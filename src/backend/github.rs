@@ -561,25 +561,15 @@ impl Backend for UnifiedGitBackend {
         if !self.is_version_installed(config, tv, check_symlink) {
             return Ok(false);
         }
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let raw_opts = tv.request.options();
         let patterns = self
             .options(&raw_opts)
             .additional_asset_patterns_for_target(&PlatformTarget::from_current());
         Ok(self.additional_assets_install_state_matches(tv, &patterns))
     }
 
-    async fn install_operation_count(&self, tv: &ToolVersion, ctx: &InstallContext) -> usize {
-        let raw_opts = ctx
-            .config
-            .get_tool_opts_with_overrides(&self.ba)
-            .await
-            .unwrap_or_else(|err| {
-                debug!(
-                    "failed to resolve merged options while counting install operations for {}: {err:#}",
-                    tv.style()
-                );
-                tv.request.options()
-            });
+    async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
+        let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
         3 + opts
             .additional_asset_patterns_for_target(&PlatformTarget::from_current())
@@ -916,7 +906,9 @@ impl Backend for UnifiedGitBackend {
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         let repo = self.repo();
-        let raw_opts = ctx.config.get_tool_opts_with_overrides(&self.ba).await?;
+        // the version's own request options: the config's are the first
+        // entry's, which a later entry of the same tool must not inherit
+        let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
         let current_target = PlatformTarget::from_current();
         let additional_patterns = opts.additional_asset_patterns_for_target(&current_target);
@@ -1184,12 +1176,12 @@ impl Backend for UnifiedGitBackend {
                 })
             }
             Err(e) => {
-                if Settings::get().generate_lockfiles()
-                    && !matches!(
-                        e.downcast_ref::<crate::errors::Error>(),
-                        Some(crate::errors::Error::UnsupportedTarget(_))
-                    )
-                {
+                // An unsupported target is reported to the lock command as such.
+                let unsupported = matches!(
+                    e.downcast_ref::<crate::errors::Error>(),
+                    Some(crate::errors::Error::UnsupportedTarget(_))
+                );
+                if unsupported || Settings::get().generate_lockfiles() {
                     return Err(e);
                 }
                 debug!(

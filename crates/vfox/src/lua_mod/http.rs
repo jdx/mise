@@ -6,9 +6,17 @@ use reqwest::{RequestBuilder, Response};
 use url::Url;
 
 use crate::http::{
-    CLIENT, HttpCancellation, http_cancellation, http_retry_attempts, is_transient, retry_async,
+    HttpCancellation, client, http_cancellation, http_retry_attempts, is_transient, retry_async,
     retry_delay, should_retry_status,
 };
+
+/// The `nil, err` result of the `try_*` functions.
+fn try_failure(lua: &Lua, err: String) -> Result<MultiValue> {
+    Ok(MultiValue::from_vec(vec![
+        Value::Nil,
+        Value::String(lua.create_string(err)?),
+    ]))
+}
 
 async fn cancel_on_interrupt<T, F>(operation: F) -> Result<T>
 where
@@ -303,8 +311,9 @@ async fn get_with_cancellation(
     };
     let request_url = rewrite_url(lua, &url)?;
     let headers = add_default_headers_for_request(lua, &url, &request_url, headers);
+    let client = client().map_err(mlua::Error::RuntimeError)?;
     let resp = cancel_on_signal(
-        send_with_retry(CLIENT.get(&request_url).headers(headers)),
+        send_with_retry(client.get(&request_url).headers(headers)),
         cancellation.cancelled(),
     )
     .await?;
@@ -326,10 +335,11 @@ async fn download_file(lua: &Lua, input: MultiValue) -> Result<()> {
     let request_url = rewrite_url(lua, &url)?;
     let headers = add_default_headers_for_request(lua, &url, &request_url, headers);
     let path: String = input.iter().nth(1).unwrap().to_string()?;
+    let client = client().map_err(mlua::Error::RuntimeError)?;
     // Retry the whole flow (request + body) so a mid-stream drop restarts the
     // download instead of failing.
     let bytes = cancel_on_interrupt(retry_async(&request_url, || async {
-        let resp = CLIENT
+        let resp = client
             .get(&request_url)
             .headers(headers.clone())
             .send()
@@ -361,8 +371,9 @@ async fn head(lua: &Lua, input: Table) -> Result<Table> {
     };
     let request_url = rewrite_url(lua, &url)?;
     let headers = add_default_headers_for_request(lua, &url, &request_url, headers);
+    let client = client().map_err(mlua::Error::RuntimeError)?;
     let resp =
-        cancel_on_interrupt(send_with_retry(CLIENT.head(&request_url).headers(headers))).await?;
+        cancel_on_interrupt(send_with_retry(client.head(&request_url).headers(headers))).await?;
     let t = lua.create_table()?;
     t.set("status_code", resp.status().as_u16())?;
     t.set("headers", get_headers(lua, resp.headers())?)?;
@@ -386,8 +397,12 @@ async fn try_get_with_cancellation(
     };
     let request_url = rewrite_url(lua, &url)?;
     let headers = add_default_headers_for_request(lua, &url, &request_url, headers);
+    let client = match client() {
+        Ok(client) => client,
+        Err(e) => return try_failure(lua, e),
+    };
     let resp = match cancel_on_signal(
-        send_with_retry(CLIENT.get(&request_url).headers(headers)),
+        send_with_retry(client.get(&request_url).headers(headers)),
         cancellation.cancelled(),
     )
     .await
@@ -423,8 +438,12 @@ async fn try_head(lua: &Lua, input: Table) -> Result<MultiValue> {
     };
     let request_url = rewrite_url(lua, &url)?;
     let headers = add_default_headers_for_request(lua, &url, &request_url, headers);
+    let client = match client() {
+        Ok(client) => client,
+        Err(e) => return try_failure(lua, e),
+    };
     let resp = match cancel_on_interrupt(send_with_retry(
-        CLIENT.head(&request_url).headers(headers),
+        client.head(&request_url).headers(headers),
     ))
     .await
     {
@@ -468,8 +487,12 @@ async fn try_download_file(lua: &Lua, input: MultiValue) -> Result<MultiValue> {
             ]));
         }
     };
+    let client = match client() {
+        Ok(client) => client,
+        Err(e) => return try_failure(lua, e),
+    };
     let bytes = match cancel_on_interrupt(retry_async(&request_url, || async {
-        let resp = CLIENT
+        let resp = client
             .get(&request_url)
             .headers(headers.clone())
             .send()

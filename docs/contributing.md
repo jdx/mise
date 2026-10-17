@@ -99,7 +99,7 @@ with the default features only.
 git clone https://github.com/jdx/mise.git
 cd mise
 mise trust
-mise install                     # the project's tools: mbx, hk, usage, prettier, shellcheck, ...
+mise install                     # the project's tools: mbx, hk, usage, oxfmt, shellcheck, ...
 mise exec -- hk install --mise   # optional: run the linters as a Git pre-commit hook
 mise run build
 target/debug/mise --version
@@ -193,7 +193,7 @@ runs. `mise run release-plz` refuses to run outside GitHub Actions.
 
 ## Linting and formatting {#linting-and-formatting}
 
-[`hk.pkl`](https://github.com/jdx/mise/blob/main/hk.pkl) configures Prettier,
+[`hk.pkl`](https://github.com/jdx/mise/blob/main/hk.pkl) configures oxfmt,
 markdownlint, taplo, ShellCheck, shfmt, stylua, lua-language-server,
 `cargo fmt`, `cargo check`, and JSON schema validation.
 
@@ -205,7 +205,7 @@ mise exec -- hk check --pr  # check only the files your branch changed
 
 `hk install --mise` runs the same fixes as a Git pre-commit hook and stashes
 unstaged changes while it runs. On Windows, `lint-fix` runs only Clippy,
-Prettier, and `cargo fmt`.
+oxfmt, and `cargo fmt`.
 
 ### Clippy {#clippy}
 

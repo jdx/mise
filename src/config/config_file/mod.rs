@@ -271,7 +271,7 @@ pub trait ConfigFile: Debug + Send + Sync {
         Default::default()
     }
 
-    fn bootstrap_config(&self) -> Option<crate::system::BootstrapTomlConfig> {
+    fn bootstrap_config(&self) -> Option<mise_system_config::bootstrap::BootstrapTomlConfig> {
         None
     }
 
@@ -279,13 +279,17 @@ pub trait ConfigFile: Debug + Send + Sync {
         None
     }
 
-    fn dotfiles_config(&self) -> Option<crate::system::DotfilesTomlConfig> {
+    fn dotfiles_config(&self) -> Option<mise_system_config::dotfiles::DotfilesTomlConfig> {
         None
     }
 
     fn dotfile_groups_config(
         &self,
-    ) -> Option<crate::system::dotfile_groups::DotfileGroupsTomlConfig> {
+    ) -> Option<mise_system_config::dotfiles::DotfileGroupsTomlConfig> {
+        None
+    }
+
+    fn history_config(&self) -> Option<mise_system_config::history::HistoryTomlConfig> {
         None
     }
 }
@@ -582,6 +586,7 @@ pub fn trust_active_config() -> Result<()> {
     if settings.paranoid || Settings::safe_mode() {
         return Ok(());
     }
+    let mut newly_trusted = false;
     for path in config::load_config_paths(&config::DEFAULT_CONFIG_FILENAMES, false) {
         if config::is_global_config(&path) {
             continue;
@@ -592,7 +597,24 @@ pub fn trust_active_config() -> Result<()> {
         }
         if !is_trusted(&config_root) {
             trust(&config_root)?;
+            newly_trusted = true;
         }
+    }
+    // The settings snapshot was built before this config was trusted, so it left out the
+    // project's `[settings]`.
+    if newly_trusted {
+        Settings::reload()?;
+    }
+    Ok(())
+}
+
+/// Trusts a config root. The settings snapshot was built without the project's
+/// `[settings]` while it was untrusted, so rebuild it to pick them up.
+fn trust_and_reload_settings(config_root: &Path) -> eyre::Result<()> {
+    let was_trusted = is_trusted(config_root);
+    trust(config_root)?;
+    if !was_trusted && settings::is_loaded() {
+        Settings::reload()?;
     }
     Ok(())
 }
@@ -617,7 +639,7 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
     {
         let config_root = config_trust_root(path);
         if is_path_trusted(path) || (!is_ignored(&config_root) && !is_ignored(path)) {
-            trust(&config_root)?;
+            trust_and_reload_settings(&config_root)?;
             return Ok(());
         }
     }
@@ -647,7 +669,7 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
         };
         match ans {
             Confirmation::Yes => {
-                trust(&config_root)?;
+                trust_and_reload_settings(&config_root)?;
                 return Ok(());
             }
             // Only a real decline is worth remembering. An ignore marker is

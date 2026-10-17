@@ -38,4 +38,17 @@ echo "=== Cleanup ==="
 rm -rf mise.toml mise.lock tmp/tiny-brew
 mise uninstall tiny@brew 2>/dev/null || true
 
+echo "=== A link the config does not select leaves the lockfile in charge (#14521) ==="
+cat <<EOF >mise.toml
+[tools]
+tiny = "3"
+EOF
+mise lock --platform linux-x64
+sed -i 's/^version = ".*"/version = "3.0.1"/' mise.lock
+mkdir -p "$PWD/tmp/tiny-other"
+mise link tiny@other "$PWD/tmp/tiny-other"
+assert_contains "mise ls tiny" "3.0.1"
+rm -rf mise.toml mise.lock tmp/tiny-other
+mise uninstall tiny@other 2>/dev/null || true
+
 echo "mise link + lockfile tests passed!"

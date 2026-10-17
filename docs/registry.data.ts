@@ -23,7 +23,11 @@ type Registry = {
 
 /** Verification a backend performs beyond checksums, as shown on the registry page. */
 type Verification =
-  "packslip" | "github-attestations" | "slsa" | "cosign" | "minisign";
+  | "packslip"
+  | "github-attestations"
+  | "slsa"
+  | "cosign"
+  | "minisign";
 
 type Tool = {
   short: string;

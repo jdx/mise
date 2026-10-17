@@ -195,6 +195,7 @@ async fn verify_attestation_uncached(
 ) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
     let mut digest = None;
+    let mut mirror_err = None;
     if use_versions_host_for_attestations(api_url, use_versions_host) {
         let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
         match verify_with_mirror(
@@ -209,13 +210,14 @@ async fn verify_attestation_uncached(
         {
             MirrorVerdict::Done(result) => return result,
             MirrorVerdict::AskGithub => {}
+            MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
         }
         digest = Some(artifact_digest);
     }
 
     let token = resolve_token_for_wrapper(api_url);
     let base_url = routed_api_url(api_url.unwrap_or(crate::github::API_URL), token.is_some())?;
-    if let Some(digest) = digest {
+    let result = if let Some(digest) = digest {
         mise_sigstore::verify_github_attestation_with_base_url_and_digest(
             mise_sigstore::GithubAttestationRequest {
                 artifact_path,
@@ -240,7 +242,8 @@ async fn verify_attestation_uncached(
             mise_retry_config(),
         )
         .await
-    }
+    };
+    result.map_err(|err| after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
 }
 
 /// Verify a GitHub artifact attestation filtered by predicate type.
@@ -270,6 +273,7 @@ pub async fn verify_attestation_with_predicate_type(
     };
 
     let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
+    let mut mirror_err = None;
     if use_versions_host_for_attestations(api_url, use_versions_host) {
         match verify_with_mirror(
             artifact_path,
@@ -283,6 +287,7 @@ pub async fn verify_attestation_with_predicate_type(
         {
             MirrorVerdict::Done(result) => return result,
             MirrorVerdict::AskGithub => {}
+            MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
         }
     }
     let client = attestation_client(api_url.unwrap_or(crate::github::API_URL))?;
@@ -294,7 +299,8 @@ pub async fn verify_attestation_with_predicate_type(
             limit: 30,
             predicate_type: Some(predicate_type.to_string()),
         })
-        .await?;
+        .await
+        .map_err(|err| after_mirror_failure(err, owner, repo, mirror_err.as_ref()))?;
     mise_sigstore::verify_github_attestation_with_attestations(
         artifact_path,
         &attestations,
@@ -347,10 +353,13 @@ pub async fn detect_attestations(
     digest: &str,
     use_versions_host: bool,
 ) -> Result<bool, DetectError> {
-    if use_versions_host_for_attestations(Some(api_url), use_versions_host)
-        && let Some(found) = detect_with_mirror(owner, repo, digest, None).await
-    {
-        return found;
+    let mut mirror_err = None;
+    if use_versions_host_for_attestations(Some(api_url), use_versions_host) {
+        match detect_with_mirror(owner, repo, digest, None).await {
+            MirrorVerdict::Done(found) => return found,
+            MirrorVerdict::AskGithub => {}
+            MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
+        }
     }
 
     let token = resolve_token_for_wrapper(Some(api_url));
@@ -361,7 +370,9 @@ pub async fn detect_attestations(
     let attestations = source
         .fetch_attestations(&artifact_ref)
         .await
-        .map_err(DetectError::Fetch)?;
+        .map_err(|err| {
+            DetectError::Fetch(after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+        })?;
     Ok(!attestations.is_empty())
 }
 
@@ -379,10 +390,13 @@ pub async fn detect_attestations_with_predicate_type(
     let Some(predicate_type) = predicate_type else {
         return detect_attestations(owner, repo, api_url, digest, use_versions_host).await;
     };
-    if use_versions_host_for_attestations(Some(api_url), use_versions_host)
-        && let Some(found) = detect_with_mirror(owner, repo, digest, Some(predicate_type)).await
-    {
-        return found;
+    let mut mirror_err = None;
+    if use_versions_host_for_attestations(Some(api_url), use_versions_host) {
+        match detect_with_mirror(owner, repo, digest, Some(predicate_type)).await {
+            MirrorVerdict::Done(found) => return found,
+            MirrorVerdict::AskGithub => {}
+            MirrorVerdict::RetryGithub(err) => mirror_err = Some(err),
+        }
     }
 
     let client = attestation_client(api_url).map_err(DetectError::SourceCreation)?;
@@ -400,7 +414,9 @@ pub async fn detect_attestations_with_predicate_type(
             predicate_type: Some(predicate_type.to_string()),
         })
         .await
-        .map_err(DetectError::Fetch)?;
+        .map_err(|err| {
+            DetectError::Fetch(after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+        })?;
     Ok(!attestations.is_empty())
 }
 
@@ -506,21 +522,60 @@ async fn refreshed_mirrored_attestations(
     Ok(fresh)
 }
 
-/// What mise-versions settled about an artifact's attestations.
-enum MirrorVerdict {
+/// What mise-versions settled about an artifact's attestations: `T` is a
+/// verification's result, or a probe's.
+enum MirrorVerdict<T = AttestationResult<bool>> {
     /// The answer: verified, or why not.
-    Done(AttestationResult<bool>),
+    Done(T),
     /// GitHub has to answer: paranoid mode confirming what mise-versions
     /// said, or a repository mise-versions doesn't know (a private one) while
     /// the user has a token to read it with.
     AskGithub,
+    /// mise-versions failed in a way GitHub is asked to make up for (see
+    /// [`crate::github::MirrorAnswer`]). GitHub answers, and when its
+    /// lookup fails too, the error names both failures; whether that fails
+    /// the install is `provenance_api_failures_fatal`'s to say, as for any
+    /// failed lookup.
+    RetryGithub(eyre::Report),
+}
+
+/// The verdict once mise-versions failed to answer for `full`.
+fn mirror_error_verdict(full: &str, err: eyre::Report) -> MirrorVerdict {
+    if crate::versions_host::retries_on_github(&err) {
+        return MirrorVerdict::RetryGithub(err);
+    }
+    MirrorVerdict::Done(Err(mirror_failure(full, &err)))
+}
+
+/// GitHub's attestation `err` for `owner/repo`, after mise-versions failed
+/// with `mirror_err`: a failed lookup names both failures and stays a lookup
+/// failure ([`is_api_failure`]); anything else, such as an attestation that
+/// doesn't verify, is GitHub's answer alone.
+fn after_mirror_failure(
+    err: AttestationError,
+    owner: &str,
+    repo: &str,
+    mirror_err: Option<&eyre::Report>,
+) -> AttestationError {
+    match mirror_err {
+        Some(mirror_err) if is_api_failure(&err) => {
+            let failed = crate::versions_host::GithubRetryFailed::new(
+                &format!("GitHub attestations of {owner}/{repo}"),
+                mirror_err,
+                eyre::Report::new(err),
+            );
+            AttestationError::Api(format!("{:#}", eyre::Report::new(failed)))
+        }
+        _ => err,
+    }
 }
 
 /// Verify `artifact_path` against mise-versions' attestations for `owner/repo`,
 /// keeping only those of `predicate_type` when it is set.
 ///
-/// Normal usage never falls back to api.github.com, whose rate limit is 60
-/// requests an hour without a token. A set kept from an earlier command may
+/// Normal usage asks api.github.com, whose rate limit is 60 requests an hour
+/// without a token, only when mise-versions errors
+/// ([`MirrorVerdict::RetryGithub`]). A set kept from an earlier command may
 /// predate an attestation GitHub added since, so one that doesn't verify is
 /// asked for again before the failure stands; mise-versions refreshes its own
 /// copy within half an hour of a release.
@@ -558,7 +613,7 @@ async fn verify_with_mirror(
             // Paranoid mode has GitHub confirm mise-versions anyway, so it
             // asks GitHub when mise-versions can't answer.
             Err(_) if !mirror_may_answer_none() => return MirrorVerdict::AskGithub,
-            Err(err) => return MirrorVerdict::Done(Err(mirror_failure(&full, &err))),
+            Err(err) => return mirror_error_verdict(&full, err),
         };
         trace!(
             "got {} GitHub attestations for {full}@{digest} from mise-versions",
@@ -641,18 +696,18 @@ async fn verify_with_mirror(
 }
 
 /// Whether mise-versions' attestations for `owner/repo` at `digest` include
-/// any of `predicate_type` (any at all when `None`). `None` sends the caller
-/// to GitHub, as [`MirrorVerdict::AskGithub`] does.
+/// any of `predicate_type` (any at all when `None`), with the same verdicts
+/// as [`verify_with_mirror`].
 async fn detect_with_mirror(
     owner: &str,
     repo: &str,
     digest: &str,
     predicate_type: Option<&str>,
-) -> Option<Result<bool, DetectError>> {
+) -> MirrorVerdict<Result<bool, DetectError>> {
     let full = format!("{owner}/{repo}");
     if !crate::versions_host::enabled_for_github_repo(&full) {
         // Rerouted by url_replacements, as in `verify_with_mirror`.
-        return None;
+        return MirrorVerdict::AskGithub;
     }
     let digest = if digest.contains(':') {
         digest.to_string()
@@ -670,15 +725,15 @@ async fn detect_with_mirror(
         let attestations = match found {
             Ok(Some(attestations)) => attestations,
             Ok(None) => {
-                return detect_after_attestation_404(verdict_after_attestation_404(
+                return detect_verdict(verdict_after_attestation_404(
                     &full,
                     repo_listing(&full).await,
                     !mirror_may_answer_none(),
                     || resolve_token_for_wrapper(None).is_some(),
                 ));
             }
-            Err(_) if !mirror_may_answer_none() => return None,
-            Err(err) => return Some(Err(DetectError::Fetch(mirror_failure(&full, &err)))),
+            Err(_) if !mirror_may_answer_none() => return MirrorVerdict::AskGithub,
+            Err(err) => return detect_verdict(mirror_error_verdict(&full, err)),
         };
         trace!(
             "got {} GitHub attestation probes for {full}@{digest} from mise-versions",
@@ -691,9 +746,9 @@ async fn detect_with_mirror(
                 continue;
             }
             if !mirror_may_answer_none() {
-                return None;
+                return MirrorVerdict::AskGithub;
             }
-            return Some(Err(DetectError::Fetch(AttestationError::Api(format!(
+            return MirrorVerdict::Done(Err(DetectError::Fetch(AttestationError::Api(format!(
                 "mise-versions returned attestations for {full} without their bundles"
             )))));
         }
@@ -706,9 +761,9 @@ async fn detect_with_mirror(
                 debug!(
                     "mise-versions has no attestations for {full}@{digest}; paranoid mode asks GitHub"
                 );
-                return None;
+                return MirrorVerdict::AskGithub;
             }
-            return Some(Ok(found));
+            return MirrorVerdict::Done(Ok(found));
         }
     }
     unreachable!("the second pass always returns")
@@ -745,8 +800,10 @@ async fn repo_listing(full: &str) -> RepoListing {
 
 /// The verdict after mise-versions answered 404 for `full`'s attestations.
 /// A failed listing is a failed lookup, not "no attestations": that would
-/// let the install go on unchecked, and `provenance_api_failures_fatal`
-/// decides what a failed lookup does. Paranoid mode asks GitHub instead.
+/// let the install go on unchecked. It is retried on GitHub when
+/// mise-versions errored ([`mirror_error_verdict`]), and
+/// `provenance_api_failures_fatal` decides what a failed lookup does.
+/// Paranoid mode asks GitHub instead.
 fn verdict_after_attestation_404(
     full: &str,
     listing: RepoListing,
@@ -762,18 +819,21 @@ fn verdict_after_attestation_404(
         RepoListing::Unknown if paranoid => MirrorVerdict::AskGithub,
         RepoListing::Unknown => unknown_repo_verdict(full, has_token()),
         RepoListing::Failed(_) if paranoid => MirrorVerdict::AskGithub,
-        RepoListing::Failed(err) => MirrorVerdict::Done(Err(mirror_failure(full, &err))),
+        RepoListing::Failed(err) => mirror_error_verdict(full, err),
     }
 }
 
-/// [`verdict_after_attestation_404`] for a probe: no attestations is
-/// `Ok(false)`, any other failure a fetch error, and `None` asks GitHub.
-fn detect_after_attestation_404(verdict: MirrorVerdict) -> Option<Result<bool, DetectError>> {
+/// A verification's verdict for a probe: no attestations is `Ok(false)` and
+/// any other failure a fetch error.
+fn detect_verdict(verdict: MirrorVerdict) -> MirrorVerdict<Result<bool, DetectError>> {
     match verdict {
-        MirrorVerdict::AskGithub => None,
-        MirrorVerdict::Done(Err(AttestationError::NoAttestations)) => Some(Ok(false)),
-        MirrorVerdict::Done(Err(err)) => Some(Err(DetectError::Fetch(err))),
-        MirrorVerdict::Done(Ok(found)) => Some(Ok(found)),
+        MirrorVerdict::AskGithub => MirrorVerdict::AskGithub,
+        MirrorVerdict::RetryGithub(err) => MirrorVerdict::RetryGithub(err),
+        MirrorVerdict::Done(Err(AttestationError::NoAttestations)) => {
+            MirrorVerdict::Done(Ok(false))
+        }
+        MirrorVerdict::Done(Err(err)) => MirrorVerdict::Done(Err(DetectError::Fetch(err))),
+        MirrorVerdict::Done(Ok(found)) => MirrorVerdict::Done(Ok(found)),
     }
 }
 
@@ -787,7 +847,7 @@ fn unknown_repo_verdict(full: &str, has_token: bool) -> MirrorVerdict {
     }
     MirrorVerdict::Done(Err(AttestationError::Api(format!(
         "GitHub repository {full} not found (404 from mise-versions.jdx.dev, which mise asks \
-         instead of api.github.com). If the repository is private, set GITHUB_TOKEN; to ask \
+         before api.github.com). If the repository is private, set GITHUB_TOKEN; to ask \
          GitHub directly, set use_versions_host = false."
     ))))
 }
@@ -912,8 +972,18 @@ mod tests {
     fn unknown() -> RepoListing {
         RepoListing::Unknown
     }
+    /// A listing that failed with `status` (`None`: no connection).
+    fn failed_with(status: Option<u16>) -> RepoListing {
+        RepoListing::Failed(
+            crate::versions_host::VersionsHostUnavailable {
+                status,
+                message: format!("HTTP {status:?}"),
+            }
+            .into(),
+        )
+    }
     fn failed() -> RepoListing {
-        RepoListing::Failed(eyre::eyre!("HTTP 503"))
+        failed_with(Some(503))
     }
 
     #[test]
@@ -935,13 +1005,21 @@ mod tests {
             verdict(unknown(), false, true),
             MirrorVerdict::AskGithub
         ));
-        // Failed listing: a failed lookup, never "no attestations".
-        assert!(matches!(
-            verdict(failed(), false, false),
-            MirrorVerdict::Done(Err(AttestationError::Api(_)))
-        ));
+        // Failed listing: never "no attestations". mise-versions erroring
+        // (no connection, 429, 5xx) retries the lookup on GitHub, token or
+        // not; a 403 (the mirror disabled) is a failed lookup.
+        for listing in [failed(), failed_with(None), failed_with(Some(429))] {
+            assert!(matches!(
+                verdict(listing, false, false),
+                MirrorVerdict::RetryGithub(_)
+            ));
+        }
         assert!(matches!(
             verdict(failed(), false, true),
+            MirrorVerdict::RetryGithub(_)
+        ));
+        assert!(matches!(
+            verdict(failed_with(Some(403)), false, false),
             MirrorVerdict::Done(Err(AttestationError::Api(_)))
         ));
         // Paranoid mode asks GitHub whenever mise-versions can't settle it.
@@ -974,25 +1052,77 @@ mod tests {
     #[test]
     fn test_attestation_404_probe_by_listing() {
         let probe = |listing, paranoid, has_token| {
-            detect_after_attestation_404(verdict_after_attestation_404(
+            detect_verdict(verdict_after_attestation_404(
                 "o/r",
                 listing,
                 paranoid,
                 || has_token,
             ))
         };
-        assert!(matches!(probe(listed(), false, false), Some(Ok(false))));
+        assert!(matches!(
+            probe(listed(), false, false),
+            MirrorVerdict::Done(Ok(false))
+        ));
         assert!(matches!(
             probe(unknown(), false, false),
-            Some(Err(DetectError::Fetch(AttestationError::Api(_))))
+            MirrorVerdict::Done(Err(DetectError::Fetch(AttestationError::Api(_))))
         ));
-        assert!(probe(unknown(), false, true).is_none());
+        assert!(matches!(
+            probe(unknown(), false, true),
+            MirrorVerdict::AskGithub
+        ));
         assert!(matches!(
             probe(failed(), false, false),
-            Some(Err(DetectError::Fetch(AttestationError::Api(_))))
+            MirrorVerdict::RetryGithub(_)
         ));
-        assert!(probe(listed(), true, false).is_none());
-        assert!(probe(failed(), true, false).is_none());
+        assert!(matches!(
+            probe(failed_with(Some(403)), false, false),
+            MirrorVerdict::Done(Err(DetectError::Fetch(AttestationError::Api(_))))
+        ));
+        assert!(matches!(
+            probe(listed(), true, false),
+            MirrorVerdict::AskGithub
+        ));
+        assert!(matches!(
+            probe(failed(), true, false),
+            MirrorVerdict::AskGithub
+        ));
+    }
+
+    #[test]
+    fn test_github_failure_after_mirror_failure_names_both() {
+        let mirror_err: eyre::Report = crate::versions_host::VersionsHostUnavailable {
+            status: Some(503),
+            message: "HTTP status server error (503 Service Unavailable)".to_string(),
+        }
+        .into();
+        let err = after_mirror_failure(
+            AttestationError::Api("HTTP 403 rate limit exceeded".to_string()),
+            "o",
+            "r",
+            Some(&mirror_err),
+        );
+        // Still a failed lookup, for provenance_api_failures_fatal.
+        assert!(is_api_failure(&err));
+        let message = err.to_string();
+        assert!(message.contains("mise-versions.jdx.dev"), "{message}");
+        assert!(message.contains("503 Service Unavailable"), "{message}");
+        assert!(message.contains("api.github.com"), "{message}");
+        assert!(message.contains("rate limit exceeded"), "{message}");
+        // GitHub's own answer stands alone.
+        assert!(matches!(
+            after_mirror_failure(
+                AttestationError::NoAttestations,
+                "o",
+                "r",
+                Some(&mirror_err)
+            ),
+            AttestationError::NoAttestations
+        ));
+        assert!(matches!(
+            after_mirror_failure(AttestationError::Api("x".into()), "o", "r", None),
+            AttestationError::Api(m) if m == "x"
+        ));
     }
     use crate::env as mise_env;
     use confique::Layer;

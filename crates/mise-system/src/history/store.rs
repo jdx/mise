@@ -1,0 +1,1439 @@
+//! The on-disk history store under `$MISE_STATE_DIR/history/`.
+//!
+//! The bare repository `repo.git` is the complete representation: every
+//! tracked-file version is an ordinary commit whose tree holds the files.
+//! Recovery journals do not belong in publishable commits. Everything else
+//! in the directory is a rebuildable index or machine-local bookkeeping. Every
+//! function takes the state directory explicitly (`*_in`) so tests can point
+//! it at a temporary directory.
+//!
+//! Locks live alongside the state they protect, opened with `LockFile::at`.
+//! Do not put them in the cache: a service and a shell can use different
+//! cache directories while sharing the same history store.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use eyre::{Result, WrapErr, bail, eyre};
+use serde::{Deserialize, Serialize};
+
+use super::journal::JournalEntry;
+use mise_util::file::{self, display_path};
+
+/// The version of what a checkpoint records about itself.
+///
+/// **Bumped whenever a reader that does not understand the addition
+/// would draw a wrong conclusion from its absence.** Version 2 added an
+/// entry's `include` list: an older mise ignores the field, reads the
+/// entry as covering its whole tree, and a rollback then deletes the
+/// files the list never selected. It refuses a newer schema instead —
+/// `replay::validate` rejects anything above its own — and that is the
+/// answer wanted here: refuse rather than misinterpret.
+pub(crate) const SCHEMA_VERSION: u32 = 2;
+
+/// The state directory the store lives under.
+pub fn state_dir() -> PathBuf {
+    super::local::root()
+}
+
+pub fn store_dir_in(state_dir: &Path) -> PathBuf {
+    state_dir.join("history")
+}
+
+pub fn repo_dir_in(state_dir: &Path) -> PathBuf {
+    store_dir_in(state_dir).join("repo.git")
+}
+
+pub(crate) fn index_dir_in(state_dir: &Path) -> PathBuf {
+    store_dir_in(state_dir).join("index")
+}
+
+fn index_file_in(state_dir: &Path) -> PathBuf {
+    index_dir_in(state_dir).join("checkpoints.json")
+}
+
+fn meta_cache_dir_in(state_dir: &Path) -> PathBuf {
+    index_dir_in(state_dir).join("meta")
+}
+
+fn commit_meta_cache_dir_in(state_dir: &Path) -> PathBuf {
+    index_dir_in(state_dir).join("commits")
+}
+
+pub(crate) fn pending_dir_in(state_dir: &Path) -> PathBuf {
+    index_dir_in(state_dir).join("pending")
+}
+
+pub(crate) fn operation_marker_in(state_dir: &Path) -> PathBuf {
+    store_dir_in(state_dir).join("operation.json")
+}
+
+pub(crate) fn operation_lock_in(state_dir: &Path) -> PathBuf {
+    store_dir_in(state_dir).join("operation")
+}
+
+/// The lock serializing captures and index writes.
+pub(crate) fn store_lock_path_in(state_dir: &Path) -> PathBuf {
+    store_dir_in(state_dir).join("store")
+}
+
+/// Creates the store directory, private to the user: snapshots hold
+/// whatever the tracked paths hold, secrets included.
+pub(crate) fn ensure_store_dir_in(state_dir: &Path) -> Result<()> {
+    let dir = store_dir_in(state_dir);
+    create_private_dir(&dir)?;
+    create_private_dir(&index_dir_in(state_dir))?;
+    create_private_dir(&meta_cache_dir_in(state_dir))?;
+    create_private_dir(&commit_meta_cache_dir_in(state_dir))?;
+    create_private_dir(&pending_dir_in(state_dir))?;
+    Ok(())
+}
+
+#[cfg(unix)]
+pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    if !dir.is_dir() {
+        if let Some(parent) = dir.parent() {
+            file::create_dir_all(parent)?;
+        }
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(dir)
+            .or_else(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists && dir.is_dir() {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            })
+            .wrap_err_with(|| format!("creating {}", display_path(dir)))?;
+    }
+    let mode = std::fs::metadata(dir)?.permissions().mode() & 0o777;
+    if mode != 0o700 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .wrap_err_with(|| format!("restricting {}", display_path(dir)))?;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW;
+    use windows_sys::Win32::Security::{
+        DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, SECURITY_ATTRIBUTES,
+        SetFileSecurityW,
+    };
+    use windows_sys::Win32::Storage::FileSystem::CreateDirectoryW;
+
+    if let Some(parent) = dir.parent() {
+        file::create_dir_all(parent)?;
+    }
+    // Protected, inheritable owner-only access. Supplying this at creation
+    // avoids exposing snapshots through a permissive parent ACL, even briefly.
+    let sddl: Vec<u16> = "D:P(A;OICI;FA;;;OW)\0".encode_utf16().collect();
+    let mut descriptor = std::ptr::null_mut();
+    // SAFETY: both pointers are valid for the call; Windows allocates the
+    // descriptor, released with LocalFree below on every path.
+    if unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.as_ptr(),
+            1,
+            &mut descriptor,
+            std::ptr::null_mut(),
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let result = (|| -> Result<()> {
+        let mut path: Vec<u16> = dir.as_os_str().encode_wide().collect();
+        if path.contains(&0) {
+            eyre::bail!("history directory contains a NUL character");
+        }
+        path.push(0);
+        let attributes = SECURITY_ATTRIBUTES {
+            nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: descriptor,
+            bInheritHandle: 0,
+        };
+        if !dir.is_dir()
+            // SAFETY: path is NUL-terminated and attributes/descriptor remain live.
+            && unsafe { CreateDirectoryW(path.as_ptr(), &attributes) } == 0
+            && !dir.is_dir()
+        {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        // Also tighten an existing directory instead of trusting inherited ACLs.
+        // SAFETY: path and descriptor are valid until the call returns.
+        if unsafe {
+            SetFileSecurityW(
+                path.as_ptr(),
+                DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                descriptor,
+            )
+        } == 0
+        {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(())
+    })();
+    // SAFETY: ConvertStringSecurityDescriptorToSecurityDescriptorW allocated it.
+    unsafe {
+        LocalFree(descriptor);
+    }
+    result.wrap_err_with(|| format!("restricting {}", display_path(dir)))
+}
+
+/// Display context for an in-progress local operation, never durable history.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Machine {
+    pub id: String,
+    pub name: String,
+}
+
+pub(crate) fn machine() -> Machine {
+    Machine {
+        id: "local".into(),
+        name: hostname(),
+    }
+}
+
+fn hostname() -> String {
+    #[cfg(unix)]
+    let system_hostname = nix::unistd::gethostname()
+        .ok()
+        .map(|name| name.to_string_lossy().into_owned());
+    #[cfg(not(unix))]
+    let system_hostname: Option<String> = None;
+
+    system_hostname
+        .filter(|name| !name.is_empty())
+        .or_else(|| std::env::var("HOSTNAME").ok())
+        .filter(|name| !name.is_empty())
+        .or_else(|| {
+            std::fs::read_to_string("/etc/hostname")
+                .ok()
+                .map(|name| name.trim().to_string())
+                .filter(|name| !name.is_empty())
+        })
+        .or_else(|| std::env::var("COMPUTERNAME").ok())
+        .unwrap_or_else(|| "machine".to_string())
+}
+
+/// The file holding the name generated for this machine's store.
+fn machine_name_path_in(state_dir: &Path) -> PathBuf {
+    store_dir_in(state_dir).join("machine")
+}
+
+/// This machine's name in per-machine stream names (`machine-<name>`):
+/// `[history] machine` when set, otherwise a name generated once and kept
+/// with the store. A hostname alone is not enough: installers often leave
+/// every machine with the same default one, and renaming a host must not
+/// move its streams.
+pub(crate) fn machine_name() -> Result<String> {
+    match super::config::machine_name()? {
+        Some(name) => Ok(name),
+        None => machine_name_in(&mise_util::dirs::STATE)
+            .wrap_err("cannot name this machine's own history streams"),
+    }
+}
+
+/// The name kept in the store under `state_dir`, generated on first use.
+pub(crate) fn machine_name_in(state_dir: &Path) -> Result<String> {
+    let path = machine_name_path_in(state_dir);
+    if let Some(name) = read_machine_name(&path)? {
+        return Ok(name);
+    }
+    ensure_store_dir_in(state_dir)?;
+    let name = format!(
+        "{}-{}",
+        generated_name_prefix(),
+        mise_util::rand::random_string(8).to_ascii_lowercase()
+    );
+    // write it to a file of its own beside the final path, then link it
+    // into place: the link fails when another process or thread got there
+    // first, and nobody ever reads a half-written name
+    let mut staging = tempfile::Builder::new()
+        .prefix("machine.")
+        .tempfile_in(store_dir_in(state_dir))?;
+    std::io::Write::write_all(&mut staging, format!("{name}\n").as_bytes())?;
+    let linked = std::fs::hard_link(staging.path(), &path);
+    drop(staging);
+    match linked {
+        Ok(()) => Ok(name),
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            read_machine_name(&path)?.ok_or_else(|| eyre!("{} is empty", display_path(&path)))
+        }
+        Err(err) => Err(err).wrap_err_with(|| format!("writing {}", display_path(&path))),
+    }
+}
+
+fn read_machine_name(path: &Path) -> Result<Option<String>> {
+    match std::fs::read_to_string(path) {
+        Ok(content) => {
+            let name = content.trim();
+            if !is_valid_machine_name(name) {
+                bail!(
+                    "{} does not hold a valid machine name; remove it to generate a new one, or set [history] machine",
+                    display_path(path)
+                );
+            }
+            Ok(Some(name.to_string()))
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err).wrap_err_with(|| format!("reading {}", display_path(path))),
+    }
+}
+
+/// The hostname reduced to characters every stream name accepts.
+fn generated_name_prefix() -> String {
+    let mut prefix = String::new();
+    for c in hostname().chars().map(|c| c.to_ascii_lowercase()) {
+        if c.is_ascii_alphanumeric() {
+            prefix.push(c);
+        } else if !prefix.is_empty() && !prefix.ends_with('-') {
+            prefix.push('-');
+        }
+        if prefix.len() >= 40 {
+            break;
+        }
+    }
+    let prefix = prefix.trim_end_matches('-');
+    if prefix.is_empty() {
+        "machine".to_string()
+    } else {
+        prefix.to_string()
+    }
+}
+
+#[cfg(test)]
+mod machine_name_tests {
+    use super::*;
+
+    #[test]
+    fn a_generated_name_is_kept_with_the_store() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = machine_name_in(temp.path()).unwrap();
+        assert!(is_valid_machine_name(&first), "{first}");
+        let (prefix, suffix) = first.rsplit_once('-').unwrap();
+        assert!(!prefix.is_empty(), "{first}");
+        assert_eq!(suffix.len(), 8, "{first}");
+        assert_eq!(machine_name_in(temp.path()).unwrap(), first);
+        // another store is another machine, even under the same hostname
+        let other = tempfile::tempdir().unwrap();
+        assert_ne!(machine_name_in(other.path()).unwrap(), first);
+    }
+
+    #[test]
+    fn concurrent_first_uses_agree_on_one_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let barrier = std::sync::Barrier::new(16);
+        let names: Vec<String> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..16)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        machine_name_in(temp.path()).unwrap()
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        assert!(names.iter().all(|name| name == &names[0]), "{names:?}");
+        assert_eq!(machine_name_in(temp.path()).unwrap(), names[0]);
+        let leftovers: Vec<_> = std::fs::read_dir(store_dir_in(temp.path()))
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with("machine."))
+            .collect();
+        assert!(leftovers.is_empty(), "staging files left behind");
+    }
+
+    #[test]
+    fn a_damaged_name_is_reported_not_replaced() {
+        let temp = tempfile::tempdir().unwrap();
+        ensure_store_dir_in(temp.path()).unwrap();
+        std::fs::write(machine_name_path_in(temp.path()), "../x\n").unwrap();
+        assert!(machine_name_in(temp.path()).is_err());
+    }
+
+    #[test]
+    fn machine_names_are_single_stream_components() {
+        for valid in ["desk", "omarchy-3f2a9c1b", "work-mbp.local", "a_b"] {
+            assert!(is_valid_machine_name(valid), "{valid}");
+        }
+        for invalid in [
+            "",
+            ".",
+            "..",
+            "-x",
+            ".hidden",
+            "a/b",
+            "a@b",
+            "a b",
+            &"x".repeat(64),
+        ] {
+            assert!(!is_valid_machine_name(invalid), "{invalid}");
+        }
+    }
+}
+
+/// Whether `name` can follow `machine-` in a stream name: 1-63 letters,
+/// digits, `.`, `-`, or `_`, starting with a letter or digit.
+pub(crate) fn is_valid_machine_name(name: &str) -> bool {
+    (1..=63).contains(&name.len())
+        && name.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Trigger {
+    Edit,
+    Save,
+    Agent,
+    Baseline,
+    CaptureBefore,
+    Capture,
+    BootstrapBefore,
+    Bootstrap,
+    RollbackBefore,
+    Rollback,
+    UndoBefore,
+    Undo,
+    ApplyBefore,
+    Apply,
+    Update,
+}
+
+impl Trigger {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Edit => "edit",
+            Self::Save => "save",
+            Self::Agent => "agent",
+            Self::Baseline => "baseline",
+            Self::CaptureBefore => "capture-before",
+            Self::Capture => "capture",
+            Self::BootstrapBefore => "bootstrap-before",
+            Self::Bootstrap => "bootstrap",
+            Self::RollbackBefore => "rollback-before",
+            Self::Rollback => "rollback",
+            Self::UndoBefore => "undo-before",
+            Self::Undo => "undo",
+            Self::ApplyBefore => "apply-before",
+            Self::Apply => "apply",
+            Self::Update => "update",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        Some(match text {
+            "edit" => Self::Edit,
+            "save" => Self::Save,
+            "agent" => Self::Agent,
+            "baseline" => Self::Baseline,
+            "capture-before" => Self::CaptureBefore,
+            "capture" => Self::Capture,
+            "bootstrap-before" => Self::BootstrapBefore,
+            "bootstrap" => Self::Bootstrap,
+            "rollback-before" => Self::RollbackBefore,
+            "rollback" => Self::Rollback,
+            "undo-before" => Self::UndoBefore,
+            "undo" => Self::Undo,
+            "apply-before" => Self::ApplyBefore,
+            "apply" => Self::Apply,
+            "update" => Self::Update,
+            _ => return None,
+        })
+    }
+
+    /// A capture with no metadata of its own: recorded only when something
+    /// changed. A bare `mise dot save` counts; one with a description,
+    /// a label, or a task always records.
+    pub(crate) fn is_automatic(self) -> bool {
+        matches!(self, Self::Edit | Self::Save)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DescriptionSource {
+    Computed,
+    User,
+    Agent,
+    Command,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OperationKind {
+    Capture,
+    Bootstrap,
+    Rollback,
+    Undo,
+    Apply,
+}
+
+impl OperationKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Capture => "capture",
+            Self::Bootstrap => "bootstrap",
+            Self::Rollback => "rollback",
+            Self::Undo => "undo",
+            Self::Apply => "apply",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OperationStatus {
+    /// The command that owns this operation has not finished (or died).
+    Pending,
+    Completed,
+    Failed,
+}
+
+impl OperationStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+/// Derived checkpoint metadata. Durable metadata lives in ordinary commits;
+/// descriptions, labels, and pins change through annotations.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Checkpoint {
+    pub schema_version: u32,
+    /// Committed records use the Git commit OID. Pending operation records
+    /// reserve a provisional UUID before their outcome commit exists.
+    pub uuid: String,
+    pub machine: Machine,
+    /// RFC 3339, UTC.
+    pub created_at: String,
+    pub mise_version: String,
+    pub trigger: Trigger,
+    pub description: String,
+    pub description_source: DescriptionSource,
+    /// The computed description, kept even when a caller supplied one.
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
+    pub tree: TreeInfo,
+    pub changes: Changes,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation: Option<Operation>,
+}
+
+impl Checkpoint {
+    /// The snapshot-tree path a display path travels as, under whichever
+    /// coverage entry owns it, or `None` when no entry does.
+    ///
+    /// **The one conversion between how a path is shown and how it
+    /// travels.** A display path is for a person: it keeps the host's
+    /// separator, and only on unix is `$HOME` shown as `~`. A tree path is
+    /// portable, and a reader rebuilds a display path from it with
+    /// [`super::tracked::tree_path_to_display`] — which always writes `~/`
+    /// with `/`. The two display spellings of one path are therefore not
+    /// the same string on Windows, so anything matching a written record
+    /// against a walked one compares tree paths, or display paths both
+    /// derived from a tree path, and never one of each.
+    pub(crate) fn portable_path(&self, path: &String) -> Option<String> {
+        let path = super::tracked::normalize_target(Path::new(path));
+        let entry = self
+            .tree
+            .coverage
+            .entries
+            .iter()
+            .filter(|entry| {
+                path.starts_with(super::tracked::normalize_target(Path::new(&entry.path)))
+            })
+            .max_by_key(|entry| Path::new(&entry.path).components().count())?;
+        super::sync::layout::Roots::current().branch_path(&path, entry.variant.as_deref())
+    }
+
+    /// Only tracked-file metadata may travel with the ordinary history.
+    /// Recovery material and command invocation details remain local.
+    pub(crate) fn for_commit(&self) -> CommitRecord {
+        let portable = |path: &String| self.portable_path(path);
+        CommitRecord {
+            trigger: self.trigger,
+            description_source: self.description_source,
+            task: self.task.clone(),
+            labels: self.labels.clone(),
+            // **A repository the capture skipped is recorded here, not
+            // only in `coverage.nested`.** The trailer is format-frozen
+            // for released clients, so `nested` cannot become a field of
+            // its own; without this, a machine that rebuilt its index
+            // from Git would know nothing about the skip, and if the
+            // directory has since lost its `.git` it would look like an
+            // ordinary part of the tracked tree whose files the
+            // checkpoint "did not hold" — which is how a rollback
+            // deletes them. As an omission it reads, on this mise and on
+            // an older one, as what it is: a path this commit did not
+            // capture.
+            omitted: self
+                .tree
+                .coverage
+                .omitted
+                .iter()
+                .chain(self.tree.coverage.nested.iter())
+                .filter_map(|item| portable(&item.path))
+                .collect(),
+            incomplete: self
+                .tree
+                .coverage
+                .incomplete
+                .iter()
+                .filter_map(|item| portable(&item.path))
+                .collect(),
+            operation: self.operation.as_ref().map(|op| CommitOperation {
+                id: op.id.clone(),
+                kind: op.kind,
+                status: op.status,
+                before: op.before.clone(),
+                to: op.to.clone(),
+                undoes: op.undoes.clone(),
+                applied: op.applied.clone(),
+                affected: op.affected.iter().filter_map(portable).collect(),
+                sources: op
+                    .sources
+                    .iter()
+                    .filter_map(|source| {
+                        let paths: Vec<_> = source.paths.iter().filter_map(portable).collect();
+                        (!paths.is_empty()).then(|| OperationSource {
+                            checkpoint: source.checkpoint.clone(),
+                            paths,
+                        })
+                    })
+                    .collect(),
+                directories: op.directories.iter().filter_map(portable).collect(),
+                directory_modes: op
+                    .directory_modes
+                    .iter()
+                    .filter_map(|(path, mode)| portable(path).map(|path| (path, *mode)))
+                    .collect(),
+            }),
+        }
+    }
+
+    /// The trigger label plus the operation kind, for tables.
+    pub fn kind_label(&self) -> String {
+        self.trigger.as_str().to_string()
+    }
+
+    pub fn status(&self) -> Option<OperationStatus> {
+        self.operation.as_ref().map(|operation| operation.status)
+    }
+}
+
+/// Only information Git cannot derive belongs in a commit trailer. In
+/// particular, no recovery data, invocation arguments, or machine paths.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CommitRecord {
+    pub trigger: Trigger,
+    pub description_source: DescriptionSource,
+    pub task: Option<String>,
+    pub labels: Vec<String>,
+    /// Portable paths that this commit could not capture, not known absences.
+    pub omitted: Vec<String>,
+    /// Portable directory prefixes whose inventory was incomplete.
+    pub incomplete: Vec<String>,
+    pub operation: Option<CommitOperation>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CommitOperation {
+    /// Stable identity reserved before the operation starts, independent of
+    /// the outcome commit's object id and this machine's numeric index.
+    pub id: String,
+    pub kind: OperationKind,
+    pub status: OperationStatus,
+    pub before: Option<String>,
+    pub to: Option<String>,
+    pub undoes: Option<String>,
+    pub applied: Option<String>,
+    pub affected: Vec<String>,
+    pub sources: Vec<OperationSource>,
+    pub directories: Vec<String>,
+    pub directory_modes: BTreeMap<String, u32>,
+}
+
+impl CommitOperation {
+    pub(crate) fn localize(self) -> Result<Operation> {
+        let local = |path: String| -> Result<String> {
+            super::sync::layout::Roots::current()
+                .locate(&path)
+                .path()
+                .map(display_path)
+                .ok_or_else(|| eyre!("invalid operation path: {path}"))
+        };
+        Ok(Operation {
+            id: self.id,
+            kind: self.kind,
+            status: self.status,
+            command: self.kind.as_str().into(),
+            argv: vec![],
+            cwd: PathBuf::new(),
+            user: None,
+            finished_at: None,
+            error: None,
+            before: self.before,
+            to: self.to,
+            undoes: self.undoes,
+            applied: self.applied,
+            affected: self
+                .affected
+                .into_iter()
+                .map(local)
+                .collect::<Result<_>>()?,
+            sources: self
+                .sources
+                .into_iter()
+                .map(|source| {
+                    Ok(OperationSource {
+                        checkpoint: source.checkpoint,
+                        paths: source.paths.into_iter().map(local).collect::<Result<_>>()?,
+                    })
+                })
+                .collect::<Result<_>>()?,
+            directories: self
+                .directories
+                .into_iter()
+                .map(local)
+                .collect::<Result<_>>()?,
+            directory_modes: self
+                .directory_modes
+                .into_iter()
+                .map(|(path, bits)| Ok((local(path)?, bits)))
+                .collect::<Result<_>>()?,
+            message: None,
+            journal: vec![],
+        })
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TreeInfo {
+    /// The ordinary tracked-file tree of this commit.
+    pub snapshot: Option<String>,
+    /// False when no content snapshot could be taken (no usable `git`).
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    pub roots: Vec<RootRecord>,
+    pub coverage: Coverage,
+    /// Unix permission bits (`0o600`, `0o700`, …) of captured regular files
+    /// whose mode is not one git records (`0644`, `0755`), by display path,
+    /// so a restore puts a private file back private.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub modes: BTreeMap<String, u32>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RootRecord {
+    /// `home` for `$HOME`, `fs` for everything outside it.
+    pub label: String,
+    pub path: PathBuf,
+    pub files: u64,
+    pub bytes: u64,
+}
+
+/// The effective rules a capture ran under, persisted so a checkpoint can
+/// say for any path whether it was captured, known absent, uncovered, or
+/// omitted.
+///
+/// Unknown fields are refused rather than skipped: what this record does
+/// not say decides whether a live file is deleted, so a reader that
+/// cannot see all of it must not answer from the part it understands.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Coverage {
+    pub entries: Vec<CoverageEntry>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclude: Vec<String>,
+    /// Which matcher read `exclude` when this checkpoint was written.
+    ///
+    /// Added later, so its absence marks a checkpoint written by a mise
+    /// that read exclusion globs differently. A replay cannot know what
+    /// such a checkpoint covered, so it says so rather than treating an
+    /// unmatched path as one the snapshot held and deleting it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub matcher: Option<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub incomplete: Vec<PathReason>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub omitted: Vec<PathReason>,
+    /// Nested repositories saved as a commit pointer without their files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nested: Vec<PathReason>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageEntry {
+    /// `~`-relative when under `$HOME`, absolute otherwise.
+    pub path: String,
+    /// The explicit tracking mode.
+    pub mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+    pub autosave: bool,
+    #[serde(default)]
+    pub encrypt: bool,
+    /// `live`, `saved`, or `protective`.
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declared_in: Option<String>,
+    /// The entry's own `exclude` patterns, relative to its path.
+    /// Absent when the declaration states none, `[]` when it states an
+    /// empty one, which clears what another machine published.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
+    /// The entry's own `include` patterns, when it declared a list.
+    /// Recorded so a replay knows which paths the checkpoint never set
+    /// out to hold: without it an unselected file looks known-absent, and
+    /// a rollback deletes something the checkpoint never managed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PathReason {
+    pub path: String,
+    pub reason: String,
+}
+
+/// What changed since the previous checkpoint's snapshot, as `~`-relative
+/// (or absolute) paths.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Changes {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modified: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub removed: Vec<String>,
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+impl Changes {
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.modified.is_empty() && self.removed.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.added.len() + self.modified.len() + self.removed.len()
+    }
+
+    /// Whether `path` (or anything under it) changed.
+    pub fn touches(&self, path: &str) -> bool {
+        let under = |candidate: &String| {
+            candidate == path
+                || candidate
+                    .strip_prefix(path)
+                    .is_some_and(|rest| rest.starts_with('/'))
+        };
+        self.added.iter().any(under)
+            || self.modified.iter().any(under)
+            || self.removed.iter().any(under)
+    }
+}
+
+/// The outcome half of an operation pair.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Operation {
+    pub id: String,
+    pub kind: OperationKind,
+    pub status: OperationStatus,
+    /// The mise command line without `argv[0]`, e.g. `bootstrap --yes`.
+    pub command: String,
+    pub argv: Vec<String>,
+    pub cwd: PathBuf,
+    pub user: Option<String>,
+    pub finished_at: Option<String>,
+    pub error: Option<String>,
+    /// The protective checkpoint taken before the operation ran.
+    pub before: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undoes: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applied: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub affected: Vec<String>,
+    /// Every checkpoint a rollback took content from, with the paths taken
+    /// from each (a path-first rollback may resolve paths to different
+    /// checkpoints; `to` names only the first).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<OperationSource>,
+    /// Paths that were directories before this operation replaced or removed
+    /// them; an empty directory leaves no trace in a snapshot, so undo
+    /// recreates these explicitly.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub directories: Vec<String>,
+    /// Modes of directories removed by this operation, including empty ones
+    /// which cannot be represented by a Git snapshot tree.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub directory_modes: BTreeMap<String, u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// The file changes the operation made, with their preimages.
+    #[serde(default)]
+    pub journal: Vec<JournalEntry>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OperationSource {
+    pub checkpoint: String,
+    pub paths: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Summary {
+    pub message: Option<String>,
+}
+
+/// One line of the local index: enough to list checkpoints without
+/// reading the repository.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct IndexEntry {
+    pub id: u64,
+    pub uuid: String,
+    pub commit: String,
+    pub created_at: String,
+    pub trigger: Trigger,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub(crate) struct Index {
+    pub next_id: u64,
+    pub entries: Vec<IndexEntry>,
+}
+
+impl Index {
+    pub(crate) fn by_uuid(&self, uuid: &str) -> Option<&IndexEntry> {
+        self.entries.iter().find(|entry| entry.uuid == uuid)
+    }
+}
+
+pub(crate) fn index_exists_in(state_dir: &Path) -> bool {
+    index_file_in(state_dir).exists()
+}
+
+pub(crate) fn load_index_in(state_dir: &Path) -> Result<Index> {
+    let path = index_file_in(state_dir);
+    if !path.exists() {
+        return Ok(Index {
+            next_id: 1,
+            entries: vec![],
+        });
+    }
+    let text = file::read_to_string(&path)?;
+    serde_json::from_str(&text).wrap_err_with(|| format!("reading {}", display_path(&path)))
+}
+
+pub(crate) fn write_index_in(state_dir: &Path, index: &Index) -> Result<()> {
+    write_json(&index_file_in(state_dir), index)
+}
+
+/// A checkpoint together with its local handle.
+#[derive(Clone, Debug, Serialize)]
+pub struct Entry {
+    pub id: u64,
+    pub commit: String,
+    #[serde(flatten)]
+    pub checkpoint: Checkpoint,
+}
+
+/// A description or label edit appended as metadata in ordinary Git history.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Annotation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description_source: Option<DescriptionSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub labels: Option<Vec<String>>,
+    pub updated_at: String,
+}
+
+impl Annotation {
+    pub(crate) fn apply_to(&self, checkpoint: &mut Checkpoint) {
+        if let Some(description) = &self.description {
+            checkpoint.description = description.clone();
+            checkpoint.description_source =
+                self.description_source.unwrap_or(DescriptionSource::User);
+        }
+        if let Some(labels) = &self.labels {
+            checkpoint.labels = labels.clone();
+        }
+    }
+}
+
+pub(crate) fn meta_cache_path_in(state_dir: &Path, uuid: &str) -> PathBuf {
+    meta_cache_dir_in(state_dir).join(format!("{uuid}.json"))
+}
+
+pub(crate) fn write_meta_cache_in(state_dir: &Path, checkpoint: &Checkpoint) -> Result<()> {
+    write_json_if_changed(&meta_cache_path_in(state_dir, &checkpoint.uuid), checkpoint)
+}
+
+pub(crate) fn read_meta_cache_in(state_dir: &Path, uuid: &str) -> Result<Option<Checkpoint>> {
+    let path = meta_cache_path_in(state_dir, uuid);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = file::read_to_string(&path)?;
+    let checkpoint =
+        serde_json::from_str(&text).wrap_err_with(|| format!("reading {}", display_path(&path)))?;
+    Ok(Some(checkpoint))
+}
+
+const COMMIT_META_CACHE_VERSION: u32 = 1;
+
+/// The local context used while deriving display paths and active variants.
+/// A commit cache is reusable only while every input to that derivation is
+/// unchanged. Both configured and resolved roots are retained so changing a
+/// symlinked ancestor invalidates the cache as well.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct CommitMetaContext {
+    version: u32,
+    schema_version: u32,
+    home: PathBuf,
+    config_dir: PathBuf,
+    resolved_home: PathBuf,
+    resolved_config_dir: PathBuf,
+    environments: Vec<String>,
+    /// This machine's name, which names its per-machine streams.
+    #[serde(default)]
+    machine: Option<String>,
+}
+
+impl CommitMetaContext {
+    fn current() -> Self {
+        let roots = super::sync::layout::Roots::current();
+        Self {
+            version: COMMIT_META_CACHE_VERSION,
+            schema_version: SCHEMA_VERSION,
+            home: mise_util::dirs::HOME.to_path_buf(),
+            config_dir: super::tracked::global_config_dir(),
+            resolved_home: roots.home,
+            resolved_config_dir: roots.config_dir,
+            environments: super::select::active_environments(),
+            machine: known_machine_name(),
+        }
+    }
+}
+
+/// This machine's name when one is configured or already kept, without
+/// generating one: every cached record is checked against it, so it is read
+/// once per process. A name generated later in this process is seen by the
+/// next one, which then rebuilds the records once.
+fn known_machine_name() -> Option<String> {
+    static KNOWN: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    KNOWN
+        .get_or_init(|| {
+            super::config::machine_name().ok().flatten().or_else(|| {
+                read_machine_name(&machine_name_path_in(&mise_util::dirs::STATE))
+                    .ok()
+                    .flatten()
+            })
+        })
+        .clone()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct CommitMetaCache {
+    context: CommitMetaContext,
+    commit: String,
+    checkpoint: Checkpoint,
+}
+
+fn commit_meta_cache_path_in(state_dir: &Path, commit: &str) -> PathBuf {
+    commit_meta_cache_dir_in(state_dir).join(format!("{commit}.json"))
+}
+
+/// Reads metadata derived directly from a commit, before annotations.
+pub(crate) fn read_commit_meta_cache_in(
+    state_dir: &Path,
+    commit: &str,
+) -> Result<Option<Checkpoint>> {
+    let path = commit_meta_cache_path_in(state_dir, commit);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let Ok(text) = file::read_to_string(&path) else {
+        return Ok(None);
+    };
+    let Ok(cache) = serde_json::from_str::<CommitMetaCache>(&text) else {
+        return Ok(None);
+    };
+    if cache.context != CommitMetaContext::current()
+        || cache.commit != commit
+        || cache.checkpoint.uuid != commit
+        || cache.checkpoint.schema_version != SCHEMA_VERSION
+    {
+        return Ok(None);
+    }
+    Ok(Some(cache.checkpoint))
+}
+
+fn commit_meta_cache(commit: &str, checkpoint: &Checkpoint) -> CommitMetaCache {
+    CommitMetaCache {
+        context: CommitMetaContext::current(),
+        commit: commit.to_string(),
+        checkpoint: checkpoint.clone(),
+    }
+}
+
+pub(crate) fn pending_path_in(state_dir: &Path, uuid: &str) -> PathBuf {
+    pending_dir_in(state_dir).join(format!("{uuid}.json"))
+}
+
+/// Private write-ahead bookkeeping for an unfinished operation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Pending {
+    pub id: u64,
+    pub checkpoint: Checkpoint,
+    pub recovery: RecoveryState,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryState {
+    /// An interrupted batch or an explicitly incomplete all-or-nothing apply.
+    Pending,
+    /// A normally returned command; retain its completed phases.
+    UnfinishedWrites,
+    /// All writes completed or were safely recovered; finalize history only.
+    Finished,
+}
+
+pub(crate) fn write_pending_in(state_dir: &Path, pending: &Pending) -> Result<()> {
+    write_json(
+        &pending_path_in(state_dir, &pending.checkpoint.uuid),
+        pending,
+    )
+}
+
+/// Every pending record with the file holding it. Unreadable records stop
+/// recovery; never hide them or discard possibly referenced preimages.
+pub fn list_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)>> {
+    let mut pending = vec![];
+    let directory = match std::fs::read_dir(pending_dir_in(state_dir)) {
+        Ok(directory) => directory,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(pending),
+        Err(error) => return Err(error.into()),
+    };
+    for entry in directory {
+        let path = entry?.path();
+        if path.extension().is_some_and(|ext| ext == "json") {
+            let text = match std::fs::read_to_string(&path) {
+                Ok(text) => text,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(err) => {
+                    return Err(err).wrap_err_with(|| format!("reading {}", display_path(&path)));
+                }
+            };
+            let record = serde_json::from_str::<Pending>(&text).wrap_err_with(|| format!(
+                "cannot read recovery record {}; repair it before retrying; recovery data was retained", display_path(&path)
+            ))?;
+            pending.push((path, record));
+        }
+    }
+    pending.sort_by_key(|(_, record)| record.id);
+    Ok(pending)
+}
+
+/// Read-only status lookup. A record removed concurrently is skipped, but
+/// corruption must remain visible rather than reporting healthy empty state.
+pub fn peek_pending_in(state_dir: &Path) -> Result<Vec<(PathBuf, Pending)>> {
+    list_pending_in(state_dir)
+}
+
+pub(crate) fn remove_pending_in(state_dir: &Path, uuid: &str) {
+    let _ = std::fs::remove_file(pending_path_in(state_dir, uuid));
+}
+
+/// The marker of an operation in progress, next to the lock that owns it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OperationMarker {
+    pub uuid: String,
+    pub kind: OperationKind,
+    pub started_at: String,
+    pub command: String,
+}
+
+pub(crate) fn write_marker_in(state_dir: &Path, marker: &OperationMarker) -> Result<()> {
+    write_json(&operation_marker_in(state_dir), marker)
+}
+
+pub fn read_marker_in(state_dir: &Path) -> Result<Option<OperationMarker>> {
+    let path = operation_marker_in(state_dir);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = file::read_to_string(&path)?;
+    let marker =
+        serde_json::from_str(&text).wrap_err_with(|| format!("reading {}", display_path(&path)))?;
+    Ok(Some(marker))
+}
+
+pub(crate) fn remove_marker_in(state_dir: &Path) {
+    let _ = std::fs::remove_file(operation_marker_in(state_dir));
+}
+
+/// Loads every indexed checkpoint, oldest first.
+pub(crate) fn list_in(state_dir: &Path) -> Result<Vec<Entry>> {
+    let index = load_index_in(state_dir)?;
+    let mut entries = Vec::with_capacity(index.entries.len());
+    for line in &index.entries {
+        match read_meta_cache_in(state_dir, &line.uuid)? {
+            Some(checkpoint) => entries.push(Entry {
+                id: line.id,
+                commit: line.commit.clone(),
+                checkpoint,
+            }),
+            None => warn!(
+                "history: checkpoint {} ({}) has no cached record; run any history command with a usable git to rebuild the index",
+                line.id, line.uuid
+            ),
+        }
+    }
+    Ok(entries)
+}
+
+/// Turns `ID`, `latest`, `latest~N`, or `commit:<sha>` into a checkpoint id,
+/// resolved against `entries` (oldest first).
+pub(crate) fn resolve_ref(spec: &str, entries: &[Entry]) -> Result<u64> {
+    if let Some(rest) = spec.strip_prefix("latest") {
+        let back: usize = match rest {
+            "" => 0,
+            _ => rest
+                .strip_prefix('~')
+                .and_then(|n| n.parse().ok())
+                .ok_or_else(|| eyre!("invalid checkpoint reference {spec:?}"))?,
+        };
+        return entries
+            .iter()
+            .rev()
+            .nth(back)
+            .map(|entry| entry.id)
+            .ok_or_else(|| {
+                eyre!(
+                    "no history checkpoint {spec} (only {} recorded)",
+                    entries.len()
+                )
+            });
+    }
+    let prefix = if let Some(prefix) = spec.strip_prefix("commit:") {
+        prefix
+    } else if !spec.is_empty() && spec.bytes().all(|byte| byte.is_ascii_digit()) {
+        let id = spec.parse::<u64>().map_err(|_| {
+            eyre!("invalid checkpoint ID {spec:?}; use commit:<sha> for a numeric commit hash")
+        })?;
+        return entries
+            .iter()
+            .find(|entry| entry.id == id)
+            .map(|entry| entry.id)
+            .ok_or_else(|| eyre!("no history checkpoint matches {spec:?}"));
+    } else {
+        spec
+    };
+    if prefix.is_empty() {
+        bail!("invalid checkpoint reference {spec:?}");
+    }
+    let matches: Vec<&Entry> = entries
+        .iter()
+        .filter(|entry| entry.checkpoint.uuid.starts_with(prefix))
+        .collect();
+    match matches.as_slice() {
+        [one] => Ok(one.id),
+        [] => bail!("no history checkpoint matches {spec:?}"),
+        _ => bail!("{spec:?} matches more than one checkpoint; use a longer prefix"),
+    }
+}
+
+pub fn now_rfc3339() -> String {
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+pub(crate) fn new_uuid() -> String {
+    uuid::Uuid::now_v7().to_string()
+}
+
+pub(crate) fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+    write_json_text(path, value, false, true).map(|_| ())
+}
+
+/// [`write_json`], leaving a file that already holds these bytes alone. An
+/// index rebuild visits every checkpoint, and rewriting each one through a
+/// temporary file and an fsync costs I/O proportional to the whole history.
+fn write_json_if_changed<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+    write_json_text(path, value, true, true).map(|_| ())
+}
+
+/// The cache records an index rebuild writes, made durable together.
+///
+/// **A rebuild over newly fetched history writes two records per commit,
+/// and syncing each one cost a journal commit apiece:** about 18ms on
+/// ext4, so 37ms a commit, against 1.5ms to read the commit itself. A pull
+/// that fetched thousands of checkpoints spent minutes here. Each record is
+/// still renamed into place whole, so a crash never leaves a torn one, and
+/// [`Self::finish`] syncs the batch before the index that names them is
+/// written. That needs `syncfs`, which only Linux has: elsewhere nothing
+/// flushes a batch, so each record is synced as it is written.
+pub(crate) struct CacheBatch<'a> {
+    state_dir: &'a Path,
+    written: bool,
+}
+
+impl<'a> CacheBatch<'a> {
+    const DEFERS_SYNC: bool = cfg!(any(target_os = "linux", target_os = "android"));
+
+    pub(crate) fn new(state_dir: &'a Path) -> Self {
+        Self {
+            state_dir,
+            written: false,
+        }
+    }
+
+    pub(crate) fn write_meta(&mut self, checkpoint: &Checkpoint) -> Result<()> {
+        let path = meta_cache_path_in(self.state_dir, &checkpoint.uuid);
+        self.written |= write_json_text(&path, checkpoint, true, !Self::DEFERS_SYNC)?;
+        Ok(())
+    }
+
+    pub(crate) fn write_commit_meta(
+        &mut self,
+        commit: &str,
+        checkpoint: &Checkpoint,
+    ) -> Result<()> {
+        let path = commit_meta_cache_path_in(self.state_dir, commit);
+        let cache = commit_meta_cache(commit, checkpoint);
+        self.written |= write_json_text(&path, &cache, false, !Self::DEFERS_SYNC)?;
+        Ok(())
+    }
+
+    pub(crate) fn finish(self) -> Result<()> {
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        if self.written {
+            file::sync_filesystem(index_dir_in(self.state_dir))?;
+        }
+        Ok(())
+    }
+}
+
+/// Writes `value` as JSON, saying whether the file was written.
+fn write_json_text<T: Serialize>(
+    path: &Path,
+    value: &T,
+    skip_unchanged: bool,
+    synced: bool,
+) -> Result<bool> {
+    let mut text = serde_json::to_string_pretty(value)?;
+    text.push('\n');
+    let unchanged =
+        skip_unchanged && std::fs::read(path).is_ok_and(|existing| existing == text.as_bytes());
+    if !unchanged {
+        if let Some(parent) = path.parent() {
+            file::create_dir_all(parent)?;
+        }
+        if synced {
+            file::write_atomic(path, text)
+        } else {
+            file::write_atomic_unsynced(path, text)
+        }
+        .wrap_err_with(|| format!("writing {}", display_path(path)))?;
+    }
+    // a rebuild still heals a file whose mode drifted, but a file already at
+    // 0600 is not touched: a chmod writes the inode too
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let private =
+            std::fs::metadata(path).is_ok_and(|meta| meta.permissions().mode() & 0o777 == 0o600);
+        if !private {
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        }
+    }
+    Ok(!unchanged)
+}
+
+#[cfg(test)]
+mod commit_cache_tests {
+    use super::*;
+
+    #[test]
+    fn commit_metadata_cache_requires_current_context_and_identity() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        ensure_store_dir_in(temp.path())?;
+        let checkpoint = super::super::checkpoint::test_checkpoint("abc123", None);
+        let mut batch = CacheBatch::new(temp.path());
+        batch.write_commit_meta("abc123", &checkpoint)?;
+        batch.finish()?;
+        assert_eq!(
+            read_commit_meta_cache_in(temp.path(), "abc123")?
+                .unwrap()
+                .uuid,
+            "abc123"
+        );
+
+        let path = commit_meta_cache_path_in(temp.path(), "abc123");
+        let mut cache: CommitMetaCache = serde_json::from_str(&file::read_to_string(&path)?)?;
+        cache.context.version += 1;
+        write_json(&path, &cache)?;
+        assert!(read_commit_meta_cache_in(temp.path(), "abc123")?.is_none());
+
+        cache.context = CommitMetaContext::current();
+        cache.commit = "different".into();
+        write_json(&path, &cache)?;
+        assert!(read_commit_meta_cache_in(temp.path(), "abc123")?.is_none());
+
+        std::fs::write(&path, [0xff])?;
+        assert!(read_commit_meta_cache_in(temp.path(), "abc123")?.is_none());
+        Ok(())
+    }
+}
+
+#[cfg(all(test, unix))]
+mod private_directory_tests {
+    #[test]
+    fn concurrent_creation_preserves_private_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("history");
+        let barrier = std::sync::Barrier::new(16);
+        std::thread::scope(|scope| {
+            for _ in 0..16 {
+                scope.spawn(|| {
+                    barrier.wait();
+                    super::create_private_dir(&path).unwrap();
+                });
+            }
+        });
+        assert_eq!(
+            std::fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+}

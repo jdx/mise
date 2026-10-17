@@ -13,22 +13,22 @@ local linters = new Mapping<String, Step> {
         }
         check_first = false
     }
-    // uses builtin prettier linter config; run via `mise x` so hk picks up
-    // the mise-pinned prettier rather than whatever happens to be on
-    // PATH (e.g. a Homebrew prettier), keeping local and CI in sync.
-    ["prettier"] = (Builtins.prettier) {
+    // uses builtin oxfmt linter config; run via `mise x` so hk picks up
+    // the mise-pinned oxfmt rather than whatever happens to be on
+    // PATH (e.g. a Homebrew oxfmt), keeping local and CI in sync.
+    ["oxfmt"] = (Builtins.oxfmt) {
       batch = false
       exclude = "vendor/aqua-registry/**"
       check = new CommandSpec {
-        command = "mise x prettier -- prettier --check {{ files }}"
+        command = "mise x oxfmt -- oxfmt --check --no-error-on-unmatched-pattern {{ files }}"
         effect = "read"
       }
       check_list_files = new CommandSpec {
-        command = "mise x prettier -- prettier --list-different {{ files }}"
+        command = "mise x oxfmt -- oxfmt --list-different --no-error-on-unmatched-pattern {{ files }}"
         effect = "read"
       }
       fix = new CommandSpec {
-        command = "mise x prettier -- prettier --write {{ files }}"
+        command = "mise x oxfmt -- oxfmt --write --no-error-on-unmatched-pattern {{ files }}"
         effect = "write"
       }
       depends = List("schema")
@@ -127,6 +127,23 @@ fi
         }
         fix = new CommandSpec {
           command = "jactionlint --fix {{ files }}"
+          effect = "write"
+        }
+    }
+    // docs/public/llms.txt is built from page descriptions and the sidebar, so
+    // any docs edit can change it; CI fails when `mise run render` would.
+    // Reads the committed docs/cli pages and cli_commands.ts, which the
+    // render:usage and render:help tasks keep current.
+    ["render-llms"] {
+        glob = List("docs/**/*.md", "docs/.vitepress/sidebar.ts", "docs/.vitepress/llms.ts")
+        // the output is outside the glob, so name it for the pre-commit hook to stage
+        stage = List("docs/public/llms.txt")
+        check = new CommandSpec {
+          command = "node docs/.vitepress/llms.ts > /dev/null && git diff --exit-code -- docs/public/llms.txt"
+          effect = "write"
+        }
+        fix = new CommandSpec {
+          command = "node docs/.vitepress/llms.ts"
           effect = "write"
         }
     }

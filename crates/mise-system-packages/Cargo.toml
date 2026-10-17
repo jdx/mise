@@ -1,0 +1,59 @@
+[package]
+name = "mise-system-packages"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "System package manager drivers for mise: apt, dnf, brew, and more"
+repository = "https://github.com/jdx/mise"
+include = ["src/**/*"]
+
+[dependencies]
+async-trait = "0.1"
+base64 = "0.23"
+chrono = { version = "0.4", default-features = false, features = [
+  "std",
+  "clock",
+] }
+eyre = "0.6"
+flate2 = "1"
+fslock = "0.2"
+futures-util = "0.3"
+glob = "0.3"
+hex = "0.4"
+jdx-tar = "1"
+log = "0.4"
+calm_io = "0.1"
+mise-settings = { path = "../mise-settings", version = "2026" }
+mise-ui = { path = "../mise-ui", version = "2026" }
+mise-util = { path = "../mise-util", version = "2026", default-features = false }
+regex = "1"
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+shell-escape = "0.1"
+shell-words = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }
+toml = { version = "1", features = ["parse", "preserve_order"] }
+unicode-normalization = "0.1"
+url = "2"
+urlencoding = "2"
+walkdir = "2"
+
+[target.'cfg(unix)'.dependencies]
+mise-brew-metadata = { path = "../mise-brew-metadata", version = "0.1" }
+mise-brew-relocation = { path = "../mise-brew-relocation", version = "0.1" }
+nix = { version = "0.31", features = [
+  "dir",
+  "fs",
+  "hostname",
+  "signal",
+  "user",
+] }
+plist = "1"
+unicase = "2"
+
+[dev-dependencies]
+indoc = "2"
+mockito = "1"

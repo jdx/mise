@@ -122,7 +122,7 @@ which = "8"
 xx = { version = "2", default-features = false, features = ["glob"] }
 xz2 = "0.1"
 yaml-edit = "0.3"
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 zstd = "0.14"
 
 [target.'cfg(unix)'.dependencies]
@@ -149,7 +149,6 @@ windows-sys = { version = "0.61", features = [
 
 [dev-dependencies]
 confique = { version = "0.4", default-features = false }
-ctor = "1"
 mockito = "1"
 insta = { version = "1", features = ["filters", "json"] }
 pretty_assertions = "1"

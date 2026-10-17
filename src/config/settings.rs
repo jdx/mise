@@ -38,6 +38,8 @@ enum SettingsSourcePolicy {
 enum SettingsTrustPolicy {
     AsDiscovered,
     TrustedOnly,
+    /// Global and system config only: no project file is consulted, trusted or not.
+    GlobalOnly,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,6 +60,13 @@ impl SettingsLoadPolicy {
     pub(crate) const TRUSTED_HIERARCHY: Self = Self {
         source: SettingsSourcePolicy::Hierarchy,
         trust: SettingsTrustPolicy::TrustedOnly,
+    };
+    /// Settings no project file can influence. The trust check reads a few of them
+    /// (`paranoid`, `trusted_config_paths`, ...), so they must exist before any project
+    /// file can be classified as trusted.
+    const GLOBAL_HIERARCHY: Self = Self {
+        source: SettingsSourcePolicy::Hierarchy,
+        trust: SettingsTrustPolicy::GlobalOnly,
     };
 }
 
@@ -91,6 +100,52 @@ impl IdiomaticVersionFileSettings {
 }
 
 static PACKAGE_QUERY_SETTINGS: AtomicBool = AtomicBool::new(false);
+type ParseCache = std::collections::HashMap<PathBuf, Result<SettingsPartial, String>>;
+
+thread_local! {
+    /// Settings files parsed during the current [`load`], so the global-only pass that
+    /// bootstraps trust and the trusted pass that follows it read each file once. `None`
+    /// outside a load. `load` runs on one thread, so this never mixes concurrent loads.
+    static LOAD_PARSE_CACHE: std::cell::RefCell<Option<ParseCache>> =
+        const { std::cell::RefCell::new(None) };
+    /// How many times each settings file was actually parsed on this thread.
+    #[cfg(test)]
+    static PARSE_COUNTS: std::cell::RefCell<std::collections::HashMap<PathBuf, usize>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+fn parse_settings_file_once(path: &Path) -> Result<SettingsPartial> {
+    let cached = LOAD_PARSE_CACHE
+        .with_borrow(|cache| cache.as_ref().and_then(|cache| cache.get(path).cloned()));
+    if let Some(cached) = cached {
+        return cached.map_err(|err| eyre::eyre!(err));
+    }
+    #[cfg(test)]
+    PARSE_COUNTS.with_borrow_mut(|counts| *counts.entry(path.to_path_buf()).or_default() += 1);
+    let parsed = Settings::parse_settings_file(path);
+    LOAD_PARSE_CACHE.with_borrow_mut(|cache| {
+        if let Some(cache) = cache {
+            cache.insert(
+                path.to_path_buf(),
+                parsed
+                    .as_ref()
+                    .map(Clone::clone)
+                    .map_err(|err| err.to_string()),
+            );
+        }
+    });
+    parsed
+}
+
+/// Set while [`load`] has published its global-only bootstrap snapshot, so the cache reads as
+/// loaded although the real settings are still being built.
+static BOOTSTRAPPING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the settings cache holds only the snapshot used to decide trust. Warnings that depend
+/// on the final settings must wait for them.
+pub(crate) fn is_bootstrapping() -> bool {
+    BOOTSTRAPPING.load(Ordering::Relaxed)
+}
 /// Caches the resolved `safe` value from the most recent settings load so
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static EXPLICIT_INLINE_SHELL: RwLock<Option<bool>> = RwLock::new(None);
@@ -666,6 +721,7 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
     context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
     context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
     context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
+    context.insert("system_brew_prefix", &env::system_brew_prefix());
 
     let mut resolve = |setting: &str, target: &mut toml::Value| -> Result<()> {
         let Some(value) = target.as_str() else {
@@ -732,7 +788,6 @@ pub trait SettingsExt: Sized {
 
     fn erlang_compile(&self, purpose: CompilePurpose) -> Option<bool>;
 
-    #[cfg(not(windows))]
     fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool>;
 
     /// The log level the parsed CLI flags ask for, without a full settings build.
@@ -934,7 +989,6 @@ impl SettingsExt for Settings {
         self.compile_setting(purpose, "erlang", self.erlang.compile)
     }
 
-    #[cfg(not(windows))]
     fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool> {
         self.compile_setting(purpose, "ruby", self.ruby.compile)
     }
@@ -1451,11 +1505,16 @@ impl SettingsInternal for Settings {
             .filter(|path| match trust_policy {
                 SettingsTrustPolicy::AsDiscovered => true,
                 SettingsTrustPolicy::TrustedOnly => {
-                    crate::config::is_global_config(path)
-                        || crate::config::config_file::is_path_trusted(path)
+                    let usable = crate::config::is_global_config(path)
+                        || crate::config::config_file::is_path_trusted(path);
+                    if !usable {
+                        debug!("ignoring settings in untrusted config: {}", path.display());
+                    }
+                    usable
                 }
+                SettingsTrustPolicy::GlobalOnly => crate::config::is_global_config(path),
             })
-            .filter_map(|path| match Self::parse_settings_file(&path) {
+            .filter_map(|path| match parse_settings_file_once(&path) {
                 Ok(config) => Some(config),
                 Err(err) => {
                     // Name the file. mise reads several settings files and two of them can fail
@@ -1646,8 +1705,38 @@ fn load() -> Result<Arc<Settings>> {
         env::set_current_dir(cd)?;
     }
 
-    // Reload settings after current directory option processed
-    settings = Settings::load_sources_from(None, SettingsLoadPolicy::HIERARCHY)?;
+    // Reload settings after current directory option processed. A project's `[settings]` can
+    // repoint downloads and build commands, so they apply only once that project is trusted,
+    // just like its `[tools]` and `[env]`. Deciding trust reads a few settings of its own, so
+    // publish the ones no project file can influence first.
+    let previous = mise_settings::is_loaded()
+        .then(mise_settings::last_cached)
+        .flatten();
+    LOAD_PARSE_CACHE.set(Some(ParseCache::new()));
+    let bootstrap = Settings::load_sources_from(None, SettingsLoadPolicy::GLOBAL_HIERARCHY);
+    let bootstrap = match bootstrap {
+        Ok(bootstrap) => bootstrap,
+        Err(err) => {
+            LOAD_PARSE_CACHE.set(None);
+            return Err(err);
+        }
+    };
+    mise_settings::store(Arc::new(bootstrap));
+    BOOTSTRAPPING.store(true, Ordering::Relaxed);
+    let trusted = Settings::load_sources_from(None, SettingsLoadPolicy::TRUSTED_HIERARCHY);
+    BOOTSTRAPPING.store(false, Ordering::Relaxed);
+    LOAD_PARSE_CACHE.set(None);
+    settings = match trusted {
+        Ok(settings) => settings,
+        Err(err) => {
+            // A failed reload keeps the settings that were current before it.
+            match previous {
+                Some(previous) => mise_settings::store(previous),
+                None => mise_settings::clear(),
+            }
+            return Err(err);
+        }
+    };
     time!("try_get load2");
     if !settings.legacy_version_file {
         settings.idiomatic_version_file = Some(false);
@@ -1700,6 +1789,9 @@ fn load() -> Result<Arc<Settings>> {
     }
     trace!("Settings: {:#?}", redacted_settings_for_debug(&settings));
     let settings = Arc::new(settings);
+    // Replace the bootstrap snapshot published above; the loader's own result is not cached
+    // once the cache has changed underneath it.
+    mise_settings::store(settings.clone());
     let system_installs_changed = settings.system_installs_dir() != *env::MISE_SYSTEM_INSTALLS_DIR;
     if system_installs_changed {
         crate::toolset::install_state::reset_tools();
@@ -2207,6 +2299,54 @@ mod tests {
 
     fn sv(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// The shape #5791 reported: the setting is accepted into the file, so without this it
+    /// survives into the partial and `mise settings get` echoes it back while the config
+    /// loader — which already ran — never saw it.
+    /// The global-only pass that bootstraps trust and the trusted pass after it both read the
+    /// config files, but a file must only be parsed once per load, and reads outside a load
+    /// must not be served from a cache.
+    #[test]
+    fn test_load_parses_each_settings_file_once() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let layers = || Settings::settings_layers_from(None, SettingsTrustPolicy::AsDiscovered);
+        let parses = || PARSE_COUNTS.with_borrow(|counts| counts.values().sum::<usize>());
+
+        LOAD_PARSE_CACHE.set(Some(ParseCache::new()));
+        let before = parses();
+        layers();
+        let first_pass = parses() - before;
+        layers();
+        let second_pass = parses() - before - first_pass;
+        LOAD_PARSE_CACHE.set(None);
+        // The unit-test config directory always holds at least one settings file.
+        assert!(first_pass >= 1, "no settings file was parsed");
+        assert_eq!(second_pass, 0, "the second pass re-parsed a cached file");
+
+        let before = parses();
+        layers();
+        assert_eq!(
+            parses() - before,
+            first_pass,
+            "a read outside a load was cached"
+        );
+    }
+
+    /// `load` must open the cache for its two passes and close it afterwards, or the first
+    /// settings reload after an edit would keep serving the old values.
+    #[test]
+    fn test_load_closes_its_parse_cache() {
+        let _settings = crate::test::SettingsGuard::lock();
+        // Tests may share a thread (`RUST_TEST_THREADS=1`), so count only this load's parses.
+        PARSE_COUNTS.with_borrow_mut(|counts| counts.clear());
+        let settings = load();
+        assert!(settings.is_ok(), "{:?}", settings.err());
+        assert!(LOAD_PARSE_CACHE.with_borrow(Option::is_none));
+        // Every file the real load touched was parsed exactly once.
+        PARSE_COUNTS.with_borrow(|counts| {
+            assert!(counts.values().all(|n| *n == 1), "{counts:?}");
+        });
     }
 
     /// The shape #5791 reported: the setting is accepted into the file, so without this it

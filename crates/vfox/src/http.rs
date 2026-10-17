@@ -5,12 +5,50 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::sync::watch;
 
-pub(crate) static CLIENT: LazyLock<Client> = LazyLock::new(|| {
+// A client that cannot be built (e.g. no CA certificates on the system) is
+// kept as an error and reported by the request that needs it, as mise's own
+// HTTP client does, instead of aborting the process.
+static CLIENT: LazyLock<Result<Client, String>> = LazyLock::new(|| {
     ClientBuilder::new()
         .user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
         .build()
-        .expect("Failed to create reqwest client")
+        .map_err(|err| error_chain(&err))
 });
+
+static NO_REDIRECT_CLIENT: LazyLock<Result<Client, String>> = LazyLock::new(|| {
+    ClientBuilder::new()
+        .user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|err| error_chain(&err))
+});
+
+pub(crate) fn client() -> Result<&'static Client, String> {
+    initialized(&CLIENT)
+}
+
+/// Client that never follows redirects, for requests that carry plugin headers
+/// and have to decide per hop which headers to forward.
+pub(crate) fn no_redirect_client() -> Result<&'static Client, String> {
+    initialized(&NO_REDIRECT_CLIENT)
+}
+
+/// `builder error` alone hides the cause, such as missing CA certificates.
+fn error_chain(err: &dyn std::error::Error) -> String {
+    let mut message = err.to_string();
+    let mut source = err.source();
+    while let Some(err) = source {
+        message.push_str(&format!(": {err}"));
+        source = err.source();
+    }
+    message
+}
+
+fn initialized(client: &Result<Client, String>) -> Result<&Client, String> {
+    client
+        .as_ref()
+        .map_err(|err| format!("Could not initialize the HTTP client: {err}"))
+}
 
 pub(crate) const URL_REWRITER_REGISTRY_KEY: &str = "url_rewriter_fn";
 pub(crate) const HTTP_HEADERS_RESOLVER_REGISTRY_KEY: &str = "http_headers_resolver_fn";
@@ -176,4 +214,19 @@ where
         }
     }
     Err(last_err.expect("retry loop should always return"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_client_that_failed_to_build_is_an_error() {
+        let failed: Result<Client, String> = Err("No CA certificates were loaded".to_string());
+        let err = initialized(&failed).unwrap_err();
+        assert_eq!(
+            err,
+            "Could not initialize the HTTP client: No CA certificates were loaded"
+        );
+    }
 }

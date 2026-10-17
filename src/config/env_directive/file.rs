@@ -131,6 +131,7 @@ impl EnvResults {
         ctx: &mut EnvDirectiveContext<'_>,
         input: String,
         expand: bool,
+        find_up: bool,
     ) -> Result<IndexMap<PathBuf, EnvMap>> {
         let mut out = IndexMap::new();
         let s = ctx.parse_template("_.file", &input)?;
@@ -138,7 +139,22 @@ impl EnvResults {
         // Accumulate loaded vars so opted-in expansion can reference values from
         // an earlier file in the same directive or an earlier env block.
         let mut acc: TeraEnvMap = ctx.exec_env.clone();
-        for p in xx::file::glob(ctx.normalize_path(s.into())).unwrap_or_default() {
+        let pattern = PathBuf::from(&s);
+        let paths = match &*crate::dirs::CWD {
+            // Farthest directory first, so the file nearest the current directory wins.
+            Some(cwd) if find_up && !file::replace_path(&pattern).is_absolute() => {
+                // The result depends on the current directory, which the env cache key omits.
+                ctx.results.has_uncacheable = true;
+                cwd.ancestors()
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .flat_map(|dir| xx::file::glob(dir.join(&pattern)).unwrap_or_default())
+                    .collect()
+            }
+            _ => xx::file::glob(ctx.normalize_path(pattern)).unwrap_or_default(),
+        };
+        for p in paths {
             let config = ctx.config;
             let exec_env = ctx.exec_env;
             // The loaders expand templates in values read from the file and do

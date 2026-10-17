@@ -442,7 +442,7 @@ impl ServerHandler for MiseServer {
                 // With ?include_inactive=true, shows all installed tools
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to load config: {e}")),
+                    message: Cow::Owned(format!("Failed to load config: {e:#}")),
                     data: None,
                 })?;
 
@@ -452,7 +452,7 @@ impl ServerHandler for MiseServer {
                     .await
                     .map_err(|e| ErrorData {
                         code: ErrorCode::INTERNAL_ERROR,
-                        message: Cow::Owned(format!("Failed to get tool request set: {e}")),
+                        message: Cow::Owned(format!("Failed to get tool request set: {e:#}")),
                         data: None,
                     })?
                     .clone();
@@ -460,7 +460,7 @@ impl ServerHandler for MiseServer {
                 let mut ts = crate::toolset::Toolset::from(trs);
                 ts.resolve(&config).await.map_err(|e| ErrorData {
                     code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to resolve toolset: {e}")),
+                    message: Cow::Owned(format!("Failed to resolve toolset: {e:#}")),
                     data: None,
                 })?;
 
@@ -476,7 +476,7 @@ impl ServerHandler for MiseServer {
                     // Include all versions (active + installed)
                     ts.list_all_versions(&config).await.map_err(|e| ErrorData {
                         code: ErrorCode::INTERNAL_ERROR,
-                        message: Cow::Owned(format!("Failed to list tool versions: {e}")),
+                        message: Cow::Owned(format!("Failed to list tool versions: {e:#}")),
                         data: None,
                     })?
                 } else {
@@ -518,7 +518,7 @@ impl ServerHandler for MiseServer {
             ("mise", Some("tasks")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to load config: {e}")),
+                    message: Cow::Owned(format!("Failed to load config: {e:#}")),
                     data: None,
                 })?;
 
@@ -529,7 +529,7 @@ impl ServerHandler for MiseServer {
                     .await
                     .map_err(|e| ErrorData {
                         code: ErrorCode::INTERNAL_ERROR,
-                        message: Cow::Owned(format!("Failed to load tasks: {e}")),
+                        message: Cow::Owned(format!("Failed to load tasks: {e:#}")),
                         data: None,
                     })?;
 
@@ -584,13 +584,13 @@ impl ServerHandler for MiseServer {
             ("mise", Some("env")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to load config: {e}")),
+                    message: Cow::Owned(format!("Failed to load config: {e:#}")),
                     data: None,
                 })?;
 
                 let env_template = config.env().await.map_err(|e| ErrorData {
                     code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to load env: {e}")),
+                    message: Cow::Owned(format!("Failed to load env: {e:#}")),
                     data: None,
                 })?;
 
@@ -612,7 +612,7 @@ impl ServerHandler for MiseServer {
             ("mise", Some("config")) => {
                 let config = Config::get().await.map_err(|e| ErrorData {
                     code: ErrorCode::INTERNAL_ERROR,
-                    message: Cow::Owned(format!("Failed to load config: {e}")),
+                    message: Cow::Owned(format!("Failed to load config: {e:#}")),
                     data: None,
                 })?;
 

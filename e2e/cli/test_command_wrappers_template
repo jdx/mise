@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+fake_bin="$HOME/wrapper-bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/fakeshow" <<'SH'
+#!/usr/bin/env bash
+printf 'home:%s args:%s\n' "$FOO_HOME" "$*"
+SH
+cat >"$fake_bin/foo" <<'SH'
+#!/usr/bin/env bash
+echo unwrapped
+SH
+chmod +x "$fake_bin/fakeshow" "$fake_bin/foo"
+export PATH="$fake_bin:$PATH"
+
+cat >mise.toml <<'TOML'
+[vars]
+mode = "fast"
+
+[env]
+PROJECT_DIR = "/opt/foo"
+
+[wrappers.foo]
+command = "fakeshow"
+args = ["--mode={{ vars.mode }}", "{{ env.PROJECT_DIR }}"]
+env = { FOO_HOME = "{{ [env.HOME, 'foo'] | join_path }}" }
+TOML
+
+mise reshim
+eval "$(mise activate bash --shims)"
+assert "foo run" "home:$HOME/foo args:--mode=fast /opt/foo run"

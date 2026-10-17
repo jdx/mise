@@ -612,7 +612,7 @@ impl Backend for JavaPlugin {
         let platform_key = self.get_platform_key();
         let (metadata, tarball_path) =
             if let Some(platform_info) = tv.lock_platforms.get(&platform_key) {
-                if let Some(ref url) = platform_info.url {
+                if let Some(url) = platform_info.url.clone() {
                     // Use the filename from the URL, not the platform key
                     let filename = url.split('/').next_back().unwrap();
                     debug!("Using existing URL from lockfile for {}: {}", filename, url);
@@ -622,9 +622,9 @@ impl Backend for JavaPlugin {
                     if !tarball_path.exists() {
                         debug!("File not found, downloading from cached URL: {}", url);
                         // Download using the lockfile URL, not JavaMetadata
-                        let pinned = lock_checksum(&tv, &platform_key, url);
+                        let pinned = lock_checksum(&tv, &platform_key, &url);
                         HTTP.download_file_stored(
-                            url,
+                            &url,
                             &tarball_path,
                             pinned.as_deref(),
                             Some(ctx.pr.as_ref()),
@@ -636,27 +636,33 @@ impl Backend for JavaPlugin {
                         ctx.pr.set_message(format!("cached {filename}"));
                     }
 
-                    // Fetch metadata for installation (for install/move logic)
-                    let metadata = self.tv_to_metadata(&tv).await?;
-                    (metadata, tarball_path)
+                    // The lockfile already names the build, so the catalog is not consulted.
+                    (
+                        JavaMetadata::from_locked(
+                            &tv.version,
+                            &url,
+                            &Settings::get().java.shorthand_vendor,
+                        ),
+                        tarball_path,
+                    )
                 } else {
                     // No URL in lockfile, fall back to metadata
                     let metadata = self.tv_to_metadata(&tv).await?;
                     let tarball_path = self
                         .download(ctx, &mut tv, ctx.pr.as_ref(), metadata)
                         .await?;
-                    (metadata, tarball_path)
+                    (metadata.clone(), tarball_path)
                 }
             } else {
                 let metadata = self.tv_to_metadata(&tv).await?;
                 let tarball_path = self
                     .download(ctx, &mut tv, ctx.pr.as_ref(), metadata)
                     .await?;
-                (metadata, tarball_path)
+                (metadata.clone(), tarball_path)
             };
 
         ctx.pr.next_operation();
-        self.install(&tv, ctx.pr.as_ref(), &tarball_path, metadata)?;
+        self.install(&tv, ctx.pr.as_ref(), &tarball_path, &metadata)?;
         ctx.pr.next_operation();
         self.verify(&tv, ctx.pr.as_ref())?;
 
@@ -877,6 +883,28 @@ impl Display for JavaMetadata {
 }
 
 impl JavaMetadata {
+    /// The parts of a catalog entry that installing needs, rebuilt from the lockfile so
+    /// an install of a locked build does not fetch the catalog. `version` is the locked
+    /// version such as "zulu-21.0.1", `url` the locked download URL, and `shorthand_vendor`
+    /// the vendor a numeric version like "21.0.1" stands for.
+    fn from_locked(version: &str, url: &str, shorthand_vendor: &str) -> Self {
+        let mut parts = version.split('-');
+        let vendor = match parts.next() {
+            Some(v) if !v.starts_with(|c: char| c.is_ascii_digit()) => v.to_string(),
+            _ => shorthand_vendor.to_string(),
+        };
+        Self {
+            url: url.to_string(),
+            vendor,
+            version: version
+                .split('-')
+                .find(|p| p.starts_with(|c: char| c.is_ascii_digit()))
+                .unwrap_or_default()
+                .to_string(),
+            ..Default::default()
+        }
+    }
+
     fn to_version_string(&self, platform: &Platform) -> String {
         let mut v = vec![self.vendor.clone()];
         if self
@@ -933,6 +961,16 @@ static JAVA_FEATURES: Lazy<HashSet<String>> = Lazy::new(|| {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn java_locked_metadata_keeps_vendor_and_version() {
+        let url = "https://cdn.azul.com/zulu/bin/zulu21.30.15-ca-jdk21.0.1-macosx_aarch64.tar.gz";
+        let m = JavaMetadata::from_locked("zulu-21.0.1", url, "temurin");
+        assert_eq!((m.vendor.as_str(), m.version.as_str()), ("zulu", "21.0.1"));
+        assert_eq!(m.url, url);
+        let m = JavaMetadata::from_locked("21.0.1", url, "zulu");
+        assert_eq!((m.vendor.as_str(), m.version.as_str()), ("zulu", "21.0.1"));
+    }
 
     #[test]
     fn java_missing_metadata_includes_version_and_platform() {

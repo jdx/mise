@@ -1,0 +1,609 @@
+//! Reconcile explicit local declaration edits with the repository's inventory.
+//! The observation cache is replaceable bookkeeping, never file history.
+
+use std::ops::ControlFlow;
+use std::path::{Path, PathBuf};
+
+use eyre::Result;
+use serde::{Deserialize, Serialize};
+
+use super::manifest::Manifest;
+use super::shadow::HistoryRepo;
+use super::tracked::TrackedSet;
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Observation {
+    head: String,
+    declarations: Manifest,
+}
+
+fn cache_path(state_dir: &Path) -> PathBuf {
+    super::store::index_dir_in(state_dir).join("declarations.json")
+}
+
+/// Read-only resolution. Explicit CLI enrollment/removal wins; otherwise only
+/// changes to local declarations update the inventory, not unchanged copies.
+pub(crate) fn resolve(
+    state_dir: &Path,
+    repo: &HistoryRepo,
+    tracked: &TrackedSet,
+    enroll: &[PathBuf],
+    untrack: &[PathBuf],
+) -> Result<TrackedSet> {
+    let Some(current) = &tracked.declarations else {
+        return Ok(tracked.clone());
+    };
+    let Some(head) = repo.ref_oid(HistoryRepo::HISTORY_REF)? else {
+        return Ok(tracked.clone());
+    };
+    let Some(saved) = Manifest::read(repo, &head)? else {
+        return Ok(tracked.clone());
+    };
+    let previous = match std::fs::read(cache_path(state_dir)) {
+        Ok(bytes) => match serde_json::from_slice::<Observation>(&bytes) {
+            Ok(observation)
+                if repo
+                    .ref_oid(&format!("{}^{{commit}}", observation.head))?
+                    .is_some()
+                    && repo
+                        .merge_bases(&observation.head, &head)?
+                        .contains(&observation.head) =>
+            {
+                Some(observation.declarations)
+            }
+            _ => None,
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+    let mut historical = vec![];
+    if previous.is_none() && !current.enrollment.is_empty() {
+        let mut undecided: Vec<_> = current.enrollment.iter().collect();
+        let commits = repo.rev_list(&head, usize::MAX)?;
+        Manifest::read_distinct(repo, &commits, |manifest| {
+            let matched: Vec<_> = undecided
+                .iter()
+                .filter(|entry| manifest.enrollment.contains(entry))
+                .map(|entry| (*entry).clone())
+                .collect();
+            if !matched.is_empty() {
+                undecided.retain(|entry| !matched.contains(entry));
+                // Retain only answers to the membership question, not every
+                // historical configuration and its potentially large fields.
+                historical.push(Manifest {
+                    enrollment: matched,
+                    ..Default::default()
+                });
+            }
+            if undecided.is_empty() {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            }
+        })?;
+    }
+    let mut manifest = reconcile(&saved, current, previous.as_ref(), &historical);
+    let roots = super::sync::layout::Roots::current();
+    for path in enroll {
+        if let Some(portable) = roots.branch_path(path, None)
+            && let Some(declaration) = current
+                .enrollment
+                .iter()
+                .find(|entry| entry.path == portable)
+        {
+            // **Enrolling a path explicitly says to track it, not to
+            // forget what it leaves out.** `reconcile` has already
+            // settled this entry's exclusions, including a list another
+            // machine published that this declaration does not repeat;
+            // taking the declaration whole here threw that away, so the
+            // baseline `mise dot track` saves captured exactly the files
+            // the shared list exists to keep out — and could publish
+            // them. Silence is not an instruction here either.
+            let mut enrolled = declaration.clone();
+            if let Some(reconciled) = manifest
+                .enrollment
+                .iter()
+                .find(|entry| entry.path == portable)
+            {
+                if enrolled.exclude.is_none() {
+                    enrolled.exclude = reconciled.exclude.clone();
+                }
+                // and the include list with it: enrolling a path says
+                // nothing about which of its files were selected, and
+                // losing a published list here would widen the entry to
+                // its whole tree
+                if enrolled.include.is_none() {
+                    enrolled.include = reconciled.include.clone();
+                }
+                if enrolled.allow_plaintext.is_none() {
+                    enrolled.allow_plaintext = reconciled.allow_plaintext;
+                }
+            }
+            manifest.enrollment.retain(|entry| entry.path != portable);
+            manifest.enrollment.push(enrolled);
+        }
+    }
+    for path in untrack.iter().chain(&tracked.disabled) {
+        if let Some(portable) = roots.branch_path(path, None) {
+            manifest.enrollment.retain(|entry| entry.path != portable);
+        }
+    }
+    manifest.enrollment.sort_by(|a, b| a.path.cmp(&b.path));
+    manifest.remove_unenrolled_permissions();
+    let mut resolved = manifest.tracking()?;
+    for entry in &mut resolved.entries {
+        entry.declared_in = tracked
+            .entries
+            .iter()
+            .find(|declared| declared.path == entry.path)
+            .and_then(|declared| declared.declared_in.clone());
+    }
+    resolved.required_sources = tracked.required_sources.clone();
+    resolved.invalid = tracked.invalid.clone();
+    resolved.invalid_local = tracked.invalid_local.clone();
+    resolved.declarations = Some(current.clone());
+    resolved.disabled = tracked.disabled.clone();
+    resolved.local = tracked.local.clone();
+    resolved.keep_local_out();
+    Ok(resolved)
+}
+
+fn reconcile(
+    saved: &Manifest,
+    current: &Manifest,
+    previous: Option<&Manifest>,
+    historical: &[Manifest],
+) -> Manifest {
+    let mut result = saved.clone();
+    for entry in &current.enrollment {
+        let old = previous.and_then(|previous| {
+            previous
+                .enrollment
+                .iter()
+                .find(|old| old.path == entry.path)
+        });
+        if old == Some(entry) {
+            continue;
+        }
+        // When the cache is missing, an old declaration seen in Git is not
+        // authority to resurrect a remotely untracked path or old policy.
+        if previous.is_none()
+            && historical
+                .iter()
+                .any(|manifest| manifest.enrollment.contains(entry))
+        {
+            continue;
+        }
+        if let Some(existing) = result
+            .enrollment
+            .iter_mut()
+            .find(|saved| saved.path == entry.path)
+        {
+            if let Some(old) = old {
+                if entry.autosave != old.autosave {
+                    existing.autosave = entry.autosave;
+                }
+                if entry.encrypt != old.encrypt {
+                    existing.encrypt = entry.encrypt;
+                }
+                if entry.allow_plaintext != old.allow_plaintext {
+                    existing.allow_plaintext = entry.allow_plaintext;
+                }
+                if entry.variants != old.variants {
+                    existing.variants = entry.variants.clone();
+                }
+                // silence is not an instruction: a declaration that
+                // drops the `exclude` key says nothing again, and what
+                // the manifest carries stands. `exclude = []` is how the
+                // list is cleared, and it expresses the default — no
+                // exclusions — so nothing is unreachable.
+                if entry.exclude != old.exclude && entry.exclude.is_some() {
+                    existing.exclude = entry.exclude.clone();
+                }
+                // **`include` cannot borrow that rule, because absence
+                // is a third meaning it alone can express.** An absent
+                // list selects the tree with credential filtering, `[]`
+                // selects nothing, and `["**"]` selects credential-named
+                // files too — so if dropping the key could not take
+                // effect, a published list could never be returned to
+                // the default. Here there is a cache to compare against:
+                // this machine declared the list before and does not
+                // now, which is an edit, not silence. Without a cache
+                // there is no such evidence, and the branch below keeps
+                // what was published.
+                if entry.include != old.include {
+                    existing.include = entry.include.clone();
+                }
+            } else {
+                // **A declaration that says nothing about selection does
+                // not clear it.** Without a cache to compare against the
+                // local declaration is otherwise taken whole, which would
+                // drop a list this machine never had an opinion about and
+                // make the paths it leaves out look selected here. That
+                // is the wrong direction to fail in for both lists: a
+                // dropped `exclude` re-selects what it omitted, and a
+                // dropped `include` widens the entry back to the whole
+                // tree. Saying `exclude = []` or `include = []` still
+                // clears it: that is an opinion.
+                let exclude = existing.exclude.clone();
+                let include = existing.include.clone();
+                let allow_plaintext = existing.allow_plaintext;
+                *existing = entry.clone();
+                if existing.exclude.is_none() {
+                    existing.exclude = exclude;
+                }
+                if existing.include.is_none() {
+                    existing.include = include;
+                }
+                if existing.allow_plaintext.is_none() {
+                    existing.allow_plaintext = allow_plaintext;
+                }
+            }
+        } else {
+            result.enrollment.push(entry.clone());
+        }
+    }
+    if let Some(previous) = previous {
+        for old in &previous.enrollment {
+            if !current
+                .enrollment
+                .iter()
+                .any(|entry| entry.path == old.path)
+            {
+                result.enrollment.retain(|entry| entry.path != old.path);
+            }
+        }
+        // Exclusions are an ordered program, not a set: sorting or removing
+        // duplicates changes the meaning of negation and repeated patterns.
+        if current.exclude != previous.exclude {
+            result.exclude = saved
+                .exclude
+                .iter()
+                .filter(|item| !previous.exclude.contains(item) && !current.exclude.contains(item))
+                .chain(current.exclude.iter())
+                .cloned()
+                .collect();
+        }
+        if current.recipients != previous.recipients && !current.recipients.is_empty() {
+            result.recipients = current.recipients.clone();
+        }
+    } else {
+        for exclusion in &current.exclude {
+            if !result.exclude.contains(exclusion) {
+                result.exclude.push(exclusion.clone());
+            }
+        }
+        if result.recipients.is_empty() {
+            result.recipients = current.recipients.clone();
+        }
+    }
+    result.enrollment.sort_by(|a, b| a.path.cmp(&b.path));
+    result
+}
+
+/// Confirm local declarations only after the corresponding tree was saved.
+pub(crate) fn confirm(state_dir: &Path, repo: &HistoryRepo, tracked: &TrackedSet) -> Result<()> {
+    if let Some(declarations) = &tracked.declarations
+        && let Some(head) = repo.ref_oid(HistoryRepo::HISTORY_REF)?
+    {
+        super::store::write_json(
+            &cache_path(state_dir),
+            &Observation {
+                head,
+                declarations: declarations.clone(),
+            },
+        )?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::history::manifest::Enrollment;
+
+    fn manifest(path: &str) -> Manifest {
+        Manifest {
+            enrollment: vec![Enrollment {
+                path: path.into(),
+                autosave: true,
+                encrypt: false,
+                allow_plaintext: None,
+                variants: vec![],
+                exclude: None,
+                include: None,
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn plaintext_approval_survives_a_silent_machine_and_can_be_revoked() {
+        let mut saved = manifest("home/commit-mossy-token.md");
+        saved.enrollment[0].allow_plaintext = Some(true);
+        let silent = manifest("home/commit-mossy-token.md");
+
+        let merged = reconcile(&saved, &silent, Some(&silent), &[]);
+        assert_eq!(merged.enrollment[0].allow_plaintext, Some(true));
+
+        let revoked = reconcile(&saved, &silent, Some(&saved), &[]);
+        assert_eq!(revoked.enrollment[0].allow_plaintext, None);
+    }
+
+    /// **Where an entry's `exclude` list comes from is reconcile's
+    /// answer, and only reconcile's.** A machine whose own declaration
+    /// carries no list keeps the one the saved manifest holds — another
+    /// machine published it, and dropping it would make the paths it
+    /// protects look managed here, so a snapshot that omits them reads as
+    /// a deletion to replay. A declaration that genuinely drops the list
+    /// still drops it, or the list could never be undone.
+    #[test]
+    fn an_entry_keeps_the_saved_exclusions_until_its_declaration_changes_them() {
+        // `declare(&[])` is a declaration that says nothing about
+        // exclusions, which is not the same as one that says none
+        let declare = |exclude: &[&str]| Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/.ssh".into(),
+                autosave: true,
+                exclude: (!exclude.is_empty())
+                    .then(|| exclude.iter().map(|glob| (*glob).to_string()).collect()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let saved = declare(&["id_*"]);
+
+        // this machine declares the target and says nothing about
+        // exclusions: the saved list stands
+        let current = declare(&[]);
+        let merged = reconcile(&saved, &current, Some(&current), &[]);
+        assert_eq!(
+            merged.enrollment[0].exclude,
+            Some(vec!["id_*".to_string()]),
+            "a declaration that says nothing dropped the saved exclusions"
+        );
+
+        // and with no cache to compare against it still stands. A
+        // declaration is otherwise taken whole there, which used to drop
+        // a list this machine never had an opinion about — and silence is
+        // silence whether or not the machine has seen itself before.
+        let merged = reconcile(&saved, &current, None, &[]);
+        assert_eq!(merged.enrollment[0].exclude, Some(vec!["id_*".to_string()]));
+
+        // **and an explicitly empty list clears it.** This is the whole
+        // reason absence and emptiness are told apart: with both read as
+        // "no exclusions", a machine could add to a published list but
+        // never take it away.
+        let cleared = Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/.ssh".into(),
+                autosave: true,
+                exclude: Some(vec![]),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let merged = reconcile(&saved, &cleared, None, &[]);
+        assert_eq!(
+            merged.enrollment[0].exclude,
+            Some(vec![]),
+            "an explicitly empty list could not clear what was published"
+        );
+
+        // dropping the key is silence again, not an instruction to
+        // capture everything: what the manifest carries stands, and the
+        // `exclude = []` above is how it is actually cleared
+        let previous = declare(&["id_*"]);
+        let merged = reconcile(&saved, &current, Some(&previous), &[]);
+        assert_eq!(
+            merged.enrollment[0].exclude,
+            Some(vec!["id_*".to_string()]),
+            "dropping the key was read as clearing the list"
+        );
+        let widened = declare(&["id_*", "*.pem"]);
+        let merged = reconcile(&saved, &widened, Some(&previous), &[]);
+        assert_eq!(
+            merged.enrollment[0].exclude,
+            Some(vec!["id_*".to_string(), "*.pem".to_string()])
+        );
+    }
+
+    /// **An include list is selection too, and reconcile owes it the
+    /// same silence rule as `exclude`.** The two fail in opposite
+    /// directions and the include one is the dangerous direction: a
+    /// dropped `exclude` re-selects what it omitted, while a dropped
+    /// `include` widens the entry back to the whole tree, so the caches,
+    /// sessions and credential-named files the list was written to keep
+    /// out become capturable — and publishable — on a machine that never
+    /// had an opinion about them.
+    #[test]
+    fn an_entry_keeps_the_saved_include_list_until_its_declaration_changes_it() {
+        let declare = |include: Option<&[&str]>| Manifest {
+            enrollment: vec![Enrollment {
+                path: "home/.codex".into(),
+                autosave: true,
+                include: include
+                    .map(|globs| globs.iter().map(|glob| (*glob).to_string()).collect()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let saved = declare(Some(&["config.toml"]));
+        let silent = declare(None);
+
+        // a machine that has a cache and says nothing in either it or
+        // its declaration has expressed no opinion: the published list
+        // stands rather than widening the entry to the whole tree
+        let merged = reconcile(&saved, &silent, Some(&silent), &[]);
+        assert_eq!(
+            merged.enrollment[0].include,
+            Some(vec!["config.toml".to_string()]),
+            "a declaration that says nothing dropped the saved include list"
+        );
+
+        // **but deleting a key this machine did declare is an edit, and
+        // the only way back to the default.** An absent list is a third
+        // meaning `[]` and `["**"]` cannot express — the tree with
+        // credential filtering — so if this could not take effect a
+        // published list would be a one-way door.
+        let merged = reconcile(&saved, &silent, Some(&saved), &[]);
+        assert_eq!(
+            merged.enrollment[0].include, None,
+            "deleting a declared include list could not restore the default selection"
+        );
+
+        // and with no cache, where the declaration is otherwise taken
+        // whole — the adopt and first-resolve path
+        let merged = reconcile(&saved, &silent, None, &[]);
+        assert_eq!(
+            merged.enrollment[0].include,
+            Some(vec!["config.toml".to_string()]),
+            "with no cache a silent declaration widened the entry to the whole tree"
+        );
+
+        // an explicitly empty list is an opinion and still clears it,
+        // selecting nothing — otherwise a list could be added to but
+        // never taken away
+        let merged = reconcile(&saved, &declare(Some(&[])), None, &[]);
+        assert_eq!(
+            merged.enrollment[0].include,
+            Some(vec![]),
+            "an explicitly empty include list could not clear what was published"
+        );
+
+        // and a genuine change still lands, with or without a cache
+        let widened = declare(Some(&["config.toml", "rules/**"]));
+        let merged = reconcile(&saved, &widened, Some(&saved), &[]);
+        assert_eq!(
+            merged.enrollment[0].include,
+            Some(vec!["config.toml".to_string(), "rules/**".to_string()])
+        );
+        let merged = reconcile(&saved, &widened, None, &[]);
+        assert_eq!(
+            merged.enrollment[0].include,
+            Some(vec!["config.toml".to_string(), "rules/**".to_string()])
+        );
+    }
+
+    #[test]
+    fn exclusion_edits_preserve_order_repeats_and_remote_additions() {
+        let mut previous = manifest("home/config");
+        previous.exclude = vec!["~/config/**".into()];
+        let mut current = previous.clone();
+        current.exclude.push("!~/config/keep".into());
+        let mut saved = previous.clone();
+        saved.exclude.push("~/remote/**".into());
+        let merged = reconcile(&saved, &current, Some(&previous), &[]);
+        assert_eq!(
+            merged.exclude,
+            vec!["~/remote/**", "~/config/**", "!~/config/keep"]
+        );
+        assert_eq!(
+            reconcile(&merged, &current, Some(&current), &[]).exclude,
+            merged.exclude
+        );
+        let mut repeated = current.clone();
+        repeated.exclude.push("~/config/**".into());
+        assert_eq!(
+            reconcile(&current, &repeated, Some(&current), &[]).exclude,
+            repeated.exclude
+        );
+    }
+
+    #[test]
+    fn unchanged_config_cannot_resurrect_remote_untracking_even_without_cache() {
+        let old = manifest("home/.zshrc");
+        let removed = Manifest::default();
+        assert!(
+            reconcile(&removed, &old, Some(&old), &[])
+                .enrollment
+                .is_empty()
+        );
+        assert!(
+            reconcile(&removed, &old, None, std::slice::from_ref(&old))
+                .enrollment
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn manifest_only_enrollment_survives_and_new_local_declarations_are_added() {
+        let saved = manifest("home/.zshrc");
+        assert_eq!(
+            reconcile(
+                &saved,
+                &Manifest::default(),
+                Some(&Manifest::default()),
+                &[]
+            ),
+            saved
+        );
+        let current = manifest("home/.new");
+        let result = reconcile(&saved, &current, Some(&Manifest::default()), &[]);
+        assert_eq!(result.enrollment.len(), 2);
+        let removed = reconcile(&result, &Manifest::default(), Some(&current), &[]);
+        assert_eq!(removed.enrollment, saved.enrollment);
+    }
+
+    #[test]
+    fn policy_edits_preserve_independent_remote_changes() {
+        let old = manifest("home/.zshrc");
+        let mut saved = old.clone();
+        saved.enrollment[0].encrypt = true;
+        let mut current = old.clone();
+        current.enrollment[0].autosave = false;
+        let result = reconcile(&saved, &current, Some(&old), &[]);
+        assert!(result.enrollment[0].encrypt);
+        assert!(!result.enrollment[0].autosave);
+    }
+
+    #[test]
+    fn invalid_or_missing_observation_rebuilds_without_reenrolling_old_declarations() -> Result<()>
+    {
+        let temp = tempfile::tempdir()?;
+        let repo = HistoryRepo::open_or_init_in(temp.path())?.unwrap();
+        let old = manifest("home/.zshrc");
+        let tree = old.write(&repo, &repo.empty_object("tree")?)?;
+        let initial = repo.commit_tree(&tree, vec![], "enroll")?;
+        let removed = Manifest::default().write(&repo, &repo.empty_object("tree")?)?;
+        let head = repo.commit_tree(&removed, vec![&initial], "untrack")?;
+        repo.update_history_head(&head, None)?;
+        let declared = TrackedSet {
+            declarations: Some(old.clone()),
+            ..Default::default()
+        };
+        assert!(
+            resolve(temp.path(), &repo, &declared, &[], &[])?
+                .entries
+                .is_empty()
+        );
+        mise_util::file::create_dir_all(cache_path(temp.path()).parent().unwrap())?;
+        std::fs::write(cache_path(temp.path()), b"invalid cache")?;
+        assert!(
+            resolve(temp.path(), &repo, &declared, &[], &[])?
+                .entries
+                .is_empty()
+        );
+        super::super::store::write_json(
+            &cache_path(temp.path()),
+            &Observation {
+                head: "0000000000000000000000000000000000000000".into(),
+                declarations: Manifest::default(),
+            },
+        )?;
+        assert!(
+            resolve(temp.path(), &repo, &declared, &[], &[])?
+                .entries
+                .is_empty()
+        );
+        let path = super::super::sync::layout::Roots::current()
+            .home
+            .join(".zshrc");
+        assert_eq!(
+            resolve(temp.path(), &repo, &declared, &[path], &[])?.manifest,
+            old
+        );
+        Ok(())
+    }
+}

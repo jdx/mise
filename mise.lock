@@ -745,11 +745,11 @@ aube = { path = ".mise/locks/npm-markdownlint-cli/0.49.1", digest = "sha256:51f2
 backend = "npm:markdownlint-cli"
 specifiers = ["latest"]
 
-[[tools.prettier]]
-version = "3.9.9"
-aube = { path = ".mise/locks/prettier/3.9.9", digest = "sha256:815f6667505e41ac2d03ecbac86b79f1beb78d45783879428193c9adc80760a3" }
-backend = "npm:prettier"
-specifiers = ["3.9.9"]
+[[tools.oxfmt]]
+version = "0.73.0"
+aube = { path = ".mise/locks/oxfmt/0.73.0", digest = "sha256:e42eeebedd060ec6393c40caa35362b541991453b9aab2de3d33d41a0c245a62" }
+backend = "npm:oxfmt"
+specifiers = ["0.73.0"]
 
 [[tools.shellcheck]]
 version = "0.11.0"

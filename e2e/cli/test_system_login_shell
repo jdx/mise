@@ -115,3 +115,13 @@ login_shell = "relative-shell"
 EOF
 assert_succeed "mise bootstrap user status"
 assert_contains "mise bootstrap user status 2>&1" "shell must be an absolute path"
+
+# login_shell is a template, so it can use [vars].
+cat <<EOF2 >mise.toml
+[bootstrap.user]
+login_shell = "{{ vars.shell_dir }}/zsh"
+
+[vars]
+shell_dir = "/tmp/templated"
+EOF2
+assert_contains "mise bootstrap user status --json" '"/tmp/templated/zsh"'

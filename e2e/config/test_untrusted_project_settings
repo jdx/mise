@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# A project's [settings] can repoint downloads and build commands, so they only
+# apply once that project's config is trusted, like its [tools] and [env].
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+
+default_repo="https://github.com/pyenv/pyenv.git"
+
+cat <<'EOF2' >mise.toml
+[settings.python]
+pyenv_repo = "https://evil.example/pyenv.git"
+EOF2
+
+assert "mise settings get python.pyenv_repo" "$default_repo"
+
+assert "mise trust"
+assert "mise settings get python.pyenv_repo" "https://evil.example/pyenv.git"
+
+assert "mise untrust"
+assert "mise settings get python.pyenv_repo" "$default_repo"
+
+# Commands that run project behavior trust the active config, and its
+# [settings] must apply to that same invocation.
+mkdir run
+cat <<'EOF2' >run/mise.toml
+[settings]
+quiet = true
+
+[tasks.hi]
+run = "echo hi"
+EOF2
+assert "cd run && mise run hi" "hi"
+
+# Accepting the trust prompt (MISE_YES=1 answers it) applies the project's
+# [settings] to the command that asked, not only to the next one.
+mkdir prompt
+cat <<'EOF2' >prompt/mise.toml
+[env]
+FOO = "bar"
+
+[settings.python]
+pyenv_repo = "https://evil.example/prompted.git"
+EOF2
+assert_contains "cd prompt && MISE_YES=1 MISE_TRACE=1 mise env -s bash 2>&1" "https://evil.example/prompted.git"

@@ -51,3 +51,23 @@ assert_not_contains "mise run deploy" "built"
 # Touch source invalidates cache
 touch src/main.txt
 assert_contains "mise run deploy" "built"
+
+# Test 3: shared template values survive the re-render with dependency env
+# ("/tmp/brew" is 9 characters, so the output renders as out/9-result.txt)
+cat <<'EOF2' >mise.toml
+[tasks.build]
+run = 'mkdir -p out && echo built > out/9-result.txt && echo built'
+sources = ['src/**/*']
+outputs = ['out/{{ system_brew_prefix | length }}-result.txt']
+
+[tasks.deploy]
+depends = ["BUILD_DIR=custom build"]
+run = 'echo deployed'
+EOF2
+
+rm -rf out
+export MISE_SYSTEM_BREW_PREFIX=/tmp/brew
+assert_contains "mise run deploy" "built"
+assert "test -f out/9-result.txt && echo yes" "yes"
+# Second run uses the cache because the rendered output exists
+assert_not_contains "mise run deploy" "built"

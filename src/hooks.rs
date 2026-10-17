@@ -865,7 +865,7 @@ async fn execute_task(
     task_name: &str,
     installed_tools: Option<&[InstalledToolInfo]>,
 ) -> Result<()> {
-    let mise_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mise"));
+    let mise_bin = crate::shims::running_mise_bin();
 
     let mut env = if hook.hook == Hooks::Preinstall {
         ts.full_env_without_tools(config).await?

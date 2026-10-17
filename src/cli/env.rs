@@ -93,7 +93,7 @@ impl Env {
         // behind: an eval'd shell has no command-not-found handler to fall
         // back on (discussion #12678).
         if ts.has_lazy_declarations()
-            && let Err(err) = crate::shims::ensure_lazy_shims(&missing)
+            && let Err(err) = crate::shims::ensure_lazy_shims(&missing).await
         {
             warn!("failed to create shims for lazy tools: {err:#}");
         }

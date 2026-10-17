@@ -148,21 +148,35 @@ impl LsRemote {
             }
             None => None,
         };
-        if let Some(ba) = prefix
-            .as_deref()
-            .and_then(|prefix| plugin.ba().with_registry_version(prefix))
-        {
-            plugin = ba.backend()?;
-        }
         let matches_prefix = |v: &str| prefix.as_ref().is_none_or(|p| v.starts_with(p));
 
-        let versions_matching_prefix = plugin
-            .list_remote_versions_with_info(config)
-            .await?
+        // A tool whose registry backends serve different version ranges lists
+        // each range from its own backend.
+        let listed = match &self.plugin {
+            Some(tool_arg) => {
+                backend::list_remote_versions_across_ranges(config, &tool_arg.ba, prefix.as_deref())
+                    .await?
+            }
+            None => None,
+        };
+        let listed = match listed {
+            Some(listed) => listed,
+            None => {
+                if let Some(ba) = prefix
+                    .as_deref()
+                    .and_then(|prefix| plugin.ba().with_registry_version(prefix))
+                {
+                    plugin = ba.backend()?;
+                }
+                let listed = plugin.list_remote_versions_with_info(config).await?;
+                ensure_version_listing_succeeded(plugin.ba(), plugin.id())?;
+                listed
+            }
+        };
+        let versions_matching_prefix = listed
             .into_iter()
             .filter(|v| matches_prefix(&v.version))
             .collect::<Vec<_>>();
-        ensure_version_listing_succeeded(plugin.ba(), plugin.id())?;
         let hidden_versions = before_date
             .map(|before| VersionInfo::count_hidden_by_date(&versions_matching_prefix, before))
             .unwrap_or_default();

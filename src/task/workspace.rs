@@ -18,6 +18,7 @@ use super::{
 pub mod cargo;
 pub mod git;
 pub mod go;
+pub mod gradle;
 pub mod node;
 pub mod uv;
 
@@ -571,6 +572,16 @@ impl WorkspaceProjectGraph {
             skip_provider_errors,
         )?
         .with_overrides(overrides)?;
+        // Declaring a project in a provider's namespace takes manual control
+        // from that provider, so its failed discovery no longer blocks the graph.
+        for (raw_id, config) in overrides {
+            if config.remove {
+                continue;
+            }
+            if let Some((provider_id, _)) = raw_id.split_once(':') {
+                graph.provider_errors.remove(provider_id);
+            }
+        }
         for (raw_id, config) in overrides {
             if config.remove || config.root.is_none() {
                 continue;
@@ -867,6 +878,11 @@ impl WorkspaceProjectGraph {
         let mapped = self.map_paths_to_projects(paths)?;
         let global_matcher =
             build_source_matcher(workspace_root, workspace_root, resolved_global_inputs);
+        // A Gradle settings script decides every project's membership and
+        // directory, even when the root project owns the file.
+        let has_gradle_projects = self
+            .projects()
+            .any(|project| project.id.as_str().starts_with("gradle:"));
         let global_paths = mapped
             .projects_by_path
             .keys()
@@ -874,6 +890,7 @@ impl WorkspaceProjectGraph {
             .filter(|path| {
                 mapped.unowned_paths.contains(*path)
                     || is_source(&global_matcher, &workspace_root.join(path))
+                    || (has_gradle_projects && is_gradle_settings(path))
             })
             .cloned()
             .collect::<BTreeSet<_>>();
@@ -1217,6 +1234,10 @@ fn normalize_project_root(id: &ProjectId, root: &Path) -> Result<PathBuf> {
     Ok(normalized)
 }
 
+fn is_gradle_settings(path: &Path) -> bool {
+    path == Path::new("settings.gradle") || path == Path::new("settings.gradle.kts")
+}
+
 fn normalize_workspace_path(path: &Path) -> Result<PathBuf> {
     if path.is_absolute() {
         bail!("workspace path {path:?} is absolute; paths must be workspace-relative");
@@ -1331,6 +1352,19 @@ mod tests {
 
         fn discover(&self, _workspace_root: &Path) -> Result<Vec<WorkspaceProject>> {
             bail!("broken workspace metadata")
+        }
+    }
+
+    #[derive(Debug)]
+    struct NamedFailingProvider(&'static str);
+
+    impl WorkspaceProvider for NamedFailingProvider {
+        fn id(&self) -> &str {
+            self.0
+        }
+
+        fn discover(&self, _workspace_root: &Path) -> Result<Vec<WorkspaceProject>> {
+            bail!("{} workspace metadata is unreadable", self.0)
         }
     }
 
@@ -1879,6 +1913,80 @@ mod tests {
         assert_eq!(
             graph.provider_discovery_error().as_deref(),
             Some("broken: broken workspace metadata")
+        );
+    }
+
+    #[test]
+    fn override_in_provider_namespace_clears_its_discovery_error() {
+        let overrides = BTreeMap::from([(
+            "broken:app".to_string(),
+            WorkspaceProjectOverride {
+                root: Some(PathBuf::from("app")),
+                ..Default::default()
+            },
+        )]);
+
+        let graph = WorkspaceProjectGraph::discover_all_with_overrides_lenient(
+            &[&FailingDiscoveryProvider],
+            Path::new("/workspace"),
+            &overrides,
+        )
+        .unwrap();
+
+        assert!(graph.provider_discovery_error().is_none());
+        assert!(
+            graph
+                .get(&ProjectId::new("broken", "app").unwrap())
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn overrides_only_clear_errors_of_the_namespace_they_declare_projects_in() {
+        let declare = |id: &str| {
+            (
+                id.to_string(),
+                WorkspaceProjectOverride {
+                    root: Some(PathBuf::from("app")),
+                    ..Default::default()
+                },
+            )
+        };
+        let discover = |overrides: BTreeMap<String, WorkspaceProjectOverride>| {
+            WorkspaceProjectGraph::discover_all_with_overrides_lenient(
+                &[&FailingDiscoveryProvider, &NamedFailingProvider("fragile")],
+                Path::new("/workspace"),
+                &overrides,
+            )
+            .unwrap()
+        };
+
+        let other_namespace = discover(BTreeMap::from([declare("custom:app")]));
+        assert_eq!(
+            other_namespace.provider_discovery_error().as_deref(),
+            Some(
+                "broken: broken workspace metadata; \
+                 fragile: fragile workspace metadata is unreadable"
+            )
+        );
+
+        let removed = discover(BTreeMap::from([(
+            "broken:app".to_string(),
+            WorkspaceProjectOverride {
+                remove: true,
+                ..Default::default()
+            },
+        )]));
+        assert!(
+            removed
+                .provider_discovery_error()
+                .is_some_and(|error| error.contains("broken:"))
+        );
+
+        let one_of_two = discover(BTreeMap::from([declare("broken:app")]));
+        assert_eq!(
+            one_of_two.provider_discovery_error().as_deref(),
+            Some("fragile: fragile workspace metadata is unreadable")
         );
     }
 
@@ -2585,6 +2693,28 @@ mod tests {
                 ["apps/app/toolchain.toml"],
                 &["**/toolchain.toml".to_string()],
             )
+            .unwrap();
+
+        assert_eq!(
+            affected,
+            graph.projects().map(|project| project.id.clone()).collect()
+        );
+    }
+
+    #[test]
+    fn gradle_settings_changes_affect_every_project() {
+        let provider = TestProvider {
+            id: "gradle",
+            projects: vec![
+                project("gradle", ":", "."),
+                project("gradle", ":app", "app"),
+                project("gradle", ":lib", "lib"),
+            ],
+        };
+        let graph = WorkspaceProjectGraph::discover(&provider, Path::new("/workspace")).unwrap();
+
+        let affected = graph
+            .affected_projects_for_paths(Path::new("/workspace"), ["settings.gradle.kts"], &[])
             .unwrap();
 
         assert_eq!(

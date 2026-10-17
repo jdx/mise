@@ -47,7 +47,15 @@ impl Vfox {
         let mut verified_attestation = None;
         let mut checksum_verified = false;
         if let Some(url) = pre_install.url.as_ref().map(|s| Url::from_str(s)) {
-            let file = self.download(&url?, &sdk, version, download_dir).await?;
+            let file = self
+                .download(
+                    &url?,
+                    &sdk,
+                    version,
+                    download_dir,
+                    pre_install.headers.as_ref(),
+                )
+                .await?;
             verified_attestation = self.verify(&pre_install, &file).await?;
             self.extract(&file, install_dir)?;
             // Note: sha1/md5 are verified in `verify`, but intentionally excluded here.
@@ -147,27 +155,91 @@ impl Vfox {
         sdk: &Plugin,
         version: &str,
         download_dir: &Path,
+        plugin_headers: Option<&HeaderMap>,
     ) -> Result<PathBuf> {
         let path = Self::download_path_for(download_dir, &sdk.name, version, url)?;
         let mut request_url = url.clone();
         self.rewrite_url(&mut request_url);
         self.log_emit(format!("Downloading {request_url}"));
         let url_str = request_url.to_string();
+        let client = client()?;
+        let no_redirect_client = no_redirect_client()?;
         let bytes = retry_async(&url_str, || async {
-            let mut request = CLIENT.get(request_url.clone());
-            if let Some(resolver) = &self.http_headers_resolver {
-                request = request.headers(resolver(&request_url));
-            }
-            let resp = request.send().await?;
+            let resp = match plugin_headers.filter(|h| !h.is_empty()) {
+                Some(plugin_headers) => {
+                    // The headers belong to the plugin's own `url`; a rewritten
+                    // mirror is not trusted with them.
+                    match self
+                        .get_following_redirects(
+                            no_redirect_client,
+                            &request_url,
+                            url,
+                            plugin_headers,
+                        )
+                        .await?
+                    {
+                        Some(resp) => resp,
+                        None => return Ok(None),
+                    }
+                }
+                None => {
+                    let mut request = client.get(request_url.clone());
+                    if let Some(resolver) = &self.http_headers_resolver {
+                        request = request.headers(resolver(&request_url));
+                    }
+                    request.send().await?
+                }
+            };
             let resp = resp.error_for_status()?;
-            resp.bytes().await
+            resp.bytes().await.map(Some)
         })
-        .await?;
+        .await?
+        .ok_or_else(|| format!("too many redirects downloading {request_url}"))?;
         file::mkdirp(path.parent().unwrap())?;
         let mut file = tokio::fs::File::create(&path).await?;
         tokio::io::AsyncWriteExt::write_all(&mut file, &bytes).await?;
         file.sync_all().await?;
         Ok(path)
+    }
+
+    /// GET `url` with the plugin's headers, following redirects by hand so the
+    /// headers are only sent to the origin of `trusted` (the plugin's own
+    /// `url`). A rewritten mirror or a redirect to another host, port or scheme
+    /// (e.g. a signed storage URL) does not receive them. Returns `None` when
+    /// the redirect limit is exceeded.
+    async fn get_following_redirects(
+        &self,
+        client: &reqwest::Client,
+        url: &Url,
+        trusted: &Url,
+        plugin_headers: &HeaderMap,
+    ) -> reqwest::Result<Option<reqwest::Response>> {
+        const MAX_REDIRECTS: usize = 10;
+        let mut current = url.clone();
+        for _ in 0..=MAX_REDIRECTS {
+            let mut headers = self
+                .http_headers_resolver
+                .as_ref()
+                .map(|resolver| resolver(&current))
+                .unwrap_or_default();
+            if current.origin() == trusted.origin() {
+                headers.extend(plugin_headers.clone());
+            }
+            let resp = client.get(current.clone()).headers(headers).send().await?;
+            if !resp.status().is_redirection() {
+                return Ok(Some(resp));
+            }
+            let Some(next) = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|l| l.to_str().ok())
+                .and_then(|l| current.join(l).ok())
+            else {
+                return Ok(Some(resp));
+            };
+            current = next;
+        }
+        Ok(None)
     }
 
     pub(super) fn download_path_for(

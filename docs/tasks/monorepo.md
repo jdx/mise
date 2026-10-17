@@ -382,7 +382,7 @@ the same defaults without touching the projects, use
 ## Next steps
 
 - [Workspace project graph](/tasks/workspace-graph.html):
-  infer projects and their dependencies from Cargo, uv, Go, and Node.js
+  infer projects and their dependencies from Cargo, uv, Go, Gradle, and Node.js
   workspaces, run only affected tasks, and import package scripts.
 - [Task templates](/tasks/templates.html): share task definitions between
   projects.

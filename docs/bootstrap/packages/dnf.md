@@ -136,7 +136,7 @@ system_packages.ostree = "layer"
 With `layer`:
 
 - `apply` installs all missing packages in one `rpm-ostree install
---idempotent --allow-inactive` transaction (each call builds a new
+  --idempotent --allow-inactive` transaction (each call builds a new
   deployment), after `rpm-ostree refresh-md` with `--update`, and prints a
   reboot notice. It uses [sudo](/bootstrap/packages/#sudo) as usual.
 - Packages already requested for the next deployment count as installed and show

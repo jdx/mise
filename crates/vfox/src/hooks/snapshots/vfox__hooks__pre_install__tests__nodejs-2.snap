@@ -15,4 +15,5 @@ PreInstall {
     sha1: None,
     sha512: None,
     attestation: None,
+    headers: None,
 }

@@ -73,6 +73,9 @@ ignore = [
   { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 unmaintained - transitive via age/mlua/tabled/rops, no safe upgrade available" },
   { id = "RUSTSEC-2023-0071", reason = "rsa crate Marvin attack vulnerability from sigstore crate - no safe upgrade available" },
   { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml unmaintained - transitive via serde_yaml (mise, mise-util, aqua-registry, rattler, rops), no safe upgrade available" },
+  { id = "RUSTSEC-2026-0367", reason = "zip < 9 SUID/SGID extraction advisory - mise's own zip is 9; the remaining 8.x copy comes from aube (which only reads the OSV database zip) and ubi, whose extract_all option calls ZipArchive::extract on release archives, so this is a residual risk until ubi moves to zip 9, no safe upgrade available" },
+  { id = "RUSTSEC-2026-0368", reason = "zip < 9 symlink target extraction advisory - mise's own zip is 9; the remaining 8.x copy comes from aube (which only reads the OSV database zip) and ubi, whose extract_all option calls ZipArchive::extract on release archives, so this is a residual risk until ubi moves to zip 9, no safe upgrade available" },
+  { id = "RUSTSEC-2026-0369", reason = "zip < 9 symlink permissions advisory - mise's own zip is 9; the remaining 8.x copy comes from aube (which only reads the OSV database zip) and ubi, whose extract_all option calls ZipArchive::extract on release archives, so this is a residual risk until ubi moves to zip 9, no safe upgrade available" },
   #"RUSTSEC-0000-0000",
   #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
   #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish

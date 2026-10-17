@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# A watch_files command sees MISE_WATCH_FILES_GIT_REWRITTEN=1 when git moved HEAD
+# when every changed file was written before git last moved HEAD.
+
+git init -q
+git config user.email test@example.com
+git config user.name test
+
+cat <<EOT >mise.toml
+[[watch_files]]
+patterns = ["watched.txt"]
+run = 'echo "GIT_REWRITTEN=[\$MISE_WATCH_FILES_GIT_REWRITTEN]"'
+EOT
+
+echo one >watched.txt
+git add mise.toml watched.txt
+git commit -q -m one
+
+eval "$(mise hook-env -s bash)"
+sleep 1
+echo edit >>watched.txt
+assert_contains "mise hook-env -s bash 2>&1" "GIT_REWRITTEN=[]"
+
+eval "$(mise hook-env -s bash)"
+sleep 1
+git checkout -q -b other
+echo two >watched.txt
+git commit -q -am two
+# an edit that was committed before the next prompt is still the user's edit
+assert_contains "mise hook-env -s bash 2>&1" "GIT_REWRITTEN=[]"
+
+eval "$(mise hook-env -s bash)"
+sleep 1
+git checkout -q -
+assert_contains "mise hook-env -s bash 2>&1" "GIT_REWRITTEN=[1]"
+
+# a later real edit is not mistaken for a git rewrite
+eval "$(mise hook-env -s bash)"
+sleep 1
+echo three >>watched.txt
+assert_contains "mise hook-env -s bash 2>&1" "GIT_REWRITTEN=[]"

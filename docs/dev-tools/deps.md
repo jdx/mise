@@ -264,6 +264,9 @@ stale and mise runs it.
 
 - A provider with sources is stale on its first run.
 - An optional output must keep existing once mise has seen it.
+- A virtual environment that mise creates, for example with
+  `python.uv_venv_auto`, keeps each provider that tracks it stale until that
+  provider runs.
 - A custom provider with outputs but no sources is fresh while its outputs
   exist; editing its command alone does not rerun it.
 - A provider with neither sources nor outputs runs every time.

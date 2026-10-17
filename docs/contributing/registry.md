@@ -309,9 +309,37 @@ that spans it keeps the preferred backend. Prereleases of the boundary version
 sort below it, so an exact request for `tool@2.0.0-rc.1` selects `tool-legacy`,
 while the prefix `2` still selects `tool-next`.
 
+`mise ls-remote tool` lists every range, each from the backend that serves it:
+1.x from `tool-legacy` and 2.x and later from `tool-next`. A version a backend
+lists outside its own range is left out, since installing it would select
+another backend. The same applies to `min_version` alone: hk lists 1.58.1 and
+later from packslip and earlier releases from aqua. A prefix inside one range,
+such as `mise ls-remote tool 1`, lists only that range's backend.
+
 A locked backend stays in use only for the versions it serves. If the lockfile
 records `tool-legacy` and the config moves to `tool@2`, mise selects `tool-next`
 instead of asking the legacy backend for a release it does not publish.
+
+### Options that change between versions {#version-ranged-options}
+
+When a release changes how a backend finds its files, such as a renamed asset or
+release workflow, list the backend once per range and give each entry its own
+options:
+
+```toml
+backends = [
+  { full = "github:example/tool", min_version = "2.0.0", options = { asset_pattern = "tool-v2-*" } },
+  { full = "github:example/tool", max_version = "2.0.0", options = { asset_pattern = "tool-*" } },
+]
+bins = ["tool"]
+version_order = "semver"
+```
+
+`tool@1.4.0` installs with `tool-*` and `tool@2.1.0` with `tool-v2-*`. Requests
+that are not routed by version, such as `latest`, use the first entry's options.
+Entries for one backend must not give a version different options, unless their
+`platforms` keep them apart. Older mise releases apply the first entry's options to every
+version, so add a range only for a change those releases already handle wrongly.
 
 ## Required attestations {#required-attestations}
 
