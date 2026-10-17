@@ -914,6 +914,79 @@ pub(crate) fn is_install_time_option_key_for_type(backend_type: &BackendType, ke
             .any(|itk| key.starts_with("platforms.") && key.ends_with(&format!(".{itk}")))
 }
 
+/// Schema definitions that document the options each backend reads. The schema is the
+/// source of truth for them: `schema_matches_parser` keeps it in step with the parser.
+fn option_schema_defs(backend_type: &BackendType) -> &'static [&'static str] {
+    match backend_type {
+        BackendType::Cargo => &["tool_cargo_options"],
+        BackendType::Http => &["tool_http_options"],
+        BackendType::S3 => &["tool_s3_options"],
+        BackendType::Github => &["tool_github_options", "tool_forge_options"],
+        BackendType::Gitlab => &["tool_gitlab_options", "tool_forge_options"],
+        BackendType::Forgejo => &["tool_forgejo_options", "tool_forge_options"],
+        BackendType::Go => &["tool_go_options"],
+        BackendType::Npm => &["tool_npm_options"],
+        BackendType::Packslip => &["tool_packslip_options"],
+        BackendType::Pipx => &["tool_pypi_options"],
+        BackendType::Spm => &["tool_spm_options"],
+        _ => &[],
+    }
+}
+
+fn schema_option_keys(def: &str) -> HashSet<String> {
+    static SCHEMA: LazyLock<serde_json::Value> = LazyLock::new(|| {
+        serde_json::from_str(include_str!("../../schema/mise.json")).unwrap_or_default()
+    });
+    SCHEMA["$defs"][def]["properties"]
+        .as_object()
+        .map(|props| props.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// Returns the option keys that another backend documents but this one does not.
+///
+/// Only keys the schema attributes to other backends count, so an option no backend
+/// claims (a typo, or one a plugin reads) is left alone.
+pub(crate) fn foreign_option_keys<'a>(
+    backend_type: &BackendType,
+    keys: impl IntoIterator<Item = &'a String>,
+) -> Vec<String> {
+    let own_defs = option_schema_defs(backend_type);
+    if own_defs.is_empty() {
+        return vec![];
+    }
+    let own: HashSet<String> = own_defs
+        .iter()
+        .flat_map(|d| schema_option_keys(d))
+        .collect();
+    let others: HashSet<String> = [
+        BackendType::Cargo,
+        BackendType::Http,
+        BackendType::S3,
+        BackendType::Github,
+        BackendType::Go,
+        BackendType::Npm,
+        BackendType::Packslip,
+        BackendType::Pipx,
+        BackendType::Spm,
+    ]
+    .iter()
+    .flat_map(|t| {
+        option_schema_defs(t)
+            .iter()
+            .flat_map(|d| schema_option_keys(d))
+    })
+    .collect();
+    let mut foreign: Vec<String> = keys
+        .into_iter()
+        .filter(|key| !own.contains(*key) && others.contains(*key))
+        .filter(|key| !is_install_time_option_key_for_type(backend_type, key))
+        .cloned()
+        .collect();
+    foreign.sort();
+    foreign
+}
+
 /// Normalize idiomatic file contents by removing comments and empty lines.
 /// Full-line and inline comments are supported by .python-version, .nvmrc, etc.
 pub(crate) fn normalize_idiomatic_contents(contents: &str) -> String {
@@ -4518,6 +4591,13 @@ pub trait Backend: Debug + Send + Sync {
         } else {
             self.prepare_install_version(&ctx, tv).await?
         };
+        for key in foreign_option_keys(&self.get_type(), tv.request.options().opts.keys()) {
+            warn_once!(
+                "{}: option `{key}` is not used by the {} backend and is ignored",
+                self.ba().short,
+                self.get_type()
+            );
+        }
         // Toolset installs preflight these options before doing any work, but
         // direct callers such as `install-into` must be protected here too.
         tv.request.ensure_safe_install_options()?;
@@ -8320,4 +8400,56 @@ pub async fn reset() -> Result<()> {
     TOOLS_INCLUDE_INSTALLED.store(false, std::sync::atomic::Ordering::SeqCst);
     *cached = Some(tools);
     Ok(())
+}
+
+#[cfg(test)]
+mod foreign_option_tests {
+    use super::*;
+
+    fn keys(names: &[&str]) -> Vec<String> {
+        names.iter().map(|k| k.to_string()).collect()
+    }
+
+    #[test]
+    fn flags_an_option_that_belongs_to_another_backend() {
+        let opts = keys(&["asset_pattern", "bin", "crate", "platforms"]);
+        assert_eq!(
+            foreign_option_keys(&BackendType::Cargo, &opts),
+            vec!["asset_pattern"]
+        );
+    }
+
+    #[test]
+    fn leaves_unclaimed_options_alone() {
+        let opts = keys(&["something_new", "rename_exe"]);
+        assert!(foreign_option_keys(&BackendType::Cargo, &opts).is_empty());
+    }
+
+    #[test]
+    fn schema_documented_options_are_never_flagged() {
+        for backend_type in [
+            BackendType::Cargo,
+            BackendType::Http,
+            BackendType::S3,
+            BackendType::Github,
+            BackendType::Gitlab,
+            BackendType::Forgejo,
+            BackendType::Go,
+            BackendType::Npm,
+            BackendType::Packslip,
+            BackendType::Pipx,
+            BackendType::Spm,
+        ] {
+            let opts: Vec<String> = option_schema_defs(&backend_type)
+                .iter()
+                .flat_map(|d| schema_option_keys(d))
+                .collect();
+            assert!(!opts.is_empty(), "{backend_type:?} has no schema options");
+            assert_eq!(
+                foreign_option_keys(&backend_type, &opts),
+                Vec::<String>::new(),
+                "{backend_type:?} documents options that would be reported as ignored"
+            );
+        }
+    }
 }
