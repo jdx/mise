@@ -78,7 +78,8 @@ rm .env.local
 # Every occurrence still loads in order, so a file between two loads of the same file can expand
 # values from the earlier one.
 mkdir -p repeated
-printf 'BASE=/opt/app\n' >repeated/base.env
+# shellcheck disable=SC2016
+printf 'BASE=/opt/app\nAFTER=$OUTPUT\n' >repeated/base.env
 # shellcheck disable=SC2016
 printf '{"OUTPUT": "$BASE/out"}\n' >repeated/derived.json
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
@@ -86,6 +87,8 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 _.file = { path = ["base.env", "derived.json", "base.env"], find_up = true, expand = true }
 TOML
 assert_contains "cd repeated && mise env --dotenv" "OUTPUT=/opt/app/out"
+# Only the second load of base.env can see OUTPUT, which derived.json set in between.
+assert_contains "cd repeated && mise env --dotenv" "AFTER=/opt/app/out"
 
 # A templated name resolves after the files listed before it, so it can use their values.
 mkdir -p staged
