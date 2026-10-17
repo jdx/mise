@@ -247,8 +247,10 @@ run = '[ -n "$MISE_WATCH_FILES_GIT_REWRITTEN" ] || { IFS=:; hk fix $MISE_WATCH_F
 The variable is unset when any changed file is newer than the last HEAD move,
 so a real edit made alongside a rebase still runs the command. It is also unset
 when the last HEAD move was a commit, since a commit does not rewrite the files
-you edited. `git stash pop` and `git stash apply` do not move HEAD, so they are
-not detected.
+you edited. Moves that leave HEAD on the same commit, as `git checkout -b`,
+`git reset` and `git branch -m` make, are ignored. `git stash pop` and
+`git stash apply` do not move HEAD, and `git reset --hard` without a commit
+leaves it in place, so they are not detected.
 
 ## Environment variables {#hook-execution}
 
