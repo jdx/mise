@@ -5,8 +5,8 @@ use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use path_absolutize::Absolutize;
 use serde::Deserialize;
+use serde::de;
 use serde::de::Visitor;
-use serde::{Deserializer, de};
 use std::fmt::{Debug, Formatter};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
@@ -16,7 +16,6 @@ use std::{
 };
 use tera::Context as TeraContext;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value};
-use versions::Versioning;
 
 use crate::args::BackendArg;
 use crate::backend::unalias_backend;
@@ -37,7 +36,6 @@ use crate::hooks::{Hook, HookDef, Hooks};
 use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
-use crate::task::workspace::WorkspaceProjectOverride;
 use crate::task::{Task, TaskTemplate};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
@@ -349,7 +347,10 @@ fn replace_tool_entries_preserving_position(
 pub struct MiseToml {
     #[serde(rename = "_")]
     custom: Option<toml::Value>,
-    #[serde(default, deserialize_with = "deserialize_min_version")]
+    #[serde(
+        default,
+        deserialize_with = "mise_config::min_version::deserialize_min_version"
+    )]
     min_version: Option<MinVersionSpec>,
     #[serde(skip)]
     context: TeraContext,
@@ -485,27 +486,7 @@ pub use mise_config::env::EnvList;
 use mise_config::env::deserialize_root_env;
 pub(crate) use mise_config::env::deserialize_vars;
 
-/// Configuration for the [monorepo] section in mise.toml.
-#[derive(Debug, Default, Clone, Deserialize)]
-pub struct MonorepoConfig {
-    /// Explicit list of config roots for monorepo task discovery.
-    /// Supports single-level glob patterns (*).
-    pub config_roots: Option<Vec<String>>,
-    /// Short names for configured monorepo task roots.
-    #[serde(default)]
-    pub path_aliases: BTreeMap<String, String>,
-    /// Use a single lockfile at the monorepo root for descendant config roots.
-    /// None follows the rollout default; true opts in, false keeps colocated locks.
-    pub lockfile: Option<bool>,
-    /// Explicit additions, removals, and overrides for provider-inferred projects.
-    // Consumed when workspace providers are connected to task loading.
-    #[allow(dead_code)]
-    #[serde(default)]
-    pub projects: BTreeMap<String, WorkspaceProjectOverride>,
-    /// Task defaults applied by task name across workspace projects.
-    #[serde(default)]
-    pub task_defaults: IndexMap<String, TaskTemplate>,
-}
+pub use mise_config::monorepo::MonorepoConfig;
 
 impl MiseToml {
     fn enforce_min_version_fallback(body: &str) -> eyre::Result<()> {
@@ -2297,97 +2278,6 @@ impl From<ToolRequest> for MiseTomlTool {
     }
 }
 
-fn deserialize_min_version<'de, D>(deserializer: D) -> Result<Option<MinVersionSpec>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    struct MinVersionVisitor;
-
-    impl<'de> Visitor<'de> for MinVersionVisitor {
-        type Value = Option<MinVersionSpec>;
-
-        fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-            formatter.write_str("string or table for min_version")
-        }
-
-        fn visit_none<E>(self) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(None)
-        }
-
-        fn visit_unit<E>(self) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            Ok(None)
-        }
-
-        fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            deserializer.deserialize_any(self)
-        }
-
-        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            let version = Versioning::new(v)
-                .ok_or_else(|| versions::Error::IllegalVersioning(v.to_string()))
-                .map_err(E::custom)?;
-            Ok(MinVersionSpec::new(Some(version), None))
-        }
-
-        fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            self.visit_str(&v)
-        }
-
-        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
-        where
-            M: de::MapAccess<'de>,
-        {
-            let mut hard: Option<Versioning> = None;
-            let mut soft: Option<Versioning> = None;
-            while let Some(key) = map.next_key::<String>()? {
-                match key.as_str() {
-                    "hard" => {
-                        if hard.is_some() {
-                            return Err(de::Error::duplicate_field("hard"));
-                        }
-                        let value: String = map.next_value()?;
-                        let version = Versioning::new(&value)
-                            .ok_or_else(|| versions::Error::IllegalVersioning(value.clone()))
-                            .map_err(de::Error::custom)?;
-                        hard = Some(version);
-                    }
-                    "soft" => {
-                        if soft.is_some() {
-                            return Err(de::Error::duplicate_field("soft"));
-                        }
-                        let value: String = map.next_value()?;
-                        let version = Versioning::new(&value)
-                            .ok_or_else(|| versions::Error::IllegalVersioning(value.clone()))
-                            .map_err(de::Error::custom)?;
-                        soft = Some(version);
-                    }
-                    other => {
-                        return Err(de::Error::unknown_field(other, &["hard", "soft"]));
-                    }
-                }
-            }
-            Ok(MinVersionSpec::new(hard, soft))
-        }
-    }
-
-    deserializer.deserialize_option(MinVersionVisitor)
-}
-
 impl<'de> de::Deserialize<'de> for MiseTomlToolList {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -2608,60 +2498,6 @@ impl<'de> de::Deserialize<'de> for BackendArg {
         }
 
         deserializer.deserialize_any(BackendArgVisitor)
-    }
-}
-
-impl<'de> de::Deserialize<'de> for Alias {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        struct AliasVisitor;
-
-        impl<'de> Visitor<'de> for AliasVisitor {
-            type Value = Alias;
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("alias")
-            }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(Alias {
-                    backend: Some(v.to_string()),
-                    ..Default::default()
-                })
-            }
-
-            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
-            where
-                M: de::MapAccess<'de>,
-            {
-                let mut backend = None;
-                let mut versions = IndexMap::new();
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "backend" => {
-                            backend = Some(map.next_value()?);
-                        }
-                        "versions" => {
-                            versions = map.next_value()?;
-                        }
-                        _ => {
-                            deprecated!(
-                                "TOOL_VERSION_ALIASES",
-                                "tool version aliases should be `alias.<TOOL>.versions.<FROM> = <TO>`, not `alias.<TOOL>.<FROM> = <TO>`"
-                            );
-                            versions.insert(key, map.next_value()?);
-                        }
-                    }
-                }
-                Ok(Alias { backend, versions })
-            }
-        }
-
-        deserializer.deserialize_any(AliasVisitor)
     }
 }
 

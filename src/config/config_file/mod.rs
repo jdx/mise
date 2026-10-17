@@ -1455,6 +1455,38 @@ pub use mise_config::task::TaskConfig;
 
 pub use mise_config::tool_config::ToolConfig;
 
+/// Turn the deprecated spellings mise-config's parsers accept into mise's warnings, with the
+/// ids, versions and messages mise has always used.
+pub(crate) fn register_deprecation_handler() {
+    mise_config::deprecation::set_handler(|deprecation| {
+        use mise_config::deprecation::Deprecation;
+        match deprecation {
+            Deprecation::EnvMise => deprecated_at!(
+                "2026.7.0",
+                "2026.12.0",
+                "config.env.mise",
+                "`env.mise` is deprecated. Use `env._` instead."
+            ),
+            Deprecation::DirectiveValue => deprecated_at!(
+                "2026.7.0",
+                "2026.12.0",
+                "config.directive.value",
+                "`value` in built-in `file`, `path`, and `source` directive objects is deprecated. Use `path` instead."
+            ),
+            Deprecation::DirectiveValues => deprecated_at!(
+                "2026.7.0",
+                "2026.12.0",
+                "config.directive.values",
+                "`values` in built-in `file`, `path`, and `source` directive objects is deprecated. Use `path` instead."
+            ),
+            Deprecation::ToolVersionAliases => deprecated!(
+                "TOOL_VERSION_ALIASES",
+                "tool version aliases should be `alias.<TOOL>.versions.<FROM> = <TO>`, not `alias.<TOOL>.<FROM> = <TO>`"
+            ),
+        }
+    });
+}
+
 /// Deliberately not `#[cfg(unix)]` like the module below: the bug these cover is
 /// one that only shows up once `canonicalize` rewrites the path, which is the
 /// normal case on Windows.

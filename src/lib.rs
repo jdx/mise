@@ -141,6 +141,7 @@ pub fn register_util_hooks() {
     mise_util::deprecation::set_version(env!("CARGO_PKG_VERSION"));
     config::settings::register_loader();
     config::env_directive::register_hooks();
+    config::config_file::register_deprecation_handler();
     system::packages_host::register();
     system::bootstrap_host::register();
     daemons::glue::register();
