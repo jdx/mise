@@ -122,3 +122,7 @@ assert "mise settings add paranoid env_files"
 assert_contains "mise settings get paranoid" "true"
 assert_fail_contains "mise config set --global settings.paranoid config,nope 2>&1" "valid categories"
 assert_contains "mise settings get paranoid" "true"
+# An empty list turns every category off.
+assert "mise config set --global --type set settings.paranoid '[]'"
+assert "mise settings paranoid='[]'"
+assert_contains "mise settings get paranoid" "false"

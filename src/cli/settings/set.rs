@@ -233,6 +233,8 @@ fn parse_set_by_comma(value: &str) -> Result<toml_edit::Value> {
 fn parse_bool_or_list(key: &str, value: &str) -> Result<toml_edit::Value> {
     if key == "paranoid" {
         value
+            .replace("[]", "")
+            .replace("[]", "")
             .parse::<mise_settings::Paranoid>()
             .map_err(|err| eyre!(err))?;
     }

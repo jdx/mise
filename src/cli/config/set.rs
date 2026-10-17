@@ -217,6 +217,7 @@ impl ConfigSet {
         // Settings load rejects an unknown category, which would fail every later command.
         if full_key == "settings.paranoid" {
             value
+                .replace("[]", "")
                 .parse::<mise_settings::Paranoid>()
                 .map_err(|err| eyre::eyre!(err))?;
         }
