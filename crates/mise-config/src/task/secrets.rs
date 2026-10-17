@@ -1,5 +1,6 @@
 use serde::de::{self, Deserializer, SeqAccess, Visitor};
 
+pub const G7_TEXT: &str = "secrets is not allowed in [task_templates.<t>] or monorepo.task_defaults; list secrets on each task so every grant is visible on the task and in mise secrets ls";
 const G4_TRUE: &str = "secrets = true is not supported; tasks receive only the secrets they list, e.g. secrets = [\"DEPLOY_KEY\"]; grant for one run with mise run --secrets-all <task> or --secrets KEY";
 const G4_FALSE: &str =
     "secrets = false is not needed: tasks receive no secrets unless they list them";

@@ -9,14 +9,16 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 mod confirm;
+mod decl;
 mod dep;
 mod outputs;
 mod secrets;
 
 pub use confirm::TaskConfirm;
+pub use decl::{TaskDecl, TaskTemplate};
 pub use dep::TaskDep;
 pub use outputs::TaskOutputs;
-pub use secrets::TaskSecrets;
+pub use secrets::{G7_TEXT, TaskSecrets};
 
 // A `{ version = "..." }`-style tool table, shared by `[tools]` and a task's `tools`: exactly one
 // of `version`, `path`, `prefix` or `ref`, plus backend options.
@@ -472,4 +474,21 @@ pub enum TaskOutput {
     Timed,
     Quiet,
     Silent,
+}
+
+/// `[task_config]`: how this config root's tasks are found and run.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct TaskConfig {
+    pub cascade: Option<bool>,
+    pub includes: Option<Vec<String>>,
+    pub excludes: Option<Vec<String>>,
+    pub dir: Option<String>,
+    pub shell: Option<String>,
+    pub cache: Option<TaskCacheConfig>,
+    pub rust_cache: Option<TaskRustCacheConfig>,
+    pub global_env: Vec<String>,
+    pub global_pass_through_env: Vec<String>,
+    pub global_inputs: Vec<String>,
+    pub input_groups: IndexMap<String, Vec<String>>,
 }

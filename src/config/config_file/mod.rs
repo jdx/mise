@@ -22,7 +22,7 @@ use crate::file::display_path;
 use crate::hash::hash_to_str;
 use crate::hooks::Hook;
 use crate::redactions::Redactions;
-use crate::task::{Task, TaskRustCacheConfig, TaskTemplate};
+use crate::task::{Task, TaskTemplate};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
 use crate::ui::prompt::Confirmation;
 use crate::ui::{prompt, style};
@@ -36,7 +36,6 @@ use eyre::{Result, eyre};
 use globset::{GlobBuilder, GlobMatcher};
 use idiomatic_version::IdiomaticVersionFile;
 use indexmap::IndexMap;
-use serde::Deserialize;
 use std::sync::LazyLock as Lazy;
 use tool_versions::ToolVersions;
 
@@ -1452,21 +1451,7 @@ impl Hash for dyn ConfigFile {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(default)]
-pub struct TaskConfig {
-    pub cascade: Option<bool>,
-    pub includes: Option<Vec<String>>,
-    pub excludes: Option<Vec<String>>,
-    pub dir: Option<String>,
-    pub shell: Option<String>,
-    pub cache: Option<crate::task::TaskCacheConfig>,
-    pub rust_cache: Option<TaskRustCacheConfig>,
-    pub global_env: Vec<String>,
-    pub global_pass_through_env: Vec<String>,
-    pub global_inputs: Vec<String>,
-    pub input_groups: IndexMap<String, Vec<String>>,
-}
+pub use mise_config::task::TaskConfig;
 
 pub use mise_config::tool_config::ToolConfig;
 

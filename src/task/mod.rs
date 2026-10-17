@@ -1,5 +1,5 @@
 use crate::args::{BackendArg, ToolArg};
-use crate::config::config_file::mise_toml::{EnvList, deserialize_vars};
+use crate::config::config_file::mise_toml::EnvList;
 use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config, SettingsExt};
@@ -125,7 +125,7 @@ use task_sources::TaskOutputs;
 pub use task_sources::{RawOutputTemplates, TaskOutputsExt};
 
 pub use mise_config::task::{
-    RunEntry, Silent, TaskDaemons, TaskRustCacheConfig, TaskToolValue, TaskToolValueMap,
+    RunEntry, Silent, TaskDaemons, TaskDecl, TaskRustCacheConfig, TaskToolValue, TaskToolValueMap,
     TaskWatchOptions,
 };
 
@@ -323,168 +323,104 @@ pub(crate) struct TaskTomlBoolPresence {
     silent: bool,
 }
 
-impl TaskTomlBoolPresence {
-    pub(crate) fn record(&mut self, key: &str) {
-        match key {
-            "hide" => self.hide = true,
-            "raw" => self.raw = true,
-            "raw_args" => self.raw_args = true,
-            "interactive" => self.interactive = true,
-            "quiet" => self.quiet = true,
-            "silent" => self.silent = true,
-            _ => {}
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone)]
 pub struct Task {
     /// Internal execution occurrence. A task referenced as both a regular and
     /// post dependency must run once in each phase.
-    #[serde(skip)]
     pub(crate) run_phase: TaskRunPhase,
-    #[serde(skip)]
     pub name: String,
-    #[serde(skip)]
     pub display_name: String,
-    #[serde(default)]
     pub description: String,
-    #[serde(default, rename = "alias", deserialize_with = "deserialize_arr")]
     pub aliases: Vec<String>,
-    #[serde(skip)]
     pub config_source: PathBuf,
     /// Additional files that contributed to this task's definition.
     ///
     /// The primary definition remains in `config_source`; this contains task
     /// templates, workspace defaults, and metadata overlays merged into it.
-    #[serde(skip)]
     pub additional_config_sources: Vec<PathBuf>,
-    #[serde(skip)]
     pub cf: Option<Arc<dyn ConfigFile>>,
-    #[serde(skip)]
     pub config_root: Option<PathBuf>,
-    #[serde(default)]
     pub confirm: Option<TaskConfirm>,
-    #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends: Vec<TaskDep>,
     /// Project daemons that must be running and ready before this task's body
     /// starts. Skipped along with dependencies under `--skip-deps`.
-    #[serde(default)]
     pub daemons: Option<TaskDaemons>,
     /// [experimental] Secret keys this task receives when it starts. Dependencies and
     /// subtasks get only their own lists.
-    #[serde(default)]
     pub secrets: Option<crate::secrets::TaskSecrets>,
     /// The `git::` or `oci::` include this task was loaded through, if any.
-    #[serde(skip)]
     pub(crate) remote_include: Option<String>,
     /// The task's own env values that use `{{ secrets.X }}`, recorded when the config is
     /// loaded. They are not rendered with the rest of the env: the executor renders them just
     /// before spawn. Env that arrives later (dependency and run-entry env) is never recorded,
     /// so it cannot become a grant.
-    #[serde(skip)]
     pub(crate) late_secret_env: Vec<crate::secrets::LateSecretEnv>,
-    #[serde(default, deserialize_with = "deserialize_arr")]
     pub depends_post: Vec<TaskDep>,
-    #[serde(default, deserialize_with = "deserialize_arr")]
     pub wait_for: Vec<TaskDep>,
-    #[serde(default)]
     pub env: EnvList,
-    #[serde(default, deserialize_with = "deserialize_vars")]
     pub vars: EnvList,
     /// Env vars inherited from parent tasks at runtime (not used for task identity/deduplication)
-    #[serde(skip)]
     pub inherited_env: EnvList,
     /// Env directives contributed by a `[tasks.<name>]` TOML block that overlays
     /// this (file) task. Each entry keeps the config path of the overlay source
     /// so path-based directives like `_.file = ".env"` resolve relative to the
     /// TOML file, not the file task's script path. Populated by
     /// [`Task::merge_toml_overlay`]; empty otherwise.
-    #[serde(skip)]
     pub overlay_env: Vec<(EnvDirective, PathBuf)>,
     /// Vars contributed by a `[tasks.<name>]` TOML overlay; same path-preservation
     /// as `overlay_env`.
-    #[serde(skip)]
     pub overlay_vars: Vec<(EnvDirective, PathBuf)>,
     /// Boolean fields explicitly present in a structured TOML task definition.
-    #[serde(skip)]
     pub(crate) toml_bool_presence: TaskTomlBoolPresence,
-    #[serde(default)]
     pub dir: Option<String>,
-    #[serde(default)]
     pub hide: bool,
-    #[serde(default)]
     pub global: bool,
-    #[serde(default)]
     pub raw: bool,
     /// When true, mise does not parse arguments to the task at all:
     /// the usage spec parser is bypassed and `--help`/`-h` are passed through
     /// to the underlying command instead of being intercepted by mise.
     /// Useful when the task is a thin proxy for a tool that already has its
     /// own argument parser (e.g. `next build`, Django manage.py, argparse).
-    #[serde(default)]
     pub raw_args: bool,
-    #[serde(default)]
     pub interactive: bool,
-    #[serde(default, deserialize_with = "deserialize_arr")]
     pub sources: Vec<String>,
     /// Original unrendered source templates, preserved so they can be
     /// re-rendered once task usage arguments are available.
-    #[serde(skip)]
     pub raw_sources: Option<Vec<String>>,
     /// Effective environment for deferred source/output path templates.
-    #[serde(skip)]
     pub(crate) raw_path_env: Option<BTreeMap<String, String>>,
-    #[serde(default)]
     pub watch: Option<TaskWatchOptions>,
-    #[serde(default)]
     pub outputs: TaskOutputs,
     /// Experimental local artifact cache configuration.
-    #[serde(default)]
     pub cache: Option<TaskCacheConfig>,
     /// Deprecated compatibility field; enabled values emit an mbx migration warning.
-    #[serde(default)]
     pub rust_cache: Option<TaskRustCacheConfig>,
-    #[serde(skip)]
     pub raw_outputs: RawOutputTemplates,
-    #[serde(default)]
     pub shell: Option<String>,
-    #[serde(default)]
     pub quiet: bool,
-    #[serde(default)]
     pub silent: Silent,
     /// Per-task output *style* override (prefix/interleave/keep-order/…).
     /// Orthogonal to `quiet`/`silent` verbosity; see [`TaskOutput`].
-    #[serde(default)]
     pub output: Option<TaskOutput>,
-    #[serde(default)]
     pub tools: IndexMap<String, TaskToolValue>,
-    #[serde(default)]
     pub usage: String,
-    #[serde(default)]
     pub timeout: Option<String>,
     /// A shell command checked before the task runs; exiting 0 skips the task.
-    #[serde(default)]
     pub skip_if: Option<String>,
 
     // normal type
-    #[serde(default, deserialize_with = "deserialize_arr")]
     pub run: Vec<RunEntry>,
 
-    #[serde(default, deserialize_with = "deserialize_arr")]
     pub run_windows: Vec<RunEntry>,
 
     // command type
     // pub command: Option<String>,
-    #[serde(default)]
     pub args: Vec<String>,
 
     // script type
     // pub script: Option<String>,
 
     // file type
-    #[serde(default)]
     pub file: Option<PathBuf>,
 
     /// This task was loaded from a TOML file in `task_config.includes`.
@@ -492,7 +428,6 @@ pub struct Task {
     /// Included TOML tasks and executable file tasks share the same loading
     /// pipeline, but inline config tasks override the former while only
     /// contributing metadata to the latter.
-    #[serde(skip)]
     pub(crate) is_toml_include: bool,
     /// This task's name is a script file's name, so it drops a known script extension
     /// for display ([`Task::display_name`]).
@@ -501,78 +436,58 @@ pub struct Task {
     /// over under that script's own name (`[tasks."hello.sh"] run = "..."`), which
     /// is still the `hello` the script was listed as. Any other TOML task's name is
     /// shown as written.
-    #[serde(skip)]
     pub(crate) name_from_file: bool,
 
     /// Relative precedence of the config that defined this task or selected
     /// its TOML include. Lower values have higher precedence. This is scoped
     /// to one config root and is only used while task sources are merged.
-    #[serde(skip)]
     pub(crate) config_precedence: usize,
 
     // Store the original remote file source (git::/http:/https:) before it's replaced with local path
     // This is used to determine if the task should use monorepo config file context
-    #[serde(skip)]
     pub remote_file_source: Option<String>,
 
     /// Block reads, writes, network, and env vars
-    #[serde(default)]
     pub deny_all: bool,
     /// Block filesystem reads
-    #[serde(default)]
     pub deny_read: bool,
     /// Block all filesystem writes
-    #[serde(default)]
     pub deny_write: bool,
     /// Block all network access
-    #[serde(default)]
     pub deny_net: bool,
     /// Block env var inheritance
-    #[serde(default)]
     pub deny_env: bool,
     /// Allow reads from specific paths
-    #[serde(default)]
     pub allow_read: Vec<std::path::PathBuf>,
     /// Allow writes to specific paths
-    #[serde(default)]
     pub allow_write: Vec<std::path::PathBuf>,
     /// Allow network to specific hosts
-    #[serde(default)]
     pub allow_net: Vec<String>,
     /// Allow specific env vars through
-    #[serde(default)]
     pub allow_env: Vec<String>,
     /// Preserve ambient env vars when env inheritance is denied without hashing their values
-    #[serde(default)]
     pub pass_through_env: Vec<String>,
 
     /// Name of the task template to extend
-    #[serde(default)]
     pub extends: Option<String>,
 
     /// When true, include args in the output prefix to disambiguate tasks
     /// with the same display_name but different arguments.
-    #[serde(skip)]
     pub show_args_in_prefix: bool,
 
     /// Original unrendered dependency templates, preserved so they can be
     /// re-rendered later with parent task args/flags (usage context) available.
-    #[serde(skip)]
     pub depends_raw: Option<Vec<TaskDep>>,
-    #[serde(skip)]
     pub depends_post_raw: Option<Vec<TaskDep>>,
-    #[serde(skip)]
     pub wait_for_raw: Option<Vec<TaskDep>>,
 
     /// Workspace graph error that prevents this task's `^task` dependencies from resolving.
-    #[serde(skip)]
     pub(crate) workspace_dependency_error: Option<String>,
 
     /// Args supplied after a literal `--` separator on the command line.
     /// Tracked separately from `args` so the usage parser can be bypassed
     /// when these contain `--help`/`-h`, restoring the documented escape
     /// hatch for passing help through to the underlying command.
-    #[serde(skip)]
     pub trailing_args: Vec<String>,
 }
 
@@ -3525,6 +3440,73 @@ fn match_tasks_with_context(
     Ok(matches)
 }
 
+impl Task {
+    /// The runtime task for a `[tasks.<name>]` table. Template rendering, tool resolution and
+    /// overlay merging happen later; this only carries the declaration over and records which
+    /// overlay flags the table set.
+    pub(crate) fn from_decl(decl: TaskDecl) -> Self {
+        let toml_bool_presence = TaskTomlBoolPresence {
+            hide: decl.hide.is_some(),
+            raw: decl.raw.is_some(),
+            raw_args: decl.raw_args.is_some(),
+            interactive: decl.interactive.is_some(),
+            quiet: decl.quiet.is_some(),
+            silent: decl.silent.is_some(),
+        };
+        Task {
+            description: decl.description,
+            aliases: decl.aliases,
+            confirm: decl.confirm,
+            depends: decl.depends,
+            daemons: decl.daemons,
+            secrets: decl.secrets,
+            depends_post: decl.depends_post,
+            wait_for: decl.wait_for,
+            env: decl.env,
+            vars: decl.vars,
+            dir: decl.dir,
+            hide: decl.hide.unwrap_or(false),
+            global: decl.global,
+            raw: decl.raw.unwrap_or(false),
+            raw_args: decl.raw_args.unwrap_or(false),
+            interactive: decl.interactive.unwrap_or(false),
+            sources: decl.sources,
+            watch: decl.watch,
+            outputs: decl.outputs,
+            cache: decl.cache,
+            rust_cache: decl.rust_cache,
+            shell: decl.shell,
+            quiet: decl.quiet.unwrap_or(false),
+            silent: decl.silent.unwrap_or_default(),
+            output: decl.output,
+            tools: decl.tools,
+            usage: decl.usage,
+            timeout: decl.timeout,
+            skip_if: decl.skip_if,
+            run: decl.run,
+            run_windows: decl.run_windows,
+            args: decl.args,
+            file: decl.file,
+            deny_all: decl.deny_all,
+            deny_read: decl.deny_read,
+            deny_write: decl.deny_write,
+            deny_net: decl.deny_net,
+            deny_env: decl.deny_env,
+            allow_read: decl.allow_read,
+            allow_write: decl.allow_write,
+            allow_net: decl.allow_net,
+            allow_env: decl.allow_env,
+            pass_through_env: decl.pass_through_env,
+            extends: decl.extends,
+            toml_bool_presence,
+            // What `#[serde(skip)]` gave a table-form task before `TaskDecl`; `Task::default()`
+            // starts at `usize::MAX`. Loading reassigns it either way.
+            config_precedence: 0,
+            ..Default::default()
+        }
+    }
+}
+
 impl Default for Task {
     fn default() -> Self {
         Task {
@@ -4575,15 +4557,19 @@ mod tests {
         );
     }
 
+    /// A task as a `[tasks.<name>]` table would declare it.
+    fn parse_task(toml: &str) -> Task {
+        Task::from_decl(toml::from_str(toml).unwrap())
+    }
+
     #[test]
     fn test_task_watch_options_deserialize() {
-        let task: Task = toml::from_str(
+        let task = parse_task(
             r#"
 run = "echo build"
 watch = { no_vcs_ignore = true }
 "#,
-        )
-        .unwrap();
+        );
 
         assert_eq!(
             task.watch,
@@ -4595,50 +4581,45 @@ watch = { no_vcs_ignore = true }
 
     #[test]
     fn test_task_rust_cache_deserializes_boolean_and_table() {
-        let enabled: Task = toml::from_str(
+        let enabled = parse_task(
             r#"
 run = "cargo build"
 rust_cache = true
 "#,
-        )
-        .unwrap();
-        let table: Task = toml::from_str(
+        );
+        let table = parse_task(
             r#"
 run = "cargo build"
 rust_cache = {}
 "#,
-        )
-        .unwrap();
+        );
 
         assert_eq!(enabled.rust_cache, Some(TaskRustCacheConfig::default()));
         assert_eq!(table.rust_cache, Some(TaskRustCacheConfig::default()));
 
-        let verify: Task = toml::from_str(
+        let verify = parse_task(
             r#"
 run = "cargo build"
 rust_cache = { verify = true }
 "#,
-        )
-        .unwrap();
+        );
         assert_eq!(verify.rust_cache, Some(TaskRustCacheConfig::default()));
     }
 
     #[test]
     fn test_task_rust_cache_deserializes_disabled() {
-        let disabled: Task = toml::from_str(
+        let disabled = parse_task(
             r#"
 run = "cargo build"
 rust_cache = false
 "#,
-        )
-        .unwrap();
-        let table: Task = toml::from_str(
+        );
+        let table = parse_task(
             r#"
 run = "cargo build"
 rust_cache = { enabled = false }
 "#,
-        )
-        .unwrap();
+        );
 
         assert_eq!(
             disabled.rust_cache,
@@ -4652,7 +4633,7 @@ rust_cache = { enabled = false }
 
     #[test]
     fn test_task_language_cache_rejects_unknown_option() {
-        let error = toml::from_str::<Task>(
+        let error = toml::from_str::<crate::task::TaskDecl>(
             r#"
 run = "cargo build"
 rust_cache = { unknown = true }
@@ -6249,12 +6230,12 @@ echo "hello world"
 
     fn late_task(env: &str) -> Task {
         let body = format!("[tasks.m]\nrun = 'true'\n{env}\n");
-        let mut tasks: BTreeMap<String, Task> =
+        let mut tasks: BTreeMap<String, crate::task::TaskDecl> =
             toml::from_str::<toml::Table>(&body).unwrap()["tasks"]
                 .clone()
                 .try_into()
                 .unwrap();
-        let mut task = tasks.remove("m").unwrap();
+        let mut task = Task::from_decl(tasks.remove("m").unwrap());
         task.name = "m".into();
         task.record_late_secret_env(Path::new("/p/mise.toml"))
             .unwrap();
