@@ -26,6 +26,11 @@ use itertools::Itertools;
 /// `mise daemons start|restart|register`) trust their active config
 /// automatically.
 ///
+/// In paranoid mode, `mise trust` with no path also trusts the env files and
+/// scripts that config reads (`env._.file`, `env._.source` and the `env_file`
+/// setting), which have trust of their own. Give a file's path to trust only
+/// that file.
+///
 /// Trusting a config file in a repository's main checkout also trusts the same
 /// path in its git worktrees. Paranoid mode (https://mise.jdx.dev/paranoid.html)
 /// turns off automatic and worktree trust and requires trust, tied to the
@@ -36,7 +41,7 @@ use itertools::Itertools;
     verbatim_doc_comment,
     example(
         r###"mise trust"###,
-        help = r###"Trust the nearest untrusted config in this directory or a parent"###
+        help = r###"Trust the nearest untrusted config in this directory or a parent, and in paranoid mode the env files it reads"###
     ),
     example(
         r###"mise trust ~/src/app/mise.toml"###,
@@ -93,9 +98,19 @@ impl Trust {
                 self.config_file = Some(p);
                 self.trust()?;
             }
+            Self::trust_env_files().await?;
             Ok(())
-        } else {
+        } else if self.config_file.is_some() {
             self.trust()
+        } else {
+            // With no path, trust what the project loads: its config and, in paranoid mode, the
+            // env files and scripts that config reads.
+            let config = self.trust_next_config()?;
+            let env_files = Self::trust_env_files().await?;
+            if !config && env_files == 0 {
+                warn!("No untrusted config or environment files found.");
+            }
+            Ok(())
         }
     }
     pub(crate) fn clean() -> Result<()> {
@@ -283,6 +298,49 @@ impl Trust {
         let cfr = path.canonicalize()?;
         info!("trusted {}", display_path(&cfr));
         Ok(())
+    }
+
+    /// Trusts the nearest untrusted config. Returns whether there was one.
+    fn trust_next_config(&self) -> Result<bool> {
+        let Some(path) = self.get_next_untrusted() else {
+            return Ok(false);
+        };
+        config_file::trust(&path)?;
+        info!("trusted {}", display_path(&path.canonicalize()?));
+        Ok(true)
+    }
+
+    /// In paranoid mode, trusts the env files and scripts the trusted config reads, which have
+    /// trust of their own. Resolves the env the way `hook-env` does, so a file that is not yet
+    /// trusted is recorded instead of failing, then trusts what was recorded. A trusted file can
+    /// name the next one, so this repeats until nothing new turns up. Returns how many it trusted.
+    async fn trust_env_files() -> Result<usize> {
+        if !Settings::get().paranoid {
+            return Ok(0);
+        }
+        config::skip_untrusted_configs();
+        let mut trusted = 0;
+        // Each pass can only add files a previous pass revealed, so a small bound is enough and
+        // keeps a cycle from looping.
+        for _ in 0..5 {
+            let config = config::Config::reset().await?;
+            if let Err(err) = config.env_uncached().await {
+                debug!("resolving env to find files to trust: {err:#}");
+            }
+            let pending = config::skipped_untrusted_configs()
+                .into_iter()
+                .filter(|p| p.is_file() && !config_file::is_path_trusted(p))
+                .collect::<Vec<_>>();
+            if pending.is_empty() {
+                break;
+            }
+            for path in pending {
+                config_file::trust(&path)?;
+                info!("trusted {}", display_path(&path.canonicalize()?));
+                trusted += 1;
+            }
+        }
+        Ok(trusted)
     }
 
     fn config_file(&self) -> Result<Option<PathBuf>> {

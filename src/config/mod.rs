@@ -668,7 +668,7 @@ impl Config {
     /// neither reads nor writes the memo or the on-disk `CachedNonToolEnv`, and
     /// a hook that changes an env input is visible to the hooks ordered after
     /// it. The cost is one resolution per tool that declares a hook.
-    pub(crate) async fn env_uncached(self: &Arc<Self>) -> eyre::Result<IndexMap<String, String>> {
+    pub async fn env_uncached(self: &Arc<Self>) -> eyre::Result<IndexMap<String, String>> {
         Ok(self
             .load_env(false)
             .await?
