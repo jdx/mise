@@ -23,6 +23,7 @@ dummy = "1"'
 
 # A bad value already in a config file can still be fixed with mise settings.
 mkdir -p ~/.config/mise
+# schema: invalid
 cat >~/.config/mise/config.toml <<'TOML'
 [settings]
 windows_shim_mode = "file"

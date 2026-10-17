@@ -47,6 +47,7 @@ cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
 [bootstrap.user]
 login_shell = "/tmp/global-shell"
 EOF
+# schema: invalid
 cat <<EOF >mise.toml
 [bootstrap.user]
 login_shell = "relative-shell"
@@ -109,6 +110,7 @@ assert_contains "cat '$MISE_TEST_SHELLS_FILE'" "/tmp/mise-test-shell"
 assert "cat '$CHSH_LOG'" "-s /tmp/mise-test-shell"
 
 # Invalid values warn and are skipped like other malformed [bootstrap.user] entries.
+# schema: invalid
 cat <<EOF >mise.toml
 [bootstrap.user]
 login_shell = "relative-shell"

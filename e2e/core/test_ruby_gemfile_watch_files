@@ -61,6 +61,7 @@ done
 # even when they watch the same file as the internal Gemfile watch.
 printf '3.3.6\n' >.ruby-version
 printf 'ruby file: ".ruby-version"\n' >Gemfile
+# schema: invalid
 cat >mise.toml <<'EOF'
 [[watch_files]]
 patterns = [".ruby-version"]

@@ -81,12 +81,14 @@ cat <<'EOF' >mise.toml
 scope = "user"
 EOF
 assert_fail "mise bootstrap services status" 'must set `command` or `builtin`'
+# schema: invalid
 cat <<'EOF' >mise.toml
 [bootstrap.services.agent]
 builtin = "history-watch"
 command = "x"
 EOF
 assert_fail "mise bootstrap services status" 'sets both `builtin` and `command`'
+# schema: invalid
 cat <<'EOF' >mise.toml
 [bootstrap.services.agent]
 builtin = "nope"

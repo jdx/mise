@@ -35,6 +35,7 @@ assert_not_contains 'mise bootstrap macos defaults status --json' '/Applications
 
 if [[ $(uname) == Darwin ]]; then
   # Validation is read-only and rejects the entire list.
+  # schema: invalid
   cat >mise.toml <<'EOF'
 [bootstrap.macos.dock]
 apps = ["/Applications/Valid.app", "relative.app"]

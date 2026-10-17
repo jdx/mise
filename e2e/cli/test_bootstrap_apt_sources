@@ -13,6 +13,7 @@ if [[ "$(printf '%s\n2.4\n' "$apt_version" | sort -V | head -n1)" != "2.4" ]]; t
   exit 0
 fi
 
+# schema: invalid
 cat <<EOF >mise.toml
 [bootstrap.apt.sources]
 git-core = { ppa = "ppa:git-core/ppa" }

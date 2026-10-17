@@ -90,6 +90,7 @@ assert_fail "mise dot apply --yes --force" "~/.olddir is a directory"
 assert "cat ~/.olddir/keep" "keep"
 
 # absent entries take no source
+# schema: invalid
 cat >mise.toml <<'TOML'
 [dotfiles]
 "~/.oldrc" = { mode = "absent", source = "oldrc" }
@@ -100,6 +101,7 @@ assert_succeed "mise dot apply --yes"
 assert "cat ~/.oldrc" "kept"
 
 # nor permissions, which would describe a file that must not exist
+# schema: invalid
 cat >mise.toml <<'TOML'
 [dotfiles]
 "~/.oldrc" = { mode = "absent", permissions = "0600" }

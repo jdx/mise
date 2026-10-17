@@ -206,6 +206,7 @@ TOML
 mkdir -p ~/.only-include
 echo 'chosen' >~/.only-include/config.toml
 echo 'not chosen' >~/.only-include/cache.db
+# schema: invalid
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [dotfiles]
 "~/.only-include" = { include = ["config.toml"] }
@@ -355,6 +356,7 @@ assert_contains 'mise dot paths 2>&1' 'invalid include pattern'
 assert_contains 'mise dot paths 2>&1' '~/.config/empty'
 
 # `include` belongs to tracked directories only
+# schema: invalid
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [dotfiles]
 "~/.config/other" = { source = "src", mode = "copy", include = ["a"] }

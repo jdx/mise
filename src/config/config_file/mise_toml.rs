@@ -767,14 +767,25 @@ impl MiseToml {
     }
 
     fn parse_body(body: &str, path: &Path, check_trust: bool) -> eyre::Result<Self> {
+        Self::parse_body_reporting(body, path, check_trust, &mut |field| {
+            warn!("unknown field in {}: {field}", display_path(path));
+        })
+    }
+
+    /// [`Self::parse_body`], handing each field the deserializer skipped to
+    /// `on_unknown` instead of warning about it.
+    fn parse_body_reporting(
+        body: &str,
+        path: &Path,
+        check_trust: bool,
+        on_unknown: &mut dyn FnMut(String),
+    ) -> eyre::Result<Self> {
         if check_trust && !Self::is_trust_exempt(body, path) {
             trust_check(path)?;
         }
         trace!("parsing: {}", display_path(path));
         let des = toml::Deserializer::parse(body).map_err(|e| toml_parse_error(&e, body, path))?;
-        let de_res = serde_ignored::deserialize(des, |p| {
-            warn!("unknown field in {}: {p}", display_path(path));
-        });
+        let de_res = serde_ignored::deserialize(des, |p| on_unknown(p.to_string()));
         let mut rf: MiseToml = match de_res {
             Ok(rf) => rf,
             Err(err) => {
@@ -3411,6 +3422,9 @@ fn is_tools_sorted(tools: &IndexMap<BackendArg, MiseTomlToolList>) -> bool {
     }
     true
 }
+
+#[cfg(test)]
+mod schema_conformance;
 
 #[cfg(test)]
 #[cfg(unix)]

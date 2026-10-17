@@ -49,6 +49,7 @@ assert_succeed "mise bootstrap macos defaults status"
 assert_contains "mise bootstrap macos defaults status 2>&1" "unsupported value type"
 
 # a domain entry that isn't a table warns but doesn't fail
+# schema: invalid
 cat <<EOF >mise.toml
 [bootstrap.macos.defaults]
 autohide = true
@@ -57,6 +58,7 @@ assert_succeed "mise bootstrap macos defaults status"
 assert_contains "mise bootstrap macos defaults status 2>&1" "expected a table"
 
 # friendly defaults validate keys and enum values
+# schema: invalid
 cat <<EOF >mise.toml
 [bootstrap.macos.dock]
 orientation = "top"

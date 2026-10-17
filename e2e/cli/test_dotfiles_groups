@@ -267,6 +267,7 @@ cat <<EOF >mise.toml
 root = "keep"
 EOF
 assert_succeed "mise dot apply --yes"
+# schema: invalid
 cat <<EOF >mise.toml
 [dotfile_groups.keep]
 EOF

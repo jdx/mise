@@ -210,6 +210,8 @@ version_json_path = ".[].tag_name"
 A filter keeps one channel of an API that returns several, such as Flutter's
 stable releases:
 
+<!-- schema: skip -->
+
 ```toml
 version_json_path = ".releases[?channel=stable].version"
 ```
@@ -231,10 +233,14 @@ version_expr = 'filter(split(body, "\n"), # != "")'
 
 Other examples:
 
+<!-- schema: skip -->
+
 ```toml
 # keys of a JSON object, as in {"versions": {"1.0.0": {}, "2.0.0": {}}}
 version_expr = 'keys(fromJSON(body).versions)'
 ```
+
+<!-- schema: skip -->
 
 ```toml
 # sort with mise's version-aware comparator

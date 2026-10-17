@@ -2846,6 +2846,9 @@
                   }
                 ]
               },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
               "redact": {
                 "$ref": "#/$defs/env_redact"
               }
@@ -2863,6 +2866,9 @@
                 "description": "question to ask once, on a machine with no saved answer, when a command is run with a prompt flag such as mise bootstrap --prompt-vars",
                 "type": "string"
               },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
               "redact": {
                 "$ref": "#/$defs/env_redact"
               }
@@ -2876,6 +2882,9 @@
               "prompt": {
                 "description": "question to ask once, on a machine with no saved answer, when a command is run with a prompt flag such as mise bootstrap --prompt-vars",
                 "type": "string"
+              },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
               },
               "redact": {
                 "$ref": "#/$defs/env_redact"
@@ -2900,6 +2909,9 @@
               "age": {
                 "$ref": "#/$defs/env_age"
               },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
               "redact": {
                 "$ref": "#/$defs/env_redact"
               }
@@ -2919,6 +2931,9 @@
                   },
                   "format": {
                     "$ref": "#/$defs/env_age_format"
+                  },
+                  "tools": {
+                    "$ref": "#/$defs/env_tools"
                   },
                   "redact": {
                     "$ref": "#/$defs/env_redact"
@@ -2998,6 +3013,12 @@
                 "enabled": {
                   "type": "boolean",
                   "default": true
+                },
+                "verify": {
+                  "type": "boolean",
+                  "default": false,
+                  "deprecated": true,
+                  "description": "deprecated no-op"
                 }
               }
             }
@@ -5668,6 +5689,12 @@
                 "enabled": {
                   "type": "boolean",
                   "default": true
+                },
+                "verify": {
+                  "type": "boolean",
+                  "default": false,
+                  "deprecated": true,
+                  "description": "deprecated no-op"
                 }
               }
             }
@@ -5995,6 +6022,35 @@
         {
           "type": "string",
           "description": "absolute or ~/-relative remote path to install the provisioned mise to"
+        }
+      ]
+    },
+    "macos_defaults_value": {
+      "description": "a property list value: boolean, integer, real, string, or an array or dictionary of these",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/macos_defaults_value"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/macos_defaults_value"
+          }
         }
       ]
     },
@@ -7779,21 +7835,8 @@
                 "type": "object",
                 "description": "defaults keys and their desired values for this domain",
                 "additionalProperties": {
-                  "anyOf": [
-                    {
-                      "type": "boolean"
-                    },
-                    {
-                      "type": "integer"
-                    },
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "string"
-                    }
-                  ],
-                  "description": "desired value, written with the matching `defaults write` type (-bool, -int, -float, -string)"
+                  "$ref": "#/$defs/macos_defaults_value",
+                  "description": "desired value, written with the matching `defaults write` type; arrays and tables become property list arrays and dictionaries"
                 }
               }
             },
@@ -7924,7 +7967,7 @@
                         "items": {
                           "type": "string",
                           "minLength": 1,
-                          "pattern": "^(/|~$|~/)"
+                          "pattern": "^(?:/|~$|~/|\\{[{%])"
                         }
                       },
                       "start_calendar_interval": {
@@ -8243,7 +8286,7 @@
                       },
                       "umask": {
                         "type": "string",
-                        "pattern": "^(?:[0-7]{1,3}|0[0-7]{3})$",
+                        "pattern": "^(?:(?:[0-7]{1,3}|0[0-7]{3})$|\\{[{%])",
                         "description": "write UMask in the [Service] section"
                       },
                       "working_directory": {
@@ -8492,8 +8535,8 @@
           "properties": {
             "login_shell": {
               "type": "string",
-              "pattern": "^/",
-              "description": "current user's desired login shell, applied with `chsh -s`; must be an absolute path"
+              "pattern": "^\\s*(?:/|\\{[{%])",
+              "description": "current user's desired login shell, applied with `chsh -s`; a template that must render to an absolute path"
             }
           }
         },
