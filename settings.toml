@@ -2667,7 +2667,7 @@ type = "ListString"
 
 [paranoid]
 default = false
-description = "Require explicit, content-bound trust for project config, and re-verify provenance on every install. Accepts `true` or a list of categories."
+description = "Turn on paranoid mode: `true` for every protection, or a list of categories (`config`, `env_files`, `plugins`, `provenance`) for only those."
 docs = """
 `true` turns on every part of [paranoid mode](/paranoid.html). A list turns on
 only the categories it names, and `false` turns them all off:

@@ -236,7 +236,10 @@ impl ConfigSet {
             TomlValueTypes::Float => toml_edit::value(value.parse::<f64>()?),
             TomlValueTypes::Bool => toml_edit::value(match parse_bool(&value) {
                 Ok(value) => value,
-                Err(err) => mise_settings::Paranoid::bool_spelling(&value).ok_or(err)?,
+                Err(err) if full_key == "settings.paranoid" => {
+                    mise_settings::Paranoid::bool_spelling(&value).ok_or(err)?
+                }
+                Err(err) => return Err(err),
             }),
             TomlValueTypes::List => {
                 let mut list = toml_edit::Array::new();
