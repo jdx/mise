@@ -962,7 +962,8 @@ impl OptionSpec {
                 .is_some_and(|rest| {
                     known.iter().any(|k| {
                         rest.strip_suffix(k.as_str())
-                            .is_some_and(|p| p.ends_with('_'))
+                            .and_then(|p| p.strip_suffix('_'))
+                            .is_some_and(|platform| platform.contains(['_', '-']))
                     })
                 })
     }
@@ -8471,6 +8472,11 @@ mod option_spec_tests {
         assert_eq!(
             spec.unknown_keys(&BackendType::Http, &opts("platform_linux_x64_nonsense=u")),
             vec!["platform_linux_x64_nonsense"]
+        );
+        // A platform with no arch is not a spelling the install path reads.
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Http, &opts("platform_linux_url=u")),
+            vec!["platform_linux_url"]
         );
     }
 
