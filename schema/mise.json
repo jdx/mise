@@ -8175,7 +8175,7 @@
                       },
                       "keep_alive_on_failure": {
                         "type": "boolean",
-                        "description": "write KeepAlive = { SuccessfulExit = false }, so launchd relaunches the job only after a failure",
+                        "description": "write KeepAlive = { SuccessfulExit = false }, so launchd relaunches the job only after a failure; cannot be combined with keep_alive",
                         "default": false
                       },
                       "start_interval": {
@@ -8190,9 +8190,9 @@
                       },
                       "nice": {
                         "type": "integer",
-                        "description": "write Nice, the niceness of the process",
-                        "minimum": -128,
-                        "maximum": 127
+                        "description": "write Nice, the niceness of the process, from -20 to 20",
+                        "minimum": -20,
+                        "maximum": 20
                       },
                       "process_type": {
                         "type": "string",
@@ -8254,6 +8254,17 @@
                       }
                     },
                     "required": ["program"],
+                    "not": {
+                      "required": ["keep_alive", "keep_alive_on_failure"],
+                      "properties": {
+                        "keep_alive": {
+                          "const": true
+                        },
+                        "keep_alive_on_failure": {
+                          "const": true
+                        }
+                      }
+                    },
                     "additionalProperties": false
                   },
                   "propertyNames": {

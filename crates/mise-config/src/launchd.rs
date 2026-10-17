@@ -8,7 +8,12 @@ use crate::schema::refs;
 // The doc comments on these types are their descriptions in schema/mise.json, which editors show
 // to users. Notes for Rust readers go in plain comments.
 
+// mise-system rejects `keep_alive` together with `keep_alive_on_failure` when it builds the agent.
 #[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
+#[schemars(extend("not" = {
+    "required": ["keep_alive", "keep_alive_on_failure"],
+    "properties": {"keep_alive": {"const": true}, "keep_alive_on_failure": {"const": true}}
+}))]
 pub struct LaunchdTomlConfig {
     /// program path for ProgramArguments[0]
     // Optional in the type, required by the schema. An `Option` field is optional to serde
@@ -24,7 +29,7 @@ pub struct LaunchdTomlConfig {
     /// write KeepAlive
     #[serde(default)]
     pub keep_alive: bool,
-    /// write KeepAlive = { SuccessfulExit = false }, so launchd relaunches the job only after a failure
+    /// write KeepAlive = { SuccessfulExit = false }, so launchd relaunches the job only after a failure; cannot be combined with keep_alive
     #[serde(default)]
     pub keep_alive_on_failure: bool,
     /// write StartInterval in seconds
@@ -33,8 +38,9 @@ pub struct LaunchdTomlConfig {
     /// write ThrottleInterval in seconds
     #[serde(default)]
     pub throttle_interval: Option<u64>,
-    /// write Nice, the niceness of the process
+    /// write Nice, the niceness of the process, from -20 to 20
     #[serde(default)]
+    #[schemars(range(min = -20, max = 20))]
     pub nice: Option<i8>,
     /// write ProcessType, the scheduling band launchd runs the job in
     #[serde(default)]
