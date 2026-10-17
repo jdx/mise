@@ -37,7 +37,8 @@ static CONFIG: Lazy<NpmConfig> = Lazy::new(|| NpmConfig::load(&meta_dir()));
 /// cache, `prefer_offline()` serves the cache and only falls back to the
 /// network on a miss. (Offline state is set from the CLI/env at startup, so
 /// resolving it once at client construction is sufficient.)
-static CLIENT: Lazy<RegistryClient> = Lazy::new(|| {
+static CLIENT: Lazy<std::result::Result<RegistryClient, String>> = Lazy::new(|| {
+    probe_tls_roots()?;
     // Before the first registry request, so the memoized User-Agent is
     // mise's rather than standalone aube's.
     crate::backend::aube_host::init();
@@ -54,8 +55,32 @@ static CLIENT: Lazy<RegistryClient> = Lazy::new(|| {
     // most once per process) rather than on every async fetch — keeps the
     // blocking mkdir + its sync lock off the Tokio worker in the hot path.
     let _ = crate::file::create_dir_all(meta_dir());
-    RegistryClient::from_config(config).with_network_mode(mode)
+    Ok(RegistryClient::from_config(config).with_network_mode(mode))
 });
+
+/// `aube-registry` builds its HTTP clients with `.expect(..)`, so a TLS root it
+/// cannot load aborts the process (releases build with `panic = "abort"`, so
+/// the panic cannot be caught). Build an equivalent client first and report
+/// that failure as an error instead.
+fn probe_tls_roots() -> std::result::Result<(), String> {
+    reqwest::Client::builder()
+        .use_rustls_tls()
+        .build()
+        .map(drop)
+        .map_err(|err| {
+            let mut msg = format!("Could not initialize the npm registry HTTP client: {err}");
+            let mut source = std::error::Error::source(&err);
+            while let Some(cause) = source {
+                msg.push_str(&format!(": {cause}"));
+                source = cause.source();
+            }
+            msg
+        })
+}
+
+fn client() -> Result<&'static RegistryClient> {
+    CLIENT.as_ref().map_err(|err| eyre::eyre!("{err}"))
+}
 
 /// Neutral mise-owned directory used both as the client's "project dir" (so
 /// no real project `.npmrc` is read) and as `aube-registry`'s on-disk
@@ -68,7 +93,7 @@ fn meta_dir() -> PathBuf {
 /// on-disk cache. The full (non-corgi) route is used so the `time` map is
 /// present for release-date / `minimum_release_age` filtering.
 async fn fetch_packument(name: &str) -> Result<aube_registry::Packument> {
-    Ok(CLIENT
+    Ok(client()?
         .fetch_packument_with_time_cached(name, &meta_dir())
         .await?)
 }
@@ -141,7 +166,7 @@ pub(crate) async fn latest_dist_tag(name: &str) -> Result<Option<String>> {
 /// metadata and tarball requests.
 pub(crate) async fn search_tools(query: &str, limit: usize) -> Result<Vec<vfox::BackendTool>> {
     let timeout = Settings::get().fetch_remote_versions_timeout();
-    Ok(CLIENT
+    Ok(client()?
         .search_packages(query, limit, timeout)
         .await?
         .into_iter()
@@ -166,11 +191,13 @@ pub(crate) fn search_registry(query: &str) -> String {
 /// Download the exact npm registry tarball for a package version, honoring
 /// user npm registry and authentication configuration.
 pub(crate) async fn download_tarball(name: &str, version: &str, path: &Path) -> Result<()> {
-    let metadata = CLIENT.fetch_single_version_metadata(name, version).await?;
+    let metadata = client()?
+        .fetch_single_version_metadata(name, version)
+        .await?;
     let dist = metadata
         .dist
         .ok_or_else(|| eyre::eyre!("npm package {name}@{version} has no dist metadata"))?;
-    let bytes = CLIENT.fetch_tarball_bytes(&dist.tarball).await?;
+    let bytes = client()?.fetch_tarball_bytes(&dist.tarball).await?;
     crate::file::write(path, bytes)?;
     Ok(())
 }
