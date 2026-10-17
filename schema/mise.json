@@ -8286,7 +8286,7 @@
                       },
                       "umask": {
                         "type": "string",
-                        "pattern": "^(?:[0-7]{1,3}|0[0-7]{3}$|\\{[{%])",
+                        "pattern": "^(?:(?:[0-7]{1,3}|0[0-7]{3})$|\\{[{%])",
                         "description": "write UMask in the [Service] section"
                       },
                       "working_directory": {
