@@ -6873,7 +6873,6 @@ name = "mise-daemons"
 version = "0.1.0"
 dependencies = [
  "bytesize",
- "console",
  "eyre",
  "fslock",
  "futures-util",
@@ -6892,8 +6891,6 @@ dependencies = [
  "tera 2.4.0",
  "tokio",
  "toml 1.1.8+spec-1.1.0",
- "url",
- "versions",
  "walkdir",
  "which",
  "windows-sys 0.61.2",

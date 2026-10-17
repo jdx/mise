@@ -9,7 +9,6 @@ include = ["src/**/*", "presets/*.toml", "build.rs"]
 
 [dependencies]
 bytesize = "2"
-console = "0.16"
 eyre = "0.6"
 fslock = "0.2"
 futures-util = "0.3"
@@ -27,8 +26,6 @@ tempfile = "3"
 tera = "2"
 tokio = { version = "1", features = ["full"] }
 toml = { version = "1", features = ["parse", "preserve_order"] }
-url = "2"
-versions = { version = "8", features = ["serde"] }
 walkdir = "2"
 which = "8"
 
