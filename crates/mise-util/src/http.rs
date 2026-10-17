@@ -267,7 +267,8 @@ impl DownloadValidator {
 /// download has nothing to check a kept file against.
 fn cache_allowed(pin: Option<&str>) -> bool {
     let settings = Settings::get();
-    settings.download_cache && (pin.is_some() || !(settings.locked || settings.paranoid))
+    settings.download_cache
+        && (pin.is_some() || !(settings.locked || settings.paranoid.provenance()))
 }
 
 /// How a download may use the store of finished downloads.

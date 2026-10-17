@@ -53,7 +53,7 @@ impl Settings {
     }
 
     pub fn force_provenance_verify(&self) -> bool {
-        self.locked_verify_provenance || self.paranoid
+        self.locked_verify_provenance || self.paranoid.provenance()
     }
 
     pub fn ensure_experimental(&self, what: &str) -> Result<()> {

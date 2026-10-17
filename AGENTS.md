@@ -250,6 +250,9 @@ A few existing call sites (e.g. runtime symlinks) do use `Versioning` ordering t
 
 If you think you need to pick "the newest installed version" at a new call site, stop and ask — that call almost always belongs on the backend, not inline.
 
+### Paranoid mode categories
+`paranoid` is a bool or a list of categories (`config`, `env_files`, `plugins`, `provenance`), defined by `Paranoid` in `crates/mise-settings/src/paranoid.rs`. Any new behavior gated on paranoid mode must belong to one of those categories, or introduce a new named category, so it is individually selectable. New code must never read paranoid as a plain bool: call `settings.paranoid.config()`, `.env_files()`, `.plugins()` or `.provenance()`, and add an e2e test that the category works alone.
+
 ### Plugin Development
 - Core tools are implemented in `src/plugins/core/`
 - External plugins use ASDF or vfox compatibility layers

@@ -2649,19 +2649,44 @@ rust_type = "Vec<String>"
 type = "ListString"
 
 [paranoid]
-description = "Require explicit, content-bound trust for project config, and re-verify provenance on every install."
+default = false
+description = "Require explicit, content-bound trust for project config, and re-verify provenance on every install. Accepts `true` or a list of categories."
 docs = """
-Every config file outside global and system config needs your approval, which
-is tied to the file's contents, so any edit needs approval again.
-`.miserc.toml` files and configs under
-[`trusted_config_paths`](#trusted_config_paths) still load without it.
-Automatic trust, CI trust and `--yes` for the trust prompt are turned off, and
-[`locked_verify_provenance`](#locked_verify_provenance) is turned on. See
-[Paranoid mode](/paranoid.html).
+`true` turns on every part of [paranoid mode](/paranoid.html). A list turns on
+only the categories it names, and `false` turns them all off:
+
+```toml
+[settings]
+paranoid = ["env_files"]
+```
+
+- `config`: every config file outside global and system config needs your
+  approval, which is tied to the file's contents, so any edit needs approval
+  again. `.miserc.toml` files and configs under
+  [`trusted_config_paths`](#trusted_config_paths) still load without it.
+  Automatic trust, CI trust and `--yes` for the trust prompt are turned off, and
+  trust is not shared between worktrees or through a monorepo marker.
+- `env_files`: files loaded by `env._.file`, `env._.source` and
+  [`env_file`](#env_file) need approval tied to their contents.
+- `plugins`: mise refuses to install an unregistered community plugin by short
+  name.
+- `provenance`: [`locked_verify_provenance`](#locked_verify_provenance) is turned
+  on, and a "no attestations" answer from mise-versions is confirmed with GitHub.
+
+From the environment, `MISE_PARANOID=1` selects every category and
+`MISE_PARANOID=config,env_files` selects those listed. An unknown category is an
+error. See [Paranoid mode](/paranoid.html).
 """
+enum = [
+  { value = "config", description = "content-bound trust for project config, no automatic or CI trust" },
+  { value = "env_files", description = "content-bound trust for env files and sourced scripts" },
+  { value = "plugins", description = "refuse unregistered community plugins" },
+  { value = "provenance", description = "re-verify provenance on every install" },
+]
 env = "MISE_PARANOID"
 global_only = true
-type = "Bool"
+rust_type = "Paranoid"
+type = "BoolOrList"
 
 [pin]
 description = "Make `mise use` write the resolved version, such as `24.14.0` for `node@24`, instead of the requested one."

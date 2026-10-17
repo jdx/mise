@@ -184,6 +184,10 @@ impl ConfigSet {
             "false" | "no" | "0" => TomlValueTypes::Bool,
             _ => TomlValueTypes::String,
         };
+        let infer_bool_or_list = |value: &str| match value {
+            "true" | "yes" | "1" | "false" | "no" | "0" => TomlValueTypes::Bool,
+            _ => TomlValueTypes::List,
+        };
         let type_to_use = match self.type_ {
             TomlValueTypes::Infer => {
                 let expected_type = full_key
@@ -193,6 +197,7 @@ impl ConfigSet {
                     Some(meta) => match meta.type_ {
                         SettingsType::Bool => TomlValueTypes::Bool,
                         SettingsType::BoolOrString => infer_bool_or_string(&value),
+                        SettingsType::BoolOrList => infer_bool_or_list(&value),
                         SettingsType::String => TomlValueTypes::String,
                         SettingsType::Integer => TomlValueTypes::Integer,
                         SettingsType::Duration => TomlValueTypes::String,

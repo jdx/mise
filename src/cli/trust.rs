@@ -178,7 +178,7 @@ pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
             }
         },
     };
-    let cfr = config_trust_root(&path);
+    let cfr = config_file::trust_root_for_cli(&path);
     config_file::untrust(&cfr)?;
     let cfr = cfr.canonicalize()?;
     info!("untrusted {}", display_path(&cfr));
@@ -193,7 +193,7 @@ pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
         );
     }
 
-    if !Settings::get().paranoid
+    if !Settings::get().paranoid.config()
         && let Some(main_path) = crate::git::main_checkout_equivalent(&cfr)
         && config_file::is_trusted(&main_path)
     {
@@ -252,7 +252,7 @@ impl Trust {
                 }
             },
         };
-        let cfr = config_trust_root(&path);
+        let cfr = config_file::trust_root_for_cli(&path);
         config_file::add_ignored(cfr.clone())?;
         let cfr = cfr.canonicalize()?;
         info!("ignored {}", display_path(&cfr));
@@ -270,7 +270,7 @@ impl Trust {
     }
     fn trust(&self) -> Result<()> {
         let path = match self.config_file()? {
-            Some(filename) => config_trust_root(&filename),
+            Some(filename) => config_file::trust_root_for_cli(&filename),
             None => match self.get_next_untrusted() {
                 Some(path) => path,
                 None => {

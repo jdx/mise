@@ -1466,7 +1466,8 @@ impl Config {
         let mut config_files: ConfigMap = ConfigMap::default();
         let mut idiomatic_settings_by_root =
             BTreeMap::<PathBuf, settings::IdiomaticVersionFileSettings>::new();
-        let require_trust_before_detection = Settings::get().paranoid && !Settings::safe_mode();
+        let require_trust_before_detection =
+            Settings::get().paranoid.config() && !Settings::safe_mode();
         for path in Tracker::list_all()?.into_iter() {
             if config_path_is_ignored(&path, false) {
                 debug!("skipping ignored tracked config: {}", display_path(&path));
@@ -2110,7 +2111,7 @@ pub(crate) fn monorepo_lockfile_root_from_dir(dir: &Path) -> Option<PathBuf> {
     if let Some(root) = MONOREPO_LOCKFILE_ROOT_FROM_DIR.lock().unwrap().get(dir) {
         return root.clone();
     }
-    let paranoid = Settings::try_get().is_ok_and(|settings| settings.paranoid);
+    let paranoid = Settings::try_get().is_ok_and(|settings| settings.paranoid.config());
     let mut config_files = ConfigMap::new();
     for ancestor in all_dirs_from(dir).unwrap_or_default() {
         for path in config_paths_in_dir(&ancestor) {
@@ -7310,7 +7311,7 @@ pub(crate) fn trust_check_remote_task_file(config_source: &Path, file: &Path) ->
 /// does: only its `#MISE` headers render, even when its name ends in `.toml`,
 /// so a template elsewhere in the script needs no trust.
 fn remote_task_file_requires_trust(path: &Path) -> bool {
-    if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid.config()) {
         return true;
     }
     let Ok(body) = file::read_to_string(path) else {
@@ -7325,7 +7326,7 @@ fn remote_task_file_requires_trust(path: &Path) -> bool {
 /// exec() etc. when task fields render), so only files containing template
 /// syntax need trust. Paranoid mode keeps requiring trust for everything.
 fn task_include_requires_trust(path: &Path) -> bool {
-    if Settings::try_get().is_ok_and(|settings| settings.paranoid) {
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid.config()) {
         return true;
     }
     let Ok(body) = file::read_to_string(path) else {

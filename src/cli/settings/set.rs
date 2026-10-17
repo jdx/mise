@@ -102,6 +102,7 @@ pub(super) fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<
         SettingsType::SetString => parse_set_by_comma(value)?,
         SettingsType::IndexMap => parse_indexmap_by_json(value)?,
         SettingsType::BoolOrString => parse_bool(value).unwrap_or_else(|_| value.into()),
+        SettingsType::BoolOrList => parse_bool_or_list(key, value)?,
     };
 
     let path = if local {
@@ -211,6 +212,17 @@ fn parse_set_by_comma(value: &str) -> Result<toml_edit::Value> {
         .map(String::from)
         .collect();
     Ok(dedup_toml_array(&array).into())
+}
+
+/// A setting that takes `true`/`false` or a comma separated list. `paranoid` checks its
+/// categories here, since loading settings would reject an unknown one in every later command.
+fn parse_bool_or_list(key: &str, value: &str) -> Result<toml_edit::Value> {
+    if key == "paranoid" {
+        value
+            .parse::<mise_settings::Paranoid>()
+            .map_err(|err| eyre!(err))?;
+    }
+    parse_bool(value).or_else(|_| parse_set_by_comma(value))
 }
 
 fn parse_bool(value: &str) -> Result<toml_edit::Value> {

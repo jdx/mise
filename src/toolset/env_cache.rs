@@ -487,8 +487,9 @@ pub(crate) fn compute_settings_hash() -> String {
     // with a different `safe` value must not be reused.
     hasher.update(settings.safe.to_string().as_bytes());
     // Paranoid mode requires trust for each env file, which a cache hit never checks, so an
-    // entry built without it must not be reused with it.
-    hasher.update(settings.paranoid.to_string().as_bytes());
+    // entry built without it must not be reused with it. The selected categories are hashed,
+    // so differing selections never share an entry.
+    hasher.update(settings.paranoid.fingerprint().as_bytes());
 
     // Where tools are installed: the install layout decides which directory a
     // tool's env (JAVA_HOME, PATH entries) names.

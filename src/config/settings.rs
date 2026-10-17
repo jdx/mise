@@ -2943,7 +2943,7 @@ mod tests {
         let partial = settings_partial_from_table(settings);
 
         assert_eq!(partial.ci, Some(true));
-        assert_eq!(partial.paranoid, Some(true));
+        assert_eq!(partial.paranoid, Some(mise_settings::Paranoid::all()));
         assert_eq!(
             partial.trusted_config_paths,
             Some([PathBuf::from("/")].into_iter().collect())

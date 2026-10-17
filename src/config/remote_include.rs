@@ -63,7 +63,7 @@ async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
         return load_local(parent, reference);
     }
     let pin = classify(reference)?;
-    if pin == Pin::Mutable && Settings::try_get().is_ok_and(|s| s.paranoid) {
+    if pin == Pin::Mutable && Settings::try_get().is_ok_and(|s| s.paranoid.config()) {
         bail!(
             "paranoid mode binds trust to content, so a config include must be pinned to a \
              commit sha or an OCI digest: {reference}"
@@ -113,7 +113,7 @@ async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
 fn load_local(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
     // Paranoid mode binds trust to the including file's hash, which does not
     // cover a file that can change without it.
-    if Settings::try_get().is_ok_and(|s| s.paranoid) {
+    if Settings::try_get().is_ok_and(|s| s.paranoid.config()) {
         bail!(
             "paranoid mode binds trust to content, so a local config include is not \
              allowed: {reference}"
