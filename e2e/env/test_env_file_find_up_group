@@ -75,6 +75,18 @@ TOML
 assert_contains "mise env --dotenv" "EXAMPLE=project"
 rm .env.local
 
+# Every occurrence still loads in order, so a file between two loads of the same file can expand
+# values from the earlier one.
+mkdir -p repeated
+printf 'BASE=/opt/app\n' >repeated/base.env
+# shellcheck disable=SC2016
+printf '{"OUTPUT": "$BASE/out"}\n' >repeated/derived.json
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[env]
+_.file = { path = ["base.env", "derived.json", "base.env"], find_up = true, expand = true }
+TOML
+assert_contains "cd repeated && mise env --dotenv" "OUTPUT=/opt/app/out"
+
 # A templated name resolves after the files listed before it, so it can use their values.
 mkdir -p staged
 printf 'STAGE=dev\n' >staged/.env
