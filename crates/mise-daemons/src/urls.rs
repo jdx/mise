@@ -13,7 +13,7 @@ use std::sync::LazyLock;
 
 /// Pitchfork release that understands `worktree_label` and per-daemon `proxy`.
 /// Named in errors and docs so an older supervisor's rejection is explicable.
-pub(crate) const REQUIRED_PITCHFORK: &str = "2.26.0";
+pub const REQUIRED_PITCHFORK: &str = "2.26.0";
 
 /// Maximum length of one DNS label (RFC 1035).
 const MAX_LABEL_LEN: usize = 63;
@@ -47,7 +47,7 @@ impl RootLabels {
 
 /// What `proxy` asks for on one daemon.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Proxy {
+pub enum Proxy {
     /// `proxy = false`: no hostname, and so no URL export.
     Disabled,
     /// `proxy = "label"`: the declaration names the hostname component.
@@ -132,8 +132,8 @@ pub fn proxy_settings() -> &'static ProxySettings {
 /// `~/.config/pitchfork` and ignores `XDG_CONFIG_HOME`, so honouring it here
 /// would read a different file from the one serving the URL.
 fn user_config_dir() -> PathBuf {
-    crate::env::var_path("PITCHFORK_CONFIG_DIR")
-        .unwrap_or_else(|| crate::dirs::HOME.join(".config").join("pitchfork"))
+    mise_util::env::var_path("PITCHFORK_CONFIG_DIR")
+        .unwrap_or_else(|| mise_util::dirs::HOME.join(".config").join("pitchfork"))
 }
 
 /// Read a boolean the way pitchfork does. Its settings resolver accepts several
@@ -173,7 +173,10 @@ fn read_proxy_settings() -> ProxySettings {
             continue;
         };
         let Ok(doc) = toml::from_str::<toml::Value>(&text) else {
-            debug!("ignoring unparseable {}", crate::file::display_path(&path));
+            debug!(
+                "ignoring unparseable {}",
+                mise_util::file::display_path(&path)
+            );
             continue;
         };
         let Some(proxy) = doc.get("settings").and_then(|s| s.get("proxy")) else {
@@ -202,7 +205,7 @@ fn read_proxy_settings() -> ProxySettings {
             lan.ip = ip.to_string();
         }
     }
-    let lan = apply_proxy_env(&mut settings, lan, |key| crate::env::var(key).ok());
+    let lan = apply_proxy_env(&mut settings, lan, |key| mise_util::env::var(key).ok());
     // Applied once, after every layer. Doing it inside the loop would let a
     // later file's `tld` undo an earlier layer's LAN mode, which pitchfork
     // resolves the other way round: it settles the settings first, then the
@@ -218,7 +221,7 @@ fn read_proxy_settings() -> ProxySettings {
 /// address into a running flag would let a later `lan = false` discard an
 /// earlier address, and would leave a later empty address unable to clear one.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct Lan {
+pub struct Lan {
     enabled: bool,
     ip: String,
 }
@@ -263,7 +266,7 @@ fn apply_proxy_env(
 /// Reject a label that cannot survive as a DNS name. Pitchfork puts the label
 /// straight into a hostname and, with `sync_hosts`, into `/etc/hosts`, so an
 /// underscore or a trailing dash produces a name no browser will resolve.
-pub(crate) fn validate_label(kind: &str, value: &str) -> Result<()> {
+pub fn validate_label(kind: &str, value: &str) -> Result<()> {
     if value.is_empty()
         || value.len() > 63
         || value.starts_with('-')
@@ -288,7 +291,7 @@ pub(crate) fn validate_label(kind: &str, value: &str) -> Result<()> {
 /// `None` when nothing usable is left, in which case there is no hostname to
 /// offer. Repairing rather than rejecting is deliberate: these names were not
 /// written as DNS labels by whoever chose them.
-pub(crate) fn sanitize_label(value: &str) -> Option<String> {
+pub fn sanitize_label(value: &str) -> Option<String> {
     let mut out = String::with_capacity(value.len());
     for c in value.chars() {
         if c.is_ascii_alphanumeric() {
@@ -374,18 +377,20 @@ fn worktree_label(dir: &Path) -> Option<String> {
 /// `.git` that names the repository.
 fn namespace_reaches_siblings<'a>(
     root: &'a Path,
-    checkout: &'a crate::git::Checkout,
+    checkout: &'a mise_util::git::Checkout,
     worktree: Option<&str>,
     namespace: Option<&str>,
 ) -> Option<&'a Path> {
     let checkout_dir = checkout.repository.as_deref().unwrap_or(root);
-    (worktree.is_none() && namespace.is_some() && crate::git::has_sibling_worktrees(checkout_dir))
-        .then_some(checkout_dir)
+    (worktree.is_none()
+        && namespace.is_some()
+        && mise_util::git::has_sibling_worktrees(checkout_dir))
+    .then_some(checkout_dir)
 }
 
-pub(crate) fn labels(root: &Path, settings: &DaemonSettings) -> Result<RootLabels> {
+pub fn labels(root: &Path, settings: &DaemonSettings) -> Result<RootLabels> {
     let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let checkout = crate::git::checkout_of(&root);
+    let checkout = mise_util::git::checkout_of(&root);
     let project = match settings.namespace.as_deref() {
         Some(explicit) => sanitize_label(explicit),
         // Not the hashed default namespace: that is derived from the root path,
@@ -428,7 +433,7 @@ pub(crate) fn labels(root: &Path, settings: &DaemonSettings) -> Result<RootLabel
 }
 
 /// What a daemon's `proxy` declaration resolved to.
-pub(crate) struct Applied {
+pub struct Applied {
     /// The hostname the proxy routes to it. None when the daemon opted out,
     /// configured no port, or produced a name DNS could not carry.
     pub host: Option<String>,
@@ -461,7 +466,7 @@ fn validate_idle_timeout(name: &str, table: &toml::Table) -> Result<()> {
 
 /// Read `proxy` and `proxy_tls` from a daemon table, validate them, write the
 /// normalized values back for pitchfork, and return the daemon's hostname.
-pub(crate) fn apply(
+pub fn apply(
     name: &str,
     table: &mut toml::Table,
     labels: &RootLabels,
@@ -539,7 +544,7 @@ pub(crate) fn apply(
 /// Take a daemon's hostname away after the fact, when another daemon turned out
 /// to derive the same one. The proxy must not be asked to route an ambiguous
 /// hostname, and the daemon keeps running on its port.
-pub(crate) fn withdraw(table: &mut toml::Table) {
+pub fn withdraw(table: &mut toml::Table) {
     table.insert("proxy".into(), toml::Value::Boolean(false));
     // `proxy_tls` beside `proxy = false` is the pair `apply` refuses when a
     // declaration writes it, so the generated file must not carry it either.
@@ -1099,21 +1104,21 @@ mod tests {
         };
         let only = add("main");
         assert!(
-            !crate::git::has_sibling_worktrees(&only),
+            !mise_util::git::has_sibling_worktrees(&only),
             "one worktree has no sibling to collide with"
         );
         let second = add("feature");
-        assert!(crate::git::has_sibling_worktrees(&only));
-        assert!(crate::git::has_sibling_worktrees(&second));
+        assert!(mise_util::git::has_sibling_worktrees(&only));
+        assert!(mise_util::git::has_sibling_worktrees(&second));
 
         // A monorepo declares several roots inside one checkout, and only the
         // checkout holds the `.git` that names the repository. Asking from the
         // project root would find nothing and report no sibling at all.
         let nested = second.join("packages").join("api");
         std::fs::create_dir_all(&nested).unwrap();
-        assert!(!crate::git::has_sibling_worktrees(&nested));
+        assert!(!mise_util::git::has_sibling_worktrees(&nested));
         let reaches = |dir: &Path| {
-            namespace_reaches_siblings(dir, &crate::git::checkout_of(dir), None, Some("shop"))
+            namespace_reaches_siblings(dir, &mise_util::git::checkout_of(dir), None, Some("shop"))
                 .map(Path::to_path_buf)
         };
         assert_eq!(
@@ -1125,13 +1130,13 @@ mod tests {
         // Without a namespace to share there is nothing to collide over, and a
         // checkout that still has a worktree component is told apart by it.
         assert_eq!(
-            namespace_reaches_siblings(&second, &crate::git::checkout_of(&second), None, None),
+            namespace_reaches_siblings(&second, &mise_util::git::checkout_of(&second), None, None),
             None
         );
         assert_eq!(
             namespace_reaches_siblings(
                 &second,
-                &crate::git::checkout_of(&second),
+                &mise_util::git::checkout_of(&second),
                 Some("feature"),
                 Some("shop")
             ),
@@ -1143,7 +1148,7 @@ mod tests {
         // send the remaining one off to change a name nothing else shares.
         std::fs::remove_dir_all(&second).unwrap();
         assert!(
-            !crate::git::has_sibling_worktrees(&only),
+            !mise_util::git::has_sibling_worktrees(&only),
             "a stale registry entry is not a sibling"
         );
 
@@ -1151,10 +1156,10 @@ mod tests {
         let second = add("feature");
         relative("main");
         relative("feature");
-        assert!(crate::git::has_sibling_worktrees(&only));
+        assert!(mise_util::git::has_sibling_worktrees(&only));
         std::fs::remove_dir_all(&second).unwrap();
         assert!(
-            !crate::git::has_sibling_worktrees(&only),
+            !mise_util::git::has_sibling_worktrees(&only),
             "a relative pointer to a removed worktree is still stale"
         );
 
@@ -1162,7 +1167,7 @@ mod tests {
         // this definition, however many worktrees hang off it.
         let ordinary = tmp.path().join("plain");
         std::fs::create_dir_all(ordinary.join(".git")).unwrap();
-        assert!(!crate::git::has_sibling_worktrees(&ordinary));
+        assert!(!mise_util::git::has_sibling_worktrees(&ordinary));
     }
 
     /// `git clone --separate-git-dir` leaves a common dir with an arbitrary

@@ -3,6 +3,7 @@ use crate::backend::Backend;
 use crate::config::Config;
 use crate::config::settings::{Settings, SettingsStatusMissingTools};
 use crate::config::tracking::Tracker;
+use crate::daemons::glue::DaemonSetExt;
 use crate::env::TERM_WIDTH;
 use crate::errors::Error;
 use crate::file::display_path;
@@ -1116,7 +1117,7 @@ async fn get_versions_needed_by_tracked_configs_with_progress(
             }
         }
         let files = [(path.clone(), cf.clone())].into_iter().collect();
-        crate::daemons::load(&files)?.add_tool_requests(&mut requests)?;
+        crate::daemons::glue::load(&files)?.add_tool_requests(&mut requests)?;
         // Tools scoped to a task are still referenced by the config.
         let (task_requests, task_templated) =
             crate::config::task_tool_requests(config, &tracked, &cf);

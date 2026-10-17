@@ -7,8 +7,8 @@
 //! pitchfork; the pitchfork calls live in [`remove`].
 
 use super::runtime::{Runtime, State};
-use crate::file::display_path;
 use eyre::Result;
+use mise_util::file::display_path;
 use std::path::{Path, PathBuf};
 
 /// One `<state-dir>/state.json` and the directory that contains it.
@@ -186,7 +186,7 @@ fn as_container(path: &Path) -> String {
 
 /// The directory holding every project's daemon state.
 pub fn base_dir() -> PathBuf {
-    crate::dirs::STATE.join("daemons")
+    mise_util::dirs::STATE.join("daemons")
 }
 
 /// Every readable `state.json` directly below `base`, in path order.
@@ -672,9 +672,9 @@ fn delete_state_dir(dir: &Path, lock: super::ProjectLock) -> Result<()> {
         if path == state_file || path == legacy {
             continue;
         }
-        crate::file::remove_all(path)?;
+        mise_util::file::remove_all(path)?;
     }
-    crate::file::remove_all(&state_file)?;
+    mise_util::file::remove_all(&state_file)?;
     drop(lock);
     Ok(())
 }
@@ -685,7 +685,7 @@ mod tests {
 
     fn write_state(base: &Path, name: &str, root: &Path, data: &[(&str, usize)]) -> PathBuf {
         // Named by the hash of the canonical root, as `state_dir` names it.
-        let dir = base.join(crate::hash::hash_to_str(
+        let dir = base.join(mise_util::hash::hash_to_str(
             &root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
         ));
         std::fs::create_dir_all(&dir).unwrap();
@@ -794,7 +794,9 @@ mod tests {
         // The lock an older mise takes is still honored, so a start from one
         // and a prune from this version continue to exclude each other.
         let legacy = super::super::legacy_lock_file_for_state_dir(&dir);
-        let held = crate::lock_file::LockFile::at(&legacy).try_lock().unwrap();
+        let held = mise_util::lock_file::LockFile::at(&legacy)
+            .try_lock()
+            .unwrap();
         let entry = orphans(&base).unwrap().remove(0);
         assert_eq!(remove(&entry, None).await.unwrap(), Outcome::Kept);
         assert!(dir.join("state.json").exists());
@@ -882,7 +884,7 @@ mod tests {
 
         // What `prepare()` records when the project was reached through the
         // alias: the raw path, against a directory named for the canonical one.
-        let dir = base.join(crate::hash::hash_to_str(&project));
+        let dir = base.join(mise_util::hash::hash_to_str(&project));
         std::fs::create_dir_all(&dir).unwrap();
         let state = State {
             root: alias.clone(),
@@ -1008,7 +1010,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let base = tmp.path().join("daemons");
         let gone = tmp.path().join("gone");
-        let dir = base.join(crate::hash::hash_to_str(&gone));
+        let dir = base.join(mise_util::hash::hash_to_str(&gone));
         std::fs::create_dir_all(&dir).unwrap();
         // Only the field that matters for selection, plus one this version has
         // never heard of. A state file that cannot be parsed is state that can
