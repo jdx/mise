@@ -175,7 +175,7 @@ impl EnvResults {
         // searches upward, or a glob, can find files in repositories, so those need approval like
         // project config.
         let operator_owned = !find_up
-            && !crate::config::is_glob_pattern(&s)
+            && !inputs.iter().any(|p| crate::config::is_glob_pattern(p))
             && crate::config::is_global_config(ctx.source);
         for p in paths {
             if !operator_owned
