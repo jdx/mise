@@ -24,3 +24,21 @@ mise install
 install_path="$(mise where cargo:rename-test@1.0.0)"
 assert "test -x '$install_path/bin/renamed-bin' && echo ok" "ok"
 assert "test ! -e '$install_path/bin/orig-bin' && echo ok" "ok"
+
+# Changing rename_exe must reinstall with the new name.
+cat >mise.toml <<'EOS'
+[tools]
+"cargo:rename-test" = { version = "1.0.0", bin = "orig-bin", rename_exe = "other-bin" }
+EOS
+mise install
+assert "test -x '$install_path/bin/other-bin' && echo ok" "ok"
+assert "test ! -e '$install_path/bin/renamed-bin' && echo ok" "ok"
+
+# Removing rename_exe must restore the original name.
+cat >mise.toml <<'EOS'
+[tools]
+"cargo:rename-test" = { version = "1.0.0", bin = "orig-bin" }
+EOS
+mise install
+assert "test -x '$install_path/bin/orig-bin' && echo ok" "ok"
+assert "test ! -e '$install_path/bin/other-bin' && echo ok" "ok"
