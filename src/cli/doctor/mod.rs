@@ -288,6 +288,8 @@ impl Doctor {
             .extend(crate::secrets::doctor_warnings(&config).await);
         let ts = config.get_toolset().await?;
         let desired_shims = self.analyze_shims(&config, ts).await;
+        #[cfg(windows)]
+        self.analyze_native_shim_template();
         self.analyze_plugins();
         self.analyze_env_modules(&config);
         self.analyze_plugin_drift(&config);
@@ -653,6 +655,8 @@ impl Doctor {
         match ToolsetBuilder::new().build(config).await {
             Ok(ts) => {
                 let desired_shims = self.analyze_shims(config, &ts).await;
+                #[cfg(windows)]
+                self.analyze_native_shim_template();
                 self.analyze_toolset(&ts).await?;
                 self.analyze_paths(&ts).await?;
                 self.check_path_ordering(&ts, config).await;
@@ -1303,6 +1307,15 @@ impl Doctor {
         }
         time!("doctor::analyze_shims");
         HashSet::new()
+    }
+
+    /// "exe" shims are copies of the `mise-shim.exe` beside mise, which a package manager can leave
+    /// behind when it replaces `mise.exe`; `mise reshim` then rebuilds the old launcher forever.
+    #[cfg(windows)]
+    fn analyze_native_shim_template(&mut self) {
+        if let Some(stale) = shims::stale_native_shim_template(&shims::mise_bin_for_shims()) {
+            self.errors.push(stale.message());
+        }
     }
 
     fn analyze_plugins(&mut self) {

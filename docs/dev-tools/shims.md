@@ -55,8 +55,13 @@ mise keeps two shim directories:
 
 When you install a tool, mise adds a shim to the shim directory for every
 executable the tool provides. On Unix each shim is a symlink to the `mise`
-binary; on Windows it is a small executable by default (see
-[`windows_shim_mode`](/configuration/settings.html#windows_shim_mode)).
+binary; on Windows it is a copy of the `mise-shim.exe` that ships beside
+`mise.exe` by default (see
+[`windows_shim_mode`](/configuration/settings.html#windows_shim_mode)). If an
+update replaces `mise.exe` but leaves an older `mise-shim.exe` behind,
+`mise doctor` and `mise reshim` report it, since every rebuilt shim would keep
+the old launcher. Update mise with the package manager that installed it, or
+run `mise self-update`, so both files are replaced, then `mise reshim --force`.
 
 ```sh
 mise use node@24 npm:prettier@3
