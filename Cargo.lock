@@ -4364,7 +4364,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c48eccd894bd15555b0346470e63491ded94aefe76b3fcb1052084b5a393238"
 dependencies = [
  "bstr",
- "hashbrown 0.17.1",
+ "hashbrown 0.15.5",
 ]
 
 [[package]]
@@ -7915,7 +7915,7 @@ dependencies = [
  "aes-gcm",
  "aes-kw",
  "argon2",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bitfields",
  "block-padding 0.3.3",
  "blowfish",
@@ -12944,18 +12944,6 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "7.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc12baa6db2b15a140161ce53d72209dacea594230798c24774139b54ecaa980"
-dependencies = [
- "crc32fast",
- "indexmap 2.14.2",
- "memchr",
- "typed-path",
-]
-
-[[package]]
-name = "zip"
 version = "8.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
@@ -13009,14 +12997,14 @@ dependencies = [
 
 [[package]]
 name = "zipsign-api"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32a55ebb27e67d9a9d116dd3a19637ee8cc0570c8ef816fb504c453f15448c99"
+checksum = "00d866e1d567fd67738668647c2e06587851e0e3583df84298cc363c14602316"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek 2.2.0",
  "thiserror 2.0.21",
- "zip 7.4.0",
+ "zip 9.0.4",
 ]
 
 [[package]]
