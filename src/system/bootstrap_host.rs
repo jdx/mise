@@ -127,6 +127,9 @@ pub fn register() {
         global_shared_config_path: config::global_shared_config_path,
         config_files_with_incoming: config::config_files_with_incoming,
         safe_mode_ignores_bootstrap: config::safe_mode_ignores_bootstrap,
+        verify_release_signature: |data, signature| {
+            crate::minisign::verify(&crate::minisign::MISE_PUB_KEY, data, signature)
+        },
         parse_config_file: |path| Ok(view(Arc::new(MiseToml::from_file(path)?))),
         parse_config_body: |body, path| {
             Ok(view(Arc::new(MiseToml::for_history_preflight(body, path)?)))

@@ -131,6 +131,8 @@ pub struct Host {
     pub config_files_with_incoming: fn(&Path, &BTreeSet<PathBuf>) -> IndexSet<PathBuf>,
     /// Whether safe mode ignores the bootstrap declarations of the file.
     pub safe_mode_ignores_bootstrap: fn(&Path) -> bool,
+    /// Verify a minisign signature made with mise's release key.
+    pub verify_release_signature: fn(&[u8], &str) -> Result<()>,
     /// Parse a config file from disk.
     pub parse_config_file: fn(&Path) -> Result<Arc<dyn ConfigFileView>>,
     /// Decode only the static declarations of a config body, without trusting or evaluating it.
@@ -194,6 +196,10 @@ pub fn config_files_with_incoming(dir: &Path, incoming: &BTreeSet<PathBuf>) -> I
 
 pub fn safe_mode_ignores_bootstrap(path: &Path) -> bool {
     (host().safe_mode_ignores_bootstrap)(path)
+}
+
+pub fn verify_release_signature(data: &[u8], signature: &str) -> Result<()> {
+    (host().verify_release_signature)(data, signature)
 }
 
 pub fn parse_config_file(path: &Path) -> Result<Arc<dyn ConfigFileView>> {

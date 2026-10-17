@@ -1437,12 +1437,8 @@ impl fmt::Display for LibcFlavor {
 
 impl ReleaseManifest {
     fn verified(contents: &str, signature: &str) -> Result<Self> {
-        crate::minisign::verify(
-            &crate::minisign::MISE_PUB_KEY,
-            contents.as_bytes(),
-            signature,
-        )
-        .wrap_err("mise release checksum signature is invalid")?;
+        crate::system::host::verify_release_signature(contents.as_bytes(), signature)
+            .wrap_err("mise release checksum signature is invalid")?;
         let checksums = crate::hash::parse_shasums(contents);
         if checksums.is_empty() {
             bail!("signed mise release checksum manifest is empty");
