@@ -9,7 +9,6 @@ use eyre::{WrapErr, bail, eyre};
 use indexmap::IndexMap;
 use rops::file::format::{JsonFileFormat, TomlFileFormat, YamlFileFormat};
 use std::{
-    collections::HashSet,
     fs,
     path::{Path, PathBuf},
     sync::Arc,
@@ -148,7 +147,7 @@ impl EnvResults {
                 if find_up
                     && patterns
                         .iter()
-                        .any(|pattern| !file::replace_path(pattern).is_absolute()) =>
+                        .all(|pattern| !file::replace_path(pattern).is_absolute()) =>
             {
                 // The result depends on the current directory, which the env cache key omits.
                 ctx.results.has_uncacheable = true;
@@ -156,24 +155,13 @@ impl EnvResults {
                 // nearest directory first and the later name first, then reverse, so the loader
                 // sees the farthest directory first, and within one directory the names in the
                 // order written. The file nearest the current directory then wins, and within one
-                // directory a later name wins. An absolute name matches in every directory, so
-                // keep only its first occurrence.
-                let mut seen = HashSet::new();
+                // directory a later name wins. A single name is the same walk with one name.
                 let mut nearest_first = Vec::new();
                 for dir in cwd.ancestors() {
                     for pattern in patterns.iter().rev() {
-                        let mut matches = if file::replace_path(pattern).is_absolute() {
-                            xx::file::glob(ctx.normalize_path(pattern.clone()))
-                        } else {
-                            xx::file::glob(dir.join(pattern))
-                        }
-                        .unwrap_or_default();
+                        let mut matches = xx::file::glob(dir.join(pattern)).unwrap_or_default();
                         matches.reverse();
-                        for path in matches {
-                            if seen.insert(path.clone()) {
-                                nearest_first.push(path);
-                            }
-                        }
+                        nearest_first.extend(matches);
                     }
                 }
                 nearest_first.into_iter().rev().collect()

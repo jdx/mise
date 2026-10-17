@@ -337,8 +337,13 @@ One entry searches directory by directory, so the closest directory wins, and
 within one directory a name later in the list wins. In the layout above,
 `EXAMPLE` is now `project`, and a `.env.local` next to that `.env` would
 override it. Without `find_up`, a `path` list loads its files in the order
-written. `find_up` has no effect on an absolute path, which loads where the list
-puts it.
+written.
+
+Only plain relative names are searched together. A name with a template or
+`$VAR`, an absolute path, or a `~` path is searched on its own, in the order
+written, as if it were a separate entry. That lets a template use a value from
+a file listed before it, and it means an absolute file is overridden by names
+listed after it and overrides those before it.
 
 The [`env_file`](/configuration/settings.html#env_file) setting
 (`MISE_ENV_FILE=.env`) also discovers a dotenv file in the current directory and

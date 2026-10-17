@@ -45,7 +45,8 @@ TOML
 assert_contains "mise env --dotenv" "EXAMPLE=abs"
 assert_contains "mise env --dotenv" "ONLY_PROJECT=1"
 
-# An absolute name in the list loads where the list puts it.
+# An absolute path ends a group: the names before and after it are searched as separate groups,
+# in list order, so a later name beats the absolute file and an earlier one loses to it.
 cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
 [env]
 _.file = { path = ["$PWD/../abs.env", ".env"], find_up = true }
@@ -56,6 +57,24 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
 _.file = { path = [".env", "$PWD/../abs.env"], find_up = true }
 TOML
 assert_contains "mise env --dotenv" "EXAMPLE=abs"
+# ...even when the later name is only found in a parent directory.
+mv .env .env.hidden
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[env]
+_.file = { path = ["$PWD/../abs.env", ".env"], find_up = true }
+TOML
+assert_contains "mise env --dotenv" "EXAMPLE=parent"
+mv .env.hidden .env
+
+# A templated name resolves after the files listed before it, so it can use their values.
+mkdir -p staged
+printf 'STAGE=dev\n' >staged/.env
+printf 'FROM_DEV=1\n' >staged/dev.env
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[env]
+_.file = { path = [".env", "{{ env.STAGE }}.env"], find_up = true }
+TOML
+assert_contains "cd staged && mise env --dotenv" "FROM_DEV=1"
 
 # Without find_up a path list loads its files in the order written, relative to the config.
 cat >mise.toml <<'TOML'
