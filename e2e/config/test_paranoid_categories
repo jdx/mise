@@ -124,5 +124,7 @@ assert_fail_contains "mise config set --global settings.paranoid config,nope 2>&
 assert_contains "mise settings get paranoid" "true"
 # An empty list turns every category off.
 assert "mise config set --global --type set settings.paranoid '[]'"
+assert "mise config set --global settings.paranoid '[]'"
+assert_contains "mise settings get paranoid" "false"
 assert "mise settings paranoid='[]'"
 assert_contains "mise settings get paranoid" "false"

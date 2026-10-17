@@ -170,7 +170,8 @@
             "ListPath",
             "SetString",
             "IndexMap<String, String>",
-            "BoolOrString"
+            "BoolOrString",
+            "BoolOrList"
           ],
           "description": "Type of this setting"
         }
@@ -193,7 +194,7 @@
           "if": {
             "properties": {
               "type": {
-                "const": "BoolOrString"
+                "enum": ["BoolOrString", "BoolOrList"]
               }
             },
             "required": ["type"]
