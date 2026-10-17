@@ -51,7 +51,7 @@ pub struct LaunchdTomlConfig {
     pub start_calendar_interval: Option<LaunchdCalendarIntervals>,
     /// write QueueDirectories (absolute paths; `~` and `~/` are expanded)
     #[serde(default)]
-    #[schemars(inner(length(min = 1), regex(pattern = r"^(/|~$|~/)")))]
+    #[schemars(inner(length(min = 1), regex(pattern = r"^(?:/|~$|~/|\{[{%])")))]
     pub queue_directories: Vec<String>,
     /// environment variables for EnvironmentVariables
     #[serde(default)]

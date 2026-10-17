@@ -154,7 +154,7 @@ pub struct SystemdTomlConfig {
     pub nice: Option<i8>,
     /// write UMask in the [Service] section
     #[serde(default)]
-    #[schemars(regex(pattern = r"^(?:[0-7]{1,3}|0[0-7]{3})$"))]
+    #[schemars(regex(pattern = r"^(?:(?:[0-7]{1,3}|0[0-7]{3})$|\{[{%])"))]
     pub umask: Option<String>,
     /// write WorkingDirectory in the [Service] section
     #[serde(default)]
