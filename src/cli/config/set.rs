@@ -186,8 +186,7 @@ impl ConfigSet {
         };
         let infer_bool_or_list = |value: &str| match mise_settings::Paranoid::bool_spelling(value) {
             Some(_) => TomlValueTypes::Bool,
-            None if value.trim() == "[]" => TomlValueTypes::Set,
-            None => TomlValueTypes::List,
+            None => TomlValueTypes::Set,
         };
         let type_to_use = match self.type_ {
             TomlValueTypes::Infer => {

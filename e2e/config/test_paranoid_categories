@@ -128,3 +128,5 @@ assert "mise config set --global settings.paranoid '[]'"
 assert_contains "mise settings get paranoid" "false"
 assert "mise settings paranoid='[]'"
 assert_contains "mise settings get paranoid" "false"
+assert "mise config set --global settings.paranoid config,,env_files,config"
+assert_contains "mise settings get paranoid" '["config", "env_files"]'
