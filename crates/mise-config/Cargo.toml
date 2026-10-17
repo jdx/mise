@@ -6,10 +6,21 @@ license = "MIT"
 description = "The mise.toml declaration types"
 repository = "https://github.com/jdx/mise"
 
+[features]
+default = ["schema"]
+# The JSON schema for the sections this crate declares. mise itself turns it off; the crate's
+# own tests use it to check schema/mise.json.
+schema = ["dep:schemars", "dep:serde_json"]
+
 [dependencies]
 eyre = "0.6"
 indexmap = { version = "2", features = ["serde"] }
 mise-bootstrap = { path = "../mise-bootstrap", version = "0.1" }
+schemars = { version = "1", optional = true, features = [
+  "indexmap2",
+  "preserve_order",
+] }
 serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", optional = true, features = ["preserve_order"] }
 serde_ignored = "0.1"
 toml = { version = "1", features = ["parse", "preserve_order"] }

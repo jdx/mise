@@ -18,6 +18,8 @@ pub mod managed_files;
 pub mod packages;
 pub mod remote;
 pub mod repos;
+#[cfg(feature = "schema")]
+pub mod schema;
 pub mod secrets;
 pub mod services_common;
 pub mod systemd;

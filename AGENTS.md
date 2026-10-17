@@ -261,7 +261,7 @@ If you think you need to pick "the newest installed version" at a new call site,
 ### Configuration Parsing
 The configuration system supports multiple file formats and environment-specific configs. Changes to settings require updating `settings.toml` and running `mise run render:schema`. The `Settings` types are generated from `settings.toml` in `crates/mise-settings`; loading them (config discovery, trust, CLI flags) stays in `src/config/settings.rs`, whose `SettingsExt` trait holds the methods that need the rest of mise.
 
-When changing configuration syntax or tool options, update `schema/mise.json` and run `mise run render:schema`. The render task also regenerates `schema/mise-task.json` from the main schema.
+When changing configuration syntax or tool options, update `schema/mise.json` and run `mise run render:schema`. The render task also regenerates `schema/mise-task.json` from the main schema. Sections whose types live in `crates/mise-config` (so far `[history]`) are generated from those types and their doc comments: edit the Rust, not the JSON, then run `mise run render:schema`.
 
 The `schema_matches_parser` unit test (`src/config/config_file/mise_toml/schema_conformance.rs`) validates every `toml` block in `docs/` and every mise config an e2e heredoc writes against both the schema and `MiseToml`'s parser, and fails when they disagree. Fix the schema rather than the corpus. Mark a config that mise refuses on purpose with `# schema: invalid` (e2e) or `<!-- schema: invalid -->` (docs) on the line above it, and an excerpt that is not a whole config with `schema: skip`. List deliberate differences in its `GAPS` with a reason.
 
