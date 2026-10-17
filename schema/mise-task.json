@@ -89,66 +89,67 @@
       ]
     },
     "task_props": {
+      "type": "object",
       "description": "common task properties",
       "properties": {
         "alias": {
           "oneOf": [
             {
-              "description": "alias for this task",
-              "type": "string"
+              "type": "string",
+              "description": "alias for this task"
             },
             {
+              "type": "array",
               "description": "alias for this task",
               "items": {
-                "description": "alias for this task",
-                "type": "string"
-              },
-              "type": "array"
+                "type": "string",
+                "description": "alias for this task"
+              }
             }
           ]
         },
         "confirm": {
           "oneOf": [
             {
-              "description": "confirmation message before running this task",
-              "type": "string"
+              "type": "string",
+              "description": "confirmation message before running this task"
             },
             {
+              "type": "object",
               "description": "confirmation message before running this task with optional default value and custom answer labels",
               "properties": {
                 "message": {
-                  "description": "confirmation message before running this task",
-                  "type": "string"
+                  "type": "string",
+                  "description": "confirmation message before running this task"
                 },
                 "default": {
+                  "type": "string",
                   "description": "default value for confirmation (yes/no/true/false)",
-                  "enum": ["yes", "no", "y", "n", "true", "false"],
-                  "type": "string"
+                  "enum": ["yes", "no", "y", "n", "true", "false"]
                 },
                 "yes": {
-                  "description": "custom label for the affirmative answer",
-                  "type": "string"
+                  "type": "string",
+                  "description": "custom label for the affirmative answer"
                 },
                 "no": {
-                  "description": "custom label for the negative answer",
-                  "type": "string"
+                  "type": "string",
+                  "description": "custom label for the negative answer"
                 }
               },
               "required": ["message"],
-              "unevaluatedProperties": false,
-              "type": "object"
+              "unevaluatedProperties": false
             }
           ]
         },
         "depends": {
           "oneOf": [
             {
-              "description": "task with args to run before this task",
-              "type": "string"
+              "type": "string",
+              "description": "task with args to run before this task"
             },
             {
-              "description": "task with args to run before this task",
               "type": "array",
+              "description": "task with args to run before this task",
               "items": {
                 "$ref": "#/$defs/task_dependency_item"
               }
@@ -162,16 +163,16 @@
           "description": "[experimental] project daemons that must be running and ready before this task runs",
           "oneOf": [
             {
-              "description": "true requires every daemon declared in [daemons]",
-              "type": "boolean"
+              "type": "boolean",
+              "description": "true requires every daemon declared in [daemons]"
             },
             {
-              "description": "name of a daemon declared in [daemons]",
-              "type": "string"
+              "type": "string",
+              "description": "name of a daemon declared in [daemons]"
             },
             {
-              "description": "names of daemons declared in [daemons]",
               "type": "array",
+              "description": "names of daemons declared in [daemons]",
               "items": {
                 "type": "string"
               }
@@ -181,12 +182,12 @@
         "depends_post": {
           "oneOf": [
             {
-              "description": "task with args to run after this task",
-              "type": "string"
+              "type": "string",
+              "description": "task with args to run after this task"
             },
             {
-              "description": "task with args to run after this task",
               "type": "array",
+              "description": "task with args to run after this task",
               "items": {
                 "$ref": "#/$defs/task_dependency_item"
               }
@@ -199,15 +200,15 @@
         "wait_for": {
           "oneOf": [
             {
-              "description": "task with args to wait for completion first",
-              "type": "string"
+              "type": "string",
+              "description": "task with args to wait for completion first"
             },
             {
+              "type": "array",
               "description": "task with args to wait for completion first",
               "items": {
                 "$ref": "#/$defs/task_dependency_item"
-              },
-              "type": "array"
+              }
             },
             {
               "$ref": "#/$defs/task_dependency_table"
@@ -215,13 +216,13 @@
           ]
         },
         "description": {
-          "description": "description of task",
-          "type": "string"
+          "type": "string",
+          "description": "description of task"
         },
         "dir": {
-          "default": "{{ config_root }}",
+          "type": "string",
           "description": "directory to run script in, default is the project's base directory",
-          "type": "string"
+          "default": "{{ config_root }}"
         },
         "env": {
           "$ref": "#/$defs/env"
@@ -230,11 +231,11 @@
           "$ref": "#/$defs/vars"
         },
         "tools": {
+          "type": "object",
           "description": "tools to install/activate before running this task",
           "additionalProperties": {
             "$ref": "#/$defs/tool"
           },
-          "type": "object",
           "patternProperties": {
             "^github:": {
               "$ref": "#/$defs/tool_github"
@@ -299,71 +300,71 @@
           }
         },
         "hide": {
-          "default": false,
+          "type": "boolean",
           "description": "do not display this task",
-          "type": "boolean"
+          "default": false
         },
         "outputs": {
           "oneOf": [
             {
+              "type": "array",
               "description": "files created by this task (entries starting with `!` are excluded; use `\\!` to escape a literal `!` prefix)",
               "items": {
-                "description": "glob pattern or path to files created by this task (entries starting with `!` are excluded)",
-                "type": "string"
-              },
-              "type": "array"
+                "type": "string",
+                "description": "glob pattern or path to files created by this task (entries starting with `!` are excluded)"
+              }
             },
             {
-              "description": "glob pattern or path to files created by this task (entries starting with `!` are excluded)",
-              "type": "string"
+              "type": "string",
+              "description": "glob pattern or path to files created by this task (entries starting with `!` are excluded)"
             },
             {
+              "type": "object",
               "unevaluatedProperties": false,
               "properties": {
                 "auto": {
-                  "description": "automatically touch an internal tracked file instead of specifying outputs; `false` is the same as leaving `outputs` unset",
-                  "type": "boolean"
+                  "type": "boolean",
+                  "description": "automatically touch an internal tracked file instead of specifying outputs; `false` is the same as leaving `outputs` unset"
                 }
               },
-              "required": ["auto"],
-              "type": "object"
+              "required": ["auto"]
             }
           ]
         },
         "cache": {
-          "description": "experimental local artifact cache for declared task outputs",
           "type": "object",
+          "description": "experimental local artifact cache for declared task outputs",
           "unevaluatedProperties": false,
           "properties": {
             "enabled": {
-              "default": false,
+              "type": "boolean",
               "description": "store and restore task outputs from the local mise cache",
-              "type": "boolean"
+              "default": false
             },
             "audit": {
-              "default": false,
+              "type": "boolean",
               "description": "report project files read or written outside declared cache sources and outputs",
-              "type": "boolean"
+              "default": false
             },
             "env": {
+              "type": "array",
               "description": "ambient environment variable names whose values affect the cache key",
               "items": {
                 "type": "string"
-              },
-              "type": "array"
+              }
             },
             "command_inputs": {
+              "type": "array",
               "description": "commands whose stdout and stderr affect the cache key",
               "items": {
                 "type": "string"
-              },
-              "type": "array"
+              }
             }
           }
         },
         "rust_cache": {
-          "deprecated": true,
           "description": "deprecated no-op; use mbx for Rust action caching instead: https://mr-boxington.jdx.dev/getting-started",
+          "deprecated": true,
           "oneOf": [
             {
               "type": "boolean"
@@ -378,15 +379,16 @@
                 },
                 "verify": {
                   "type": "boolean",
+                  "description": "deprecated no-op",
                   "default": false,
-                  "deprecated": true,
-                  "description": "deprecated no-op"
+                  "deprecated": true
                 }
               }
             }
           ]
         },
         "output": {
+          "type": "string",
           "description": "output style for this task (prefix, interleave, keep-order, replacing, timed, quiet, silent). Independent of the quiet/silent verbosity fields.",
           "enum": [
             "prefix",
@@ -396,41 +398,40 @@
             "timed",
             "quiet",
             "silent"
-          ],
-          "type": "string"
+          ]
         },
         "quiet": {
-          "default": false,
+          "type": "boolean",
           "description": "do not display mise information for this task",
-          "type": "boolean"
+          "default": false
         },
         "silent": {
-          "default": false,
           "description": "suppress all output for this task",
+          "default": false,
           "oneOf": [
             {
               "type": "boolean"
             },
             {
-              "enum": ["stdout", "stderr"],
-              "type": "string"
+              "type": "string",
+              "enum": ["stdout", "stderr"]
             }
           ]
         },
         "interactive": {
-          "default": false,
+          "type": "boolean",
           "description": "mark task as interactive, acquiring exclusive terminal access while allowing other non-interactive tasks to run in parallel",
-          "type": "boolean"
+          "default": false
         },
         "raw": {
-          "default": false,
+          "type": "boolean",
           "description": "directly connect task to stdin/stdout/stderr",
-          "type": "boolean"
+          "default": false
         },
         "raw_args": {
-          "default": false,
+          "type": "boolean",
           "description": "skip mise's argument parsing for this task — all arguments (including --help/-h) are forwarded verbatim to the underlying command. Use for tasks that proxy a tool with its own argument parser.",
-          "type": "boolean"
+          "default": false
         },
         "run": {
           "oneOf": [
@@ -459,22 +460,22 @@
           ]
         },
         "file": {
-          "description": "Execute an external script",
-          "type": "string"
+          "type": "string",
+          "description": "Execute an external script"
         },
         "sources": {
           "oneOf": [
             {
+              "type": "array",
               "description": "files that this task depends on (entries starting with `!` are excluded; use `\\!` to escape a literal `!` prefix)",
               "items": {
-                "description": "glob pattern or path to files that this task depends on (entries starting with `!` are excluded)",
-                "type": "string"
-              },
-              "type": "array"
+                "type": "string",
+                "description": "glob pattern or path to files that this task depends on (entries starting with `!` are excluded)"
+              }
             },
             {
-              "description": "glob pattern or path to files that this task depends on (entries starting with `!` are excluded)",
-              "type": "string"
+              "type": "string",
+              "description": "glob pattern or path to files that this task depends on (entries starting with `!` are excluded)"
             }
           ]
         },
@@ -482,80 +483,80 @@
           "$ref": "#/$defs/task_watch"
         },
         "shell": {
-          "description": "specify a shell command to run the script with",
-          "type": "string"
+          "type": "string",
+          "description": "specify a shell command to run the script with"
         },
         "usage": {
-          "description": "Specify usage (https://usage.jdx.dev/) specs for the task",
-          "type": "string"
+          "type": "string",
+          "description": "Specify usage (https://usage.jdx.dev/) specs for the task"
         },
         "timeout": {
-          "description": "timeout for this task",
-          "type": "string"
+          "type": "string",
+          "description": "timeout for this task"
         },
         "skip_if": {
-          "description": "shell command checked before the task runs; if it exits 0, the task is skipped and counts as successful",
-          "type": "string"
+          "type": "string",
+          "description": "shell command checked before the task runs; if it exits 0, the task is skipped and counts as successful"
         },
         "deny_all": {
-          "default": false,
+          "type": "boolean",
           "description": "block reads, writes, network, and env vars",
-          "type": "boolean"
+          "default": false
         },
         "deny_read": {
-          "default": false,
+          "type": "boolean",
           "description": "block filesystem reads",
-          "type": "boolean"
+          "default": false
         },
         "deny_write": {
-          "default": false,
+          "type": "boolean",
           "description": "block all filesystem writes",
-          "type": "boolean"
+          "default": false
         },
         "deny_net": {
-          "default": false,
+          "type": "boolean",
           "description": "block all network access",
-          "type": "boolean"
+          "default": false
         },
         "deny_env": {
-          "default": false,
+          "type": "boolean",
           "description": "block env var inheritance",
-          "type": "boolean"
+          "default": false
         },
         "allow_read": {
+          "type": "array",
           "description": "allow reads from specific paths",
           "items": {
             "type": "string"
-          },
-          "type": "array"
+          }
         },
         "allow_write": {
+          "type": "array",
           "description": "allow writes to specific paths",
           "items": {
             "type": "string"
-          },
-          "type": "array"
+          }
         },
         "allow_net": {
+          "type": "array",
           "description": "allow network to specific hosts; not supported yet, so Linux and macOS reject it",
           "items": {
             "type": "string"
-          },
-          "type": "array"
+          }
         },
         "allow_env": {
+          "type": "array",
           "description": "allow specific env vars through",
           "items": {
             "type": "string"
-          },
-          "type": "array"
+          }
         },
         "pass_through_env": {
+          "type": "array",
           "description": "experimental ambient env vars preserved under environment denial without affecting the task cache key",
           "items": {
             "type": "string"
-          },
-          "type": "array"
+          }
         },
         "secrets": {
           "description": "[experimental] Secret keys this task receives when it starts, e.g. [\"DEPLOY_KEY\"]. Dependencies do not inherit them. See `mise secrets ls`.",
@@ -573,8 +574,7 @@
             }
           ]
         }
-      },
-      "type": "object"
+      }
     },
     "env": {
       "additionalProperties": {
