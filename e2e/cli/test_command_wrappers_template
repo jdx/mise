@@ -29,3 +29,16 @@ TOML
 mise reshim
 eval "$(mise activate bash --shims)"
 assert "foo run" "home:$HOME/foo args:--mode=fast /opt/foo run"
+
+# `config_root` and relative paths come from the declaring file, wherever the shim runs
+echo token >token.txt
+mkdir -p sub
+cat >mise.toml <<'TOML'
+[wrappers.foo]
+command = "fakeshow"
+args = ["{{ config_root }}", "{{ read_file(path='token.txt') | trim }}"]
+TOML
+
+mise reshim
+assert "foo run" "home: args:$PWD token run"
+assert "cd sub && foo run" "home: args:$PWD token run"
