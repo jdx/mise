@@ -1,5 +1,13 @@
 # Changelog
 
+## [2026.10.14](https://github.com/jdx/mise/releases/tag/v2026.10.14) - 2026-10-17
+
+### 🐛 Bug Fixes
+
+- **(activate)** stop fish not-found recursion after mise implode by @jdx in [#14594](https://github.com/jdx/mise/pull/14594)
+- **(bootstrap)** find nix installed by a pre-packages hook by @jdx in [#14596](https://github.com/jdx/mise/pull/14596)
+- **(pipx)** bind the real python for locked uv installs by @jdx in [#14593](https://github.com/jdx/mise/pull/14593)
+
 ## [2026.10.13](https://github.com/jdx/mise/releases/tag/v2026.10.13) - 2026-10-17
 
 ### 🚀 Features
