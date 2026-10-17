@@ -6,8 +6,8 @@
 # https://github.com/jdx/mise/issues/14590
 
 if ! command -v fish >/dev/null; then
-	echo "fish not installed, skipping"
-	exit 0
+  echo "fish not installed, skipping"
+  exit 0
 fi
 
 mkdir -p stub
