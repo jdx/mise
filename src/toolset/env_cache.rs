@@ -494,8 +494,9 @@ pub(crate) fn compute_settings_hash() -> String {
     hasher.update(dirs::INSTALL_STORE.to_string_lossy().as_bytes());
 
     // Add any other relevant settings
-    if let Some(env_file) = &settings.env_file {
+    for env_file in settings.env_file.iter().flatten() {
         hasher.update(env_file.to_string_lossy().as_bytes());
+        hasher.update(b"\0");
     }
 
     let hash = hasher.finalize();
