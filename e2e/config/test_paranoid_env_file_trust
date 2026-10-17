@@ -133,3 +133,35 @@ assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file or script
 assert "MISE_PARANOID=1 mise trust $HOME/globbed/repos/a/.env"
 assert_contains "MISE_PARANOID=1 mise env" "GLOB_SRC_TEST=ran"
 assert_contains "MISE_PARANOID=1 mise env" "GLOB_FILE_TEST=yes"
+
+# A bare `mise trust` trusts the project's config and the env files and scripts it reads.
+unset MISE_GLOBAL_CONFIG_FILE
+mkdir -p ~/bare
+cd ~/bare || exit 1
+cat <<'EOS' >mise.toml
+[env]
+_.file = ".env"
+_.source = "env.sh"
+EOS
+echo 'BARE_FILE_TEST=one' >.env
+echo 'export BARE_SRC_TEST=ran' >env.sh
+echo 'BARE_SETTING_TEST=set' >.env.setting
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "not trusted"
+assert_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env.setting mise trust 2>&1" "env.sh"
+assert_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env.setting mise env" "BARE_FILE_TEST=one"
+assert_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env.setting mise env" "BARE_SRC_TEST=ran"
+assert_contains "MISE_PARANOID=1 MISE_ENV_FILE=.env.setting mise env" "BARE_SETTING_TEST=set"
+# Editing a file makes it untrusted again, and `mise trust` approves it once more.
+echo 'BARE_FILE_TEST=two' >.env
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file"
+assert "MISE_PARANOID=1 mise trust"
+assert_contains "MISE_PARANOID=1 mise env" "BARE_FILE_TEST=two"
+# With a path it trusts only that file.
+echo 'BARE_FILE_TEST=three' >.env
+echo 'export BARE_SRC_TEST=edited' >env.sh
+assert "MISE_PARANOID=1 mise trust .env"
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file or script"
+assert "MISE_PARANOID=1 mise trust"
+assert_contains "MISE_PARANOID=1 mise env" "BARE_SRC_TEST=edited"
+# Outside paranoid mode it behaves as before and does not touch env files.
+assert_not_contains "mise trust 2>&1" "env.sh"
