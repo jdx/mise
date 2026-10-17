@@ -173,6 +173,7 @@ mise accepts a plugin release when:
 
 Declare the artifact in the repository's `packslip.toml`:
 
+<!-- schema: skip -->
 ```toml
 [[artifact]]
 path = "dist/my-plugin.tar.gz"

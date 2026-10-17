@@ -250,6 +250,18 @@ so the change cannot leak into a later test.
 that depend on order. It needs a nightly toolchain (`cargo +nightly`); you do
 not have to change your default toolchain.
 
+### Schema conformance {#schema-conformance}
+
+`schema/mise.json` is written by hand, so a unit test checks it against the
+parser: `cargo test schema_matches_parser` parses every `toml` block in `docs/`
+and every mise config an E2E test writes with a heredoc, validates each against
+the schema, and fails when the two disagree. Fix the schema, then run
+`mise run render:schema`. An E2E config that mise refuses on purpose gets a
+`# schema: invalid` comment on the line above its heredoc, and the test then
+checks that the schema rejects it too; `# schema: skip` leaves a heredoc out.
+A deliberate difference goes in the `GAPS` list in
+`src/config/config_file/mise_toml/schema_conformance.rs`, with its reason.
+
 ### E2E tests {#e2e-tests}
 
 `mise run test:e2e` builds mise, then runs the tests you select. Each argument
@@ -454,6 +466,7 @@ entry becomes three things: a field of the Rust `Settings` type, which
 [settings reference](/configuration/settings.html), which renders
 `settings.toml` when the site builds.
 
+<!-- schema: skip -->
 ```toml
 [http_timeout]
 default = "30s"

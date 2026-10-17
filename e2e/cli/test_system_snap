@@ -126,6 +126,7 @@ assert_succeed "test ! -s '$HOME/snap-log'"
 
 # Malformed names and channels are rejected.
 assert_fail_contains "mise bootstrap packages apply --yes snap:--classic" "invalid snap name"
+# schema: invalid
 cat >mise.toml <<'TOML'
 [bootstrap.packages]
 "snap:node" = { channel = "22 stable" }

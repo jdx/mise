@@ -375,6 +375,12 @@
                 "enabled": {
                   "type": "boolean",
                   "default": true
+                },
+                "verify": {
+                  "type": "boolean",
+                  "default": false,
+                  "deprecated": true,
+                  "description": "deprecated no-op"
                 }
               }
             }
@@ -962,6 +968,9 @@
                   }
                 ]
               },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
               "redact": {
                 "$ref": "#/$defs/env_redact"
               }
@@ -979,6 +988,9 @@
                 "description": "question to ask once, on a machine with no saved answer, when a command is run with a prompt flag such as mise bootstrap --prompt-vars",
                 "type": "string"
               },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
               "redact": {
                 "$ref": "#/$defs/env_redact"
               }
@@ -992,6 +1004,9 @@
               "prompt": {
                 "description": "question to ask once, on a machine with no saved answer, when a command is run with a prompt flag such as mise bootstrap --prompt-vars",
                 "type": "string"
+              },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
               },
               "redact": {
                 "$ref": "#/$defs/env_redact"
@@ -1016,6 +1031,9 @@
               "age": {
                 "$ref": "#/$defs/env_age"
               },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
               "redact": {
                 "$ref": "#/$defs/env_redact"
               }
@@ -1035,6 +1053,9 @@
                   },
                   "format": {
                     "$ref": "#/$defs/env_age_format"
+                  },
+                  "tools": {
+                    "$ref": "#/$defs/env_tools"
                   },
                   "redact": {
                     "$ref": "#/$defs/env_redact"

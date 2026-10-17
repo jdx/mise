@@ -201,3 +201,86 @@ assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file"
 assert_contains "MISE_PARANOID=1 mise trust 2>&1" "parent.env"
 assert_contains "MISE_PARANOID=1 mise env" "STRICT_PARENT=1"
 assert_contains "MISE_PARANOID=1 mise env" "STRICT_CHILD=1"
+
+# A `required` variable that only the untrusted file supplies must not stop `mise trust` from
+# finding that file.
+mkdir -p ~/required
+cd ~/required || exit 1
+cat <<'EOS' >mise.toml
+[env]
+REQUIRED_TEST = { required = true }
+_.file = ".env"
+EOS
+echo 'REQUIRED_TEST=yes' >.env
+assert_contains "MISE_PARANOID=1 mise trust 2>&1" ".env"
+assert_contains "MISE_PARANOID=1 mise env" "REQUIRED_TEST=yes"
+
+# An entry that resolves after the tools do is found as well.
+mkdir -p ~/aftertools
+cd ~/aftertools || exit 1
+cat <<'EOS' >mise.toml
+[env]
+_.file = { path = ".env", tools = true }
+EOS
+echo 'AFTER_TOOLS_TEST=yes' >.env
+assert_contains "MISE_PARANOID=1 mise trust 2>&1" ".env"
+assert_contains "MISE_PARANOID=1 mise env" "AFTER_TOOLS_TEST=yes"
+
+# `mise trust --all` also approves the env files of the projects below the current directory.
+mkdir -p ~/all/one ~/all/two/deep
+cat <<'EOS' >~/all/one/mise.toml
+[env]
+_.file = ".env"
+EOS
+echo 'ALL_ONE_TEST=yes' >~/all/one/.env
+cat <<'EOS' >~/all/two/deep/mise.toml
+[env]
+_.source = "env.sh"
+EOS
+echo 'export ALL_TWO_TEST=yes' >~/all/two/deep/env.sh
+cd ~/all || exit 1
+assert "MISE_PARANOID=1 mise trust --all"
+assert_contains "cd one && MISE_PARANOID=1 mise env" "ALL_ONE_TEST=yes"
+assert_contains "cd two/deep && MISE_PARANOID=1 mise env" "ALL_TWO_TEST=yes"
+
+# An activated shell picks up a file as soon as it is trusted. The skipped file keeps `hook-env`
+# from exiting early, so the next prompt re-resolves the environment.
+mkdir -p ~/activated
+cd ~/activated || exit 1
+cat <<'EOS' >mise.toml
+[env]
+_.file = ".env"
+EOS
+echo 'ACTIVATED_TEST=yes' >.env
+assert "MISE_PARANOID=1 mise trust mise.toml"
+assert "MISE_PARANOID=1 bash --noprofile --norc -c 'eval \"\$(mise hook-env -s bash 2>/dev/null)\"; [ -z \"\${ACTIVATED_TEST:-}\" ] && mise trust >/dev/null 2>&1 && eval \"\$(mise hook-env -s bash 2>/dev/null)\" && [ \"\${ACTIVATED_TEST:-}\" = yes ] && echo ok'" "ok"
+
+# `mise trust --all` also covers a project below the current directory whose config is already
+# trusted but whose env file was edited.
+mkdir -p ~/all-again/proj
+cd ~/all-again/proj || exit 1
+cat <<'EOS' >mise.toml
+[env]
+_.file = ".env"
+EOS
+echo 'AGAIN_TEST=one' >.env
+assert "MISE_PARANOID=1 mise trust"
+echo 'AGAIN_TEST=two' >.env
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file"
+cd ..
+assert "MISE_PARANOID=1 mise trust --all"
+assert_contains "cd proj && MISE_PARANOID=1 mise env" "AGAIN_TEST=two"
+
+# The environment selected with -E reaches the per-project runs, so files that only an
+# environment-specific config names are approved too.
+mkdir -p ~/all-env/proj
+cd ~/all-env/proj || exit 1
+echo '# project' >mise.toml
+cat <<'EOS' >mise.staging.toml
+[env]
+_.file = ".env.staging"
+EOS
+echo 'STAGING_TEST=yes' >.env.staging
+cd ..
+assert "MISE_PARANOID=1 mise -E staging trust --all"
+assert_contains "cd proj && MISE_PARANOID=1 MISE_ENV=staging mise env" "STAGING_TEST=yes"

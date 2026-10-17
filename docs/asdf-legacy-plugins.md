@@ -273,6 +273,8 @@ the Git refs before and after the update.
 An optional `mise.plugin.toml` at the plugin's root changes how mise caches or
 replaces some scripts:
 
+<!-- schema: skip -->
+
 ```toml
 [exec-env]
 cache-key = ["{{ opts.mirror | default(value='') }}"]

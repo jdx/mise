@@ -129,6 +129,8 @@ through the registry.
 Each tool is one file, `registry/<name>.toml`, and the file name is the
 shorthand. Keys are in alphabetical order because taplo sorts them:
 
+<!-- schema: skip -->
+
 ```toml
 aliases = ["your-tool-cli"]
 backends = [
@@ -190,6 +192,8 @@ other keys narrow or configure it:
 
 Long tables read better as `[[backends]]` sections. This is
 `registry/twg.toml`:
+
+<!-- schema: skip -->
 
 ```toml
 description = "Command line interface to the Atlassian Teamwork Graph and Cloud services"
@@ -265,6 +269,8 @@ mise shows the message as a warning whenever it installs the tool.
 When a backend supports only newer releases, set `min_version` on it. hk
 publishes packslip manifests starting at 1.58.1:
 
+<!-- schema: skip -->
+
 ```toml
 backends = [
   { full = "packslip:github.com/jdx/hk", min_version = "1.58.1" },
@@ -291,6 +297,8 @@ bound.
 
 When a backend serves only older releases, such as a frozen 1.x line published
 separately from later majors, set `max_version` on it:
+
+<!-- schema: skip -->
 
 ```toml
 backends = [
@@ -326,6 +334,8 @@ When a release changes how a backend finds its files, such as a renamed asset or
 release workflow, list the backend once per range and give each entry its own
 options:
 
+<!-- schema: skip -->
+
 ```toml
 backends = [
   { full = "github:example/tool", min_version = "2.0.0", options = { asset_pattern = "tool-v2-*" } },
@@ -347,6 +357,8 @@ When a project publishes
 [GitHub artifact attestations](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations)
 for its release assets, set `attestations_since` on its `github:` backend to the
 first version whose assets all carry them:
+
+<!-- schema: skip -->
 
 ```toml
 backends = [
@@ -390,6 +402,8 @@ An entry can let users read the tool's version from the
 [idiomatic version files](/dev-tools/versions.html#idiomatic-version-files) the
 tool already uses. A file name uses mise's plain-text parser:
 
+<!-- schema: skip -->
+
 ```toml
 backends = ["aqua:owner/repo"]
 idiomatic_files = [".your-tool-version"]
@@ -398,6 +412,8 @@ idiomatic_files = [".your-tool-version"]
 For a structured or tool-specific file, use a table with the parser fields that
 the [http backend's version listing](/dev-tools/backends/http.html#version-list-url)
 supports:
+
+<!-- schema: skip -->
 
 ```toml
 idiomatic_files = [
@@ -468,6 +484,8 @@ Every new entry needs a `test`. The registry workflow's
 [`validate-new-tools` job](https://github.com/jdx/mise/blob/main/.github/workflows/registry-impl.yml)
 fails a pull request that adds a tool without one.
 
+<!-- schema: skip -->
+
 ```toml
 test = { cmd = "your-tool --version", expected = "your-tool {{version}}" }
 ```
@@ -486,6 +504,8 @@ version; otherwise pick another stable part of the output.
 
 If `cmd` needs other mise-managed tools on `PATH`, list them in `tools`. Only
 `mise test-tool` uses them; they do not change how the tool installs.
+
+<!-- schema: skip -->
 
 ```toml
 test = { cmd = "gradle -V", expected = "Gradle", tools = ["java"] }

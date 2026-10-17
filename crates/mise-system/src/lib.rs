@@ -246,7 +246,6 @@ impl BootstrapMerge for BootstrapTomlConfig {
         or(&mut self.linux.firewall, lower.linux.firewall);
         fill(&mut self.linux.systemd.units, lower.linux.systemd.units);
         or(&mut self.user.login_shell, lower.user.login_shell);
-        #[cfg(unix)]
         or(&mut self.brew.adopt, lower.brew.adopt);
         fill(&mut self.brew.taps, lower.brew.taps);
     }

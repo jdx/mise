@@ -263,6 +263,8 @@ The configuration system supports multiple file formats and environment-specific
 
 When changing configuration syntax or tool options, update `schema/mise.json` and run `mise run render:schema`. The render task also regenerates `schema/mise-task.json` from the main schema.
 
+The `schema_matches_parser` unit test (`src/config/config_file/mise_toml/schema_conformance.rs`) validates every `toml` block in `docs/` and every mise config an e2e heredoc writes against both the schema and `MiseToml`'s parser, and fails when they disagree. Fix the schema rather than the corpus. Mark a config that mise refuses on purpose with `# schema: invalid` (e2e) or `<!-- schema: invalid -->` (docs) on the line above it, and an excerpt that is not a whole config with `schema: skip`. List deliberate differences in its `GAPS` with a reason.
+
 ### Testing Strategy
 - E2E tests are organized by feature area (cli/, config/, backend/, etc.)
 - Use snapshot testing for CLI output verification

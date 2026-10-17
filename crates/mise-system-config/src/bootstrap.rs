@@ -176,7 +176,8 @@ pub struct BootstrapLinuxSystemdTomlConfig {
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct SystemBrewTomlConfig {
     /// Adopt identical existing app bundles for brew-cask entries by default.
-    #[cfg(unix)]
+    /// Parsed on every platform so a config shared with Windows, where brew
+    /// does not run, is not reported as having an unknown field.
     #[serde(default)]
     pub adopt: Option<bool>,
     /// `[bootstrap.brew.taps]`: `owner/tap` -> GitHub git URL. Like
