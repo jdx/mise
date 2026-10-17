@@ -28,7 +28,7 @@ use crate::wrappers::CommandWrapper;
 /// Each generated fragment, keyed by the JSON pointer it replaces in `schema/mise.json`.
 pub fn fragments() -> Vec<(&'static str, Value)> {
     let mut generator = generator();
-    vec![
+    let derived = vec![
         (
             "/properties/bootstrap",
             fragment::<BootstrapTomlConfig>(&mut generator),
@@ -64,7 +64,13 @@ pub fn fragments() -> Vec<(&'static str, Value)> {
             "/$defs/launchd_calendar_interval",
             fragment::<LaunchdCalendarInterval>(&mut generator),
         ),
-    ]
+    ];
+    // Written by hand next to their parser, so they skip the generator's transforms and are
+    // emitted exactly as written.
+    let hand_written = crate::env::schema_fragments()
+        .into_iter()
+        .map(|(pointer, schema)| (pointer, schema.to_value()));
+    derived.into_iter().chain(hand_written).collect()
 }
 
 /// `schema_with` functions that point at a `$defs` entry, for fields that share one definition.

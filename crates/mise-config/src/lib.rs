@@ -1,7 +1,7 @@
 //! The `mise.toml` declaration types: plain data parsed from the file, with no templating,
 //! settings, or filesystem access. So far this covers `[bootstrap]`, the `[daemons]` sections,
-//! `[doctor]`, `[dotfiles]`, `[dotfile_groups]`, `[history]`, `[oci]`, `[tool_config]`,
-//! `[watch_files]`, and `[wrappers]`.
+//! `[doctor]`, `[dotfiles]`, `[env]`, `[dotfile_groups]`, `[history]`, `[oci]`, `[tool_config]`,
+//! `[vars]`, `[watch_files]`, and `[wrappers]`.
 //!
 //! mise's config layer stores these as parsed, and the system modules interpret them. Keeping
 //! the plain data here, below both, is what lets those two layers be separate crates.
@@ -14,6 +14,7 @@ pub mod de;
 pub mod defaults;
 pub mod doctor;
 pub mod dotfiles;
+pub mod env;
 pub mod firewall;
 pub mod history;
 pub mod launchd;
