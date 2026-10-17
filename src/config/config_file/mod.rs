@@ -696,9 +696,17 @@ pub(crate) fn env_file_trust_check(path: &Path) -> eyre::Result<bool> {
     if Settings::safe_mode() || !Settings::try_get().is_ok_and(|settings| settings.paranoid) {
         return Ok(true);
     }
-    // A file that is not there loads nothing, so there is nothing to approve.
-    let Ok(canonical) = path.canonicalize() else {
-        return Ok(true);
+    // A file that is not there loads nothing, so there is nothing to approve. Any other failure
+    // to resolve it is not proof it is absent, so it must not load unchecked.
+    let canonical = match path.canonicalize() {
+        Ok(canonical) => canonical,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(err) => {
+            return Err(eyre!(
+                "cannot check paranoid-mode trust for {}: {err}",
+                display_path(path)
+            ));
+        }
     };
     // `is_trusted` memoizes by path, which would let a long-lived process (a reload after the
     // file was edited) keep accepting changed contents. Forget the memo so the hash is checked.
@@ -1849,6 +1857,19 @@ mod env_file_trust_tests {
         paranoid_on(&held);
         let tmp = tempfile::tempdir().unwrap();
         assert!(env_file_trust_check(&tmp.path().join(".env")).unwrap());
+    }
+
+    /// A path that cannot be resolved for a reason other than being absent is not shown to be
+    /// absent, so it fails instead of loading unchecked.
+    #[cfg(unix)]
+    #[test]
+    fn a_path_that_cannot_be_resolved_fails_closed() {
+        use std::os::unix::ffi::OsStrExt;
+        let held = crate::test::SettingsGuard::lock();
+        paranoid_on(&held);
+        let path = Path::new(std::ffi::OsStr::from_bytes(b"/tmp/nul\0byte/.env"));
+        let err = env_file_trust_check(path).unwrap_err();
+        assert!(err.to_string().contains("cannot check paranoid-mode trust"));
     }
 
     #[test]
