@@ -140,14 +140,13 @@ impl ConfigSet {
                 display_path(&file)
             );
         }
-        if !file.exists() && !self.global && !self.system {
+        let may_create = self.global || self.system || self.override_file;
+        if !file.exists() && !may_create {
             bail!("config file not found: {}", display_path(&file));
         }
         let raw = match std::fs::read_to_string(&file) {
             Ok(raw) => raw,
-            Err(error)
-                if (self.global || self.system) && error.kind() == std::io::ErrorKind::NotFound =>
-            {
+            Err(error) if may_create && error.kind() == std::io::ErrorKind::NotFound => {
                 String::new()
             }
             Err(error) => return Err(error.into()),

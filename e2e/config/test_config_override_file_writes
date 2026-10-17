@@ -86,3 +86,8 @@ assert_fail "mise settings set --override --local quiet=true"
 
 # MISE_GLOBAL_CONFIG_FILE disables the tier, so --override has nowhere to write
 assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/g.toml mise set --override H=8 2>&1" "MISE_GLOBAL_CONFIG_FILE"
+
+# --override creates a missing file, for config set too
+rm "$MISE_CONFIG_DIR/config.override.toml" "$MISE_CONFIG_DIR/config.test.override.toml"
+assert_succeed "mise config set --override env.NEW 1"
+assert_contains "cat $MISE_CONFIG_DIR/config.override.toml" 'NEW = "1"'

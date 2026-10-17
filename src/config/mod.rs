@@ -3277,8 +3277,27 @@ pub fn is_global_config(path: &Path) -> bool {
 
 /// Whether `path` is one of the global override files, which outrank all project config.
 /// See [`override_config_files`].
+///
+/// Matched by name and directory rather than against the files found on disk, so a
+/// file `--override` has just created is already recognized: its lockfile and trust
+/// must not change once a later load discovers it.
 pub fn is_override_config(path: &Path) -> bool {
-    config_set_contains(&override_config_files(), path)
+    if env::MISE_GLOBAL_CONFIG_FILE.is_some() {
+        return false;
+    }
+    let is_override_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| n.strip_prefix("config."))
+        .and_then(|n| n.strip_suffix(".override.toml"))
+        .is_some()
+        || path
+            .file_name()
+            .is_some_and(|n| n == "config.override.toml");
+    is_override_name
+        && path.parent().is_some_and(|dir| {
+            file::desymlink_path_cached(dir) == file::desymlink_path_cached(&dirs::CONFIG)
+        })
 }
 
 /// Whether `path` was loaded from a `[bootstrap].config_roots` root that global
