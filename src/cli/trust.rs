@@ -333,7 +333,7 @@ impl Trust {
     /// trusted is recorded instead of failing, then trusts what was recorded. A trusted file can
     /// name the next one, so this repeats until nothing new turns up. Returns how many it trusted.
     async fn trust_env_files() -> Result<usize> {
-        if !Settings::get().paranoid {
+        if !Settings::get().paranoid.env_files() {
             return Ok(0);
         }
         config::skip_untrusted_configs();
