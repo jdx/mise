@@ -412,6 +412,16 @@ if [[ $cur_version != "$latest_version" ]]; then
 	bump_and_publish_subcrate "mise-dotenv" "crates/mise-dotenv" "MISE_DOTENV_VERSION"
 	cargo add -p mise "mise-dotenv@$MISE_DOTENV_VERSION"
 
+	# mise-settings re-exports TaskOutput from mise-config, so mise-config and its only
+	# workspace dependency, mise-bootstrap, publish first.
+	bump_and_publish_subcrate "mise-bootstrap" "crates/mise-bootstrap" "MISE_BOOTSTRAP_VERSION"
+	cargo add -p mise "mise-bootstrap@$MISE_BOOTSTRAP_VERSION"
+	cargo add -p mise-config "mise-bootstrap@$MISE_BOOTSTRAP_VERSION"
+
+	bump_and_publish_subcrate "mise-config" "crates/mise-config" "MISE_CONFIG_VERSION"
+	cargo add -p mise "mise-config@$MISE_CONFIG_VERSION"
+	cargo add -p mise-settings "mise-config@$MISE_CONFIG_VERSION"
+
 	# Copy settings.toml into the crate directory so the published package includes it.
 	cp settings.toml crates/mise-settings/settings.toml
 	bump_and_publish_subcrate "mise-settings" "crates/mise-settings" "MISE_SETTINGS_VERSION"
@@ -436,12 +446,6 @@ if [[ $cur_version != "$latest_version" ]]; then
 	cargo add -p mise-system-packages --target 'cfg(unix)' "mise-brew-metadata@$MISE_BREW_METADATA_VERSION"
 	bump_and_publish_subcrate "mise-system-packages" "crates/mise-system-packages" "MISE_SYSTEM_PACKAGES_VERSION"
 	cargo add -p mise "mise-system-packages@$MISE_SYSTEM_PACKAGES_VERSION"
-	bump_and_publish_subcrate "mise-bootstrap" "crates/mise-bootstrap" "MISE_BOOTSTRAP_VERSION"
-	cargo add -p mise "mise-bootstrap@$MISE_BOOTSTRAP_VERSION"
-	cargo add -p mise-config "mise-bootstrap@$MISE_BOOTSTRAP_VERSION"
-
-	bump_and_publish_subcrate "mise-config" "crates/mise-config" "MISE_CONFIG_VERSION"
-	cargo add -p mise "mise-config@$MISE_CONFIG_VERSION"
 
 	bump_and_publish_subcrate "vfox" "crates/vfox" "VFOX_VERSION"
 	cargo add "vfox@$VFOX_VERSION"

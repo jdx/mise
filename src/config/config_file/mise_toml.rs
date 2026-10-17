@@ -115,68 +115,7 @@ where
     options.insert_option(key, value).map_err(de::Error::custom)
 }
 
-#[derive(Deserialize)]
-#[serde(try_from = "RawToolMap")]
-pub(crate) struct ParsedToolMap {
-    pub request: String,
-    pub options: IndexMap<String, toml::Value>,
-}
-
-#[derive(Deserialize)]
-struct RawToolMap {
-    version: Option<toml::Value>,
-    path: Option<toml::Value>,
-    prefix: Option<toml::Value>,
-    #[serde(rename = "ref")]
-    ref_: Option<toml::Value>,
-    #[serde(flatten)]
-    options: IndexMap<String, toml::Value>,
-}
-
-fn parse_tool_selector(
-    key: &'static str,
-    value: Option<toml::Value>,
-) -> std::result::Result<Option<(&'static str, String)>, String> {
-    match value {
-        Some(toml::Value::String(value)) => Ok(Some((key, value))),
-        Some(_) => Err(format!("tool selector `{key}` must be a string")),
-        None => Ok(None),
-    }
-}
-
-impl TryFrom<RawToolMap> for ParsedToolMap {
-    type Error = String;
-
-    fn try_from(raw: RawToolMap) -> std::result::Result<Self, Self::Error> {
-        let selectors = [
-            parse_tool_selector("version", raw.version)?,
-            parse_tool_selector("path", raw.path)?,
-            parse_tool_selector("prefix", raw.prefix)?,
-            parse_tool_selector("ref", raw.ref_)?,
-        ];
-        let mut selectors = selectors.into_iter().flatten();
-        let Some((key, value)) = selectors.next() else {
-            return Err(
-                "tool definition must include exactly one of `version`, `path`, `prefix`, or `ref`"
-                    .to_string(),
-            );
-        };
-        if let Some((other, _)) = selectors.next() {
-            return Err(format!(
-                "tool definition cannot specify both `{key}` and `{other}`"
-            ));
-        }
-        let request = if key == "version" {
-            value
-        } else {
-            format!("{key}:{value}")
-        };
-        Ok(Self {
-            request,
-            options: raw.options,
-        })
-    }
-}
+pub(crate) use mise_config::task::ParsedToolMap;
 
 fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
     let core = options.core;

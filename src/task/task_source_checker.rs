@@ -4,6 +4,7 @@ use crate::file::{self, display_path};
 use crate::hash;
 use crate::rand::random_string;
 use crate::task::Task;
+use crate::task::task_sources::TaskOutputsExt;
 use eyre::{Result, bail};
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
