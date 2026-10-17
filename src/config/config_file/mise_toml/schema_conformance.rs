@@ -104,6 +104,11 @@ impl Gap {
 #[test]
 fn schema_matches_parser() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    // the corpus lives in the repository, not in the published crate
+    if !root.join("docs").is_dir() || !root.join("e2e").is_dir() {
+        eprintln!("skipping: docs/ and e2e/ are only in a checkout of the repository");
+        return;
+    }
     let schema = std::fs::read_to_string(root.join("schema/mise.json")).unwrap();
     let schema: serde_json::Value = serde_json::from_str(&schema).unwrap();
     let validator = jsonschema::draft202012::new(&schema).unwrap();
@@ -443,9 +448,6 @@ fn path_is_config(path: &str) -> bool {
 fn e2e_corpus(root: &Path) -> Vec<Document> {
     static HEREDOC: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r#"<<(-?)\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)['"]?"#).unwrap());
-    // `> file` but not `>> file` or `2> file`
-    static TARGET: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r#"(?:^|[\s;(])>\s*"?([^\s"';&|<>]+)"?"#).unwrap());
     let mut corpus = vec![];
     for entry in walkdir::WalkDir::new(root.join("e2e")).sort_by_file_name() {
         let entry = entry.unwrap();
@@ -481,10 +483,10 @@ fn e2e_corpus(root: &Path) -> Vec<Document> {
                 body.push_str(l);
                 body.push('\n');
             }
-            let Some(target) = TARGET.captures(line) else {
+            let Some(target) = redirect_target(line) else {
                 continue;
             };
-            if !path_is_config(&target[1]) {
+            if !path_is_config(target) {
                 continue;
             }
             // the shell expands an unquoted heredoc, so its text is the file
@@ -503,4 +505,37 @@ fn e2e_corpus(root: &Path) -> Vec<Document> {
         }
     }
     corpus
+}
+
+/// The file a shell line writes with `> file`, unquoted or in single or
+/// double quotes. Appends (`>> file`) and other descriptors (`2> file`) are
+/// not a whole file.
+fn redirect_target(line: &str) -> Option<&str> {
+    static TARGET: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?:^|[\s;(])>\s*(?:"([^"]+)"|'([^']+)'|([^\s"';&|<>]+))"#).unwrap()
+    });
+    let captures = TARGET.captures(line)?;
+    (1..=3).find_map(|i| captures.get(i)).map(|m| m.as_str())
+}
+
+#[test]
+fn redirect_targets() {
+    for (line, target) in [
+        ("cat >mise.toml <<'EOF'", Some("mise.toml")),
+        ("cat <<EOF >mise.toml", Some("mise.toml")),
+        ("cat > mise.toml <<EOF", Some("mise.toml")),
+        (
+            r#"cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'"#,
+            Some("$MISE_CONFIG_DIR/config.toml"),
+        ),
+        (
+            "cat >'.mise/conf.d/30-literal.qa*.toml' <<'EOF'",
+            Some(".mise/conf.d/30-literal.qa*.toml"),
+        ),
+        ("cat >>mise.toml <<'EOF'", None),
+        ("cat 2>err.log <<'EOF'", None),
+        ("cat <<'EOF'", None),
+    ] {
+        assert_eq!(redirect_target(line), target, "{line}");
+    }
 }
