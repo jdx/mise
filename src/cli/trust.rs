@@ -96,9 +96,10 @@ impl Trust {
                 self.config_file = Some(p);
                 self.trust()?;
             }
-            let descendants = self.get_untrusted_descendants();
-            for p in &descendants {
-                self.config_file = Some(p.clone());
+            // Env files need trust whether or not their project's config was already trusted.
+            let descendants = self.get_descendants();
+            for p in self.get_untrusted_descendants() {
+                self.config_file = Some(p);
                 self.trust()?;
             }
             Self::trust_env_files().await?;
@@ -334,10 +335,14 @@ impl Trust {
             .unique()
         {
             debug!("trusting env files in {}", display_path(&dir));
-            let status = std::process::Command::new(&exe)
-                .arg("trust")
-                .current_dir(&dir)
-                .status()?;
+            let mut cmd = std::process::Command::new(&exe);
+            cmd.arg("trust").current_dir(&dir);
+            // `-E`/`--env` is not inherited by a child process, but `MISE_ENV` is, and the
+            // environment-specific configs it selects can name env files too.
+            if !env::MISE_ENV.is_empty() {
+                cmd.env("MISE_ENV", env::MISE_ENV.join(","));
+            }
+            let status = cmd.status()?;
             if !status.success() {
                 warn!("could not trust env files in {}", display_path(&dir));
             }
@@ -431,6 +436,19 @@ impl Trust {
     /// or vendor are not trusted. Returns one config file per untrusted trust
     /// root; `trust()` computes the trust root from each.
     fn get_untrusted_descendants(&self) -> Vec<PathBuf> {
+        self.get_descendants()
+            .into_iter()
+            .filter(|p| !config_file::is_trusted(&config_trust_root(p)))
+            .collect()
+    }
+
+    /// Config files in subdirectories of the current directory, one per trust root, whether or
+    /// not they are trusted yet.
+    ///
+    /// Walks respecting .gitignore, skipping hidden directories and common
+    /// build/dependency directories so e.g. vendored configs in node_modules
+    /// or vendor are not included. `trust()` computes the trust root from each.
+    fn get_descendants(&self) -> Vec<PathBuf> {
         const EXCLUDED_DIRS: &[&str] = &["node_modules", "vendor", "target", "dist", "build"];
         // Respect config discovery being disabled, matching load_config_paths
         // used by the ancestor-walk pass.
@@ -485,14 +503,11 @@ impl Trust {
                 }
             }
         }
-        // Keep one config file per untrusted trust root.
+        // Keep one config file per trust root.
         let mut seen = HashSet::new();
         config_files
             .into_iter()
-            .filter(|p| {
-                let ctr = config_trust_root(p);
-                !config_file::is_trusted(&ctr) && seen.insert(ctr)
-            })
+            .filter(|p| seen.insert(config_trust_root(p)))
             .collect()
     }
 

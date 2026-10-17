@@ -254,3 +254,33 @@ EOS
 echo 'ACTIVATED_TEST=yes' >.env
 assert "MISE_PARANOID=1 mise trust mise.toml"
 assert "MISE_PARANOID=1 bash --noprofile --norc -c 'eval \"\$(mise hook-env -s bash 2>/dev/null)\"; [ -z \"\${ACTIVATED_TEST:-}\" ] && mise trust >/dev/null 2>&1 && eval \"\$(mise hook-env -s bash 2>/dev/null)\" && [ \"\${ACTIVATED_TEST:-}\" = yes ] && echo ok'" "ok"
+
+# `mise trust --all` also covers a project below the current directory whose config is already
+# trusted but whose env file was edited.
+mkdir -p ~/all-again/proj
+cd ~/all-again/proj || exit 1
+cat <<'EOS' >mise.toml
+[env]
+_.file = ".env"
+EOS
+echo 'AGAIN_TEST=one' >.env
+assert "MISE_PARANOID=1 mise trust"
+echo 'AGAIN_TEST=two' >.env
+assert_fail_contains "MISE_PARANOID=1 mise env 2>&1" "environment file"
+cd ..
+assert "MISE_PARANOID=1 mise trust --all"
+assert_contains "cd proj && MISE_PARANOID=1 mise env" "AGAIN_TEST=two"
+
+# The environment selected with -E reaches the per-project runs, so files that only an
+# environment-specific config names are approved too.
+mkdir -p ~/all-env/proj
+cd ~/all-env/proj || exit 1
+echo '# project' >mise.toml
+cat <<'EOS' >mise.staging.toml
+[env]
+_.file = ".env.staging"
+EOS
+echo 'STAGING_TEST=yes' >.env.staging
+cd ..
+assert "MISE_PARANOID=1 mise -E staging trust --all"
+assert_contains "cd proj && MISE_PARANOID=1 MISE_ENV=staging mise env" "STAGING_TEST=yes"
