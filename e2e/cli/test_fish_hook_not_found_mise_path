@@ -26,5 +26,6 @@ fish -c "source activate.fish; fish_command_not_found /nonexistent/bin/mise; fis
 assert_not_contains "cat calls.log 2>/dev/null || true" "hook-not-found"
 
 # any other command still reaches hook-not-found
-fish -c "source activate.fish; fish_command_not_found some-missing-tool; true" >/dev/null 2>&1
+fish -c "source activate.fish; fish_command_not_found some-missing-tool; fish_command_not_found /nonexistent/mise-tools/node; true" >/dev/null 2>&1
 assert_contains "cat calls.log" "hook-not-found -s fish -- some-missing-tool"
+assert_contains "cat calls.log" "hook-not-found -s fish -- /nonexistent/mise-tools/node"
