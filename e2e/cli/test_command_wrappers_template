@@ -32,10 +32,11 @@ assert "foo run" "home:$HOME/foo args:--mode=fast /opt/foo run"
 
 # `config_root` and relative paths come from the declaring file, wherever the shim runs
 echo token >token.txt
+echo fakeshow >command.txt
 mkdir -p sub
 cat >mise.toml <<'TOML'
 [wrappers.foo]
-command = "fakeshow"
+command = "{{ read_file(path='command.txt') | trim }}"
 args = ["{{ config_root }}", "{{ read_file(path='token.txt') | trim }}"]
 TOML
 
