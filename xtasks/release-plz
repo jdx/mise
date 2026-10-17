@@ -428,6 +428,7 @@ if [[ $cur_version != "$latest_version" ]]; then
 	rm -f crates/mise-settings/settings.toml
 	cargo add -p mise "mise-settings@$MISE_SETTINGS_VERSION"
 	cargo add -p mise-util "mise-settings@$MISE_SETTINGS_VERSION"
+	cargo add -p mise-util "mise-config@$MISE_CONFIG_VERSION"
 	cargo add -p mise-ui "mise-settings@$MISE_SETTINGS_VERSION"
 	cargo add -p mise-system-packages "mise-settings@$MISE_SETTINGS_VERSION"
 
