@@ -13,7 +13,8 @@ write_proxy() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-BIN_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+SELF=$(readlink -f "${BASH_SOURCE[0]}")
+BIN_DIR=$(cd "$(dirname "$SELF")" && pwd -P)
 PREFIX=${TEST_RUST_PROVIDER_PREFIX:-$(cd "$BIN_DIR/.." && pwd -P)}
 STATE="$PREFIX/state"
 mkdir -p "$STATE"
@@ -170,7 +171,7 @@ EOF
     touch "$home/.cargo/bin/cargo" "$home/.rustup/settings.toml"
     mise install
     assert_contains "grep -c '^toolchain install' '$prefix/state/rustup.log'" "1"
-    assert_contains "mise exec -- sh -c 'command -v rustc'" "$bin/rustc"
+    assert_contains "mise exec -- sh -c 'command -v rustc'" "rust-proxies/"
     assert_contains "mise exec -- rustc -V" "rustc $version (external provider)"
 
     for command in rustup cargo rustc; do
