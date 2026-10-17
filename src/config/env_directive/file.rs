@@ -162,8 +162,11 @@ impl EnvResults {
             && crate::config::is_global_config(ctx.source);
         for p in paths {
             if !operator_owned && !crate::config::config_file::env_file_trust_check(&p)? {
-                // Trusting the file later changes nothing the cache key sees.
-                ctx.results.has_uncacheable = true;
+                // Trusting the file later changes nothing the cache key sees. A file that is not
+                // there has nothing to trust.
+                if p.exists() {
+                    ctx.results.has_uncacheable = true;
+                }
                 continue;
             }
             let config = ctx.config;

@@ -1726,8 +1726,11 @@ impl Config {
                 continue;
             }
             if !config_file::env_file_trust_check(&env_file)? {
-                // Trusting the file later changes nothing the cache key sees.
-                env_results.has_uncacheable = true;
+                // Trusting the file later changes nothing the cache key sees. A file that is not
+                // there has nothing to trust.
+                if env_file.exists() {
+                    env_results.has_uncacheable = true;
+                }
                 continue;
             }
             debug!("env_file: {}", display_path(&env_file));
