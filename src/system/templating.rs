@@ -16,7 +16,7 @@ use eyre::{Result, eyre};
 use serde::de::DeserializeOwned;
 use tera::Context;
 
-use crate::config::Config;
+use crate::system::host::Config;
 use crate::tera::{TeraEngine, contains_template_syntax, get_tera_without_exec, render_str};
 
 pub(crate) use mise_system_config::templating::Templated;
@@ -40,7 +40,7 @@ impl<T: DeserializeOwned> TemplatedExt<T> for Templated<T> {
         }
         let mut ctx = config.bootstrap_tera_ctx(config_path).clone();
         if ctx.get("config_root").is_none() {
-            let config_root = crate::config::config_file::config_root::config_root(config_path);
+            let config_root = crate::system::host::config_root(config_path);
             ctx.insert("config_root", &config_root);
         }
         self.render_with(&ctx, config_path)

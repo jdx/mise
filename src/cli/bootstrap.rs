@@ -2253,7 +2253,11 @@ impl Bootstrap {
         } else {
             let activations = dry_run_config_files
                 .as_ref()
-                .map(system::shell_activation_from_config_files)
+                .map(|files| {
+                    system::shell_activation_from_config_files(&system::bootstrap_host::view_map(
+                        files,
+                    ))
+                })
                 .unwrap_or_else(|| system::shell_activation_from_config(&config));
             if activations.is_empty() {
                 debug!("bootstrap: no [bootstrap.mise_shell_activate] configured, skipping");

@@ -2129,6 +2129,10 @@ impl ConfigFile for MiseToml {
             .filter(|_| !self.ignored_in_safe_mode("[dotfile_groups]"))
             .cloned()
     }
+
+    fn history_config(&self) -> Option<mise_system_config::history::HistoryTomlConfig> {
+        self.history.clone()
+    }
 }
 
 impl MiseToml {
@@ -2144,11 +2148,6 @@ impl MiseToml {
             );
         }
         ignored
-    }
-
-    /// `[history]` as declared by this file.
-    pub(crate) fn history_config(&self) -> Option<mise_system_config::history::HistoryTomlConfig> {
-        self.history.clone()
     }
 }
 

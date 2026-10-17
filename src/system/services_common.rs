@@ -6,7 +6,7 @@ use std::path::Path;
 use eyre::{Result, bail};
 use indexmap::{IndexMap, IndexSet};
 
-use crate::config::{Config, ConfigMap};
+use crate::system::host::{Config, ConfigMap};
 use crate::system::resources::{ResourceId, ResourceOrigin};
 use crate::system::services::ServiceRequest;
 pub use mise_system_config::services_common::{
@@ -96,7 +96,7 @@ pub(crate) fn compose_declarations(
 ) -> Result<IndexMap<String, (ServiceTomlConfig, ResourceOrigin)>> {
     let mut composed: IndexMap<String, (ServiceTomlConfig, ResourceOrigin)> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
-        for (name, declaration) in services_from_config_files(config_files) {
+        for (name, declaration) in services_from_config_files(&config_files) {
             if let Some(existing) = composed.get(&name) {
                 if existing.0 == declaration.0 {
                     continue;
@@ -122,7 +122,7 @@ fn services_from_config_files(
             let origin = ResourceOrigin {
                 config: path.clone(),
                 config_root: cf.config_root(),
-                environment: crate::config::environments_for_config_path(path),
+                environment: crate::system::host::environments_for_config_path(path),
                 source: None,
             };
             for (name, service) in bootstrap.services {

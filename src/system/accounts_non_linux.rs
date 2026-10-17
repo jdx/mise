@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use eyre::{Result, bail};
 
-use crate::config::Config;
+use crate::system::host::Config;
 use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
 
 pub use mise_bootstrap::AccountState;
@@ -84,7 +84,7 @@ pub fn apply_privileged_plan_from_stdin() -> Result<()> {
 }
 
 fn accounts_configured(config: &Config) -> bool {
-    config.config_files.values().any(|cf| {
+    config.config_files().values().any(|cf| {
         cf.bootstrap_config().is_some_and(|bootstrap| {
             for group in bootstrap.groups.values() {
                 let _ = (group.state, group.gid, group.system);

@@ -223,7 +223,7 @@ async fn set_inner(
 
     // the first synchronization
     drop(preview_lock.take());
-    crate::config::Config::reset().await?;
+    crate::system::host::reload_config().await?;
     let tracked = TrackedSet::effective().await?;
     let store = Store::open_in(state_dir)?;
     // the mode just chosen decides, not the settings loaded before it was
@@ -330,7 +330,7 @@ pub(crate) fn confirmed_destructive(yes: bool, question: &str, command: &str) ->
 /// machine's own declaration never conflicts with the configuration it
 /// pulls.
 fn origin_file() -> Result<PathBuf> {
-    crate::config::edit::declaration_file(true)
+    crate::system::host::declaration_file(true)
 }
 
 /// Writes the ordinary repository connection.
@@ -339,7 +339,7 @@ pub(super) fn write_config(url: &str, branch: &str, mode: Option<SyncMode>) -> R
     if let Some(parent) = global.parent() {
         crate::file::create_dir_all(parent)?;
     }
-    let mut doc = crate::config::edit::read_document(&global)?;
+    let mut doc = crate::system::host::read_document(&global)?;
     let history = doc
         .entry("history")
         .or_insert(Item::Table(toml_edit::Table::new()));
@@ -388,9 +388,9 @@ pub(super) fn write_config(url: &str, branch: &str, mode: Option<SyncMode>) -> R
 /// Offer enrollment explicitly; connecting origin must not enroll prerequisites.
 async fn setup_requirements(tracked: &TrackedSet) -> Result<()> {
     use crate::system::files::FileMode;
-    let config = crate::config::Config::get().await?;
+    let config = crate::system::host::config().await?;
     let mut required = std::collections::BTreeSet::new();
-    let shared_config = crate::config::global_shared_config_path();
+    let shared_config = crate::system::host::global_shared_config_path();
     if shared_config.is_file() {
         required.insert(shared_config);
     }
@@ -445,11 +445,14 @@ fn remove_locked(state_dir: &std::path::Path, status: &mut run::SyncStatus) -> R
     let mut removed = vec![];
     // the machine-local file, and the shared one for a declaration written
     // there by hand or by an earlier mise
-    for file in [origin_file()?, crate::config::global_shared_config_path()] {
+    for file in [
+        origin_file()?,
+        crate::system::host::global_shared_config_path(),
+    ] {
         if !file.exists() {
             continue;
         }
-        let mut doc = crate::config::edit::read_document(&file)?;
+        let mut doc = crate::system::host::read_document(&file)?;
         let mut changed = false;
         if let Some(history) = doc.get_mut("history").and_then(Item::as_table_mut) {
             changed = history.remove("origin").is_some();

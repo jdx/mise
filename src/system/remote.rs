@@ -6,8 +6,8 @@ use std::process::{Command, Output, Stdio};
 use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 
-use crate::config::Config;
 use crate::http::HTTP;
+use crate::system::host::Config;
 use crate::ui::multi_progress_report::MultiProgressReport;
 pub use mise_system_config::remote::DEFAULT_INSTALL_MISE_PATH;
 pub use mise_system_config::remote::{
@@ -96,7 +96,7 @@ pub fn hosts_from_config(
     layered_excludes: &[String],
 ) -> Result<IndexMap<String, RemoteHost>> {
     let mut hosts = IndexMap::new();
-    for cf in config.config_files.values() {
+    for cf in config.config_files().values() {
         let Some(bootstrap) = cf.bootstrap_config() else {
             continue;
         };
@@ -154,7 +154,7 @@ pub fn hosts_from_config(
 
 pub fn excludes_from_config(config: &Config) -> Vec<String> {
     config
-        .config_files
+        .config_files()
         .values()
         .filter_map(|cf| cf.bootstrap_config())
         .flat_map(|bootstrap| bootstrap.remote.exclude)

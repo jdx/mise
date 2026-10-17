@@ -7,7 +7,7 @@ use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
+use crate::system::host::Config;
 use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
 
 pub use mise_bootstrap::AccountState;
@@ -128,7 +128,7 @@ struct AccountPlan {
 pub fn requests_from_config(config: &Config) -> Result<AccountRequests> {
     let mut groups = IndexMap::new();
     let mut users = IndexMap::new();
-    for cf in config.config_files.values() {
+    for cf in config.config_files().values() {
         if let Some(bootstrap) = cf.bootstrap_config() {
             for (name, group) in bootstrap.groups {
                 groups.entry(name).or_insert(group);

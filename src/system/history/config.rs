@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 use eyre::{Result, WrapErr};
 use indexmap::IndexMap;
 
-use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{Settings, SettingsExt};
 use crate::file::display_path;
 pub(crate) use mise_system_config::history::HistoryTomlConfig;
@@ -61,7 +60,7 @@ pub(crate) fn file_recipients() -> Result<Vec<String>> {
     let mut recipients = Vec::new();
     for (path, layer) in layers()? {
         if let Some(encryption) = layer.encryption {
-            if !crate::config::config_file::is_trusted(&path) {
+            if !crate::system::host::is_trusted(&path) {
                 eyre::bail!(
                     "trust the configuration before using its encryption recipients: {}",
                     display_path(&path)
@@ -103,7 +102,7 @@ pub(crate) fn describe_command() -> Result<Option<String>> {
             }
         };
         if let Some(command) = settings.history.describe_command {
-            if !crate::config::config_file::is_trusted(&path) {
+            if !crate::system::host::is_trusted(&path) {
                 warn!(
                     "history: ignoring settings.history.describe_command in untrusted {}",
                     display_path(&path)
@@ -150,9 +149,9 @@ pub(crate) fn layers() -> Result<Vec<(PathBuf, HistoryTomlConfig)>> {
 }
 
 fn config_files() -> impl Iterator<Item = PathBuf> {
-    crate::config::system_config_files()
+    crate::system::host::system_config_files()
         .into_iter()
-        .chain(crate::config::global_config_files())
+        .chain(crate::system::host::global_config_files())
         .filter(|path| path.is_file())
         .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
 }
@@ -160,7 +159,7 @@ fn config_files() -> impl Iterator<Item = PathBuf> {
 fn read_layer(path: &Path) -> Result<Option<HistoryTomlConfig>> {
     // Ignoring a malformed later layer could restore obsolete recipients or
     // remove exclusions. Fail closed instead of falling back to another policy.
-    let toml = MiseToml::from_file(path)
+    let toml = crate::system::host::parse_config_file(path)
         .wrap_err_with(|| format!("cannot read history configuration: {}", display_path(path)))?;
     Ok(toml.history_config())
 }
@@ -171,7 +170,7 @@ fn read_layer(path: &Path) -> Result<Option<HistoryTomlConfig>> {
 pub fn reload_commands() -> Result<IndexMap<String, String>> {
     let mut commands = IndexMap::new();
     for (path, layer) in layers()? {
-        if !crate::config::config_file::is_trusted(&path) {
+        if !crate::system::host::is_trusted(&path) {
             if !layer.reload.is_empty() {
                 warn!(
                     "history: ignoring [history.reload] in untrusted {}",

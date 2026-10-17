@@ -11,7 +11,8 @@ use eyre::{Result, bail};
 use serde::Serialize;
 use strum::{EnumIter, IntoEnumIterator};
 
-use crate::config::{Config, Settings, SettingsExt};
+use crate::config::{Settings, SettingsExt};
+use crate::system::host::Config;
 use crate::tera::DryRunRender;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, Serialize)]
@@ -148,8 +149,7 @@ pub async fn run_phase(
         let run = if crate::tera::contains_template_syntax(&hook.run) {
             let mut context = config.bootstrap_tera_ctx(&hook.config_path).clone();
             if context.get("config_root").is_none() {
-                let config_root =
-                    crate::config::config_file::config_root::config_root(&hook.config_path);
+                let config_root = crate::system::host::config_root(&hook.config_path);
                 context.insert("config_root", &config_root);
             }
             let rendered = if dry_run {
