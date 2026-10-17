@@ -198,7 +198,6 @@ rattler_solve = { version = "11", default-features = false, features = [
 rattler_package_streaming = { version = "0.27", default-features = false }
 rattler_virtual_packages = { version = "8", default-features = false }
 regex = "1"
-plist = "1"
 reflink-copy = "0.1"
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
@@ -254,7 +253,6 @@ toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.12", default-features = false }
 url = "2"
 urlencoding = "2"
-uuid = { version = "1", features = ["v7"] }
 usage-lib = { version = "7.0", features = ["docs"] }
 versions = { version = "8", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
@@ -321,7 +319,6 @@ windows-sys = { version = "0.61", features = [
 [build-dependencies]
 aqua-registry = { path = "crates/aqua-registry" }
 built = { version = "0.8", features = ["chrono"] }
-cc = "1"
 cfg_aliases = "0.2"
 eyre = "0.6"
 phf_codegen = "0.14"
@@ -393,8 +390,8 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ 
 [package.metadata.cargo-machete]
 ignored = [
   "aws-lc-rs",
+  "gix",
   "built",
-  "cc", # Used by build.rs for the macOS notification helper.
   "cfg_aliases",
   "openssl",
   "phf_codegen",

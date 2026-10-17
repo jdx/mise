@@ -6684,7 +6684,6 @@ dependencies = [
  "built",
  "bytesize",
  "calm_io",
- "cc",
  "cfg_aliases",
  "chacha20poly1305 0.11.0",
  "chrono",
@@ -6750,7 +6749,6 @@ dependencies = [
  "petgraph",
  "phf 0.14.0",
  "phf_codegen 0.14.0",
- "plist",
  "pretty_assertions",
  "rand 0.10.3",
  "rattler",
@@ -6798,7 +6796,6 @@ dependencies = [
  "usage-cli",
  "usage-lib",
  "usage-rs",
- "uuid",
  "versions",
  "vfox",
  "walkdir",
@@ -7005,7 +7002,6 @@ dependencies = [
  "walkdir",
  "which",
  "windows-sys 0.61.2",
- "xx",
 ]
 
 [[package]]

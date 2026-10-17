@@ -79,7 +79,6 @@ versions = { version = "8", features = ["serde"] }
 vfox = { path = "../vfox", version = "2026.7", default-features = false }
 walkdir = "2"
 which = "8"
-xx = { version = "2", default-features = false, features = ["glob"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"
@@ -119,3 +118,8 @@ eyre = "0.6"
 
 [dev-dependencies]
 minisign-verify = "0.3"
+uuid = { version = "1", features = ["v4"] }
+
+[package.metadata.cargo-machete]
+# build.rs builds the macOS notification helper with it; cargo-machete does not scan build scripts.
+ignored = ["cc"]
