@@ -688,13 +688,20 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
 /// JSON, YAML or TOML file it points at: an edit to that file changes the environment of every
 /// command. A file under `trusted_config_paths`, which only global config can set, stays trusted
 /// by path.
-pub(crate) fn env_file_trust_check(path: &Path) -> eyre::Result<()> {
+///
+/// An untrusted file is an error, except where untrusted config is being skipped (`hook-env`,
+/// run on entering a directory): there it is left out and reported with the skipped configs,
+/// so the trusted ones still apply. `Ok(false)` means "do not load it".
+pub(crate) fn env_file_trust_check(path: &Path) -> eyre::Result<bool> {
     if Settings::safe_mode() || !Settings::try_get().is_ok_and(|settings| settings.paranoid) {
-        return Ok(());
+        return Ok(true);
     }
     // A file that is not there loads nothing, so there is nothing to approve.
     if !path.exists() || is_path_trusted(path) {
-        return Ok(());
+        return Ok(true);
+    }
+    if config::skip_untrusted_path(path) {
+        return Ok(false);
     }
     Err(UntrustedEnvFile(path.into()))?
 }

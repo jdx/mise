@@ -1725,7 +1725,9 @@ impl Config {
             if env_results.env_files.contains(&env_file) {
                 continue;
             }
-            config_file::env_file_trust_check(&env_file)?;
+            if !config_file::env_file_trust_check(&env_file)? {
+                continue;
+            }
             debug!("env_file: {}", display_path(&env_file));
             match std::fs::read(&env_file) {
                 Ok(bytes) => {
@@ -3950,6 +3952,19 @@ static SKIPPED_UNTRUSTED_CONFIGS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 /// a directory is not an explicit request to run its config.
 pub fn skip_untrusted_configs() {
     SKIP_UNTRUSTED_CONFIGS.store(true, Ordering::Relaxed);
+}
+
+/// Records `path` as skipped when [`skip_untrusted_configs`] is active, and says whether it did.
+pub(crate) fn skip_untrusted_path(path: &Path) -> bool {
+    if !SKIP_UNTRUSTED_CONFIGS.load(Ordering::Relaxed) {
+        return false;
+    }
+    debug!("skipping untrusted file: {}", display_path(path));
+    let mut skipped = SKIPPED_UNTRUSTED_CONFIGS.lock().unwrap();
+    if !skipped.iter().any(|p| p == path) {
+        skipped.push(path.to_path_buf());
+    }
+    true
 }
 
 /// Untrusted config files skipped so far when [`skip_untrusted_configs`] is active.
