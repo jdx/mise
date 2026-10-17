@@ -67,10 +67,6 @@ pub fn apply_privileged_plan_from_stdin() -> Result<()> {
 fn configured(config: &Config) -> bool {
     config.config_files().values().any(|cf| {
         cf.bootstrap_config()
-            .and_then(|bootstrap| bootstrap.linux.firewall)
-            .is_some_and(|firewall| {
-                let _ = firewall.values.len();
-                true
-            })
+            .is_some_and(|bootstrap| bootstrap.linux.firewall.is_some())
     })
 }

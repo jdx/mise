@@ -6736,7 +6736,7 @@ run = "cargo build"
         file::remove_file(&p).unwrap();
     }
 
-    #[cfg(target_os = "linux")]
+    // Not Linux-only: every platform parses the section, so a shared config is checked anywhere.
     #[tokio::test]
     async fn test_bootstrap_linux_firewall() {
         let _config = Config::get().await.unwrap();
