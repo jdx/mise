@@ -66,6 +66,15 @@ TOML
 assert_contains "mise env --dotenv" "EXAMPLE=parent"
 mv .env.hidden .env
 
+# A name listed twice loads at its last position, so it still wins over names listed between.
+printf 'EXAMPLE=local\n' >.env.local
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[env]
+_.file = { path = [".env", ".env.local", ".env"], find_up = true }
+TOML
+assert_contains "mise env --dotenv" "EXAMPLE=project"
+rm .env.local
+
 # A templated name resolves after the files listed before it, so it can use their values.
 mkdir -p staged
 printf 'STAGE=dev\n' >staged/.env

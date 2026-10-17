@@ -9,6 +9,7 @@ use eyre::{WrapErr, bail, eyre};
 use indexmap::IndexMap;
 use rops::file::format::{JsonFileFormat, TomlFileFormat, YamlFileFormat};
 use std::{
+    collections::HashSet,
     fs,
     path::{Path, PathBuf},
     sync::Arc,
@@ -171,6 +172,15 @@ impl EnvResults {
                 .flat_map(|pattern| xx::file::glob(ctx.normalize_path(pattern)).unwrap_or_default())
                 .collect(),
         };
+        // A file named twice, or matched by overlapping globs, loads once at its last position.
+        // The result below is keyed by path, so a repeat would otherwise keep its first place.
+        let mut seen = HashSet::new();
+        let mut paths: Vec<PathBuf> = paths
+            .into_iter()
+            .rev()
+            .filter(|path| seen.insert(path.clone()))
+            .collect();
+        paths.reverse();
         for p in paths {
             let config = ctx.config;
             let exec_env = ctx.exec_env;
