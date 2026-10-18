@@ -172,22 +172,35 @@ impl Backend for DotnetPlugin {
                 .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
                 .build()
         });
-        let channels = CHANNELS
-            .get_or_try_init_async(async || {
-                let index: ReleasesIndex = HTTP_FETCH.json(RELEASES_INDEX_URL).await?;
-                Ok(index
-                    .releases_index
-                    .into_iter()
-                    .filter_map(|ch| {
-                        Some(Channel {
-                            version: ch.channel_version?,
-                            release_type: ch.release_type?,
-                            support_phase: ch.support_phase?,
+        // Offline, an expired cache still answers: the channel list changes a few times
+        // a year, and refusing here would break `latest --installed dotnet@lts`.
+        let stale;
+        let offline_cache = if Settings::get().offline() {
+            CHANNELS.get_cached().ok()
+        } else {
+            None
+        };
+        let channels = if let Some(channels) = offline_cache {
+            stale = channels;
+            &stale
+        } else {
+            CHANNELS
+                .get_or_try_init_async(async || {
+                    let index: ReleasesIndex = HTTP_FETCH.json(RELEASES_INDEX_URL).await?;
+                    Ok(index
+                        .releases_index
+                        .into_iter()
+                        .filter_map(|ch| {
+                            Some(Channel {
+                                version: ch.channel_version?,
+                                release_type: ch.release_type?,
+                                support_phase: ch.support_phase?,
+                            })
                         })
-                    })
-                    .collect())
-            })
-            .await?;
+                        .collect())
+                })
+                .await?
+        };
         select_channel(channels, release_type)
             .map(|channel| Some(channel.version.clone()))
             .ok_or_else(|| eyre::eyre!("no supported .NET {release_type} channel found"))
@@ -438,7 +451,7 @@ const RELEASES_INDEX_URL: &str =
     "https://builds.dotnet.microsoft.com/dotnet/release-metadata/releases-index.json";
 
 /// A .NET release channel such as `10.0`, as the releases index describes it.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Channel {
     version: String,
     release_type: String,

@@ -8,7 +8,11 @@ assert_matches "mise latest dotnet@sts" '^[0-9]+\.[0-9]+\.[0-9]+$'
 # The listing is limited to the resolved channel.
 lts="$(mise latest dotnet@lts)"
 channel="${lts%.*}"
+assert_contains "mise ls-remote dotnet lts" "$channel."
 assert "mise ls-remote dotnet lts | awk -v c=\"$channel.\" 'index(\$0, c) != 1 { n++ } END { print n + 0 }'" "0"
+
+# Offline, the cached channel list still resolves the alias.
+assert "MISE_OFFLINE=1 mise latest dotnet@lts" "$lts"
 
 # An alias in mise.toml takes precedence over the built-in one.
 cat >mise.toml <<'TOML'
