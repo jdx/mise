@@ -273,6 +273,13 @@ function reset() {
   opacity: 1;
 }
 
+/* Touch screens have no hover to reveal them. */
+@media (hover: none) {
+  .mise-toml-editor .mte-corner {
+    opacity: 1;
+  }
+}
+
 .mise-toml-editor .mte-corner button:hover {
   border-color: var(--vp-c-brand-1);
   color: var(--vp-c-text-1);
