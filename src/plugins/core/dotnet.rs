@@ -1,17 +1,19 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock as Lazy};
 
 use async_trait::async_trait;
 use eyre::Result;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use versions::Versioning;
 
 use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::options::BackendOptions;
 use crate::backend::{VersionInfo, platform_target::PlatformTarget};
+use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cmd::CmdLineRunner;
+use crate::config::settings::SettingsExt;
 use crate::config::{Config, Settings};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
@@ -123,9 +125,7 @@ impl Backend for DotnetPlugin {
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let index: ReleasesIndex = HTTP_FETCH
-            .json("https://builds.dotnet.microsoft.com/dotnet/release-metadata/releases-index.json")
-            .await?;
+        let index: ReleasesIndex = HTTP_FETCH.json(RELEASES_INDEX_URL).await?;
 
         // Fetch all channel release data in parallel
         let urls: Vec<String> = index
@@ -159,6 +159,51 @@ impl Backend for DotnetPlugin {
                 ..Default::default()
             })
             .collect())
+    }
+
+    async fn resolve_dynamic_alias(&self, version: &str) -> Result<Option<String>> {
+        let release_type = match version {
+            "lts" => "lts",
+            "sts" => "sts",
+            _ => return Ok(None),
+        };
+        static CHANNELS: Lazy<CacheManager<Vec<Channel>>> = Lazy::new(|| {
+            CacheManagerBuilder::new(dirs::CACHE.join("dotnet").join("channels.msgpack.z"))
+                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+                .build()
+        });
+        // Offline, an expired cache still answers: the channel list changes a few times
+        // a year, and refusing here would break `latest --installed dotnet@lts`.
+        let stale;
+        let offline_cache = if Settings::get().offline() {
+            CHANNELS.get_cached().ok()
+        } else {
+            None
+        };
+        let channels = if let Some(channels) = offline_cache {
+            stale = channels;
+            &stale
+        } else {
+            CHANNELS
+                .get_or_try_init_async(async || {
+                    let index: ReleasesIndex = HTTP_FETCH.json(RELEASES_INDEX_URL).await?;
+                    Ok(index
+                        .releases_index
+                        .into_iter()
+                        .filter_map(|ch| {
+                            Some(Channel {
+                                version: ch.channel_version?,
+                                release_type: ch.release_type?,
+                                support_phase: ch.support_phase?,
+                            })
+                        })
+                        .collect())
+                })
+                .await?
+        };
+        select_channel(channels, release_type)
+            .map(|channel| Some(channel.version.clone()))
+            .ok_or_else(|| eyre::eyre!("no supported .NET {release_type} channel found"))
     }
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
@@ -402,6 +447,36 @@ fn install_cmd<'a>(
 
 // --- Microsoft releases API types ---
 
+const RELEASES_INDEX_URL: &str =
+    "https://builds.dotnet.microsoft.com/dotnet/release-metadata/releases-index.json";
+
+/// A .NET release channel such as `10.0`, as the releases index describes it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Channel {
+    version: String,
+    release_type: String,
+    support_phase: String,
+}
+
+/// The newest channel of a release type that Microsoft supports for production.
+///
+/// `preview` and `go-live` channels are not stable yet, and `eol` ones are out of
+/// support, so `lts` and `sts` skip them, matching `dotnet-install --channel`.
+/// Channel versions are always `major.minor`, so they are compared numerically.
+fn select_channel<'a>(channels: &'a [Channel], release_type: &str) -> Option<&'a Channel> {
+    let key = |ch: &Channel| -> Option<(u32, u32)> {
+        let (major, minor) = ch.version.split_once('.')?;
+        Some((major.parse().ok()?, minor.parse().ok()?))
+    };
+    channels
+        .iter()
+        .filter(|ch| ch.release_type.eq_ignore_ascii_case(release_type))
+        .filter(|ch| matches!(ch.support_phase.as_str(), "active" | "maintenance"))
+        .filter_map(|ch| Some((key(ch)?, ch)))
+        .max_by_key(|(key, _)| *key)
+        .map(|(_, ch)| ch)
+}
+
 #[derive(Deserialize)]
 struct ReleasesIndex {
     #[serde(rename = "releases-index")]
@@ -412,6 +487,12 @@ struct ReleasesIndex {
 struct ChannelEntry {
     #[serde(rename = "releases.json")]
     releases_json: Option<String>,
+    #[serde(rename = "channel-version")]
+    channel_version: Option<String>,
+    #[serde(rename = "release-type")]
+    release_type: Option<String>,
+    #[serde(rename = "support-phase")]
+    support_phase: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -532,6 +613,55 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    fn channel(version: &str, release_type: &str, support_phase: &str) -> Channel {
+        Channel {
+            version: version.to_string(),
+            release_type: release_type.to_string(),
+            support_phase: support_phase.to_string(),
+        }
+    }
+
+    fn channels() -> Vec<Channel> {
+        vec![
+            channel("11.0", "sts", "go-live"),
+            channel("10.0", "lts", "active"),
+            channel("9.0", "sts", "maintenance"),
+            channel("8.0", "lts", "maintenance"),
+            channel("7.0", "sts", "eol"),
+            channel("6.0", "lts", "eol"),
+        ]
+    }
+
+    #[test]
+    fn select_channel_picks_newest_supported_lts() {
+        let channels = channels();
+        assert_eq!(select_channel(&channels, "lts").unwrap().version, "10.0");
+    }
+
+    #[test]
+    fn select_channel_skips_go_live_and_eol_sts() {
+        let channels = channels();
+        assert_eq!(select_channel(&channels, "sts").unwrap().version, "9.0");
+    }
+
+    #[test]
+    fn select_channel_compares_versions_numerically() {
+        let channels = vec![
+            channel("9.0", "lts", "active"),
+            channel("10.0", "lts", "active"),
+        ];
+        assert_eq!(select_channel(&channels, "lts").unwrap().version, "10.0");
+    }
+
+    #[test]
+    fn select_channel_is_none_without_a_supported_match() {
+        let channels = vec![
+            channel("7.0", "sts", "eol"),
+            channel("11.0", "sts", "preview"),
+        ];
+        assert!(select_channel(&channels, "sts").is_none());
     }
 
     #[test]
