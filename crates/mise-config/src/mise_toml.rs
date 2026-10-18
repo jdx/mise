@@ -116,7 +116,7 @@ pub struct MiseTomlDecl<T = ToolSpec, S = toml::Table> {
     #[serde(default)]
     #[schemars(schema_with = "dotfiles")]
     pub dotfiles: Option<DotfilesTomlConfig>,
-    // The schema has no description for `[dotfile_groups]` yet.
+    /// named directory trees of dotfiles, applied with `mise dotfiles apply` or `mise bootstrap` while [bootstrap] dotfile_groups selects them (or is unset)
     #[serde(default)]
     #[schemars(schema_with = "dotfile_groups")]
     pub dotfile_groups: Option<DotfileGroupsTomlConfig>,
@@ -279,12 +279,18 @@ fn deps(_: &mut SchemaGenerator) -> Schema {
     hand_written(crate::deps::schema::deps())
 }
 
-fn dotfiles(_: &mut SchemaGenerator) -> Schema {
-    hand_written(crate::dotfiles::schema::dotfiles())
+fn dotfiles(generator: &mut SchemaGenerator) -> Schema {
+    generator.subschema_for::<IndexMap<String, crate::dotfiles::DotfileEntryDecl>>()
 }
 
-fn dotfile_groups(_: &mut SchemaGenerator) -> Schema {
-    hand_written(crate::dotfiles::schema::dotfile_groups())
+fn dotfile_groups(generator: &mut SchemaGenerator) -> Schema {
+    let mut schema =
+        generator.subschema_for::<IndexMap<String, crate::dotfiles::DotfileGroupDecl>>();
+    schema.insert(
+        "propertyNames".into(),
+        serde_json::json!({"pattern": "^[A-Za-z0-9_.-]+$"}),
+    );
+    schema
 }
 
 fn daemons(_: &mut SchemaGenerator) -> Schema {

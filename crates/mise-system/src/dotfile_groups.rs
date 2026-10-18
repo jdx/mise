@@ -33,7 +33,7 @@ use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use crate::files::{self, FileMode, FileRequest, FileTomlEntry};
+use crate::files::{self, FileMode, FileRequest, FileTomlEntry, FileTomlTable};
 use crate::history::journal;
 use crate::host::ConfigMap;
 use crate::resources::ResourceOrigin;
@@ -271,7 +271,7 @@ fn expand_group(
     let walks = mode != FileMode::Symlink;
     files::merge_group_entry(
         target_raw.clone(),
-        FileTomlEntry::Table {
+        FileTomlEntry::Table(FileTomlTable {
             source: Some(root.to_string_lossy().to_string()),
             content: None,
             mode: Some(mode.name().to_string()),
@@ -288,7 +288,7 @@ fn expand_group(
             dot_prefix: (group.dot_prefix && walks).then_some(true),
             relative: group.relative,
             group: Some(name.to_string()),
-        },
+        }),
         base,
         origin,
         &mut merged,
@@ -1141,6 +1141,18 @@ fn remove_empty_dirs(dir: &Path, root: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `schema/mise.json` describes a group from `mise_config::dotfiles::DotfileGroupDecl`, so
+    /// the keys this parser reads must be exactly the ones it declares.
+    #[test]
+    fn group_keys_match_the_declaration() {
+        use mise_config::de::struct_fields;
+        use mise_config::dotfiles::DotfileGroupDecl;
+        let parsed: std::collections::BTreeSet<_> = struct_fields::<GroupToml>().iter().collect();
+        let declared: std::collections::BTreeSet<_> =
+            struct_fields::<DotfileGroupDecl>().iter().collect();
+        assert_eq!(parsed, declared);
+    }
 
     #[test]
     fn group_names_are_path_safe() {

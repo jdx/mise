@@ -415,54 +415,59 @@ pub(crate) enum FileTomlEntry {
     /// optional so `{}` can mean implied source/default mode. Mode stays a
     /// string here so configs using modes from newer mise versions still
     /// parse (they warn and are skipped, like unknown package managers)
-    Table {
-        #[serde(default)]
-        source: Option<String>,
-        #[serde(default)]
-        content: Option<String>,
-        #[serde(default)]
-        mode: Option<String>,
-        #[serde(default)]
-        exclude: Option<Vec<String>>,
-        /// history: capture only these paths of a tracked directory
-        #[serde(default)]
-        include: Option<Vec<String>>,
-        #[serde(default)]
-        manifest: Option<String>,
-        /// octal permissions for the target, e.g. `"0600"`; on its own it
-        /// manages only the permissions of an existing target
-        #[serde(default)]
-        permissions: Option<String>,
-        /// history: save edits automatically (default true)
-        #[serde(default)]
-        autosave: Option<bool>,
-        #[serde(default)]
-        encrypt: Option<bool>,
-        /// Allow an explicitly tracked credential-named file in plaintext.
-        #[serde(default)]
-        allow_plaintext: Option<bool>,
-        /// Platform / profile selectors, with optional deployment destinations
-        #[serde(default)]
-        variants: Option<Vec<FileVariant>>,
-        /// `false` disables an inherited declaration on this machine
-        #[serde(default)]
-        enabled: Option<bool>,
-        /// template only: remove the target when the template renders empty
-        #[serde(default)]
-        remove_empty: Option<bool>,
-        /// directory-walking modes only: deploy a source name like
-        /// `dot-bashrc` as `.bashrc`
-        #[serde(default)]
-        dot_prefix: Option<bool>,
-        /// symlink modes only: link with a relative target, overriding
-        /// `dotfiles.relative_symlinks`
-        #[serde(default)]
-        relative: Option<bool>,
-        /// the dotfile group this entry belongs to, selected with
-        /// `[bootstrap] dotfile_groups`
-        #[serde(default)]
-        group: Option<String>,
-    },
+    Table(FileTomlTable),
+}
+
+/// The table form of a [`FileTomlEntry`]. Its keys, with [`crate::edits::EditTomlTable`]'s, are
+/// the keys `mise_config::dotfiles::DotfileTableDecl` declares for the schema.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct FileTomlTable {
+    #[serde(default)]
+    pub(crate) source: Option<String>,
+    #[serde(default)]
+    pub(crate) content: Option<String>,
+    #[serde(default)]
+    pub(crate) mode: Option<String>,
+    #[serde(default)]
+    pub(crate) exclude: Option<Vec<String>>,
+    /// history: capture only these paths of a tracked directory
+    #[serde(default)]
+    pub(crate) include: Option<Vec<String>>,
+    #[serde(default)]
+    pub(crate) manifest: Option<String>,
+    /// octal permissions for the target, e.g. `"0600"`; on its own it
+    /// manages only the permissions of an existing target
+    #[serde(default)]
+    pub(crate) permissions: Option<String>,
+    /// history: save edits automatically (default true)
+    #[serde(default)]
+    pub(crate) autosave: Option<bool>,
+    #[serde(default)]
+    pub(crate) encrypt: Option<bool>,
+    /// Allow an explicitly tracked credential-named file in plaintext.
+    #[serde(default)]
+    pub(crate) allow_plaintext: Option<bool>,
+    /// Platform / profile selectors, with optional deployment destinations
+    #[serde(default)]
+    pub(crate) variants: Option<Vec<FileVariant>>,
+    /// `false` disables an inherited declaration on this machine
+    #[serde(default)]
+    pub(crate) enabled: Option<bool>,
+    /// template only: remove the target when the template renders empty
+    #[serde(default)]
+    pub(crate) remove_empty: Option<bool>,
+    /// directory-walking modes only: deploy a source name like
+    /// `dot-bashrc` as `.bashrc`
+    #[serde(default)]
+    pub(crate) dot_prefix: Option<bool>,
+    /// symlink modes only: link with a relative target, overriding
+    /// `dotfiles.relative_symlinks`
+    #[serde(default)]
+    pub(crate) relative: Option<bool>,
+    /// the dotfile group this entry belongs to, selected with
+    /// `[bootstrap] dotfile_groups`
+    #[serde(default)]
+    pub(crate) group: Option<String>,
 }
 
 impl FileRequest {
@@ -1041,7 +1046,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
             if let FileTomlEntry::Source(_) = &entry {
                 validate_file_variants(&target, None, None, None, false, &[])?;
             }
-            if let FileTomlEntry::Table {
+            if let FileTomlEntry::Table(FileTomlTable {
                 source,
                 content,
                 mode,
@@ -1057,7 +1062,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 relative,
                 group,
                 ..
-            } = entry
+            }) = entry
             {
                 if group.is_some() {
                     bail!("dotfile {target}: {GROUP_KEY_IN_DOTFILES}");
@@ -1280,7 +1285,7 @@ fn files_from_config_files_with_tracking_roots(
                 let mut requests = IndexMap::new();
                 if let Some(entry) = parse_dotfiles_entry(&key, value, path) {
                     let overrides_target = matches!(&entry,
-                        FileTomlEntry::Table { variants: Some(vs), .. }
+                        FileTomlEntry::Table(FileTomlTable { variants: Some(vs), .. })
                             if vs.iter().any(|v| v.target.is_some()));
                     merge_file_entry(key.clone(), entry, base, &origin, &mut requests);
                     // An invalid or inactive declaration cannot suppress an
@@ -1531,7 +1536,7 @@ fn merge_file_entry(
             None,
             None,
         ),
-        FileTomlEntry::Table {
+        FileTomlEntry::Table(FileTomlTable {
             source,
             content,
             mode,
@@ -1548,7 +1553,7 @@ fn merge_file_entry(
             dot_prefix,
             relative,
             group,
-        } => (
+        }) => (
             source,
             content,
             mode,
@@ -6294,6 +6299,40 @@ fn relative_link_path(source: &Path, target: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    /// `schema/mise.json` describes a `[dotfiles]` entry from
+    /// `mise_config::dotfiles::DotfileTableDecl`. A table is read as a whole-file entry or an
+    /// edit, so together those two parsers must read exactly the keys it declares.
+    #[test]
+    fn dotfile_keys_match_the_declaration() {
+        use mise_config::de::struct_fields;
+        use mise_config::dotfiles::{DotfileTableDecl, DotfileVariantDecl};
+        use std::collections::BTreeSet;
+        let parsed: BTreeSet<&str> = struct_fields::<FileTomlTable>()
+            .iter()
+            .chain(struct_fields::<crate::edits::EditTomlTable>())
+            .copied()
+            // a [dotfiles] entry takes no group; only a group's own entries are in one
+            .filter(|key| *key != "group")
+            .collect();
+        let declared: BTreeSet<&str> = struct_fields::<DotfileTableDecl>()
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(parsed, declared);
+
+        // a variant is its `target` plus a history selector
+        let parsed: BTreeSet<&str> = struct_fields::<crate::history::select::Variant>()
+            .iter()
+            .copied()
+            .chain(["target"])
+            .collect();
+        let declared: BTreeSet<&str> = struct_fields::<DotfileVariantDecl>()
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(parsed, declared);
+    }
+
     #[test]
     fn destination_variants_survive_incoming_config_preflight() -> Result<()> {
         let path = dirs::HOME.join(".config/mise/config.toml");
@@ -6334,13 +6373,13 @@ variants = [
 ]
 "#,
         )?;
-        let FileTomlEntry::Table {
+        let FileTomlEntry::Table(FileTomlTable {
             source,
             content,
             mode,
             variants: Some(variants),
             ..
-        } = entry
+        }) = entry
         else {
             bail!("expected a table entry with variants");
         };
@@ -8154,11 +8193,11 @@ source = "oldrc""#,
     #[test]
     fn a_permissions_only_table_is_a_whole_file_entry() {
         let value: toml::Value = toml::from_str(r#"permissions = "0600""#).unwrap();
-        let Some(FileTomlEntry::Table {
+        let Some(FileTomlEntry::Table(FileTomlTable {
             source,
             permissions,
             ..
-        }) = file_entry_from_toml("~/.ssh/config", value)
+        })) = file_entry_from_toml("~/.ssh/config", value)
         else {
             panic!("expected a whole-file table entry");
         };
