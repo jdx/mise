@@ -22,6 +22,9 @@ export type Key = {
   children: Key[];
 };
 
+// Marks a schema that stands for one key several alternative shapes each define.
+const MERGED = "x-merged";
+
 // Deep enough for `[bootstrap]`; the bound also stops a cyclic `$ref`.
 const MAX_DEPTH = 6;
 
@@ -193,9 +196,22 @@ export function describeKey(
   const alternatives = new Set(
     nodes.map((n) => n.description).filter((d) => d !== undefined),
   );
+  // A key several shapes define has each of their descriptions.
+  const merged: Schema[] = schema[MERGED] ? schema.anyOf : [];
+  const mergedDescriptions = [
+    ...new Set(
+      merged
+        .map((m) => first(itself(root, m), (n) => n.description))
+        .filter((d) => d !== undefined),
+    ),
+  ];
   const description: string =
     first(itself(root, schema), (n) => n.description) ??
-    (alternatives.size === 1 ? [...alternatives][0] : "");
+    (mergedDescriptions.length > 0
+      ? mergedDescriptions.join("; or ")
+      : alternatives.size === 1
+        ? [...alternatives][0]
+        : "");
   const experimental = /^\[?experimental\]?\b/i.test(description);
   const defaultValue = first(nodes, (n) => n.default);
   const key: Key = {
@@ -205,36 +221,47 @@ export function describeKey(
     choices: choices(nodes),
     default:
       defaultValue === undefined ? undefined : JSON.stringify(defaultValue),
-    deprecated: itself(root, schema).some((n) => n.deprecated === true),
+    // deprecated only when every shape that defines it says so
+    deprecated:
+      merged.length > 0
+        ? merged.every((m) =>
+            itself(root, m).some((n) => n.deprecated === true),
+          )
+        : itself(root, schema).some((n) => n.deprecated === true),
     experimental,
     link: elsewhere[path],
     children: [],
   };
   if (depth >= MAX_DEPTH || key.link) return key;
 
-  const seen = new Set<string>();
+  // A key the alternative shapes each define is every one of those definitions at once.
+  const named = new Map<string, Schema[]>();
   for (const n of nodes) {
     for (const [child, childSchema] of Object.entries(n.properties ?? {})) {
-      if (seen.has(child)) continue;
-      seen.add(child);
-      key.children.push(
-        describeKey(
-          root,
-          child,
-          childSchema as Schema,
-          path,
-          render,
-          depth + 1,
-        ),
-      );
+      const schemas = named.get(child) ?? [];
+      if (!schemas.includes(childSchema)) schemas.push(childSchema as Schema);
+      named.set(child, schemas);
     }
+  }
+  for (const [child, schemas] of named) {
+    key.children.push(
+      describeKey(
+        root,
+        child,
+        schemas.length === 1 ? schemas[0] : { anyOf: schemas, [MERGED]: true },
+        path,
+        render,
+        depth + 1,
+      ),
+    );
   }
   // An open table: its other keys are names the user picks.
   const value = placeholderChildren(nodes);
-  const named = key.children.length > 0;
+  const hasNamed = key.children.length > 0;
   let shared = new Set<string>();
   if (value.length > 0) {
-    const placeholder = placeholders[path] ?? "<key>";
+    // a section's open table has the same names wherever it is nested (`tasks.<name>.env`)
+    const placeholder = placeholders[path] ?? placeholders[name] ?? "<key>";
     const entry = describeKey(
       root,
       placeholder,
@@ -270,7 +297,7 @@ export function describeKey(
       }
     }
   }
-  if (!named) {
+  if (!hasNamed) {
     // A list of tables: describe one item.
     const items = nodes.flatMap((n) => (n.items ? expand(root, n.items) : []));
     if (items.some((n) => n.properties)) {
