@@ -51,7 +51,7 @@ pub(crate) struct TasksLs {
 
     /// Include tasks from every project in the monorepo, not only the current
     /// directory's hierarchy
-    #[usage(long)]
+    #[usage(short, long)]
     pub all: bool,
 
     /// Display tasks for usage completion
