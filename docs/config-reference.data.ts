@@ -190,7 +190,12 @@ export function describeKey(
   depth = 0,
 ): Key {
   const nodes = expand(root, schema);
-  const path = parent ? `${parent}.${name}` : name;
+  // one item of a list is `<list>[]`, so its keys read `<list>[].<key>` at every depth
+  const path = !parent
+    ? name
+    : name === "[]"
+      ? `${parent}[]`
+      : `${parent}.${name}`;
   // The key's own description, else the one its alternative shapes agree on: one of
   // several differing alternatives would misdescribe the others.
   const alternatives = new Set(
@@ -234,10 +239,20 @@ export function describeKey(
   };
   if (depth >= MAX_DEPTH || key.link) return key;
 
+  // A key the shape itself forbids (`hide = false` beside a task template's `$ref` to the
+  // task keys) is not one of its keys, whatever the shapes it is built from allow.
+  const forbidden = new Set(
+    itself(root, schema).flatMap((n) =>
+      Object.entries(n.properties ?? {})
+        .filter(([, v]) => v === false)
+        .map(([k]) => k),
+    ),
+  );
   // A key the alternative shapes each define is every one of those definitions at once.
   const named = new Map<string, Schema[]>();
   for (const n of nodes) {
     for (const [child, childSchema] of Object.entries(n.properties ?? {})) {
+      if (forbidden.has(child) || typeof childSchema !== "object") continue;
       const schemas = named.get(child) ?? [];
       if (!schemas.includes(childSchema)) schemas.push(childSchema as Schema);
       named.set(child, schemas);
@@ -309,12 +324,7 @@ export function describeKey(
         render,
         depth + 1,
       );
-      key.children.push(
-        ...entry.children.map((c) => ({
-          ...c,
-          path: c.path.replace(".[].", "[]."),
-        })),
-      );
+      key.children.push(...entry.children);
     }
   }
   return key;
