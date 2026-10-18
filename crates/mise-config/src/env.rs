@@ -765,7 +765,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                 // `Val` is untagged, whose own error only says no shape matched.
                                 let e = e.to_string();
                                 let detail = if e.contains("untagged enum Val") {
-                                    "`value` and `default` take a string, integer or boolean, `required` a boolean or help text, and `age` an encrypted string or a table with `value`".to_string()
+                                    "`value` takes a string, integer or boolean, `default` a string or integer, `required` a boolean or help text, and `age` an encrypted string or a table with `value`".to_string()
                                 } else {
                                     e
                                 };
