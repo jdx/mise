@@ -203,13 +203,20 @@ impl<'de> Deserialize<'de> for RunEntry {
 
             fn visit_map<M: serde::de::MapAccess<'de>>(
                 self,
-                map: M,
+                mut map: M,
             ) -> Result<Self::Value, M::Error> {
                 use serde::de::Error;
 
-                // Buffered, so only the keys the chosen shape reads are checked.
-                let mut table =
-                    toml::Table::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                // The known keys are buffered, so only the ones the chosen shape reads are
+                // checked; any other key is skipped where serde_ignored can report it.
+                let mut table = toml::Table::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    if matches!(key.as_str(), "task" | "args" | "env" | "tasks") {
+                        table.insert(key, map.next_value()?);
+                    } else {
+                        map.next_value::<serde::de::IgnoredAny>()?;
+                    }
+                }
                 let field = |table: &mut toml::Table, key: &str| table.remove(key);
                 if let Some(task) = field(&mut table, "task") {
                     let task = task
@@ -279,6 +286,17 @@ mod run_entry_tests {
                 .to_string()
                 .contains("needs `task`")
         );
+        // an unknown key is skipped where serde_ignored sees it
+        let mut ignored = vec![];
+        let des = toml::Deserializer::parse(r#"run = { task = "lint", tsak = 1 }"#).unwrap();
+        #[derive(serde::Deserialize)]
+        struct Wrapper {
+            run: RunEntry,
+        }
+        let wrapper: Wrapper =
+            serde_ignored::deserialize(des, |path| ignored.push(path.to_string())).unwrap();
+        assert!(matches!(wrapper.run, RunEntry::SingleTask { .. }));
+        assert_eq!(ignored, ["run.tsak"]);
     }
 }
 
