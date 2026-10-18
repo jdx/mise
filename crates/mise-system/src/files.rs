@@ -2679,6 +2679,12 @@ fn check_symlink(source: &Path, target: &Path, relative: bool) -> Result<FileSta
     // otherwise (see `link_path`), so which one is on disk decides how to read it. Only fall
     // through to the copy comparison when it is not a symlink.
     if cfg!(windows) && source.is_file() && !target.is_symlink() {
+        // with `dotfiles.windows_symlinks` on a copy is not the requested form: it differs, so
+        // the regular file at the target is a conflict that needs `--force` before a link
+        // replaces it, as on Unix
+        if windows_symlinks() && target.exists() {
+            return Ok(FileState::Differs("exists but is not a symlink".into()));
+        }
         return check_copy(source, target);
     }
     if target.is_symlink() {
@@ -3080,7 +3086,7 @@ fn reconcile_symlink_each_states(
 }
 
 fn save_symlink_each_state(req: &FileRequest) {
-    if cfg!(windows) {
+    if cfg!(windows) && !windows_symlinks() {
         return;
     }
     let path = symlink_each_state_path(req);
@@ -3717,7 +3723,7 @@ fn stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
 }
 
 fn symlink_each_state_needs_update(req: &FileRequest) -> Result<bool> {
-    if cfg!(windows) {
+    if cfg!(windows) && !windows_symlinks() {
         return Ok(false);
     }
     let desired = desired_symlink_each_state(req)?;
@@ -4972,7 +4978,7 @@ fn plan_unapply_one<'a>(
                 }
             }
         }
-        FileMode::SymlinkEach if !cfg!(windows) => {
+        FileMode::SymlinkEach if !cfg!(windows) || windows_symlinks() => {
             clear_symlink_each_state = symlink_each_state_path(req).exists();
             if req.target.is_symlink() || (req.target.exists() && !req.target.is_dir()) {
                 if opts.force {
@@ -4983,6 +4989,17 @@ fn plan_unapply_one<'a>(
             } else if req.target.is_dir() {
                 for path in owned_links(req)? {
                     paths.insert(path, ());
+                }
+                // files an earlier apply copied, before `dotfiles.windows_symlinks` was on,
+                // are removed on the same terms as a `copy` entry's
+                // (a missing source has nothing to compare them with, and must not stop the
+                // recorded links from being removed)
+                if cfg!(windows) && req.source.is_dir() {
+                    for (source, target) in walk_source_files(req)? {
+                        if !target.is_symlink() {
+                            plan_regular_file(&source, &target, opts.force, &mut paths)?;
+                        }
+                    }
                 }
                 cleanup_empty_dirs = true;
             }
@@ -5852,8 +5869,20 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
     }
     match req.mode {
         FileMode::Symlink => {
+            if let Some(dir) = req.target.parent() {
+                ensure_windows_link_possible(&req.source, dir)?;
+            }
             replace_recorded(&req.target, written, || {
-                link_path(&req.source, &req.target, req.relative, true)
+                link_path(
+                    &req.source,
+                    &req.target,
+                    req.relative,
+                    if windows_symlinks() {
+                        WindowsLink::Link
+                    } else {
+                        WindowsLink::TryLink
+                    },
+                )
             })?;
             // the link is in place; listing what it exposes only feeds
             // reload matching, so a walk that fails must not fail the apply
@@ -5868,6 +5897,15 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             }
         }
         FileMode::SymlinkEach => {
+            // before anything is removed or created: Windows may refuse the links, and a
+            // `--force` replacement of a blocking file must not have happened by then
+            if windows_symlinks()
+                && let Some((source, _)) = walk_source_files(req)?
+                    .into_iter()
+                    .find(|(source, _)| source.is_file())
+            {
+                ensure_windows_link_possible(&source, &req.target)?;
+            }
             // conflicts were vetted (or --force given): clear anything
             // blocking a directory we need
             for dir in needed_dirs(req)? {
@@ -5886,7 +5924,16 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                     file::create_dir_all(parent)?;
                 }
                 replace_recorded(&target, written, || {
-                    link_path(&source, &target, req.relative, false)
+                    link_path(
+                        &source,
+                        &target,
+                        req.relative,
+                        if windows_symlinks() {
+                            WindowsLink::Link
+                        } else {
+                            WindowsLink::Copy
+                        },
+                    )
                 })?;
             }
             prune_stale_links(req, written)?;
@@ -6245,40 +6292,99 @@ fn replace_recorded(
     create_recorded(target, written, write)
 }
 
-/// How many `symlink-each` entries `link_path` copies: on Windows every regular file, while a
-/// source that is not a file (a directory link) still gets a junction.
+/// Whether `dotfiles.windows_symlinks` is on. Only Windows consults it: elsewhere files are
+/// always linked.
+fn windows_symlinks() -> bool {
+    cfg!(windows) && Settings::get().dotfiles.windows_symlinks
+}
+
+/// How many `symlink-each` entries `link_path` copies: on Windows every regular file unless
+/// `dotfiles.windows_symlinks` links them, while a source that is not a file (a directory link)
+/// still gets a junction.
 fn windows_each_copies(files: &[(PathBuf, PathBuf)]) -> usize {
-    if cfg!(windows) {
+    if cfg!(windows) && !windows_symlinks() {
         files.iter().filter(|(source, _)| source.is_file()).count()
     } else {
         0
     }
 }
 
-/// `allow_windows_symlink` is false for `symlink-each`, which stays on the Windows copy path:
-/// its unapply planner is `#[cfg(not(windows))]`-guarded and falls through to the content
-/// comparison, which rejects a symlink — creating one there would make unapply demand `--force`.
+/// With `dotfiles.windows_symlinks` on, prove a file link can be created in `links_in` (the
+/// directory the links will go in, which may not exist yet) before `replace_recorded` removes
+/// what is there: the removal comes first, so a link Windows then refuses would leave neither
+/// the old file nor a new one.
+fn ensure_windows_link_possible(source: &Path, links_in: &Path) -> Result<()> {
+    #[cfg(windows)]
+    if windows_symlinks() && source.is_file() {
+        // a short name, not derived from any target's: a filename near the 255-character limit
+        // must still leave room for it. Unique, so a file of the user's can never be the one
+        // that gets removed: only a link this call created is.
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let name = format!(".mise-probe-{}-{nanos:x}", std::process::id());
+        // the nearest directory that exists, `links_in` itself when it does
+        let dir = links_in.ancestors().find(|dir| dir.is_dir());
+        let probe = dir.map_or_else(|| PathBuf::from(&name), |dir| dir.join(&name));
+        std::os::windows::fs::symlink_file(source, &probe).wrap_err_with(|| {
+            format!(
+                "cannot link {} into {}; turn on Developer Mode or run elevated, or set dotfiles.windows_symlinks = false",
+                source.display_user(),
+                links_in.display_user()
+            )
+        })?;
+        std::fs::remove_file(&probe)?;
+    }
+    #[cfg(not(windows))]
+    let _ = (source, links_in);
+    Ok(())
+}
+
+/// What `link_path` does with a regular file on Windows. Other platforms and directory sources
+/// ignore it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WindowsLink {
+    /// always copy. `symlink-each` does this by default: its unapply planner only reads links
+    /// when `dotfiles.windows_symlinks` is on, and otherwise falls through to the content
+    /// comparison, which rejects a symlink and would make unapply demand `--force`.
+    Copy,
+    /// link when Windows allows it, else copy. Windows grants
+    /// SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE when Developer Mode is on, so a file
+    /// symlink is often creatable without elevation -- `windows_shim_mode` already relies on
+    /// that. Junctions only cover directories, so a copy stays the fallback.
+    TryLink,
+    /// link or fail (`dotfiles.windows_symlinks`): a silent copy would leave a target that no
+    /// longer follows its source
+    Link,
+}
+
 fn link_path(
     source: &Path,
     target: &Path,
     relative: bool,
-    allow_windows_symlink: bool,
+    windows_link: WindowsLink,
 ) -> Result<()> {
     #[cfg(windows)]
     if source.is_file() {
-        // Windows grants SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE when Developer Mode is
-        // on, so a file symlink is often creatable without elevation -- `windows_shim_mode`
-        // already relies on that. Try it rather than assume it fails. Junctions only cover
-        // directories, so a copy stays the fallback: it is what this did unconditionally
-        // before, and it keeps working where the privilege really is absent.
-        if allow_windows_symlink && std::os::windows::fs::symlink_file(source, target).is_ok() {
-            return Ok(());
+        match windows_link {
+            WindowsLink::Copy => file::copy(source, target)?,
+            WindowsLink::TryLink => {
+                if std::os::windows::fs::symlink_file(source, target).is_err() {
+                    file::copy(source, target)?;
+                }
+            }
+            WindowsLink::Link => std::os::windows::fs::symlink_file(source, target).wrap_err_with(|| {
+                format!(
+                    "cannot link {} to {}; turn on Developer Mode or run elevated, or set dotfiles.windows_symlinks = false",
+                    target.display_user(),
+                    source.display_user()
+                )
+            })?,
         }
-        file::copy(source, target)?;
         return Ok(());
     }
     #[cfg(not(windows))]
-    let _ = allow_windows_symlink;
+    let _ = windows_link;
     if relative {
         file::make_symlink(&relative_link_path(source, target), target)?;
     } else {
@@ -7927,7 +8033,7 @@ source = "oldrc""#,
         let target = dir.path().join("linked");
         file::write(&source, "contents")?;
 
-        link_path(&source, &target, false, true)?;
+        link_path(&source, &target, false, WindowsLink::TryLink)?;
 
         assert!(
             target.exists() || target.is_symlink(),
@@ -7937,9 +8043,30 @@ source = "oldrc""#,
         Ok(())
     }
 
-    /// `symlink-each` opts out of the Windows symlink attempt, so it keeps producing a copy
-    /// there. Pinned because the two modes share `link_path`: making it symlink for everyone
-    /// would route `symlink-each` unapply through a planner that rejects symlinks.
+    /// `dotfiles.windows_symlinks` makes `link_path` link or fail, never fall back to a copy.
+    /// Which of the two happens depends on the runner's privilege, so assert the property that
+    /// holds for both: a symlink on success, and nothing at all on failure.
+    #[cfg(windows)]
+    #[test]
+    fn link_path_link_never_leaves_a_copy() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfile");
+        let target = dir.path().join("linked");
+        file::write(&source, "contents")?;
+
+        match link_path(&source, &target, false, WindowsLink::Link) {
+            Ok(()) => assert!(target.is_symlink(), "Link must produce a symlink"),
+            Err(err) => {
+                assert!(!target.exists(), "a failed Link must not leave a copy");
+                assert!(format!("{err:#}").contains("windows_symlinks"), "{err:#}");
+            }
+        }
+        Ok(())
+    }
+
+    /// `symlink-each` stays on the Windows copy path unless `dotfiles.windows_symlinks` is on.
+    /// Pinned because the two modes share `link_path`: making it symlink for everyone would
+    /// route `symlink-each` unapply through a planner that rejects symlinks.
     #[cfg(windows)]
     #[test]
     fn symlink_each_still_copies_on_windows() -> Result<()> {
@@ -7948,7 +8075,7 @@ source = "oldrc""#,
         let target = dir.path().join("copied");
         file::write(&source, "contents")?;
 
-        link_path(&source, &target, false, false)?;
+        link_path(&source, &target, false, WindowsLink::Copy)?;
 
         assert!(
             !target.is_symlink(),
@@ -7967,7 +8094,7 @@ source = "oldrc""#,
         let target = dir.path().join("link");
         file::create_dir_all(&source)?;
         file::write(source.join("keep"), "x")?;
-        link_path(&source, &target, false, true)?;
+        link_path(&source, &target, false, WindowsLink::TryLink)?;
 
         assert!(remove_existing(&target)?);
 
@@ -8004,7 +8131,7 @@ source = "oldrc""#,
         file::write(&source, "contents")?;
         file::create_dir_all(target.parent().unwrap())?;
 
-        link_path(&source, &target, true, true)?;
+        link_path(&source, &target, true, WindowsLink::TryLink)?;
 
         assert_eq!(
             std::fs::read_link(&target)?,
@@ -8028,7 +8155,7 @@ source = "oldrc""#,
         let source = dir.path().join("dotfile");
         let target = dir.path().join("linked");
         file::write(&source, "contents")?;
-        link_path(&source, &target, false, true)?;
+        link_path(&source, &target, false, WindowsLink::TryLink)?;
 
         assert!(matches!(
             check_symlink(&source, &target, true)?,
@@ -8053,7 +8180,7 @@ source = "oldrc""#,
         file::make_symlink(&real_config, &config)?;
         let target = config.join("foo");
 
-        link_path(&source, &target, true, true)?;
+        link_path(&source, &target, true, WindowsLink::TryLink)?;
 
         assert!(std::fs::read_link(&target)?.is_relative());
         assert_eq!(file::read_to_string(&target)?, "contents");
@@ -8083,7 +8210,7 @@ source = "oldrc""#,
     fn relative_link_in_a_symlinked_directory_is_owned_after_its_source_goes() -> Result<()> {
         let (_dir, source, config) = symlinked_link_dir()?;
         let target = config.join("foo");
-        link_path(&source, &target, true, true)?;
+        link_path(&source, &target, true, WindowsLink::TryLink)?;
         std::fs::remove_file(&source)?;
 
         assert!(link_points_to(&source, &target));
@@ -8123,7 +8250,7 @@ source = "oldrc""#,
         file::create_dir_all(target.parent().unwrap())?;
         file::make_symlink(&dir.path().join("nowhere"), &source)?;
 
-        link_path(&source, &target, true, false)?;
+        link_path(&source, &target, true, WindowsLink::Copy)?;
 
         assert_eq!(
             std::fs::read_link(&target)?,
