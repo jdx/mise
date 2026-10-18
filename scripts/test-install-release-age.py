@@ -183,6 +183,36 @@ class ReleaseAgeTests(unittest.TestCase):
             self.assertLess(index, installer)
             self.assertIn("s3://mise/v2026.1.0/install.sh", calls[installer])
 
+    def publish_with_staged_keys(self, staged):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "aws.log"
+            env = os.environ.copy()
+            env.update(CLOUDFLARE_ACCESS_KEY_ID="test", CLOUDFLARE_SECRET_ACCESS_KEY="test",
+                       CLOUDFLARE_API_TOKEN="test", GITHUB_REPOSITORY="jdx/mise",
+                       TEST_AWS_LOG=str(log), TEST_STAGED=staged)
+            result = subprocess.run(
+                ["bash", "-c", r'''
+                    aws() { echo "$*" >>"$TEST_AWS_LOG"; case "$*" in *list-objects-v2*) printf '%b\n' "$TEST_STAGED";; esac; }
+                    curl() { :; }
+                    gh() { echo '[{"tag_name":"v2026.1.0","draft":false,"prerelease":false,"published_at":"2026-01-01T00:00:00Z"}]'; }
+                    export -f aws curl gh
+                    bash "$1" v2026.1.0
+                ''', "test", str(ROOT / "scripts/publish-version.sh")],
+                env=env, text=True, capture_output=True, check=False,
+            )
+            return result, log.read_text()
+
+    def test_release_without_powershell_installer_still_publishes(self):
+        result, calls = self.publish_with_staged_keys("None")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("install.ps1", calls.replace("--prefix v2026.1.0/install.ps1", ""))
+
+    def test_release_with_powershell_installer_promotes_it(self):
+        staged = "v2026.1.0/install.ps1\\tv2026.1.0/install.ps1.sig\\tv2026.1.0/install.ps1.minisig"
+        result, calls = self.publish_with_staged_keys(staged.replace("\\t", "\n"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("cp s3://mise/v2026.1.0/install.ps1 s3://mise/install.ps1 ", calls)
+
     def test_paginated_retry_discards_partial_response_and_waits_for_reset(self):
         helper = ROOT / "scripts/gh-api-retry.sh"
         with tempfile.TemporaryDirectory() as tmp:
