@@ -42,6 +42,7 @@ use crate::launchd::LaunchdCalendarInterval;
 use crate::mise_toml::MiseTomlDecl;
 use crate::monorepo::MonorepoConfig;
 use crate::remote::InstallMiseTomlConfig;
+use crate::task::shapes::{TaskDependencyItem, TaskDependencyTable, TaskRunEntry, TaskWatchDecl};
 use crate::task::{TaskConfig, TaskDecl};
 use crate::tool_config::ToolConfig;
 use crate::watch_files::WatchFile;
@@ -165,6 +166,16 @@ fn derived_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Value)> {
             fragment::<HookInstallDefinition>(generator),
         ),
         ("hooks", fragment::<HooksDecl>(generator)),
+        (
+            "task_dependency_item",
+            fragment::<TaskDependencyItem>(generator),
+        ),
+        (
+            "task_dependency_table",
+            fragment::<TaskDependencyTable>(generator),
+        ),
+        ("task_run_entry", fragment::<TaskRunEntry>(generator)),
+        ("task_watch", fragment::<TaskWatchDecl>(generator)),
         ("env", fragment::<EnvDecl>(generator)),
         ("vars", fragment::<VarsDecl>(generator)),
         ("env_directive", fragment::<EnvDirectiveDecl>(generator)),
@@ -367,6 +378,8 @@ pub(crate) mod refs {
         monorepo_root,
         os_filter,
         task_config,
+        task_dependency_table,
+        task_run_entry,
         task_watch,
         tool_bool,
         tool_bool_text,

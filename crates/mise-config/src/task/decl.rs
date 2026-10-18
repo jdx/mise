@@ -8,6 +8,11 @@ use indexmap::IndexMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, de::Error as _};
 
+use super::shapes::{
+    RustCacheDecl, SilentDecl, TaskAlias, TaskCacheDecl, TaskConfirmDecl, TaskDaemonsDecl,
+    TaskDepends, TaskDependsPost, TaskOutputDecl, TaskOutputsDecl, TaskRunDecl, TaskSecretsDecl,
+    TaskSourcesDecl, TaskWaitFor,
+};
 use super::{
     G7_TEXT, RunEntry, Silent, TaskCacheConfig, TaskConfirm, TaskDaemons, TaskDep, TaskOutput,
     TaskOutputs, TaskRustCacheConfig, TaskSecrets, TaskToolValue, TaskWatchOptions,
@@ -26,24 +31,24 @@ pub struct TaskDecl {
         rename = "alias",
         deserialize_with = "crate::de::deserialize_arr"
     )]
-    #[schemars(schema_with = "super::schema::task_props_alias")]
+    #[schemars(with = "TaskAlias")]
     pub aliases: Vec<String>,
     #[serde(default)]
-    #[schemars(schema_with = "super::schema::task_props_confirm")]
+    #[schemars(with = "Option<TaskConfirmDecl>")]
     pub confirm: Option<TaskConfirm>,
     #[serde(default, deserialize_with = "crate::de::deserialize_arr")]
-    #[schemars(schema_with = "super::schema::task_props_depends")]
+    #[schemars(with = "TaskDepends")]
     pub depends: Vec<TaskDep>,
     // Project daemons that must be running and ready before this task's body
     // starts. Skipped along with dependencies under `--skip-deps`.
     #[serde(default)]
-    #[schemars(schema_with = "super::schema::task_props_daemons")]
+    #[schemars(with = "Option<TaskDaemonsDecl>")]
     pub daemons: Option<TaskDaemons>,
     #[serde(default, deserialize_with = "crate::de::deserialize_arr")]
-    #[schemars(schema_with = "super::schema::task_props_depends_post")]
+    #[schemars(with = "TaskDependsPost")]
     pub depends_post: Vec<TaskDep>,
     #[serde(default, deserialize_with = "crate::de::deserialize_arr")]
-    #[schemars(schema_with = "super::schema::task_props_wait_for")]
+    #[schemars(with = "TaskWaitFor")]
     pub wait_for: Vec<TaskDep>,
     /// description of task
     #[serde(default)]
@@ -65,20 +70,20 @@ pub struct TaskDecl {
     #[schemars(extend("default" = false))]
     pub hide: Option<bool>,
     #[serde(default)]
-    #[schemars(schema_with = "super::schema::task_props_outputs")]
+    #[schemars(with = "TaskOutputsDecl")]
     pub outputs: TaskOutputs,
     // Experimental local artifact cache configuration.
     #[serde(default)]
-    #[schemars(schema_with = "super::schema::task_props_cache")]
+    #[schemars(with = "Option<TaskCacheDecl>")]
     pub cache: Option<TaskCacheConfig>,
     // Deprecated compatibility field; enabled values emit an mbx migration warning.
     #[serde(default)]
-    #[schemars(schema_with = "super::schema::task_props_rust_cache")]
+    #[schemars(with = "Option<RustCacheDecl>")]
     pub rust_cache: Option<TaskRustCacheConfig>,
     // Per-task output *style* override (prefix/interleave/keep-order/…).
     // Orthogonal to `quiet`/`silent` verbosity; see [`TaskOutput`].
     #[serde(default)]
-    #[schemars(schema_with = "super::schema::task_props_output")]
+    #[schemars(with = "Option<TaskOutputDecl>")]
     pub output: Option<TaskOutput>,
     /// do not display mise information for this task
     #[schemars(extend("default" = false))]
@@ -86,10 +91,7 @@ pub struct TaskDecl {
     // `default` keeps the field optional, since schemars cannot see the `Option` through
     // `schema_with`; it also replaces the schema's own default, so that is set again.
     #[serde(default)]
-    #[schemars(
-        schema_with = "super::schema::task_props_silent",
-        extend("default" = false)
-    )]
+    #[schemars(with = "Option<SilentDecl>", extend("default" = false))]
     pub silent: Option<Silent>,
     /// mark task as interactive, acquiring exclusive terminal access while allowing other non-interactive tasks to run in parallel
     #[schemars(extend("default" = false))]
@@ -106,16 +108,16 @@ pub struct TaskDecl {
     #[schemars(extend("default" = false))]
     pub raw_args: Option<bool>,
     #[serde(default, deserialize_with = "crate::de::deserialize_arr")]
-    #[schemars(schema_with = "super::schema::task_props_run")]
+    #[schemars(with = "TaskRunDecl")]
     pub run: Vec<RunEntry>,
     #[serde(default, deserialize_with = "crate::de::deserialize_arr")]
-    #[schemars(schema_with = "super::schema::task_props_run_windows")]
+    #[schemars(with = "TaskRunDecl")]
     pub run_windows: Vec<RunEntry>,
     /// Execute an external script
     #[serde(default)]
     pub file: Option<PathBuf>,
     #[serde(default, deserialize_with = "crate::de::deserialize_arr")]
-    #[schemars(schema_with = "super::schema::task_props_sources")]
+    #[schemars(with = "TaskSourcesDecl")]
     pub sources: Vec<String>,
     #[serde(default)]
     #[schemars(schema_with = "crate::schema::refs::task_watch")]
@@ -168,7 +170,7 @@ pub struct TaskDecl {
     // [experimental] Secret keys this task receives when it starts. Dependencies and
     // subtasks get only their own lists.
     #[serde(default)]
-    #[schemars(schema_with = "super::schema::task_props_secrets")]
+    #[schemars(with = "Option<TaskSecretsDecl>")]
     pub secrets: Option<TaskSecrets>,
     // Not in the schema: mise sets it while loading, and the docs never mention it.
     #[serde(default)]
