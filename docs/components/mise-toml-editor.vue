@@ -11,6 +11,10 @@ const props = defineProps<{
   readonly?: boolean;
   /** Keep the config in the page's URL, so a link shares it. */
   share?: boolean;
+  /** A bare code block that happens to have hover: no toolbar, and loaded when scrolled into view. */
+  compact?: boolean;
+  /** The file name shown above the config, from a ```toml [name] fence. */
+  title?: string;
 }>();
 
 const host = ref<HTMLElement>();
@@ -46,6 +50,28 @@ function decode(text: string): string | undefined {
   }
 }
 
+// Pages show hundreds of examples, so a compact one loads its editor only once it is near the screen.
+function whenVisible(): Promise<void> {
+  const el = host.value;
+  if (!props.compact || !el || !("IntersectionObserver" in window)) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          observer.disconnect();
+          resolve();
+        }
+      },
+      { rootMargin: "400px" },
+    );
+    observer.observe(el);
+    stopObserving = () => observer.disconnect();
+  });
+}
+let stopObserving = () => {};
+
 onMounted(async () => {
   let doc = props.code ?? "";
   if (props.share) {
@@ -54,6 +80,8 @@ onMounted(async () => {
   }
   current = doc;
   try {
+    await whenVisible();
+    if (unmounted) return;
     const { createEditor } = await import("../.vitepress/mise-toml/editor.ts");
     if (unmounted) return;
     const created = await createEditor(host.value!, {
@@ -78,6 +106,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   unmounted = true;
+  stopObserving();
   view?.destroy();
 });
 
@@ -111,10 +140,11 @@ function reset() {
 </script>
 
 <template>
-  <div class="mise-toml-editor" :class="{ ready }">
+  <div class="mise-toml-editor" :class="{ ready, compact }">
+    <div v-if="title" class="mte-title">{{ title }}</div>
     <pre v-if="!ready" class="mte-fallback"><code>{{ code }}</code></pre>
     <div ref="host" class="mte-host" />
-    <div v-if="ready" class="mte-toolbar">
+    <div v-if="ready && !compact" class="mte-toolbar">
       <span class="mte-hint">
         {{
           readonly
@@ -147,6 +177,20 @@ function reset() {
   --mte-comment: var(--vp-c-text-3);
   --mte-punctuation: var(--vp-c-text-2);
   margin: 16px 0;
+}
+
+.mise-toml-editor.compact {
+  margin: 16px 0;
+}
+
+.mise-toml-editor .mte-title {
+  padding: 6px 24px;
+  background: var(--vp-code-tab-bg);
+  border-radius: 8px 8px 0 0;
+  border-bottom: 1px solid var(--vp-code-tab-divider);
+  color: var(--vp-code-tab-text-color);
+  font-family: var(--vp-font-family-mono);
+  font-size: 13px;
 }
 
 .mise-toml-editor .mte-fallback {

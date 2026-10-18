@@ -135,23 +135,57 @@ function writeRedirectStubs(outDir: string) {
 }
 
 // https://vitepress.dev/reference/site-config
+/** Whether a file at this path is read as a mise config (mirrors `path_is_config` in the schema conformance test). */
+function pathIsConfig(path: string): boolean {
+  const name = path.split("/").pop()!;
+  if (!name.endsWith(".toml")) return false;
+  let stem = name.slice(0, -".toml".length);
+  if (stem.startsWith(".")) stem = stem.slice(1);
+  if (stem === "mise" || stem.startsWith("mise."))
+    return stem !== "mise.plugin";
+  const inConfigDir =
+    path.includes("mise/") || path.includes("MISE_CONFIG_DIR");
+  return (
+    inConfigDir &&
+    (stem === "config" ||
+      stem.startsWith("config.") ||
+      path.includes("conf.d/"))
+  );
+}
+
 /**
- * ```` ```toml editor ```` shows the config in a mise.toml editor that knows the schema, instead
- * of as a code block: hovering a key says what it is, and the reader can try changes. Add
- * `readonly` to keep the hover without editing. The block is still a `toml` block, so the
- * schema conformance test checks it like any other.
+ * Every ```` ```toml ```` or ```` ```mise-toml ```` block that shows a mise config (no title, a label, or a title naming a
+ * mise config file) is shown in a mise.toml editor that knows the schema: hovering a key says
+ * what it is. It is read-only unless the fence says ```` ```toml editor ````, which also lets the
+ * reader try changes; `share` keeps the config in the URL. A `<!-- schema: skip -->` or
+ * `<!-- schema: invalid -->` line above a block leaves it a plain code block, as the schema
+ * conformance test treats it. A `plain` flag does the same.
  */
 function miseTomlEditorFence(md: MarkdownIt) {
   const fence = md.renderer.rules.fence!;
   md.renderer.rules.fence = (tokens, idx, options, env, self) => {
-    const [lang, ...flags] = tokens[idx].info.trim().split(/\s+/);
-    if (lang !== "toml" || !flags.includes("editor")) {
+    const info = tokens[idx].info.trim();
+    const [lang, ...flags] = info.split(/\s+/);
+    if (!["toml", "mise-toml"].includes(lang) || flags.includes("plain")) {
+      return fence(tokens, idx, options, env, self);
+    }
+    const explicit = flags.includes("editor");
+    const title = /\[([^\]]*)\]/.exec(info)?.[1];
+    const isConfig =
+      title === undefined || !/[./]/.test(title) || pathIsConfig(title);
+    const above = tokens[idx - 1];
+    const marked =
+      above?.type === "html_block" &&
+      /^\s*<!--\s*schema:\s*(skip|invalid)\b/.test(above.content);
+    if (!explicit && (!isConfig || marked)) {
       return fence(tokens, idx, options, env, self);
     }
     const code = md.utils.escapeHtml(tokens[idx].content);
-    const readonly = flags.includes("readonly") ? " readonly" : "";
+    const readonly = explicit && !flags.includes("readonly") ? "" : " readonly";
     const share = flags.includes("share") ? " share" : "";
-    return `<MiseTomlEditor code="${code}"${readonly}${share} />\n`;
+    const compact = explicit ? "" : " compact";
+    const label = title ? ` title="${md.utils.escapeHtml(title)}"` : "";
+    return `<MiseTomlEditor code="${code}"${readonly}${share}${compact}${label} />\n`;
   };
 }
 
