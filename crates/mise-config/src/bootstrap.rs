@@ -175,14 +175,18 @@ pub struct BootstrapMacosTomlConfig {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BootstrapMacosDefaultsEntry {
+    /// preferences domain, such as "com.apple.dock" or "NSGlobalDomain"; -g and -globalDomain mean NSGlobalDomain
     pub domain: String,
+    /// preference key within the domain
     pub key: String,
+    /// any writes the preference for every host; current writes it for this machine only, like defaults -currentHost
     #[serde(default)]
     pub host: HostScope,
     /// Dictionary keys below the preference key; omitted to replace the whole value
     #[serde(default)]
     #[schemars(length(min = 1))]
     pub path: Option<Vec<String>>,
+    /// desired value, written with the matching property list type; replaces the selected value in full
     #[schemars(schema_with = "defaults_value")]
     pub value: toml::Value,
 }
@@ -240,6 +244,7 @@ pub struct SystemBrewTomlConfig {
     // Like `[plugins]`, this lets shared config name tap remotes while package entries stay
     // focused on formulae and casks.
     #[serde(default)]
+    #[schemars(extend("additionalProperties" = {"type": "string", "description": "git URL of the tap's GitHub repository, used instead of https://github.com/<owner>/homebrew-<tap>.git"}))]
     pub taps: IndexMap<String, String>,
 }
 

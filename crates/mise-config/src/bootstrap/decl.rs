@@ -36,6 +36,7 @@ pub enum BootstrapHook {
 #[derive(JsonSchema)]
 #[schemars(extend("additionalProperties" = true))]
 pub struct BootstrapHookTable {
+    /// shell command or commands to run in order, with the default inline shell; Tera templates are rendered first
     pub run: BootstrapHookRun,
 }
 
@@ -121,27 +122,35 @@ pub struct ShellActivationTable {
 #[serde(deny_unknown_fields)]
 pub struct BootstrapMiseShellActivate {
     #[serde(default)]
+    /// manage the activation blocks in ~/.bash_profile (shims) and ~/.bashrc (activate); a mode applies to both files
     #[schemars(schema_with = "refs::bootstrap_shell_activation")]
     pub bash: Option<BootstrapShellActivation>,
     #[serde(default)]
+    /// manage the activation blocks in ~/.zprofile (shims) and ~/.zshrc (activate); a mode applies to both files, and ~/.zshenv is never written
     #[schemars(schema_with = "refs::bootstrap_shell_activation")]
     pub zsh: Option<BootstrapShellActivation>,
     #[serde(default)]
+    /// manage the activation block in ~/.config/fish/config.fish; activate by default, and auto activates interactive shells and uses shims otherwise
     #[schemars(schema_with = "refs::bootstrap_shell_activation")]
     pub fish: Option<BootstrapShellActivation>,
     #[serde(default)]
+    /// manage the activation block in ~/.bash_profile; shims by default
     #[schemars(schema_with = "refs::bootstrap_shell_activation")]
     pub bash_profile: Option<BootstrapShellActivation>,
     #[serde(default)]
+    /// manage the activation block in ~/.bashrc; activate by default
     #[schemars(schema_with = "refs::bootstrap_shell_activation")]
     pub bashrc: Option<BootstrapShellActivation>,
     #[serde(default)]
+    /// manage the activation block in ~/.zshenv, which zsh reads for every script; shims by default
     #[schemars(schema_with = "refs::bootstrap_shell_activation")]
     pub zshenv: Option<BootstrapShellActivation>,
     #[serde(default)]
+    /// manage the activation block in ~/.zprofile; shims by default
     #[schemars(schema_with = "refs::bootstrap_shell_activation")]
     pub zprofile: Option<BootstrapShellActivation>,
     #[serde(default)]
+    /// manage the activation block in ~/.zshrc; activate by default
     #[schemars(schema_with = "refs::bootstrap_shell_activation")]
     pub zshrc: Option<BootstrapShellActivation>,
 }
@@ -151,6 +160,7 @@ pub struct BootstrapMiseShellActivate {
 #[schemars(extend("propertyNames" = {"pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"}))]
 pub struct BootstrapAptSources(pub BTreeMap<String, AptSourceDecl>);
 
+/// apt source: a Launchpad PPA, or repository URIs with the key that signs them
 // A PPA stands alone; any other source names its URIs and the key that signs them.
 #[derive(JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -198,6 +208,7 @@ pub enum OneOrManyStrings {
 #[schemars(extend("propertyNames" = {"pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"}))]
 pub struct BootstrapDnfRepos(pub BTreeMap<String, DnfRepoDecl>);
 
+/// dnf repository to enable, given as a COPR project
 #[derive(JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DnfRepoDecl {

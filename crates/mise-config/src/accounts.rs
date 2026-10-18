@@ -7,6 +7,7 @@ use serde::Deserialize;
 // The doc comments on these types are their descriptions in schema/mise.json, which editors show
 // to users. Notes for Rust readers go in plain comments.
 
+/// local Linux group that bootstrap creates, updates, or removes
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 #[schemars(extend(
     "if" = {
@@ -32,6 +33,7 @@ pub struct GroupTomlConfig {
     pub system: bool,
 }
 
+/// local Linux user that bootstrap creates, updates, or removes
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 #[schemars(extend("allOf" = [
     {

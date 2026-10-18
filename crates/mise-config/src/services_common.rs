@@ -70,11 +70,14 @@ pub enum ServiceChangeAction {
     None,
 }
 
+/// Linux systemd system unit that mise starts, stops, enables, or masks, or a user service mise defines from command or builtin
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema)]
 #[schemars(extend("not" = {"required": ["builtin", "command"]}))]
 pub struct ServiceTomlConfig {
+    /// running or stopped; absent removes a user service's definition (user scope only)
     #[serde(default)]
     pub state: ServiceState,
+    /// start the service at boot (system scope) or at login (user scope)
     #[serde(default = "default_true")]
     pub enabled: bool,
     /// System scope only
@@ -94,20 +97,21 @@ pub struct ServiceTomlConfig {
     #[serde(default)]
     #[schemars(length(min = 1))]
     pub command: Option<String>,
-    // User scope: a human-readable description.
+    /// text the service manager shows for the service; user scope only
     #[serde(default)]
     pub description: Option<String>,
-    // User scope: restart policy.
+    /// when to restart the process after it exits: on-failure, always, or never; on Windows, always and on-failure both retry failed runs only; user scope only
     #[serde(default)]
     #[schemars(extend("default" = "on-failure"))]
     pub restart: Option<ServiceRestart>,
-    // User scope: environment variables for the process.
+    /// environment variables for the process; user scope only
     #[serde(default)]
+    #[schemars(extend("additionalProperties" = {"type": "string", "description": "value of the environment variable"}))]
     pub environment: IndexMap<String, String>,
-    // User scope: working directory (`~` is expanded).
+    /// directory to run the process in, with ~ expanded; user scope only
     #[serde(default)]
     pub working_directory: Option<String>,
-    // User scope: converge after `[tools]` are installed.
+    /// start the service only after `mise bootstrap` installs [tools] and plugin packages; user scope only
     #[serde(default)]
     pub requires_tools: bool,
 }

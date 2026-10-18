@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 // The doc comments on these types are their descriptions in schema/mise.json, which editors show
 // to users. Notes for Rust readers go in plain comments.
 
+/// systemd user unit written to ~/.config/systemd/user/dev.mise.<name>.service, or .timer when it sets a timer key
 #[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
 #[schemars(extend("oneOf" = [
     {
@@ -144,6 +145,7 @@ pub struct SystemdTomlConfig {
     pub private_tmp: Option<bool>,
     /// environment variables for Environment entries
     #[serde(default)]
+    #[schemars(extend("additionalProperties" = {"type": "string", "description": "value of the environment variable"}))]
     pub environment: IndexMap<String, String>,
     /// write one EnvironmentFile entry per path in the [Service] section
     #[serde(default)]
