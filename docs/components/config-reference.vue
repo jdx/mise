@@ -76,10 +76,23 @@ function expandAll() {
 }
 
 // Opens the keys above the one the URL names, then scrolls to it.
-async function reveal() {
-  const id = decodeURIComponent(window.location.hash.slice(1));
+// The key `id` names, or the nearest key above it that the page lists: a key inside a tree the
+// page lists once, under "Same keys as", is not on the page itself.
+function listed(id) {
   const { parents } = index.value;
-  if (!parents.has(id)) return;
+  let at = id;
+  while (at && !parents.has(at)) {
+    const cut = at.endsWith("[]") ? at.length - 2 : at.lastIndexOf(".");
+    if (cut <= 0) return undefined;
+    at = at.slice(0, cut);
+  }
+  return at || undefined;
+}
+
+async function reveal() {
+  const id = listed(decodeURIComponent(window.location.hash.slice(1)));
+  const { parents } = index.value;
+  if (!id) return;
   if (matches.value && !matches.value.shown.has(id)) filter.value = "";
   for (let p = parents.get(id); p !== undefined; p = parents.get(p)) {
     open.add(p);

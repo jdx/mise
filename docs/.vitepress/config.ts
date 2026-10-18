@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type MarkdownIt from "markdown-it";
 import { defineConfig } from "vitepress";
 import { sidebar } from "./sidebar";
 import { referenceKeys, referenceMarkdown } from "../config-reference.data";
@@ -134,6 +135,26 @@ function writeRedirectStubs(outDir: string) {
 }
 
 // https://vitepress.dev/reference/site-config
+/**
+ * ```` ```toml editor ```` shows the config in a mise.toml editor that knows the schema, instead
+ * of as a code block: hovering a key says what it is, and the reader can try changes. Add
+ * `readonly` to keep the hover without editing. The block is still a `toml` block, so the
+ * schema conformance test checks it like any other.
+ */
+function miseTomlEditorFence(md: MarkdownIt) {
+  const fence = md.renderer.rules.fence!;
+  md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+    const [lang, ...flags] = tokens[idx].info.trim().split(/\s+/);
+    if (lang !== "toml" || !flags.includes("editor")) {
+      return fence(tokens, idx, options, env, self);
+    }
+    const code = md.utils.escapeHtml(tokens[idx].content);
+    const readonly = flags.includes("readonly") ? " readonly" : "";
+    const share = flags.includes("share") ? " share" : "";
+    return `<MiseTomlEditor code="${code}"${readonly}${share} />\n`;
+  };
+}
+
 export default withMermaid(
   defineConfig({
     title: "mise-en-place",
@@ -252,6 +273,7 @@ export default withMermaid(
       config(md) {
         md.use(groupIconMdPlugin);
         md.use(tabsMarkdownPlugin);
+        md.use(miseTomlEditorFence);
       },
     },
     vite: {
