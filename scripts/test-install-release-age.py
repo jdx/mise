@@ -183,6 +183,45 @@ class ReleaseAgeTests(unittest.TestCase):
             self.assertLess(index, installer)
             self.assertIn("s3://mise/v2026.1.0/install.sh", calls[installer])
 
+    def publish_with_staged_keys(self, staged, missing=""):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / "aws.log"
+            env = os.environ.copy()
+            env.update(CLOUDFLARE_ACCESS_KEY_ID="test", CLOUDFLARE_SECRET_ACCESS_KEY="test",
+                       CLOUDFLARE_API_TOKEN="test", GITHUB_REPOSITORY="jdx/mise",
+                       TEST_AWS_LOG=str(log), TEST_STAGED=staged, TEST_MISSING=missing)
+            result = subprocess.run(
+                ["bash", "-c", r'''
+                    aws() { echo "$*" >>"$TEST_AWS_LOG"; case "$*" in *"head-object"*"--key $TEST_MISSING") [ -n "$TEST_MISSING" ] && return 254;; *list-objects-v2*) printf '%b\n' "$TEST_STAGED";; esac; }
+                    curl() { :; }
+                    gh() { echo '[{"tag_name":"v2026.1.0","draft":false,"prerelease":false,"published_at":"2026-01-01T00:00:00Z"}]'; }
+                    export -f aws curl gh
+                    bash "$1" v2026.1.0
+                ''', "test", str(ROOT / "scripts/publish-version.sh")],
+                env=env, text=True, capture_output=True, check=False,
+            )
+            return result, log.read_text()
+
+    def test_release_without_powershell_installer_still_publishes(self):
+        result, calls = self.publish_with_staged_keys("None")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("install.ps1", calls.replace("--prefix v2026.1.0/install.ps1", ""))
+
+    def test_release_with_powershell_installer_promotes_it(self):
+        staged = "v2026.1.0/install.ps1\\tv2026.1.0/install.ps1.sig\\tv2026.1.0/install.ps1.minisig"
+        result, calls = self.publish_with_staged_keys(staged.replace("\\t", "\n"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for name in ("install.ps1", "install.ps1.sig", "install.ps1.minisig"):
+            self.assertIn(f"head-object --bucket mise --key v2026.1.0/{name}", calls)
+            self.assertIn(f"cp s3://mise/v2026.1.0/{name} s3://mise/{name} ", calls)
+
+    def test_staged_powershell_installer_requires_both_signatures(self):
+        staged = "v2026.1.0/install.ps1\nv2026.1.0/install.ps1.sig\nv2026.1.0/install.ps1.minisig"
+        for name in ("install.ps1.sig", "install.ps1.minisig"):
+            result, calls = self.publish_with_staged_keys(staged, f"v2026.1.0/{name}")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn("s3 cp", calls)
+
     def test_paginated_retry_discards_partial_response_and_waits_for_reset(self):
         helper = ROOT / "scripts/gh-api-retry.sh"
         with tempfile.TemporaryDirectory() as tmp:

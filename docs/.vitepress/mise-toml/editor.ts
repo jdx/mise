@@ -24,7 +24,7 @@ import {
   syntaxHighlighting,
 } from "@codemirror/language";
 import { linter, lintGutter, lintKeymap } from "@codemirror/lint";
-import { EditorState, type Text } from "@codemirror/state";
+import { EditorState, type Extension, type Text } from "@codemirror/state";
 import {
   drawSelection,
   EditorView,
@@ -358,11 +358,10 @@ export async function createEditor(
   const extensions = [
     lineNumbers(),
     highlightActiveLineGutter(),
-    history(),
+    ...(options.readonly ? [] : [history(), closeBrackets()]),
     drawSelection(),
     highlightActiveLine(),
     bracketMatching(),
-    closeBrackets(),
     tomlMode,
     syntaxHighlighting(highlight),
     theme,
@@ -381,6 +380,33 @@ export async function createEditor(
       },
       { hoverTime: 250 },
     ),
+    ...(options.readonly ? [] : editing(resolved)),
+    keymap.of([
+      ...closeBracketsKeymap,
+      ...defaultKeymap,
+      ...historyKeymap,
+      ...(options.readonly
+        ? []
+        : [...completionKeymap, ...lintKeymap, indentWithTab]),
+    ]),
+    EditorView.updateListener.of((update) => {
+      if (update.docChanged) options.onChange?.(update.state.doc.toString());
+    }),
+  ];
+  if (options.readonly)
+    extensions.push(
+      EditorState.readOnly.of(true),
+      EditorView.editable.of(false),
+    );
+  return new EditorView({
+    parent,
+    state: EditorState.create({ doc: options.doc, extensions }),
+  });
+}
+
+/** What makes an editor editable: problems as you type and completions. A read-only one has neither. */
+function editing(resolved: MiseSchema): Extension[] {
+  return [
     linter(
       (view) =>
         analysisOf(view.state.doc, resolved)
@@ -429,27 +455,7 @@ export async function createEditor(
         },
       ],
     }),
-    keymap.of([
-      ...closeBracketsKeymap,
-      ...defaultKeymap,
-      ...historyKeymap,
-      ...completionKeymap,
-      ...lintKeymap,
-      indentWithTab,
-    ]),
-    EditorView.updateListener.of((update) => {
-      if (update.docChanged) options.onChange?.(update.state.doc.toString());
-    }),
   ];
-  if (options.readonly)
-    extensions.push(
-      EditorState.readOnly.of(true),
-      EditorView.editable.of(false),
-    );
-  return new EditorView({
-    parent,
-    state: EditorState.create({ doc: options.doc, extensions }),
-  });
 }
 
 function lineBefore(context: CompletionContext): string {

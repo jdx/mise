@@ -87,7 +87,7 @@ export const OPENS: Partial<Record<CaptureId, (c: Capture) => number>> = {
   C12: (c) => stepOf(c, "ci-skip").type,
   C13: (c) => stepOf(c, "help").type,
   C14: (c) => stepOf(c, "cd").type,
-  C15: (c) => stepOf(c, "confirm").type,
+  C15: (c) => stepOf(c, "track").type,
   C17: (c) => stepOf(c, "lock").type,
   C18: (c) => stepOf(c, "confirm-1").type,
   // C19 opens on the screen its Ctrl-L cleared.
@@ -132,6 +132,8 @@ export const HOLDS: Partial<Record<CaptureId, (c: Capture) => number>> = {
  * run's output (and its `Finished in`) cropped away above it.
  */
 export const SKIP_SCREEN: ScreenOptions = { from: /^~\/work\/api \$/ };
+/** track's screen: a soft-wrapped line is one line, cropped by the pane's fade (scenes/track.ts). */
+export const TRACK_SCREEN: ScreenOptions = { joinWraps: true };
 
 /** The capture rig's terminal width: a row this long wrapped onto the next (a soft wrap). */
 const COLS = 80;
@@ -778,7 +780,7 @@ export const RESTS: Record<BoundaryId, readonly Layer[]> = {
       from: "fixtures",
     },
     { kind: "rail", rect: RAIL },
-    pane(LEFT, "C15"),
+    pane(LEFT, "C15", { screen: TRACK_SCREEN }),
   ],
   "track|machines": [
     {
@@ -789,7 +791,7 @@ export const RESTS: Record<BoundaryId, readonly Layer[]> = {
       from: "fixtures",
     },
     { kind: "rail", rect: RAIL, dots: checkpoints },
-    held(LEFT, "C15"),
+    held(LEFT, "C15", { screen: TRACK_SCREEN }),
   ],
   "machines|lock": [apiCard("C17", ["[tools]"]), pane(LEFT, "C17")],
   "lock|new": [],
