@@ -40,6 +40,7 @@ import {
   CUT_ON,
   fileOf,
   firstWith,
+  lapseRate,
   lastBefore,
   type ReelData,
   reelData,
@@ -258,7 +259,9 @@ const takeOf = perFacts((d: ReelData | null): Take => {
   // The rows at LAPSE, half a beat after git's lines, cut before any rate.
   const rowsAt = p.next();
   const stop = c && ci ? lastBefore(c, CUT_ON, ci.enter, ci.end) : 0;
-  const rowsPlay = c ? [play(rowsAt, header, stop, LAPSE)] : [];
+  const rowsPlay = c
+    ? [play(rowsAt, header, stop, lapseRate(c, LAPSE, header, stop))]
+    : [];
   const plays: Play[] = c
     ? [cut(0, OPENS.C19!(c)), ...type.plays, ...rowsPlay]
     : [];
@@ -579,12 +582,18 @@ function bandRows(g: G, c: Capture, x: Take): void {
  * the one the lock pins. Each chip runs down
  * under its row (the pane's rows below it are fading), along under the
  * card's rows through its empty lower part, and up a column right of the
- * longest row, so it crosses no text, landing beside its own row (M6).
+ * longest row that fits the card, so it crosses no text, landing beside its
+ * own row (M6).
  * They leave before the card's tables fold.
  */
 function pinnedLifts(c: Capture, x: Take, rows: CardRows): ValueLift[] {
   const bodies = rows.filter((r) => r.kind === "body");
-  const right = Math.max(...bodies.map((r) => r.x + (r.w ?? 0)));
+  // A row that runs off the card (hk's pin, its tail faded) has no column of
+  // its own: the chips go right of the longest row that fits.
+  const edge = CARD.x + CARD.w - CARD_ART.inset;
+  const right = Math.max(
+    ...bodies.map((r) => r.x + (r.w ?? 0)).filter((x) => x <= edge + 1e-6),
+  );
   // As large as a lifted value is set (TYPE.chip.lift, to read on a
   // phone), or as large as the widest chip fits between the column and
   // the card's right inset: a chip n characters wide at size s is

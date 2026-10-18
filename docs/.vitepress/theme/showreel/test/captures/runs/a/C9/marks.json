@@ -1,8 +1,1 @@
-[
-  { "name": "start", "t": 0.542753 },
-  { "name": "cd-out", "t": 1.995088 },
-  { "name": "env-empty", "t": 5.349214 },
-  { "name": "cd-in", "t": 8.447327 },
-  { "name": "port", "t": 11.530664 },
-  { "name": "end", "t": 13.331703 }
-]
+[{"name":"start","t":0.54322},{"name":"cd-out","t":1.994892},{"name":"env-empty","t":5.350626},{"name":"cd-in","t":8.450624},{"name":"port","t":11.535921},{"name":"end","t":13.337424}]
