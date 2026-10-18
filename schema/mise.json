@@ -469,36 +469,36 @@
       "oneOf": [
         {
           "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+          "maximum": 65535,
+          "minimum": 1
         },
         {
           "type": "string",
-          "const": "auto",
-          "description": "Offset the preset's default port by this project root's worktree slot."
+          "description": "Offset the preset's default port by this project root's worktree slot.",
+          "const": "auto"
         },
         {
           "type": "object",
-          "required": ["auto"],
+          "additionalProperties": false,
           "properties": {
             "auto": {
-              "const": true,
-              "description": "Enable per-worktree port allocation."
+              "description": "Enable per-worktree port allocation.",
+              "const": true
             },
             "base": {
               "type": "integer",
+              "description": "Port used by the primary checkout. Defaults to the preset's port; required for custom daemons.",
               "minimum": 1,
-              "maximum": 65535,
-              "description": "Port used by the primary checkout. Defaults to the preset's port; required for custom daemons."
+              "maximum": 65535
             },
             "stride": {
               "type": "integer",
+              "description": "Distance between consecutive worktree slots. Defaults to 1.",
               "minimum": 1,
-              "maximum": 65535,
-              "description": "Distance between consecutive worktree slots. Defaults to 1."
+              "maximum": 65535
             }
           },
-          "additionalProperties": false
+          "required": ["auto"]
         }
       ]
     },
@@ -507,8 +507,8 @@
       "oneOf": [
         {
           "type": "string",
-          "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
-          "maxLength": 63
+          "maxLength": 63,
+          "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
         },
         {
           "type": "boolean",
@@ -530,8 +530,8 @@
       ]
     },
     "daemon_proxy_tls": {
-      "description": "Whether the proxy terminates TLS for this daemon or passes the connection through to it.",
       "type": "string",
+      "description": "Whether the proxy terminates TLS for this daemon or passes the connection through to it.",
       "enum": ["terminate", "passthrough"]
     },
     "deps_provider": {
@@ -9528,6 +9528,7 @@
     },
     "daemons": {
       "type": "object",
+      "description": "Experimental project daemons: custom pitchfork commands or managed presets.",
       "additionalProperties": {
         "oneOf": [
           {
@@ -9536,29 +9537,6 @@
           },
           {
             "type": "object",
-            "required": ["run"],
-            "not": {
-              "anyOf": [
-                {
-                  "required": ["preset"]
-                },
-                {
-                  "required": ["project"]
-                },
-                {
-                  "required": ["task"]
-                },
-                {
-                  "required": ["args"]
-                },
-                {
-                  "required": ["provider"]
-                },
-                {
-                  "required": ["resource"]
-                }
-              ]
-            },
             "properties": {
               "run": {
                 "type": "string"
@@ -9593,11 +9571,60 @@
                 "$ref": "#/$defs/daemon_proxy_idle_timeout"
               }
             },
-            "additionalProperties": true
+            "required": ["run"],
+            "additionalProperties": true,
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["preset"]
+                },
+                {
+                  "required": ["project"]
+                },
+                {
+                  "required": ["task"]
+                },
+                {
+                  "required": ["args"]
+                },
+                {
+                  "required": ["provider"]
+                },
+                {
+                  "required": ["resource"]
+                }
+              ]
+            }
           },
           {
             "type": "object",
+            "properties": {
+              "task": {
+                "type": "string",
+                "description": "mise task run as this daemon's long-running process"
+              },
+              "args": {
+                "type": "array",
+                "description": "arguments passed to the task after `--`",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "init": {
+                "$ref": "#/$defs/daemon_init"
+              },
+              "proxy": {
+                "$ref": "#/$defs/daemon_proxy"
+              },
+              "proxy_tls": {
+                "$ref": "#/$defs/daemon_proxy_tls"
+              },
+              "proxy_idle_timeout": {
+                "$ref": "#/$defs/daemon_proxy_idle_timeout"
+              }
+            },
             "required": ["task"],
+            "additionalProperties": true,
             "not": {
               "anyOf": [
                 {
@@ -9616,61 +9643,15 @@
                   "required": ["resource"]
                 }
               ]
-            },
-            "properties": {
-              "task": {
-                "description": "mise task run as this daemon's long-running process",
-                "type": "string"
-              },
-              "args": {
-                "description": "arguments passed to the task after `--`",
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "init": {
-                "$ref": "#/$defs/daemon_init"
-              },
-              "proxy": {
-                "$ref": "#/$defs/daemon_proxy"
-              },
-              "proxy_tls": {
-                "$ref": "#/$defs/daemon_proxy_tls"
-              },
-              "proxy_idle_timeout": {
-                "$ref": "#/$defs/daemon_proxy_idle_timeout"
-              }
-            },
-            "additionalProperties": true
+            }
           },
           {
             "type": "object",
-            "required": ["preset", "version"],
-            "not": {
-              "anyOf": [
-                {
-                  "required": ["project"]
-                },
-                {
-                  "required": ["task"]
-                },
-                {
-                  "required": ["args"]
-                },
-                {
-                  "required": ["provider"]
-                },
-                {
-                  "required": ["resource"]
-                }
-              ]
-            },
             "properties": {
               "data_dir": {
                 "type": "string",
-                "minLength": 1,
-                "description": "Persistent preset data directory, relative to the declaring project root or absolute. Defaults to mise state storage."
+                "description": "Persistent preset data directory, relative to the declaring project root or absolute. Defaults to mise state storage.",
+                "minLength": 1
               },
               "preset": {
                 "type": "string",
@@ -9687,8 +9668,8 @@
                 "description": "Overrides for the preset's additional named ports.",
                 "additionalProperties": {
                   "type": "integer",
-                  "minimum": 1,
-                  "maximum": 65535
+                  "maximum": 65535,
+                  "minimum": 1
                 }
               },
               "options": {
@@ -9710,12 +9691,32 @@
                 "$ref": "#/$defs/daemon_proxy_idle_timeout"
               }
             },
-            "additionalProperties": true
+            "required": ["preset", "version"],
+            "additionalProperties": true,
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["project"]
+                },
+                {
+                  "required": ["task"]
+                },
+                {
+                  "required": ["args"]
+                },
+                {
+                  "required": ["provider"]
+                },
+                {
+                  "required": ["resource"]
+                }
+              ]
+            }
           },
           {
             "type": "object",
             "description": "Daemon declared by another project, run under that project's namespace and root.",
-            "required": ["project"],
+            "additionalProperties": false,
             "properties": {
               "project": {
                 "type": "string",
@@ -9726,11 +9727,10 @@
                 "description": "Daemon name inside the referenced project, when it differs from this key."
               }
             },
-            "additionalProperties": false
+            "required": ["project"]
           },
           {
             "type": "object",
-            "required": ["provider"],
             "additionalProperties": false,
             "properties": {
               "provider": {
@@ -9739,23 +9739,20 @@
               },
               "resource": {
                 "type": "string",
-                "pattern": "^[a-z][a-z0-9_]{0,62}$",
-                "description": "Database or NATS account shared by consumers choosing this name. Omit for a checkout-specific resource."
+                "description": "Database or NATS account shared by consumers choosing this name. Omit for a checkout-specific resource.",
+                "pattern": "^[a-z][a-z0-9_]{0,62}$"
               }
-            }
+            },
+            "required": ["provider"]
           }
         ]
-      },
-      "description": "Experimental project daemons: custom pitchfork commands or managed presets."
+      }
     },
     "daemon_providers": {
       "type": "object",
-      "propertyNames": {
-        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
-      },
+      "description": "Experimental shared servers owned by the user. Only allowed in global configuration.",
       "additionalProperties": {
         "type": "object",
-        "required": ["preset", "version"],
         "additionalProperties": false,
         "properties": {
           "preset": {
@@ -9771,8 +9768,8 @@
             "type": "object",
             "additionalProperties": {
               "type": "integer",
-              "minimum": 1,
-              "maximum": 65535
+              "maximum": 65535,
+              "minimum": 1
             }
           },
           "options": {
@@ -9785,9 +9782,12 @@
           "tool": {
             "type": "string"
           }
-        }
+        },
+        "required": ["preset", "version"]
       },
-      "description": "Experimental shared servers owned by the user. Only allowed in global configuration."
+      "propertyNames": {
+        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+      }
     },
     "daemons_settings": {
       "type": "object",

@@ -268,10 +268,16 @@ fn dotfile_groups(generator: &mut SchemaGenerator) -> Schema {
     schema
 }
 
-fn daemons(_: &mut SchemaGenerator) -> Schema {
-    hand_written(crate::daemons::schema::daemons())
+fn daemons(generator: &mut SchemaGenerator) -> Schema {
+    generator.subschema_for::<IndexMap<String, crate::daemons::DaemonDecl>>()
 }
 
-fn daemon_providers(_: &mut SchemaGenerator) -> Schema {
-    hand_written(crate::daemons::schema::daemon_providers())
+fn daemon_providers(generator: &mut SchemaGenerator) -> Schema {
+    let mut schema =
+        generator.subschema_for::<IndexMap<String, crate::daemons::DaemonProviderDecl>>();
+    schema.insert(
+        "propertyNames".into(),
+        serde_json::json!({"pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"}),
+    );
+    schema
 }

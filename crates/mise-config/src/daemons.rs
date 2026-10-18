@@ -1,15 +1,30 @@
 //! `[daemons]`, `[daemons_settings]` and `[daemon_groups]`.
 
-pub(crate) mod schema;
-
 use schemars::JsonSchema;
 use serde::Deserialize;
+
+use schemars::{Schema, SchemaGenerator, json_schema};
+
+use crate::dotfiles::schema::any_table;
+use crate::schema::refs;
+
+fn always_true(_: &mut SchemaGenerator) -> Schema {
+    json_schema!({"const": true})
+}
+
+fn preset_names(_: &mut SchemaGenerator) -> Schema {
+    json_schema!({"type": "string", "enum": ["cockroachdb", "nats", "postgres", "redis", "spicedb"]})
+}
+
+fn provider_preset_names(_: &mut SchemaGenerator) -> Schema {
+    json_schema!({"enum": ["postgres", "cockroachdb", "nats"]})
+}
 
 // The doc comments on these types are their descriptions in schema/mise.json, which editors show
 // to users. Notes for Rust readers go in plain comments.
 
 // A `[daemons]` entry. A definition stays a raw table that mise-daemons checks when it builds the
-// daemon, so its schema is written by hand in `schema.rs`.
+// daemon, so its schema comes from the `Daemon*Decl` types below.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum Declaration {
@@ -77,4 +92,245 @@ impl GroupDeclaration {
             GroupDeclaration::Table(table) => &table.daemons,
         }
     }
+}
+
+// The doc comments on the declaration types below are their descriptions in schema/mise.json.
+// A definition stays a raw table that mise-daemons reads key by key, and keys it does not know
+// are forwarded to pitchfork, so these types describe what a table may hold; nothing parses
+// into them.
+
+/// A fixed port, or "auto" to derive one from the project root so the primary checkout keeps the base port and each linked git worktree gets its own.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
+pub enum DaemonPort {
+    Fixed(#[schemars(range(min = 1, max = 65535))] u16),
+    /// Offset the preset's default port by this project root's worktree slot.
+    Auto(#[schemars(extend("const" = "auto"))] String),
+    PerWorktree(DaemonPortAuto),
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DaemonPortAuto {
+    /// Enable per-worktree port allocation.
+    #[schemars(schema_with = "always_true")]
+    pub auto: bool,
+    /// Port used by the primary checkout. Defaults to the preset's port; required for custom daemons.
+    #[schemars(range(min = 1, max = 65535))]
+    pub base: Option<u16>,
+    /// Distance between consecutive worktree slots. Defaults to 1.
+    #[schemars(range(min = 1, max = 65535))]
+    pub stride: Option<u16>,
+}
+
+/// Hostname label the reverse proxy routes to this daemon, false to opt out, or true to use the daemon's name. Only a daemon with a port is routed. The hostname is <proxy>.<worktree>.<project>.<tld> in a linked git worktree and <proxy>.<project>.<tld> in the primary checkout.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
+pub enum DaemonProxy {
+    Label(
+        #[schemars(length(max = 63), regex(pattern = r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"))] String,
+    ),
+    /// false opts out of the reverse proxy; true uses the daemon's name, which re-enables routing for a preset that opts out.
+    Enabled(bool),
+}
+
+/// Whether the proxy terminates TLS for this daemon or passes the connection through to it.
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DaemonProxyTls {
+    Terminate,
+    Passthrough,
+}
+
+/// Stop this daemon after this long without proxy traffic when the proxy started it, for example "30m". false exempts it from idle shutdown even when pitchfork's proxy.idle_timeout is set; "0" does the same. Idle shutdown is off unless this or pitchfork's proxy.idle_timeout is set, and a daemon started with `mise daemons start` is never stopped for inactivity. Requires pitchfork 2.27.0.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
+pub enum DaemonProxyIdleTimeout {
+    After(#[schemars(regex(pattern = r"^\s*[0-9]"))] String),
+    Never(#[schemars(extend("enum" = [false]))] bool),
+}
+
+/// idempotent setup commands run before the daemon's long-running process
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
+pub enum DaemonInit {
+    One(String),
+    Many(Vec<String>),
+}
+
+/// Pitchfork's structured port configuration, forwarded verbatim.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[schemars(extend("not" = {"required": ["auto"]}))]
+pub struct DaemonPitchforkPort(#[schemars(schema_with = "any_table")] pub toml::Table);
+
+// The port of a custom daemon: mise's own, or pitchfork's structured form.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
+pub enum DaemonCommandPort {
+    Mise(#[schemars(schema_with = "refs::daemon_port")] DaemonPort),
+    Pitchfork(DaemonPitchforkPort),
+}
+
+// One `[daemons]` entry. Which shape a table is follows from its keys, so each names the keys
+// that belong to another shape in `not`.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
+pub enum DaemonDecl {
+    /// Version request for a preset matching the daemon name.
+    Version(String),
+    Command(Box<DaemonCommandDecl>),
+    Task(Box<DaemonTaskDecl>),
+    Preset(Box<DaemonPresetDecl>),
+    Project(DaemonProjectDecl),
+    Provider(DaemonProviderRefDecl),
+}
+
+// Extra keys are forwarded to pitchfork, so the table is open.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[schemars(extend(
+    "additionalProperties" = true,
+    "not" = {"anyOf": [
+        {"required": ["preset"]},
+        {"required": ["project"]},
+        {"required": ["task"]},
+        {"required": ["args"]},
+        {"required": ["provider"]},
+        {"required": ["resource"]}
+    ]}
+))]
+pub struct DaemonCommandDecl {
+    pub run: String,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_init")]
+    pub init: Option<DaemonInit>,
+    pub mise: Option<bool>,
+    pub port: Option<DaemonCommandPort>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_proxy")]
+    pub proxy: Option<DaemonProxy>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_proxy_tls")]
+    pub proxy_tls: Option<DaemonProxyTls>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_proxy_idle_timeout")]
+    pub proxy_idle_timeout: Option<DaemonProxyIdleTimeout>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[schemars(extend(
+    "additionalProperties" = true,
+    "not" = {"anyOf": [
+        {"required": ["run"]},
+        {"required": ["preset"]},
+        {"required": ["project"]},
+        {"required": ["provider"]},
+        {"required": ["resource"]}
+    ]}
+))]
+pub struct DaemonTaskDecl {
+    /// mise task run as this daemon's long-running process
+    pub task: String,
+    /// arguments passed to the task after `--`
+    pub args: Option<Vec<String>>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_init")]
+    pub init: Option<DaemonInit>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_proxy")]
+    pub proxy: Option<DaemonProxy>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_proxy_tls")]
+    pub proxy_tls: Option<DaemonProxyTls>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_proxy_idle_timeout")]
+    pub proxy_idle_timeout: Option<DaemonProxyIdleTimeout>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[schemars(extend(
+    "additionalProperties" = true,
+    "not" = {"anyOf": [
+        {"required": ["project"]},
+        {"required": ["task"]},
+        {"required": ["args"]},
+        {"required": ["provider"]},
+        {"required": ["resource"]}
+    ]}
+))]
+pub struct DaemonPresetDecl {
+    /// Persistent preset data directory, relative to the declaring project root or absolute. Defaults to mise state storage.
+    #[schemars(length(min = 1))]
+    pub data_dir: Option<String>,
+    #[schemars(schema_with = "preset_names")]
+    pub preset: String,
+    pub version: String,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_port")]
+    pub port: Option<DaemonPort>,
+    /// Overrides for the preset's additional named ports.
+    pub ports: Option<std::collections::BTreeMap<String, DaemonPortNumber>>,
+    #[serde(default)]
+    #[schemars(schema_with = "any_table")]
+    pub options: Option<toml::Table>,
+    pub run: Option<String>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_init")]
+    pub init: Option<DaemonInit>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_proxy")]
+    pub proxy: Option<DaemonProxy>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_proxy_tls")]
+    pub proxy_tls: Option<DaemonProxyTls>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_proxy_idle_timeout")]
+    pub proxy_idle_timeout: Option<DaemonProxyIdleTimeout>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct DaemonPortNumber(#[schemars(range(min = 1, max = 65535))] pub u16);
+
+/// Daemon declared by another project, run under that project's namespace and root.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DaemonProjectDecl {
+    /// Directory of a project whose mise configuration declares the daemon. A relative path resolves against this project root.
+    pub project: String,
+    /// Daemon name inside the referenced project, when it differs from this key.
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DaemonProviderRefDecl {
+    /// Name of a globally defined shared server provider.
+    pub provider: String,
+    /// Database or NATS account shared by consumers choosing this name. Omit for a checkout-specific resource.
+    #[schemars(regex(pattern = r"^[a-z][a-z0-9_]{0,62}$"))]
+    pub resource: Option<String>,
+}
+
+// One `[daemon_providers]` entry: a shared server owned by the user.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DaemonProviderDecl {
+    #[schemars(schema_with = "provider_preset_names")]
+    pub preset: String,
+    pub version: String,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_port")]
+    pub port: Option<DaemonPort>,
+    pub ports: Option<std::collections::BTreeMap<String, DaemonPortNumber>>,
+    #[serde(default)]
+    #[schemars(schema_with = "any_table")]
+    pub options: Option<toml::Table>,
+    #[schemars(length(min = 1))]
+    pub data_dir: Option<String>,
+    pub tool: Option<String>,
 }
