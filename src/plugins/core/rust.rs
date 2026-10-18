@@ -92,6 +92,22 @@ fn apply_rustup_mirror_env<'a>(
     cmd.envs(rustup_mirror_env(config_env))
 }
 
+/// A mirror can serve the channels without GitHub being reachable (an offline
+/// network), so a failed release listing then only loses the numbered releases.
+/// The flag says the listing is degraded, so it must not be cached as complete.
+fn releases_or_channels_only<T>(
+    releases: Result<Vec<T>>,
+    mirrored: bool,
+) -> Result<(Vec<T>, bool)> {
+    match releases {
+        Err(err) if mirrored => {
+            warn!("failed to list rust releases from GitHub, using channels only: {err:#}");
+            Ok((vec![], true))
+        }
+        other => other.map(|releases| (releases, false)),
+    }
+}
+
 fn nightly_manifest_url_for(dist_server: Option<&str>) -> String {
     let server = dist_server
         .map(|s| s.trim_end_matches('/'))
@@ -627,8 +643,17 @@ impl Backend for RustPlugin {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let mut versions: Vec<VersionInfo> = github::list_releases("rust-lang/rust")
-            .await?
+        Ok(self._list_remote_versions_checked(config).await?.0)
+    }
+
+    async fn _list_remote_versions_checked(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<(Vec<VersionInfo>, bool)> {
+        let mirrored = rustup_dist_server(&config.env().await?).is_some();
+        let (releases, degraded) =
+            releases_or_channels_only(github::list_releases("rust-lang/rust").await, mirrored)?;
+        let mut versions: Vec<VersionInfo> = releases
             .into_iter()
             .map(|r| {
                 let created_at = Some(r.released_at().to_string());
@@ -665,7 +690,7 @@ impl Backend for RustPlugin {
                 ..Default::default()
             },
         ]);
-        Ok(versions)
+        Ok((versions, degraded))
     }
 
     fn is_rolling_channel(&self, version: &str) -> bool {
@@ -1596,6 +1621,20 @@ const RUST_TARGET_ARCHES: &[&str] = &[
 mod tests {
     use super::*;
     use confique::Layer;
+
+    #[test]
+    fn test_releases_or_channels_only() {
+        let fail = || Err(eyre::eyre!("dns error"));
+        assert_eq!(
+            releases_or_channels_only::<u8>(fail(), true).unwrap(),
+            (vec![], true)
+        );
+        assert!(releases_or_channels_only::<u8>(fail(), false).is_err());
+        assert_eq!(
+            releases_or_channels_only(Ok(vec![1u8]), true).unwrap(),
+            (vec![1], false)
+        );
+    }
 
     #[test]
     fn test_nightly_manifest_url_for_mirror() {

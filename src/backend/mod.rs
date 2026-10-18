@@ -3049,6 +3049,16 @@ pub trait Backend: Debug + Send + Sync {
     /// Backends should return a digest rather than raw values. A non-empty
     /// context partitions the remote-version cache and disables the shared
     /// versions host, whose response cannot account for local context.
+    /// Like `_list_remote_versions`, plus whether the list is missing versions
+    /// because a source was unreachable. Such a list is returned but not left
+    /// in the cache, so the next call tries again.
+    async fn _list_remote_versions_checked(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<(Vec<VersionInfo>, bool)> {
+        Ok((self._list_remote_versions(config).await?, false))
+    }
+
     async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
         Ok(None)
     }
@@ -3285,6 +3295,7 @@ pub trait Backend: Debug + Send + Sync {
             ));
         }
 
+        let degraded = std::sync::atomic::AtomicBool::new(false);
         let fetch = || async {
             trace!("Listing remote versions for {}", ba.to_string());
             // Try versions host first (now returns VersionInfo with timestamps)
@@ -3308,9 +3319,9 @@ pub trait Backend: Debug + Send + Sync {
                 "Calling backend to list remote versions for {}",
                 ba.to_string()
             );
-            let versions = self
-                ._list_remote_versions(config)
-                .await?
+            let (listed, listing_degraded) = self._list_remote_versions_checked(config).await?;
+            degraded.store(listing_degraded, std::sync::atomic::Ordering::Relaxed);
+            let versions = listed
                 .into_iter()
                 .map(|v| match self.mark_prereleases_from_version_pattern() {
                     true => mark_prerelease(v),
@@ -3363,7 +3374,7 @@ pub trait Backend: Debug + Send + Sync {
             );
             remote_versions.get_or_try_init_async(fetch).await?.clone()
         };
-        if versions.is_empty() {
+        if versions.is_empty() || degraded.load(std::sync::atomic::Ordering::Relaxed) {
             remote_versions.clear()?;
         }
         Ok(filter_cached_prereleases(versions, want_prereleases))
