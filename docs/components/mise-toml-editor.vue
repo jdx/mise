@@ -268,6 +268,11 @@ function reset() {
   top: 48px;
 }
 
+/* A code group's tab shows the title, so the block has no title bar to clear. */
+.vp-code-group .mise-toml-editor.titled .mte-corner {
+  top: 8px;
+}
+
 .mise-toml-editor.compact:hover .mte-corner,
 .mise-toml-editor .mte-corner:focus-within {
   opacity: 1;
