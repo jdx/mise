@@ -59,6 +59,7 @@ pub mod env_directive;
 pub mod miserc;
 pub(crate) mod provenance;
 mod remote_include;
+pub mod schema;
 pub mod settings;
 pub mod tracking;
 

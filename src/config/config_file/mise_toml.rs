@@ -621,7 +621,8 @@ impl MiseToml {
 
     fn parse_body(body: &str, path: &Path, check_trust: bool) -> eyre::Result<Self> {
         Self::parse_body_reporting(body, path, check_trust, &mut |field| {
-            warn!("unknown field in {}: {field}", display_path(path));
+            let segments = super::unknown_key::segments(field);
+            warn!("{}", super::unknown_key::message(path, body, &segments));
         })
     }
 
@@ -631,14 +632,14 @@ impl MiseToml {
         body: &str,
         path: &Path,
         check_trust: bool,
-        on_unknown: &mut dyn FnMut(String),
+        on_unknown: &mut dyn FnMut(&serde_ignored::Path),
     ) -> eyre::Result<Self> {
         if check_trust && !Self::is_trust_exempt(body, path) {
             trust_check(path)?;
         }
         trace!("parsing: {}", display_path(path));
         let des = toml::Deserializer::parse(body).map_err(|e| toml_parse_error(&e, body, path))?;
-        let de_res = serde_ignored::deserialize(des, |p| on_unknown(p.to_string()));
+        let de_res = serde_ignored::deserialize(des, |p| on_unknown(&p));
         let mut rf: MiseToml = match de_res {
             Ok(rf) => rf,
             Err(err) => {
