@@ -6304,14 +6304,16 @@ fn windows_each_copies(files: &[(PathBuf, PathBuf)]) -> usize {
 fn ensure_windows_link_possible(source: &Path, target: &Path) -> Result<()> {
     #[cfg(windows)]
     if windows_symlinks() && source.is_file() {
-        let mut probe = target.as_os_str().to_owned();
-        // unique, so a file of the user's can never be the one that gets removed: only a link
-        // this call created is deleted
+        // a short name in the target's directory, not derived from the target's own: a filename
+        // near the 255-character limit must still leave room for it. Unique, so a file of the
+        // user's can never be the one that gets removed: only a link this call created is.
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_nanos());
-        probe.push(format!(".mise-link-probe-{}-{nanos}", std::process::id()));
-        let probe = PathBuf::from(probe);
+        let name = format!(".mise-probe-{}-{nanos:x}", std::process::id());
+        let probe = target
+            .parent()
+            .map_or_else(|| PathBuf::from(&name), |dir| dir.join(&name));
         std::os::windows::fs::symlink_file(source, &probe).wrap_err_with(|| {
             format!(
                 "cannot link {} to {}; turn on Developer Mode or run elevated, or set dotfiles.windows_symlinks = false",
