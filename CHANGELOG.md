@@ -1,5 +1,75 @@
 # Changelog
 
+## [2026.10.14](https://github.com/jdx/mise/releases/tag/v2026.10.14) - 2026-10-18
+
+### 🚀 Features
+
+- **(backend)** reject tool options a backend does not read by @jdx in [#14629](https://github.com/jdx/mise/pull/14629)
+- **(config)** let env_file take several filenames by @jdx in [#14606](https://github.com/jdx/mise/pull/14606)
+- **(config)** add config.override.toml so global config can override project config by @jdx in [#14610](https://github.com/jdx/mise/pull/14610)
+- **(config)** let paranoid take a list of categories by @jdx in [#14609](https://github.com/jdx/mise/pull/14609)
+- **(config)** say where an unknown mise.toml key is and what it meant by @jdx in [#14639](https://github.com/jdx/mise/pull/14639)
+- **(config)** add mise config explain by @jdx in [#14642](https://github.com/jdx/mise/pull/14642)
+- **(env)** let a find_up env._.file entry search several names together by @jdx in [#14620](https://github.com/jdx/mise/pull/14620)
+- **(task)** read #MISE headers through TaskDecl by @jdx in [#14637](https://github.com/jdx/mise/pull/14637)
+
+### 🐛 Bug Fixes
+
+- **(activate)** stop fish not-found recursion after mise implode by @jdx in [#14594](https://github.com/jdx/mise/pull/14594)
+- **(bootstrap)** find nix installed by a pre-packages hook by @jdx in [#14596](https://github.com/jdx/mise/pull/14596)
+- **(bootstrap)** parse [bootstrap.linux.firewall] on every OS by @jdx in [#14615](https://github.com/jdx/mise/pull/14615)
+- **(cargo)** honor rename_exe for cargo-installed tools by @jdx in [#14626](https://github.com/jdx/mise/pull/14626)
+- **(config)** require content-bound trust for env files in paranoid mode by @jdx in [#14604](https://github.com/jdx/mise/pull/14604)
+- **(config)** say which shapes a hook, run entry or env value takes by @jdx in [#14640](https://github.com/jdx/mise/pull/14640)
+- **(hooks)** don't report git rewrites when HEAD stayed on the same commit by @JamBalaya56562 in [#14585](https://github.com/jdx/mise/pull/14585)
+- **(npm)** report an unusable TLS root store instead of aborting by @jdx in [#14595](https://github.com/jdx/mise/pull/14595)
+- **(npm)** accept the checksum option from packageManager by @jdx in [#14655](https://github.com/jdx/mise/pull/14655)
+- **(pipx)** bind the real python for locked uv installs by @jdx in [#14593](https://github.com/jdx/mise/pull/14593)
+- **(rust)** don't put an external rustup's directory ahead of mise's tools by @jdx in [#14597](https://github.com/jdx/mise/pull/14597)
+- **(schema)** generate [bootstrap] from its parser types by @jdx in [#14616](https://github.com/jdx/mise/pull/14616)
+- **(shim)** render command wrappers with their config file's config_root by @JamBalaya56562 in [#14628](https://github.com/jdx/mise/pull/14628)
+
+### 🚜 Refactor
+
+- **(config)** move doctor, tool_config, watch_files and wrappers into mise-config by @jdx in [#14617](https://github.com/jdx/mise/pull/14617)
+- **(config)** move the oci and daemons declarations into mise-config by @jdx in [#14618](https://github.com/jdx/mise/pull/14618)
+- **(config)** move alias, min_version and monorepo into mise-config by @jdx in [#14627](https://github.com/jdx/mise/pull/14627)
+- **(config)** declare [tools] in mise-config, keyed by string by @jdx in [#14631](https://github.com/jdx/mise/pull/14631)
+- **(config)** parse mise.toml through MiseTomlDecl by @jdx in [#14638](https://github.com/jdx/mise/pull/14638)
+- **(env)** move env directives and the [env] parser into mise-config by @jdx in [#14621](https://github.com/jdx/mise/pull/14621)
+- **(task)** move the task declaration field types into mise-config by @jdx in [#14622](https://github.com/jdx/mise/pull/14622)
+- **(task)** split TaskDecl from Task by @jdx in [#14624](https://github.com/jdx/mise/pull/14624)
+- rename mise-system-config to mise-config by @jdx in [#14608](https://github.com/jdx/mise/pull/14608)
+
+### 📚 Documentation
+
+- **(config)** add an interactive mise.toml reference generated from the schema by @jdx in [#14641](https://github.com/jdx/mise/pull/14641)
+- **(env)** explain env_file and _.file find_up are different features by @jdx in [#14602](https://github.com/jdx/mise/pull/14602)
+
+### ⚡ Performance
+
+- **(dotfiles)** build snapshot trees without a git process per tracked file by @waynehoover in [#14607](https://github.com/jdx/mise/pull/14607)
+
+### 🧪 Testing
+
+- **(npm)** install a popular package in the dependency check by @jdx in [#14633](https://github.com/jdx/mise/pull/14633)
+- **(schema)** check schema/mise.json against the config parser by @jdx in [#14613](https://github.com/jdx/mise/pull/14613)
+
+### 📦️ Dependency Updates
+
+- bump mbx to 1.24.1 by @jdx in [#14635](https://github.com/jdx/mise/pull/14635)
+
+### Chore
+
+- **(schema)** generate the [history] schema from mise-config by @jdx in [#14611](https://github.com/jdx/mise/pull/14611)
+- **(schema)** generate the task schema from TaskDecl and TaskTemplate by @jdx in [#14625](https://github.com/jdx/mise/pull/14625)
+- **(schema)** generate the whole schema from a top-level MiseTomlDecl by @jdx in [#14632](https://github.com/jdx/mise/pull/14632)
+- **(schema)** generate the [dotfiles] schema from typed entries by @jdx in [#14644](https://github.com/jdx/mise/pull/14644)
+
+### Ci
+
+- restore the nextest timeout for the mise-oci blob test by @jdx in [#14619](https://github.com/jdx/mise/pull/14619)
+
 ## [2026.10.13](https://github.com/jdx/mise/releases/tag/v2026.10.13) - 2026-10-17
 
 ### 🚀 Features
