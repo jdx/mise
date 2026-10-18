@@ -300,6 +300,7 @@ export const sidebar: SidebarItem[] = [
     collapsed: true,
     items: [
       { text: "mise.toml", link: "/configuration" },
+      { text: "mise.toml reference", link: "/configuration/reference" },
       { text: "Config environments", link: "/configuration/environments" },
       { text: "Settings", link: "/configuration/settings" },
       { text: "Config variables", link: "/configuration/vars" },
