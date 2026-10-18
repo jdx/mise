@@ -2381,6 +2381,10 @@ impl PackslipBackend {
 
 #[async_trait]
 impl Backend for PackslipBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_packslip_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Packslip
     }

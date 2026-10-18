@@ -31,6 +31,10 @@ pub(crate) struct GemBackend {
 
 #[async_trait]
 impl Backend for GemBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_gem_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Gem
     }
