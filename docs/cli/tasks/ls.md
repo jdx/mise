@@ -20,7 +20,7 @@ See <https://mise.jdx.dev/tasks/task-discovery.html>
 - **`-J --json`** — Output in JSON format
 - **`-l --local`** — Only show non-global tasks
 - **`-x --extended`** — Show all columns
-- **`--all`** — Include tasks from every project in the monorepo, not only the current directory's hierarchy
+- **`-a --all`** — Include tasks from every project in the monorepo, not only the current directory's hierarchy
 - **`--hidden`** — Show hidden tasks
 - **`--name-only`** — Print only task names, one per line (for fzf and similar tools)
 - **`--no-header`** — Do not print the table header

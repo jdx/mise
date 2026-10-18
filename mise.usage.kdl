@@ -6642,7 +6642,7 @@ With no subcommand, lists tasks like `mise tasks ls` and accepts the same flags.
     flag "-J --json" help="Output in JSON format"
     flag "-l --local" help="Only show non-global tasks" overrides=--global
     flag "-x --extended" help="Show all columns"
-    flag --all help="Include tasks from every project in the monorepo, not only the current directory's hierarchy"
+    flag "-a --all" help="Include tasks from every project in the monorepo, not only the current directory's hierarchy"
     flag --complete help="Display tasks for usage completion" hide=#true
     flag --hidden help="Show hidden tasks"
     flag --name-only help="Print only task names, one per line (for fzf and similar tools)" {
@@ -6792,7 +6792,7 @@ See https://mise.jdx.dev/tasks/task-discovery.html
         flag "-J --json" help="Output in JSON format"
         flag "-l --local" help="Only show non-global tasks" overrides=--global
         flag "-x --extended" help="Show all columns"
-        flag --all help="Include tasks from every project in the monorepo, not only the current directory's hierarchy"
+        flag "-a --all" help="Include tasks from every project in the monorepo, not only the current directory's hierarchy"
         flag --complete help="Display tasks for usage completion" hide=#true
         flag --hidden help="Show hidden tasks"
         flag --name-only help="Print only task names, one per line (for fzf and similar tools)" {
