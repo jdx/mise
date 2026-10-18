@@ -5868,6 +5868,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
     }
     match req.mode {
         FileMode::Symlink => {
+            ensure_windows_link_possible(&req.source, &req.target)?;
             replace_recorded(&req.target, written, || {
                 link_path(
                     &req.source,
@@ -5910,6 +5911,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                 if let Some(parent) = target.parent() {
                     file::create_dir_all(parent)?;
                 }
+                ensure_windows_link_possible(&source, &target)?;
                 replace_recorded(&target, written, || {
                     link_path(
                         &source,
@@ -6294,6 +6296,30 @@ fn windows_each_copies(files: &[(PathBuf, PathBuf)]) -> usize {
     } else {
         0
     }
+}
+
+/// With `dotfiles.windows_symlinks` on, prove a file link can be created beside `target` before
+/// `replace_recorded` removes what is there: the removal comes first, so a link Windows then
+/// refuses would leave neither the old file nor a new one.
+fn ensure_windows_link_possible(source: &Path, target: &Path) -> Result<()> {
+    #[cfg(windows)]
+    if windows_symlinks() && source.is_file() {
+        let mut probe = target.as_os_str().to_owned();
+        probe.push(".mise-link-probe");
+        let probe = PathBuf::from(probe);
+        let _ = std::fs::remove_file(&probe);
+        std::os::windows::fs::symlink_file(source, &probe).wrap_err_with(|| {
+            format!(
+                "cannot link {} to {}; turn on Developer Mode or run elevated, or set dotfiles.windows_symlinks = false",
+                target.display_user(),
+                source.display_user()
+            )
+        })?;
+        std::fs::remove_file(&probe)?;
+    }
+    #[cfg(not(windows))]
+    let _ = (source, target);
+    Ok(())
 }
 
 /// What `link_path` does with a regular file on Windows. Other platforms and directory sources
