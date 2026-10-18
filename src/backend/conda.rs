@@ -1045,6 +1045,10 @@ impl CondaBackend {
 
 #[async_trait]
 impl Backend for CondaBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_conda_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Conda
     }
