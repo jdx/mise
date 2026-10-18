@@ -278,10 +278,33 @@ function reset() {
   opacity: 1;
 }
 
-/* Touch screens have no hover to reveal them. */
+/* Touch screens have no hover to reveal them, and a pointer cannot move away to uncover the
+   code, so the buttons get a row of their own between the title and the code. */
 @media (hover: none) {
-  .mise-toml-editor .mte-corner {
+  .mise-toml-editor.compact {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mise-toml-editor.compact .mte-title {
+    order: 0;
+  }
+
+  .mise-toml-editor.compact .mte-corner,
+  .mise-toml-editor.titled .mte-corner,
+  .vp-code-group .mise-toml-editor.titled .mte-corner {
+    position: static;
+    order: 1;
+    justify-content: flex-end;
+    padding: 6px 8px 0;
+    background: var(--vp-code-block-bg);
+    border-radius: 8px 8px 0 0;
     opacity: 1;
+  }
+
+  .mise-toml-editor.compact .mte-fallback,
+  .mise-toml-editor.compact .mte-host {
+    order: 2;
   }
 }
 
