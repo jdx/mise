@@ -133,6 +133,13 @@ function copyLink() {
   void copy(url.toString(), "link");
 }
 
+// The playground takes the config from the URL, the same as a shared link.
+function openPlayground() {
+  const url = new URL("/configuration/playground.html", window.location.origin);
+  url.searchParams.set(PARAM, encode(props.code ?? ""));
+  window.open(url, "_blank", "noopener");
+}
+
 function reset() {
   if (!view) return;
   view.dispatch({
@@ -146,15 +153,22 @@ function reset() {
     <div v-if="title" class="mte-title">{{ title }}</div>
     <pre v-if="!ready" class="mte-fallback"><code>{{ code }}</code></pre>
     <div ref="host" class="mte-host" />
-    <button
-      v-if="compact"
-      type="button"
-      class="mte-copy"
-      :title="copied === 'config' ? 'Copied' : 'Copy code'"
-      @click="copyConfig"
-    >
-      {{ copied === "config" ? "Copied" : "Copy" }}
-    </button>
+    <span v-if="compact" class="mte-corner">
+      <button
+        type="button"
+        title="Edit this example in the playground"
+        @click="openPlayground"
+      >
+        Playground
+      </button>
+      <button
+        type="button"
+        :title="copied === 'config' ? 'Copied' : 'Copy code'"
+        @click="copyConfig"
+      >
+        {{ copied === "config" ? "Copied" : "Copy" }}
+      </button>
+    </span>
     <div v-if="ready && !compact" class="mte-toolbar">
       <span class="mte-hint">
         {{
@@ -196,27 +210,32 @@ function reset() {
 }
 
 /* Like the copy button on a plain code block: in the corner, shown on hover or focus. */
-.mise-toml-editor .mte-copy {
+.mise-toml-editor .mte-corner {
   position: absolute;
   top: 8px;
   right: 8px;
   z-index: 5;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.mise-toml-editor .mte-corner button {
   padding: 2px 10px;
   border: 1px solid var(--vp-c-divider);
   border-radius: 6px;
   background: var(--vp-code-block-bg);
   color: var(--vp-c-text-2);
   font-size: 12px;
-  opacity: 0;
-  transition: opacity 0.25s;
 }
 
-.mise-toml-editor.compact:hover .mte-copy,
-.mise-toml-editor .mte-copy:focus-visible {
+.mise-toml-editor.compact:hover .mte-corner,
+.mise-toml-editor .mte-corner:focus-within {
   opacity: 1;
 }
 
-.mise-toml-editor .mte-copy:hover {
+.mise-toml-editor .mte-corner button:hover {
   border-color: var(--vp-c-brand-1);
   color: var(--vp-c-text-1);
 }
