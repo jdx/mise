@@ -2518,7 +2518,7 @@ Defaults to the highest-precedence loaded TOML file other than the global overri
 mise config explain
 ~/src/app/mise.toml
    1  tools                  dev tools to use
-   2  tools.node             a version of the tool, or a table with its version and options
+   2  tools.node             version of the tool to install
    4  settings               mise settings
    5  settings.experimantal  not a key mise reads; did you mean experimental?
 """# help="Describe the keys of the project config"

@@ -17,7 +17,7 @@ use toml_edit::{Item, TableLike};
         r###"mise config explain
 ~/src/app/mise.toml
    1  tools                  dev tools to use
-   2  tools.node             a version of the tool, or a table with its version and options
+   2  tools.node             version of the tool to install
    4  settings               mise settings
    5  settings.experimantal  not a key mise reads; did you mean experimental?"###,
         help = "Describe the keys of the project config"
@@ -79,13 +79,25 @@ struct Explained {
     /// whether the schema names this key, or lets its table hold any key
     known: bool,
     suggestion: Option<String>,
+    /// whether the schema describes this key, so the keys under it can be described too
+    #[serde(skip)]
+    described: bool,
 }
 
 impl ConfigExplain {
+    /// `--file` naming a file: read it as is, without the config loading that resolving any
+    /// other target needs.
+    pub(super) fn reads_named_file(&self) -> bool {
+        self.file.as_ref().is_some_and(|file| file.is_file())
+    }
+
     pub(super) fn run(self) -> Result<()> {
-        let Some(file) =
+        let file = if self.reads_named_file() {
+            self.file.clone()
+        } else {
             super::target_file(self.file, self.global, self.system, self.override_file)?
-        else {
+        };
+        let Some(file) = file else {
             bail!("No mise.toml file found");
         };
         if !file.exists() {
@@ -96,6 +108,8 @@ impl ConfigExplain {
             .map_err(|e| eyre::eyre!("{}: {e}", display_path(&file)))?;
         let mut keys = vec![];
         walk(&body, doc.as_table(), &mut vec![], &mut keys);
+        // A table split across headers is walked as one, so put its keys back in file order.
+        keys.sort_by_key(|k| k.line);
         if let Some(prefix) = &self.key {
             keys.retain(|k| k.key == *prefix || k.key.starts_with(&format!("{prefix}.")));
             if keys.is_empty() {
@@ -141,9 +155,9 @@ fn walk(body: &str, table: &dyn TableLike, path: &mut Vec<String>, out: &mut Vec
             .get_key_value(name)
             .and_then(|(key, _)| key.span())
             .map_or(0, |span| body[..span.start].matches('\n').count() + 1);
-        let explained = explain(path, line);
-        // Below an unknown key, or a table whose keys the schema leaves open, nothing more is known.
-        let descend = explained.known && !open_table(path);
+        let explained = explain(path, line, json_type(item));
+        // Below an unknown key, or a key only an open table accepts, nothing more is known.
+        let descend = explained.described;
         out.push(explained);
         if descend {
             match item {
@@ -156,6 +170,15 @@ fn walk(body: &str, table: &dyn TableLike, path: &mut Vec<String>, out: &mut Vec
                         path.pop();
                     }
                 }
+                Item::Value(toml_edit::Value::Array(values)) => {
+                    for (i, value) in values.iter().enumerate() {
+                        if let toml_edit::Value::InlineTable(t) = value {
+                            path.push(i.to_string());
+                            walk(body, t, path, out);
+                            path.pop();
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -163,25 +186,32 @@ fn walk(body: &str, table: &dyn TableLike, path: &mut Vec<String>, out: &mut Vec
     }
 }
 
-fn explain(path: &[String], line: usize) -> Explained {
+fn explain(path: &[String], line: usize, written: &str) -> Explained {
     let segments: Vec<&str> = path.iter().map(String::as_str).collect();
     let root = &*schema::SCHEMA;
     let nodes = schema::at(&segments);
     let (name, parent) = segments.split_last().expect("a key has a name");
-    let known =
-        !nodes.is_empty() || open_table(&parent.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+    let known = !nodes.is_empty() || accepts_any_key(parent);
     let suggestion = (!known)
         .then(|| crate::fuzzy::nearest(name, schema::known_keys(parent)))
         .flatten()
         .map(str::to_string);
-    // The key's own description, through `$ref`, before one an alternative shape gives.
+    // The key's own description, through `$ref`, else that of the shape the value is written in:
+    // another shape's description would misdescribe it.
     let description = nodes
         .first()
         .and_then(|node| own_description(root, node))
         .or_else(|| {
-            nodes
-                .iter()
-                .find_map(|node| node.get("description").and_then(Value::as_str))
+            nodes.iter().find_map(|node| {
+                let matches = match node.get("type") {
+                    Some(Value::String(t)) => t == written,
+                    Some(Value::Array(types)) => types.iter().any(|t| t == written),
+                    _ => false,
+                };
+                matches
+                    .then(|| node.get("description").and_then(Value::as_str))
+                    .flatten()
+            })
         })
         .map(|d| d.lines().next().unwrap_or_default().to_string());
     let deprecated = nodes
@@ -194,17 +224,16 @@ fn explain(path: &[String], line: usize) -> Explained {
         deprecated,
         known,
         suggestion,
+        described: !nodes.is_empty(),
     }
 }
 
-/// Whether the table at `path` accepts any key, such as `[_]`: its schema says
-/// `additionalProperties = true` and names no keys of its own.
-fn open_table(path: &[String]) -> bool {
-    let segments: Vec<&str> = path.iter().map(String::as_str).collect();
-    schema::at(&segments).iter().any(|node| {
-        node.get("additionalProperties") == Some(&Value::Bool(true))
-            && node.get("properties").is_none()
-    })
+/// Whether the table at `path` accepts keys it does not describe, such as `[_]` or an env
+/// plugin under `env._`: its schema says `additionalProperties = true`.
+fn accepts_any_key(path: &[&str]) -> bool {
+    schema::at(path)
+        .iter()
+        .any(|node| node.get("additionalProperties") == Some(&Value::Bool(true)))
 }
 
 /// The description on `node` or on a schema it points at with `$ref`.
@@ -242,4 +271,17 @@ fn deprecated_itself(root: &Value, node: &Value) -> bool {
         node = target;
     }
     false
+}
+
+/// The JSON schema type of a TOML item, to pick the shape it is written in.
+fn json_type(item: &Item) -> &'static str {
+    match item {
+        Item::Table(_) | Item::Value(toml_edit::Value::InlineTable(_)) => "object",
+        Item::ArrayOfTables(_) | Item::Value(toml_edit::Value::Array(_)) => "array",
+        Item::Value(toml_edit::Value::String(_) | toml_edit::Value::Datetime(_)) => "string",
+        Item::Value(toml_edit::Value::Integer(_)) => "integer",
+        Item::Value(toml_edit::Value::Float(_)) => "number",
+        Item::Value(toml_edit::Value::Boolean(_)) => "boolean",
+        Item::None => "null",
+    }
 }

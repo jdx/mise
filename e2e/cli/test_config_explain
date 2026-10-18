@@ -13,7 +13,7 @@ experimantal = true
 run = "echo build"
 EOF
 
-assert_contains "mise config explain" "tools.node             a version of the tool"
+assert_contains "mise config explain" "tools.node             version of the tool to install"
 assert_contains "mise config explain" "settings.experimantal  not a key mise reads; did you mean experimental?"
 assert_contains "mise config explain" "tasks.build.run        script to run"
 
@@ -24,3 +24,38 @@ assert_contains "mise config explain tasks" "tasks.build"
 assert "mise config explain settings.experimantal --json | jq -r '.[0].suggestion'" "experimental"
 assert "mise config explain tools --json | jq -r '.[1].line'" "2"
 assert_fail "mise config explain nope" "Key not found: nope"
+
+# Keys are listed in file order even when a table is split across headers, an inline array of
+# tables is walked, and an env plugin under env._ is a key mise reads.
+# schema: skip
+cat <<'EOF' >split.toml
+[tasks.first]
+run = "a"
+
+[tools]
+node = "22"
+
+[tasks.second]
+run = "b"
+EOF
+assert "mise config explain --file split.toml --json | jq -r 'map(.key) | join(\" \")'" "tasks tasks.first tasks.first.run tools tools.node tasks.second tasks.second.run"
+# schema: skip
+cat <<'EOF' >env.toml
+env = [{ FOO = "one" }, { BAR = { value = "two", redat = true } }]
+EOF
+assert_contains "mise config explain --file env.toml" "env.1.BAR.redat  not a key mise reads; did you mean redact?"
+# schema: skip
+cat <<'EOF' >plugin.toml
+[env]
+_.my-env-plugin = { x = 1 }
+EOF
+assert_not_contains "mise config explain --file plugin.toml" "not a key mise reads"
+
+# A config whose settings fail to load can still be explained by name.
+# schema: invalid
+cat <<'EOF' >mise.toml
+[settings.status]
+missing_tools = "sometimes"
+EOF
+assert_fail "mise config explain"
+assert_contains "mise config explain --file mise.toml" "settings.status.missing_tools"

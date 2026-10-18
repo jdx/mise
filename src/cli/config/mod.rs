@@ -46,6 +46,12 @@ impl Commands {
 }
 
 impl Config {
+    /// Whether this only reads a named file, so it must work when the settings that file sets
+    /// would fail to load: `config explain --file` describes a broken file rather than refusing.
+    pub(crate) fn is_file_only(&self) -> bool {
+        matches!(&self.command, Some(Commands::Explain(cmd)) if cmd.reads_named_file())
+    }
+
     pub(crate) async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(self.ls));
 
