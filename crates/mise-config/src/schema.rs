@@ -19,6 +19,11 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde_json::{Map, Value, json};
 
 use crate::alias::Alias;
+use crate::bootstrap::{
+    BootstrapAptSources, BootstrapDnfRepos, BootstrapFilePhase, BootstrapHook, BootstrapHooksDecl,
+    BootstrapMacosDefaults, BootstrapMiseShellActivate, BootstrapShellActivation,
+    MacosDefaultsValue, MacosDock, MacosFinder, MacosKeyboard, MacosTrackpad,
+};
 use crate::daemons::{DaemonInit, DaemonPort, DaemonProxy, DaemonProxyIdleTimeout, DaemonProxyTls};
 use crate::deps::DepsProviderDecl;
 use crate::doctor::DoctorConfig;
@@ -155,6 +160,46 @@ fn derived_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Value)> {
             fragment::<HookInstallDefinition>(generator),
         ),
         ("hooks", fragment::<HooksDecl>(generator)),
+        (
+            "bootstrap_file_phase",
+            fragment::<BootstrapFilePhase>(generator),
+        ),
+        ("bootstrap_hook", fragment::<BootstrapHook>(generator)),
+        (
+            "bootstrap_shell_activation",
+            fragment::<BootstrapShellActivation>(generator),
+        ),
+        (
+            "bootstrap_apt_sources",
+            fragment::<BootstrapAptSources>(generator),
+        ),
+        (
+            "bootstrap_dnf_repos",
+            fragment::<BootstrapDnfRepos>(generator),
+        ),
+        ("bootstrap_hooks", fragment::<BootstrapHooksDecl>(generator)),
+        (
+            "bootstrap_macos_defaults",
+            fragment::<BootstrapMacosDefaults>(generator),
+        ),
+        ("bootstrap_macos_dock", fragment::<MacosDock>(generator)),
+        ("bootstrap_macos_finder", fragment::<MacosFinder>(generator)),
+        (
+            "bootstrap_macos_keyboard",
+            fragment::<MacosKeyboard>(generator),
+        ),
+        (
+            "bootstrap_macos_trackpad",
+            fragment::<MacosTrackpad>(generator),
+        ),
+        (
+            "bootstrap_mise_shell_activate",
+            fragment::<BootstrapMiseShellActivate>(generator),
+        ),
+        (
+            "macos_defaults_value",
+            fragment::<MacosDefaultsValue>(generator),
+        ),
         ("doctor", fragment::<DoctorConfig>(generator)),
         (
             "launchd_calendar_interval",
@@ -180,7 +225,6 @@ fn hand_written_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Valu
             ("tool_alias_versions", crate::alias::versions_schema()),
         ])
         .chain(crate::mise_toml::schema_defs())
-        .chain(crate::bootstrap::schema::defs())
         .map(|(name, schema)| (name, schema.to_value()))
         .collect()
 }
@@ -264,6 +308,7 @@ pub(crate) mod refs {
         bootstrap_macos_trackpad,
         bootstrap_mise_shell_activate,
         bootstrap_remote_install_mise,
+        bootstrap_shell_activation,
         doctor,
         env,
         hook_current_shell_script_table,
@@ -283,6 +328,7 @@ pub(crate) mod refs {
         hook_task_ref,
         hooks,
         launchd_calendar_interval,
+        macos_defaults_value,
         monorepo,
         monorepo_root,
         os_filter,
@@ -432,10 +478,10 @@ fn drop_empty_default(schema: &mut Schema) {
     }
 }
 
-/// TOML integers have no width, so `format: "uint16"` and the like say nothing to an editor,
-/// and a strict validator rejects formats it does not know. The range stays.
+/// TOML numbers have no width, so `format: "uint16"` or `"double"` and the like say nothing to
+/// an editor, and a strict validator rejects formats it does not know. The range stays.
 fn drop_integer_format(schema: &mut Schema) {
-    if schema.get("type") == Some(&Value::from("integer")) {
+    if matches!(schema.get("type"), Some(t) if t == "integer" || t == "number") {
         schema.remove("format");
     }
 }

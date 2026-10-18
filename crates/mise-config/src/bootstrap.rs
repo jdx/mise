@@ -1,4 +1,5 @@
-pub(crate) mod schema;
+mod decl;
+pub use decl::*;
 
 use indexmap::IndexMap;
 use schemars::JsonSchema;

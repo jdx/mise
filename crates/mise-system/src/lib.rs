@@ -3837,6 +3837,82 @@ mod tests {
         );
     }
 
+    // A value of the type the declaration gives `property`, to set the key to.
+    fn sample_value(property: &serde_json::Value) -> toml::Value {
+        if let Some(choice) = property
+            .get("enum")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|choices| choices.iter().find_map(serde_json::Value::as_str))
+        {
+            return toml::Value::String(choice.into());
+        }
+        let types: Vec<&str> = match &property["type"] {
+            serde_json::Value::String(t) => vec![t.as_str()],
+            serde_json::Value::Array(types) => types.iter().filter_map(|t| t.as_str()).collect(),
+            _ => vec![],
+        };
+        if types.contains(&"boolean") {
+            tv("true")
+        } else if types.contains(&"integer") {
+            tv("2")
+        } else if types.contains(&"number") {
+            tv("0.5")
+        } else if types.contains(&"array") {
+            tv(r#"["/Applications/Example.app"]"#)
+        } else {
+            panic!("no sample for {property}")
+        }
+    }
+
+    // The schema is generated from `mise_config::bootstrap::Macos*`; the code that compiles
+    // these keys into defaults is the `match` in `merge_*_defaults`. A key the declaration
+    // lists but the code ignores fails here.
+    #[test]
+    fn the_declared_macos_keys_are_keys_the_code_reads() {
+        use mise_config::bootstrap::{MacosDock, MacosFinder, MacosKeyboard, MacosTrackpad};
+        use schemars::JsonSchema;
+
+        fn declared<T: JsonSchema>() -> Vec<(String, toml::Value)> {
+            let schema = schemars::generate::SchemaSettings::draft2020_12()
+                .with(|settings| settings.inline_subschemas = true)
+                .into_generator()
+                .into_root_schema_for::<T>()
+                .to_value();
+            schema["properties"]
+                .as_object()
+                .expect("a table of keys")
+                .iter()
+                .map(|(key, property)| (key.clone(), sample_value(property)))
+                .collect()
+        }
+
+        let sections = [
+            ("dock", declared::<MacosDock>()),
+            ("finder", declared::<MacosFinder>()),
+            ("keyboard", declared::<MacosKeyboard>()),
+            ("trackpad", declared::<MacosTrackpad>()),
+        ];
+        for (section, keys) in sections {
+            assert!(!keys.is_empty(), "no keys declared for {section}");
+            for (key, value) in keys {
+                let mut macos = BootstrapMacosTomlConfig::default();
+                let table = match section {
+                    "dock" => &mut macos.dock,
+                    "finder" => &mut macos.finder,
+                    "keyboard" => &mut macos.keyboard,
+                    _ => &mut macos.trackpad,
+                };
+                table.insert(key.clone(), value);
+                let mut out = IndexMap::new();
+                merge_friendly_macos_defaults(&mut out, &macos);
+                assert!(
+                    !out.is_empty(),
+                    "[bootstrap.macos.{section}].{key} is declared, but the code ignores it"
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_friendly_macos_defaults() {
         let mut macos = BootstrapMacosTomlConfig::default();
