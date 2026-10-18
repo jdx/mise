@@ -18,6 +18,7 @@ const props = defineProps<{
 }>();
 
 const host = ref<HTMLElement>();
+const root = ref<HTMLElement>();
 const ready = ref(false);
 const failed = ref(false);
 const copied = ref("");
@@ -52,7 +53,8 @@ function decode(text: string): string | undefined {
 
 // Pages show hundreds of examples, so a compact one loads its editor only once it is near the screen.
 function whenVisible(): Promise<void> {
-  const el = host.value;
+  // The whole block, not the host below it: a tall example is in view before its host is.
+  const el = root.value;
   if (!props.compact || !el || !("IntersectionObserver" in window)) {
     return Promise.resolve();
   }
@@ -140,7 +142,7 @@ function reset() {
 </script>
 
 <template>
-  <div class="mise-toml-editor" :class="{ ready, compact }">
+  <div ref="root" class="mise-toml-editor" :class="{ ready, compact }">
     <div v-if="title" class="mte-title">{{ title }}</div>
     <pre v-if="!ready" class="mte-fallback"><code>{{ code }}</code></pre>
     <div ref="host" class="mte-host" />
@@ -181,6 +183,10 @@ function reset() {
 
 .mise-toml-editor.compact {
   margin: 16px 0;
+}
+
+.vp-code-group .mte-title {
+  display: none;
 }
 
 .mise-toml-editor .mte-title {

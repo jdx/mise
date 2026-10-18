@@ -185,7 +185,10 @@ function miseTomlEditorFence(md: MarkdownIt) {
     const share = flags.includes("share") ? " share" : "";
     const compact = explicit ? "" : " compact";
     const label = title ? ` title="${md.utils.escapeHtml(title)}"` : "";
-    return `<MiseTomlEditor code="${code}"${readonly}${share}${compact}${label} />\n`;
+    // VitePress's code groups show and hide their blocks by this wrapper's `language-*` and
+    // `active` classes, so a config inside a group keeps them.
+    const active = flags.includes("active") ? " active" : "";
+    return `<div class="language-toml${active}"><MiseTomlEditor code="${code}"${readonly}${share}${compact}${label} /></div>\n`;
   };
 }
 
