@@ -3623,10 +3623,19 @@ impl AquaBackend {
         }
 
         if make_executable {
+            let candidates: Vec<_> = Self::srcs_for_platform(pkg, v, &install_path, os(), arch())?
+                .into_iter()
+                .map(|link| link.src)
+                .collect();
             for bin_path in &bin_paths {
                 // bin_path should exist, but doesn't when the registry is outdated
                 if bin_path.exists() {
                     file::make_executable(bin_path)?;
+                } else if let Some(alt) = candidates
+                    .iter()
+                    .find(|c| c.exists() && c.file_name() == bin_path.file_name())
+                {
+                    file::make_executable(alt)?;
                 } else {
                     warn!("bin path does not exist: {}", bin_path.display());
                 }
@@ -3780,28 +3789,30 @@ impl AquaBackend {
         install_path: &Path,
         os: &str,
         arch: &str,
-    ) -> Result<Option<AquaFileLink>> {
+    ) -> Result<Vec<AquaFileLink>> {
         let explicit_link = f.link.is_some();
         // Like aqua, a file without `src` is found at its `name`.
-        let src = f
-            .src(pkg, version, os, arch)?
-            .unwrap_or_else(|| f.name.clone());
         let link = f.link(pkg, version, os, arch)?;
+        f.src_candidates(pkg, version, os, arch)?
+            .into_iter()
+            .map(|src| {
+                let src = src.unwrap_or_else(|| f.name.clone());
+                let mut src = install_path.join(src);
+                let mut dst = src
+                    .parent()
+                    .wrap_err_with(|| format!("file source has no parent: {}", src.display()))?
+                    .join(link.as_deref().unwrap_or(f.name.as_str()));
+                src = complete_windows_ext(src, pkg, os, version);
+                dst = complete_windows_dst_ext(&src, dst, pkg, os, version);
 
-        let mut src = install_path.join(src);
-        let mut dst = src
-            .parent()
-            .wrap_err_with(|| format!("file source has no parent: {}", src.display()))?
-            .join(link.as_deref().unwrap_or(f.name.as_str()));
-        src = complete_windows_ext(src, pkg, os, version);
-        dst = complete_windows_dst_ext(&src, dst, pkg, os, version);
-
-        Ok(Some(AquaFileLink {
-            src,
-            dst,
-            hard: f.hard,
-            explicit_link,
-        }))
+                Ok(AquaFileLink {
+                    src,
+                    dst,
+                    hard: f.hard,
+                    explicit_link,
+                })
+            })
+            .collect()
     }
 
     fn create_file_link(link: &AquaFileLink) -> Result<()> {
@@ -5648,5 +5659,43 @@ no_asset: true
             pkg.replacements.get("linux").map(String::as_str),
             Some("unknown-linux-gnu")
         );
+    }
+
+    #[test]
+    fn test_bin_paths_include_darwin_universal_layout() {
+        // fastfetch 2.70.0 ships `fastfetch-macos-universal.tar.gz` where the registry
+        // templates a per-architecture asset directory.
+        let mut pkg = AquaPackage::default();
+        pkg.repo_owner = "fastfetch-cli".to_string();
+        pkg.repo_name = "fastfetch".to_string();
+        pkg.asset = "fastfetch-{{.OS}}-{{.Arch}}.{{.Format}}".to_string();
+        pkg.format = "tar.gz".to_string();
+        pkg.replacements
+            .insert("darwin".to_string(), "macos".to_string());
+        pkg.replacements
+            .insert("arm64".to_string(), "aarch64".to_string());
+        pkg.files = vec![aqua_registry::AquaFile {
+            name: "fastfetch".to_string(),
+            src: Some("{{.AssetWithoutExt}}/usr/bin/fastfetch".to_string()),
+            ..Default::default()
+        }];
+        let install = Path::new("/installs/fastfetch/2.70.0");
+        let paths = AquaBackend::candidate_bin_paths_for_platform(
+            &pkg, "2.70.0", install, "darwin", "arm64",
+        )
+        .unwrap();
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("fastfetch-macos-aarch64/usr/bin"),
+                PathBuf::from("fastfetch-macos-universal/usr/bin"),
+            ]
+        );
+        // other platforms are unchanged
+        let paths = AquaBackend::candidate_bin_paths_for_platform(
+            &pkg, "2.70.0", install, "linux", "arm64",
+        )
+        .unwrap();
+        assert_eq!(paths.len(), 1);
     }
 }
