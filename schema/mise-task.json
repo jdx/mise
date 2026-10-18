@@ -3003,6 +3003,12 @@
           "url": {
             "$ref": "#/$defs/tool_http_options/properties/url"
           },
+          "headers": {
+            "$ref": "#/$defs/tool_http_options/properties/headers"
+          },
+          "headers_forward": {
+            "$ref": "#/$defs/tool_http_options/properties/headers_forward"
+          },
           "checksum": {
             "$ref": "#/$defs/tool_http_options/properties/checksum"
           },
