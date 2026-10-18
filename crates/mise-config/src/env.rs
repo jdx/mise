@@ -11,8 +11,8 @@ use crate::env_value::EnvValue;
 use serde::de::Visitor;
 use serde::{Deserialize, Deserializer, de};
 
-mod schema;
-pub(crate) use schema::defs as schema_defs;
+mod decl;
+pub use decl::*;
 
 static DISPLAY_PATH: OnceLock<fn(&str) -> String> = OnceLock::new();
 
@@ -907,4 +907,52 @@ where
     }
 
     deserializer.deserialize_any(RootEnvVisitor)
+}
+
+#[cfg(test)]
+mod schema_tests {
+    use super::*;
+    use schemars::{JsonSchema, schema_for};
+    use std::collections::BTreeSet;
+
+    fn keys<T: JsonSchema>() -> BTreeSet<String> {
+        schema_for!(T)
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+            .map(|properties| properties.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    // The schema is generated from the `Env*` and `Vars*` declaration types; the parser reads
+    // the options of a variable or directive into `EnvDirectiveOptions`. Every key the types
+    // declare besides the ones that carry the value must be one of its fields, and each of its
+    // fields must be declared, so a key added to one without the other fails here.
+    #[test]
+    fn the_declared_option_keys_are_the_options_the_parser_reads() {
+        let declared: BTreeSet<String> = [
+            keys::<EnvValueTable>(),
+            keys::<EnvDefaultTable>(),
+            keys::<EnvRequiredTable>(),
+            keys::<EnvAgeTable>(),
+            keys::<EnvAgeComplex>(),
+            keys::<VarsValueTable>(),
+            keys::<VarsDefaultTable>(),
+            keys::<VarsRequiredTable>(),
+            keys::<VarsAgeTable>(),
+            keys::<VarsAgeComplex>(),
+            keys::<EnvDirectiveDecl>(),
+        ]
+        .into_iter()
+        .flatten()
+        // what a table says the value is, rather than an option of it
+        .filter(|key| {
+            !["value", "default", "age", "path", "paths", "format"].contains(&key.as_str())
+        })
+        .collect();
+        let read: BTreeSet<String> = crate::de::struct_fields::<EnvDirectiveOptions>()
+            .iter()
+            .map(|field| field.to_string())
+            .collect();
+        assert_eq!(declared, read);
+    }
 }

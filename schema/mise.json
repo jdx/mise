@@ -638,130 +638,12 @@
       "additionalProperties": true
     },
     "env": {
-      "additionalProperties": {
-        "description": "an environment variable: its value, or a table with `value`, `default`, `required` or `age`",
-        "oneOf": [
-          {
-            "type": "object",
-            "properties": {
-              "value": {
-                "$ref": "#/$defs/env_value"
-              },
-              "tools": {
-                "$ref": "#/$defs/env_tools"
-              },
-              "redact": {
-                "$ref": "#/$defs/env_redact"
-              },
-              "required": {
-                "const": false,
-                "description": "a variable with its own value cannot be required; only `required = false` is accepted"
-              }
-            },
-            "required": ["value"],
-            "unevaluatedProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "default": {
-                "$ref": "#/$defs/env_default"
-              },
-              "tools": {
-                "$ref": "#/$defs/env_tools"
-              },
-              "redact": {
-                "$ref": "#/$defs/env_redact"
-              }
-            },
-            "required": ["default"],
-            "unevaluatedProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "tools": {
-                "$ref": "#/$defs/env_tools"
-              },
-              "redact": {
-                "$ref": "#/$defs/env_redact"
-              },
-              "required": {
-                "oneOf": [
-                  {
-                    "const": true
-                  },
-                  {
-                    "type": "string"
-                  }
-                ],
-                "description": "a variable without a value must be required: `true` or help text on how to set it"
-              }
-            },
-            "required": ["required"],
-            "unevaluatedProperties": false
-          },
-          {
-            "type": "object",
-            "properties": {
-              "age": {
-                "$ref": "#/$defs/env_age"
-              },
-              "tools": {
-                "$ref": "#/$defs/env_tools"
-              },
-              "redact": {
-                "$ref": "#/$defs/env_redact"
-              },
-              "required": {
-                "$ref": "#/$defs/env_required"
-              }
-            },
-            "required": ["age"],
-            "unevaluatedProperties": false,
-            "description": "[experimental] age-encrypted environment variable"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "age": {
-                "type": "object",
-                "properties": {
-                  "value": {
-                    "$ref": "#/$defs/env_age_value"
-                  },
-                  "format": {
-                    "$ref": "#/$defs/env_age_format"
-                  },
-                  "tools": {
-                    "$ref": "#/$defs/env_tools"
-                  },
-                  "redact": {
-                    "$ref": "#/$defs/env_redact"
-                  },
-                  "required": {
-                    "$ref": "#/$defs/env_required"
-                  }
-                },
-                "required": ["value"],
-                "unevaluatedProperties": false,
-                "description": "[experimental] age-encrypted value (complex format)"
-              }
-            },
-            "required": ["age"],
-            "unevaluatedProperties": false,
-            "description": "[experimental] age-encrypted environment variable"
-          },
-          {
-            "$ref": "#/$defs/env_value"
-          }
-        ]
-      },
+      "type": "object",
       "description": "environment variables",
       "properties": {
         "_": {
+          "type": "object",
           "description": "environment modules",
-          "additionalProperties": true,
           "properties": {
             "file": {
               "oneOf": [
@@ -769,17 +651,17 @@
                   "$ref": "#/$defs/env_directive"
                 },
                 {
-                  "description": "environment file to load (dotenv, json, yaml, or toml)",
-                  "type": "string"
+                  "type": "string",
+                  "description": "environment file to load (dotenv, json, yaml, or toml)"
                 },
                 {
-                  "description": "environment files to load (dotenv, json, yaml, or toml)",
                   "type": "array",
+                  "description": "environment files to load (dotenv, json, yaml, or toml)",
                   "items": {
                     "oneOf": [
                       {
-                        "description": "environment file to load (dotenv, json, yaml, or toml)",
-                        "type": "string"
+                        "type": "string",
+                        "description": "environment file to load (dotenv, json, yaml, or toml)"
                       },
                       {
                         "$ref": "#/$defs/env_directive"
@@ -807,36 +689,36 @@
                   "oneOf": [
                     {
                       "type": "object",
+                      "required": ["path"],
                       "properties": {
                         "path": {
                           "$ref": "#/$defs/env_path"
                         }
-                      },
-                      "required": ["path"]
+                      }
                     },
                     {
                       "type": "object",
+                      "required": ["paths"],
                       "properties": {
                         "paths": {
                           "$ref": "#/$defs/env_paths"
                         }
-                      },
-                      "required": ["paths"]
+                      }
                     }
                   ]
                 },
                 {
-                  "description": "PATH entry to add",
-                  "type": "string"
+                  "type": "string",
+                  "description": "PATH entry to add"
                 },
                 {
-                  "description": "PATH entries to add",
                   "type": "array",
+                  "description": "PATH entries to add",
                   "items": {
                     "oneOf": [
                       {
-                        "description": "PATH entry to add",
-                        "type": "string"
+                        "type": "string",
+                        "description": "PATH entry to add"
                       },
                       {
                         "type": "object",
@@ -855,54 +737,54 @@
               ]
             },
             "python": {
+              "type": "object",
               "description": "python environment",
+              "additionalProperties": false,
               "properties": {
                 "venv": {
                   "oneOf": [
                     {
-                      "description": "path to python virtual environment to use",
-                      "type": "string"
+                      "type": "string",
+                      "description": "path to python virtual environment to use"
                     },
                     {
+                      "type": "object",
                       "description": "virtualenv options",
+                      "additionalProperties": false,
                       "properties": {
                         "create": {
-                          "default": false,
+                          "type": "boolean",
                           "description": "create a new virtual environment if one does not exist",
-                          "type": "boolean"
+                          "default": false
                         },
                         "path": {
-                          "description": "path to python virtual environment to use",
-                          "type": "string"
+                          "type": "string",
+                          "description": "path to python virtual environment to use"
                         },
                         "python": {
-                          "description": "python version to use",
-                          "type": "string"
+                          "type": "string",
+                          "description": "python version to use"
                         },
                         "python_create_args": {
-                          "description": "additional arguments to pass to python when creating a virtual environment",
                           "type": "array",
+                          "description": "additional arguments to pass to python when creating a virtual environment",
                           "items": {
                             "type": "string"
                           }
                         },
                         "uv_create_args": {
-                          "description": "additional arguments to pass to uv when creating a virtual environment",
                           "type": "array",
+                          "description": "additional arguments to pass to uv when creating a virtual environment",
                           "items": {
                             "type": "string"
                           }
                         }
                       },
-                      "required": ["path"],
-                      "additionalProperties": false,
-                      "type": "object"
+                      "required": ["path"]
                     }
                   ]
                 }
-              },
-              "additionalProperties": false,
-              "type": "object"
+              }
             },
             "source": {
               "oneOf": [
@@ -910,17 +792,17 @@
                   "$ref": "#/$defs/env_directive"
                 },
                 {
-                  "description": "bash script to load",
-                  "type": "string"
+                  "type": "string",
+                  "description": "bash script to load"
                 },
                 {
-                  "description": "bash scripts to load",
                   "type": "array",
+                  "description": "bash scripts to load",
                   "items": {
                     "oneOf": [
                       {
-                        "description": "bash script to load",
-                        "type": "string"
+                        "type": "string",
+                        "description": "bash script to load"
                       },
                       {
                         "$ref": "#/$defs/env_directive"
@@ -931,10 +813,128 @@
               ]
             }
           },
-          "type": "object"
+          "additionalProperties": true
         }
       },
-      "type": "object"
+      "additionalProperties": {
+        "description": "an environment variable: its value, or a table with `value`, `default`, `required` or `age`",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["value"],
+            "properties": {
+              "value": {
+                "$ref": "#/$defs/env_value"
+              },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "description": "a variable with its own value cannot be required; only `required = false` is accepted",
+                "const": false
+              }
+            },
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["default"],
+            "properties": {
+              "default": {
+                "$ref": "#/$defs/env_default"
+              },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              }
+            },
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["required"],
+            "properties": {
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "description": "a variable without a value must be required: `true` or help text on how to set it",
+                "oneOf": [
+                  {
+                    "const": true
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "description": "[experimental] age-encrypted environment variable",
+            "required": ["age"],
+            "properties": {
+              "age": {
+                "$ref": "#/$defs/env_age"
+              },
+              "tools": {
+                "$ref": "#/$defs/env_tools"
+              },
+              "redact": {
+                "$ref": "#/$defs/env_redact"
+              },
+              "required": {
+                "$ref": "#/$defs/env_required"
+              }
+            },
+            "unevaluatedProperties": false
+          },
+          {
+            "type": "object",
+            "description": "[experimental] age-encrypted environment variable",
+            "required": ["age"],
+            "properties": {
+              "age": {
+                "type": "object",
+                "description": "[experimental] age-encrypted value (complex format)",
+                "properties": {
+                  "value": {
+                    "$ref": "#/$defs/env_age_value"
+                  },
+                  "format": {
+                    "$ref": "#/$defs/env_age_format"
+                  },
+                  "tools": {
+                    "$ref": "#/$defs/env_tools"
+                  },
+                  "redact": {
+                    "$ref": "#/$defs/env_redact"
+                  },
+                  "required": {
+                    "$ref": "#/$defs/env_required"
+                  }
+                },
+                "required": ["value"],
+                "unevaluatedProperties": false
+              }
+            },
+            "unevaluatedProperties": false
+          },
+          {
+            "$ref": "#/$defs/env_value"
+          }
+        ]
+      }
     },
     "env_age": {
       "type": "string",
@@ -942,14 +942,15 @@
     },
     "env_age_format": {
       "type": "string",
-      "enum": ["raw", "zstd"],
-      "description": "[experimental] compression format for the encrypted value"
+      "description": "[experimental] compression format for the encrypted value",
+      "enum": ["raw", "zstd"]
     },
     "env_age_value": {
       "type": "string",
       "description": "[experimental] age-encrypted value"
     },
     "env_default": {
+      "description": "fallback value to use when the environment variable is unset or empty",
       "oneOf": [
         {
           "type": "string",
@@ -959,8 +960,7 @@
           "type": "integer",
           "description": "fallback value to use when the environment variable is unset or empty"
         }
-      ],
-      "description": "fallback value to use when the environment variable is unset or empty"
+      ]
     },
     "env_directive": {
       "type": "object",
@@ -990,33 +990,33 @@
       "oneOf": [
         {
           "type": "object",
+          "required": ["path"],
           "properties": {
             "path": {
               "$ref": "#/$defs/env_path"
             }
-          },
-          "required": ["path"]
+          }
         },
         {
           "type": "object",
+          "required": ["paths"],
           "properties": {
             "paths": {
               "$ref": "#/$defs/env_paths"
             }
-          },
-          "required": ["paths"]
+          }
         }
       ]
     },
     "env_file_expand": {
       "type": "boolean",
-      "default": false,
-      "description": "enable shell-style variable expansion for values loaded by env._.file"
+      "description": "enable shell-style variable expansion for values loaded by env._.file",
+      "default": false
     },
     "env_file_find_up": {
       "type": "boolean",
-      "default": false,
-      "description": "look for a relative env._.file path in the current directory and each parent directory"
+      "description": "look for a relative env._.file path in the current directory and each parent directory",
+      "default": false
     },
     "env_path": {
       "oneOf": [
@@ -1042,6 +1042,7 @@
       "description": "redact the value from logs"
     },
     "env_required": {
+      "description": "require this environment variable to be defined before mise runs or in a later config file. Can be a boolean or a help string. A variable that carries its own `value` cannot also be `required = true`.",
       "oneOf": [
         {
           "type": "boolean",
@@ -1051,8 +1052,7 @@
           "type": "string",
           "description": "require this environment variable with user help text on how to set it"
         }
-      ],
-      "description": "require this environment variable to be defined before mise runs or in a later config file. Can be a boolean or a help string. A variable that carries its own `value` cannot also be `required = true`."
+      ]
     },
     "env_tools": {
       "type": "boolean",
@@ -6256,12 +6256,12 @@
       }
     },
     "vars": {
-      "description": "variables to set",
       "type": "object",
+      "description": "variables to set",
       "properties": {
         "_": {
+          "type": "object",
           "description": "vars modules",
-          "additionalProperties": true,
           "properties": {
             "file": {
               "oneOf": [
@@ -6269,23 +6269,23 @@
                   "$ref": "#/$defs/env_directive"
                 },
                 {
-                  "description": "environment file to load (dotenv, json, yaml, or toml)",
-                  "type": "string"
+                  "type": "string",
+                  "description": "environment file to load (dotenv, json, yaml, or toml)"
                 },
                 {
+                  "type": "array",
                   "description": "environment files to load (dotenv, json, yaml, or toml)",
                   "items": {
                     "oneOf": [
                       {
-                        "description": "environment file to load (dotenv, json, yaml, or toml)",
-                        "type": "string"
+                        "type": "string",
+                        "description": "environment file to load (dotenv, json, yaml, or toml)"
                       },
                       {
                         "$ref": "#/$defs/env_directive"
                       }
                     ]
-                  },
-                  "type": "array"
+                  }
                 }
               ]
             },
@@ -6295,40 +6295,40 @@
                   "$ref": "#/$defs/env_directive"
                 },
                 {
-                  "description": "bash script to load",
-                  "type": "string"
+                  "type": "string",
+                  "description": "bash script to load"
                 },
                 {
+                  "type": "array",
                   "description": "bash scripts to load",
                   "items": {
                     "oneOf": [
                       {
-                        "description": "bash script to load",
-                        "type": "string"
+                        "type": "string",
+                        "description": "bash script to load"
                       },
                       {
                         "$ref": "#/$defs/env_directive"
                       }
                     ]
-                  },
-                  "type": "array"
+                  }
                 }
               ]
             }
           },
-          "type": "object"
+          "additionalProperties": true
         }
       },
       "additionalProperties": {
         "description": "a variable: its value, or a table with `value`, `default`, `required` or `age`",
         "oneOf": [
           {
-            "description": "value of variable",
-            "type": "string"
+            "type": "string",
+            "description": "value of variable"
           },
           {
-            "description": "value of variable",
-            "type": "integer"
+            "type": "integer",
+            "description": "value of variable"
           },
           {
             "description": "value of variable",
@@ -6336,6 +6336,7 @@
           },
           {
             "type": "object",
+            "required": ["value"],
             "properties": {
               "value": {
                 "oneOf": [
@@ -6357,18 +6358,18 @@
                 "$ref": "#/$defs/env_redact"
               }
             },
-            "required": ["value"],
             "unevaluatedProperties": false
           },
           {
             "type": "object",
+            "required": ["default"],
             "properties": {
               "default": {
                 "$ref": "#/$defs/env_default"
               },
               "prompt": {
-                "description": "question to ask once, on a machine with no saved answer, when a command is run with a prompt flag such as mise bootstrap --prompt-vars",
-                "type": "string"
+                "type": "string",
+                "description": "question to ask once, on a machine with no saved answer, when a command is run with a prompt flag such as mise bootstrap --prompt-vars"
               },
               "tools": {
                 "$ref": "#/$defs/env_tools"
@@ -6377,15 +6378,15 @@
                 "$ref": "#/$defs/env_redact"
               }
             },
-            "required": ["default"],
             "unevaluatedProperties": false
           },
           {
             "type": "object",
+            "required": ["required"],
             "properties": {
               "prompt": {
-                "description": "question to ask once, on a machine with no saved answer, when a command is run with a prompt flag such as mise bootstrap --prompt-vars",
-                "type": "string"
+                "type": "string",
+                "description": "question to ask once, on a machine with no saved answer, when a command is run with a prompt flag such as mise bootstrap --prompt-vars"
               },
               "tools": {
                 "$ref": "#/$defs/env_tools"
@@ -6404,11 +6405,12 @@
                 ]
               }
             },
-            "required": ["required"],
             "unevaluatedProperties": false
           },
           {
             "type": "object",
+            "description": "[experimental] age-encrypted variable",
+            "required": ["age"],
             "properties": {
               "age": {
                 "$ref": "#/$defs/env_age"
@@ -6420,15 +6422,15 @@
                 "$ref": "#/$defs/env_redact"
               }
             },
-            "required": ["age"],
-            "unevaluatedProperties": false,
-            "description": "[experimental] age-encrypted variable"
+            "unevaluatedProperties": false
           },
           {
             "type": "object",
+            "required": ["age"],
             "properties": {
               "age": {
                 "type": "object",
+                "description": "[experimental] age-encrypted value (complex format)",
                 "properties": {
                   "value": {
                     "$ref": "#/$defs/env_age_value"
@@ -6444,11 +6446,9 @@
                   }
                 },
                 "required": ["value"],
-                "unevaluatedProperties": false,
-                "description": "[experimental] age-encrypted value (complex format)"
+                "unevaluatedProperties": false
               }
             },
-            "required": ["age"],
             "unevaluatedProperties": false
           }
         ]

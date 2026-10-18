@@ -27,6 +27,11 @@ use crate::bootstrap::{
 use crate::daemons::{DaemonInit, DaemonPort, DaemonProxy, DaemonProxyIdleTimeout, DaemonProxyTls};
 use crate::deps::DepsProviderDecl;
 use crate::doctor::DoctorConfig;
+use crate::env::{
+    EnvAgeDecl, EnvAgeFormatDecl, EnvAgeValueDecl, EnvDecl, EnvDefaultDecl, EnvDirectiveDecl,
+    EnvFileExpandDecl, EnvFileFindUpDecl, EnvPathDecl, EnvRedactDecl, EnvRequiredDecl,
+    EnvToolsDecl, EnvValueDecl, VarsDecl,
+};
 use crate::hooks::{
     HookCurrentShellScriptTable, HookCurrentShellScriptsTable, HookDefinition, HookDefinitionItem,
     HookInstallDefinition, HookInstallDefinitionItem, HookInstallScriptTable,
@@ -160,6 +165,21 @@ fn derived_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Value)> {
             fragment::<HookInstallDefinition>(generator),
         ),
         ("hooks", fragment::<HooksDecl>(generator)),
+        ("env", fragment::<EnvDecl>(generator)),
+        ("vars", fragment::<VarsDecl>(generator)),
+        ("env_directive", fragment::<EnvDirectiveDecl>(generator)),
+        ("env_value", fragment::<EnvValueDecl>(generator)),
+        ("env_path", fragment::<EnvPathDecl>(generator)),
+        ("env_paths", fragment::<Vec<String>>(generator)),
+        ("env_tools", fragment::<EnvToolsDecl>(generator)),
+        ("env_file_expand", fragment::<EnvFileExpandDecl>(generator)),
+        ("env_file_find_up", fragment::<EnvFileFindUpDecl>(generator)),
+        ("env_redact", fragment::<EnvRedactDecl>(generator)),
+        ("env_required", fragment::<EnvRequiredDecl>(generator)),
+        ("env_default", fragment::<EnvDefaultDecl>(generator)),
+        ("env_age", fragment::<EnvAgeDecl>(generator)),
+        ("env_age_value", fragment::<EnvAgeValueDecl>(generator)),
+        ("env_age_format", fragment::<EnvAgeFormatDecl>(generator)),
         (
             "bootstrap_file_phase",
             fragment::<BootstrapFilePhase>(generator),
@@ -219,7 +239,6 @@ fn derived_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Value)> {
 fn hand_written_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Value)> {
     shared::defs()
         .into_iter()
-        .chain(crate::env::schema_defs())
         .chain(crate::task::schema_defs())
         .chain(crate::tools::schema_defs())
         .chain([
@@ -313,6 +332,19 @@ pub(crate) mod refs {
         bootstrap_shell_activation,
         doctor,
         env,
+        env_age,
+        env_age_format,
+        env_age_value,
+        env_default,
+        env_directive,
+        env_file_expand,
+        env_file_find_up,
+        env_path,
+        env_paths,
+        env_redact,
+        env_required,
+        env_tools,
+        env_value,
         hook_current_shell_script_table,
         hook_current_shell_scripts_table,
         hook_definition,
@@ -382,6 +414,10 @@ fn generator() -> SchemaGenerator {
 
 const HAND_WRITTEN: &str = "x-mise-hand-written";
 
+/// Marks an object that leaves its other keys unconstrained, which [`reject_unknown_keys`] would
+/// otherwise close. Removed from the output with [`strip_hand_written`].
+const OPEN: &str = "x-mise-open";
+
 /// Marks a schema written by hand, so the generator's transforms leave it as written when a
 /// derived type embeds it.
 pub(crate) fn hand_written(mut schema: Schema) -> Schema {
@@ -411,6 +447,7 @@ impl<T: Transform> Transform for Generated<T> {
 fn strip_hand_written(value: &mut Value) {
     match value {
         Value::Object(object) => {
+            object.remove(OPEN);
             if object.remove(HAND_WRITTEN).is_some() {
                 let empty = match object.get("default") {
                     Some(Value::Null) => true,
@@ -511,6 +548,7 @@ fn reject_unknown_keys(schema: &mut Schema) {
         return;
     };
     if object.get("type") == Some(&Value::from("object"))
+        && !object.contains_key(OPEN)
         && object.contains_key("properties")
         && !object.contains_key("additionalProperties")
         && !object.contains_key("unevaluatedProperties")
