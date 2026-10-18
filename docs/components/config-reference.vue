@@ -127,7 +127,9 @@ onBeforeUnmount(() => window.removeEventListener("hashchange", reveal));
   </div>
   <p v-if="failed" class="summary" role="status">
     The rest of the reference did not load. Reload the page, or read
-    <a href="/configuration/reference.md">the Markdown copy</a>.
+    <a href="https://mise.jdx.dev/configuration/reference.md"
+      >the Markdown copy</a
+    >.
   </p>
   <p v-if="matches" class="summary" role="status">
     {{ matches.hits.size }}
