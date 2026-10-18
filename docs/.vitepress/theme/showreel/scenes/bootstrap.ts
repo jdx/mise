@@ -118,9 +118,11 @@ const schedule = perFacts((d: ReelData | null) => {
   // mise applies the plan without asking, so the take's one prompt is the
   // services' (`confirm-1`): the first two acts split the take at the line
   // that says the files were written.
-  const wrote = (c: Capture): number =>
-    firstWith(c, /^Wrote \d+ file/, stepOf(c, "confirm-1").enter) ??
-    stepOf(c, "confirm-1").end;
+  const wrote = (c: Capture): number => {
+    const s = stepOf(c, "confirm-1");
+    const t = firstWith(c, /^Wrote \d+ file/, s.enter);
+    return t !== null && t <= s.end ? t : s.end;
+  };
   const adopt = termAct(
     p,
     "adopt",
