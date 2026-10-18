@@ -5894,6 +5894,14 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             }
         }
         FileMode::SymlinkEach => {
+            // before anything is removed or created: Windows may refuse the links, and a
+            // `--force` replacement of a blocking file must not have happened by then
+            if let Some((source, _)) = walk_source_files(req)?
+                .into_iter()
+                .find(|(source, _)| source.is_file())
+            {
+                ensure_windows_link_possible(&source, &req.target)?;
+            }
             // conflicts were vetted (or --force given): clear anything
             // blocking a directory we need
             for dir in needed_dirs(req)? {
@@ -5911,7 +5919,6 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                 if let Some(parent) = target.parent() {
                     file::create_dir_all(parent)?;
                 }
-                ensure_windows_link_possible(&source, &target)?;
                 replace_recorded(&target, written, || {
                     link_path(
                         &source,
@@ -6311,9 +6318,9 @@ fn ensure_windows_link_possible(source: &Path, target: &Path) -> Result<()> {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_nanos());
         let name = format!(".mise-probe-{}-{nanos:x}", std::process::id());
-        let probe = target
-            .parent()
-            .map_or_else(|| PathBuf::from(&name), |dir| dir.join(&name));
+        // the target's directory may not exist yet: use the nearest one that does
+        let dir = target.ancestors().skip(1).find(|dir| dir.is_dir());
+        let probe = dir.map_or_else(|| PathBuf::from(&name), |dir| dir.join(&name));
         std::os::windows::fs::symlink_file(source, &probe).wrap_err_with(|| {
             format!(
                 "cannot link {} to {}; turn on Developer Mode or run elevated, or set dotfiles.windows_symlinks = false",
