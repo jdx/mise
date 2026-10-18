@@ -23,7 +23,7 @@ pub struct HistoryTomlConfig {
     #[serde(default)]
     #[schemars(regex(pattern = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$"))]
     pub machine: Option<String>,
-    /// commands run once after a rollback or undo writes a path matching the glob (trusted global or system config only)
+    /// commands run once after a rollback, undo, pull, or dotfiles apply writes a path matching the glob (trusted global or system config only)
     #[serde(default)]
     #[schemars(with = "IndexMap<String, HistoryReloadCommand>")]
     pub reload: IndexMap<String, String>,
@@ -32,7 +32,7 @@ pub struct HistoryTomlConfig {
     pub origin: Option<OriginTomlConfig>,
 }
 
-/// command to run once when a restore or apply writes a path matching this glob
+/// command to run once when a rollback, undo, pull, or dotfiles apply writes a path matching this glob
 #[derive(JsonSchema)]
 pub struct HistoryReloadCommand(pub String);
 

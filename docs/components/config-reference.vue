@@ -234,8 +234,11 @@ const filterInput = ref(null);
 
 function onFilterKey(event) {
   if (event.key === "ArrowDown" || event.key === "Enter") {
-    const first = matches.value?.hits[0] ?? keys.value[0];
-    if (first) select(first.path, { focus: true });
+    // the first row the tree shows that matches, in the tree's own order
+    const shown = rows();
+    const first = (shown.find((r) => r.classList.contains("hit")) ?? shown[0])
+      ?.dataset.path;
+    if (first) select(first, { focus: true });
     event.preventDefault();
   } else if (event.key === "Escape") {
     filter.value = "";

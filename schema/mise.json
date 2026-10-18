@@ -9251,10 +9251,10 @@
         },
         "reload": {
           "type": "object",
-          "description": "commands run once after a rollback or undo writes a path matching the glob (trusted global or system config only)",
+          "description": "commands run once after a rollback, undo, pull, or dotfiles apply writes a path matching the glob (trusted global or system config only)",
           "additionalProperties": {
             "type": "string",
-            "description": "command to run once when a restore or apply writes a path matching this glob"
+            "description": "command to run once when a rollback, undo, pull, or dotfiles apply writes a path matching this glob"
           }
         },
         "origin": {
