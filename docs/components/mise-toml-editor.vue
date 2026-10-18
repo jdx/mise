@@ -306,6 +306,10 @@ function reset() {
   .mise-toml-editor.compact .mte-host {
     order: 2;
   }
+
+  .mise-toml-editor.compact .mte-hint {
+    order: 3;
+  }
 }
 
 .mise-toml-editor .mte-corner button:hover {
