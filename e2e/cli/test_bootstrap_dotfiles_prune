@@ -50,3 +50,29 @@ assert "cat $HOME/.zshrc" "edited"
 rm "$DOTS/home/.bashrc"
 assert_succeed "mise bootstrap --only dotfiles --prune-dotfiles --yes"
 assert_fail "test -e $HOME/.bashrc"
+
+# A configuration entry that deselects a group releases its files in the same
+# run: the prune reads the configuration the dotfiles phase just wrote.
+config="$MISE_CONFIG_DIR/config.toml"
+src="$HOME/dotfiles-checkout"
+mkdir -p "$src/extra"
+echo 'hello' >"$src/extra/.greeting"
+rm mise.toml
+cat <<EOF2 >"$src/config.toml"
+[dotfiles]
+"$config" = { source = "$src/config.toml", mode = "copy" }
+
+[dotfile_groups.extra]
+root = "$src/extra"
+target = "~"
+mode = "copy"
+EOF2
+cp "$src/config.toml" "$config"
+assert_succeed "mise bootstrap --only dotfiles --yes"
+assert "cat ~/.greeting" "hello"
+cat <<EOF2 >"$src/config.toml"
+[dotfiles]
+"$config" = { source = "$src/config.toml", mode = "copy" }
+EOF2
+assert_succeed "mise bootstrap --only dotfiles --prune-dotfiles --yes"
+assert_fail "test -e ~/.greeting"

@@ -1917,6 +1917,10 @@ impl Bootstrap {
         let mut config = Config::get().await?;
         let mut hooks = system::hooks_from_config(&config);
         let skip = self.skip_parts();
+        if self.prune_dotfiles && !skip.contains(&BootstrapPart::Dotfiles) {
+            // before any phase changes anything, like `mise dot apply --prune`
+            super::dotfiles::ensure_prune_sees_every_group(&config)?;
+        }
         let summary = Summary { message: None };
         let accounts_enabled = !skip.contains(&BootstrapPart::Accounts);
         let files_enabled = !skip.contains(&BootstrapPart::Files);
@@ -2238,13 +2242,9 @@ impl Bootstrap {
             if edits.is_empty() {
                 debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
             }
-            if self.prune_dotfiles {
-                // before anything is written, like `mise dot apply --prune`
-                super::dotfiles::ensure_prune_sees_every_group(&config)?;
-            }
             // the same [history.reload] commands `mise dot apply` runs, for
             // the targets this phase writes
-            if (!files.is_empty() || !edits.is_empty() || self.prune_dotfiles)
+            if (!files.is_empty() || !edits.is_empty())
                 && !write_and_reload(self.dry_run, |written| {
                     self.apply_dotfiles(&config, &files, &edits, &secrets, written)
                 })?
@@ -2259,6 +2259,17 @@ impl Bootstrap {
             } else {
                 config = Config::reset().await?;
                 hooks = system::hooks_from_config(&config);
+            }
+            // after the reload, so a configuration entry that deselects a group
+            // releases that group's files in this run
+            if self.prune_dotfiles
+                && !write_and_reload(self.dry_run, |written| {
+                    info!("bootstrap: pruning dotfiles");
+                    prune_orphans(&config, self.dry_run, false, self.yes, written)?;
+                    Ok(true)
+                })?
+            {
+                return Ok(declined());
             }
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PostDotfiles)
                 .await?;
@@ -2682,10 +2693,6 @@ impl Bootstrap {
             if !system::edits::apply(config, edits, &opts, written)? {
                 return Ok(false);
             }
-        }
-        if self.prune_dotfiles {
-            info!("bootstrap: pruning dotfiles");
-            prune_orphans(config, self.dry_run, false, self.yes, written)?;
         }
         Ok(true)
     }
