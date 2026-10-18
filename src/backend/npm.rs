@@ -2122,7 +2122,14 @@ impl NPMBackend {
     ) -> Result<()> {
         // Validate the fallible options before writing anything, so a malformed
         // value fails without leaving a half-written project dir behind.
-        let aube_config = self.aube_project_config(before_date, options, resolved_from_lockfile)?;
+        let mut aube_config =
+            self.aube_project_config(before_date, options, resolved_from_lockfile)?;
+        // mise reads and writes `aube-lock.yaml` here; a user's own
+        // `defaultLockfile`/`defaultLockfileFormat` must not redirect it.
+        aube_config.insert(
+            "defaultLockfile".to_string(),
+            toml::Value::String("aube-lock.yaml".to_string()),
+        );
 
         let mut manifest = serde_json::json!({
             "name": "mise-npm-install",
@@ -4448,6 +4455,10 @@ pkg@1.2.0 '1.2.0'
                 toml::Value::String("undici".to_string()),
                 toml::Value::String("undici@^5".to_string()),
             ])
+        );
+        assert_eq!(
+            config["defaultLockfile"],
+            toml::Value::String("aube-lock.yaml".to_string())
         );
         assert!(!install_path.join(".npmrc").exists());
         // The build-script allowlist goes in package.json's aube namespace.
