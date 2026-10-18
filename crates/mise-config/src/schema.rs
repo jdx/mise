@@ -21,6 +21,7 @@ use crate::history::HistoryTomlConfig;
 use crate::launchd::LaunchdCalendarInterval;
 use crate::oci::OciConfig;
 use crate::remote::InstallMiseTomlConfig;
+use crate::task::{TaskConfig, TaskDecl};
 use crate::tool_config::ToolConfig;
 use crate::watch_files::WatchFile;
 use crate::wrappers::CommandWrapper;
@@ -65,12 +66,29 @@ pub fn fragments() -> Vec<(&'static str, Value)> {
             fragment::<LaunchdCalendarInterval>(&mut generator),
         ),
     ];
+    // `task_props` is composed with `allOf` in `task` and `task_template`, which close it with
+    // `unevaluatedProperties`; closing it here as well would reject every key they add.
+    let mut task_props = fragment::<TaskDecl>(&mut generator);
+    if let Some(object) = task_props.as_object_mut() {
+        object.remove("additionalProperties");
+    }
+    let task_template = crate::task::template_schema(&task_props);
+    let tasks = vec![
+        ("/$defs/task_props", task_props),
+        ("/$defs/task_template", task_template),
+        ("/$defs/task_config", fragment::<TaskConfig>(&mut generator)),
+    ];
     // Written by hand next to their parser, so they skip the generator's transforms and are
     // emitted exactly as written.
     let hand_written = crate::env::schema_fragments()
         .into_iter()
+        .chain(crate::task::schema_fragments())
         .map(|(pointer, schema)| (pointer, schema.to_value()));
-    derived.into_iter().chain(hand_written).collect()
+    derived
+        .into_iter()
+        .chain(tasks)
+        .chain(hand_written)
+        .collect()
 }
 
 /// `schema_with` functions that point at a `$defs` entry, for fields that share one definition.
@@ -99,8 +117,11 @@ pub(crate) mod refs {
         bootstrap_macos_trackpad,
         bootstrap_mise_shell_activate,
         bootstrap_remote_install_mise,
+        env,
         launchd_calendar_interval,
         os_filter,
+        task_watch,
+        vars,
     );
 }
 
@@ -170,11 +191,12 @@ fn drop_null(schema: &mut Schema) {
     }
 }
 
-/// A default of `[]` or `{}` says nothing an editor can use.
+/// A default of `[]`, `{}` or `""` says nothing an editor can use.
 fn drop_empty_default(schema: &mut Schema) {
     let empty = match schema.get("default") {
         Some(Value::Array(values)) => values.is_empty(),
         Some(Value::Object(values)) => values.is_empty(),
+        Some(Value::String(value)) => value.is_empty(),
         _ => false,
     };
     if empty {

@@ -12,12 +12,14 @@ mod confirm;
 mod decl;
 mod dep;
 mod outputs;
+mod schema;
 mod secrets;
 
 pub use confirm::TaskConfirm;
 pub use decl::{TaskDecl, TaskTemplate};
 pub use dep::TaskDep;
 pub use outputs::TaskOutputs;
+pub(crate) use schema::{fragments as schema_fragments, task_template as template_schema};
 pub use secrets::{G7_TEXT, TaskSecrets};
 
 // A `{ version = "..." }`-style tool table, shared by `[tools]` and a task's `tools`: exactly one
@@ -476,19 +478,33 @@ pub enum TaskOutput {
     Silent,
 }
 
-/// `[task_config]`: how this config root's tasks are found and run.
-#[derive(Clone, Debug, Default, Deserialize)]
+// `[task_config]`: how this config root's tasks are found and run.
+/// configuration for task execution/management
+#[derive(Clone, Debug, Default, Deserialize, schemars::JsonSchema)]
 #[serde(default)]
+#[schemars(extend("unevaluatedProperties" = false))]
 pub struct TaskConfig {
+    /// cascade task configuration to descendant config roots
+    #[schemars(extend("default" = false))]
     pub cascade: Option<bool>,
-    pub includes: Option<Vec<String>>,
-    pub excludes: Option<Vec<String>>,
+    /// default directory to run tasks in defined in this file
     pub dir: Option<String>,
+    /// default shell to run tasks with in this config scope
     pub shell: Option<String>,
+    #[schemars(schema_with = "schema::task_config_cache")]
     pub cache: Option<TaskCacheConfig>,
+    #[schemars(schema_with = "schema::task_config_rust_cache")]
     pub rust_cache: Option<TaskRustCacheConfig>,
+    /// experimental ambient environment variable names added to every enabled task cache key in this config scope
     pub global_env: Vec<String>,
+    /// experimental ambient environment variable names preserved under environment denial without affecting task cache keys
     pub global_pass_through_env: Vec<String>,
+    /// experimental config-root-relative source patterns added to every task in this config scope; entries may reference input groups with @group:<name>
     pub global_inputs: Vec<String>,
+    /// experimental reusable config-root-relative source groups referenced with @group:<name>
     pub input_groups: IndexMap<String, Vec<String>>,
+    #[schemars(schema_with = "schema::task_config_includes")]
+    pub includes: Option<Vec<String>>,
+    /// config-root-relative paths or glob patterns to exclude from file-task discovery
+    pub excludes: Option<Vec<String>>,
 }
