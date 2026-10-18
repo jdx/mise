@@ -146,6 +146,15 @@ function reset() {
     <div v-if="title" class="mte-title">{{ title }}</div>
     <pre v-if="!ready" class="mte-fallback"><code>{{ code }}</code></pre>
     <div ref="host" class="mte-host" />
+    <button
+      v-if="compact"
+      type="button"
+      class="mte-copy"
+      :title="copied === 'config' ? 'Copied' : 'Copy code'"
+      @click="copyConfig"
+    >
+      {{ copied === "config" ? "Copied" : "Copy" }}
+    </button>
     <div v-if="ready && !compact" class="mte-toolbar">
       <span class="mte-hint">
         {{
@@ -182,7 +191,34 @@ function reset() {
 }
 
 .mise-toml-editor.compact {
+  position: relative;
   margin: 16px 0;
+}
+
+/* Like the copy button on a plain code block: in the corner, shown on hover or focus. */
+.mise-toml-editor .mte-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  padding: 2px 10px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 6px;
+  background: var(--vp-code-block-bg);
+  color: var(--vp-c-text-2);
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.mise-toml-editor.compact:hover .mte-copy,
+.mise-toml-editor .mte-copy:focus-visible {
+  opacity: 1;
+}
+
+.mise-toml-editor .mte-copy:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-text-1);
 }
 
 .vp-code-group .mte-title {
