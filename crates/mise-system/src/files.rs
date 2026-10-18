@@ -6305,9 +6305,13 @@ fn ensure_windows_link_possible(source: &Path, target: &Path) -> Result<()> {
     #[cfg(windows)]
     if windows_symlinks() && source.is_file() {
         let mut probe = target.as_os_str().to_owned();
-        probe.push(".mise-link-probe");
+        // unique, so a file of the user's can never be the one that gets removed: only a link
+        // this call created is deleted
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        probe.push(format!(".mise-link-probe-{}-{nanos}", std::process::id()));
         let probe = PathBuf::from(probe);
-        let _ = std::fs::remove_file(&probe);
         std::os::windows::fs::symlink_file(source, &probe).wrap_err_with(|| {
             format!(
                 "cannot link {} to {}; turn on Developer Mode or run elevated, or set dotfiles.windows_symlinks = false",
