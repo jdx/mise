@@ -113,8 +113,6 @@ where
     options.insert_option(key, value).map_err(de::Error::custom)
 }
 
-pub(crate) use mise_config::task::ParsedToolMap;
-
 fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
     let core = options.core;
     if let Some(os) = core.os
@@ -460,20 +458,6 @@ pub(crate) struct MiseTomlTool {
     /// See: <https://github.com/jdx/mise/discussions/5531>
     pub request: String,
     pub options: Option<ToolVersionOptions>,
-}
-
-fn parse_mise_toml_tool_map<E>(parsed: ParsedToolMap) -> std::result::Result<MiseTomlTool, E>
-where
-    E: de::Error,
-{
-    let mut options = ToolVersionOptions::default();
-    for (key, value) in parsed.options {
-        insert_tool_option(&mut options, key, value)?;
-    }
-    Ok(MiseTomlTool {
-        request: parsed.request,
-        options: Some(options),
-    })
 }
 
 #[derive(Debug, Default, Clone)]
@@ -2283,51 +2267,14 @@ impl<'de> de::Deserialize<'de> for MiseTomlToolList {
     where
         D: de::Deserializer<'de>,
     {
-        struct MiseTomlToolListVisitor;
-
-        impl<'de> Visitor<'de> for MiseTomlToolListVisitor {
-            type Value = MiseTomlToolList;
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("tool list")
-            }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(MiseTomlToolList(vec![MiseTomlTool {
-                    request: v.to_string(),
-                    options: None,
-                }]))
-            }
-
-            fn visit_seq<S>(self, mut seq: S) -> std::result::Result<Self::Value, S::Error>
-            where
-                S: de::SeqAccess<'de>,
-            {
-                let mut tools = vec![];
-                while let Some(tool) = seq.next_element::<MiseTomlTool>()? {
-                    tools.push(tool);
-                }
-                Ok(MiseTomlToolList(tools))
-            }
-
-            fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
-            where
-                M: de::MapAccess<'de>,
-            {
-                let parsed =
-                    ParsedToolMap::deserialize(de::value::MapAccessDeserializer::new(map))?;
-                Ok(MiseTomlToolList(vec![
-                    parse_mise_toml_tool_map::<M::Error>(parsed)?,
-                ]))
-            }
-        }
-
-        deserializer.deserialize_any(MiseTomlToolListVisitor)
+        let tools = mise_config::tools::ToolSpecList::<MiseTomlTool>::deserialize(deserializer)?;
+        Ok(MiseTomlToolList(tools.0))
     }
 }
 
+// Each tool checks its own options inside its visitor: toml attaches a span only to errors
+// raised while it is inside that value, so this keeps an invalid option pointing at the tool's
+// own table, even inside a list.
 impl<'de> de::Deserialize<'de> for MiseTomlTool {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -2341,27 +2288,48 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
                 formatter.write_str("tool definition")
             }
 
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                Ok(MiseTomlTool {
+                MiseTomlTool::from_spec(mise_config::tools::ToolSpec {
                     request: v.to_string(),
                     options: None,
                 })
             }
 
-            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+            fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
             where
                 M: de::MapAccess<'de>,
             {
-                let parsed =
-                    ParsedToolMap::deserialize(de::value::MapAccessDeserializer::new(map))?;
-                parse_mise_toml_tool_map::<M::Error>(parsed)
+                let parsed = mise_config::task::ParsedToolMap::deserialize(
+                    de::value::MapAccessDeserializer::new(map),
+                )?;
+                MiseTomlTool::from_spec(parsed.into())
             }
         }
 
         deserializer.deserialize_any(MiseTomlToolVisitor)
+    }
+}
+
+impl MiseTomlTool {
+    /// The checked form of a declared tool: its options parsed into [`ToolVersionOptions`].
+    fn from_spec<E: de::Error>(spec: mise_config::tools::ToolSpec) -> std::result::Result<Self, E> {
+        let options = match spec.options {
+            None => None,
+            Some(raw) => {
+                let mut options = ToolVersionOptions::default();
+                for (key, value) in raw {
+                    insert_tool_option(&mut options, key, value)?;
+                }
+                Some(options)
+            }
+        };
+        Ok(MiseTomlTool {
+            request: spec.request,
+            options,
+        })
     }
 }
 

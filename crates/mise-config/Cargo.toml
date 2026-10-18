@@ -17,4 +17,5 @@ serde_ignored = "0.1"
 shell-words = "1"
 strum = { version = "0.28", features = ["derive"] }
 toml = { version = "1", features = ["parse", "preserve_order"] }
+toml_edit = { version = "0.25", default-features = false }
 versions = "8"

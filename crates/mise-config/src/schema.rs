@@ -90,6 +90,7 @@ pub fn fragments() -> Vec<(&'static str, Value)> {
     let hand_written = crate::env::schema_fragments()
         .into_iter()
         .chain(crate::task::schema_fragments())
+        .chain(crate::tools::schema_fragments())
         .chain([
             (
                 "/$defs/tool_alias_entry",

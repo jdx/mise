@@ -56,6 +56,7 @@ log = "0.4"
 md-5 = "0.11"
 mise-agent-env = { path = "../mise-agent-env", version = "0.1" }
 mise-cache-core = { path = "../mise-cache-core", version = "0.1", default-features = false }
+mise-config = { path = "../mise-config", version = "0.1" }
 mise-settings = { path = "../mise-settings", version = "2026" }
 mise-sigstore = { path = "../mise-sigstore", version = "0.1", default-features = false }
 netrc-rs = "0.1"

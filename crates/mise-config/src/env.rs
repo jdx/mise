@@ -6,6 +6,7 @@ use std::str::FromStr;
 use std::sync::OnceLock;
 
 use crate::deprecation::{Deprecation, report};
+use crate::env_value::EnvValue;
 
 use serde::de::Visitor;
 use serde::{Deserialize, Deserializer, de};
@@ -51,35 +52,6 @@ impl schemars::JsonSchema for EnvList {
 
     fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
         schemars::json_schema!({"$ref": "#/$defs/env"})
-    }
-}
-
-// A scalar env value: a string, an integer, or a boolean where `false` unsets the variable.
-// The same shape as mise-util's `EnvValue`, which this crate does not depend on.
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum EnvScalar {
-    String(String),
-    Integer(i64),
-    Boolean(bool),
-}
-
-impl EnvScalar {
-    fn into_string(self) -> Option<String> {
-        match self {
-            Self::String(value) => Some(value),
-            Self::Integer(value) => Some(value.to_string()),
-            Self::Boolean(true) => Some("true".to_string()),
-            Self::Boolean(false) => None,
-        }
-    }
-
-    fn into_default_string(self) -> Option<String> {
-        match self {
-            Self::String(value) => Some(value),
-            Self::Integer(value) => Some(value.to_string()),
-            Self::Boolean(_) => None,
-        }
     }
 }
 
@@ -732,12 +704,12 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     options: EnvDirectiveOptions,
                                 },
                                 Map {
-                                    value: EnvScalar,
+                                    value: EnvValue,
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
                                 DefaultMap {
-                                    default: EnvScalar,
+                                    default: EnvValue,
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
@@ -745,7 +717,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     #[serde(flatten)]
                                     options: EnvDirectiveOptions,
                                 },
-                                Primitive(EnvScalar),
+                                Primitive(EnvValue),
                             }
 
                             #[derive(Deserialize)]

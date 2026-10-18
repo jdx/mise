@@ -2,7 +2,7 @@
 //! settings, or filesystem access. So far this covers `[bootstrap]`, the `[daemons]` sections,
 //! `[doctor]`, `[dotfiles]`, `[env]`, `[dotfile_groups]`, `[history]`, `[oci]`, `[tool_config]`,
 //! `[vars]`, `[watch_files]`, `[wrappers]`, `[deps]`, `[task_config]`, `[tool_alias]`,
-//! `[monorepo]`, `min_version`, and the `[tasks]` and `[task_templates]` declarations.
+//! `[monorepo]`, `min_version`, `[tools]`, and the `[tasks]` and `[task_templates]` declarations.
 //!
 //! mise's config layer stores these as parsed, and the system modules interpret them. Keeping
 //! the plain data here, below both, is what lets those two layers be separate crates.
@@ -19,6 +19,7 @@ pub mod deps;
 pub mod doctor;
 pub mod dotfiles;
 pub mod env;
+pub mod env_value;
 pub mod firewall;
 pub mod history;
 pub mod launchd;
@@ -37,5 +38,6 @@ pub mod systemd;
 pub mod task;
 pub mod templating;
 pub mod tool_config;
+pub mod tools;
 pub mod watch_files;
 pub mod wrappers;

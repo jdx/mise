@@ -21,24 +21,7 @@ pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
 
 const AUTO_UPDATE_ERROR: &str = "auto_update must be true, false, or a duration such as \"12h\"";
 
-#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-pub struct CoreToolOptions {
-    #[serde(default)]
-    pub os: Option<Vec<String>>,
-    #[serde(default)]
-    pub depends: Option<Vec<String>>,
-    #[serde(default)]
-    pub install_env: IndexMap<String, EnvValue>,
-    #[serde(default)]
-    pub lazy: Option<bool>,
-    #[serde(default)]
-    pub lazy_bins: Vec<String>,
-    /// `true`, `false`, or a check interval for background updates. Only
-    /// honored in global config; never passed to a backend or stored in an
-    /// install manifest.
-    #[serde(default)]
-    pub auto_update: Option<String>,
-}
+pub use mise_config::tools::CoreToolOptions;
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct RawBackendOptions {
