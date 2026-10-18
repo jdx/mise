@@ -1030,13 +1030,20 @@ impl OptionSpec {
         unknown
     }
 
+    /// Fails on the first unknown option, other than the `allowed` keys, such as the ones a
+    /// tool stub file adds to a tool's options.
     pub(crate) fn check(
         &self,
         tool: &str,
         backend_type: &BackendType,
         opts: &ToolVersionOptions,
+        allowed: &[&str],
     ) -> eyre::Result<()> {
-        if let Some(key) = self.unknown_keys(backend_type, opts).first() {
+        if let Some(key) = self
+            .unknown_keys(backend_type, opts)
+            .iter()
+            .find(|key| !allowed.contains(&key.as_str()))
+        {
             bail!(
                 "{tool}: option `{key}` is not used by the {backend_type} backend\n\
                 hint: Remove it, or check the spelling against the backend's documented options"
@@ -4656,15 +4663,19 @@ pub trait Backend: Debug + Send + Sync {
         } else {
             self.prepare_install_version(&ctx, tv).await?
         };
-        // A tool stub's fields (`bin`, checksums such as `blake3`) are its own format, which
-        // is turned into backend options elsewhere.
-        if !matches!(tv.request.source(), crate::toolset::ToolSource::ToolStub(_))
-            && let Some(spec) = self.option_spec()
-        {
+        if let Some(spec) = self.option_spec() {
+            // A tool stub file adds its own `bin` field to the tool's options.
+            let stub_keys: &[&str] =
+                if matches!(tv.request.source(), crate::toolset::ToolSource::ToolStub(_)) {
+                    &["bin"]
+                } else {
+                    &[]
+                };
             spec.check(
                 &crate::install_layout::resolver::redact_credentials(&self.ba().short),
                 &self.get_type(),
                 &tv.request.options(),
+                stub_keys,
             )?;
         }
         // Toolset installs preflight these options before doing any work, but
@@ -8553,7 +8564,7 @@ mod option_spec_tests {
     fn check_fails_on_an_unknown_option() {
         let o = opts("nonsense=1");
         let err = OptionSpec::new(&["tool_cargo_options"])
-            .check("cargo:x", &BackendType::Cargo, &o)
+            .check("cargo:x", &BackendType::Cargo, &o, &[])
             .unwrap_err();
         assert!(err.to_string().contains("option `nonsense` is not used"));
     }
