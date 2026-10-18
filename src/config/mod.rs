@@ -1,4 +1,5 @@
 use crate::daemons::glue::DaemonSetExt;
+use crate::task::TaskToolValueExt;
 use dashmap::DashMap;
 use eyre::{Context, Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};

@@ -5,6 +5,7 @@ use crate::duration;
 use crate::env_diff::EnvDiff;
 use crate::file::{can_execute_directly, display_path, replace_path, strip_utf8_bom};
 use crate::sandbox::SandboxConfig;
+use crate::task::RunEntryExt;
 use crate::task::TaskArtifactCache;
 use crate::task::task_cache::{
     CommandInput, TaskCacheContext, TaskCacheMissReason, TaskCacheRestore,
@@ -19,6 +20,7 @@ use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{
     remove_auto_output, save_checksum, sources_are_fresh, task_cwd,
 };
+use crate::task::task_sources::TaskOutputsExt;
 use crate::task::{
     Deps, FailedTasks, GetMatchingExt, Task, TaskCacheAudit, TaskCacheMode, TaskCacheOutput,
 };

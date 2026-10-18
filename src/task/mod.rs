@@ -1,5 +1,5 @@
 use crate::args::{BackendArg, ToolArg};
-use crate::config::config_file::mise_toml::{EnvList, ParsedToolMap, deserialize_vars};
+use crate::config::config_file::mise_toml::{EnvList, deserialize_vars};
 use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config, SettingsExt};
@@ -120,97 +120,34 @@ use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, Toolset};
 use crate::ui::style;
 pub(crate) use deps::task_key;
 pub use deps::{Deps, TaskCompletionState, TaskCycleError, TaskDependencyState, TaskKey};
-use task_dep::TaskDep;
-use task_sources::{RawOutputTemplates, TaskOutputs};
+use task_dep::{TaskDep, TaskDepExt};
+use task_sources::TaskOutputs;
+pub use task_sources::{RawOutputTemplates, TaskOutputsExt};
 
-/// Represents a tool value in task-level tools field.
-/// Supports both string syntax (e.g., "1.0.0") and object syntax
-/// (e.g., { version = "1.0.0", targets = ["x86_64"] })
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(untagged)]
-pub enum TaskToolValue {
-    String(String),
-    Map(TaskToolValueMap),
+pub use mise_config::task::{
+    RunEntry, Silent, TaskDaemons, TaskRustCacheConfig, TaskToolValue, TaskToolValueMap,
+    TaskWatchOptions,
+};
+
+/// Turning a task's tool declaration into a request, and rendering its templates, needs mise's
+/// backends and tera engine, so it lives here rather than on the type in mise-config.
+pub(crate) trait TaskToolValueExt {
+    fn to_tool_arg(&self, tool: &str) -> Result<ToolArg>;
+    fn has_template(&self) -> bool;
+    fn render_templates(&mut self, tera: &mut TeraEngine, context: &tera::Context) -> Result<()>;
 }
 
-impl<'de> Deserialize<'de> for TaskToolValue {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct TaskToolValueVisitor;
-
-        impl<'de> serde::de::Visitor<'de> for TaskToolValueVisitor {
-            type Value = TaskToolValue;
-
-            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-                formatter.write_str("a task tool definition as a string or table")
-            }
-
-            fn visit_str<E>(self, value: &str) -> std::result::Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(TaskToolValue::String(value.to_string()))
-            }
-
-            fn visit_string<E>(self, value: String) -> std::result::Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(TaskToolValue::String(value))
-            }
-
-            fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
-            where
-                M: serde::de::MapAccess<'de>,
-            {
-                let parsed =
-                    ParsedToolMap::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
-                Ok(TaskToolValue::Map(parsed.into()))
-            }
-        }
-
-        deserializer.deserialize_any(TaskToolValueVisitor)
+fn task_tool_value_has_template(value: &toml::Value) -> bool {
+    match value {
+        toml::Value::String(value) => contains_template_syntax(value),
+        toml::Value::Array(values) => values.iter().any(task_tool_value_has_template),
+        toml::Value::Table(values) => values.values().any(task_tool_value_has_template),
+        _ => false,
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct TaskToolValueMap {
-    pub version: String,
-    #[serde(flatten)]
-    pub opts: IndexMap<String, toml::Value>,
-}
-
-impl From<ParsedToolMap> for TaskToolValueMap {
-    fn from(parsed: ParsedToolMap) -> Self {
-        Self {
-            version: parsed.request,
-            opts: parsed.options,
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for TaskToolValueMap {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        Ok(ParsedToolMap::deserialize(deserializer)?.into())
-    }
-}
-
-impl TaskToolValue {
-    fn value_has_template(value: &toml::Value) -> bool {
-        match value {
-            toml::Value::String(value) => contains_template_syntax(value),
-            toml::Value::Array(values) => values.iter().any(Self::value_has_template),
-            toml::Value::Table(values) => values.values().any(Self::value_has_template),
-            _ => false,
-        }
-    }
-
-    pub(crate) fn to_tool_arg(&self, tool: &str) -> Result<ToolArg> {
+impl TaskToolValueExt for TaskToolValue {
+    fn to_tool_arg(&self, tool: &str) -> Result<ToolArg> {
         match self {
             Self::String(version) => format!("{tool}@{version}").parse(),
             Self::Map(map) => {
@@ -241,12 +178,12 @@ impl TaskToolValue {
         }
     }
 
-    pub(crate) fn has_template(&self) -> bool {
+    fn has_template(&self) -> bool {
         match self {
             Self::String(version) => contains_template_syntax(version),
             Self::Map(map) => {
                 contains_template_syntax(&map.version)
-                    || map.opts.values().any(Self::value_has_template)
+                    || map.opts.values().any(task_tool_value_has_template)
             }
         }
     }
@@ -263,14 +200,14 @@ impl TaskToolValue {
                 }
                 toml::Value::Array(values) => {
                     for value in values {
-                        if TaskToolValue::value_has_template(value) {
+                        if task_tool_value_has_template(value) {
                             render_value(value, tera, context)?;
                         }
                     }
                 }
                 toml::Value::Table(values) => {
                     for (_, value) in values.iter_mut() {
-                        if TaskToolValue::value_has_template(value) {
+                        if task_tool_value_has_template(value) {
                             render_value(value, tera, context)?;
                         }
                     }
@@ -291,7 +228,7 @@ impl TaskToolValue {
                     map.version = render_str(tera, &map.version, context)?;
                 }
                 for value in map.opts.values_mut() {
-                    if Self::value_has_template(value) {
+                    if task_tool_value_has_template(value) {
                         render_value(value, tera, context)?;
                     }
                 }
@@ -301,55 +238,15 @@ impl TaskToolValue {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum RunEntry {
-    /// Shell script entry
-    Script(String),
-    /// Run a single task with optional args and env
-    SingleTask {
-        task: String,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        args: Vec<String>,
-        #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
-        env: IndexMap<String, String>,
-    },
-    /// Run multiple tasks in parallel
-    TaskGroup { tasks: Vec<String> },
+/// Rendering a run entry's templates needs mise's tera engine, so it lives here rather than on
+/// the type in mise-config.
+pub(crate) trait RunEntryExt {
+    fn render(&self, tera: &mut TeraEngine, tera_ctx: &tera::Context) -> crate::Result<RunEntry>;
+    fn has_tera_template(&self) -> bool;
 }
 
-impl std::hash::Hash for RunEntry {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            RunEntry::Script(s) => {
-                0u8.hash(state);
-                s.hash(state);
-            }
-            RunEntry::SingleTask { task, args, env } => {
-                1u8.hash(state);
-                task.hash(state);
-                args.hash(state);
-                let mut pairs: Vec<_> = env.iter().collect();
-                pairs.sort_by_key(|(k, _)| k.as_str());
-                for (k, v) in pairs {
-                    k.hash(state);
-                    v.hash(state);
-                }
-            }
-            RunEntry::TaskGroup { tasks } => {
-                2u8.hash(state);
-                tasks.hash(state);
-            }
-        }
-    }
-}
-
-impl RunEntry {
-    pub(crate) fn render(
-        &self,
-        tera: &mut TeraEngine,
-        tera_ctx: &tera::Context,
-    ) -> crate::Result<Self> {
+impl RunEntryExt for RunEntry {
+    fn render(&self, tera: &mut TeraEngine, tera_ctx: &tera::Context) -> crate::Result<Self> {
         match self {
             RunEntry::Script(s) => Ok(RunEntry::Script(s.clone())),
             RunEntry::SingleTask { task, args, env } => {
@@ -399,7 +296,7 @@ impl RunEntry {
         }
     }
 
-    pub(crate) fn has_tera_template(&self) -> bool {
+    fn has_tera_template(&self) -> bool {
         match self {
             RunEntry::Script(_) => false,
             RunEntry::SingleTask { task, args, env } => {
@@ -410,15 +307,6 @@ impl RunEntry {
             RunEntry::TaskGroup { tasks } => tasks.iter().any(|t| contains_template_syntax(t)),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub enum Silent {
-    #[default]
-    Off,
-    Bool(bool),
-    Stdout,
-    Stderr,
 }
 
 /// Boolean fields present in a structured TOML task definition.
@@ -445,229 +333,6 @@ impl TaskTomlBoolPresence {
             "quiet" => self.quiet = true,
             "silent" => self.silent = true,
             _ => {}
-        }
-    }
-}
-
-impl Silent {
-    pub(crate) fn is_silent(&self) -> bool {
-        matches!(self, Silent::Bool(true) | Silent::Stdout | Silent::Stderr)
-    }
-
-    pub(crate) fn suppresses_stdout(&self) -> bool {
-        matches!(self, Silent::Bool(true) | Silent::Stdout)
-    }
-
-    pub(crate) fn suppresses_stderr(&self) -> bool {
-        matches!(self, Silent::Bool(true) | Silent::Stderr)
-    }
-
-    pub(crate) fn suppresses_both(&self) -> bool {
-        matches!(self, Silent::Bool(true))
-    }
-}
-
-impl Serialize for Silent {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            Silent::Off | Silent::Bool(false) => serializer.serialize_bool(false),
-            Silent::Bool(true) => serializer.serialize_bool(true),
-            Silent::Stdout => serializer.serialize_str("stdout"),
-            Silent::Stderr => serializer.serialize_str("stderr"),
-        }
-    }
-}
-
-impl From<bool> for Silent {
-    fn from(b: bool) -> Self {
-        if b { Silent::Bool(true) } else { Silent::Off }
-    }
-}
-
-impl std::str::FromStr for Silent {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "true" => Ok(Silent::Bool(true)),
-            "false" => Ok(Silent::Off),
-            "stdout" => Ok(Silent::Stdout),
-            "stderr" => Ok(Silent::Stderr),
-            _ => Err(format!(
-                "invalid silent value: {}, expected true, false, 'stdout', or 'stderr'",
-                s
-            )),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Silent {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct SilentVisitor;
-
-        impl<'de> serde::de::Visitor<'de> for SilentVisitor {
-            type Value = Silent;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a boolean or a string ('stdout' or 'stderr')")
-            }
-
-            fn visit_bool<E>(self, value: bool) -> Result<Silent, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(Silent::from(value))
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<Silent, E>
-            where
-                E: serde::de::Error,
-            {
-                match value {
-                    "stdout" => Ok(Silent::Stdout),
-                    "stderr" => Ok(Silent::Stderr),
-                    _ => Err(E::custom(format!(
-                        "invalid silent value: '{}', expected 'stdout' or 'stderr'",
-                        value
-                    ))),
-                }
-            }
-        }
-
-        deserializer.deserialize_any(SilentVisitor)
-    }
-}
-
-impl std::str::FromStr for RunEntry {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(RunEntry::Script(s.to_string()))
-    }
-}
-
-impl Display for RunEntry {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            RunEntry::Script(s) => write!(f, "{}", s),
-            RunEntry::SingleTask { task, args, env } => {
-                for (k, v) in env {
-                    write!(f, "{}={} ", k, v)?;
-                }
-                write!(f, "task: {task}")?;
-                if !args.is_empty() {
-                    write!(f, " {}", args.join(" "))?;
-                }
-                Ok(())
-            }
-            RunEntry::TaskGroup { tasks } => write!(f, "tasks: {}", tasks.join(", ")),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
-#[serde(default, deny_unknown_fields)]
-pub struct TaskWatchOptions {
-    /// Ignore VCS ignore files such as `.gitignore` when running `mise watch`.
-    pub no_vcs_ignore: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct TaskRustCacheOptions {
-    enabled: bool,
-    #[serde(rename = "verify")]
-    _verify: bool,
-}
-
-impl Default for TaskRustCacheOptions {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            _verify: false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TaskRustCacheConfig {
-    pub enabled: bool,
-}
-
-impl Default for TaskRustCacheConfig {
-    fn default() -> Self {
-        Self { enabled: true }
-    }
-}
-
-impl<'de> Deserialize<'de> for TaskRustCacheConfig {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct RustCacheVisitor;
-
-        impl<'de> serde::de::Visitor<'de> for RustCacheVisitor {
-            type Value = TaskRustCacheConfig;
-
-            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-                formatter.write_str("a boolean or Rust cache options table")
-            }
-
-            fn visit_bool<E>(self, enabled: bool) -> std::result::Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(TaskRustCacheConfig { enabled })
-            }
-
-            fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
-            where
-                M: serde::de::MapAccess<'de>,
-            {
-                let options = TaskRustCacheOptions::deserialize(
-                    serde::de::value::MapAccessDeserializer::new(map),
-                )?;
-                Ok(TaskRustCacheConfig {
-                    enabled: options.enabled,
-                })
-            }
-        }
-
-        deserializer.deserialize_any(RustCacheVisitor)
-    }
-}
-
-/// Project daemons a task requires: `true` for every daemon declared in the
-/// project, or an explicit name or list of names.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum TaskDaemons {
-    All(bool),
-    One(String),
-    Names(Vec<String>),
-}
-
-impl TaskDaemons {
-    /// The names written in the declaration. Empty for `true` and `false`,
-    /// which name no daemon.
-    pub fn names(&self) -> &[String] {
-        match self {
-            Self::All(_) => &[],
-            Self::One(name) => std::slice::from_ref(name),
-            Self::Names(names) => names.as_slice(),
-        }
-    }
-
-    fn names_mut(&mut self) -> &mut [String] {
-        match self {
-            Self::All(_) => &mut [],
-            Self::One(name) => std::slice::from_mut(name),
-            Self::Names(names) => names.as_mut_slice(),
         }
     }
 }
@@ -7344,7 +7009,7 @@ echo "test"
 
         use crate::config::Config;
 
-        use super::{TaskToolValue, TaskToolValueMap};
+        use super::{TaskToolValue, TaskToolValueExt, TaskToolValueMap};
 
         let _config = Config::get().await.unwrap();
 
@@ -7489,7 +7154,7 @@ echo "test"
 
         use crate::config::Config;
 
-        use super::{TaskToolValue, TaskToolValueMap};
+        use super::{TaskToolValue, TaskToolValueExt, TaskToolValueMap};
 
         let _config = Config::get().await.unwrap();
         let tool = TaskToolValue::Map(TaskToolValueMap {
@@ -7524,7 +7189,7 @@ echo "test"
         use crate::config::Config;
         use crate::toolset::ToolsetBuilder;
 
-        use super::{TaskToolValue, TaskToolValueMap};
+        use super::{TaskToolValue, TaskToolValueExt, TaskToolValueMap};
 
         let config = Config::get().await.unwrap();
         let tool = TaskToolValue::Map(TaskToolValueMap {
@@ -7556,7 +7221,7 @@ echo "test"
 
         use crate::config::Config;
 
-        use super::{TaskToolValue, TaskToolValueMap};
+        use super::{TaskToolValue, TaskToolValueExt, TaskToolValueMap};
 
         let _config = Config::get().await.unwrap();
         for version in [
@@ -7589,7 +7254,7 @@ echo "test"
     async fn test_task_tool_renders_nested_options() {
         use indexmap::IndexMap;
 
-        use super::{TaskToolValue, TaskToolValueMap};
+        use super::{TaskToolValue, TaskToolValueExt, TaskToolValueMap};
         use crate::config::Config;
         use crate::tera::TeraEngine;
 

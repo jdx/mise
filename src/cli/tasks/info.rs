@@ -7,6 +7,7 @@ use serde_json::json;
 use crate::config::Config;
 use crate::file::display_path;
 use crate::task::Task;
+use crate::task::TaskOutputsExt;
 use crate::task::task_fetcher::TaskFetcher;
 use crate::task::task_source_checker::task_cwd;
 use crate::ui::info;

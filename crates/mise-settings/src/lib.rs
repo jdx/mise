@@ -159,32 +159,7 @@ pub enum SystemPackagesOstree {
     Layer,
 }
 
-/// How task output is presented. mise's task runner resolves it further; see
-/// `TaskOutputExt` there.
-#[derive(
-    Debug,
-    Default,
-    Clone,
-    Copy,
-    PartialEq,
-    strum::Display,
-    strum::EnumString,
-    strum::EnumIs,
-    serde::Serialize,
-    serde::Deserialize,
-)]
-#[serde(rename_all = "kebab-case")]
-#[strum(serialize_all = "kebab-case")]
-pub enum TaskOutput {
-    Interleave,
-    KeepOrder,
-    #[default]
-    Prefix,
-    Replacing,
-    Timed,
-    Quiet,
-    Silent,
-}
+pub use mise_config::task::TaskOutput;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PythonUvVenvAuto {
