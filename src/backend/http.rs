@@ -1275,6 +1275,13 @@ impl Backend for HttpBackend {
         VersionOrder::from_options_or(opts, self.ba.registry_version_order().unwrap_or_default())
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::with_platforms(
+            &["tool_http_options"],
+            &["tool_http_platforms"],
+        ))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Http
     }
