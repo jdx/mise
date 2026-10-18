@@ -13,6 +13,6 @@ EOF
 assert "mise run ok" "ok"
 assert_contains "mise tasks ls" "ok"
 assert_contains "mise tasks info ok" "Task: ok"
-assert_contains "mise tasks ls --json" '"name": "ok"'
+assert "mise tasks ls --json 2>/dev/null | jq -c '[.[] | select(.name == \"bad\") | .dir]'" '[null]'
 assert_contains "mise tasks validate --json 2>&1 || true" "invalid-directory-template"
-assert_fail "mise run bad" 'failed to render `dir` of task bad'
+assert_fail "mise run bad" "of task bad in"
