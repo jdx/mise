@@ -4983,6 +4983,15 @@ fn plan_unapply_one<'a>(
                 for path in owned_links(req)? {
                     paths.insert(path, ());
                 }
+                // files an earlier apply copied, before `dotfiles.windows_symlinks` was on,
+                // are removed on the same terms as a `copy` entry's
+                if cfg!(windows) {
+                    for (source, target) in walk_source_files(req)? {
+                        if !target.is_symlink() {
+                            plan_regular_file(&source, &target, opts.force, &mut paths)?;
+                        }
+                    }
+                }
                 cleanup_empty_dirs = true;
             }
         }
@@ -5887,7 +5896,12 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             // entry would never converge
             file::create_dir_all(&req.target)?;
             for (source, target) in walk_source_files(req)? {
-                if check_symlink(&source, &target, req.relative)? == FileState::Applied {
+                // a copy an earlier apply left reads as Applied, but with
+                // `dotfiles.windows_symlinks` on it has to become a link
+                let copy_to_relink = windows_symlinks() && source.is_file() && !target.is_symlink();
+                if !copy_to_relink
+                    && check_symlink(&source, &target, req.relative)? == FileState::Applied
+                {
                     continue;
                 }
                 if let Some(parent) = target.parent() {
