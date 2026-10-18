@@ -152,7 +152,8 @@ function value(key: SnippetKey): string {
   if (["boolean", "integer", "number", "true", "false"].includes(types[0])) {
     return placeholder(types[0]);
   }
-  if (key.choices.length > 0) return JSON.stringify(key.choices[0]);
+  // `choices` are written as TOML already
+  if (key.choices.length > 0) return key.choices[0];
   // a key that takes a list or a table often takes a plain string too, and that reads best
   return placeholder(types.includes("string") ? "string" : types[0]);
 }

@@ -132,7 +132,30 @@ function toggle(path) {
   else open.add(path);
 }
 
-provide("configReference", { open, matches, selected, toggle, select });
+// The row the tree's tab stop is on: the selected key while the tree shows it, else the
+// first row shown, so collapsing or filtering away the selected key never leaves the tree
+// without one.
+const tabTarget = ref(grouped(sections)[0]?.keys[0]?.path);
+
+function updateTabTarget() {
+  nextTick(() => {
+    const shown = rows();
+    tabTarget.value =
+      shown.find((r) => r.dataset.path === selected.value)?.dataset.path ??
+      shown[0]?.dataset.path;
+  });
+}
+
+watch([selected, matches, () => open.size, keys], updateTabTarget);
+
+provide("configReference", {
+  open,
+  matches,
+  selected,
+  tabTarget,
+  toggle,
+  select,
+});
 
 function expandAll() {
   for (const { key } of index.value.entries) {
@@ -216,7 +239,8 @@ function onFilterKey(event) {
   }
 }
 
-// `/` jumps to the filter, as on other docs sites.
+// `/` jumps to the filter, as on other docs sites. The site search binds `/` too; on this
+// page the filter takes it, and Ctrl+K still opens the site search.
 function onGlobalKey(event) {
   if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey)
     return;
@@ -228,7 +252,14 @@ function onGlobalKey(event) {
   )
     return;
   event.preventDefault();
-  filterInput.value?.focus();
+  event.stopImmediatePropagation();
+  // on a phone the filter is in the tree, which a selected key hides
+  if (narrow.value && selected.value) {
+    select(null);
+    nextTick(() => filterInput.value?.focus());
+  } else {
+    filterInput.value?.focus();
+  }
 }
 
 watch(filter, (value) => {
@@ -246,7 +277,8 @@ onMounted(async () => {
   onMedia();
   media.addEventListener("change", onMedia);
   window.addEventListener("hashchange", reveal);
-  window.addEventListener("keydown", onGlobalKey);
+  // in the capture phase, so it runs before the site search's own listener
+  window.addEventListener("keydown", onGlobalKey, { capture: true });
   try {
     full.value = (await import("/config-reference.data.ts")).data;
   } catch (error) {
@@ -261,7 +293,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   media?.removeEventListener("change", onMedia);
   window.removeEventListener("hashchange", reveal);
-  window.removeEventListener("keydown", onGlobalKey);
+  window.removeEventListener("keydown", onGlobalKey, { capture: true });
 });
 
 function firstSentence(html) {

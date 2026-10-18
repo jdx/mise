@@ -11,7 +11,8 @@ const props = defineProps({
   all: Boolean,
 });
 
-const { open, matches, selected, toggle, select } = inject("configReference");
+const { open, matches, selected, tabTarget, toggle, select } =
+  inject("configReference");
 
 const shown = computed(() =>
   !matches.value || props.all
@@ -43,10 +44,9 @@ function choose(key) {
   select(key.path);
 }
 
-// the first row takes the tab stop until a key is selected
+// one row in the whole tree takes the tab stop: the selected key, or the first row shown
 function tabStop(key) {
-  if (selected.value) return selected.value === key.path ? 0 : -1;
-  return props.depth === 0 && key === props.keys[0] ? 0 : -1;
+  return tabTarget.value === key.path ? 0 : -1;
 }
 </script>
 
@@ -69,6 +69,8 @@ function tabStop(key) {
         :style="{ paddingLeft: `${depth * 14 + 4}px` }"
         :title="key.path"
         @click="choose(key)"
+        @keydown.enter.prevent="choose(key)"
+        @keydown.space.prevent="choose(key)"
       >
         <span
           v-if="key.count > 0"
