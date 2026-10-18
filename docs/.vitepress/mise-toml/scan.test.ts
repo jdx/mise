@@ -142,6 +142,27 @@ test("the context of the cursor says what is being typed", () => {
     typed: "os",
   });
   assert.deepEqual(at("[tas|"), { mode: "header", from: 1, typed: "tas" });
+  // A new line in an array is an item, not a key of the table.
+  assert.deepEqual(at('[tasks.build]\ndepends = [\n  "lint",\n  |\n]\n'), {
+    mode: "value",
+    path: ["tasks", "build", "depends", "0"],
+    from: 38,
+    typed: "",
+  });
+});
+
+test("an escape that names no character does not stop the scan", () => {
+  assert.deepEqual(paths('a = "\\U00110000"\nb = "\\uD800"\nc = 1\n'), [
+    "a",
+    "b",
+    "c",
+  ]);
+});
+
+test("a numeric key is a key, while an array index is not", () => {
+  const keys = tableKeys(scan("[settings]\n404 = true\nd = [{ e = 1 }]\n"));
+  assert.deepEqual([...keys.get("settings")!], ["404", "d"]);
+  assert.deepEqual([...keys.get("settings\u0000d\u00000")!], ["e"]);
 });
 
 test("dotted keys are split as typed", () => {

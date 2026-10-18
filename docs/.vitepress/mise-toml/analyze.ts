@@ -133,12 +133,7 @@ export class Analysis {
     const seen = new Set<string>();
     const report = (segment: Segment, value?: Value) => {
       const key = `${id(segment.path)}@${segment.from}`;
-      if (
-        seen.has(key) ||
-        /^\d+$/.test(segment.name) ||
-        !this.reachable(segment.path)
-      )
-        return;
+      if (seen.has(key) || !this.reachable(segment.path)) return;
       seen.add(key);
       const info = this.info(segment.path);
       if (!info.known) {
@@ -190,11 +185,7 @@ export class Analysis {
   hover(pos: number): Hover | undefined {
     for (const entry of this.scan.entries) {
       for (const segment of entry.segments) {
-        if (
-          segment.from <= pos &&
-          pos <= segment.to &&
-          !/^\d+$/.test(segment.name)
-        ) {
+        if (segment.from <= pos && pos <= segment.to) {
           return {
             from: segment.from,
             to: segment.to,
@@ -228,7 +219,7 @@ export class Analysis {
 
   completions(
     pos: number,
-  ): { from: number; options: Completion[] } | undefined {
+  ): { from: number; to: number; options: Completion[] } | undefined {
     const context = contextAt(this.text, this.scan, pos);
     if (context.mode === "header") {
       const parts = context.typed.split(".");
@@ -243,7 +234,7 @@ export class Analysis {
           info: k.description,
           kind: "section" as const,
         }));
-      return { from, options };
+      return { from, to: this.wordEnd(pos), options };
     }
     if (context.mode === "key") {
       const present = this.keys.get(id(context.table)) ?? new Set();
@@ -261,12 +252,31 @@ export class Analysis {
           info: k.description,
           kind: "property" as const,
         }));
-      return { from: context.from, options };
+      return { from: context.from, to: this.wordEnd(pos), options };
     }
     const options = this.schema
       .values(context.path, this.written(context.path.slice(0, -1)))
       .map((v) => ({ label: v, kind: "value" as const }));
-    return options.length ? { from: context.from, options } : undefined;
+    return options.length
+      ? { from: context.from, to: this.valueEnd(pos, context.typed), options }
+      : undefined;
+  }
+
+  // Where the word at `pos` ends, so a completion replaces all of it.
+  private wordEnd(pos: number): number {
+    return pos + /^[A-Za-z0-9_-]*/.exec(this.text.slice(pos))![0].length;
+  }
+
+  // Where the value at `pos` ends: the rest of the word, or in a quoted string, its closing
+  // quote, so a completion does not leave the old quote behind.
+  private valueEnd(pos: number, typed: string): number {
+    const quote = typed[0];
+    if (quote === '"' || quote === "'") {
+      const close = this.text.indexOf(quote, pos);
+      const eol = this.text.indexOf("\n", pos);
+      if (close !== -1 && (eol === -1 || close < eol)) return close + 1;
+    }
+    return this.wordEnd(pos);
   }
 }
 

@@ -86,6 +86,21 @@ test("a value of the wrong kind is reported", () => {
   );
 });
 
+test("a numeric key is checked like any other", () => {
+  assert.deepEqual(problems("[settings]\n404 = true\n"), [
+    "warning 404: not a key mise reads",
+  ]);
+});
+
+test("a bad escape is a syntax error, and the rest is still read", () => {
+  const found = problems(
+    '[settings]\njobs = "\\U00110000"\nexperimantal = true\n',
+  );
+  assert.equal(found.length, 3);
+  assert.match(found[0], /^error/);
+  assert.match(found[2], /did you mean experimental/);
+});
+
 test("a deprecated key is noted", () => {
   const found = problems('[hooks]\nenter = { script = "echo hi" }\n');
   assert.equal(found.length, 1);
@@ -145,6 +160,12 @@ test("completion offers sections in a header, and choices for a value", () => {
     .completions(valuePos)!
     .options.map((o) => o.label);
   assert.deepEqual(values.sort(), ["false", "true"]);
+
+  // A choice replaces the whole quoted value, closing quote included.
+  const [quoted, quotedPos] = at('[settings]\nstatus.missing_tools = "ne|"\n');
+  const result = analyze(quoted, schema).completions(quotedPos)!;
+  assert.equal(quoted.slice(result.from, result.to), '"ne"');
+  assert.ok(result.options.some((o) => o.label === '"never"'));
 
   const [tools, toolsPos] = at("[tools]\n|");
   const backends = analyze(tools, schema).completions(toolsPos)!.options;

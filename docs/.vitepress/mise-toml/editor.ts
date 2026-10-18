@@ -408,6 +408,7 @@ export async function createEditor(
           }
           return {
             from: result.from,
+            to: result.to,
             validFor: /^[\w"'.:-]*$/,
             options: result.options.map((o): CodeMirrorCompletion => ({
               label: o.label,

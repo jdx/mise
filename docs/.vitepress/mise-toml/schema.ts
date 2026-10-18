@@ -436,7 +436,7 @@ export class MiseSchema {
     const nodes = this.at(path);
     const { forms, fitted } = this.forms(parentPath, parent);
     const named = forms.some((n) => directChild(n, name) !== undefined);
-    const known = isIndex(name) || named || (fitted && acceptsAnyKey(forms));
+    const known = named || (fitted && acceptsAnyKey(forms));
     let suggestion: string | undefined;
     if (!known) {
       const keys = forms.flatMap((n) =>

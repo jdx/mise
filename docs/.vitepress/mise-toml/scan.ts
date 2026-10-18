@@ -37,8 +37,14 @@ export type Entry = {
   value?: Value;
 };
 
-/** An inline table `{ ... }`, whose keys belong to `path`. */
-export type Container = { path: string[]; from: number; to: number };
+/** An inline table `{ ... }`, whose keys belong to `path`, or an array `[ ... ]`, whose items
+ * are values of `path`. */
+export type Container = {
+  kind: "table" | "array";
+  path: string[];
+  from: number;
+  to: number;
+};
 
 export type Scan = {
   entries: Entry[];
@@ -115,9 +121,14 @@ export function scan(text: string): Scan {
         } else if (next === "u" || next === "U") {
           const width = next === "u" ? 4 : 8;
           const hex = text.slice(pos + 2, pos + 2 + width);
-          out += /^[0-9a-fA-F]+$/.test(hex)
-            ? String.fromCodePoint(parseInt(hex, 16))
-            : "";
+          const code = /^[0-9a-fA-F]+$/.test(hex) ? parseInt(hex, 16) : -1;
+          // Anything but a Unicode scalar value is a syntax error, which smol-toml reports.
+          const scalar =
+            hex.length === width &&
+            code >= 0 &&
+            code <= 0x10ffff &&
+            (code < 0xd800 || code > 0xdfff);
+          out += scalar ? String.fromCodePoint(code) : "";
           pos += 2 + width;
         } else if (multi && (next === "\n" || next === " " || next === "\r")) {
           // A line-ending backslash trims the newline and the whitespace after it.
@@ -169,6 +180,13 @@ export function scan(text: string): Scan {
     }
     if (c === "[") {
       pos++;
+      const container: Container = {
+        kind: "array",
+        path,
+        from,
+        to: text.length,
+      };
+      containers.push(container);
       let index = 0;
       for (;;) {
         blank();
@@ -184,11 +202,17 @@ export function scan(text: string): Scan {
         // Something that is not an element: give up on the rest of the array.
         else if (text[pos] !== "]" && pos === before) break;
       }
+      container.to = pos;
       return { kind: "array", from, to: pos };
     }
     if (c === "{") {
       pos++;
-      const container: Container = { path, from, to: text.length };
+      const container: Container = {
+        kind: "table",
+        path,
+        from,
+        to: text.length,
+      };
       containers.push(container);
       for (;;) {
         blank();
@@ -325,11 +349,12 @@ export function tableKeys(result: Scan): Map<string, Set<string>> {
     if (!keys.has(id)) keys.set(id, new Set());
     keys.get(id)!.add(name);
   };
+  // Each written key belongs to the table its path leads to. An array's index is in a path but
+  // never a segment, so it is not taken for a key, while a key such as `404` is.
   for (const entry of result.entries) {
-    entry.path.forEach((name, i) => {
-      // An index is the position in an array, not a key of a table.
-      if (!/^\d+$/.test(name)) add(entry.path.slice(0, i), name);
-    });
+    for (const segment of entry.segments) {
+      add(segment.path.slice(0, -1), segment.name);
+    }
   }
   return keys;
 }
@@ -341,7 +366,7 @@ export type Context =
   | { mode: "header"; from: number; typed: string };
 
 export function contextAt(text: string, result: Scan, pos: number): Context {
-  // The innermost inline table around `pos`, if any.
+  // The innermost inline table or array around `pos`, if any.
   const container = result.containers
     .filter(
       (c) =>
@@ -359,6 +384,9 @@ export function contextAt(text: string, result: Scan, pos: number): Context {
     const typed = /[A-Za-z0-9_."'-]*$/.exec(text.slice(lineStart, pos))![0];
     return { mode: "header", from: pos - typed.length, typed };
   }
+  // In an array, whatever is typed is an item: a value of the array's key.
+  if (container?.kind === "array")
+    return { mode: "value", path: [...container.path, "0"], from, typed: word };
   const table = container ? container.path : sectionAt(result, pos);
   const eq = indexOfUnquoted(before, "=");
   if (eq === -1)

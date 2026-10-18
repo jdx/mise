@@ -18,6 +18,8 @@ const ready = ref(false);
 const failed = ref(false);
 const copied = ref("");
 let view: import("@codemirror/view").EditorView | undefined;
+// Set when the page leaves while the editor is still loading, so it is not attached afterwards.
+let unmounted = false;
 let current = props.code ?? "";
 
 const PARAM = "config";
@@ -53,7 +55,8 @@ onMounted(async () => {
   current = doc;
   try {
     const { createEditor } = await import("../.vitepress/mise-toml/editor.ts");
-    view = await createEditor(host.value!, {
+    if (unmounted) return;
+    const created = await createEditor(host.value!, {
       doc,
       readonly: props.readonly,
       onChange: (text) => {
@@ -61,6 +64,11 @@ onMounted(async () => {
         copied.value = "";
       },
     });
+    if (unmounted) {
+      created.destroy();
+      return;
+    }
+    view = created;
     ready.value = true;
   } catch (error) {
     failed.value = true;
@@ -68,7 +76,10 @@ onMounted(async () => {
   }
 });
 
-onBeforeUnmount(() => view?.destroy());
+onBeforeUnmount(() => {
+  unmounted = true;
+  view?.destroy();
+});
 
 async function copy(text: string, what: string) {
   try {
