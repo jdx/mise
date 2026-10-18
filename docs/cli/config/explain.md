@@ -19,6 +19,8 @@ file by default; select another with `--file`, `--global`, or `--system`.
 ## Arguments
 - **`[KEY]`** — Dotted key path to describe, with the keys under it; omit for the whole file
 
+  Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
+
 ## Flags
 - **`-f --file <FILE>`** — Config file to read, or a directory whose config file to read
 

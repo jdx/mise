@@ -2513,7 +2513,11 @@ Defaults to the highest-precedence loaded TOML file other than the global overri
         }
         flag "-J --json" help="Print the keys as JSON"
         flag "-h --help" help="Print help" action=help builtin=#true
-        arg "[KEY]" help="Dotted key path to describe, with the keys under it; omit for the whole file" required=#false
+        arg "[KEY]" help="Dotted key path to describe, with the keys under it; omit for the whole file" help_long=#"""
+Dotted key path to describe, with the keys under it; omit for the whole file
+
+Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
+"""# required=#false
         example #"""
 mise config explain
 ~/src/app/mise.toml

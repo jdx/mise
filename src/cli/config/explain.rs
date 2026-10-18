@@ -30,6 +30,8 @@ use toml_edit::{Item, TableLike};
 )]
 pub(super) struct ConfigExplain {
     /// Dotted key path to describe, with the keys under it; omit for the whole file
+    ///
+    /// Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
     #[usage(complete = complete_key)]
     pub key: Option<String>,
 
@@ -72,7 +74,10 @@ fn complete_key(
 /// One key the file sets.
 #[derive(Debug, serde::Serialize)]
 struct Explained {
+    /// the path as it is printed, with a key that has a dot in its name quoted
     key: String,
+    /// the keys of the path, unquoted
+    path: Vec<String>,
     line: usize,
     description: Option<String>,
     deprecated: bool,
@@ -115,7 +120,8 @@ impl ConfigExplain {
         // A table split across headers is walked as one, so put its keys back in file order.
         keys.sort_by_key(|k| k.line);
         if let Some(prefix) = &self.key {
-            keys.retain(|k| k.key == *prefix || k.key.starts_with(&format!("{prefix}.")));
+            let wanted = split_path(prefix);
+            keys.retain(|k| k.path.starts_with(&wanted));
             if keys.is_empty() {
                 bail!("Key not found: {prefix} in {}", display_path(&file));
             }
@@ -148,6 +154,34 @@ impl Explained {
         } else {
             description.to_string()
         }
+    }
+}
+
+/// A dotted key path split into its keys, honoring TOML quotes: `tasks."build.sh"` is `tasks`
+/// and `build.sh`, not three keys.
+fn split_path(path: &str) -> Vec<String> {
+    let mut keys = vec![String::new()];
+    let mut quote = None;
+    for c in path.chars() {
+        match (quote, c) {
+            (None, '"' | '\'') => quote = Some(c),
+            (Some(q), c) if c == q => quote = None,
+            (None, '.') => keys.push(String::new()),
+            (_, c) => keys.last_mut().expect("starts with a key").push(c),
+        }
+    }
+    keys
+}
+
+/// A key as it is printed in a path: quoted when its name would not split back into itself,
+/// such as the task `build.sh`.
+fn quote_key(name: &str) -> String {
+    if !name.is_empty() && !name.contains(['.', '"', '\'']) && !name.contains(char::is_whitespace) {
+        name.to_string()
+    } else if name.contains('"') {
+        format!("'{name}'")
+    } else {
+        format!("\"{name}\"")
     }
 }
 
@@ -268,7 +302,12 @@ fn explain(path: &[String], line: usize, item: &Item, parent_value: &Written) ->
         .or(candidates.first())
         .is_some_and(|candidate| deprecated_itself(root, candidate));
     Explained {
-        key: segments.join("."),
+        key: path
+            .iter()
+            .map(|s| quote_key(s))
+            .collect::<Vec<_>>()
+            .join("."),
+        path: path.to_vec(),
         line,
         description,
         deprecated,

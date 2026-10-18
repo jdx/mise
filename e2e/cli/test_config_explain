@@ -114,3 +114,16 @@ port = 5432
 EOF
 assert_contains "mise config explain --file project.toml" "daemons.shared.port     not a key mise reads"
 assert_not_contains "mise config explain --file project.toml" "did you mean port"
+
+# A task name with a dot in it is one key: it is printed quoted, and a filter for
+# `tasks.hello` does not take in the separate task `hello.sh`.
+cat <<'EOF' >dots.toml
+[tasks.hello]
+run = "echo hello"
+
+[tasks."hello.sh"]
+run = "echo hello.sh"
+EOF
+assert "mise config explain --file dots.toml tasks.hello --json | jq -r 'map(.key) | join(\" \")'" "tasks.hello tasks.hello.run"
+assert "mise config explain --file dots.toml 'tasks.\"hello.sh\"' --json | jq -r 'map(.key) | join(\" \")'" 'tasks."hello.sh" tasks."hello.sh".run'
+assert "mise config explain --file dots.toml 'tasks.\"hello.sh\"' --json | jq -r '.[0].path | join(\"|\")'" "tasks|hello.sh"
