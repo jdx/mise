@@ -5302,8 +5302,10 @@ fn describe(req: &FileRequest) -> Result<String> {
                 0 => String::new(),
                 n => format!(", rm {n} stale link(s)"),
             };
+            // Windows copies each file (see `link_path`), so say `cp` rather than promise links
+            let verb = if cfg!(windows) { "cp -r" } else { ln };
             format!(
-                "{ln} {src}/* into {tgt}/ ({} files){removals}",
+                "{verb} {src}/* into {tgt}/ ({} files){removals}",
                 walk_source_files(req)?.len()
             )
         }
@@ -5322,6 +5324,11 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
         FileMode::Track => format!("tracked {tgt} in place"),
         FileMode::Absent => format!("removed {tgt}"),
         FileMode::Symlink => format!("created symlink {tgt} -> {src}"),
+        // Windows copies each file (see `link_path`), so don't report links it didn't make
+        FileMode::SymlinkEach if cfg!(windows) => format!(
+            "copied {} file(s) from {src} to {tgt}",
+            walk_source_files(req)?.len()
+        ),
         FileMode::SymlinkEach => format!(
             "created {} symlink(s) from {src} in {tgt}",
             walk_source_files(req)?.len()
