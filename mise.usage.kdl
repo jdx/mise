@@ -2485,6 +2485,51 @@ they use.
 """#
     }
     flag "-h --help" help="Print help" action=help builtin=#true
+    cmd explain help="Describe each key in a mise TOML file" effect=read {
+        long_help #"""
+Describe each key in a mise TOML file
+
+Lists every key the file sets, with its line and what it does, from the same schema
+editors use to check a config. A key mise does not read is marked, with the known key it
+most likely meant, and so is a deprecated one. Reads the highest-precedence loaded TOML
+file by default; select another with `--file`, `--global`, or `--system`.
+"""#
+        flag "-f --file --path" help="Config file to read, or a directory whose config file to read" {
+            long_help #"""
+Config file to read, or a directory whose config file to read
+
+Defaults to the highest-precedence loaded TOML file other than the global override files.
+"""#
+            arg <FILE>
+        }
+        flag "-g --global" help="Read the global config file" {
+            conflicts "--file" "--system"
+        }
+        flag --system help="Read the system config file" {
+            conflicts "--file" "--global"
+        }
+        flag --override help="Read the global override file, `config.override.toml`" {
+            conflicts "--file" "--global" "--system"
+        }
+        flag "-J --json" help="Print the keys as JSON"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[KEY]" help="Dotted key path to describe, with the keys under it; omit for the whole file" help_long=#"""
+Dotted key path to describe, with the keys under it; omit for the whole file
+
+Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
+"""# required=#false
+        example #"""
+mise config explain
+~/src/app/mise.toml
+   1  tools                  dev tools to use
+   2  tools.node             a version of the tool, or a table with its version and options
+   4  settings               mise settings
+   5  settings.experimantal  not a key mise reads; did you mean experimental?
+"""# help="Describe the keys of the project config"
+        example "mise config explain tasks" help="Describe only the keys under [tasks]"
+        complete file type=path
+        complete key run="mise __complete_word__ --candidates key --line={{ words | shell_join | shell_quote }}"
+    }
     cmd get help="Print a value from one mise TOML file" effect=read {
         long_help #"""
 Print a value from one mise TOML file
@@ -2511,7 +2556,11 @@ For a directory, mise reads the TOML config file already there, such as `.mise.t
             conflicts "--file" "--global" "--system"
         }
         flag "-h --help" help="Print help" action=help builtin=#true
-        arg "[KEY]" help="Dotted key path to print, such as `tools.python`; omit to print the whole file" required=#false
+        arg "[KEY]" help="Dotted key path to print, such as `tools.python`; omit to print the whole file" help_long=#"""
+Dotted key path to print, such as `tools.python`; omit to print the whole file
+
+Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
+"""# required=#false
         example #"""
 mise config get tools.python
 3.13
@@ -2603,7 +2652,11 @@ For a directory, mise edits the TOML config file already there, such as `.mise.t
             }
         }
         flag "-h --help" help="Print help" action=help builtin=#true
-        arg <KEY> help="Dotted key path to set, such as `tools.python`"
+        arg <KEY> help="Dotted key path to set, such as `tools.python`" help_long=#"""
+Dotted key path to set, such as `tools.python`
+
+Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
+"""#
         arg "[VALUE]" help="The value to set the key to (optional if provided as KEY=VALUE)" required=#false
         example "mise config set tools.python 3.13" help="Request python 3.13"
         example "mise config set env.NODE_ENV production" help="Set an environment variable"

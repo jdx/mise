@@ -200,6 +200,7 @@ pub(crate) fn tools() -> Schema {
 
 fn tool() -> Schema {
     json_schema!({
+        "description": "a version of the tool, or a table with its version and options",
         "oneOf": [
             {"description": "version of the tool to install", "type": "string"},
             {

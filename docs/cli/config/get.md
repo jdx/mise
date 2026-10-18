@@ -18,6 +18,8 @@ template-expanded environment; use `mise env` for the resolved environment.
 ## Arguments
 - **`[KEY]`** — Dotted key path to print, such as `tools.python`; omit to print the whole file
 
+  Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
+
 ## Flags
 - **`-f --file <FILE>`** — Config file to read, or a directory whose config file to read
 

@@ -297,6 +297,7 @@ fn vars() -> Schema {
             }
         },
         "additionalProperties": {
+            "description": "a variable: its value, or a table with `value`, `default`, `required` or `age`",
             "oneOf": [
                 {"description": "value of variable", "type": "string"},
                 {"description": "value of variable", "type": "integer"},

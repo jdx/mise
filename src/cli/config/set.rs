@@ -53,6 +53,10 @@ use std::path::PathBuf;
 )]
 pub(super) struct ConfigSet {
     /// Dotted key path to set, such as `tools.python`
+    ///
+    /// Quote a key with a dot in its name as TOML does, inside shell quotes:
+    /// `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when
+    /// there is no key `build` in the way.
     #[usage(complete = complete_key)]
     pub key: String,
 
@@ -158,8 +162,18 @@ impl ConfigSet {
             Err(error) => return Err(error.into()),
         };
         let mut config: toml_edit::DocumentMut = raw.parse()?;
+        let parts = super::keys::rejoin(super::keys::split_keys(&full_key), |path| {
+            path.iter()
+                .try_fold(config.as_item(), |item, k| item.get(k))
+                .is_some()
+        });
+        // The decoded keys, not the key as typed, say what is being set: `settings."jobs"` is
+        // the `jobs` setting.
+        let setting =
+            (parts.first().map(String::as_str) == Some("settings")).then(|| parts[1..].join("."));
+        let is_paranoid = setting.as_deref() == Some("paranoid");
+        let in_tools = parts.first().map(String::as_str) == Some("tools");
         let mut container = config.as_item_mut();
-        let parts = full_key.split('.').collect::<Vec<&str>>();
         let last_key = parts.last().unwrap();
         for (idx, part) in parts.iter().take(parts.len() - 1).enumerate() {
             container = container
@@ -170,15 +184,14 @@ impl ConfigSet {
                         parts[..idx].join(".")
                     )
                 })?
-                .entry(part)
+                .entry(part.as_str())
                 .or_insert({
                     let mut t = toml_edit::Table::new();
                     t.set_implicit(true);
                     toml_edit::Item::Table(t)
                 });
             // if the key is a tool with a simple value, we want to convert it to an inline table preserving the version
-            let is_simple_tool_version =
-                full_key.starts_with("tools.") && idx == 1 && !container.is_table_like();
+            let is_simple_tool_version = in_tools && idx == 1 && !container.is_table_like();
             if is_simple_tool_version {
                 let mut inline_table = toml_edit::InlineTable::new();
                 inline_table.insert("version", container.as_value().unwrap().clone());
@@ -199,9 +212,7 @@ impl ConfigSet {
         };
         let type_to_use = match self.type_ {
             TomlValueTypes::Infer => {
-                let expected_type = full_key
-                    .strip_prefix("settings.")
-                    .and_then(|key| SETTINGS_META.get(key));
+                let expected_type = setting.as_deref().and_then(|key| SETTINGS_META.get(key));
                 match expected_type {
                     Some(meta) => match meta.type_ {
                         SettingsType::Bool => TomlValueTypes::Bool,
@@ -224,7 +235,7 @@ impl ConfigSet {
         };
 
         // Settings load rejects an unknown category, which would fail every later command.
-        if full_key == "settings.paranoid" {
+        if is_paranoid {
             value
                 .replace("[]", "")
                 .parse::<mise_settings::Paranoid>()
@@ -236,7 +247,7 @@ impl ConfigSet {
             TomlValueTypes::Float => toml_edit::value(value.parse::<f64>()?),
             TomlValueTypes::Bool => toml_edit::value(match parse_bool(&value) {
                 Ok(value) => value,
-                Err(err) if full_key == "settings.paranoid" => {
+                Err(err) if is_paranoid => {
                     mise_settings::Paranoid::bool_spelling(&value).ok_or(err)?
                 }
                 Err(err) => return Err(err),

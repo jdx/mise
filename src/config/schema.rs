@@ -52,22 +52,25 @@ fn expand_at<'a>(root: &'a Value, node: &'a Value, out: &mut Vec<&'a Value>, dep
 pub fn child<'a>(root: &'a Value, nodes: &[&'a Value], key: &str) -> Vec<&'a Value> {
     let mut out = vec![];
     for node in nodes {
-        let schema = node
-            .get("properties")
-            .and_then(|properties| properties.get(key))
-            .or_else(|| pattern_property(node, key))
-            .or_else(|| node.get("additionalProperties").filter(|v| v.is_object()))
-            .or_else(|| {
-                key.parse::<usize>()
-                    .ok()
-                    .and(node.get("items"))
-                    .filter(|v| v.is_object())
-            });
-        if let Some(schema) = schema {
+        if let Some(schema) = direct_child(node, key) {
             expand(root, schema, &mut out);
         }
     }
     out
+}
+
+/// The schema `node` gives `key`, as written: see [`child`].
+pub fn direct_child<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
+    node.get("properties")
+        .and_then(|properties| properties.get(key))
+        .or_else(|| pattern_property(node, key))
+        .or_else(|| node.get("additionalProperties").filter(|v| v.is_object()))
+        .or_else(|| {
+            key.parse::<usize>()
+                .ok()
+                .and(node.get("items"))
+                .filter(|v| v.is_object())
+        })
 }
 
 fn pattern_property<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {

@@ -9,6 +9,7 @@
   },
   "$defs": {
     "task": {
+      "description": "a task: a script, a list of scripts and task references, or a table",
       "oneOf": [
         {
           "description": "script to run",
@@ -940,6 +941,7 @@
         }
       },
       "additionalProperties": {
+        "description": "a variable: its value, or a table with `value`, `default`, `required` or `age`",
         "oneOf": [
           {
             "description": "value of variable",
@@ -1086,6 +1088,7 @@
       }
     },
     "tool": {
+      "description": "a version of the tool, or a table with its version and options",
       "oneOf": [
         {
           "description": "version of the tool to install",

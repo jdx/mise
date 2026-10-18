@@ -423,6 +423,9 @@ export const commands: { [key: string]: Command } = {
   config: {
     hide: false,
     subcommands: {
+      explain: {
+        hide: false,
+      },
       get: {
         hide: false,
       },

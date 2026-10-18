@@ -25,4 +25,7 @@ plain Markdown, one file per section, starting at
 [reference.md](https://mise.jdx.dev/configuration/reference.md), for reading without this page's
 scripts.
 
+To see what each key in one of your own files does, run
+[`mise config explain`](/cli/config/explain.html).
+
 <ConfigReference />
