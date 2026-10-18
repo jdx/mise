@@ -184,8 +184,8 @@ pub enum RunEntry {
 }
 
 // Written by hand rather than `#[serde(untagged)]`, so an entry that matches no shape says which
-// shapes there are. A table reads as untagged did: as a single task when it has `task`, which then
-// ignores `tasks`, and otherwise as a task group, which ignores `args` and `env`.
+// shapes there are. A table reads as untagged did: as a single task when `task`, `args` and `env`
+// parse, which then ignores `tasks`, and otherwise as a task group, which ignores the others.
 impl<'de> Deserialize<'de> for RunEntry {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct RunEntryVisitor;
@@ -217,32 +217,43 @@ impl<'de> Deserialize<'de> for RunEntry {
                         map.next_value::<serde::de::IgnoredAny>()?;
                     }
                 }
-                let field = |table: &mut toml::Table, key: &str| table.remove(key);
-                if let Some(task) = field(&mut table, "task") {
+                let field = |key: &str| table.get(key).cloned();
+                let single = field("task").map(|task| {
                     let task = task
                         .try_into()
                         .map_err(|e| M::Error::custom(format!("`task`: {e}")))?;
-                    let args = field(&mut table, "args")
+                    let args = field("args")
                         .map(toml::Value::try_into)
                         .transpose()
                         .map_err(|e| M::Error::custom(format!("`args`: {e}")))?
                         .unwrap_or_default();
-                    let env = field(&mut table, "env")
+                    let env = field("env")
                         .map(toml::Value::try_into)
                         .transpose()
                         .map_err(|e| M::Error::custom(format!("`env`: {e}")))?
                         .unwrap_or_default();
-                    return Ok(RunEntry::SingleTask { task, args, env });
-                }
-                if let Some(tasks) = field(&mut table, "tasks") {
-                    let tasks = tasks
+                    Ok(RunEntry::SingleTask { task, args, env })
+                });
+                let single = match single {
+                    Some(Ok(single)) => return Ok(single),
+                    Some(Err(e)) => Some(e),
+                    None => None,
+                };
+                // As with untagged, a table that is not a valid single task can still be a group.
+                let group = field("tasks").map(|tasks| {
+                    tasks
                         .try_into()
-                        .map_err(|e| M::Error::custom(format!("`tasks`: {e}")))?;
-                    return Ok(RunEntry::TaskGroup { tasks });
+                        .map(|tasks| RunEntry::TaskGroup { tasks })
+                        .map_err(|e| M::Error::custom(format!("`tasks`: {e}")))
+                });
+                match (group, single) {
+                    (Some(Ok(group)), _) => Ok(group),
+                    // a table with `task` reports what is wrong with it as a single task
+                    (_, Some(e)) | (Some(Err(e)), None) => Err(e),
+                    (None, None) => Err(M::Error::custom(
+                        "a run entry table needs `task` (one task) or `tasks` (tasks run in parallel)",
+                    )),
                 }
-                Err(M::Error::custom(
-                    "a run entry table needs `task` (one task) or `tasks` (tasks run in parallel)",
-                ))
             }
         }
 
@@ -279,6 +290,21 @@ mod run_entry_tests {
                 .unwrap_err()
                 .to_string()
                 .contains("`args`")
+        );
+        // a table that fails as a single task still reads as a group
+        assert!(matches!(
+            parse(r#"{ task = 1, tasks = ["lint"] }"#).unwrap(),
+            RunEntry::TaskGroup { tasks } if tasks == ["lint"]
+        ));
+        assert!(matches!(
+            parse(r#"{ task = "lint", args = 1, tasks = ["a"] }"#).unwrap(),
+            RunEntry::TaskGroup { tasks } if tasks == ["a"]
+        ));
+        assert!(
+            parse(r#"{ task = 1, tasks = 2 }"#)
+                .unwrap_err()
+                .to_string()
+                .contains("`task`")
         );
         assert!(
             parse(r#"{ tsk = "lint" }"#)
