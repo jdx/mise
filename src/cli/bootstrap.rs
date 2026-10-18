@@ -11,7 +11,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use usage_rs::spec::ValueEnum;
 
-use super::dotfiles::{Dotfiles, DotfilesApply, prune_orphans, write_and_reload};
+use super::dotfiles::{Dotfiles, DotfilesApply, prune_orphans, write_and_reload_with};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
@@ -2243,9 +2243,12 @@ impl Bootstrap {
                 debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
             }
             // the same [history.reload] commands `mise dot apply` runs, for
-            // the targets this phase writes
+            // the targets this phase writes. Resolved once, before anything
+            // is written, so neither the apply nor the prune can change
+            // which commands run
+            let reload = system::history::config::reload_commands()?;
             if (!files.is_empty() || !edits.is_empty())
-                && !write_and_reload(self.dry_run, |written| {
+                && !write_and_reload_with(&reload, self.dry_run, |written| {
                     self.apply_dotfiles(&config, &files, &edits, &secrets, written)
                 })?
             {
@@ -2263,10 +2266,9 @@ impl Bootstrap {
             // after the reload, so a configuration entry that deselects a group
             // releases that group's files in this run
             if self.prune_dotfiles
-                && !write_and_reload(self.dry_run, |written| {
+                && !write_and_reload_with(&reload, self.dry_run, |written| {
                     info!("bootstrap: pruning dotfiles");
-                    prune_orphans(&config, self.dry_run, false, self.yes, written)?;
-                    Ok(true)
+                    prune_orphans(&config, self.dry_run, false, self.yes, written)
                 })?
             {
                 return Ok(declined());

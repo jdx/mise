@@ -209,7 +209,9 @@ impl DotfilesApply {
 
     /// Remove what deselected or undeclared groups left behind.
     fn prune(&self, config: &Config, written: &mut Vec<PathBuf>) -> Result<()> {
-        prune_orphans(config, self.dry_run, self.force, self.yes, written)
+        // a declined prompt only skips the prune here
+        prune_orphans(config, self.dry_run, self.force, self.yes, written)?;
+        Ok(())
     }
 
     fn file_opts(&self) -> system::files::ApplyOpts {
@@ -259,20 +261,10 @@ impl DotfilesApply {
 }
 
 /// Runs `write`, then the `[history.reload]` commands matching the targets it
-/// recorded, and returns its result. Shared by `mise dot apply` and the
-/// dotfiles phase of `mise bootstrap`.
-pub(crate) fn write_and_reload(
-    dry_run: bool,
-    write: impl FnOnce(&mut Vec<PathBuf>) -> Result<bool>,
-) -> Result<bool> {
-    // resolved from the trusted layers before anything is written, so
-    // nothing this apply writes can change which commands run afterwards
-    let reload = system::history::config::reload_commands()?;
-    write_and_reload_with(&reload, dry_run, write)
-}
-
-/// [`write_and_reload`] with the reload commands resolved by the caller, for
-/// an apply that writes in more than one pass.
+/// recorded, and returns its result. The caller resolves the commands before
+/// anything is written, so nothing the apply writes can change which commands
+/// run afterwards. Shared by `mise dot apply` and the dotfiles phase of
+/// `mise bootstrap`.
 pub(crate) fn write_and_reload_with(
     reload: &IndexMap<String, String>,
     dry_run: bool,
@@ -295,14 +287,15 @@ pub(crate) fn write_and_reload_with(
 
 /// Remove the files that dotfile groups deployed but no active entry deploys
 /// now, appending each removed path to `written`. Shared by `mise dot apply
-/// --prune` and `mise bootstrap --prune-dotfiles`.
+/// --prune` and `mise bootstrap --prune-dotfiles`. Returns `false` when the
+/// confirmation prompt was declined.
 pub(crate) fn prune_orphans(
     config: &Config,
     dry_run: bool,
     force: bool,
     yes: bool,
     written: &mut Vec<PathBuf>,
-) -> Result<()> {
+) -> Result<bool> {
     // checked against this config, which an earlier apply may have replaced
     super::ensure_prune_sees_every_group(config)?;
     let active = system::files::files_from_config(config)?;
@@ -315,7 +308,7 @@ pub(crate) fn prune_orphans(
         .map(|path| path.target.display_user())
         .collect::<Vec<_>>();
     if present.is_empty() {
-        return Ok(());
+        return Ok(true);
     }
     // removal is confirmed like any other apply change
     if !dry_run
@@ -325,10 +318,10 @@ pub(crate) fn prune_orphans(
             .is_yes()
     {
         info!("files: prune skipped");
-        return Ok(());
+        return Ok(false);
     }
     for record in orphaned {
         written.extend(system::dotfile_groups::remove_recorded(&record, &opts)?);
     }
-    Ok(())
+    Ok(true)
 }
