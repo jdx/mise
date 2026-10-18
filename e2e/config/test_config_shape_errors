@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# A value with several accepted shapes says which shapes it takes, or names the bad key.
+
+# schema: invalid
+cat <<'EOF' >mise.toml
+[hooks]
+enter = 1
+EOF
+assert_fail "mise env" "expected a command string, a table with"
+
+# schema: invalid
+cat <<'EOF' >mise.toml
+[hooks]
+enter = { runn = "echo hi" }
+EOF
+assert_fail "mise env" "unknown field"
+
+# schema: invalid
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = [{ tsk = "lint" }]
+EOF
+assert_fail "mise tasks ls" "a run entry table needs"
+
+# schema: invalid
+cat <<'EOF' >mise.toml
+[env]
+FOO = [1]
+EOF
+assert_fail "mise env" "Environment variable 'FOO' cannot be an array"

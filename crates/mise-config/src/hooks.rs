@@ -4,7 +4,10 @@
 mod schema;
 pub(crate) use schema::defs as schema_defs;
 
-use serde::Deserialize;
+use std::fmt::Formatter;
+
+use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer};
 
 /// The event a hook runs on.
 #[derive(
@@ -45,8 +48,7 @@ impl HookScripts {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone)]
 pub enum HookDef {
     /// Array of hook definitions: `enter = ["echo hello", { task = "setup" }]`
     Array(Vec<HookDefItem>),
@@ -69,8 +71,46 @@ impl HookDef {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged, deny_unknown_fields)]
+// Written by hand rather than `#[serde(untagged)]`, so a hook that matches no shape says which
+// shapes there are, and a mistyped key in a hook table is named.
+impl<'de> Deserialize<'de> for HookDef {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct HookDefVisitor;
+
+        impl<'de> Visitor<'de> for HookDefVisitor {
+            type Value = HookDef;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str(concat!(
+                    "a command string, a table with `run`, `script`, `scripts` or `task`, ",
+                    "or a list of those"
+                ))
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(HookDef::One(HookDefItem::RunString(v.to_string())))
+            }
+
+            fn visit_seq<S: de::SeqAccess<'de>>(self, mut seq: S) -> Result<Self::Value, S::Error> {
+                let mut items = vec![];
+                while let Some(item) = seq.next_element()? {
+                    items.push(item);
+                }
+                Ok(HookDef::Array(items))
+            }
+
+            fn visit_map<M: de::MapAccess<'de>>(self, map: M) -> Result<Self::Value, M::Error> {
+                HookTable::deserialize(de::value::MapAccessDeserializer::new(map))?
+                    .into_item()
+                    .map(HookDef::One)
+            }
+        }
+
+        deserializer.deserialize_any(HookDefVisitor)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum HookDefItem {
     /// Simple run string: `enter = "echo hello"`
     RunString(String),
@@ -90,36 +130,81 @@ pub enum HookDefItem {
     TaskRef { task: String },
 }
 
+impl<'de> Deserialize<'de> for HookDefItem {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct HookDefItemVisitor;
+
+        impl<'de> Visitor<'de> for HookDefItemVisitor {
+            type Value = HookDefItem;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str(
+                    "a command string or a table with `run`, `script`, `scripts` or `task`",
+                )
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(HookDefItem::RunString(v.to_string()))
+            }
+
+            fn visit_map<M: de::MapAccess<'de>>(self, map: M) -> Result<Self::Value, M::Error> {
+                HookTable::deserialize(de::value::MapAccessDeserializer::new(map))?.into_item()
+            }
+        }
+
+        deserializer.deserialize_any(HookDefItemVisitor)
+    }
+}
+
+/// Every key a hook table may hold. Which of them are set decides the [`HookDefItem`].
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HookTable {
+    run: Option<String>,
+    run_windows: Option<String>,
+    shell: Option<String>,
+    script: Option<HookScripts>,
+    scripts: Option<Vec<String>>,
+    task: Option<String>,
+}
+
+impl HookTable {
+    fn into_item<E: de::Error>(self) -> Result<HookDefItem, E> {
+        let runs = self.run.is_some() || self.run_windows.is_some();
+        if let Some(task) = self.task {
+            if runs || self.shell.is_some() || self.script.is_some() || self.scripts.is_some() {
+                return Err(E::custom("a hook with `task` cannot set any other key"));
+            }
+            return Ok(HookDefItem::TaskRef { task });
+        }
+        match (self.script, self.scripts) {
+            (Some(_), Some(_)) => Err(E::custom("a hook sets `script` or `scripts`, not both")),
+            (Some(_), None) | (None, Some(_)) if runs => Err(E::custom(
+                "a hook sets `run` or `script`/`scripts`, not both",
+            )),
+            (Some(script), None) => Ok(HookDefItem::ScriptTable {
+                script,
+                shell: self.shell,
+            }),
+            (None, Some(scripts)) => Ok(HookDefItem::ScriptsTable {
+                scripts,
+                shell: self.shell,
+            }),
+            (None, None) if runs => Ok(HookDefItem::Run(HookRunTable {
+                run: self.run,
+                run_windows: self.run_windows,
+                shell: self.shell,
+            })),
+            (None, None) => Err(E::custom(
+                "hook run table must define `run` or `run_windows`",
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct HookRunTable {
     pub run: Option<String>,
     pub run_windows: Option<String>,
     pub shell: Option<String>,
-}
-
-impl<'de> Deserialize<'de> for HookRunTable {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Helper {
-            run: Option<String>,
-            run_windows: Option<String>,
-            shell: Option<String>,
-        }
-
-        let helper = <Helper as Deserialize>::deserialize(deserializer)?;
-        if helper.run.is_none() && helper.run_windows.is_none() {
-            return Err(serde::de::Error::custom(
-                "hook run table must define `run` or `run_windows`",
-            ));
-        }
-        Ok(Self {
-            run: helper.run,
-            run_windows: helper.run_windows,
-            shell: helper.shell,
-        })
-    }
 }
