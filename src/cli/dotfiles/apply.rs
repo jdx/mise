@@ -209,9 +209,7 @@ impl DotfilesApply {
 
     /// Remove what deselected or undeclared groups left behind.
     fn prune(&self, config: &Config, written: &mut Vec<PathBuf>) -> Result<()> {
-        // a declined prompt only skips the prune here
-        prune_orphans(config, self.dry_run, self.force, self.yes, written)?;
-        Ok(())
+        prune_orphans(config, self.dry_run, self.force, self.yes, written)
     }
 
     fn file_opts(&self) -> system::files::ApplyOpts {
@@ -287,15 +285,15 @@ pub(crate) fn write_and_reload_with(
 
 /// Remove the files that dotfile groups deployed but no active entry deploys
 /// now, appending each removed path to `written`. Shared by `mise dot apply
-/// --prune` and `mise bootstrap --prune-dotfiles`. Returns `false` when the
-/// confirmation prompt was declined.
+/// --prune` and `mise bootstrap --prune-dotfiles`.. Declining the confirmation prompt
+/// skips the prune and nothing else.
 pub(crate) fn prune_orphans(
     config: &Config,
     dry_run: bool,
     force: bool,
     yes: bool,
     written: &mut Vec<PathBuf>,
-) -> Result<bool> {
+) -> Result<()> {
     // checked against this config, which an earlier apply may have replaced
     super::ensure_prune_sees_every_group(config)?;
     let active = system::files::files_from_config(config)?;
@@ -308,7 +306,7 @@ pub(crate) fn prune_orphans(
         .map(|path| path.target.display_user())
         .collect::<Vec<_>>();
     if present.is_empty() {
-        return Ok(true);
+        return Ok(());
     }
     // removal is confirmed like any other apply change
     if !dry_run
@@ -318,10 +316,10 @@ pub(crate) fn prune_orphans(
             .is_yes()
     {
         info!("files: prune skipped");
-        return Ok(false);
+        return Ok(());
     }
     for record in orphaned {
         written.extend(system::dotfile_groups::remove_recorded(&record, &opts)?);
     }
-    Ok(true)
+    Ok(())
 }

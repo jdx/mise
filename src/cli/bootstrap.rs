@@ -2265,13 +2265,13 @@ impl Bootstrap {
             }
             // after the reload, so a configuration entry that deselects a group
             // releases that group's files in this run
-            if self.prune_dotfiles
-                && !write_and_reload_with(&reload, self.dry_run, |written| {
+            // (declining its prompt skips the prune, as in `mise dot apply`)
+            if self.prune_dotfiles {
+                write_and_reload_with(&reload, self.dry_run, |written| {
                     info!("bootstrap: pruning dotfiles");
-                    prune_orphans(&config, self.dry_run, false, self.yes, written)
-                })?
-            {
-                return Ok(declined());
+                    prune_orphans(&config, self.dry_run, false, self.yes, written)?;
+                    Ok(true)
+                })?;
             }
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PostDotfiles)
                 .await?;
