@@ -4991,7 +4991,9 @@ fn plan_unapply_one<'a>(
                 }
                 // files an earlier apply copied, before `dotfiles.windows_symlinks` was on,
                 // are removed on the same terms as a `copy` entry's
-                if cfg!(windows) {
+                // (a missing source has nothing to compare them with, and must not stop the
+                // recorded links from being removed)
+                if cfg!(windows) && req.source.is_dir() {
                     for (source, target) in walk_source_files(req)? {
                         if !target.is_symlink() {
                             plan_regular_file(&source, &target, opts.force, &mut paths)?;
