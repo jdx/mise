@@ -4,7 +4,7 @@ use crate::{config, dirs, file};
 use eyre::bail;
 use std::io::{self, Read, Write};
 use taplo::formatter::Options;
-use toml_edit::{Array, DocumentMut, RawString, TableLike, Value};
+use toml_edit::{Array, DocumentMut, Item, RawString, TableLike, Value};
 
 /// Format mise TOML configuration
 ///
@@ -273,9 +273,86 @@ fn has_comment(raw: Option<&RawString>) -> bool {
         .is_some_and(|decor| decor.contains('#'))
 }
 
+/// Swap every inline table that spans several lines for a placeholder string,
+/// returning the placeholder and the table's original text.
+///
+/// taplo rewrites an inline table onto one line's worth of layout: it drops the
+/// newlines between entries, so a multiline table (TOML 1.1) comes out with
+/// ragged indentation and its comments land outside the table.
+fn stash_multiline_tables(toml: &str) -> (String, Vec<(String, String)>) {
+    let Ok(mut doc) = toml.parse::<DocumentMut>() else {
+        return (toml.to_string(), vec![]);
+    };
+    let mut prefix = "__mise_fmt_inline_".to_string();
+    while toml.contains(&prefix) {
+        prefix.push('_');
+    }
+    let mut stashed = vec![];
+    for (_, item) in doc.as_table_mut().iter_mut() {
+        stash_item(item, &prefix, &mut stashed);
+    }
+    if stashed.is_empty() {
+        return (toml.to_string(), stashed);
+    }
+    (doc.to_string(), stashed)
+}
+
+fn stash_item(item: &mut Item, prefix: &str, stashed: &mut Vec<(String, String)>) {
+    match item {
+        Item::Value(v) => stash_value(v, prefix, stashed),
+        Item::Table(t) => {
+            for (_, item) in t.iter_mut() {
+                stash_item(item, prefix, stashed);
+            }
+        }
+        Item::ArrayOfTables(tables) => {
+            for t in tables.iter_mut() {
+                for (_, item) in t.iter_mut() {
+                    stash_item(item, prefix, stashed);
+                }
+            }
+        }
+        Item::None => {}
+    }
+}
+
+fn stash_value(v: &mut Value, prefix: &str, stashed: &mut Vec<(String, String)>) {
+    match v {
+        Value::InlineTable(t) if t.to_string().contains('\n') => {
+            let decor = t.decor().clone();
+            t.decor_mut().clear();
+            let placeholder = format!("{prefix}{}", stashed.len());
+            stashed.push((format!("\"{placeholder}\""), t.to_string()));
+            let mut new = Value::from(placeholder);
+            *new.decor_mut() = decor;
+            *v = new;
+        }
+        Value::InlineTable(t) => {
+            for (_, v) in t.iter_mut() {
+                stash_value(v, prefix, stashed);
+            }
+        }
+        Value::Array(a) => {
+            for v in a.iter_mut() {
+                stash_value(v, prefix, stashed);
+            }
+        }
+        _ => {}
+    }
+}
+
 fn format(toml: String) -> Result<String> {
-    let tmp = taplo::formatter::format(
-        &toml,
+    let (toml, stashed) = stash_multiline_tables(&toml);
+    let mut formatted = format_with_taplo(&toml);
+    for (placeholder, original) in stashed {
+        formatted = formatted.replace(&placeholder, &original);
+    }
+    Ok(formatted)
+}
+
+fn format_with_taplo(toml: &str) -> String {
+    taplo::formatter::format(
+        toml,
         Options {
             align_comments: true,
             align_entries: false,
@@ -298,9 +375,7 @@ fn format(toml: String) -> Result<String> {
             reorder_inline_tables: false,
             trailing_newline: true,
         },
-    );
-
-    Ok(tmp)
+    )
 }
 
 #[cfg(test)]
@@ -310,6 +385,28 @@ mod tests {
     /// Run the same pipeline `mise fmt` writes back to a config file.
     fn fmt(toml: &str) -> String {
         format(sort(toml.to_string()).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn keeps_multiline_inline_tables_intact() {
+        let toml = r#"[bootstrap.macos.defaults]
+"com.apple.desktopservices" = {
+  # Prevent .DS_Store files from being created on network volumes
+  DSDontWriteNetworkStores = true,
+}
+
+[bootstrap.macos.launchd.agents]
+# Use the 1Password SSH agent with any SSH client
+SSH_AUTH_SOCK = {
+  program = "/bin/sh",
+  args = [
+    "-c",
+    '/bin/ln -sf "$HOME/x" "$SSH_AUTH_SOCK"',
+  ],
+  run_at_load = true,
+}
+"#;
+        assert_eq!(fmt(toml), toml);
     }
 
     #[test]
