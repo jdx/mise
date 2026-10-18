@@ -8,6 +8,7 @@ repository = "https://github.com/jdx/mise"
 include = ["src/**/*"]
 
 [dependencies]
+mise-config = { path = "../mise-config", version = "0.1" }
 zstd = "0.14"
 base64 = "0.23"
 eyre = "0.6"

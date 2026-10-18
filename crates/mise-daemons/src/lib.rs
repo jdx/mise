@@ -19,7 +19,6 @@ use indexmap::IndexMap;
 use mise_settings::Settings;
 use path_absolutize::Absolutize;
 use ports::{PortClaim, PortRequest};
-use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -31,70 +30,7 @@ pub const EXPERIMENTAL: &str = "[daemons] requires experimental = true";
 /// daemons of its own and recurse.
 pub const DAEMON_TASK_MARKER: &str = "MISE_DAEMON_TASK";
 
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum Declaration {
-    Preset(String),
-    Definition(toml::Table),
-}
-
-/// Project-wide daemon options declared in `[daemons_settings]`.
-///
-/// Every field is optional so a higher-precedence file can set one key without
-/// discarding the others; see [`DaemonSettings::merge`].
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DaemonSettings {
-    /// Fixed pitchfork namespace for this project, replacing the hashed default.
-    #[serde(default)]
-    pub namespace: Option<String>,
-    /// Keep linked git worktrees of one repository in separate namespaces.
-    #[serde(default)]
-    pub namespace_per_worktree: Option<bool>,
-}
-
-impl DaemonSettings {
-    /// Overlay a higher-precedence file's table onto this one, key by key. A
-    /// `mise.local.toml` that sets only `namespace_per_worktree` must not drop
-    /// the `namespace` that `mise.toml` established, because other projects
-    /// refer to daemons by the qualified ID that namespace produces.
-    fn merge(&mut self, other: Self) {
-        if other.namespace.is_some() {
-            self.namespace = other.namespace;
-        }
-        if other.namespace_per_worktree.is_some() {
-            self.namespace_per_worktree = other.namespace_per_worktree;
-        }
-    }
-
-    pub(crate) fn namespace_per_worktree(&self) -> bool {
-        self.namespace_per_worktree.unwrap_or(true)
-    }
-}
-
-/// `[daemon_groups]` entry: a bare list of members or a table with `daemons`.
-/// The table form, matching `additionalProperties: false` in schema/mise.json.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GroupTable {
-    daemons: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum GroupDeclaration {
-    List(Vec<String>),
-    Table(GroupTable),
-}
-
-impl GroupDeclaration {
-    fn members(&self) -> &[String] {
-        match self {
-            GroupDeclaration::List(members) => members,
-            GroupDeclaration::Table(table) => &table.daemons,
-        }
-    }
-}
+pub use mise_config::daemons::{DaemonSettings, Declaration, GroupDeclaration, GroupTable};
 
 #[derive(Debug, Clone)]
 pub struct Group {

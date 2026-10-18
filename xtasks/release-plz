@@ -462,11 +462,13 @@ if [[ $cur_version != "$latest_version" ]]; then
 	cargo add -p mise-oci "mise-util@$MISE_UTIL_VERSION"
 	cargo add -p mise-oci "mise-ui@$MISE_UI_VERSION"
 	cargo add -p mise-oci "mise-system@$MISE_SYSTEM_VERSION"
+	cargo add -p mise-oci "mise-config@$MISE_CONFIG_VERSION"
 	bump_and_publish_subcrate "mise-oci" "crates/mise-oci" "MISE_OCI_VERSION"
 	cargo add -p mise "mise-oci@$MISE_OCI_VERSION"
 
-	# mise-daemons sits on settings and util only.
+	# mise-daemons sits on settings, util, and the mise.toml declaration types.
 	cargo add -p mise-daemons "mise-settings@$MISE_SETTINGS_VERSION"
+	cargo add -p mise-daemons "mise-config@$MISE_CONFIG_VERSION"
 	cargo add -p mise-daemons "mise-util@$MISE_UTIL_VERSION"
 	bump_and_publish_subcrate "mise-daemons" "crates/mise-daemons" "MISE_DAEMONS_VERSION"
 	cargo add -p mise "mise-daemons@$MISE_DAEMONS_VERSION"
