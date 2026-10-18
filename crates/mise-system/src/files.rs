@@ -5868,7 +5868,9 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
     }
     match req.mode {
         FileMode::Symlink => {
-            ensure_windows_link_possible(&req.source, &req.target)?;
+            if let Some(dir) = req.target.parent() {
+                ensure_windows_link_possible(&req.source, dir)?;
+            }
             replace_recorded(&req.target, written, || {
                 link_path(
                     &req.source,
@@ -5896,9 +5898,10 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
         FileMode::SymlinkEach => {
             // before anything is removed or created: Windows may refuse the links, and a
             // `--force` replacement of a blocking file must not have happened by then
-            if let Some((source, _)) = walk_source_files(req)?
-                .into_iter()
-                .find(|(source, _)| source.is_file())
+            if windows_symlinks()
+                && let Some((source, _)) = walk_source_files(req)?
+                    .into_iter()
+                    .find(|(source, _)| source.is_file())
             {
                 ensure_windows_link_possible(&source, &req.target)?;
             }
@@ -6305,33 +6308,34 @@ fn windows_each_copies(files: &[(PathBuf, PathBuf)]) -> usize {
     }
 }
 
-/// With `dotfiles.windows_symlinks` on, prove a file link can be created beside `target` before
-/// `replace_recorded` removes what is there: the removal comes first, so a link Windows then
-/// refuses would leave neither the old file nor a new one.
-fn ensure_windows_link_possible(source: &Path, target: &Path) -> Result<()> {
+/// With `dotfiles.windows_symlinks` on, prove a file link can be created in `links_in` (the
+/// directory the links will go in, which may not exist yet) before `replace_recorded` removes
+/// what is there: the removal comes first, so a link Windows then refuses would leave neither
+/// the old file nor a new one.
+fn ensure_windows_link_possible(source: &Path, links_in: &Path) -> Result<()> {
     #[cfg(windows)]
     if windows_symlinks() && source.is_file() {
-        // a short name in the target's directory, not derived from the target's own: a filename
-        // near the 255-character limit must still leave room for it. Unique, so a file of the
-        // user's can never be the one that gets removed: only a link this call created is.
+        // a short name, not derived from any target's: a filename near the 255-character limit
+        // must still leave room for it. Unique, so a file of the user's can never be the one
+        // that gets removed: only a link this call created is.
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_nanos());
         let name = format!(".mise-probe-{}-{nanos:x}", std::process::id());
-        // the target's directory may not exist yet: use the nearest one that does
-        let dir = target.ancestors().skip(1).find(|dir| dir.is_dir());
+        // the nearest directory that exists, `links_in` itself when it does
+        let dir = links_in.ancestors().find(|dir| dir.is_dir());
         let probe = dir.map_or_else(|| PathBuf::from(&name), |dir| dir.join(&name));
         std::os::windows::fs::symlink_file(source, &probe).wrap_err_with(|| {
             format!(
-                "cannot link {} to {}; turn on Developer Mode or run elevated, or set dotfiles.windows_symlinks = false",
-                target.display_user(),
-                source.display_user()
+                "cannot link {} into {}; turn on Developer Mode or run elevated, or set dotfiles.windows_symlinks = false",
+                source.display_user(),
+                links_in.display_user()
             )
         })?;
         std::fs::remove_file(&probe)?;
     }
     #[cfg(not(windows))]
-    let _ = (source, target);
+    let _ = (source, links_in);
     Ok(())
 }
 
