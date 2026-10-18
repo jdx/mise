@@ -20,7 +20,7 @@ values you mark as sensitive in the output it captures.
 mise secrets is experimental. Enable it and add fnox to the project:
 
 ```sh
-mise settings experimental=true
+mise settings --local experimental=true
 mise use fnox
 ```
 
