@@ -4513,21 +4513,21 @@
           "$ref": "#/$defs/tool_bool"
         },
         "libc": {
-          "description": "force strict glibc or musl asset selection on linux",
           "type": "string",
+          "description": "force strict glibc or musl asset selection on linux",
           "enum": ["glibc", "gnu", "musl"]
         },
         "slsa_signer_identity": {
-          "description": "expected fulcio certificate subject for slsa provenance; requires slsa_signer_issuer",
-          "type": "string"
+          "type": "string",
+          "description": "expected fulcio certificate subject for slsa provenance; requires slsa_signer_issuer"
         },
         "slsa_signer_issuer": {
-          "description": "expected oidc issuer for slsa provenance; requires slsa_signer_identity",
-          "type": "string"
+          "type": "string",
+          "description": "expected oidc issuer for slsa provenance; requires slsa_signer_identity"
         },
         "vars": {
-          "description": "values for aqua registry template variables",
           "type": "object",
+          "description": "values for aqua registry template variables",
           "additionalProperties": {
             "type": "string"
           }
@@ -4616,8 +4616,8 @@
           "$ref": "#/$defs/tool_bool"
         },
         "bin": {
-          "description": "binary to install when a crate has several (cargo install --bin)",
-          "type": "string"
+          "type": "string",
+          "description": "binary to install when a crate has several (cargo install --bin)"
         },
         "rename_exe": {
           "description": "rename the installed executable: a name, or a table of glob = new name",
@@ -4634,8 +4634,8 @@
           ]
         },
         "crate": {
-          "description": "crate to install when a git repository contains several",
-          "type": "string"
+          "type": "string",
+          "description": "crate to install when a git repository contains several"
         },
         "locked": {
           "description": "pass --locked to cargo install (default true)",
@@ -4682,8 +4682,8 @@
       "type": "object",
       "properties": {
         "channel": {
-          "description": "conda channel to resolve the package from (default conda-forge)",
-          "type": "string"
+          "type": "string",
+          "description": "conda channel to resolve the package from (default conda-forge)"
         }
       }
     },
@@ -4723,8 +4723,8 @@
       "type": "object",
       "properties": {
         "runtime": {
-          "description": "install a shared runtime instead of the sdk; the version is the runtime version",
           "type": "string",
+          "description": "install a shared runtime instead of the sdk; the version is the runtime version",
           "enum": ["dotnet", "aspnetcore", "windowsdesktop"]
         }
       }
@@ -4753,8 +4753,8 @@
       "type": "object",
       "properties": {
         "release_type": {
-          "description": "jdk metadata channel: ga (default) or ea for early access builds",
           "type": "string",
+          "description": "jdk metadata channel: ga (default) or ea for early access builds",
           "enum": ["ga", "ea"]
         }
       }
@@ -4787,8 +4787,8 @@
           "$ref": "#/$defs/tool_bool"
         },
         "virtualenv": {
-          "description": "virtualenv path to activate; use env._.python.venv instead",
           "type": "string",
+          "description": "virtualenv path to activate; use env._.python.venv instead",
           "deprecated": true
         }
       }
@@ -4817,8 +4817,8 @@
       "type": "object",
       "properties": {
         "profile": {
-          "description": "rustup profile to install, such as minimal, default or complete",
-          "type": "string"
+          "type": "string",
+          "description": "rustup profile to install, such as minimal, default or complete"
         },
         "components": {
           "description": "rustup components to install",
@@ -4858,12 +4858,12 @@
       "type": "object",
       "properties": {
         "version_prefix": {
-          "description": "release tag prefix stripped from versions and re-added when resolving tags",
-          "type": "string"
+          "type": "string",
+          "description": "release tag prefix stripped from versions and re-added when resolving tags"
         },
         "asset_pattern": {
-          "description": "glob (* and ?) matched against release asset names, tera templated; replaces autodetection",
-          "type": "string"
+          "type": "string",
+          "description": "glob (* and ?) matched against release asset names, tera templated; replaces autodetection"
         },
         "additional_asset_patterns": {
           "description": "extra archives from the same release extracted over the primary asset, in order",
@@ -4880,12 +4880,12 @@
           ]
         },
         "matching": {
-          "description": "substring an asset name must contain, applied before platform autodetection",
-          "type": "string"
+          "type": "string",
+          "description": "substring an asset name must contain, applied before platform autodetection"
         },
         "matching_regex": {
-          "description": "regex an asset name must match, applied before platform autodetection",
-          "type": "string"
+          "type": "string",
+          "description": "regex an asset name must match, applied before platform autodetection"
         },
         "no_app": {
           "description": "penalize macos .app bundle assets during autodetection",
@@ -4906,8 +4906,8 @@
           ]
         },
         "format": {
-          "description": "force the archive format instead of detecting it from the file name",
           "type": "string",
+          "description": "force the archive format instead of detecting it from the file name",
           "enum": [
             "tar.gz",
             "tgz",
@@ -4940,8 +4940,8 @@
           ]
         },
         "checksum": {
-          "description": "expected artifact digest as algo:hash (sha256, sha512, sha1, md5, blake3)",
-          "type": "string"
+          "type": "string",
+          "description": "expected artifact digest as algo:hash (sha256, sha512, sha1, md5, blake3)"
         },
         "size": {
           "description": "expected artifact size in bytes",
@@ -4966,8 +4966,8 @@
           ]
         },
         "bin": {
-          "description": "executable name (or safe relative path) to install the downloaded binary as",
-          "type": "string"
+          "type": "string",
+          "description": "executable name (or safe relative path) to install the downloaded binary as"
         },
         "rename_exe": {
           "description": "rename the extracted executable: a name, or a table of glob = new name",
@@ -4984,8 +4984,8 @@
           ]
         },
         "bin_path": {
-          "description": "directory inside the install that contains binaries (tera templated)",
-          "type": "string"
+          "type": "string",
+          "description": "directory inside the install that contains binaries (tera templated)"
         }
       }
     },
@@ -5003,10 +5003,6 @@
           },
           "additional_asset_patterns": {
             "$ref": "#/$defs/tool_forge_options/properties/additional_asset_patterns"
-          },
-          "url": {
-            "description": "direct download url for this platform, tera templated; skips release asset selection",
-            "type": "string"
           },
           "no_app": {
             "$ref": "#/$defs/tool_forge_options/properties/no_app"
@@ -5034,6 +5030,10 @@
           },
           "format": {
             "$ref": "#/$defs/tool_forge_options/properties/format"
+          },
+          "url": {
+            "description": "direct download url for this platform, tera templated; skips release asset selection",
+            "type": "string"
           }
         }
       }
@@ -5077,8 +5077,8 @@
       "type": "object",
       "properties": {
         "api_url": {
-          "description": "api base url, for self-hosted forgejo or gitea instances",
-          "type": "string"
+          "type": "string",
+          "description": "api base url, for self-hosted forgejo or gitea instances"
         }
       }
     },
@@ -5106,8 +5106,8 @@
       "type": "object",
       "properties": {
         "source": {
-          "description": "gem registry http(s) url used to resolve and install this gem",
-          "type": "string"
+          "type": "string",
+          "description": "gem registry http(s) url used to resolve and install this gem"
         }
       }
     },
@@ -5150,20 +5150,20 @@
       "type": "object",
       "properties": {
         "api_url": {
-          "description": "api base url, for github enterprise or self-hosted instances",
-          "type": "string"
+          "type": "string",
+          "description": "api base url, for github enterprise or self-hosted instances"
         },
         "github_attestations": {
           "description": "verify github artifact attestations when available",
           "$ref": "#/$defs/tool_bool"
         },
         "slsa_signer_identity": {
-          "description": "expected fulcio certificate identity for slsa provenance, tera templated",
-          "type": "string"
+          "type": "string",
+          "description": "expected fulcio certificate identity for slsa provenance, tera templated"
         },
         "slsa_signer_issuer": {
-          "description": "expected oidc issuer for slsa provenance; requires slsa_signer_identity",
-          "type": "string"
+          "type": "string",
+          "description": "expected oidc issuer for slsa provenance; requires slsa_signer_identity"
         }
       }
     },
@@ -5206,8 +5206,8 @@
       "type": "object",
       "properties": {
         "api_url": {
-          "description": "api base url, for self-hosted gitlab instances",
-          "type": "string"
+          "type": "string",
+          "description": "api base url, for self-hosted gitlab instances"
         }
       }
     },
@@ -5286,31 +5286,31 @@
       "type": "object",
       "properties": {
         "url": {
-          "description": "download url, tera templated, http(s) or file://; required for each platform",
-          "type": "string"
+          "type": "string",
+          "description": "download url, tera templated, http(s) or file://; required for each platform"
         },
         "checksum": {
-          "description": "expected artifact digest as algo:hash",
-          "type": "string"
+          "type": "string",
+          "description": "expected artifact digest as algo:hash"
         },
         "checksum_url": {
-          "description": "checksum file or manifest url, used by mise lock without downloading",
-          "type": "string"
+          "type": "string",
+          "description": "checksum file or manifest url, used by mise lock without downloading"
         },
         "checksum_expr": {
-          "description": "expr-lang expression extracting algo:hash from the checksum_url manifest",
-          "type": "string"
+          "type": "string",
+          "description": "expr-lang expression extracting algo:hash from the checksum_url manifest"
         },
         "headers": {
-          "description": "request headers sent with the download, version_list_url and checksum_url requests; values are tera templated (e.g. Bearer {{ env.TOKEN }})",
           "type": "object",
+          "description": "request headers sent with the download, version_list_url and checksum_url requests; values are tera templated (e.g. Bearer {{ env.TOKEN }})",
           "additionalProperties": {
             "type": "string"
           }
         },
         "headers_forward": {
-          "description": "hosts each header in headers may follow a redirect to; exact hosts or *.suffix, and a header with no entry is never forwarded",
           "type": "object",
+          "description": "hosts each header in headers may follow a redirect to; exact hosts or *.suffix, and a header with no entry is never forwarded",
           "additionalProperties": {
             "oneOf": [
               {
@@ -5337,8 +5337,8 @@
           ]
         },
         "format": {
-          "description": "force the archive format instead of detecting it from the url",
           "type": "string",
+          "description": "force the archive format instead of detecting it from the url",
           "enum": [
             "tar.gz",
             "tgz",
@@ -5382,8 +5382,8 @@
           ]
         },
         "bin": {
-          "description": "name for a downloaded raw or compressed single binary (ignored for archives)",
-          "type": "string"
+          "type": "string",
+          "description": "name for a downloaded raw or compressed single binary (ignored for archives)"
         },
         "rename_exe": {
           "description": "rename the extracted executable: a name, or a table of glob = new name",
@@ -5400,32 +5400,32 @@
           ]
         },
         "bin_path": {
-          "description": "directory inside the install that contains binaries (tera templated)",
-          "type": "string"
+          "type": "string",
+          "description": "directory inside the install that contains binaries (tera templated)"
         },
         "shared_extraction": {
           "description": "share extracted content between installs with identical artifacts",
           "$ref": "#/$defs/tool_bool"
         },
         "windows_script_interpreter": {
-          "description": "windows only: write a .cmd launcher running the raw script with this interpreter",
-          "type": "string"
+          "type": "string",
+          "description": "windows only: write a .cmd launcher running the raw script with this interpreter"
         },
         "version_list_url": {
-          "description": "url returning the version list (text, json or html)",
-          "type": "string"
+          "type": "string",
+          "description": "url returning the version list (text, json or html)"
         },
         "version_regex": {
-          "description": "regex extracting versions from the list (first capture group or whole match)",
-          "type": "string"
+          "type": "string",
+          "description": "regex extracting versions from the list (first capture group or whole match)"
         },
         "version_json_path": {
-          "description": "jq-like path extracting versions from json, such as .[].version",
-          "type": "string"
+          "type": "string",
+          "description": "jq-like path extracting versions from json, such as .[].version"
         },
         "version_expr": {
-          "description": "expr-lang expression post-processing versions (variables: body, versions)",
-          "type": "string"
+          "type": "string",
+          "description": "expr-lang expression post-processing versions (variables: body, versions)"
         }
       }
     },
@@ -5553,52 +5553,53 @@
           ]
         },
         "aube_args": {
-          "description": "extra arguments for aube add --global (only with npm.package_manager = aube_cli)",
-          "type": "string"
+          "type": "string",
+          "description": "extra arguments for aube add --global (only with npm.package_manager = aube_cli)"
         },
         "pnpm_args": {
-          "description": "extra arguments for pnpm installs (shell-split)",
-          "type": "string"
+          "type": "string",
+          "description": "extra arguments for pnpm installs (shell-split)"
         },
         "bun_args": {
-          "description": "extra arguments for bun installs (shell-split)",
-          "type": "string"
+          "type": "string",
+          "description": "extra arguments for bun installs (shell-split)"
         },
         "npm_args": {
-          "description": "extra arguments for npm installs (shell-split)",
-          "type": "string"
+          "type": "string",
+          "description": "extra arguments for npm installs (shell-split)"
         }
       }
     },
     "tool_options": {
+      "type": "object",
       "properties": {
         "version": {
-          "description": "version of the tool to install",
-          "type": "string"
+          "type": "string",
+          "description": "version of the tool to install"
         },
         "path": {
-          "description": "path to a custom compiled version",
-          "type": "string"
+          "type": "string",
+          "description": "path to a custom compiled version"
         },
         "prefix": {
-          "description": "version prefix to resolve",
-          "type": "string"
+          "type": "string",
+          "description": "version prefix to resolve"
         },
         "ref": {
-          "description": "version control reference to compile",
-          "type": "string"
+          "type": "string",
+          "description": "version control reference to compile"
         },
         "os": {
           "$ref": "#/$defs/os_filter"
         },
         "minimum_release_age": {
-          "description": "minimum time since a version's release before mise selects it, as a duration such as \"7d\" or an absolute date",
-          "type": "string"
+          "type": "string",
+          "description": "minimum time since a version's release before mise selects it, as a duration such as \"7d\" or an absolute date"
         },
         "install_before": {
+          "type": "string",
           "description": "deprecated alias for minimum_release_age",
-          "deprecated": true,
-          "type": "string"
+          "deprecated": true
         },
         "version_order": {
           "description": "ordering applied to remote versions: \"source\" keeps the backend's order, \"semver\" sorts semantic versions",
@@ -5630,8 +5631,7 @@
         {
           "required": ["ref"]
         }
-      ],
-      "type": "object"
+      ]
     },
     "tool_packslip": {
       "description": "a tool installed with the packslip backend",
@@ -5657,20 +5657,20 @@
       "type": "object",
       "properties": {
         "variant": {
-          "description": "publisher-declared alternative build to select, such as fips",
-          "type": "string"
+          "type": "string",
+          "description": "publisher-declared alternative build to select, such as fips"
         },
         "pubkey": {
-          "description": "minisign public key line or path to a .pub file pinning the signer",
-          "type": "string"
+          "type": "string",
+          "description": "minisign public key line or path to a .pub file pinning the signer"
         },
         "identity": {
-          "description": "exact keyless signer certificate identity",
-          "type": "string"
+          "type": "string",
+          "description": "exact keyless signer certificate identity"
         },
         "identity_prefix": {
-          "description": "keyless signer certificate identity prefix",
-          "type": "string"
+          "type": "string",
+          "description": "keyless signer certificate identity prefix"
         },
         "workflow": {
           "description": "repository workflow file, or a list of them, that signs releases on a tag (or on the ref a name ends with, as in release.yml@refs/heads/main); github.com projects only, not valid with pubkey, identity, identity_prefix, or issuer",
@@ -5688,12 +5688,12 @@
           ]
         },
         "list_identity_prefix": {
-          "description": "separate identity prefix for the vendor release list; needs an issuer, not valid with pubkey",
-          "type": "string"
+          "type": "string",
+          "description": "separate identity prefix for the vendor release list; needs an issuer, not valid with pubkey"
         },
         "issuer": {
-          "description": "oidc issuer for the keyless signer",
-          "type": "string"
+          "type": "string",
+          "description": "oidc issuer for the keyless signer"
         },
         "allow_unlogged": {
           "description": "accept key-signed bundles without transparency-log evidence",
@@ -5704,8 +5704,8 @@
           "$ref": "#/$defs/tool_bool"
         },
         "trust": {
-          "description": "vendor exempts this tool from configured packslip stampers",
           "type": "string",
+          "description": "vendor exempts this tool from configured packslip stampers",
           "enum": ["vendor"]
         }
       }
@@ -5786,33 +5786,33 @@
           ]
         },
         "dependency_prereleases": {
-          "description": "uv prerelease policy for dependency resolution (requires uv)",
           "type": "string",
+          "description": "uv prerelease policy for dependency resolution (requires uv)",
           "enum": ["disallow", "allow", "if-necessary", "explicit"]
         },
         "python": {
-          "description": "mise-managed CPython version for this tool (minor or exact patch)",
-          "type": "string"
+          "type": "string",
+          "description": "mise-managed CPython version for this tool (minor or exact patch)"
         },
         "package_name": {
-          "description": "distribution name for git sources, used to attach extras",
-          "type": "string"
+          "type": "string",
+          "description": "distribution name for git sources, used to attach extras"
         },
         "pipx_args": {
-          "description": "extra arguments for pipx install (shell-split)",
-          "type": "string"
+          "type": "string",
+          "description": "extra arguments for pipx install (shell-split)"
         },
         "uvx": {
           "description": "set to false to install with pipx instead of uv",
           "$ref": "#/$defs/tool_bool"
         },
         "uvx_args": {
-          "description": "extra arguments for uv tool install (shell-split)",
-          "type": "string"
+          "type": "string",
+          "description": "extra arguments for uv tool install (shell-split)"
         },
         "registry_url": {
-          "description": "version-listing url containing a {} placeholder for the package name",
-          "type": "string"
+          "type": "string",
+          "description": "version-listing url containing a {} placeholder for the package name"
         }
       }
     },
@@ -5852,12 +5852,12 @@
       "type": "object",
       "properties": {
         "url": {
-          "description": "s3://bucket/key object url, tera templated; required for each platform",
-          "type": "string"
+          "type": "string",
+          "description": "s3://bucket/key object url, tera templated; required for each platform"
         },
         "checksum": {
-          "description": "expected artifact digest as algo:hash",
-          "type": "string"
+          "type": "string",
+          "description": "expected artifact digest as algo:hash"
         },
         "size": {
           "description": "expected artifact size in bytes",
@@ -5871,8 +5871,8 @@
           ]
         },
         "format": {
-          "description": "force the archive format when the object key has no usable extension",
           "type": "string",
+          "description": "force the archive format when the object key has no usable extension",
           "enum": [
             "tar.gz",
             "tgz",
@@ -5916,8 +5916,8 @@
           ]
         },
         "bin": {
-          "description": "executable name (or safe relative path) to install the downloaded binary as",
-          "type": "string"
+          "type": "string",
+          "description": "executable name (or safe relative path) to install the downloaded binary as"
         },
         "rename_exe": {
           "description": "rename the extracted executable: a name, or a table of glob = new name",
@@ -5934,36 +5934,36 @@
           ]
         },
         "bin_path": {
-          "description": "directory inside the install that contains binaries (tera templated)",
-          "type": "string"
+          "type": "string",
+          "description": "directory inside the install that contains binaries (tera templated)"
         },
         "region": {
-          "description": "aws region used for the s3 client",
-          "type": "string"
+          "type": "string",
+          "description": "aws region used for the s3 client"
         },
         "endpoint": {
-          "description": "custom s3-compatible endpoint url (minio and similar); enables path-style addressing",
-          "type": "string"
+          "type": "string",
+          "description": "custom s3-compatible endpoint url (minio and similar); enables path-style addressing"
         },
         "version_list_url": {
-          "description": "s3:// url of a manifest file listing versions",
-          "type": "string"
+          "type": "string",
+          "description": "s3:// url of a manifest file listing versions"
         },
         "version_prefix": {
-          "description": "s3 key prefix to list objects under for version discovery",
-          "type": "string"
+          "type": "string",
+          "description": "s3 key prefix to list objects under for version discovery"
         },
         "version_regex": {
-          "description": "regex extracting versions from the manifest or object keys",
-          "type": "string"
+          "type": "string",
+          "description": "regex extracting versions from the manifest or object keys"
         },
         "version_json_path": {
-          "description": "jq-like path extracting versions from json, such as .[].version",
-          "type": "string"
+          "type": "string",
+          "description": "jq-like path extracting versions from json, such as .[].version"
         },
         "version_expr": {
-          "description": "expr-lang expression post-processing versions (variables: body, versions)",
-          "type": "string"
+          "type": "string",
+          "description": "expr-lang expression post-processing versions (variables: body, versions)"
         }
       }
     },
@@ -6048,25 +6048,25 @@
       "type": "object",
       "properties": {
         "entrypoint": {
-          "description": "ruby file to compile, relative to the repository root (default main.rb)",
-          "type": "string"
+          "type": "string",
+          "description": "ruby file to compile, relative to the repository root (default main.rb)"
         },
         "bin": {
-          "description": "name of the executable written to bin/ (default: the repository name)",
-          "type": "string"
+          "type": "string",
+          "description": "name of the executable written to bin/ (default: the repository name)"
         },
         "tag_prefix": {
-          "description": "text before the version in each git tag, such as v",
-          "type": "string"
+          "type": "string",
+          "description": "text before the version in each git tag, such as v"
         },
         "source_ref": {
-          "description": "full 40-character commit SHA to build instead of the tag",
           "type": "string",
+          "description": "full 40-character commit SHA to build instead of the tag",
           "pattern": "^[0-9a-fA-F]{40}$"
         },
         "spinel": {
-          "description": "spinel compiler to run (default: spinel on PATH)",
-          "type": "string"
+          "type": "string",
+          "description": "spinel compiler to run (default: spinel on PATH)"
         }
       }
     },
@@ -6106,21 +6106,21 @@
       "type": "object",
       "properties": {
         "provider": {
-          "description": "git host used for release info and assets",
           "type": "string",
+          "description": "git host used for release info and assets",
           "enum": ["github", "gitlab"]
         },
         "api_url": {
-          "description": "provider api url, for self-hosted instances",
-          "type": "string"
+          "type": "string",
+          "description": "provider api url, for self-hosted instances"
         },
         "artifactbundle": {
           "description": "true requires an artifactbundle, false forces a source build, unset tries the bundle first",
           "$ref": "#/$defs/tool_bool"
         },
         "artifactbundle_asset": {
-          "description": "specific *.artifactbundle.zip release asset to use",
-          "type": "string"
+          "type": "string",
+          "description": "specific *.artifactbundle.zip release asset to use"
         },
         "filter_bins": {
           "description": "executable products to install",
@@ -6137,8 +6137,8 @@
           ]
         },
         "install_command": {
-          "description": "command run in the checkout instead of swift build; incompatible with filter_bins",
-          "type": "string"
+          "type": "string",
+          "description": "command run in the checkout instead of swift build; incompatible with filter_bins"
         }
       }
     },
@@ -6202,41 +6202,41 @@
       "type": "object",
       "properties": {
         "exe": {
-          "description": "name of the executable inside the archive to extract",
-          "type": "string"
+          "type": "string",
+          "description": "name of the executable inside the archive to extract"
         },
         "rename_exe": {
-          "description": "name to give the extracted executable",
-          "type": "string"
+          "type": "string",
+          "description": "name to give the extracted executable"
         },
         "matching": {
-          "description": "substring to match release filenames when several match the os and arch",
-          "type": "string"
+          "type": "string",
+          "description": "substring to match release filenames when several match the os and arch"
         },
         "matching_regex": {
-          "description": "regex release filenames must match before os and arch matching",
-          "type": "string"
+          "type": "string",
+          "description": "regex release filenames must match before os and arch matching"
         },
         "provider": {
-          "description": "forge used to fetch releases and assets",
           "type": "string",
+          "description": "forge used to fetch releases and assets",
           "enum": ["github", "gitlab"]
         },
         "api_url": {
-          "description": "provider api base url, for self-hosted instances",
-          "type": "string"
+          "type": "string",
+          "description": "provider api base url, for self-hosted instances"
         },
         "tag_regex": {
-          "description": "regex release tags must match to be listed as versions",
-          "type": "string"
+          "type": "string",
+          "description": "regex release tags must match to be listed as versions"
         },
         "extract_all": {
           "description": "extract every file in the archive instead of only the binary",
           "$ref": "#/$defs/tool_bool"
         },
         "bin_path": {
-          "description": "directory in the install containing binaries, used with extract_all",
-          "type": "string"
+          "type": "string",
+          "description": "directory in the install containing binaries, used with extract_all"
         }
       }
     },
