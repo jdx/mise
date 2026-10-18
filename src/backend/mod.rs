@@ -944,20 +944,14 @@ impl OptionSpec {
     }
 
     fn platform_schema_keys(def: &str) -> HashSet<String> {
-        static SCHEMA: LazyLock<serde_json::Value> = LazyLock::new(|| {
-            serde_json::from_str(include_str!("../../schema/mise.json")).unwrap_or_default()
-        });
-        SCHEMA["$defs"][def]["additionalProperties"]["properties"]
+        crate::config::schema::SCHEMA["$defs"][def]["additionalProperties"]["properties"]
             .as_object()
             .map(|props| props.keys().cloned().collect())
             .unwrap_or_default()
     }
 
     fn schema_keys(def: &str) -> HashSet<String> {
-        static SCHEMA: LazyLock<serde_json::Value> = LazyLock::new(|| {
-            serde_json::from_str(include_str!("../../schema/mise.json")).unwrap_or_default()
-        });
-        SCHEMA["$defs"][def]["properties"]
+        crate::config::schema::SCHEMA["$defs"][def]["properties"]
             .as_object()
             .map(|props| props.keys().cloned().collect())
             .unwrap_or_default()

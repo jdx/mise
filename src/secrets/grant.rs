@@ -898,15 +898,10 @@ pub(crate) fn key_problems(
 pub(crate) fn suggest<'a>(typo: &str, names: impl Iterator<Item = &'a str>) -> Option<String> {
     use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
     let names: Vec<&str> = names.collect();
-    let typo_lc = typo.to_lowercase();
-    let near = names
-        .iter()
-        .map(|n| (osa_distance(&typo_lc, &n.to_lowercase()), *n))
-        .filter(|(d, _)| *d <= 2)
-        .min_by_key(|(d, _)| *d);
-    if let Some((_, n)) = near {
+    if let Some(n) = crate::fuzzy::nearest(typo, names.iter().copied()) {
         return Some(n.to_string());
     }
+    let typo_lc = typo.to_lowercase();
     let mut matcher = FuzzyMatcher::default();
     let pattern = FuzzyPattern::new(&typo_lc);
     names
@@ -918,30 +913,6 @@ pub(crate) fn suggest<'a>(typo: &str, names: impl Iterator<Item = &'a str>) -> O
         })
         .max_by_key(|(score, _)| *score)
         .map(|(_, n)| n.to_string())
-}
-
-fn osa_distance(a: &str, b: &str) -> usize {
-    let a: Vec<char> = a.chars().collect();
-    let b: Vec<char> = b.chars().collect();
-    let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
-    for (i, row) in d.iter_mut().enumerate() {
-        row[0] = i;
-    }
-    for (j, cell) in d[0].iter_mut().enumerate() {
-        *cell = j;
-    }
-    for i in 1..=a.len() {
-        for j in 1..=b.len() {
-            let cost = usize::from(a[i - 1] != b[j - 1]);
-            d[i][j] = (d[i - 1][j] + 1)
-                .min(d[i][j - 1] + 1)
-                .min(d[i - 1][j - 1] + cost);
-            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
-                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
-            }
-        }
-    }
-    d[a.len()][b.len()]
 }
 
 /// A task whose `run` only injects other tasks and that has no file: it would resolve secrets

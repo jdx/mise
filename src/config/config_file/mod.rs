@@ -47,6 +47,7 @@ pub(crate) mod idiomatic_version;
 pub(crate) mod min_version;
 pub mod mise_toml;
 pub(crate) mod tool_versions;
+mod unknown_key;
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum ConfigFileType {

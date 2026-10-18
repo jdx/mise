@@ -6,18 +6,11 @@
 //! in the schema, so those come from the file the command would read or write.
 
 use serde_json::Value;
+
+use crate::config::schema::{SCHEMA, child, expand, is_deprecated};
 use std::collections::{BTreeMap, btree_map};
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 use usage_rs::complete::{Candidate, CompleteCtx};
-
-static SCHEMA: LazyLock<Value> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../../../schema/mise.json"))
-        .expect("schema/mise.json should parse")
-});
-
-/// Deep enough for every chain in the schema; a bound so a cyclic `$ref` cannot recurse forever.
-const MAX_DEPTH: usize = 32;
 
 /// Candidates for a dotted key being typed as `prefix`, against the TOML at `file`.
 pub(super) fn candidates(prefix: &str, file: Option<&Path>) -> Vec<Candidate<'static>> {
@@ -34,7 +27,7 @@ pub(super) fn candidates(prefix: &str, file: Option<&Path>) -> Vec<Candidate<'st
 
     let root = &*SCHEMA;
     let mut nodes = vec![];
-    expand(root, root, &mut nodes, 0);
+    expand(root, root, &mut nodes);
     for segment in &path {
         nodes = child(root, &nodes, segment);
     }
@@ -79,63 +72,13 @@ pub(super) fn candidates(prefix: &str, file: Option<&Path>) -> Vec<Candidate<'st
         .collect()
 }
 
-/// `node` and every schema it stands for through `$ref` and the combinators.
-fn expand<'a>(root: &'a Value, node: &'a Value, out: &mut Vec<&'a Value>, depth: usize) {
-    if depth > MAX_DEPTH {
-        return;
-    }
-    out.push(node);
-    if let Some(target) = node
-        .get("$ref")
-        .and_then(Value::as_str)
-        .and_then(|r| r.strip_prefix('#'))
-        .and_then(|pointer| root.pointer(pointer))
-    {
-        expand(root, target, out, depth + 1);
-    }
-    for combinator in ["allOf", "oneOf", "anyOf"] {
-        for variant in node
-            .get(combinator)
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            expand(root, variant, out, depth + 1);
-        }
-    }
-}
-
-/// The schemas `key` has under any of `nodes`: a named property, or else the schema a table
-/// gives its unnamed keys.
-fn child<'a>(root: &'a Value, nodes: &[&'a Value], key: &str) -> Vec<&'a Value> {
-    let mut out = vec![];
-    for node in nodes {
-        let schema = node
-            .get("properties")
-            .and_then(|properties| properties.get(key))
-            .or_else(|| node.get("additionalProperties").filter(|v| v.is_object()));
-        if let Some(schema) = schema {
-            expand(root, schema, &mut out, 0);
-        }
-    }
-    out
-}
-
 fn description(root: &Value, schema: &Value) -> Option<String> {
     let mut nodes = vec![];
-    expand(root, schema, &mut nodes, 0);
+    expand(root, schema, &mut nodes);
     nodes
         .iter()
         .find_map(|node| node.get("description").and_then(Value::as_str))
         .map(str::to_string)
-}
-
-fn is_deprecated(root: &Value, schema: &Value) -> bool {
-    let mut nodes = vec![];
-    expand(root, schema, &mut nodes, 0);
-    nodes
-        .iter()
-        .any(|node| node.get("deprecated").is_some_and(|d| d != false))
 }
 
 fn first_line(description: &str) -> String {
