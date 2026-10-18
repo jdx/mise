@@ -280,7 +280,12 @@ watch(filter, (value) => {
 let media;
 const onMedia = () => (narrow.value = media.matches);
 
+// False once the page has gone, so the reference that finishes loading after the reader
+// navigated away does not read or rewrite the next page's URL.
+let mounted = false;
+
 onMounted(async () => {
+  mounted = true;
   media = window.matchMedia("(max-width: 767px)");
   onMedia();
   media.addEventListener("change", onMedia);
@@ -288,7 +293,9 @@ onMounted(async () => {
   // in the capture phase, so it runs before the site search's own listener
   window.addEventListener("keydown", onGlobalKey, { capture: true });
   try {
-    full.value = (await import("/config-reference.data.ts")).data;
+    const data = (await import("/config-reference.data.ts")).data;
+    if (!mounted) return;
+    full.value = data;
   } catch (error) {
     failed.value = true;
     throw error;
@@ -299,6 +306,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  mounted = false;
   media?.removeEventListener("change", onMedia);
   window.removeEventListener("hashchange", reveal);
   window.removeEventListener("keydown", onGlobalKey, { capture: true });
@@ -575,8 +583,19 @@ function firstSentence(html) {
   color: var(--vp-c-text-3);
 }
 
+/* back to the overview of every section */
 .back {
-  display: none;
+  margin-bottom: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+}
+
+.back:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-text-1);
 }
 
 /* detail pane */
@@ -741,16 +760,6 @@ function firstSentence(html) {
   .explorer.has-selection .tree-pane,
   .explorer:not(.has-selection) .overview {
     display: none;
-  }
-
-  .back {
-    display: inline-block;
-    margin-bottom: 12px;
-    padding: 4px 10px;
-    border: 1px solid var(--vp-c-divider);
-    border-radius: 8px;
-    font-size: 14px;
-    color: var(--vp-c-text-2);
   }
 }
 </style>

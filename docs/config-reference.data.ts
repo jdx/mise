@@ -31,6 +31,9 @@ export type Key = {
   count: number;
   // another key with exactly the keys this one has, listed there instead of here
   sameAs?: string;
+  // when the table this key is in has alternative forms (`run` or `task` in a
+  // `[[watch_files]]` entry), the forms that have this key; absent when every form does
+  forms?: number[];
   children: Key[];
 };
 
@@ -89,6 +92,31 @@ function first<T>(nodes: Schema[], pick: (n: Schema) => T | undefined) {
     if (v !== undefined) return v;
   }
   return undefined;
+}
+
+// The keys each alternative form of a table names, when the table is one of several forms
+// (`oneOf` or `anyOf`, reached through `$ref` and `allOf`, and the forms of those forms);
+// forms with no keys of their own, such as a plain string, are left out. Empty when the
+// table has fewer than two such forms.
+function formKeys(root: Schema, schema: Schema): Set<string>[] {
+  const leaves = (node: Schema, depth = 0): Schema[] => {
+    const alternatives = itself(root, node).find(
+      (n) => !n[MERGED] && (n.oneOf ?? n.anyOf),
+    );
+    if (!alternatives || depth > 8) return [node];
+    return (alternatives.oneOf ?? alternatives.anyOf).flatMap((n: Schema) =>
+      leaves(n, depth + 1),
+    );
+  };
+  const forms = leaves(schema)
+    .map(
+      (form) =>
+        new Set(
+          itself(root, form).flatMap((n) => Object.keys(n.properties ?? {})),
+        ),
+    )
+    .filter((keys) => keys.size > 0);
+  return forms.length < 2 ? [] : forms;
 }
 
 // The schemas a table gives the keys it does not name, as written: expanding them
@@ -197,17 +225,19 @@ export function describeKey(
       named.set(child, schemas);
     }
   }
+  const forms = formKeys(root, schema);
   for (const [child, schemas] of named) {
-    key.children.push(
-      describeKey(
-        root,
-        child,
-        schemas.length === 1 ? schemas[0] : { anyOf: schemas, [MERGED]: true },
-        path,
-        render,
-        depth + 1,
-      ),
+    const entry = describeKey(
+      root,
+      child,
+      schemas.length === 1 ? schemas[0] : { anyOf: schemas, [MERGED]: true },
+      path,
+      render,
+      depth + 1,
     );
+    const having = forms.flatMap((keys, i) => (keys.has(child) ? [i] : []));
+    if (having.length > 0 && having.length < forms.length) entry.forms = having;
+    key.children.push(entry);
   }
   // An open table: its other keys are names the user picks.
   const value = placeholderChildren(nodes);
@@ -288,6 +318,7 @@ function shape(key: Key, cache: Map<Key, string>): string {
         c.default,
         c.deprecated,
         c.experimental,
+        c.forms,
         c.link,
         shape(c, cache),
       ]),

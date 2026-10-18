@@ -8,6 +8,8 @@ export type SnippetKey = {
   choices: string[];
   default?: string;
   deprecated: boolean;
+  // the alternative forms of its table that have this key; absent when every form does
+  forms?: number[];
   children: SnippetKey[];
 };
 
@@ -206,7 +208,12 @@ function childLines(key: SnippetKey, limit = 4): string[] {
         a.i - b.i,
     )
     .map(({ c }) => c);
-  for (const child of named.slice(0, limit - lines.length)) {
+  // keys of one form only: a `[[watch_files]]` entry takes `run` or `task`, not both
+  const form = named.find((c) => c.forms)?.forms?.[0];
+  const fits = named.filter(
+    (c) => !c.forms || form === undefined || c.forms.includes(form),
+  );
+  for (const child of fits.slice(0, limit - lines.length)) {
     lines.push(entryLine(child, unlist(own(child))));
   }
   const total = key.children.filter(
