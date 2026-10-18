@@ -181,6 +181,26 @@ const placeholders: Record<string, string> = {
   dotfile_groups: "<name>",
 };
 
+// Every key below `key`, at any depth.
+function descendants(key: Key): Key[] {
+  return key.children.flatMap((c) => [c, ...descendants(c)]);
+}
+
+// `key`'s path below `base`, such as `platforms.<key>.bin`.
+function relative(base: Key, key: Key): string {
+  return key.path.slice(base.path.length + 1);
+}
+
+// The keys of `children` that `shared` does not already list, keeping a shared key whose
+// own children add something (`platforms`, where Cargo's adds `bin`).
+function additions(base: Key, children: Key[], shared: Set<string>): Key[] {
+  return children.flatMap((c) => {
+    const added = additions(base, c.children, shared);
+    if (shared.has(relative(base, c)) && added.length === 0) return [];
+    return [{ ...c, children: added }];
+  });
+}
+
 export function describeKey(
   root: Schema,
   name: string,
@@ -285,9 +305,7 @@ export function describeKey(
       render,
       depth + 1,
     );
-    shared = new Set(
-      entry.children.map((c) => c.path.slice(entry.path.length + 1)),
-    );
+    shared = new Set(descendants(entry).map((c) => relative(entry, c)));
     key.children.push(entry);
   }
   // Keys matched by pattern, such as the backend-specific options of `[tools]`: each lists
@@ -305,9 +323,7 @@ export function describeKey(
           render,
           depth + 1,
         );
-        entry.children = entry.children.filter(
-          (c) => !shared.has(c.path.slice(entry.path.length + 1)),
-        );
+        entry.children = additions(entry, entry.children, shared);
         if (entry.children.length > 0) key.children.push(entry);
       }
     }
