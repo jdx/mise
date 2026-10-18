@@ -32,7 +32,6 @@ export const cardOptions = (d: ReelData | null, l: CardLayer): CardOptions => ({
   from: l.from,
   open: l.open,
   hide: l.hide,
-  keep: l.keep,
   lit: l.lit,
   size: l.size,
   fit: l.fit,

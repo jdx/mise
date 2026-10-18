@@ -77,7 +77,7 @@ import {
   unfocus,
 } from "../kit/pace";
 import { arc, curveAt, lerpRect, span } from "../kit/motion";
-import { drawPaneWindow, HK_PIN, HOLDS } from "../kit/rest";
+import { drawPaneWindow, HOLDS } from "../kit/rest";
 import {
   CHROME_H,
   COLOR,
@@ -422,7 +422,7 @@ export const scene = greyScene(
     const tools = g.d?.versions.tools ?? {};
     const oldV = tools.hk_old ?? "";
     const newV = tools.hk_new ?? "";
-    const hk = HK_PIN;
+    const hk = /^hk\s*=/;
     // The card: the station card switch's folder became (C7's file) on the
     // bar line; hk's row seats (the rows part, the line drops) as C8
     // started it, and its value turns to the new one on the tools line.

@@ -496,7 +496,6 @@ interface CardRest {
   path: string;
   open: readonly string[];
   hide?: RegExp;
-  keep?: RegExp;
   lit?: Readonly<Record<string, number>>;
   size?: number;
   /**
@@ -567,9 +566,6 @@ export type Layer =
   | { kind: "chef" };
 
 /** The api project's card, as take `from` left it. */
-/** hk's pin, which `mise use` writes with the signing workflow: wider than the card, so its tail fades. */
-export const HK_PIN = /^hk\s*=/;
-
 const apiCard = (
   from: CaptureId,
   open: readonly string[],
@@ -726,7 +722,7 @@ export const RESTS: Record<BoundaryId, readonly Layer[]> = {
     apiCard("C7", ["[tools]"], { fit: true }),
   ],
   "packslip|env": [
-    apiCard("C8", ["[tools]"], { fit: true, keep: HK_PIN }),
+    apiCard("C8", ["[tools]"], { fit: true }),
     held(PANES.slip, "C8", { dim: 1 }),
   ],
   "env|vars": [
@@ -874,7 +870,6 @@ export function drawLayer(
         from: l.from,
         open: l.open,
         hide: l.hide,
-        keep: l.keep,
         lit: l.lit,
         size: l.size,
         fit: l.fit,
