@@ -34,6 +34,7 @@ pub struct RemoteTomlConfig {
     pub hosts: IndexMap<String, RemoteHostTomlConfig>,
 }
 
+/// SSH target that `mise bootstrap remote` can bootstrap, selected by name or tag
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 pub struct RemoteHostTomlConfig {
     /// SSH host name or address

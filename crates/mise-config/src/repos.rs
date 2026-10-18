@@ -4,6 +4,7 @@ use serde::Deserialize;
 // The doc comments on these types are their descriptions in schema/mise.json, which editors show
 // to users. Notes for Rust readers go in plain comments.
 
+/// git repository to clone to this path, then keep on ref when one is set
 #[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
 pub struct RepoTomlConfig {
     /// git repository URL

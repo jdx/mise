@@ -9,6 +9,7 @@ use crate::schema::refs;
 // to users. Notes for Rust readers go in plain comments.
 
 // mise-system rejects `keep_alive` together with `keep_alive_on_failure` when it builds the agent.
+/// macOS LaunchAgent written to ~/Library/LaunchAgents/dev.mise.<name>.plist and loaded for the current user
 #[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
 #[schemars(extend("not" = {
     "required": ["keep_alive", "keep_alive_on_failure"],
@@ -55,6 +56,7 @@ pub struct LaunchdTomlConfig {
     pub queue_directories: Vec<String>,
     /// environment variables for EnvironmentVariables
     #[serde(default)]
+    #[schemars(extend("additionalProperties" = {"type": "string", "description": "value of the environment variable"}))]
     pub environment: IndexMap<String, String>,
     /// write WorkingDirectory
     #[serde(default)]
@@ -74,18 +76,23 @@ pub struct LaunchdTomlConfig {
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
 #[schemars(extend("minProperties" = 1))]
 pub struct LaunchdCalendarInterval {
+    /// minute of the hour, 0-59; every minute when unset
     #[serde(default)]
     #[schemars(range(max = 59))]
     pub minute: Option<u8>,
+    /// hour of the day, 0-23; every hour when unset
     #[serde(default)]
     #[schemars(range(max = 23))]
     pub hour: Option<u8>,
+    /// day of the month, 1-31; every day when unset
     #[serde(default)]
     #[schemars(range(min = 1, max = 31))]
     pub day: Option<u8>,
+    /// day of the week, 0-7, where 0 and 7 are Sunday; every day when unset
     #[serde(default)]
     #[schemars(range(max = 7))]
     pub weekday: Option<u8>,
+    /// month of the year, 1-12; every month when unset
     #[serde(default)]
     #[schemars(range(min = 1, max = 12))]
     pub month: Option<u8>,

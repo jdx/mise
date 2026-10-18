@@ -9,6 +9,7 @@
       "description": "apt repositories added before apt packages are installed, keyed by a name used in the files mise writes",
       "additionalProperties": {
         "type": "object",
+        "description": "apt source: a Launchpad PPA, or repository URIs with the key that signs them",
         "additionalProperties": false,
         "properties": {
           "ppa": {
@@ -95,6 +96,7 @@
       "description": "dnf repositories enabled before dnf packages are installed, keyed by a name for the entry",
       "additionalProperties": {
         "type": "object",
+        "description": "dnf repository to enable, given as a COPR project",
         "additionalProperties": false,
         "properties": {
           "copr": {
@@ -130,6 +132,7 @@
           "type": "object",
           "properties": {
             "run": {
+              "description": "shell command or commands to run in order, with the default inline shell; Tera templates are rendered first",
               "oneOf": [
                 {
                   "type": "string"
@@ -383,27 +386,35 @@
       "additionalProperties": false,
       "properties": {
         "bash": {
+          "description": "manage the activation blocks in ~/.bash_profile (shims) and ~/.bashrc (activate); a mode applies to both files",
           "$ref": "#/$defs/bootstrap_shell_activation"
         },
         "zsh": {
+          "description": "manage the activation blocks in ~/.zprofile (shims) and ~/.zshrc (activate); a mode applies to both files, and ~/.zshenv is never written",
           "$ref": "#/$defs/bootstrap_shell_activation"
         },
         "fish": {
+          "description": "manage the activation block in ~/.config/fish/config.fish; activate by default, and auto activates interactive shells and uses shims otherwise",
           "$ref": "#/$defs/bootstrap_shell_activation"
         },
         "bash_profile": {
+          "description": "manage the activation block in ~/.bash_profile; shims by default",
           "$ref": "#/$defs/bootstrap_shell_activation"
         },
         "bashrc": {
+          "description": "manage the activation block in ~/.bashrc; activate by default",
           "$ref": "#/$defs/bootstrap_shell_activation"
         },
         "zshenv": {
+          "description": "manage the activation block in ~/.zshenv, which zsh reads for every script; shims by default",
           "$ref": "#/$defs/bootstrap_shell_activation"
         },
         "zprofile": {
+          "description": "manage the activation block in ~/.zprofile; shims by default",
           "$ref": "#/$defs/bootstrap_shell_activation"
         },
         "zshrc": {
+          "description": "manage the activation block in ~/.zshrc; activate by default",
           "$ref": "#/$defs/bootstrap_shell_activation"
         }
       }
@@ -1324,28 +1335,33 @@
       "properties": {
         "minute": {
           "type": "integer",
-          "maximum": 59,
-          "minimum": 0
+          "description": "minute of the hour, 0-59; every minute when unset",
+          "minimum": 0,
+          "maximum": 59
         },
         "hour": {
           "type": "integer",
-          "maximum": 23,
-          "minimum": 0
+          "description": "hour of the day, 0-23; every hour when unset",
+          "minimum": 0,
+          "maximum": 23
         },
         "day": {
           "type": "integer",
-          "maximum": 31,
-          "minimum": 1
+          "description": "day of the month, 1-31; every day when unset",
+          "minimum": 1,
+          "maximum": 31
         },
         "weekday": {
           "type": "integer",
-          "maximum": 7,
-          "minimum": 0
+          "description": "day of the week, 0-7, where 0 and 7 are Sunday; every day when unset",
+          "minimum": 0,
+          "maximum": 7
         },
         "month": {
           "type": "integer",
-          "maximum": 12,
-          "minimum": 1
+          "description": "month of the year, 1-12; every month when unset",
+          "minimum": 1,
+          "maximum": 12
         }
       },
       "minProperties": 1,
@@ -7462,28 +7478,35 @@
           "description": "Managed system files keyed by absolute target path",
           "additionalProperties": {
             "type": "object",
+            "description": "file whose content, owner, group, and mode mise manages, keyed by an absolute or ~/ target path",
             "properties": {
               "phase": {
                 "$ref": "#/$defs/bootstrap_file_phase",
                 "default": "post-packages"
               },
               "source": {
-                "type": "string"
+                "type": "string",
+                "description": "file to copy the content from; a relative path resolves from the declaring config's directory and ~/ from your home directory"
               },
               "content": {
-                "type": "string"
+                "type": "string",
+                "description": "inline file content; cannot be combined with source"
               },
               "owner": {
-                "type": "string"
+                "type": "string",
+                "description": "user that should own the file; left as it is when unset"
               },
               "group": {
-                "type": "string"
+                "type": "string",
+                "description": "group that should own the file; left as it is when unset"
               },
               "mode": {
-                "type": "string"
+                "type": "string",
+                "description": "octal permissions such as \"0640\"; defaults to \"0644\" for a file with source or content, otherwise left as it is"
               },
               "template": {
                 "type": "boolean",
+                "description": "render source or content with mise's template engine; without it, template syntax is written unchanged",
                 "default": false
               },
               "remove_empty": {
@@ -7493,14 +7516,17 @@
               },
               "state": {
                 "type": "string",
+                "description": "present creates or updates the file; absent removes it whatever its content",
                 "enum": ["present", "absent"]
               },
               "replace": {
                 "type": "boolean",
+                "description": "replace a path of another type at the target, such as an empty directory; requires source or content",
                 "default": false
               },
               "notify": {
                 "type": "array",
+                "description": "system services declared in [bootstrap.services] to reload or restart when mise changes this file",
                 "items": {
                   "type": "string"
                 }
@@ -7582,34 +7608,42 @@
           "description": "Managed system directories keyed by absolute target path",
           "additionalProperties": {
             "type": "object",
+            "description": "directory whose owner, group, and mode mise manages, keyed by an absolute or ~/ target path",
             "properties": {
               "phase": {
                 "$ref": "#/$defs/bootstrap_file_phase",
                 "default": "post-packages"
               },
               "owner": {
-                "type": "string"
+                "type": "string",
+                "description": "user that should own the directory; left as it is when unset, and parents mise creates get the system defaults"
               },
               "group": {
-                "type": "string"
+                "type": "string",
+                "description": "group that should own the directory; left as it is when unset, and parents mise creates get the system defaults"
               },
               "mode": {
-                "type": "string"
+                "type": "string",
+                "description": "octal permissions such as \"0755\"; defaults to \"0755\""
               },
               "state": {
                 "type": "string",
+                "description": "present creates the directory with any missing parents; absent removes it, which must then be empty unless recursive is set",
                 "enum": ["present", "absent"]
               },
               "recursive": {
                 "type": "boolean",
+                "description": "with state = \"absent\", delete the directory and everything in it",
                 "default": false
               },
               "replace": {
                 "type": "boolean",
+                "description": "replace a path of another type at the target, such as a file",
                 "default": false
               },
               "notify": {
                 "type": "array",
+                "description": "system services declared in [bootstrap.services] to reload or restart when mise changes this directory",
                 "items": {
                   "type": "string"
                 }
@@ -7680,6 +7714,7 @@
               "description": "remote bootstrap inventory keyed by target name",
               "additionalProperties": {
                 "type": "object",
+                "description": "SSH target that `mise bootstrap remote` can bootstrap, selected by name or tag",
                 "properties": {
                   "host": {
                     "type": "string",
@@ -7771,14 +7806,17 @@
           "description": "System services and portable user services managed by mise bootstrap, keyed by service name",
           "additionalProperties": {
             "type": "object",
+            "description": "Linux systemd system unit that mise starts, stops, enables, or masks, or a user service mise defines from command or builtin",
             "properties": {
               "state": {
                 "type": "string",
+                "description": "running or stopped; absent removes a user service's definition (user scope only)",
                 "enum": ["running", "stopped", "absent"],
                 "default": "running"
               },
               "enabled": {
                 "type": "boolean",
+                "description": "start the service at boot (system scope) or at login (user scope)",
                 "default": true
               },
               "masked": {
@@ -7808,24 +7846,30 @@
                 "minLength": 1
               },
               "description": {
-                "type": "string"
+                "type": "string",
+                "description": "text the service manager shows for the service; user scope only"
               },
               "restart": {
                 "type": "string",
+                "description": "when to restart the process after it exits: on-failure, always, or never; user scope only",
                 "enum": ["always", "on-failure", "never"],
                 "default": "on-failure"
               },
               "environment": {
                 "type": "object",
+                "description": "environment variables for the process; user scope only",
                 "additionalProperties": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "value of the environment variable"
                 }
               },
               "working_directory": {
-                "type": "string"
+                "type": "string",
+                "description": "directory to run the process in, with ~ expanded; user scope only"
               },
               "requires_tools": {
                 "type": "boolean",
+                "description": "start the service only after `mise bootstrap` installs [tools] and plugin packages; user scope only",
                 "default": false
               }
             },
@@ -7840,6 +7884,7 @@
           "description": "Docker Compose projects managed with `mise bootstrap compose`, keyed by project name. Text fields support Tera templates.",
           "additionalProperties": {
             "type": "object",
+            "description": "Docker Compose project that mise brings up, stops, or removes",
             "properties": {
               "project_dir": {
                 "type": "string",
@@ -7866,44 +7911,52 @@
               },
               "profiles": {
                 "type": "array",
+                "description": "Compose profiles to enable, passed with --profile",
                 "items": {
                   "type": "string"
                 }
               },
               "services": {
                 "type": "array",
+                "description": "services to manage; defaults to every service the files and profiles enable",
                 "items": {
                   "type": "string"
                 }
               },
               "oneshot": {
                 "type": "array",
+                "description": "services that run once and count as converged after exiting with code 0; when services is set, they must be listed there too",
                 "items": {
                   "type": "string"
                 }
               },
               "state": {
                 "type": "string",
+                "description": "running (compose up), stopped (compose stop, keeping containers and data), or absent (compose down)",
                 "enum": ["running", "stopped", "absent"],
                 "default": "running"
               },
               "pull": {
                 "type": "string",
+                "description": "image pull policy passed to compose up as --pull",
                 "enum": ["always", "missing", "never"],
                 "default": "missing"
               },
               "build": {
                 "type": "string",
+                "description": "auto lets Compose decide, always passes --build, never passes --no-build",
                 "enum": ["auto", "always", "never"],
                 "default": "auto"
               },
               "recreate": {
                 "type": "string",
+                "description": "auto lets Compose decide, always passes --force-recreate, never passes --no-recreate",
                 "enum": ["auto", "always", "never"],
                 "default": "auto"
               },
               "wait": {
                 "type": "boolean",
+                "description": "pass --wait to compose up, so it waits for services to be running and healthy",
                 "default": true
               },
               "wait_timeout": {
@@ -7918,22 +7971,27 @@
               },
               "remove_orphans": {
                 "type": "boolean",
+                "description": "remove containers for services that are no longer in the Compose model",
                 "default": true
               },
               "renew_anonymous_volumes": {
                 "type": "boolean",
+                "description": "pass --renew-anon-volumes to compose up, recreating anonymous volumes",
                 "default": false
               },
               "down_volumes": {
                 "type": "boolean",
+                "description": "pass --volumes to compose down, removing the project's volumes",
                 "default": false
               },
               "down_images": {
                 "type": "string",
+                "description": "images compose down removes, passed as --rmi",
                 "enum": ["local", "all"]
               },
               "sudo": {
                 "type": "boolean",
+                "description": "run every Compose and engine command through sudo, for a project on the system Docker daemon",
                 "default": false
               },
               "command": {
@@ -8079,6 +8137,7 @@
           "description": "git repositories to clone or update with `mise bootstrap repos apply`, keyed by target path",
           "additionalProperties": {
             "type": "object",
+            "description": "git repository to clone to this path, then keep on ref when one is set",
             "properties": {
               "url": {
                 "type": "string",
@@ -8138,13 +8197,16 @@
                 "type": "object",
                 "properties": {
                   "domain": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "preferences domain, such as \"com.apple.dock\" or \"NSGlobalDomain\"; -g and -globalDomain mean NSGlobalDomain"
                   },
                   "key": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "preference key within the domain"
                   },
                   "host": {
                     "type": "string",
+                    "description": "any writes the preference for every host; current writes it for this machine only, like defaults -currentHost",
                     "enum": ["any", "current"],
                     "default": "any"
                   },
@@ -8157,6 +8219,7 @@
                     "minItems": 1
                   },
                   "value": {
+                    "description": "desired value, written with the matching property list type; replaces the selected value in full",
                     "anyOf": [
                       {
                         "type": "boolean"
@@ -8189,6 +8252,7 @@
                   "description": "macOS user LaunchAgents to write and load with `mise bootstrap macos launchd-agents apply`",
                   "additionalProperties": {
                     "type": "object",
+                    "description": "macOS LaunchAgent written to ~/Library/LaunchAgents/dev.mise.<name>.plist and loaded for the current user",
                     "properties": {
                       "program": {
                         "type": "string",
@@ -8272,7 +8336,8 @@
                         "type": "object",
                         "description": "environment variables for EnvironmentVariables",
                         "additionalProperties": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "value of the environment variable"
                         }
                       },
                       "working_directory": {
@@ -8392,16 +8457,19 @@
                       },
                       "state": {
                         "type": "string",
+                        "description": "present adds the rule; absent removes a rule mise added earlier",
                         "enum": ["present", "absent"],
                         "default": "present"
                       },
                       "direction": {
                         "type": "string",
+                        "description": "traffic direction the rule matches",
                         "enum": ["incoming", "outgoing"],
                         "default": "incoming"
                       },
                       "action": {
                         "type": "string",
+                        "description": "what to do with matching traffic; limit needs incoming TCP and is not available on firewalld",
                         "enum": ["allow", "limit", "deny", "reject"],
                         "default": "allow"
                       },
@@ -8421,6 +8489,7 @@
                       },
                       "protocol": {
                         "type": "string",
+                        "description": "protocol to match; any when unset, and UFW supports only tcp and udp",
                         "enum": ["tcp", "udp", "sctp", "dccp"]
                       },
                       "source": {
@@ -8455,6 +8524,7 @@
                   "description": "systemd user services and timers to write and start with `mise bootstrap linux systemd-units apply`",
                   "additionalProperties": {
                     "type": "object",
+                    "description": "systemd user unit written to ~/.config/systemd/user/dev.mise.<name>.service, or .timer when it sets a timer key",
                     "properties": {
                       "description": {
                         "type": "string",
@@ -8584,7 +8654,8 @@
                         "type": "object",
                         "description": "environment variables for Environment entries",
                         "additionalProperties": {
-                          "type": "string"
+                          "type": "string",
+                          "description": "value of the environment variable"
                         }
                       },
                       "environment_file": {
@@ -8896,7 +8967,8 @@
               "type": "object",
               "description": "Homebrew tap names mapped to custom git URLs",
               "additionalProperties": {
-                "type": "string"
+                "type": "string",
+                "description": "git URL of the tap's GitHub repository, used instead of https://github.com/<owner>/homebrew-<tap>.git"
               }
             }
           },
@@ -8951,6 +9023,7 @@
           "description": "[experimental] Linux groups that bootstrap creates or removes, keyed by group name",
           "additionalProperties": {
             "type": "object",
+            "description": "local Linux group that bootstrap creates, updates, or removes",
             "properties": {
               "state": {
                 "description": "whether the group should exist",
@@ -9000,6 +9073,7 @@
           "description": "[experimental] Linux users that bootstrap creates or removes, keyed by user name",
           "additionalProperties": {
             "type": "object",
+            "description": "local Linux user that bootstrap creates, updates, or removes",
             "properties": {
               "state": {
                 "description": "whether the user should exist",
