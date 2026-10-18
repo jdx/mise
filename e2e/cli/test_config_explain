@@ -13,7 +13,7 @@ experimantal = true
 run = "echo build"
 EOF
 
-assert_contains "mise config explain" "tools.node             version of the tool to install"
+assert_contains "mise config explain" "tools.node             a version of the tool, or a table with its version and options"
 assert_contains "mise config explain" "settings.experimantal  not a key mise reads; did you mean experimental?"
 assert_contains "mise config explain" "tasks.build.run        script to run"
 
@@ -51,11 +51,28 @@ _.my-env-plugin = { x = 1 }
 EOF
 assert_not_contains "mise config explain --file plugin.toml" "not a key mise reads"
 
-# A config whose settings fail to load can still be explained by name.
+# A key is described by the shape its value is written in, and an option a plugin tool
+# receives is a key mise reads.
+# schema: skip
+cat <<'EOF' >shapes.toml
+[env]
+DATABASE_URL = { required = true }
+
+[tools]
+"asdf:mise-plugins/mise-foo" = { version = "1", mirror = "eu" }
+EOF
+assert_contains "mise config explain --file shapes.toml" "env.DATABASE_URL.required"
+assert_contains "mise config explain --file shapes.toml" "a variable without a value must be required"
+assert_not_contains "mise config explain --file shapes.toml" "not a key mise reads"
+
+# A config whose settings fail to load can still be explained by name, also from --cd.
 # schema: invalid
 cat <<'EOF' >mise.toml
 [settings.status]
 missing_tools = "sometimes"
 EOF
 assert_fail "mise config explain"
-assert_contains "mise config explain --file mise.toml" "settings.status.missing_tools"
+assert_contains "mise config explain --file mise.toml" "settings.status.missing_tools  When to warn"
+mkdir -p other
+cp mise.toml other/mise.toml
+assert_contains "cd / && mise -C $PWD/other config explain --file mise.toml" "settings.status.missing_tools"

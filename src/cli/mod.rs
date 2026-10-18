@@ -1112,16 +1112,16 @@ impl Cli {
         measure!("add_cli_matches", {
             Settings::add_cli_matches(cli.settings_layer(command_local))
         });
+        let cd = cli
+            .cd
+            .clone()
+            .or_else(|| std::env::var_os("MISE_CD").map(PathBuf::from));
         if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_repair())
-            || matches!(&cli.command, Some(Commands::Config(cmd)) if cmd.is_file_only())
+            || matches!(&cli.command, Some(Commands::Config(cmd)) if cmd.is_file_only(cd.as_deref()))
         {
-            // These file-only edits must remain available when the values they fix would fail
-            // settings loading. Honor directory selection without loading those settings.
-            if let Some(cd) = cli
-                .cd
-                .clone()
-                .or_else(|| std::env::var_os("MISE_CD").map(PathBuf::from))
-            {
+            // These file-only commands must remain available when the settings they read or fix
+            // would fail to load. Honor directory selection without loading those settings.
+            if let Some(cd) = cd {
                 crate::env::set_current_dir(cd)?;
             }
             return match cli.command.take() {
