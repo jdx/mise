@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{collections::BTreeMap, collections::BTreeSet, ffi::OsString, sync::Arc};
 
 use crate::args::BackendArg;
@@ -29,6 +30,9 @@ pub(super) struct RustPlugin {
     /// Channels `rustup check` reported an update for in this run, so the install
     /// that follows an upgrade does not ask rustup (and the network) again.
     updatable_channels: std::sync::Mutex<BTreeSet<String>>,
+    /// Whether the last remote listing lacked the numbered releases because
+    /// GitHub was unreachable, so the backend does not keep it in the cache.
+    degraded_listing: AtomicBool,
 }
 
 const RUST_DEFAULT_DIST_SERVER: &str = "https://static.rust-lang.org";
@@ -94,13 +98,17 @@ fn apply_rustup_mirror_env<'a>(
 
 /// A mirror can serve the channels without GitHub being reachable (an offline
 /// network), so a failed release listing then only loses the numbered releases.
-fn releases_or_channels_only<T>(releases: Result<Vec<T>>, mirrored: bool) -> Result<Vec<T>> {
+/// The flag says the listing is degraded, so it must not be cached as complete.
+fn releases_or_channels_only<T>(
+    releases: Result<Vec<T>>,
+    mirrored: bool,
+) -> Result<(Vec<T>, bool)> {
     match releases {
         Err(err) if mirrored => {
             warn!("failed to list rust releases from GitHub, using channels only: {err:#}");
-            Ok(vec![])
+            Ok((vec![], true))
         }
-        other => other,
+        other => other.map(|releases| (releases, false)),
     }
 }
 
@@ -271,6 +279,7 @@ impl RustPlugin {
         Self {
             ba: plugins::core::new_backend_arg("rust").into(),
             updatable_channels: Default::default(),
+            degraded_listing: Default::default(),
         }
     }
 
@@ -638,10 +647,15 @@ impl Backend for RustPlugin {
             .map(|server| crate::hash::hash_to_str(&server.trim_end_matches('/'))))
     }
 
+    fn remote_listing_is_degraded(&self) -> bool {
+        self.degraded_listing.load(Ordering::Relaxed)
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let mirrored = rustup_dist_server(&config.env().await?).is_some();
-        let releases =
+        let (releases, degraded) =
             releases_or_channels_only(github::list_releases("rust-lang/rust").await, mirrored)?;
+        self.degraded_listing.store(degraded, Ordering::Relaxed);
         let mut versions: Vec<VersionInfo> = releases
             .into_iter()
             .map(|r| {
@@ -1614,13 +1628,15 @@ mod tests {
     #[test]
     fn test_releases_or_channels_only() {
         let fail = || Err(eyre::eyre!("dns error"));
-        assert!(
-            releases_or_channels_only::<u8>(fail(), true)
-                .unwrap()
-                .is_empty()
+        assert_eq!(
+            releases_or_channels_only::<u8>(fail(), true).unwrap(),
+            (vec![], true)
         );
         assert!(releases_or_channels_only::<u8>(fail(), false).is_err());
-        assert_eq!(releases_or_channels_only(Ok(vec![1u8]), true).unwrap(), [1]);
+        assert_eq!(
+            releases_or_channels_only(Ok(vec![1u8]), true).unwrap(),
+            (vec![1], false)
+        );
     }
 
     #[test]

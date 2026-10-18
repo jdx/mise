@@ -3049,6 +3049,13 @@ pub trait Backend: Debug + Send + Sync {
     /// Backends should return a digest rather than raw values. A non-empty
     /// context partitions the remote-version cache and disables the shared
     /// versions host, whose response cannot account for local context.
+    /// Whether the listing `_list_remote_versions` just returned is missing
+    /// versions because a source was unreachable. Such a list is returned but
+    /// not left in the cache, so the next call tries again.
+    fn remote_listing_is_degraded(&self) -> bool {
+        false
+    }
+
     async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
         Ok(None)
     }
@@ -3363,7 +3370,7 @@ pub trait Backend: Debug + Send + Sync {
             );
             remote_versions.get_or_try_init_async(fetch).await?.clone()
         };
-        if versions.is_empty() {
+        if versions.is_empty() || self.remote_listing_is_degraded() {
             remote_versions.clear()?;
         }
         Ok(filter_cached_prereleases(versions, want_prereleases))
