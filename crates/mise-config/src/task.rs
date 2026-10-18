@@ -166,7 +166,7 @@ impl<'de> Deserialize<'de> for TaskToolValueMap {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum RunEntry {
     /// Shell script entry
@@ -181,6 +181,57 @@ pub enum RunEntry {
     },
     /// Run multiple tasks in parallel
     TaskGroup { tasks: Vec<String> },
+}
+
+// Written by hand rather than `#[serde(untagged)]`, so an entry that matches no shape says which
+// shapes there are. A table with both `task` and `tasks` is a single task, as it was untagged.
+impl<'de> Deserialize<'de> for RunEntry {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct RunTable {
+            task: Option<String>,
+            #[serde(default)]
+            args: Vec<String>,
+            #[serde(default)]
+            env: IndexMap<String, String>,
+            tasks: Option<Vec<String>>,
+        }
+
+        struct RunEntryVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for RunEntryVisitor {
+            type Value = RunEntry;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("a script string or a table with `task` or `tasks`")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(RunEntry::Script(v.to_string()))
+            }
+
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                map: M,
+            ) -> Result<Self::Value, M::Error> {
+                let table =
+                    RunTable::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                match (table.task, table.tasks) {
+                    (Some(task), _) => Ok(RunEntry::SingleTask {
+                        task,
+                        args: table.args,
+                        env: table.env,
+                    }),
+                    (None, Some(tasks)) => Ok(RunEntry::TaskGroup { tasks }),
+                    (None, None) => Err(serde::de::Error::custom(
+                        "a run entry table needs `task` (one task) or `tasks` (tasks run in parallel)",
+                    )),
+                }
+            }
+        }
+
+        deserializer.deserialize_any(RunEntryVisitor)
+    }
 }
 
 impl std::hash::Hash for RunEntry {

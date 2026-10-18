@@ -46,12 +46,6 @@ where
         where
             S: de::SeqAccess<'de>,
         {
-            #[derive(Deserialize)]
-            #[serde(untagged)]
-            enum StringOrValue<T> {
-                String(String),
-                Value(T),
-            }
             let mut seq = seq;
             std::iter::from_fn(|| seq.next_element::<StringOrValue<T>>().transpose())
                 .map(|element| match element {
@@ -64,6 +58,63 @@ where
     }
 
     deserializer.deserialize_any(ArrVisitor(std::marker::PhantomData))
+}
+
+/// A list item [`deserialize_arr`] reads: a string, parsed later with `FromStr`, or anything else,
+/// which `T` reads itself.
+///
+/// Written by hand rather than `#[serde(untagged)]`, which buffers the item and reports only that
+/// it matched neither; this hands a table straight to `T`, so `T`'s own error (an unknown key, a
+/// missing one) is what the user sees.
+enum StringOrValue<T> {
+    String(String),
+    Value(T),
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for StringOrValue<T> {
+    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use de::IntoDeserializer;
+
+        struct ItemVisitor<T>(std::marker::PhantomData<T>);
+
+        impl<'de, T: Deserialize<'de>> de::Visitor<'de> for ItemVisitor<T> {
+            type Value = StringOrValue<T>;
+
+            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+                formatter.write_str("a string or a map")
+            }
+
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                Ok(StringOrValue::String(v.to_string()))
+            }
+
+            fn visit_map<M: de::MapAccess<'de>>(self, map: M) -> Result<Self::Value, M::Error> {
+                T::deserialize(de::value::MapAccessDeserializer::new(map)).map(StringOrValue::Value)
+            }
+
+            fn visit_seq<S: de::SeqAccess<'de>>(self, seq: S) -> Result<Self::Value, S::Error> {
+                T::deserialize(de::value::SeqAccessDeserializer::new(seq)).map(StringOrValue::Value)
+            }
+
+            fn visit_bool<E: de::Error>(self, v: bool) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer()).map(StringOrValue::Value)
+            }
+
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer()).map(StringOrValue::Value)
+            }
+
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer()).map(StringOrValue::Value)
+            }
+
+            fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
+                T::deserialize(v.into_deserializer()).map(StringOrValue::Value)
+            }
+        }
+
+        deserializer.deserialize_any(ItemVisitor(std::marker::PhantomData))
+    }
 }
 
 /// The keys a derived `Deserialize` struct reads: the field list serde hands to
