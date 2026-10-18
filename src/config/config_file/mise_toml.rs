@@ -19,11 +19,11 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Key, Value, table, value}
 
 use crate::args::BackendArg;
 use crate::backend::unalias_backend;
+use crate::config::config_file::config_root;
 use crate::config::config_file::{
     ConfigFile, TaskConfig, ToolConfig, config_trust_root, is_config_ignored_via_setting,
     is_persisted_ignored, trust, trust_check,
 };
-use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvValue};
 use crate::config::settings::SettingsPartial;
 use crate::config::{
@@ -42,6 +42,7 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions
 use crate::watch_files::WatchFile;
 use crate::{env, file};
 use mise_config::bootstrap::BootstrapTomlConfig;
+use mise_config::de::deserialize_arr;
 use mise_config::dotfiles::DotfilesTomlConfig;
 use mise_config::packages::PackageTomlConfig;
 

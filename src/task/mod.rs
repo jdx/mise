@@ -1,6 +1,5 @@
 use crate::args::{BackendArg, ToolArg};
 use crate::config::config_file::mise_toml::EnvList;
-use crate::config::config_file::toml::{TrackingTomlParser, deserialize_arr};
 use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{self, Config, SettingsExt};
 use crate::path_env::PathEnv;
@@ -698,15 +697,91 @@ fn parse_mise_header_toml(body: &str) -> Result<Vec<toml::Value>> {
         .collect()
 }
 
-fn parse_task_dependencies(parser: &mut TrackingTomlParser<'_>, key: &str) -> Result<Vec<TaskDep>> {
-    parser
-        .get_raw(key)
-        .map(|value| {
-            deserialize_arr::<_, Vec<TaskDep>, TaskDep>(value.clone())
-                .map_err(|e| eyre!("failed to parse {key} field in task header: {e}"))
-        })
-        .transpose()
-        .map(Option::unwrap_or_default)
+/// [`TaskDecl`] keys a file task's own file provides: the script is its `run`, and its `#USAGE`
+/// lines are its `usage`.
+const FILE_TASK_BODY_KEYS: &[&str] = &["run", "run_windows", "file", "usage"];
+
+/// Header keys whose value guards how a task runs. A bad one fails the task instead of being
+/// skipped, so a typo cannot drop a confirmation prompt or a sandbox restriction.
+const FILE_TASK_GUARD_KEYS: &[&str] = &[
+    "confirm",
+    "deny_all",
+    "deny_read",
+    "deny_write",
+    "deny_net",
+    "deny_env",
+];
+
+/// Reads a file task's merged `#MISE` header into a [`TaskDecl`], the type a `[tasks.<name>]`
+/// table deserializes into, so a header accepts exactly the keys and values a TOML task does.
+///
+/// A header is more forgiving than a TOML task, because every task in the project is loaded in
+/// one loop and one bad file must not take the others down. An unknown key, a key the file
+/// itself provides, and a bad value each warn and are skipped; only a bad value for one of the
+/// [`FILE_TASK_GUARD_KEYS`] is an error.
+fn header_decl(mut info: toml::Table, path: &Path) -> Result<TaskDecl> {
+    if info.contains_key("alias") && info.contains_key("aliases") {
+        bail!(
+            "Cannot define both 'alias' and 'aliases' fields in task file header: {}. Use only one.",
+            display_path(path)
+        );
+    }
+    // `aliases` is accepted in a header as another spelling of `alias`.
+    if let Some(aliases) = info.remove("aliases") {
+        info.insert("alias".into(), aliases);
+    }
+    for key in FILE_TASK_BODY_KEYS {
+        if info.remove(*key).is_some() {
+            warn!(
+                "`{key}` has no effect in a task file header, ignoring: {}",
+                display_path(path)
+            );
+        }
+    }
+    let known = mise_config::de::struct_fields::<TaskDecl>();
+    let mut unknown: Vec<String> = info
+        .keys()
+        .filter(|key| !known.contains(&key.as_str()))
+        .cloned()
+        .collect();
+    if !unknown.is_empty() {
+        for key in &unknown {
+            info.remove(key);
+        }
+        unknown.sort();
+        warn!(
+            "unknown field(s) {:?} in task file header, ignoring: {}",
+            unknown,
+            display_path(path)
+        );
+    }
+    if let Ok(decl) = TaskDecl::deserialize(toml::Value::Table(info.clone())) {
+        return Ok(decl);
+    }
+    // Something is invalid: find each key that fails on its own and skip it.
+    for key in info.keys().cloned().collect_vec() {
+        let single = toml::Table::from_iter([(key.clone(), info[&key].clone())]);
+        let Err(err) = TaskDecl::deserialize(toml::Value::Table(single)) else {
+            continue;
+        };
+        if FILE_TASK_GUARD_KEYS.contains(&key.as_str()) {
+            bail!(
+                "failed to parse {key} field in task header: {}: {err}",
+                display_path(path)
+            );
+        }
+        warn!(
+            "invalid `{key}` in task file header, ignoring: {}: {err}",
+            display_path(path)
+        );
+        info.remove(&key);
+    }
+    TaskDecl::deserialize(toml::Value::Table(info)).map_err(|err| {
+        eyre!(
+            "failed to parse task file header: {}: {err}",
+            display_path(path)
+        )
+    })
 }
 
 /// Whether a task include file contains Tera template syntax only after TOML
@@ -1150,152 +1225,15 @@ impl Task {
                 merge_header_value(&mut map, key, value);
                 map
             });
-        let info = toml::Value::Table(info);
-
-        let mut p = TrackingTomlParser::new(&info);
-        // trace!("task info: {:#?}", info);
-
-        task.description = p.parse_str("description").unwrap_or_default();
-        // The loaders that build file tasks call `resolve_task_template` on the result, so a
-        // template named here is applied the same way a `mise.toml` task's `extends` is. Only
-        // the header parser was missing the field, which made `#MISE extends="..."` an unknown
-        // key: warned about and dropped.
-        task.extends = p.parse_str("extends");
-        // Check for multiple alias fields before parsing
-        let alias_fields: Vec<&str> = ["alias", "aliases"]
-            .iter()
-            .filter(|&field| info.get(field).is_some())
-            .copied()
-            .collect();
-
-        if alias_fields.len() > 1 {
-            return Err(eyre::eyre!(
-                "Cannot define both 'alias' and 'aliases' fields in task file header: {}. Use only one.",
-                display_path(path)
-            ));
-        }
-
-        task.aliases = p
-            .parse_array("alias")
-            .or(p.parse_array("aliases"))
-            .or(p.parse_str("alias").map(|s| vec![s]))
-            .or(p.parse_str("aliases").map(|s| vec![s]))
-            .unwrap_or_default();
-        task.confirm = p
-            .get_raw("confirm")
-            .map(|v| {
-                TaskConfirm::deserialize(v.clone())
-                    .map_err(|e| eyre!("failed to parse confirm field in task header: {e}"))
-            })
-            .transpose()?;
-        task.skip_if = p.parse_str("skip_if");
-        task.depends = parse_task_dependencies(&mut p, "depends")?;
-        task.daemons = p
-            .get_raw("daemons")
-            .map(|v| {
-                TaskDaemons::deserialize(v.clone())
-                    .map_err(|e| eyre!("failed to parse daemons field in task header: {e}"))
-            })
-            .transpose()?;
-        task.secrets = p
-            .get_raw("secrets")
-            .map(|v| {
-                crate::secrets::TaskSecrets::deserialize(v.clone())
-                    .map_err(|e| eyre!("failed to parse secrets field in task header: {e}"))
-            })
-            .transpose()?;
-        task.depends_post = parse_task_dependencies(&mut p, "depends_post")?;
-        task.wait_for = parse_task_dependencies(&mut p, "wait_for")?;
-        task.env = p.parse_env("env")?.unwrap_or_default();
-        if let toml::Value::Table(table) = &info {
-            crate::secrets::check_toml_locations(crate::secrets::TomlShape::Header, table, path)?;
-        }
+        crate::secrets::check_toml_locations(crate::secrets::TomlShape::Header, &info, path)?;
+        let decl = header_decl(info, path)?;
+        // A script that is not executable cannot be run directly, so it is hidden whatever its
+        // header says.
+        let hidden = !file::is_executable(path) || decl.hide.unwrap_or_default();
+        task.apply_decl(decl);
+        task.hide = hidden;
         task.record_late_secret_env(path)?;
-        task.dir = p.parse_str("dir");
-        task.hide = !file::is_executable(path) || p.parse_bool("hide").unwrap_or_default();
-        task.raw = p.parse_bool("raw").unwrap_or_default();
-        task.raw_args = p.parse_bool("raw_args").unwrap_or_default();
-        task.interactive = p.parse_bool("interactive").unwrap_or_default();
-        task.sources = p
-            .get_raw("sources")
-            .map(|v| {
-                deserialize_arr::<_, Vec<String>, String>(v.clone())
-                    .map_err(|e| eyre!("failed to parse sources field in task header: {e}"))
-            })
-            .transpose()?
-            .unwrap_or_default();
-        task.watch = p
-            .get_raw("watch")
-            .map(|v| {
-                TaskWatchOptions::deserialize(v.clone())
-                    .map_err(|e| eyre!("failed to parse watch field in task header: {e}"))
-            })
-            .transpose()?;
-        task.outputs = p.get_raw("outputs").map(|to| to.into()).unwrap_or_default();
-        task.cache = p
-            .get_raw("cache")
-            .map(|v| {
-                TaskCacheConfig::deserialize(v.clone())
-                    .map_err(|e| eyre!("failed to parse cache field in task header: {e}"))
-            })
-            .transpose()?;
-        task.rust_cache = p
-            .get_raw("rust_cache")
-            .map(|value| {
-                TaskRustCacheConfig::deserialize(value.clone())
-                    .map_err(|error| eyre!("failed to parse rust_cache field: {error}"))
-            })
-            .transpose()?;
         task.file = Some(path.to_path_buf());
-        task.shell = p.parse_str("shell");
-        task.quiet = p.parse_bool("quiet").unwrap_or_default();
-        task.silent = p
-            .get_raw("silent")
-            .and_then(|v| Silent::deserialize(v.clone()).ok())
-            .unwrap_or_default();
-        task.output = p
-            .get_raw("output")
-            .and_then(|v| TaskOutput::deserialize(v.clone()).ok());
-        task.pass_through_env = p.parse_array("pass_through_env").unwrap_or_default();
-        task.tools = p
-            .parse_table("tools")
-            .map(|t| {
-                t.into_iter()
-                    .map(|(tool, value)| {
-                        TaskToolValue::deserialize(value)
-                            .map(|value| (tool.clone(), value))
-                            .map_err(|err| eyre!("failed to parse task tool `{tool}`: {err}"))
-                    })
-                    .collect::<Result<IndexMap<_, _>>>()
-            })
-            .transpose()?
-            .unwrap_or_default();
-
-        let mut unparsed = p.unparsed_keys();
-        unparsed.sort();
-
-        if !unparsed.is_empty() {
-            // A warning rather than an error, matching how `mise.toml` treats a key it does not
-            // recognise (`MiseToml::from_str` reports one through `serde_ignored` and carries on).
-            // A file task has no reason to be stricter than the config file, and it is in a worse
-            // position to be: this parse runs inside the loop that loads *every* task in the
-            // project, so returning here made one unrecognised key in one file take all of them
-            // down -- `mise run <some other task>` failed too.
-            //
-            // Only genuinely unknown key names reach this point. `TrackingTomlParser` records a key
-            // as parsed when it is looked up, so a known key holding the wrong type is not here.
-            warn!(
-                "unknown field(s) {:?} in task file header, ignoring: {}",
-                unparsed,
-                display_path(path)
-            );
-        }
-
-        #[cfg(test)]
-        {
-            let fields: Vec<String> = p.parsed_keys().map(|s| s.to_string()).collect();
-            tests::capture_parsed_fields(fields);
-        }
         Ok(task)
     }
 
@@ -3445,6 +3383,19 @@ impl Task {
     /// overlay merging happen later; this only carries the declaration over and records which
     /// overlay flags the table set.
     pub(crate) fn from_decl(decl: TaskDecl) -> Self {
+        // What `#[serde(skip)]` gave a table-form task before `TaskDecl`; `Task::default()`
+        // starts at `usize::MAX`. Loading reassigns it either way.
+        let mut task = Task {
+            config_precedence: 0,
+            ..Default::default()
+        };
+        task.apply_decl(decl);
+        task
+    }
+
+    /// Sets every field a [`TaskDecl`] declares, keeping the rest: where the task was loaded
+    /// from, its name, and its runtime state.
+    pub(crate) fn apply_decl(&mut self, decl: TaskDecl) {
         let toml_bool_presence = TaskTomlBoolPresence {
             hide: decl.hide.is_some(),
             raw: decl.raw.is_some(),
@@ -3453,7 +3404,7 @@ impl Task {
             quiet: decl.quiet.is_some(),
             silent: decl.silent.is_some(),
         };
-        Task {
+        *self = Task {
             description: decl.description,
             aliases: decl.aliases,
             confirm: decl.confirm,
@@ -3499,11 +3450,8 @@ impl Task {
             pass_through_env: decl.pass_through_env,
             extends: decl.extends,
             toml_bool_presence,
-            // What `#[serde(skip)]` gave a table-form task before `TaskDecl`; `Task::default()`
-            // starts at `usize::MAX`. Loading reassigns it either way.
-            config_precedence: 0,
-            ..Default::default()
-        }
+            ..std::mem::take(self)
+        };
     }
 }
 
@@ -4415,7 +4363,6 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     use std::path::{Path, PathBuf};
-    use std::sync::Mutex;
 
     use crate::task::task_sources::{RawOutputTemplates, TaskOutputs};
     use crate::task::workspace;
@@ -4667,17 +4614,6 @@ rust_cache = { unknown = true }
                 no_vcs_ignore: false
             })
         );
-    }
-
-    // Thread-local storage to capture parser state during tests
-    thread_local! {
-        static CAPTURED_PARSER_FIELDS: Mutex<Option<Vec<String>>> = const { Mutex::new(None) };
-    }
-
-    pub(super) fn capture_parsed_fields(fields: Vec<String>) {
-        CAPTURED_PARSER_FIELDS.with(|captured| {
-            *captured.lock().unwrap() = Some(fields);
-        });
     }
 
     #[test]
@@ -4977,11 +4913,6 @@ exec proxy "$@"
             spec.cmd.subcommands["proxy"].mounts[0].run,
             "proxy --usage-spec"
         );
-    }
-
-    #[cfg(unix)]
-    fn take_captured_fields() -> Option<Vec<String>> {
-        CAPTURED_PARSER_FIELDS.with(|captured| captured.lock().unwrap().take())
     }
 
     #[test]
@@ -6484,6 +6415,19 @@ echo "hello world"
 #MISE tools={node={prefix="20"}, python="3.11"}
 #MISE confirm="Are you sure?"
 #MISE skip_if="test -f done.txt"
+#MISE vars={GREETING="hi"}
+#MISE timeout="5m"
+#MISE global=true
+#MISE args=["--verbose"]
+#MISE deny_all=true
+#MISE deny_read=true
+#MISE deny_write=true
+#MISE deny_net=true
+#MISE deny_env=true
+#MISE allow_read=["src"]
+#MISE allow_write=["out"]
+#MISE allow_net=["example.com"]
+#MISE allow_env=["HOME"]
 echo "test"
 "#;
         fs::write(&task_file, script_content).unwrap();
@@ -6548,25 +6492,35 @@ echo "test"
         );
         assert_eq!(task.skip_if, Some("test -f done.txt".to_string()));
 
-        let mut parsed_fields =
-            take_captured_fields().expect("Parser fields should have been captured");
+        assert_eq!(task.vars.0.len(), 1);
+        assert_eq!(task.timeout, Some("5m".to_string()));
+        assert!(task.global);
+        assert_eq!(task.args, ["--verbose"]);
+        assert!(
+            task.deny_all && task.deny_read && task.deny_write && task.deny_net && task.deny_env
+        );
+        assert_eq!(task.allow_read, [PathBuf::from("src")]);
+        assert_eq!(task.allow_write, [PathBuf::from("out")]);
+        assert_eq!(task.allow_net, ["example.com"]);
+        assert_eq!(task.allow_env, ["HOME"]);
 
-        // Group "alias" and "aliases" as they are alternate forms (count as 1)
-        let has_alias = parsed_fields.iter().any(|k| k == "alias");
-        parsed_fields.retain(|k| k != "aliases" || !has_alias);
-
-        // Count property lines in script (exclude shebang and echo command)
-        let script_lines = script_content.lines().count() - 2;
-
+        // A header reads every `TaskDecl` key except the ones the file itself provides, so the
+        // script above must set each of them.
+        let in_script: std::collections::BTreeSet<&str> = script_content
+            .lines()
+            .filter_map(|line| line.strip_prefix("#MISE "))
+            .map(|entry| entry.split_once('=').unwrap().0)
+            .map(|key| if key == "aliases" { "alias" } else { key })
+            .collect();
+        let header_keys: std::collections::BTreeSet<&str> =
+            mise_config::de::struct_fields::<crate::task::TaskDecl>()
+                .iter()
+                .copied()
+                .filter(|key| !crate::task::FILE_TASK_BODY_KEYS.contains(key))
+                .collect();
         assert_eq!(
-            parsed_fields.len(),
-            script_lines,
-            "Parser looks for {} properties but test script has {} field lines.\n\
-             If you added (or removed) parseable fields, add it to the test script.\n\
-             Parser fields: {:?}",
-            parsed_fields.len(),
-            script_lines,
-            parsed_fields
+            in_script, header_keys,
+            "add each new TaskDecl key to this test's script"
         );
     }
 
@@ -6616,7 +6570,7 @@ echo "test"
 
     #[tokio::test]
     #[cfg(unix)]
-    async fn test_file_task_reports_tool_selector_errors() {
+    async fn test_file_task_skips_an_invalid_tool_selector() {
         use std::fs;
         use tempfile::tempdir;
 
@@ -6631,16 +6585,85 @@ echo "test"
         .unwrap();
         fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
 
+        // A bad header value warns and is skipped, so one file cannot stop every task loading.
         let config = Config::get().await.unwrap();
-        let err = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+        let task = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
             .await
-            .unwrap_err();
-        assert!(
-            err.to_string().contains(
-                "failed to parse task tool `node`: tool definition cannot specify both `version` and `prefix`"
-            ),
-            "{err}"
-        );
+            .unwrap();
+        assert!(task.tools.is_empty());
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_file_task_header_fails_closed_on_a_bad_guard() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+        let config = Config::get().await.unwrap();
+        for (name, header) in [("confirm", "confirm=1"), ("deny-net", "deny_net=\"yes\"")] {
+            let task_file = tasks_dir.join(name);
+            fs::write(
+                &task_file,
+                format!("#!/usr/bin/env bash\n#MISE description=\"kept\"\n#MISE {header}\n"),
+            )
+            .unwrap();
+            fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let err = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+                .await
+                .unwrap_err();
+            let key = header.split_once('=').unwrap().0;
+            assert!(
+                err.to_string()
+                    .contains(&format!("failed to parse {key} field in task header")),
+                "{err}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_file_task_header_skips_bad_values_and_body_keys() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        let temp_dir = tempdir().unwrap();
+        let tasks_dir = temp_dir.path().join("tasks");
+        fs::create_dir(&tasks_dir).unwrap();
+        let task_file = tasks_dir.join("lenient");
+        fs::write(
+            &task_file,
+            r#"#!/usr/bin/env bash
+#MISE description="kept"
+#MISE hide="true"
+#MISE silent="loud"
+#MISE output="nonsense"
+#MISE outputs=[1]
+#MISE run="echo never"
+#MISE usage="arg <x>"
+#MISE no_such_key=1
+#MISE timeout="5m"
+echo hi
+"#,
+        )
+        .unwrap();
+        fs::set_permissions(&task_file, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = Config::get().await.unwrap();
+        let task = Task::from_path(&config, &task_file, &tasks_dir, temp_dir.path())
+            .await
+            .unwrap();
+        assert_eq!(task.description, "kept");
+        assert!(!task.hide);
+        assert_eq!(task.silent, super::Silent::Off);
+        assert_eq!(task.output, None);
+        assert!(task.outputs.is_empty());
+        assert!(task.run.is_empty());
+        assert_eq!(task.usage, "");
+        assert_eq!(task.timeout, Some("5m".to_string()));
+        assert_eq!(task.file, Some(task_file));
     }
 
     #[tokio::test]

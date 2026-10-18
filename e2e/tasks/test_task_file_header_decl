@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# A file task's #MISE header accepts the same keys and values as a [tasks.<name>] table.
+
+mkdir -p mise-tasks
+
+# A key that only worked in mise.toml now works in a header.
+cat <<'EOF' >mise-tasks/too_slow
+#!/usr/bin/env bash
+#MISE timeout="1s"
+sleep 10
+echo "should not appear"
+EOF
+chmod +x mise-tasks/too_slow
+assert_contains "mise run too_slow 2>&1 || true" "timed out"
+assert_not_contains "mise run too_slow 2>&1 || true" "should not appear"
+rm mise-tasks/too_slow
+
+# A bad value, an unknown key and a key the file itself provides warn and are skipped; the
+# rest of the header still applies.
+cat <<'EOF' >mise-tasks/lenient
+#!/usr/bin/env bash
+#MISE description="kept"
+#MISE hide="true"
+#MISE run="echo never"
+#MISE no_such_key=1
+echo "ran lenient"
+EOF
+chmod +x mise-tasks/lenient
+mise run lenient >lenient.log 2>&1
+assert_contains "cat lenient.log" "ran lenient"
+assert_not_contains "cat lenient.log" "never"
+assert_contains "grep 'invalid' lenient.log" "hide"
+assert_contains "grep 'has no effect in a task file header' lenient.log" "run"
+assert_contains "cat lenient.log" 'unknown field(s) ["no_such_key"] in task file header, ignoring'
+assert_contains "mise tasks ls 2>/dev/null" "kept"
+
+# A bad confirm or deny_* is an error, so a typo cannot drop the prompt or the sandbox.
+cat <<'EOF' >mise-tasks/guarded
+#!/usr/bin/env bash
+#MISE deny_net="yes"
+echo "ran guarded"
+EOF
+chmod +x mise-tasks/guarded
+assert_fail "mise run guarded" "failed to parse deny_net field in task header"
