@@ -87,7 +87,7 @@ export const OPENS: Partial<Record<CaptureId, (c: Capture) => number>> = {
   C12: (c) => stepOf(c, "ci-skip").type,
   C13: (c) => stepOf(c, "help").type,
   C14: (c) => stepOf(c, "cd").type,
-  C15: (c) => stepOf(c, "confirm").type,
+  C15: (c) => stepOf(c, "track").type,
   C17: (c) => stepOf(c, "lock").type,
   C18: (c) => stepOf(c, "confirm-1").type,
   // C19 opens on the screen its Ctrl-L cleared.
@@ -132,6 +132,8 @@ export const HOLDS: Partial<Record<CaptureId, (c: Capture) => number>> = {
  * run's output (and its `Finished in`) cropped away above it.
  */
 export const SKIP_SCREEN: ScreenOptions = { from: /^~\/work\/api \$/ };
+/** track's screen: a soft-wrapped line is one line, cropped by the pane's fade (scenes/track.ts). */
+export const TRACK_SCREEN: ScreenOptions = { joinWraps: true };
 
 /** The capture rig's terminal width: a row this long wrapped onto the next (a soft wrap). */
 const COLS = 80;
@@ -494,6 +496,7 @@ interface CardRest {
   path: string;
   open: readonly string[];
   hide?: RegExp;
+  keep?: RegExp;
   lit?: Readonly<Record<string, number>>;
   size?: number;
   /**
@@ -564,6 +567,9 @@ export type Layer =
   | { kind: "chef" };
 
 /** The api project's card, as take `from` left it. */
+/** hk's pin, which `mise use` writes with the signing workflow: wider than the card, so its tail fades. */
+export const HK_PIN = /^hk\s*=/;
+
 const apiCard = (
   from: CaptureId,
   open: readonly string[],
@@ -720,7 +726,7 @@ export const RESTS: Record<BoundaryId, readonly Layer[]> = {
     apiCard("C7", ["[tools]"], { fit: true }),
   ],
   "packslip|env": [
-    apiCard("C8", ["[tools]"], { fit: true }),
+    apiCard("C8", ["[tools]"], { fit: true, keep: HK_PIN }),
     held(PANES.slip, "C8", { dim: 1 }),
   ],
   "env|vars": [
@@ -778,7 +784,7 @@ export const RESTS: Record<BoundaryId, readonly Layer[]> = {
       from: "fixtures",
     },
     { kind: "rail", rect: RAIL },
-    pane(LEFT, "C15"),
+    pane(LEFT, "C15", { screen: TRACK_SCREEN }),
   ],
   "track|machines": [
     {
@@ -789,7 +795,7 @@ export const RESTS: Record<BoundaryId, readonly Layer[]> = {
       from: "fixtures",
     },
     { kind: "rail", rect: RAIL, dots: checkpoints },
-    held(LEFT, "C15"),
+    held(LEFT, "C15", { screen: TRACK_SCREEN }),
   ],
   "machines|lock": [apiCard("C17", ["[tools]"]), pane(LEFT, "C17")],
   "lock|new": [],
@@ -868,6 +874,7 @@ export function drawLayer(
         from: l.from,
         open: l.open,
         hide: l.hide,
+        keep: l.keep,
         lit: l.lit,
         size: l.size,
         fit: l.fit,
