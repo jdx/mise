@@ -757,8 +757,9 @@ function firstSentence(html) {
     max-height: none;
   }
 
+  /* one pane at a time: the tree, which shows the filter's matches too, or the selected key */
   .explorer.has-selection .tree-pane,
-  .explorer:not(.has-selection) .overview {
+  .explorer:not(.has-selection) .detail-pane {
     display: none;
   }
 }
