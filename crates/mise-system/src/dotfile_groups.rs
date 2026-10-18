@@ -130,6 +130,12 @@ fn unexpanded() -> std::sync::MutexGuard<'static, HashSet<String>> {
     UNEXPANDED.lock().unwrap_or_else(|err| err.into_inner())
 }
 
+/// Forget the groups an earlier composition could not expand, before another
+/// one decides afresh: a config the apply replaced may no longer declare them.
+pub(crate) fn reset_unexpanded() {
+    unexpanded().clear();
+}
+
 /// Expand every `[dotfile_groups]` table in one config hierarchy into file
 /// requests. A more local file's definition of a group replaces the whole
 /// definition from a more global one.

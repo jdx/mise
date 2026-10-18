@@ -209,38 +209,7 @@ impl DotfilesApply {
 
     /// Remove what deselected or undeclared groups left behind.
     fn prune(&self, config: &Config, written: &mut Vec<PathBuf>) -> Result<()> {
-        let active = system::files::files_from_config(config)?;
-        let opts = system::dotfile_groups::RemoveOpts {
-            dry_run: self.dry_run,
-            force: self.force,
-        };
-        let orphaned = system::dotfile_groups::orphaned(&active);
-        let present = orphaned
-            .iter()
-            .flat_map(|record| &record.paths)
-            .filter(|path| path.target.symlink_metadata().is_ok())
-            .map(|path| path.target.display_user())
-            .collect::<Vec<_>>();
-        if present.is_empty() {
-            return Ok(());
-        }
-        // removal is confirmed like any other apply change
-        if !self.dry_run
-            && !self.yes
-            && console::user_attended_stderr()
-            && !crate::ui::prompt::confirm(format!(
-                "files: remove orphaned {}?",
-                present.join(", ")
-            ))?
-            .is_yes()
-        {
-            info!("files: prune skipped");
-            return Ok(());
-        }
-        for record in orphaned {
-            written.extend(system::dotfile_groups::remove_recorded(&record, &opts)?);
-        }
-        Ok(())
+        prune_orphans(config, self.dry_run, self.force, self.yes, written)
     }
 
     fn file_opts(&self) -> system::files::ApplyOpts {
@@ -290,20 +259,10 @@ impl DotfilesApply {
 }
 
 /// Runs `write`, then the `[history.reload]` commands matching the targets it
-/// recorded, and returns its result. Shared by `mise dot apply` and the
-/// dotfiles phase of `mise bootstrap`.
-pub(crate) fn write_and_reload(
-    dry_run: bool,
-    write: impl FnOnce(&mut Vec<PathBuf>) -> Result<bool>,
-) -> Result<bool> {
-    // resolved from the trusted layers before anything is written, so
-    // nothing this apply writes can change which commands run afterwards
-    let reload = system::history::config::reload_commands()?;
-    write_and_reload_with(&reload, dry_run, write)
-}
-
-/// [`write_and_reload`] with the reload commands resolved by the caller, for
-/// an apply that writes in more than one pass.
+/// recorded, and returns its result. The caller resolves the commands before
+/// anything is written, so nothing the apply writes can change which commands
+/// run afterwards. Shared by `mise dot apply` and the dotfiles phase of
+/// `mise bootstrap`.
 pub(crate) fn write_and_reload_with(
     reload: &IndexMap<String, String>,
     dry_run: bool,
@@ -322,4 +281,45 @@ pub(crate) fn write_and_reload_with(
         system::history::replay::run_reload(reload, &touched);
     }
     result
+}
+
+/// Remove the files that dotfile groups deployed but no active entry deploys
+/// now, appending each removed path to `written`. Shared by `mise dot apply
+/// --prune` and `mise bootstrap --prune-dotfiles`.. Declining the confirmation prompt
+/// skips the prune and nothing else.
+pub(crate) fn prune_orphans(
+    config: &Config,
+    dry_run: bool,
+    force: bool,
+    yes: bool,
+    written: &mut Vec<PathBuf>,
+) -> Result<()> {
+    // checked against this config, which an earlier apply may have replaced
+    super::ensure_prune_sees_every_group(config)?;
+    let active = system::files::files_from_config(config)?;
+    let opts = system::dotfile_groups::RemoveOpts { dry_run, force };
+    let orphaned = system::dotfile_groups::orphaned(&active);
+    let present = orphaned
+        .iter()
+        .flat_map(|record| &record.paths)
+        .filter(|path| path.target.symlink_metadata().is_ok())
+        .map(|path| path.target.display_user())
+        .collect::<Vec<_>>();
+    if present.is_empty() {
+        return Ok(());
+    }
+    // removal is confirmed like any other apply change
+    if !dry_run
+        && !yes
+        && console::user_attended_stderr()
+        && !crate::ui::prompt::confirm(format!("files: remove orphaned {}?", present.join(", ")))?
+            .is_yes()
+    {
+        info!("files: prune skipped");
+        return Ok(());
+    }
+    for record in orphaned {
+        written.extend(system::dotfile_groups::remove_recorded(&record, &opts)?);
+    }
+    Ok(())
 }

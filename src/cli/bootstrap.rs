@@ -11,7 +11,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use usage_rs::spec::ValueEnum;
 
-use super::dotfiles::{Dotfiles, DotfilesApply, write_and_reload};
+use super::dotfiles::{Dotfiles, DotfilesApply, prune_orphans, write_and_reload_with};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
@@ -161,6 +161,18 @@ pub(crate) struct Bootstrap {
     /// Overwrite existing files that conflict with whole-file dotfile entries
     #[usage(long)]
     force_dotfiles: bool,
+
+    /// Remove files that dotfile groups deployed but no active entry deploys
+    /// now
+    ///
+    /// The same pruning as `mise dot apply --prune`, run at the end of the
+    /// dotfiles phase before its post hook: files of a group that is no longer
+    /// selected or declared, and files a group stopped deploying because of a
+    /// new `exclude` or a deleted source. Changed copies stay in place, and
+    /// mise asks before removing anything unless `--yes` is given or there is
+    /// no terminal. With `--dry-run`, nothing is removed.
+    #[usage(long)]
+    prune_dotfiles: bool,
 
     /// Run only these parts
     ///
@@ -1905,6 +1917,10 @@ impl Bootstrap {
         let mut config = Config::get().await?;
         let mut hooks = system::hooks_from_config(&config);
         let skip = self.skip_parts();
+        if self.prune_dotfiles && !skip.contains(&BootstrapPart::Dotfiles) {
+            // before any phase changes anything, like `mise dot apply --prune`
+            super::dotfiles::ensure_prune_sees_every_group(&config)?;
+        }
         let summary = Summary { message: None };
         let accounts_enabled = !skip.contains(&BootstrapPart::Accounts);
         let files_enabled = !skip.contains(&BootstrapPart::Files);
@@ -2227,9 +2243,12 @@ impl Bootstrap {
                 debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
             }
             // the same [history.reload] commands `mise dot apply` runs, for
-            // the targets this phase writes
+            // the targets this phase writes. Resolved once, before anything
+            // is written, so neither the apply nor the prune can change
+            // which commands run
+            let reload = system::history::config::reload_commands()?;
             if (!files.is_empty() || !edits.is_empty())
-                && !write_and_reload(self.dry_run, |written| {
+                && !write_and_reload_with(&reload, self.dry_run, |written| {
                     self.apply_dotfiles(&config, &files, &edits, &secrets, written)
                 })?
             {
@@ -2243,6 +2262,16 @@ impl Bootstrap {
             } else {
                 config = Config::reset().await?;
                 hooks = system::hooks_from_config(&config);
+            }
+            // after the reload, so a configuration entry that deselects a group
+            // releases that group's files in this run
+            // (declining its prompt skips the prune, as in `mise dot apply`)
+            if self.prune_dotfiles {
+                write_and_reload_with(&reload, self.dry_run, |written| {
+                    info!("bootstrap: pruning dotfiles");
+                    prune_orphans(&config, self.dry_run, false, self.yes, written)?;
+                    Ok(true)
+                })?;
             }
             self.run_hooks(&config, &hooks, BootstrapHookPhase::PostDotfiles)
                 .await?;
