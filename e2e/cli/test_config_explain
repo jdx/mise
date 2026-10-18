@@ -63,7 +63,10 @@ test_mode = { default = "headless" }
 
 [tools]
 "asdf:mise-plugins/mise-foo" = { version = "1", mirror = "eu" }
+jq = ["1.7.1", "1.6"]
 EOF
+# A list of versions is described like one version.
+assert "mise config explain --file shapes.toml tools.jq --json | jq -r '.[0].description'" "a version of the tool, or a table with its version and options"
 assert_contains "mise config explain --file shapes.toml" "env.DATABASE_URL.required"
 assert_contains "mise config explain --file shapes.toml" "a variable without a value must be required"
 assert_not_contains "mise config explain --file shapes.toml" "not a key mise reads"

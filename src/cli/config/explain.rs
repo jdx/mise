@@ -307,7 +307,8 @@ impl Written {
 }
 
 /// The description of the first shape, from `node` down through `$ref` and its alternatives,
-/// that `value` fits.
+/// that `value` fits. An array shape without one of its own, such as a list of tool versions,
+/// is described by its items.
 fn describe<'a>(
     root: &'a Value,
     node: &'a Value,
@@ -324,6 +325,12 @@ fn describe<'a>(
             .filter_map(|combinator| node.get(*combinator).and_then(Value::as_array))
             .flatten()
             .find_map(|variant| describe(root, variant, value, depth + 1))
+            .or_else(|| {
+                (value.json_type == "array")
+                    .then(|| node.get("items"))
+                    .flatten()
+                    .and_then(|items| own_description(root, items))
+            })
     })
 }
 
