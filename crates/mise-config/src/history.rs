@@ -9,6 +9,7 @@ use serde::Deserialize;
 // `[history]` as parsed from a single mise.toml, before the layers are merged.
 #[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
 pub struct HistoryTomlConfig {
+    /// encryption for dotfiles tracked with encrypt = true
     #[serde(default)]
     pub encryption: Option<FileEncryptionConfig>,
     /// globs never captured by dotfiles history; a `!glob` entry re-includes a path an earlier glob excluded
@@ -24,11 +25,16 @@ pub struct HistoryTomlConfig {
     pub machine: Option<String>,
     /// commands run once after a rollback or undo writes a path matching the glob (trusted global or system config only)
     #[serde(default)]
+    #[schemars(with = "IndexMap<String, HistoryReloadCommand>")]
     pub reload: IndexMap<String, String>,
     /// the setup repository this machine publishes to and fetches from; machine-local, written by `mise bootstrap dotfiles origin set`
     #[serde(default)]
     pub origin: Option<OriginTomlConfig>,
 }
+
+/// command to run once when a restore or apply writes a path matching this glob
+#[derive(JsonSchema)]
+pub struct HistoryReloadCommand(pub String);
 
 // Public recipients shared by every encrypted dotfile.
 #[derive(Debug, Clone, Deserialize, Default, JsonSchema)]

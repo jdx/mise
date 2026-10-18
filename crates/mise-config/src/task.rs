@@ -648,6 +648,7 @@ pub struct TaskConfig {
     /// experimental config-root-relative source patterns added to every task in this config scope; entries may reference input groups with @group:<name>
     pub global_inputs: Vec<String>,
     /// experimental reusable config-root-relative source groups referenced with @group:<name>
+    #[schemars(with = "IndexMap<String, shapes::TaskInputGroup>")]
     pub input_groups: IndexMap<String, Vec<String>>,
     #[schemars(with = "Option<shapes::TaskIncludes>")]
     pub includes: Option<Vec<String>>,

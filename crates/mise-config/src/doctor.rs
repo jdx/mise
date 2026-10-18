@@ -16,10 +16,12 @@ use crate::schema::refs;
 #[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
 #[schemars(extend("additionalProperties" = true))]
 pub struct DoctorConfig {
+    /// Checks run by mise doctor project, keyed by check name.
     #[serde(default)]
     pub checks: BTreeMap<String, DoctorCheck>,
 }
 
+/// A check: a command that passes when it exits zero.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DoctorCheck {

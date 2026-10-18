@@ -20,6 +20,7 @@ pub struct MonorepoConfig {
     pub config_roots: Option<Vec<String>>,
     /// Short names for configured monorepo task roots. Keys are single path segments; values are paths in config_roots.
     #[serde(default)]
+    #[schemars(with = "BTreeMap<String, MonorepoPathAlias>")]
     pub path_aliases: BTreeMap<String, String>,
     /// Use a single lockfile at the monorepo root for descendant config roots. true opts in now, false keeps lockfiles next to subproject configs, and unset keeps the current behavior until the scheduled default flip.
     // None follows the rollout default; true opts in, false keeps colocated locks.
@@ -34,6 +35,10 @@ pub struct MonorepoConfig {
     pub projects: BTreeMap<String, WorkspaceProjectOverride>,
 }
 
+/// Config root this alias names, as listed in config_roots
+#[derive(JsonSchema)]
+pub struct MonorepoPathAlias(pub String);
+
 fn task_defaults(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
     schemars::json_schema!({
         "type": "object",
@@ -42,6 +47,7 @@ fn task_defaults(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 }
 
 // Explicit changes applied after workspace providers discover their projects.
+/// Changes to the workspace project with this ID, or a new project when the ID is new
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 #[schemars(transform = crate::schema::unevaluated)]

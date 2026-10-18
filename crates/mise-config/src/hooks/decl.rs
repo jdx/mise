@@ -167,18 +167,23 @@ fn hook_install_definition_items(_: &mut schemars::SchemaGenerator) -> schemars:
 #[derive(JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HooksDecl {
+    /// hooks to run when an activated shell moves into the project
     #[serde(default)]
     #[schemars(schema_with = "refs::hook_definition")]
     pub enter: Option<HookDefinition>,
+    /// hooks to run when an activated shell moves out of the project
     #[serde(default)]
     #[schemars(schema_with = "refs::hook_definition")]
     pub leave: Option<HookDefinition>,
+    /// hooks to run when an activated shell changes to a directory inside the project
     #[serde(default)]
     #[schemars(schema_with = "refs::hook_definition")]
     pub cd: Option<HookDefinition>,
+    /// hooks to run before mise installs tools
     #[serde(default)]
     #[schemars(schema_with = "refs::hook_install_definition")]
     pub preinstall: Option<HookInstallDefinition>,
+    /// hooks to run after mise installs tools
     #[serde(default)]
     #[schemars(schema_with = "refs::hook_install_definition")]
     pub postinstall: Option<HookInstallDefinition>,

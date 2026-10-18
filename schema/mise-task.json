@@ -66,7 +66,8 @@
               "type": "object",
               "description": "environment variables to set for the task",
               "additionalProperties": {
-                "type": "string"
+                "type": "string",
+                "description": "value of this environment variable"
               }
             }
           },
@@ -110,6 +111,7 @@
           ]
         },
         "confirm": {
+          "description": "prompt to answer before this task's own command runs, after its dependencies",
           "oneOf": [
             {
               "type": "string",
@@ -143,6 +145,7 @@
           ]
         },
         "depends": {
+          "description": "tasks that must finish before this task runs",
           "oneOf": [
             {
               "type": "string",
@@ -181,6 +184,7 @@
           ]
         },
         "depends_post": {
+          "description": "tasks to run after this task finishes",
           "oneOf": [
             {
               "type": "string",
@@ -199,6 +203,7 @@
           ]
         },
         "wait_for": {
+          "description": "tasks to wait for if they are already scheduled, without adding them to the run",
           "oneOf": [
             {
               "type": "string",
@@ -306,6 +311,7 @@
           "default": false
         },
         "outputs": {
+          "description": "files or directories this task creates; compared with `sources` to skip the task when it is up to date",
           "oneOf": [
             {
               "type": "array",
@@ -375,7 +381,9 @@
               "properties": {
                 "enabled": {
                   "type": "boolean",
-                  "default": true
+                  "description": "deprecated no-op",
+                  "default": true,
+                  "deprecated": true
                 },
                 "verify": {
                   "type": "boolean",
@@ -465,6 +473,7 @@
           "description": "Execute an external script"
         },
         "sources": {
+          "description": "files this task reads; mise skips the task when none changed since its outputs were written",
           "oneOf": [
             {
               "type": "array",
@@ -586,6 +595,7 @@
           "description": "environment modules",
           "properties": {
             "file": {
+              "description": "files to load variables from (dotenv, json, yaml, or toml)",
               "oneOf": [
                 {
                   "$ref": "#/$defs/env_directive"
@@ -612,14 +622,17 @@
               ]
             },
             "path": {
+              "description": "directories to add to the front of PATH",
               "oneOf": [
                 {
                   "type": "object",
                   "properties": {
                     "path": {
+                      "description": "directory to add to PATH, or a list of them",
                       "$ref": "#/$defs/env_path"
                     },
                     "paths": {
+                      "description": "directories to add to PATH",
                       "$ref": "#/$defs/env_paths"
                     },
                     "tools": {
@@ -664,6 +677,7 @@
                         "type": "object",
                         "properties": {
                           "path": {
+                            "description": "directory to add to PATH, or a list of them",
                             "$ref": "#/$defs/env_path"
                           },
                           "tools": {
@@ -682,6 +696,7 @@
               "additionalProperties": false,
               "properties": {
                 "venv": {
+                  "description": "python virtual environment to activate",
                   "oneOf": [
                     {
                       "type": "string",
@@ -727,6 +742,7 @@
               }
             },
             "source": {
+              "description": "bash scripts to run, taking the variables they export",
               "oneOf": [
                 {
                   "$ref": "#/$defs/env_directive"
@@ -885,6 +901,7 @@
           "description": "vars modules",
           "properties": {
             "file": {
+              "description": "files to load variables from (dotenv, json, yaml, or toml)",
               "oneOf": [
                 {
                   "$ref": "#/$defs/env_directive"
@@ -911,6 +928,7 @@
               ]
             },
             "source": {
+              "description": "bash scripts to run, taking the variables they export",
               "oneOf": [
                 {
                   "$ref": "#/$defs/env_directive"
@@ -960,6 +978,7 @@
             "required": ["value"],
             "properties": {
               "value": {
+                "description": "value of variable",
                 "oneOf": [
                   {
                     "type": "string"
@@ -1016,6 +1035,7 @@
                 "$ref": "#/$defs/env_redact"
               },
               "required": {
+                "description": "fail unless the process environment, a higher-precedence config file, or a saved answer supplies a value: true, or help text shown in the error",
                 "oneOf": [
                   {
                     "const": true
@@ -1167,9 +1187,11 @@
                       "type": "object",
                       "properties": {
                         "run": {
+                          "description": "command to run after the tool installs",
                           "type": "string"
                         },
                         "when": {
+                          "description": "install runs the command only when mise installs the tool; always runs it on every mise install and mise use",
                           "type": "string",
                           "enum": ["install", "always"],
                           "default": "install"
@@ -1212,18 +1234,22 @@
       "description": "task dependency with args, env, and optional flag",
       "properties": {
         "task": {
-          "type": "string"
+          "type": "string",
+          "description": "task name, alias, or pattern"
         },
         "args": {
           "type": "array",
+          "description": "arguments to pass to the task",
           "items": {
             "type": "string"
           }
         },
         "env": {
           "type": "object",
+          "description": "environment variables to set for this dependency only",
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "description": "value of this environment variable"
           }
         },
         "optional": {
@@ -1876,9 +1902,11 @@
       "type": "object",
       "properties": {
         "path": {
+          "description": "file to load, or a list of them; may be a glob pattern",
           "$ref": "#/$defs/env_path"
         },
         "paths": {
+          "description": "files to load; each may be a glob pattern",
           "$ref": "#/$defs/env_paths"
         },
         "tools": {
@@ -2042,7 +2070,8 @@
             {
               "type": "object",
               "additionalProperties": {
-                "type": "string"
+                "type": "string",
+                "description": "new name for the executables matching this glob"
               }
             }
           ]
@@ -2157,13 +2186,15 @@
           "type": "object",
           "description": "request headers sent with the download, version_list_url and checksum_url requests; values are tera templated (e.g. Bearer {{ env.TOKEN }})",
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "description": "value of this request header; tera templated"
           }
         },
         "headers_forward": {
           "type": "object",
           "description": "hosts each header in headers may follow a redirect to; exact hosts or *.suffix, and a header with no entry is never forwarded",
           "additionalProperties": {
+            "description": "hosts this header may follow a redirect to: exact hosts or *.suffix",
             "oneOf": [
               {
                 "type": "string"
@@ -2246,7 +2277,8 @@
             {
               "type": "object",
               "additionalProperties": {
-                "type": "string"
+                "type": "string",
+                "description": "new name for the executables matching this glob"
               }
             }
           ]
@@ -2361,7 +2393,8 @@
             {
               "type": "object",
               "additionalProperties": {
-                "type": "string"
+                "type": "string",
+                "description": "new name for the executables matching this glob"
               }
             }
           ]
@@ -2424,7 +2457,8 @@
           "type": "object",
           "description": "values for aqua registry template variables",
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "description": "value of this aqua registry template variable"
           }
         }
       }
@@ -2463,7 +2497,8 @@
             {
               "type": "object",
               "additionalProperties": {
-                "type": "string"
+                "type": "string",
+                "description": "new name for the executables matching this glob"
               }
             }
           ]
@@ -2928,6 +2963,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object"
       }
     },
@@ -2938,6 +2974,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object",
         "properties": {
           "asset_pattern": {
@@ -2987,6 +3024,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object",
         "properties": {
           "bin_path": {
@@ -3002,6 +3040,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object",
         "properties": {
           "url": {
@@ -3050,6 +3089,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object",
         "properties": {
           "url": {
@@ -3107,6 +3147,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object",
         "properties": {
           "bin": {
@@ -3122,6 +3163,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object",
         "properties": {
           "provider": {

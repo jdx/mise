@@ -71,7 +71,7 @@ fn validate_image_path(path: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// configuration for `mise oci build`
+/// [experimental] configuration for `mise oci build`
 // All fields are optional.
 #[derive(Debug, Default, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -112,11 +112,17 @@ pub struct OciConfig {
     /// Extra env vars baked into the image config
     // In addition to those derived from `[env]` and each tool's `exec_env()`.
     #[serde(default)]
+    #[schemars(with = "IndexMap<String, crate::schema::EnvVarValue>")]
     pub env: IndexMap<String, String>,
     /// Labels baked into the image config
     #[serde(default)]
+    #[schemars(with = "IndexMap<String, OciLabelValue>")]
     pub labels: IndexMap<String, String>,
 }
+
+/// value of this image label
+#[derive(JsonSchema)]
+pub struct OciLabelValue(pub String);
 
 impl OciConfig {
     /// Fill any field on `self` that is `None` / empty from `other`, leaving

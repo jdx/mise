@@ -27,6 +27,7 @@ pub struct CommandWrapperOptions {
     pub args: Vec<String>,
     /// environment variables set for the wrapper
     #[serde(default)]
+    #[schemars(with = "IndexMap<String, crate::schema::EnvVarValue>")]
     pub env: IndexMap<String, String>,
 }
 

@@ -8,6 +8,7 @@ import {
   placeholders,
   typeLabel,
 } from "./.vitepress/mise-toml/schema.ts";
+import { grouped, guides } from "./components/config-reference-sections.ts";
 
 // The mise.toml reference, read from schema/mise.json. The schema is generated
 // from mise-config's declaration types and their doc comments, so this page and
@@ -431,7 +432,7 @@ and \`<list>[].<key>\` is a key of each table in a list.`;
         .join("\n\n") + "\n",
     );
   }
-  const index = keys.map((key) => {
+  const entry = (key: Key) => {
     const count =
       key.count > 0 && `(${key.count === 1 ? "1 key" : `${key.count} keys`})`;
     const summary = [
@@ -445,9 +446,19 @@ and \`<list>[].<key>\` is a key of each table in a list.`;
     ]
       .filter(Boolean)
       .join(" ");
-    const entry = `- [\`${key.path}\`](${SITE_URL}/${file(key.path)})`;
-    return summary ? `${entry}: ${summary}` : entry;
-  });
+    const guide = guides[key.path];
+    const line = [
+      `- [\`${key.path}\`](${SITE_URL}/${file(key.path)})`,
+      summary && `: ${summary}`,
+      guide && `. Guide: [${guide.text}](${SITE_URL}${guide.link})`,
+    ]
+      .filter(Boolean)
+      .join("");
+    return line;
+  };
+  const index = grouped(keys).map(
+    (group) => `## ${group.title}\n\n${group.keys.map(entry).join("\n")}`,
+  );
   files.set(
     "configuration/reference.md",
     `# mise.toml reference
@@ -456,16 +467,27 @@ Every key mise reads from a mise.toml, generated from ${SITE_URL}/schema/mise.js
 with a file for each top-level section. ${conventions} The same reference as a
 page you can filter and browse: ${SITE_URL}/configuration/reference.html
 
-${index.join("\n")}
+${index.join("\n\n")}
 `,
   );
   return files;
+}
+
+// Descriptions write placeholders such as `git::<url>//<path>`, which Markdown would read as
+// HTML tags and drop. Outside code spans, a `<` is text unless it starts an autolink.
+function literalAngles(s: string): string {
+  return s
+    .split(/(`[^`]*`)/)
+    .map((part, i) =>
+      i % 2 === 1 ? part : part.replace(/<(?!https?:\/\/)/g, "&lt;"),
+    )
+    .join("");
 }
 
 export default {
   watch: ["../schema/mise.json"],
   async load(): Promise<Key[]> {
     const md = await markdownRenderer();
-    return referenceKeys((s) => md.renderInline(s, {}));
+    return referenceKeys((s) => md.renderInline(literalAngles(s), {}));
   },
 };

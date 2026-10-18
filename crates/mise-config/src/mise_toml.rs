@@ -102,7 +102,7 @@ pub struct MiseTomlDecl<T = ToolSpec, S = toml::Table> {
     #[serde(default)]
     #[schemars(schema_with = "plugins")]
     pub plugins: IndexMap<String, String>,
-    /// configure deps providers
+    /// [experimental] configure deps providers
     #[serde(default)]
     pub deps: Option<DepsDecl>,
     #[serde(default)]
@@ -225,7 +225,11 @@ fn plugins(_: &mut SchemaGenerator) -> Schema {
 }
 
 fn custom(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"type": "object", "additionalProperties": true})
+    json_schema!({
+        "description": "free-form data for your own use; mise never reads it",
+        "type": "object",
+        "additionalProperties": true
+    })
 }
 
 fn include(_: &mut SchemaGenerator) -> Schema {

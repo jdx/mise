@@ -50,6 +50,7 @@ pub struct VarsModules {
 }
 
 // `env._.file`: a directive, a file, or a list of either.
+/// files to load variables from (dotenv, json, yaml, or toml)
 #[derive(JsonSchema)]
 #[serde(untagged)]
 #[schemars(transform = crate::schema::one_of)]
@@ -71,6 +72,7 @@ pub enum EnvFileItem {
 }
 
 // `env._.source`
+/// bash scripts to run, taking the variables they export
 #[derive(JsonSchema)]
 #[serde(untagged)]
 #[schemars(transform = crate::schema::one_of)]
@@ -92,6 +94,7 @@ pub enum EnvSourceItem {
 }
 
 // `env._.path`
+/// directories to add to the front of PATH
 #[derive(JsonSchema)]
 #[serde(untagged)]
 #[schemars(transform = crate::schema::one_of)]
@@ -113,9 +116,11 @@ pub enum EnvPaths {
     ]
 ))]
 pub struct EnvPathTable {
+    /// directory to add to PATH, or a list of them
     #[serde(default)]
     #[schemars(schema_with = "refs::env_path")]
     pub path: Option<()>,
+    /// directories to add to PATH
     #[serde(default)]
     #[schemars(schema_with = "refs::env_paths")]
     pub paths: Option<()>,
@@ -136,6 +141,7 @@ pub enum EnvPathItem {
 #[derive(JsonSchema)]
 #[schemars(extend("x-mise-open" = true))]
 pub struct EnvPathItemTable {
+    /// directory to add to PATH, or a list of them
     #[serde(default)]
     #[schemars(schema_with = "refs::env_path")]
     pub path: Option<()>,
@@ -148,6 +154,7 @@ pub struct EnvPathItemTable {
 #[derive(JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EnvPython {
+    /// python virtual environment to activate
     pub venv: Option<EnvVenv>,
 }
 
@@ -311,6 +318,7 @@ pub enum VarsVariable {
 #[serde(deny_unknown_fields)]
 #[schemars(transform = crate::schema::unevaluated)]
 pub struct VarsValueTable {
+    /// value of variable
     #[schemars(schema_with = "vars_value")]
     pub value: (),
     #[serde(default)]
@@ -349,6 +357,7 @@ pub struct VarsRequiredTable {
     #[serde(default)]
     #[schemars(schema_with = "refs::env_redact")]
     pub redact: Option<()>,
+    /// fail unless the process environment, a higher-precedence config file, or a saved answer supplies a value: true, or help text shown in the error
     #[schemars(schema_with = "required_true_or_text")]
     pub required: (),
 }
@@ -423,9 +432,11 @@ fn vars_value(_: &mut SchemaGenerator) -> Schema {
     ]
 ))]
 pub struct EnvDirectiveDecl {
+    /// file to load, or a list of them; may be a glob pattern
     #[serde(default)]
     #[schemars(schema_with = "refs::env_path")]
     pub path: Option<()>,
+    /// files to load; each may be a glob pattern
     #[serde(default)]
     #[schemars(schema_with = "refs::env_paths")]
     pub paths: Option<()>,

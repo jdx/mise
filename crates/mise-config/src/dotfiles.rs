@@ -27,6 +27,7 @@ pub struct DotfilesTomlConfig(pub IndexMap<String, toml::Value>);
 // to users. Notes for Rust readers go in plain comments.
 
 // One `[dotfiles]` value.
+/// a dotfile: the source path of a whole-file entry, or a table describing a whole-file entry or an edit
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
 #[schemars(transform = crate::schema::one_of)]
@@ -118,11 +119,13 @@ pub enum MergeSetting {
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DotfileVariantDecl {
+    /// operating system (linux, macos, windows, or unix), optionally with an architecture such as linux/arm64; a list matches any of its values
     #[serde(default)]
     #[schemars(schema_with = "schema::one_or_many_strings")]
     pub os: Option<Vec<String>>,
     /// mise environment selected with -E or MISE_ENV
     pub profile: Option<String>,
+    /// true marks the fallback for machines that match no other variant; takes no os or profile
     pub default: Option<bool>,
     /// track mode only: a separate stream on every machine, never applied on another machine; must be the only variant and cannot be combined with encrypt
     pub machine: Option<bool>,
@@ -131,6 +134,7 @@ pub struct DotfileVariantDecl {
 }
 
 // One `[dotfile_groups.<name>]` table.
+/// a directory tree of dotfiles deployed into a target directory
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DotfileGroupDecl {
@@ -157,6 +161,7 @@ pub struct DotfileGroupDecl {
 }
 
 // One `[dotfile_groups.<name>.entries]` value.
+/// a whole-file entry for a path inside the group's target: its source path, or a table as in [dotfiles]
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
 #[schemars(transform = crate::schema::one_of)]
