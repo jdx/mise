@@ -2265,7 +2265,14 @@ impl NPMBackend {
         let trust_policy_excludes = options.trust_policy_excludes()?;
         let allow_low_downloads = options.allow_low_downloads()?;
         let allow_exotic_deps = options.allow_exotic_deps()?;
+        let allow_builds = options.allow_builds()?;
         let mut config = toml::Table::new();
+        if !matches!(allow_builds, AllowBuilds::None) {
+            // The user's `.npmrc` `ignore-scripts=true` would otherwise win over
+            // the in-process `ignore_scripts = false` and silently skip the
+            // scripts `allow_builds` approved. Project config outranks it.
+            config.insert("ignoreScripts".to_string(), toml::Value::Boolean(false));
+        }
         if let Some(before_date) = before_date {
             let minutes = Self::build_aube_minimum_release_age(elapsed_seconds_ceil(
                 before_date,
@@ -4450,6 +4457,8 @@ pkg@1.2.0 '1.2.0'
             manifest["aube"]["allowBuilds"],
             serde_json::json!({ "esbuild": true })
         );
+        // Approved builds must run even if the user's .npmrc ignores scripts.
+        assert_eq!(config["ignoreScripts"], toml::Value::Boolean(false));
         assert_eq!(
             std::fs::read_to_string(install_path.join("aube-workspace.yaml")).unwrap(),
             "packages:\n  - .\n"
