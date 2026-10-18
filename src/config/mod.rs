@@ -5201,7 +5201,13 @@ async fn inferred_workspace_tasks(
                 continue;
             }
             inferred.suggestions.apply_after_defaults(&mut task);
-            if let Err(err) = task.render(config, &project_root).await {
+            // `render` leaves a broken `dir` template raw, but an inferred task is not
+            // user-authored, so drop it instead of failing later.
+            let rendered = match task.render(config, &project_root).await {
+                Ok(()) => task.dir(config).await.map(|_| ()),
+                Err(err) => Err(err),
+            };
+            if let Err(err) = rendered {
                 warn!(
                     "Failed to render inferred task {} in {}: {err:#}. Task will not be available.",
                     task.name,
