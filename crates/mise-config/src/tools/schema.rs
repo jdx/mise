@@ -1035,6 +1035,13 @@ fn tool_cargo_options() -> Schema {
                 "description": "binary to install when a crate has several (cargo install --bin)",
                 "type": "string"
             },
+            "rename_exe": {
+                "description": "rename the installed executable: a name, or a table of glob = new name",
+                "oneOf": [
+                    {"type": "string"},
+                    {"type": "object", "additionalProperties": {"type": "string"}}
+                ]
+            },
             "crate": {
                 "description": "crate to install when a git repository contains several",
                 "type": "string"
