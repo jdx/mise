@@ -316,29 +316,33 @@ fn stash_item(item: &mut Item, prefix: &str, stashed: &mut Vec<(String, String)>
     }
 }
 
-fn stash_value(v: &mut Value, prefix: &str, stashed: &mut Vec<(String, String)>) {
+/// A value's own text, without the whitespace and comments around it.
+fn raw_text(v: &Value) -> String {
+    let mut v = v.clone();
+    v.decor_mut().clear();
+    v.to_string()
+}
+
+/// Whether the value is, or is an array holding, an inline table that spans
+/// several lines. An array holding one is stashed whole: taplo would collapse
+/// it around the short placeholder, leaving a multiline table in a one-line array.
+fn holds_multiline_table(v: &Value) -> bool {
     match v {
-        Value::InlineTable(t) if t.to_string().contains('\n') => {
-            let decor = t.decor().clone();
-            t.decor_mut().clear();
-            let placeholder = format!("{prefix}{}", stashed.len());
-            stashed.push((format!("\"{placeholder}\""), t.to_string()));
-            let mut new = Value::from(placeholder);
-            *new.decor_mut() = decor;
-            *v = new;
-        }
-        Value::InlineTable(t) => {
-            for (_, v) in t.iter_mut() {
-                stash_value(v, prefix, stashed);
-            }
-        }
-        Value::Array(a) => {
-            for v in a.iter_mut() {
-                stash_value(v, prefix, stashed);
-            }
-        }
-        _ => {}
+        Value::InlineTable(_) => raw_text(v).contains('\n'),
+        Value::Array(a) => a.iter().any(holds_multiline_table),
+        _ => false,
     }
+}
+
+fn stash_value(v: &mut Value, prefix: &str, stashed: &mut Vec<(String, String)>) {
+    if !holds_multiline_table(v) {
+        return;
+    }
+    let placeholder = format!("{prefix}{}", stashed.len());
+    stashed.push((format!("\"{placeholder}\""), raw_text(v)));
+    let mut new = Value::from(placeholder);
+    *new.decor_mut() = v.decor().clone();
+    *v = new;
 }
 
 fn format(toml: String) -> Result<String> {
@@ -405,6 +409,28 @@ SSH_AUTH_SOCK = {
   ],
   run_at_load = true,
 }
+"#;
+        assert_eq!(fmt(toml), toml);
+    }
+
+    #[test]
+    fn formats_single_line_tables_with_a_newline_only_in_their_decor() {
+        assert_eq!(
+            fmt("[a]\nx = {b=1} # c\ny = [{b=1}]\n"),
+            "[a]\nx = { b = 1 }   # c\ny = [{ b = 1 }]\n"
+        );
+    }
+
+    #[test]
+    fn keeps_arrays_of_multiline_inline_tables_intact() {
+        let toml = r#"[a]
+list = [
+  {
+    k = 1,
+    # note
+    j = 2,
+  },
+]
 "#;
         assert_eq!(fmt(toml), toml);
     }
