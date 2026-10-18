@@ -260,7 +260,9 @@
   if ($env:MISE_INSTALL_HELP -ne '0') {
     Write-Info 'mise: to activate mise in PowerShell, run:'
     # Double single quotes so a path like C:\Users\O'Brien stays one literal.
-    $quoted = $installPath.Replace("'", "''")
+    # The path sits in a literal inside the profile line, which is itself inside the
+    # single-quoted -Value below, so it needs two layers of escaping.
+    $quoted = $installPath.Replace("'", "''").Replace("'", "''")
     Write-Info '  if (-not (Test-Path $PROFILE)) { New-Item -ItemType File -Path $PROFILE -Force | Out-Null }'
     Write-Info "  Add-Content -Path `$PROFILE -Value '(& ''$quoted'' activate pwsh) | Out-String | Invoke-Expression'"
     Write-Info 'mise: run `mise doctor` to verify this is set up correctly'
