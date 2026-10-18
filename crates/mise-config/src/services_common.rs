@@ -1,13 +1,17 @@
 use indexmap::IndexMap;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+// The doc comments on these types are their descriptions in schema/mise.json, which editors show
+// to users. Notes for Rust readers go in plain comments.
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceState {
     #[default]
     Running,
     Stopped,
-    /// User scope only: the installed service definition is removed.
+    // User scope only: the installed service definition is removed.
     Absent,
 }
 
@@ -21,28 +25,28 @@ impl ServiceState {
     }
 }
 
-/// Which service manager a `[bootstrap.services]` entry targets.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+// Which service manager a `[bootstrap.services]` entry targets.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceScope {
-    /// An existing Linux systemd system unit (the original behaviour).
+    // An existing Linux systemd system unit (the original behaviour).
     #[default]
     System,
-    /// A service mise defines for the current user: a systemd user unit on
-    /// Linux, a LaunchAgent on macOS, a Scheduled Task on Windows.
+    // A service mise defines for the current user: a systemd user unit on Linux, a LaunchAgent
+    // on macOS, a Scheduled Task on Windows.
     User,
 }
 
-/// Restart policy of a user-scope service, with one meaning on every platform.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+// Restart policy of a user-scope service, with one meaning on every platform.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ServiceRestart {
-    /// Restart whenever the process exits, even successfully.
+    // Restart whenever the process exits, even successfully.
     Always,
-    /// Restart only after a failure.
+    // Restart only after a failure.
     #[default]
     OnFailure,
-    /// Never restart automatically.
+    // Never restart automatically.
     Never,
 }
 
@@ -56,7 +60,7 @@ impl ServiceRestart {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceChangeAction {
     Reload,
@@ -66,38 +70,44 @@ pub enum ServiceChangeAction {
     None,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema)]
+#[schemars(extend("not" = {"required": ["builtin", "command"]}))]
 pub struct ServiceTomlConfig {
     #[serde(default)]
     pub state: ServiceState,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// System scope only
     #[serde(default)]
     pub masked: bool,
+    /// System scope only
     #[serde(default)]
     pub on_change: ServiceChangeAction,
-    /// `"system"` (default) or `"user"`. A `builtin` implies `"user"`.
+    /// Defaults to system; builtin implies user
     #[serde(default)]
     pub scope: Option<ServiceScope>,
-    /// A service definition mise supplies (for example `"history-watch"`).
+    /// A mise-provided user service
     #[serde(default)]
+    #[schemars(extend("enum" = ["history-watch", "tool-update"]))]
     pub builtin: Option<String>,
-    /// User scope: the command line to run.
+    /// User service command; mutually exclusive with builtin
     #[serde(default)]
+    #[schemars(length(min = 1))]
     pub command: Option<String>,
-    /// User scope: a human-readable description.
+    // User scope: a human-readable description.
     #[serde(default)]
     pub description: Option<String>,
-    /// User scope: restart policy (default `"on-failure"`).
+    // User scope: restart policy.
     #[serde(default)]
+    #[schemars(extend("default" = "on-failure"))]
     pub restart: Option<ServiceRestart>,
-    /// User scope: environment variables for the process.
+    // User scope: environment variables for the process.
     #[serde(default)]
     pub environment: IndexMap<String, String>,
-    /// User scope: working directory (`~` is expanded).
+    // User scope: working directory (`~` is expanded).
     #[serde(default)]
     pub working_directory: Option<String>,
-    /// User scope: converge after `[tools]` are installed.
+    // User scope: converge after `[tools]` are installed.
     #[serde(default)]
     pub requires_tools: bool,
 }

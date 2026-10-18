@@ -1,9 +1,13 @@
 //! `[bootstrap.linux.firewall]`. Only Linux applies it, but every platform parses it the same
 //! way, so a shared config is checked everywhere and the schema does not depend on the host.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+// The doc comments on these types are their descriptions in schema/mise.json, which editors show
+// to users. Notes for Rust readers go in plain comments.
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FirewallBackend {
     #[default]
@@ -33,7 +37,7 @@ impl FirewallBackend {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FirewallState {
     #[default]
@@ -42,7 +46,7 @@ pub enum FirewallState {
     Absent,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FirewallPolicy {
     #[default]
@@ -76,7 +80,7 @@ impl FirewallPolicy {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FirewallRuleState {
     #[default]
@@ -84,7 +88,7 @@ pub enum FirewallRuleState {
     Absent,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FirewallDirection {
     #[default]
@@ -92,7 +96,7 @@ pub enum FirewallDirection {
     Outgoing,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FirewallAction {
     #[default]
@@ -135,7 +139,7 @@ impl FirewallAction {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum FirewallProtocol {
     Tcp,
@@ -155,15 +159,18 @@ impl FirewallProtocol {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
 pub enum FirewallPortToml {
-    Single(u16),
-    Range(String),
+    Single(#[schemars(range(min = 1))] u16),
+    Range(#[schemars(regex(pattern = r"^[0-9]+[-:][0-9]+$"))] String),
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
 pub struct FirewallRuleTomlConfig {
+    /// stable managed rule identifier
+    #[schemars(length(min = 1, max = 64), regex(pattern = r"^[A-Za-z0-9_-]+$"))]
     pub name: String,
     #[serde(default)]
     pub state: FirewallRuleState,
@@ -171,21 +178,40 @@ pub struct FirewallRuleTomlConfig {
     pub direction: FirewallDirection,
     #[serde(default)]
     pub action: FirewallAction,
+    /// single port number or inclusive range
     pub port: Option<FirewallPortToml>,
     pub protocol: Option<FirewallProtocol>,
+    /// source IPv4 or IPv6 CIDR network
     pub source: Option<String>,
+    /// destination IPv4 or IPv6 CIDR network
     pub destination: Option<String>,
+    /// network interface (nftables and UFW only)
+    #[schemars(length(min = 1, max = 15), regex(pattern = r"^[A-Za-z0-9_.:-]+$"))]
     pub interface: Option<String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+// The defaults below are what the firewall module uses when a key is absent.
+#[derive(Clone, Debug, Default, Deserialize, JsonSchema)]
 pub struct FirewallTomlConfig {
+    /// firewall backend; auto reuses managed or active host infrastructure
+    #[schemars(extend("default" = "auto"))]
     pub backend: Option<FirewallBackend>,
+    /// desired lifecycle of mise-managed firewall state
+    #[schemars(extend("default" = "enabled"))]
     pub state: Option<FirewallState>,
+    /// default action for incoming traffic
+    #[schemars(extend("default" = "deny"))]
     pub default_incoming: Option<FirewallPolicy>,
+    /// default action for outgoing traffic
+    #[schemars(extend("default" = "allow"))]
     pub default_outgoing: Option<FirewallPolicy>,
+    /// treat the declared rules as the complete owned ruleset; UFW reset also removes unrelated UFW rules
+    #[schemars(extend("default" = false))]
     pub exclusive: Option<bool>,
+    /// allow default-deny or reject over SSH without a rule covering the connected peer
+    #[schemars(extend("default" = false))]
     pub allow_lockout: Option<bool>,
+    /// named firewall rules reconciled without deleting undeclared managed rules
     #[serde(default)]
     pub rules: Vec<FirewallRuleTomlConfig>,
 }
