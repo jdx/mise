@@ -1777,6 +1777,11 @@
               "default": "~/.dotfiles",
               "description": "Directory that holds dotfile sources for entries without a `source`.",
               "type": "string"
+            },
+            "windows_symlinks": {
+              "default": false,
+              "description": "On Windows, deploy dotfile files as symbolic links instead of copies.",
+              "type": "boolean"
             }
           }
         },

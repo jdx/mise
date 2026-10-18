@@ -57,8 +57,9 @@ uses `dotfiles.default_mode`, which is `symlink` unless you change it.
 
 `mode = "track"` and `mode = "track-local"` are not deployment modes: they
 save the history of a file where it is, without a source. See [Dotfiles history](/dotfiles/history.html).
-On Windows, `symlink` can fall back to copying and `symlink-each` always
-copies; see [Windows](#windows).
+On Windows, `symlink` can fall back to copying and `symlink-each` copies
+unless [`dotfiles.windows_symlinks`](/configuration/settings.html#dotfiles.windows_symlinks)
+is on; see [Windows](#windows).
 
 To link a directory as a whole:
 
@@ -627,3 +628,10 @@ otherwise. A directory link is a junction. `symlink-each` always copies each
 file, so edit the source rather than the target and run `mise dot apply`.
 `mise dot status` accepts either form on disk. `relative` and `permissions`
 are ignored on Windows.
+
+Set [`dotfiles.windows_symlinks`](/configuration/settings.html#dotfiles.windows_symlinks)
+to `true` to get real file links from both modes. `symlink-each` then links
+each file, and a file that cannot be linked fails the apply instead of
+becoming a copy, so Developer Mode or an elevated shell is required. Turn it
+back off and the next `mise dot apply` replaces the links with copies, but
+`mise dot unapply` of entries still holding links needs `--force` until then.

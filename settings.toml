@@ -616,6 +616,20 @@ destination-variant entries also resolve against it. See
 env = "MISE_DOTFILES_ROOT"
 type = "Path"
 
+[dotfiles.windows_symlinks]
+default = false
+description = "On Windows, deploy dotfile files as symbolic links instead of copies."
+docs = """
+By default `symlink-each` copies each file on Windows, and `symlink` links a
+file only when Windows allows it and otherwise copies it. With this on, both
+create real file symbolic links and fail when Windows refuses, rather than
+leaving a copy that no longer follows its source. Creating them needs
+Developer Mode or an elevated shell. Directory links are always junctions.
+Ignored on other platforms. See [Windows](/dotfiles/managed.html#windows).
+"""
+env = "MISE_DOTFILES_WINDOWS_SYMLINKS"
+type = "Bool"
+
 [dotnet.cli_telemetry_optout]
 description = "Set `DOTNET_CLI_TELEMETRY_OPTOUT` to opt out of .NET CLI telemetry."
 docs = """
