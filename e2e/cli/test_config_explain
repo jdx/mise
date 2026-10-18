@@ -93,3 +93,13 @@ cd = { script = "echo b", shell = "bash" }
 EOF
 assert_contains "mise config explain --file hooks.toml" "hooks.enter.script  deprecated:"
 assert_not_contains "mise config explain --file hooks.toml" "hooks.cd.script     deprecated:"
+
+# A table that names no keys, such as a daemon preset's options, takes any key.
+cat <<'EOF' >daemons.toml
+[daemons.db]
+preset = "cockroachdb"
+version = "26"
+options.database = "app"
+EOF
+assert_contains "mise config explain --file daemons.toml" "daemons.db.options.database"
+assert_not_contains "mise config explain --file daemons.toml" "not a key mise reads"

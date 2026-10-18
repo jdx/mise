@@ -251,14 +251,29 @@ fn explain(path: &[String], line: usize, item: &Item, parent_value: &Written) ->
 }
 
 /// Whether the table at `path` accepts keys it does not describe: `[_]`, an env plugin under
-/// `env._` (`additionalProperties = true`), or a plugin tool's own options
-/// (`unevaluatedProperties` with a schema of its own).
+/// `env._` (`additionalProperties = true`), a plugin tool's own options
+/// (`unevaluatedProperties` with a schema of its own), or a table that names no keys at all,
+/// such as a daemon preset's `options`.
 fn accepts_any_key(path: &[&str]) -> bool {
     schema::at(path).iter().any(|node| {
         node.get("additionalProperties") == Some(&Value::Bool(true))
             || node
                 .get("unevaluatedProperties")
                 .is_some_and(|v| v == &Value::Bool(true) || v.is_object())
+            || (node.get("type") == Some(&Value::from("object"))
+                && [
+                    "properties",
+                    "patternProperties",
+                    "additionalProperties",
+                    "unevaluatedProperties",
+                    "propertyNames",
+                    "allOf",
+                    "oneOf",
+                    "anyOf",
+                    "$ref",
+                ]
+                .iter()
+                .all(|k| node.get(*k).is_none()))
     })
 }
 
