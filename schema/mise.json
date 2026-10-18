@@ -7,9 +7,6 @@
     "bootstrap_apt_sources": {
       "type": "object",
       "description": "apt repositories added before apt packages are installed, keyed by a name used in the files mise writes",
-      "propertyNames": {
-        "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
-      },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
@@ -88,31 +85,34 @@
             }
           }
         ]
+      },
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
       }
     },
     "bootstrap_dnf_repos": {
       "type": "object",
       "description": "dnf repositories enabled before dnf packages are installed, keyed by a name for the entry",
-      "propertyNames": {
-        "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
-      },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["copr"],
         "properties": {
           "copr": {
             "type": "string",
             "description": "COPR project as owner/project or @group/project, such as scottames/ghostty; enabled as dnf copr enable would"
           }
-        }
+        },
+        "required": ["copr"]
+      },
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_-][A-Za-z0-9_.-]*$"
       }
     },
     "bootstrap_file_phase": {
       "type": "string",
+      "description": "When to apply the managed path during bootstrap; pre-packages runs before the pre-packages hook",
       "enum": ["pre-packages", "post-packages"],
-      "default": "post-packages",
-      "description": "When to apply the managed path during bootstrap; pre-packages runs before the pre-packages hook"
+      "default": "post-packages"
     },
     "bootstrap_hook": {
       "description": "command or commands to run for a bootstrap phase",
@@ -237,23 +237,24 @@
         "type": "object",
         "description": "defaults keys and their desired values for this domain",
         "additionalProperties": {
-          "$ref": "#/$defs/macos_defaults_value",
-          "description": "desired value, written with the matching `defaults write` type; arrays and tables become property list arrays and dictionaries"
+          "description": "desired value, written with the matching `defaults write` type; arrays and tables become property list arrays and dictionaries",
+          "$ref": "#/$defs/macos_defaults_value"
         }
       }
     },
     "bootstrap_macos_dock": {
       "type": "object",
       "description": "curated Dock preferences that compile into macOS defaults",
+      "additionalProperties": false,
       "properties": {
         "apps": {
           "type": "array",
+          "description": "Pinned application paths in order; absolute or ~/ paths ending in .app. An empty array removes application tiles.",
           "items": {
             "type": "string",
             "pattern": "^(?:/|~/(?!/)).+\\.[aA][pP][pP]/*$"
           },
-          "uniqueItems": true,
-          "description": "Pinned application paths in order; absolute or ~/ paths ending in .app. An empty array removes application tiles."
+          "uniqueItems": true
         },
         "autohide_delay": {
           "type": "number",
@@ -269,8 +270,8 @@
         },
         "orientation": {
           "type": "string",
-          "enum": ["bottom", "left", "right"],
-          "description": "Dock screen edge"
+          "description": "Dock screen edge",
+          "enum": ["bottom", "left", "right"]
         },
         "tilesize": {
           "type": "integer",
@@ -292,12 +293,12 @@
           "type": "boolean",
           "description": "automatically rearrange Spaces based on most recent use"
         }
-      },
-      "additionalProperties": false
+      }
     },
     "bootstrap_macos_finder": {
       "type": "object",
       "description": "curated Finder preferences that compile into macOS defaults",
+      "additionalProperties": false,
       "properties": {
         "sort_folders_first": {
           "type": "boolean",
@@ -325,15 +326,15 @@
         },
         "preferred_view_style": {
           "type": "string",
-          "enum": ["icon", "list", "column", "gallery"],
-          "description": "Finder preferred view style"
+          "description": "Finder preferred view style",
+          "enum": ["icon", "list", "column", "gallery"]
         }
-      },
-      "additionalProperties": false
+      }
     },
     "bootstrap_macos_keyboard": {
       "type": "object",
       "description": "curated keyboard preferences that compile into macOS defaults",
+      "additionalProperties": false,
       "properties": {
         "automatic_capitalization": {
           "type": "boolean",
@@ -359,12 +360,12 @@
           "type": "boolean",
           "description": "use F1, F2, etc. as standard function keys"
         }
-      },
-      "additionalProperties": false
+      }
     },
     "bootstrap_macos_trackpad": {
       "type": "object",
       "description": "curated trackpad preferences that compile into macOS defaults",
+      "additionalProperties": false,
       "properties": {
         "tap_to_click": {
           "type": "boolean",
@@ -374,12 +375,12 @@
           "type": "boolean",
           "description": "enable three finger drag for built-in and Bluetooth trackpads"
         }
-      },
-      "additionalProperties": false
+      }
     },
     "bootstrap_mise_shell_activate": {
       "type": "object",
       "description": "declarative mise shell activation snippets, applied with `mise bootstrap mise-shell-activate apply`",
+      "additionalProperties": false,
       "properties": {
         "bash": {
           "$ref": "#/$defs/bootstrap_shell_activation"
@@ -405,8 +406,7 @@
         "zshrc": {
           "$ref": "#/$defs/bootstrap_shell_activation"
         }
-      },
-      "additionalProperties": false
+      }
     },
     "bootstrap_remote_install_mise": {
       "oneOf": [
@@ -428,12 +428,13 @@
         },
         {
           "type": "string",
-          "enum": ["activate", "shims", "auto"],
-          "description": "enable the target with the selected activation mode"
+          "description": "enable the target with the selected activation mode",
+          "enum": ["activate", "shims", "auto"]
         },
         {
           "type": "object",
           "description": "shell activation settings for the target",
+          "additionalProperties": false,
           "properties": {
             "enabled": {
               "type": "boolean",
@@ -441,12 +442,11 @@
             },
             "mode": {
               "type": "string",
-              "enum": ["activate", "shims", "auto"],
-              "description": "activation mode; defaults according to the target"
+              "description": "activation mode; defaults according to the target",
+              "enum": ["activate", "shims", "auto"]
             }
           },
-          "required": ["enabled"],
-          "additionalProperties": false
+          "required": ["enabled"]
         }
       ]
     },

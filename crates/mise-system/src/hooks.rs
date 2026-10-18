@@ -205,6 +205,16 @@ pub async fn run_phase(
 mod tests {
     use super::*;
 
+    // The schema is generated from `mise_config::bootstrap::BOOTSTRAP_HOOK_PHASES`; the code
+    // reads `BootstrapHookPhase`. A phase added to one without the other fails here.
+    #[test]
+    fn the_declared_hook_phases_are_the_phases_the_code_reads() {
+        let read: Vec<&str> = BootstrapHookPhase::iter()
+            .map(BootstrapHookPhase::as_str)
+            .collect();
+        assert_eq!(read, mise_config::bootstrap::BOOTSTRAP_HOOK_PHASES);
+    }
+
     #[test]
     fn parses_known_phases_with_hyphen_or_underscore() {
         assert_eq!(

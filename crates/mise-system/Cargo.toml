@@ -118,6 +118,7 @@ eyre = "0.6"
 
 [dev-dependencies]
 minisign-verify = "0.3"
+schemars = "1"
 uuid = { version = "1", features = ["v4"] }
 
 [package.metadata.cargo-machete]
