@@ -5302,10 +5302,16 @@ fn describe(req: &FileRequest) -> Result<String> {
                 0 => String::new(),
                 n => format!(", rm {n} stale link(s)"),
             };
-            format!(
-                "{ln} {src}/* into {tgt}/ ({} files){removals}",
-                walk_source_files(req)?.len()
-            )
+            // Windows copies each file (see `link_path`), so say `cp` rather than promise links
+            let files = walk_source_files(req)?;
+            let copies = windows_each_copies(&files);
+            match (copies, files.len() - copies) {
+                (0, links) => format!("{ln} {src}/* into {tgt}/ ({links} files){removals}"),
+                (copies, 0) => format!("cp {src}/* into {tgt}/ ({copies} files){removals}"),
+                (copies, links) => {
+                    format!("cp {copies} and {ln} {links} of {src}/* into {tgt}/{removals}")
+                }
+            }
         }
         FileMode::Copy if req.source.is_dir() => format!("cp -r {src} {tgt}"),
         FileMode::Copy => format!("cp {src} {tgt}"),
@@ -5322,10 +5328,18 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
         FileMode::Track => format!("tracked {tgt} in place"),
         FileMode::Absent => format!("removed {tgt}"),
         FileMode::Symlink => format!("created symlink {tgt} -> {src}"),
-        FileMode::SymlinkEach => format!(
-            "created {} symlink(s) from {src} in {tgt}",
-            walk_source_files(req)?.len()
-        ),
+        // Windows copies each file (see `link_path`), so don't report links it didn't make
+        FileMode::SymlinkEach => {
+            let files = walk_source_files(req)?;
+            let copies = windows_each_copies(&files);
+            match (copies, files.len() - copies) {
+                (0, links) => format!("created {links} symlink(s) from {src} in {tgt}"),
+                (copies, 0) => format!("copied {copies} file(s) from {src} to {tgt}"),
+                (copies, links) => {
+                    format!("copied {copies} file(s) and linked {links} from {src} in {tgt}")
+                }
+            }
+        }
         FileMode::Copy => format!("copied {src} to {tgt}"),
         FileMode::Template => format!("rendered {src} to {tgt}"),
         FileMode::Content => format!("wrote inline content to {tgt}"),
@@ -6228,6 +6242,16 @@ fn replace_recorded(
         return write();
     }
     create_recorded(target, written, write)
+}
+
+/// How many `symlink-each` entries `link_path` copies: on Windows every regular file, while a
+/// source that is not a file (a directory link) still gets a junction.
+fn windows_each_copies(files: &[(PathBuf, PathBuf)]) -> usize {
+    if cfg!(windows) {
+        files.iter().filter(|(source, _)| source.is_file()).count()
+    } else {
+        0
+    }
 }
 
 /// `allow_windows_symlink` is false for `symlink-each`, which stays on the Windows copy path:
