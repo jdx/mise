@@ -15,6 +15,7 @@ mod dep;
 mod outputs;
 mod schema;
 mod secrets;
+pub mod shapes;
 
 pub use confirm::TaskConfirm;
 pub use decl::{TaskDecl, TaskTemplate};
@@ -636,9 +637,9 @@ pub struct TaskConfig {
     pub dir: Option<String>,
     /// default shell to run tasks with in this config scope
     pub shell: Option<String>,
-    #[schemars(schema_with = "schema::task_config_cache")]
+    #[schemars(with = "Option<shapes::TaskConfigCacheDecl>")]
     pub cache: Option<TaskCacheConfig>,
-    #[schemars(schema_with = "schema::task_config_rust_cache")]
+    #[schemars(with = "Option<shapes::RustCacheDecl>")]
     pub rust_cache: Option<TaskRustCacheConfig>,
     /// experimental ambient environment variable names added to every enabled task cache key in this config scope
     pub global_env: Vec<String>,
@@ -648,8 +649,72 @@ pub struct TaskConfig {
     pub global_inputs: Vec<String>,
     /// experimental reusable config-root-relative source groups referenced with @group:<name>
     pub input_groups: IndexMap<String, Vec<String>>,
-    #[schemars(schema_with = "schema::task_config_includes")]
+    #[schemars(with = "Option<shapes::TaskIncludes>")]
     pub includes: Option<Vec<String>>,
     /// config-root-relative paths or glob patterns to exclude from file-task discovery
     pub excludes: Option<Vec<String>>,
+}
+
+#[cfg(test)]
+mod shape_tests {
+    use super::shapes::*;
+    use super::*;
+    use schemars::{JsonSchema, schema_for};
+    use std::collections::BTreeSet;
+
+    fn keys<T: JsonSchema>() -> BTreeSet<String> {
+        schema_for!(T)
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+            .map(|properties| properties.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn fields<T: serde::de::DeserializeOwned>() -> BTreeSet<String> {
+        crate::de::struct_fields::<T>()
+            .iter()
+            .map(|field| field.to_string())
+            .collect()
+    }
+
+    // The schema is generated from the types in `shapes.rs`; the parsers read these structs. A
+    // key added to one without the other fails here.
+    #[test]
+    fn the_declared_keys_are_the_keys_the_parsers_read() {
+        assert_eq!(keys::<TaskWatchDecl>(), fields::<TaskWatchOptions>());
+        assert_eq!(keys::<TaskCacheDecl>(), fields::<TaskCacheConfig>());
+        assert_eq!(keys::<TaskConfigCacheDecl>(), fields::<TaskCacheConfig>());
+        assert_eq!(keys::<RustCacheTable>(), fields::<TaskRustCacheOptions>());
+    }
+
+    // `TaskDep` reads a table with a visitor, so each declared key is set in turn.
+    #[test]
+    fn a_dependency_table_reads_the_keys_the_schema_declares() {
+        let declared = keys::<TaskDependencyTable>();
+        assert_eq!(
+            declared,
+            ["args", "env", "optional", "task"].map(String::from).into()
+        );
+        for key in &declared {
+            let sample = match key.as_str() {
+                "task" => "\"build\"",
+                "args" => "[\"a\"]",
+                "env" => "{ A = \"b\" }",
+                _ => "true",
+            };
+            let table = format!(
+                "task = \"build\"\n{}",
+                if key == "task" {
+                    String::new()
+                } else {
+                    format!("{key} = {sample}")
+                }
+            );
+            let dep: Result<TaskDep, _> = toml::from_str(&table);
+            assert!(
+                dep.is_ok(),
+                "`{key}` is declared, but a dependency rejects it: {dep:?}"
+            );
+        }
+    }
 }

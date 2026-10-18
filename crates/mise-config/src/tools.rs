@@ -16,6 +16,7 @@ mod decl;
 pub use decl::*;
 pub(crate) mod schema;
 pub(crate) use schema::defs as schema_defs;
+pub(crate) use schema::task_tool_patterns;
 
 /// The option sets a tool may take, generated from the types in `decl.rs`, keyed by their
 /// `$defs` names. A backend's tool composes them with `allOf`, which closes the result with

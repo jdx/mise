@@ -299,6 +299,20 @@ pub(crate) fn tools() -> Schema {
     })
 }
 
+/// The tools of a task, which key a backend by the same patterns as `[tools]` but take one
+/// tool each, not a list of them.
+pub(crate) fn task_tool_patterns() -> serde_json::Map<String, Value> {
+    BACKENDS
+        .iter()
+        .map(|b| {
+            (
+                b.pattern.to_string(),
+                json!({"$ref": format!("#/$defs/{}", b.def)}),
+            )
+        })
+        .collect()
+}
+
 /// A tool of this backend: a version, or a table of the options every tool has and the ones its
 /// backend adds.
 fn backend(backend: &Backend) -> Schema {

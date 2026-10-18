@@ -44,48 +44,48 @@
     "task_run_entry": {
       "oneOf": [
         {
-          "description": "script to run",
-          "type": "string"
+          "type": "string",
+          "description": "script to run"
         },
         {
           "type": "object",
-          "unevaluatedProperties": false,
+          "required": ["task"],
           "properties": {
             "task": {
-              "description": "single task name to run",
-              "type": "string"
+              "type": "string",
+              "description": "single task name to run"
             },
             "args": {
-              "description": "arguments to pass to the task",
               "type": "array",
+              "description": "arguments to pass to the task",
               "items": {
                 "type": "string"
               }
             },
             "env": {
-              "description": "environment variables to set for the task",
               "type": "object",
+              "description": "environment variables to set for the task",
               "additionalProperties": {
                 "type": "string"
               }
             }
           },
-          "required": ["task"]
+          "unevaluatedProperties": false
         },
         {
           "type": "object",
-          "unevaluatedProperties": false,
+          "required": ["tasks"],
           "properties": {
             "tasks": {
+              "type": "array",
               "description": "parallel task group to run",
               "items": {
-                "description": "task name and args",
-                "type": "string"
-              },
-              "type": "array"
+                "type": "string",
+                "description": "task name and args"
+              }
             }
           },
-          "required": ["tasks"]
+          "unevaluatedProperties": false
         }
       ]
     },
@@ -118,6 +118,7 @@
             {
               "type": "object",
               "description": "confirmation message before running this task with optional default value and custom answer labels",
+              "required": ["message"],
               "properties": {
                 "message": {
                   "type": "string",
@@ -137,7 +138,6 @@
                   "description": "custom label for the negative answer"
                 }
               },
-              "required": ["message"],
               "unevaluatedProperties": false
             }
           ]
@@ -321,21 +321,20 @@
             },
             {
               "type": "object",
-              "unevaluatedProperties": false,
+              "required": ["auto"],
               "properties": {
                 "auto": {
                   "type": "boolean",
                   "description": "automatically touch an internal tracked file instead of specifying outputs; `false` is the same as leaving `outputs` unset"
                 }
               },
-              "required": ["auto"]
+              "unevaluatedProperties": false
             }
           ]
         },
         "cache": {
           "type": "object",
           "description": "experimental local artifact cache for declared task outputs",
-          "unevaluatedProperties": false,
           "properties": {
             "enabled": {
               "type": "boolean",
@@ -361,7 +360,8 @@
                 "type": "string"
               }
             }
-          }
+          },
+          "unevaluatedProperties": false
         },
         "rust_cache": {
           "description": "deprecated no-op; use mbx for Rust action caching instead: https://mr-boxington.jdx.dev/getting-started",
@@ -372,7 +372,6 @@
             },
             {
               "type": "object",
-              "unevaluatedProperties": false,
               "properties": {
                 "enabled": {
                   "type": "boolean",
@@ -384,7 +383,8 @@
                   "default": false,
                   "deprecated": true
                 }
-              }
+              },
+              "unevaluatedProperties": false
             }
           ]
         },
@@ -1076,16 +1076,16 @@
       }
     },
     "task_watch": {
-      "description": "options used by `mise watch` for this task",
       "type": "object",
-      "unevaluatedProperties": false,
+      "description": "options used by `mise watch` for this task",
       "properties": {
         "no_vcs_ignore": {
-          "default": false,
+          "type": "boolean",
           "description": "do not load VCS ignore files such as `.gitignore` when watching this task",
-          "type": "boolean"
+          "default": false
         }
-      }
+      },
+      "unevaluatedProperties": false
     },
     "tool": {
       "description": "a version of the tool, or a table with its version and options",
@@ -1208,8 +1208,8 @@
       ]
     },
     "task_dependency_table": {
-      "description": "task dependency with args, env, and optional flag",
       "type": "object",
+      "description": "task dependency with args, env, and optional flag",
       "properties": {
         "task": {
           "type": "string"
@@ -1227,8 +1227,8 @@
           }
         },
         "optional": {
-          "description": "do not fail when the task name or pattern has no matches",
-          "type": "boolean"
+          "type": "boolean",
+          "description": "do not fail when the task name or pattern has no matches"
         }
       },
       "required": ["task"],
