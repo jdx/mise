@@ -9,8 +9,8 @@ import { anchorRedirects } from "./anchor-redirects.mjs";
 import { normalizePath, pageRedirects, stubFile } from "./redirects.mjs";
 
 // Pages whose anchors are created in the browser: the releases page opens the
-// release named in the hash.
-const DYNAMIC_ANCHOR_PAGES = new Set(["/releases"]);
+// release named in the hash, and the mise.toml reference opens the key it names.
+const DYNAMIC_ANCHOR_PAGES = new Set(["/releases", "/configuration/reference"]);
 
 /** Read every HTML page under `root` into path -> { ids, links }. */
 export function readSite(root) {

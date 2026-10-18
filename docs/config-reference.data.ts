@@ -19,14 +19,22 @@ export type Key = {
   experimental: boolean;
   // a page that documents this key's children instead
   link?: string;
+  // how many keys are below this one, at any depth
+  count: number;
+  // another key with exactly the keys this one has, listed there instead of here
+  sameAs?: string;
   children: Key[];
 };
 
 // Marks a schema that stands for one key several alternative shapes each define.
 const MERGED = "x-merged";
 
-// Deep enough for `[bootstrap]`; the bound also stops a cyclic `$ref`.
-const MAX_DEPTH = 6;
+// Where the docs are published, for the links in the Markdown copy.
+const SITE_URL = "https://mise.jdx.dev";
+
+// Deep enough for a tool's options inside a task (`tasks.<name>.tools.<github:…>
+// .platforms.<key>.rename_exe.<key>`); the bound also stops a cyclic `$ref`.
+const MAX_DEPTH = 8;
 
 // Sections documented on a page of their own instead of key by key here.
 const elsewhere: Record<string, string> = {
@@ -255,6 +263,7 @@ export function describeKey(
         : itself(root, schema).some((n) => n.deprecated === true),
     experimental,
     link: elsewhere[path],
+    count: 0,
     children: [],
   };
   if (depth >= MAX_DEPTH || key.link) return key;
@@ -346,14 +355,208 @@ export function describeKey(
   return key;
 }
 
+// A key with this many keys below it, written the same as another's, names that
+// key instead of listing them again: `tasks.<name>.tools.<github:…>` has the keys
+// of `tools.<github:…>`. Smaller trees read better listed again.
+const MIN_SHARED = 4;
+
+// Sections made of other sections' keys: a key in one points at the section it
+// comes from (`task_templates.<name>.run` at `tasks.<name>.run`), not the reverse.
+const DERIVED = new Set(["task_templates", "monorepo"]);
+
+// What `key` has below it, as text that is equal for two keys exactly when both
+// have the same keys, with the same names, types and descriptions.
+function shape(key: Key, cache: Map<Key, string>): string {
+  let text = cache.get(key);
+  if (text === undefined) {
+    text = JSON.stringify(
+      key.children.map((c) => [
+        c.path.slice(key.path.length),
+        c.type,
+        c.description,
+        c.choices,
+        c.default,
+        c.deprecated,
+        c.experimental,
+        c.link,
+        shape(c, cache),
+      ]),
+    );
+    cache.set(key, text);
+  }
+  return text;
+}
+
+// Lists each set of keys once: a key whose keys another key also has, written the
+// same way, points at it with `sameAs`. The key kept is one that is not
+// deprecated, outside a derived section, nearest the top and then first in the
+// schema, so `tasks.<name>.tools.<github:…>` points at `tools.<github:…>` and
+// `platform` at `platforms`.
+function shareRepeatedKeys(keys: Key[]) {
+  const all: Key[] = [];
+  const parents = new Map<Key, Key>();
+  const visit = (key: Key) => {
+    all.push(key);
+    for (const child of key.children) {
+      parents.set(child, key);
+      visit(child);
+    }
+  };
+  keys.forEach(visit);
+  const above = (key: Key): Key[] => {
+    const parent = parents.get(key);
+    return parent ? [parent, ...above(parent)] : [];
+  };
+  const depth = (key: Key) => above(key).length;
+  const deprecated = (key: Key) =>
+    [key, ...above(key)].some((k) => k.deprecated);
+  const derived = (key: Key) => DERIVED.has(key.path.split(".")[0]);
+  const cache = new Map<Key, string>();
+  const groups = new Map<string, Key[]>();
+  for (const key of all) {
+    if (key.count < MIN_SHARED) continue;
+    const text = shape(key, cache);
+    groups.set(text, [...(groups.get(text) ?? []), key]);
+  }
+  // From the top down, so a tree replaced here is not then kept for a smaller one.
+  const ordered = [...groups.values()].sort(
+    (a, b) => Math.min(...a.map(depth)) - Math.min(...b.map(depth)),
+  );
+  const replaced = (key: Key) => above(key).some((k) => k.sameAs);
+  for (const group of ordered) {
+    const present = group.filter((key) => !replaced(key));
+    if (present.length < 2) continue;
+    const [kept, ...others] = present.sort(
+      (a, b) =>
+        Number(deprecated(a)) - Number(deprecated(b)) ||
+        Number(derived(a)) - Number(derived(b)) ||
+        depth(a) - depth(b) ||
+        all.indexOf(a) - all.indexOf(b),
+    );
+    for (const other of others) {
+      other.sameAs = kept.path;
+      other.children = [];
+    }
+  }
+}
+
+// Sets `count` on `key` and every key below it; run once the tree is final.
+function countDescendants(key: Key): number {
+  key.count = key.children.reduce((n, c) => n + 1 + countDescendants(c), 0);
+  return key.count;
+}
+
+// Every key in schema/mise.json, sorted by section, with each description passed
+// through `render`.
+export function referenceKeys(render: (s: string) => string): Key[] {
+  const root = JSON.parse(fs.readFileSync("./schema/mise.json", "utf-8"));
+  const keys = Object.entries(root.properties as Record<string, Schema>)
+    .map(([name, schema]) => describeKey(root, name, schema, "", render))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  keys.forEach(countDescendants);
+  shareRepeatedKeys(keys);
+  keys.forEach(countDescendants);
+  return keys;
+}
+
+// The reference as Markdown, for readers that do not run the page's scripts: an
+// index at `configuration/reference.md` and a file for each section under
+// `configuration/reference/`, every key written out with its full path. Returns
+// path below the docs root -> content. `keys` keep their descriptions as Markdown.
+export function referenceMarkdown(keys: Key[]): Map<string, string> {
+  const file = (section: string) => `configuration/reference/${section}.md`;
+  const sectionOf = new Map<string, string>();
+  const visit = (key: Key, section: string) => {
+    sectionOf.set(key.path, section);
+    for (const child of key.children) visit(child, section);
+  };
+  for (const key of keys) visit(key, key.path);
+
+  const about = (key: Key) =>
+    [
+      `\`${key.type}\``,
+      key.deprecated && "deprecated",
+      key.experimental && "experimental",
+    ]
+      .filter(Boolean)
+      .join(", ");
+  const details = (key: Key) =>
+    [
+      key.description,
+      key.choices.length > 0 &&
+        `Choices: ${key.choices.map((c) => `\`${c}\``).join(", ")}.`,
+      key.default && `Default: \`${key.default}\`.`,
+      key.link && `Documented in ${SITE_URL}${key.link}.`,
+      key.sameAs &&
+        `Same keys as \`${key.sameAs}\`${
+          sectionOf.get(key.sameAs) === sectionOf.get(key.path)
+            ? ""
+            : `, in ${SITE_URL}/${file(sectionOf.get(key.sameAs)!)}`
+        }.`,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  const below = (key: Key): string[] =>
+    key.children.flatMap((c) => {
+      const text = details(c);
+      return [
+        `- \`${c.path}\` (${about(c)})${text ? `: ${text}` : ""}`,
+        ...below(c),
+      ];
+    });
+  const conventions = `Names in angle brackets, such as \`tasks.<name>\`, stand for a key you choose,
+and \`<list>[].<key>\` is a key of each table in a list.`;
+
+  const files = new Map<string, string>();
+  for (const key of keys) {
+    files.set(
+      file(key.path),
+      [
+        `# \`${key.path}\` in mise.toml`,
+        `Part of the mise.toml reference, ${SITE_URL}/configuration/reference.md, generated from ${SITE_URL}/schema/mise.json. ${conventions}`,
+        `Type: ${about(key)}`,
+        details(key),
+        below(key).join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n\n") + "\n",
+    );
+  }
+  const index = keys.map((key) => {
+    const count =
+      key.count > 0 && `(${key.count === 1 ? "1 key" : `${key.count} keys`})`;
+    const summary = [
+      [
+        key.description.split("\n")[0],
+        key.sameAs && `same keys as \`${key.sameAs}\``,
+      ]
+        .filter(Boolean)
+        .join("; "),
+      count,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const entry = `- [\`${key.path}\`](${SITE_URL}/${file(key.path)})`;
+    return summary ? `${entry}: ${summary}` : entry;
+  });
+  files.set(
+    "configuration/reference.md",
+    `# mise.toml reference
+
+Every key mise reads from a mise.toml, generated from ${SITE_URL}/schema/mise.json,
+with a file for each top-level section. ${conventions} The same reference as a
+page you can filter and browse: ${SITE_URL}/configuration/reference.html
+
+${index.join("\n")}
+`,
+  );
+  return files;
+}
+
 export default {
   watch: ["../schema/mise.json"],
   async load(): Promise<Key[]> {
     const md = await markdownRenderer();
-    const render = (s: string) => md.renderInline(s, {});
-    const root = JSON.parse(fs.readFileSync("./schema/mise.json", "utf-8"));
-    return Object.entries(root.properties as Record<string, Schema>)
-      .map(([name, schema]) => describeKey(root, name, schema, "", render))
-      .sort((a, b) => a.path.localeCompare(b.path));
+    return referenceKeys((s) => md.renderInline(s, {}));
   },
 };

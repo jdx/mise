@@ -18,6 +18,11 @@ of mise these docs describe. For how the sections fit together, start with
 their own reference.
 
 Names in angle brackets, such as `tasks.<name>`, stand for a key you choose. A
-type such as `string | string[]` means either form works.
+type such as `string | string[]` means either form works. Open a key to see the
+keys inside it, or filter by name or description. A key that has the same keys
+as another links to it instead of listing them again. The reference is also
+plain Markdown, one file per section, starting at
+[reference.md](/configuration/reference.md), for reading without this page's
+scripts.
 
 <ConfigReference />

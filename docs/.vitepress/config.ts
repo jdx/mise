@@ -12,6 +12,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
 import { sidebar } from "./sidebar";
+import { referenceKeys, referenceMarkdown } from "../config-reference.data";
 import { pageRedirects, redirectStub, stubFile } from "./redirects.mjs";
 import { releaseNotesPlugin } from "@jdxcode/docs-releases/vitepress";
 import {
@@ -512,6 +513,15 @@ export default withMermaid(
     buildEnd(siteConfig) {
       assertNoEmptyDocPages(siteConfig.outDir);
       writeRedirectStubs(siteConfig.outDir);
+      // The mise.toml reference page shows most keys only once its script runs;
+      // these files have all of them as plain Markdown.
+      for (const [path, content] of referenceMarkdown(
+        referenceKeys((s) => s),
+      )) {
+        const file = join(siteConfig.outDir, path);
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, content);
+      }
     },
   }),
 );
