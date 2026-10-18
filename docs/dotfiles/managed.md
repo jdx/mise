@@ -632,6 +632,9 @@ are ignored on Windows.
 Set [`dotfiles.windows_symlinks`](/configuration/settings.html#dotfiles.windows_symlinks)
 to `true` to get real file links from both modes. `symlink-each` then links
 each file, and a file that cannot be linked fails the apply instead of
-becoming a copy, so Developer Mode or an elevated shell is required. Turn it
-back off and the next `mise dot apply` replaces the links with copies, but
-`mise dot unapply` of entries still holding links needs `--force` until then.
+becoming a copy, so Developer Mode or an elevated shell is required. Files
+earlier applies copied are regular files in the way, so replacing them with
+links needs `--force`. Turning the setting off again changes only what new
+files get: links already in place stay links, and `mise dot unapply` of a
+`symlink-each` entry that holds links needs `--force` unless the setting is
+on.

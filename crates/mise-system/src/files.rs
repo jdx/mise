@@ -2678,6 +2678,12 @@ fn check_symlink(source: &Path, target: &Path, relative: bool) -> Result<FileSta
     // otherwise (see `link_path`), so which one is on disk decides how to read it. Only fall
     // through to the copy comparison when it is not a symlink.
     if cfg!(windows) && source.is_file() && !target.is_symlink() {
+        // with `dotfiles.windows_symlinks` on a copy is not the requested form: it differs, so
+        // the regular file at the target is a conflict that needs `--force` before a link
+        // replaces it, as on Unix
+        if windows_symlinks() && target.exists() {
+            return Ok(FileState::Differs("exists but is not a symlink".into()));
+        }
         return check_copy(source, target);
     }
     if target.is_symlink() {
@@ -5896,12 +5902,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             // entry would never converge
             file::create_dir_all(&req.target)?;
             for (source, target) in walk_source_files(req)? {
-                // a copy an earlier apply left reads as Applied, but with
-                // `dotfiles.windows_symlinks` on it has to become a link
-                let copy_to_relink = windows_symlinks() && source.is_file() && !target.is_symlink();
-                if !copy_to_relink
-                    && check_symlink(&source, &target, req.relative)? == FileState::Applied
-                {
+                if check_symlink(&source, &target, req.relative)? == FileState::Applied {
                     continue;
                 }
                 if let Some(parent) = target.parent() {
