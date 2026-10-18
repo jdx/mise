@@ -103,3 +103,14 @@ options.database = "app"
 EOF
 assert_contains "mise config explain --file daemons.toml" "daemons.db.options.database"
 assert_not_contains "mise config explain --file daemons.toml" "not a key mise reads"
+
+# A key is known only in the shape its table is written in: a daemon that names a project
+# takes no port, though a daemon that runs a command does.
+# schema: invalid
+cat <<'EOF' >project.toml
+[daemons.shared]
+project = "../infra"
+port = 5432
+EOF
+assert_contains "mise config explain --file project.toml" "daemons.shared.port     not a key mise reads"
+assert_not_contains "mise config explain --file project.toml" "did you mean port"

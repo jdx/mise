@@ -197,9 +197,38 @@ fn explain(path: &[String], line: usize, item: &Item, parent_value: &Written) ->
     let root = &*schema::SCHEMA;
     let nodes = schema::at(&segments);
     let (name, parent) = segments.split_last().expect("a key has a name");
-    let known = !nodes.is_empty() || accepts_any_key(parent);
+    let parent_nodes = schema::at(parent);
+    // Known as the shapes of the parent its keys are written in say: a key one shape names is
+    // not read in another, closed one, such as `port` beside a daemon's `project`. The shapes
+    // are told apart by type, `const` and `required` only, since a closed shape would otherwise
+    // rule itself out over the very key in question.
+    let forms: Vec<&Value> = parent_nodes
+        .iter()
+        .copied()
+        .filter(|node| fits(root, node, parent_value, false, 0))
+        .collect();
+    let forms = if forms.is_empty() {
+        parent_nodes.clone()
+    } else {
+        forms
+    };
+    let named = forms
+        .iter()
+        .any(|node| schema::direct_child(node, name).is_some());
+    let known = named || accepts_any_key(&forms);
+    // The nearest key those shapes name; another shape's key, or the key itself, is no fix.
     let suggestion = (!known)
-        .then(|| crate::fuzzy::nearest(name, schema::known_keys(parent)))
+        .then(|| {
+            let keys = forms
+                .iter()
+                .filter_map(|node| node.get("properties").and_then(Value::as_object))
+                .flatten()
+                .filter(|(key, schema)| {
+                    key.as_str() != *name && !schema::is_deprecated(root, schema)
+                })
+                .map(|(key, _)| key.as_str());
+            crate::fuzzy::nearest(name, keys)
+        })
         .flatten()
         .map(str::to_string);
     // Each shape the parent allows for the key, and of those the first the value fits: another
@@ -208,11 +237,10 @@ fn explain(path: &[String], line: usize, item: &Item, parent_value: &Written) ->
     // gets the key's first description.
     let value = Written::of(item);
     // The parent's shapes its own keys fit, such as a hook with `shell` beside its `script`.
-    let parent_nodes = schema::at(parent);
     let fitting: Vec<&Value> = parent_nodes
         .iter()
         .copied()
-        .filter(|node| fits(root, node, parent_value, 0))
+        .filter(|node| fits(root, node, parent_value, true, 0))
         .collect();
     let parent_nodes = if fitting.is_empty() {
         parent_nodes
@@ -236,7 +264,7 @@ fn explain(path: &[String], line: usize, item: &Item, parent_value: &Written) ->
     // where the hook form it is in deprecates it.
     let deprecated = candidates
         .iter()
-        .find(|candidate| fits(root, candidate, &value, 0))
+        .find(|candidate| fits(root, candidate, &value, true, 0))
         .or(candidates.first())
         .is_some_and(|candidate| deprecated_itself(root, candidate));
     Explained {
@@ -246,16 +274,16 @@ fn explain(path: &[String], line: usize, item: &Item, parent_value: &Written) ->
         deprecated,
         known,
         suggestion,
-        described: !nodes.is_empty(),
+        described: named && !nodes.is_empty(),
     }
 }
 
-/// Whether the table at `path` accepts keys it does not describe: `[_]`, an env plugin under
+/// Whether a table with the shapes `nodes` accepts keys it does not describe: `[_]`, an env plugin under
 /// `env._` (`additionalProperties = true`), a plugin tool's own options
 /// (`unevaluatedProperties` with a schema of its own), or a table that names no keys at all,
 /// such as a daemon preset's `options`.
-fn accepts_any_key(path: &[&str]) -> bool {
-    schema::at(path).iter().any(|node| {
+fn accepts_any_key(nodes: &[&Value]) -> bool {
+    nodes.iter().any(|node| {
         node.get("additionalProperties") == Some(&Value::Bool(true))
             || node
                 .get("unevaluatedProperties")
@@ -330,7 +358,7 @@ fn describe<'a>(
     value: &Written,
     depth: usize,
 ) -> Option<&'a str> {
-    if depth > 16 || !fits(root, node, value, depth) {
+    if depth > 16 || !fits(root, node, value, true, depth) {
         return None;
     }
     own_description(root, node).or_else(|| {
@@ -349,9 +377,10 @@ fn describe<'a>(
     })
 }
 
-/// Whether `value` fits `node`'s `const`, `enum`, `type` and alternatives. Only what tells the
-/// shapes of a key apart is checked, not everything a validator would.
-fn fits(root: &Value, node: &Value, value: &Written, depth: usize) -> bool {
+/// Whether `value` fits `node`'s `const`, `enum`, `type` and alternatives, and with `closed`
+/// also whether a closed table shape names all of its keys. Only what tells the shapes of a
+/// key apart is checked, not everything a validator would.
+fn fits(root: &Value, node: &Value, value: &Written, closed: bool, depth: usize) -> bool {
     if depth > 16 {
         return true;
     }
@@ -379,10 +408,11 @@ fn fits(root: &Value, node: &Value, value: &Written, depth: usize) -> bool {
     }
     // A closed table shape takes only the keys it names. One whose keys come through `allOf`
     // and the like is left to the checks below.
-    let closed = node.get("additionalProperties") == Some(&Value::Bool(false))
+    let is_closed = node.get("additionalProperties") == Some(&Value::Bool(false))
         || node.get("unevaluatedProperties") == Some(&Value::Bool(false));
     if value.json_type == "object"
         && closed
+        && is_closed
         && ["allOf", "oneOf", "anyOf", "patternProperties"]
             .iter()
             .all(|k| node.get(*k).is_none())
@@ -403,11 +433,17 @@ fn fits(root: &Value, node: &Value, value: &Written, depth: usize) -> bool {
     }
     let alternatives = |key: &str| node.get(key).and_then(Value::as_array);
     if let Some(variants) = alternatives("oneOf").or_else(|| alternatives("anyOf"))
-        && !variants.iter().any(|v| fits(root, v, value, depth + 1))
+        && !variants
+            .iter()
+            .any(|v| fits(root, v, value, closed, depth + 1))
     {
         return false;
     }
-    alternatives("allOf").is_none_or(|parts| parts.iter().all(|p| fits(root, p, value, depth + 1)))
+    alternatives("allOf").is_none_or(|parts| {
+        parts
+            .iter()
+            .all(|p| fits(root, p, value, closed, depth + 1))
+    })
 }
 
 /// `node` with any `$ref` followed.
