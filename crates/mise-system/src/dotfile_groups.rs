@@ -41,7 +41,7 @@ use mise_util::dirs;
 use mise_util::file;
 use mise_util::path::PathExt;
 
-pub use mise_system_config::dotfiles::DotfileGroupsTomlConfig;
+pub use mise_config::dotfiles::DotfileGroupsTomlConfig;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -41,7 +41,7 @@ anything else runs.
 | `mise-daemons`            | Daemon declarations, ports, presets, and the supervisor runtime (the toolset glue stays in `src/daemons/`) |
 | `mise-oci`                | The OCI registry client, layers, and image layout (the image builder stays in `src/oci/`)                  |
 | `mise-system`             | The bootstrap, dotfiles, and history modules                                                               |
-| `mise-system-config`      | The `mise.toml` declaration types for `[bootstrap]`, `[dotfiles]`, and `[history]`                         |
+| `mise-config`             | The `mise.toml` declaration types, so far for `[bootstrap]`, `[dotfiles]`, and `[history]`                 |
 | `mise-system-packages`    | System package manager drivers: apt, dnf, brew, brew-cask, and more                                        |
 | `mise-ui`                 | Progress reports, prompts, and themes for the terminal                                                     |
 | `mise-settings`           | The `Settings` types, generated from `settings.toml`, and the process-wide settings cache                  |

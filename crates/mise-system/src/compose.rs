@@ -11,7 +11,7 @@ use crate::host::{Config, ConfigMap};
 use crate::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
 #[cfg(test)]
 use crate::templating::Templated;
-pub use mise_system_config::compose::{
+pub use mise_config::compose::{
     ComposeBuildPolicy, ComposePullPolicy, ComposeRecreatePolicy, ComposeRemoveImages,
     ComposeState, ComposeTomlConfig,
 };

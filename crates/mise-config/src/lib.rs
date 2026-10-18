@@ -1,5 +1,6 @@
-//! The `mise.toml` declaration types for `[bootstrap]`, `[dotfiles]`, `[dotfile_groups]`, and
-//! `[history]`.
+//! The `mise.toml` declaration types: plain data parsed from the file, with no templating,
+//! settings, or filesystem access. So far this covers `[bootstrap]`, `[dotfiles]`,
+//! `[dotfile_groups]`, and `[history]`.
 //!
 //! mise's config layer stores these as parsed, and the system modules interpret them. Keeping
 //! the plain data here, below both, is what lets those two layers be separate crates.

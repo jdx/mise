@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use eyre::{Result, WrapErr};
 use indexmap::IndexMap;
 
-pub(crate) use mise_system_config::history::HistoryTomlConfig;
-pub use mise_system_config::history::OriginTomlConfig;
+pub(crate) use mise_config::history::HistoryTomlConfig;
+pub use mise_config::history::OriginTomlConfig;
 use mise_util::file::display_path;
 
 /// The configured `[history] machine`, if any layer sets one.

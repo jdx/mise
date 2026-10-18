@@ -74,19 +74,6 @@ impl PackageTomlConfig {
         }
     }
 
-    /// The `channel` and `classic` options on this entry, if it sets either.
-    pub fn snap_options(&self) -> Option<mise_system_packages::snap::SnapOptions> {
-        match self {
-            Self::Options(options) if options.channel.is_some() || options.classic.is_some() => {
-                Some(mise_system_packages::snap::SnapOptions {
-                    channel: options.channel.clone(),
-                    classic: options.classic.unwrap_or(false),
-                })
-            }
-            _ => None,
-        }
-    }
-
     /// The inline app declaration on this entry, if it carries one.
     ///
     /// `url` is what marks an entry as inline-declared; the other fields are
@@ -108,31 +95,6 @@ impl PackageTomlConfig {
                 }),
             Self::Version(_) => None,
         }
-    }
-
-    pub fn desired(&self) -> mise_system_packages::PackageDesiredState {
-        match self {
-            Self::Version(_) => mise_system_packages::PackageDesiredState::Present,
-            Self::Options(options) => match options.state {
-                PackageDesiredStateTomlConfig::Present => {
-                    mise_system_packages::PackageDesiredState::Present
-                }
-                PackageDesiredStateTomlConfig::Absent => {
-                    mise_system_packages::PackageDesiredState::Absent
-                }
-            },
-        }
-    }
-
-    pub fn is_os_supported(&self) -> bool {
-        let Self::Options(options) = self else {
-            return true;
-        };
-        options.os.is_empty()
-            || options
-                .os
-                .iter()
-                .any(|entry| mise_util::platform::os_selector_matches(entry))
     }
 
     /// Whether this package is enabled by at least one active mise environment.

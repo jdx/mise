@@ -132,7 +132,7 @@ The `mise` package has two targets. The library (`src/lib.rs`) is everything exc
 - Windows-specific tests in `e2e-win/`
 
 ### Build System
-- Rust project using a Cargo workspace; member crates live in `crates/` (`vfox`, `aqua-registry`, `mise-shim`, `mise-sigstore`, `mise-cache-core`, `mise-brew-relocation`, `mise-brew-metadata`, `mise-agent-env`, `mise-interactive-config`, `mise-settings`, `mise-util`, `mise-ui`, `mise-system-packages`, `mise-system-config`, `mise-system`, `mise-oci`, `mise-daemons`)
+- Rust project using a Cargo workspace; member crates live in `crates/` (`vfox`, `aqua-registry`, `mise-shim`, `mise-sigstore`, `mise-cache-core`, `mise-brew-relocation`, `mise-brew-metadata`, `mise-agent-env`, `mise-interactive-config`, `mise-settings`, `mise-util`, `mise-ui`, `mise-system-packages`, `mise-config`, `mise-system`, `mise-oci`, `mise-daemons`)
 - Custom build script in `build.rs` for generating metadata
 - Multiple build profiles including `release` and `serious` (with LTO)
 - Cross-compilation support via `Cross.toml`

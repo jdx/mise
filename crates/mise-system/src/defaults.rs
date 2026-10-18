@@ -6,7 +6,7 @@
 //! requested with `mise bootstrap macos defaults apply` or `mise bootstrap`.
 
 use indexmap::IndexMap;
-pub use mise_system_config::defaults::HostScope;
+pub use mise_config::defaults::HostScope;
 
 mod dock;
 

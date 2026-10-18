@@ -15,9 +15,9 @@ use async_trait::async_trait;
 use eyre::{Result, eyre};
 use futures_util::future::LocalBoxFuture;
 use indexmap::{IndexMap, IndexSet};
-use mise_system_config::bootstrap::BootstrapTomlConfig;
-use mise_system_config::dotfiles::{DotfileGroupsTomlConfig, DotfilesTomlConfig};
-use mise_system_config::history::HistoryTomlConfig;
+use mise_config::bootstrap::BootstrapTomlConfig;
+use mise_config::dotfiles::{DotfileGroupsTomlConfig, DotfilesTomlConfig};
+use mise_config::history::HistoryTomlConfig;
 use mise_util::env_diff::EnvMap;
 
 /// One loaded config file, as far as the system modules can see it.

@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 
 use crate::host::Config;
 use crate::resources::{ResourceAction, ResourceId, ResourcePlan};
-pub use mise_system_config::firewall::{
+pub use mise_config::firewall::{
     FirewallAction, FirewallBackend, FirewallDirection, FirewallPolicy, FirewallPortToml,
     FirewallProtocol, FirewallRuleState, FirewallRuleTomlConfig, FirewallState, FirewallTomlConfig,
 };

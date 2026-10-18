@@ -1,17 +1,15 @@
 [package]
-name = "mise-system-config"
+name = "mise-config"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "The mise.toml declaration types for [bootstrap], [dotfiles], and [history]"
+description = "The mise.toml declaration types"
 repository = "https://github.com/jdx/mise"
 
 [dependencies]
 eyre = "0.6"
 indexmap = { version = "2", features = ["serde"] }
 mise-bootstrap = { path = "../mise-bootstrap", version = "0.1" }
-mise-system-packages = { path = "../mise-system-packages", version = "0.1" }
-mise-util = { path = "../mise-util", version = "2026", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_ignored = "0.1"
 toml = { version = "1", features = ["parse", "preserve_order"] }

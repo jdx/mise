@@ -9,7 +9,7 @@ use indexmap::{IndexMap, IndexSet};
 use crate::host::{Config, ConfigMap};
 use crate::resources::{ResourceId, ResourceOrigin};
 use crate::services::ServiceRequest;
-pub use mise_system_config::services_common::{
+pub use mise_config::services_common::{
     ServiceChangeAction, ServiceRestart, ServiceScope, ServiceState, ServiceTomlConfig,
 };
 

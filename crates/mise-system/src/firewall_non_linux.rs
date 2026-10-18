@@ -2,7 +2,7 @@ use eyre::{Result, bail};
 
 use crate::host::Config;
 use crate::resources::{ResourceAction, ResourceId, ResourcePlan};
-pub use mise_system_config::firewall::FirewallTomlConfig;
+pub use mise_config::firewall::FirewallTomlConfig;
 
 #[derive(Clone, Debug)]
 pub struct FirewallRequest;

@@ -11,7 +11,7 @@ use tera::{Kwargs, State, TeraResult, Value};
 
 use crate::host::{Config, ConfigMap};
 use crate::resources::ResourceOrigin;
-pub use mise_system_config::secrets::{SecretOptionsTomlConfig, SecretTomlConfig};
+pub use mise_config::secrets::{SecretOptionsTomlConfig, SecretTomlConfig};
 use mise_util::env_diff::EnvMap;
 use mise_util::tera::{
     BASE_CONTEXT, TeraEngine, get_tera, get_tera_for_oci, get_tera_v2, render_str, render_str_v2,
