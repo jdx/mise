@@ -5,45 +5,21 @@ use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::sync::OnceLock;
 
+use crate::deprecation::{Deprecation, report};
+
 use serde::de::Visitor;
 use serde::{Deserialize, Deserializer, de};
 
 mod schema;
 pub(crate) use schema::fragments as schema_fragments;
 
-/// A deprecated spelling the `[env]` parser accepted.
-///
-/// The parser reports it with [`report`] instead of logging, because the warning, the
-/// version it starts in and the version it is removed in belong to mise.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Deprecation {
-    /// `env.mise` in place of `env._`.
-    EnvMise,
-    /// `value` in a built-in `file`, `path` or `source` directive object.
-    DirectiveValue,
-    /// `values` in a built-in `file`, `path` or `source` directive object.
-    DirectiveValues,
-}
-
-static DEPRECATION_HANDLER: OnceLock<fn(Deprecation)> = OnceLock::new();
 static DISPLAY_PATH: OnceLock<fn(&str) -> String> = OnceLock::new();
-
-/// Where the parser sends each [`Deprecation`] it accepts. mise registers this at startup.
-pub fn set_deprecation_handler(handler: fn(Deprecation)) {
-    let _ = DEPRECATION_HANDLER.set(handler);
-}
 
 /// How [`EnvDirective`]'s `Display` shows a path, so the home directory reads as `~` the way
 /// the rest of mise's output does. mise registers this at startup; without it paths print as
 /// written.
 pub fn set_display_path(display: fn(&str) -> String) {
     let _ = DISPLAY_PATH.set(display);
-}
-
-fn report(deprecation: Deprecation) {
-    if let Some(handler) = DEPRECATION_HANDLER.get() {
-        handler(deprecation);
-    }
 }
 
 fn display_path(path: &str) -> String {

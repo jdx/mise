@@ -31,33 +31,9 @@ pub(crate) mod venv;
 
 pub use mise_config::env::{AgeFormat, EnvDirective, EnvDirectiveOptions, RequiredValue};
 
-/// Connect the `[env]` parser in mise-config to mise's output: deprecated spellings warn with
-/// [`deprecated_at!`], and directives display paths the way the rest of mise does.
+/// Show env directive paths the way the rest of mise does.
 pub(crate) fn register_hooks() {
     mise_config::env::set_display_path(|path| display_path(path));
-    mise_config::env::set_deprecation_handler(|deprecation| {
-        use mise_config::env::Deprecation;
-        match deprecation {
-            Deprecation::EnvMise => deprecated_at!(
-                "2026.7.0",
-                "2026.12.0",
-                "config.env.mise",
-                "`env.mise` is deprecated. Use `env._` instead."
-            ),
-            Deprecation::DirectiveValue => deprecated_at!(
-                "2026.7.0",
-                "2026.12.0",
-                "config.directive.value",
-                "`value` in built-in `file`, `path`, and `source` directive objects is deprecated. Use `path` instead."
-            ),
-            Deprecation::DirectiveValues => deprecated_at!(
-                "2026.7.0",
-                "2026.12.0",
-                "config.directive.values",
-                "`values` in built-in `file`, `path`, and `source` directive objects is deprecated. Use `path` instead."
-            ),
-        }
-    });
 }
 
 #[derive(Default, Clone)]

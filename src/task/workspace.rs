@@ -7,7 +7,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use eyre::{Result, bail};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::{
     Task, TaskCacheConfig,
@@ -206,23 +206,7 @@ impl WorkspaceTaskSuggestions {
     }
 }
 
-/// Explicit changes applied after workspace providers discover their projects.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
-#[serde(default, deny_unknown_fields)]
-pub struct WorkspaceProjectOverride {
-    /// Removes the project and every dependency edge connected to it.
-    pub remove: bool,
-    /// Adds a project at this root or replaces an inferred project's root.
-    pub root: Option<PathBuf>,
-    /// Replaces provider-inferred metadata when present.
-    pub metadata: Option<BTreeMap<String, String>>,
-    /// Replaces the complete provider-inferred dependency set when present.
-    pub depends: Option<BTreeSet<String>>,
-    /// Adds dependency edges after an optional `depends` replacement.
-    pub depends_add: BTreeSet<String>,
-    /// Removes dependency edges after an optional `depends` replacement.
-    pub depends_remove: BTreeSet<String>,
-}
+pub use mise_config::monorepo::WorkspaceProjectOverride;
 
 /// Discovers projects and dependency edges from one workspace ecosystem.
 pub trait WorkspaceProvider: Debug + Send + Sync {

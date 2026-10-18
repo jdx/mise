@@ -3101,85 +3101,86 @@
       "type": "boolean"
     },
     "monorepo": {
-      "description": "Configuration for monorepo task discovery",
       "type": "object",
-      "unevaluatedProperties": false,
+      "description": "Configuration for monorepo task discovery",
       "properties": {
         "config_roots": {
-          "description": "Explicit list of config root paths for monorepo task discovery. Supports single-level glob patterns (*). When set, skips filesystem walking for better performance.",
           "type": "array",
+          "description": "Explicit list of config root paths for monorepo task discovery. Supports single-level glob patterns (*). When set, skips filesystem walking for better performance.",
           "items": {
             "type": "string"
           }
         },
         "path_aliases": {
-          "description": "Short names for configured monorepo task roots. Keys are single path segments; values are paths in config_roots.",
           "type": "object",
+          "description": "Short names for configured monorepo task roots. Keys are single path segments; values are paths in config_roots.",
           "additionalProperties": {
             "type": "string"
           }
         },
         "lockfile": {
-          "description": "Use a single lockfile at the monorepo root for descendant config roots. true opts in now, false keeps lockfiles next to subproject configs, and unset keeps the current behavior until the scheduled default flip.",
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Use a single lockfile at the monorepo root for descendant config roots. true opts in now, false keeps lockfiles next to subproject configs, and unset keeps the current behavior until the scheduled default flip."
         },
         "task_defaults": {
-          "description": "Task defaults applied by task name across inferred and explicit workspace projects",
           "type": "object",
+          "description": "Task defaults applied by task name across inferred and explicit workspace projects",
           "additionalProperties": {
             "$ref": "#/$defs/task_template"
           }
         },
         "projects": {
-          "description": "Explicit additions, removals, and overrides applied to provider-inferred workspace projects",
           "type": "object",
+          "description": "Explicit additions, removals, and overrides applied to provider-inferred workspace projects",
           "additionalProperties": {
             "type": "object",
-            "unevaluatedProperties": false,
             "properties": {
               "remove": {
+                "type": "boolean",
                 "description": "Remove this project and every dependency edge connected to it",
-                "type": "boolean"
+                "default": false
               },
               "root": {
-                "description": "Add the project at this workspace-relative root or replace its inferred root",
-                "type": "string"
+                "type": "string",
+                "description": "Add the project at this workspace-relative root or replace its inferred root"
               },
               "metadata": {
-                "description": "Replace provider-inferred project metadata",
                 "type": "object",
+                "description": "Replace provider-inferred project metadata",
                 "additionalProperties": {
                   "type": "string"
                 }
               },
               "depends": {
-                "description": "Replace the complete provider-inferred dependency set",
                 "type": "array",
+                "description": "Replace the complete provider-inferred dependency set",
+                "uniqueItems": true,
                 "items": {
                   "type": "string"
-                },
-                "uniqueItems": true
+                }
               },
               "depends_add": {
-                "description": "Add dependency edges after an optional depends replacement",
                 "type": "array",
+                "description": "Add dependency edges after an optional depends replacement",
+                "uniqueItems": true,
                 "items": {
                   "type": "string"
-                },
-                "uniqueItems": true
+                }
               },
               "depends_remove": {
-                "description": "Remove dependency edges after an optional depends replacement",
                 "type": "array",
+                "description": "Remove dependency edges after an optional depends replacement",
+                "uniqueItems": true,
                 "items": {
                   "type": "string"
-                },
-                "uniqueItems": true
+                }
               }
-            }
+            },
+            "unevaluatedProperties": false
           }
         }
-      }
+      },
+      "unevaluatedProperties": false
     },
     "tool": {
       "oneOf": [

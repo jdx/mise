@@ -14,11 +14,14 @@ use schemars::transform::RecursiveTransform;
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde_json::Value;
 
+use crate::alias::Alias;
 use crate::bootstrap::BootstrapTomlConfig;
 use crate::daemons::{DaemonSettings, GroupDeclaration};
 use crate::doctor::DoctorConfig;
 use crate::history::HistoryTomlConfig;
 use crate::launchd::LaunchdCalendarInterval;
+use crate::min_version::MinVersionSpec;
+use crate::monorepo::MonorepoConfig;
 use crate::oci::OciConfig;
 use crate::remote::InstallMiseTomlConfig;
 use crate::task::{TaskConfig, TaskDecl};
@@ -52,6 +55,10 @@ pub fn fragments() -> Vec<(&'static str, Value)> {
         ),
         ("/properties/oci", fragment::<OciConfig>(&mut generator)),
         ("/$defs/doctor", fragment::<DoctorConfig>(&mut generator)),
+        (
+            "/$defs/monorepo",
+            fragment::<MonorepoConfig>(&mut generator),
+        ),
         ("/$defs/tool_config", fragment::<ToolConfig>(&mut generator)),
         (
             "/$defs/watch_files/items",
@@ -83,6 +90,20 @@ pub fn fragments() -> Vec<(&'static str, Value)> {
     let hand_written = crate::env::schema_fragments()
         .into_iter()
         .chain(crate::task::schema_fragments())
+        .chain([
+            (
+                "/$defs/tool_alias_entry",
+                Alias::json_schema(&mut generator),
+            ),
+            (
+                "/$defs/tool_alias_versions",
+                crate::alias::versions_schema(),
+            ),
+            (
+                "/properties/min_version",
+                MinVersionSpec::json_schema(&mut generator),
+            ),
+        ])
         .map(|(pointer, schema)| (pointer, schema.to_value()));
     derived
         .into_iter()
@@ -123,6 +144,16 @@ pub(crate) mod refs {
         task_watch,
         vars,
     );
+}
+
+/// Closes a `deny_unknown_fields` struct with `unevaluatedProperties`, the form the hand-written
+/// file uses, in place of the `additionalProperties: false` schemars writes. The two accept the
+/// same tables when the schema has no subschemas.
+pub(crate) fn unevaluated(schema: &mut Schema) {
+    if schema.get("additionalProperties") == Some(&Value::Bool(false)) {
+        schema.remove("additionalProperties");
+        schema.insert("unevaluatedProperties".into(), false.into());
+    }
 }
 
 /// Writes an untagged enum's alternatives as `oneOf`, the form the hand-written file uses.

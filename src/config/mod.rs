@@ -182,11 +182,7 @@ pub struct Config {
     lockfile_discovery: std::sync::OnceLock<Arc<crate::lockfile::LockfileDiscovery>>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct Alias {
-    pub backend: Option<String>,
-    pub versions: IndexMap<String, String>,
-}
+pub use mise_config::alias::Alias;
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 use mise_util::redactions::GLOBAL_REDACTOR as _REDACTOR;
