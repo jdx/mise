@@ -140,6 +140,7 @@ pub fn register_util_hooks() {
     // First: `version::VERSION` below reads it.
     mise_util::deprecation::set_version(env!("CARGO_PKG_VERSION"));
     config::settings::register_loader();
+    config::env_directive::register_hooks();
     system::packages_host::register();
     system::bootstrap_host::register();
     daemons::glue::register();
