@@ -28,6 +28,16 @@ const total = computed(() =>
   keys.value.reduce((n, key) => n + 1 + key.count, 0),
 );
 
+const entities = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
+
+// A rendered description as text: its tags dropped and the entities Markdown writes, such as
+// the `&lt;` of a `<url>` placeholder, read back.
+function plain(html) {
+  return html
+    .replace(/<[^>]*>/g, "")
+    .replace(/&(amp|lt|gt|quot|#39);/g, (_, name) => entities[name]);
+}
+
 // Each key by path, its parent, and the text the filter searches.
 const index = computed(() => {
   const byPath = new Map();
@@ -36,7 +46,7 @@ const index = computed(() => {
   const visit = (key, parent) => {
     byPath.set(key.path, key);
     parents.set(key.path, parent);
-    const description = key.description.replace(/<[^>]*>/g, "");
+    const description = plain(key.description);
     entries.push({
       key,
       text: `${key.path} ${description}`.toLowerCase(),
@@ -255,7 +265,7 @@ onBeforeUnmount(() => {
 });
 
 function firstSentence(html) {
-  const text = html.replace(/<[^>]*>/g, "");
+  const text = plain(html);
   const cut = text.search(/[.;](\s|$)/);
   return cut > 0 ? text.slice(0, cut) : text;
 }
