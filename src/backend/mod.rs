@@ -963,17 +963,24 @@ impl OptionSpec {
             .unwrap_or_default()
     }
 
-    fn known_keys(&self, backend_type: &BackendType) -> HashSet<String> {
-        self.schema_defs
-            .iter()
-            .flat_map(|def| Self::schema_keys(def))
-            .chain(Self::schema_keys("tool_options"))
+    /// The options every tool may carry, whatever its backend.
+    fn shared_keys() -> HashSet<String> {
+        Self::schema_keys("tool_options")
+            .into_iter()
             .chain(
                 crate::toolset::EPHEMERAL_OPT_KEYS
                     .iter()
                     .chain(&["lazy", "lazy_bins", "os", "depends", "install_env"])
                     .map(|k| k.to_string()),
             )
+            .collect()
+    }
+
+    fn known_keys(&self, backend_type: &BackendType) -> HashSet<String> {
+        self.schema_defs
+            .iter()
+            .flat_map(|def| Self::schema_keys(def))
+            .chain(Self::shared_keys())
             .chain(install_time_option_keys_for_type(backend_type))
             .collect()
     }
@@ -1003,8 +1010,10 @@ impl OptionSpec {
         opts: &ToolVersionOptions,
     ) -> Vec<String> {
         let known = self.known_keys(backend_type);
+        // A backend that declares no platform options reads none from a platform override, so
+        // only the options every tool shares are accepted there.
         let platform_known = if self.platform_defs.is_empty() {
-            known.clone()
+            Self::shared_keys()
         } else {
             self.platform_defs
                 .iter()
@@ -1039,11 +1048,10 @@ impl OptionSpec {
         opts: &ToolVersionOptions,
         allowed: &[&str],
     ) -> eyre::Result<()> {
-        if let Some(key) = self
-            .unknown_keys(backend_type, opts)
-            .iter()
-            .find(|key| !allowed.contains(&key.as_str()))
-        {
+        if let Some(key) = self.unknown_keys(backend_type, opts).iter().find(|key| {
+            let name = key.rsplit('.').next().unwrap_or(key);
+            !allowed.contains(&name)
+        }) {
             bail!(
                 "{tool}: option `{key}` is not used by the {backend_type} backend\n\
                 hint: Remove it, or check the spelling against the backend's documented options"
@@ -8502,7 +8510,7 @@ mod option_spec_tests {
 
     #[test]
     fn reports_unknown_options_inside_platforms() {
-        let spec = OptionSpec::new(&["tool_cargo_options"]);
+        let spec = OptionSpec::with_platforms(&["tool_cargo_options"], &["tool_cargo_platforms"]);
         let mut o = ToolVersionOptions::default();
         let platform: toml::Table =
             toml::from_str("[linux-x64]\nasset_pattern = \"x\"\nbin = \"y\"").unwrap();
@@ -8516,7 +8524,7 @@ mod option_spec_tests {
 
     #[test]
     fn accepts_shared_and_flat_platform_options() {
-        let spec = OptionSpec::new(&["tool_http_options"]);
+        let spec = OptionSpec::with_platforms(&["tool_http_options"], &["tool_http_platforms"]);
         let o = opts(
             "postinstall=x,minimum_release_age=7d,install_before=1d,version_order=semver,prerelease=true,platform_linux_x64_url=u,platforms_macos_arm64_checksum=c",
         );
@@ -8557,6 +8565,33 @@ mod option_spec_tests {
         assert_eq!(
             spec.unknown_keys(&BackendType::Http, &o),
             Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn backends_without_platform_options_reject_them_in_overrides() {
+        let spec = OptionSpec::new(&["tool_cargo_options"]);
+        let mut o = ToolVersionOptions::default();
+        let platform: toml::Table =
+            toml::from_str("[linux-x64]\nbin = \"y\"\npostinstall = \"z\"").unwrap();
+        o.opts
+            .insert("platforms".into(), toml::Value::Table(platform));
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Cargo, &o),
+            vec!["platforms.bin"]
+        );
+    }
+
+    #[test]
+    fn stub_keys_are_allowed_inside_platform_overrides_too() {
+        let spec = OptionSpec::new(&["tool_cargo_options"]);
+        let mut o = ToolVersionOptions::default();
+        let platform: toml::Table = toml::from_str("[linux-x64]\nbin = \"y\"").unwrap();
+        o.opts
+            .insert("platforms".into(), toml::Value::Table(platform));
+        assert!(
+            spec.check("cargo:x", &BackendType::Cargo, &o, &["bin"])
+                .is_ok()
         );
     }
 
