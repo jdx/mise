@@ -157,6 +157,8 @@ test("an escape that names no character does not stop the scan", () => {
     "b",
     "c",
   ]);
+  // A half-typed escape stops at the closing quote.
+  assert.deepEqual(paths('a = "\\u"\nb = "\\U12"\nc = 1\n'), ["a", "b", "c"]);
 });
 
 test("a numeric key is a key, while an array index is not", () => {

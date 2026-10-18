@@ -120,16 +120,19 @@ export function scan(text: string): Scan {
           pos += 2;
         } else if (next === "u" || next === "U") {
           const width = next === "u" ? 4 : 8;
-          const hex = text.slice(pos + 2, pos + 2 + width);
-          const code = /^[0-9a-fA-F]+$/.test(hex) ? parseInt(hex, 16) : -1;
+          // Only the hex digits that are there, so a half-typed escape does not run past the
+          // closing quote.
+          const hex = /^[0-9a-fA-F]*/.exec(
+            text.slice(pos + 2, pos + 2 + width),
+          )![0];
+          const code = parseInt(hex, 16);
           // Anything but a Unicode scalar value is a syntax error, which smol-toml reports.
           const scalar =
             hex.length === width &&
-            code >= 0 &&
             code <= 0x10ffff &&
             (code < 0xd800 || code > 0xdfff);
           out += scalar ? String.fromCodePoint(code) : "";
-          pos += 2 + width;
+          pos += 2 + hex.length;
         } else if (multi && (next === "\n" || next === " " || next === "\r")) {
           // A line-ending backslash trims the newline and the whitespace after it.
           pos++;
