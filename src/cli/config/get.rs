@@ -71,7 +71,7 @@ impl ConfigGet {
             let config: toml::Value = toml::de::from_str(&content)?;
             let mut value = &config;
             if let Some(key) = &self.key {
-                let path = super::keys::rejoin(super::keys::split_path(key), |path| {
+                let path = super::keys::rejoin(super::keys::split_keys(key), |path| {
                     path.iter()
                         .try_fold(&config, |value, k| value.get(k))
                         .is_some()

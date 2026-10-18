@@ -131,3 +131,11 @@ assert "mise config explain --file dots.toml 'tasks.\"hello\\u002esh\"' --json |
 # Without the quotes, tasks.hello still means the task hello, and tasks.hello.sh finds hello.sh
 # only because nothing under hello is named sh.
 assert "mise config explain --file dots.toml tasks.hello.sh --json | jq -r 'map(.key) | join(\" \")'" 'tasks."hello.sh" tasks."hello.sh".run'
+
+# A daemon that has none of the keys that pick its shape still has its typos found.
+# schema: invalid
+cat <<'EOF' >typo.toml
+[daemons.db]
+prot = 5432
+EOF
+assert_contains "mise config explain --file typo.toml" "daemons.db.prot  not a key mise reads; did you mean port?"

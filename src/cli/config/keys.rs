@@ -37,6 +37,12 @@ fn separators(path: &str) -> Vec<usize> {
 /// included, so `tasks."build.sh"` and `tasks."build\u002esh"` are both `tasks` and `build.sh`.
 /// An unquoted key is taken as written, so `tools.asdf:mise-plugins/mise-foo` needs no quotes.
 pub(super) fn split_path(path: &str) -> Vec<String> {
+    split_keys(path).into_iter().map(|(key, _)| key).collect()
+}
+
+/// [`split_path`], with whether each key was quoted: a quoted key's edges are the user's own,
+/// so [`rejoin`] never joins one to its neighbors.
+pub(super) fn split_keys(path: &str) -> Vec<(String, bool)> {
     let mut keys = vec![];
     let mut start = 0;
     for dot in separators(path).into_iter().chain([path.len()]) {
@@ -46,37 +52,46 @@ pub(super) fn split_path(path: &str) -> Vec<String> {
             .then(|| toml_edit::Key::parse(key).ok())
             .flatten()
             .and_then(|parsed| parsed.into_iter().next());
-        keys.push(quoted.map_or_else(|| key.to_string(), |k| k.get().to_string()));
+        keys.push(match quoted {
+            Some(k) => (k.get().to_string(), true),
+            None => (key.to_string(), false),
+        });
         start = dot + 1;
     }
     keys
 }
 
-/// `keys`, with keys joined back with dots where that reaches further into the file, as
-/// `exists` says of each path from the top. A shell removes the quotes from `tasks."build.sh"`
-/// unless the whole path is quoted too, and bash inserts a completion as written, so
-/// `tasks.build.sh` still has to find the task `build.sh`. The keys as split win a tie, so a
-/// `build` task with a key `sh` is taken first; keys past what the file has stay split.
-pub(super) fn rejoin(keys: Vec<String>, exists: impl Fn(&[String]) -> bool) -> Vec<String> {
+/// `keys`, with unquoted keys joined back with dots where that reaches further into the file,
+/// as `exists` says of each path from the top. A shell removes the quotes from
+/// `tasks."build.sh"` unless the whole path is quoted too, and bash inserts a completion as
+/// written, so `tasks.build.sh` still has to find the task `build.sh`. The keys as split win a
+/// tie, so a `build` task with a key `sh` is taken first; keys past what the file has stay
+/// split, and a quoted key is never joined, since its quotes say where it ends.
+pub(super) fn rejoin(keys: Vec<(String, bool)>, exists: impl Fn(&[String]) -> bool) -> Vec<String> {
     let (reached, mut path) = furthest(&keys, 0, &mut vec![], &exists);
-    path.extend(keys[reached..].iter().cloned());
+    path.extend(keys[reached..].iter().map(|(key, _)| key.clone()));
     path
 }
 
 /// How far into `keys` the file goes from `start`, below the keys already `found`, and the
 /// path that gets there.
 fn furthest(
-    keys: &[String],
+    keys: &[(String, bool)],
     start: usize,
     found: &mut Vec<String>,
     exists: &dyn Fn(&[String]) -> bool,
 ) -> (usize, Vec<String>) {
     let mut best = (start, found.clone());
     for end in start + 1..=keys.len() {
-        if best.0 == keys.len() {
+        // A run of several keys is joined, which only unquoted ones may be.
+        if best.0 == keys.len() || (end > start + 1 && keys[start..end].iter().any(|(_, q)| *q)) {
             break;
         }
-        found.push(keys[start..end].join("."));
+        let run: Vec<&str> = keys[start..end]
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .collect();
+        found.push(run.join("."));
         if exists(found) {
             let reached = furthest(keys, end, found, exists);
             if reached.0 > best.0 {
@@ -353,7 +368,7 @@ mod tests {
 
     #[test]
     fn a_path_the_shell_unquoted_finds_the_dotted_key() {
-        let keys = |path: &str| split_path(path);
+        let keys = |path: &str| split_keys(path);
         let exists = |known: &'static [&'static [&'static str]]| {
             move |path: &[String]| {
                 known
@@ -384,6 +399,13 @@ mod tests {
             rejoin(keys("tasks.hello.sh.dir"), exists(only_dotted)),
             ["tasks", "hello.sh", "dir"]
         );
+        // quoted keys keep the edges the user gave them, even where `a.b` exists
+        let dotted: &[&[&str]] = &[&["_", "a.b"]];
+        assert_eq!(
+            rejoin(keys(r#"_."a"."b""#), exists(dotted)),
+            ["_", "a", "b"]
+        );
+        assert_eq!(rejoin(keys("_.a.b"), exists(dotted)), ["_", "a.b"]);
         // nothing matches: as split
         assert_eq!(
             rejoin(keys("tasks.new.sh"), exists(&[])),
