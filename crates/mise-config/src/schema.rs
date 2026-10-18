@@ -419,13 +419,18 @@ mod tests {
     /// The JSON pointer of the first value that differs, ignoring key order.
     fn first_difference(a: &Value, b: &Value, pointer: String) -> Option<String> {
         match (a, b) {
-            (Value::Object(a), Value::Object(b)) => a.keys().chain(b.keys()).find_map(|key| {
-                let at = format!("{pointer}/{}", key.replace('~', "~0").replace('/', "~1"));
-                match (a.get(key), b.get(key)) {
-                    (Some(a), Some(b)) => first_difference(a, b, at),
-                    _ => Some(at),
-                }
-            }),
+            (Value::Object(a), Value::Object(b)) => {
+                // Each key once: comparing a shared key from both sides would double the work
+                // at every level of nesting.
+                let only_b = b.keys().filter(|key| !a.contains_key(*key));
+                a.keys().chain(only_b).find_map(|key| {
+                    let at = format!("{pointer}/{}", key.replace('~', "~0").replace('/', "~1"));
+                    match (a.get(key), b.get(key)) {
+                        (Some(a), Some(b)) => first_difference(a, b, at),
+                        _ => Some(at),
+                    }
+                })
+            }
             (Value::Array(a), Value::Array(b)) if a.len() == b.len() => a
                 .iter()
                 .zip(b)
