@@ -153,13 +153,14 @@ impl Explained {
 
 /// Appends every key below `table`, whose path is `path`, in file order.
 fn walk(body: &str, table: &dyn TableLike, path: &mut Vec<String>, out: &mut Vec<Explained>) {
+    let parent = Written::table(table);
     for (name, item) in table.iter() {
         path.push(name.to_string());
         let line = table
             .get_key_value(name)
             .and_then(|(key, _)| key.span())
             .map_or(0, |span| body[..span.start].matches('\n').count() + 1);
-        let explained = explain(path, line, item);
+        let explained = explain(path, line, item, &parent);
         // Below an unknown key, or a key only an open table accepts, nothing more is known.
         let descend = explained.described;
         out.push(explained);
@@ -190,7 +191,8 @@ fn walk(body: &str, table: &dyn TableLike, path: &mut Vec<String>, out: &mut Vec
     }
 }
 
-fn explain(path: &[String], line: usize, item: &Item) -> Explained {
+/// `parent` is the table the key is in, which picks the shape of it the key belongs to.
+fn explain(path: &[String], line: usize, item: &Item, parent_value: &Written) -> Explained {
     let segments: Vec<&str> = path.iter().map(String::as_str).collect();
     let root = &*schema::SCHEMA;
     let nodes = schema::at(&segments);
@@ -205,7 +207,18 @@ fn explain(path: &[String], line: usize, item: &Item) -> Explained {
     // A value that fits no shape, such as a setting set to a choice it does not have, still
     // gets the key's first description.
     let value = Written::of(item);
+    // The parent's shapes its own keys fit, such as a hook with `shell` beside its `script`.
     let parent_nodes = schema::at(parent);
+    let fitting: Vec<&Value> = parent_nodes
+        .iter()
+        .copied()
+        .filter(|node| fits(root, node, parent_value, 0))
+        .collect();
+    let parent_nodes = if fitting.is_empty() {
+        parent_nodes
+    } else {
+        fitting
+    };
     let candidates: Vec<&Value> = parent_nodes
         .iter()
         .filter_map(|node| schema::direct_child(node, name))
@@ -219,9 +232,13 @@ fn explain(path: &[String], line: usize, item: &Item) -> Explained {
                 .find_map(|candidate| own_description(root, candidate))
         })
         .map(|d| d.lines().next().unwrap_or_default().to_string());
-    let deprecated = nodes
-        .first()
-        .is_some_and(|node| deprecated_itself(root, node));
+    // Deprecated as the shape the value fits says, so `script` in a hook is deprecated only
+    // where the hook form it is in deprecates it.
+    let deprecated = candidates
+        .iter()
+        .find(|candidate| fits(root, candidate, &value, 0))
+        .or(candidates.first())
+        .is_some_and(|candidate| deprecated_itself(root, candidate));
     Explained {
         key: segments.join("."),
         line,
@@ -254,6 +271,14 @@ struct Written {
 }
 
 impl Written {
+    fn table(table: &dyn TableLike) -> Self {
+        Self {
+            json_type: "object",
+            scalar: None,
+            keys: table.iter().map(|(k, _)| k.to_string()).collect(),
+        }
+    }
+
     fn of(item: &Item) -> Self {
         let scalar = match item {
             Item::Value(toml_edit::Value::String(s)) => Some(Value::from(s.value().as_str())),
@@ -328,6 +353,20 @@ fn fits(root: &Value, node: &Value, value: &Written, depth: usize) -> bool {
         _ => true,
     };
     if !typed {
+        return false;
+    }
+    // A closed table shape takes only the keys it names. One whose keys come through `allOf`
+    // and the like is left to the checks below.
+    let closed = node.get("additionalProperties") == Some(&Value::Bool(false))
+        || node.get("unevaluatedProperties") == Some(&Value::Bool(false));
+    if value.json_type == "object"
+        && closed
+        && ["allOf", "oneOf", "anyOf", "patternProperties"]
+            .iter()
+            .all(|k| node.get(*k).is_none())
+        && let Some(Value::Object(properties)) = node.get("properties")
+        && !value.keys.iter().all(|k| properties.contains_key(k))
+    {
         return false;
     }
     // `required` names the keys a table shape needs; a value that is not a table ignores it.

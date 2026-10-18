@@ -80,3 +80,13 @@ assert_contains "mise config explain --file mise.toml" "settings.status.missing_
 mkdir -p other
 cp mise.toml other/mise.toml
 assert_contains "cd / && mise -C $PWD/other config explain --file mise.toml" "settings.status.missing_tools"
+
+# A hook's script is deprecated only in the form that deprecates it: without a shell.
+# schema: skip
+cat <<'EOF' >hooks.toml
+[hooks]
+enter = { script = "echo a" }
+cd = { script = "echo b", shell = "bash" }
+EOF
+assert_contains "mise config explain --file hooks.toml" "hooks.enter.script  deprecated:"
+assert_not_contains "mise config explain --file hooks.toml" "hooks.cd.script     deprecated:"
