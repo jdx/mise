@@ -538,6 +538,19 @@ impl Backend for UnifiedGitBackend {
         VersionOrder::from_options_or(opts, self.ba.registry_version_order().unwrap_or_default())
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::with_platforms(
+            if self.is_gitlab() {
+                &["tool_gitlab_options", "tool_forge_options"]
+            } else if self.is_forgejo() {
+                &["tool_forgejo_options", "tool_forge_options"]
+            } else {
+                &["tool_github_options", "tool_forge_options"]
+            },
+            &["tool_forge_platforms"],
+        ))
+    }
+
     fn get_type(&self) -> BackendType {
         if self.is_gitlab() {
             BackendType::Gitlab

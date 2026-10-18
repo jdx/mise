@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+cat >~/bin/cargo <<'EOS'
+#!/usr/bin/env bash
+while (($#)); do
+  if [[ $1 == "--root" ]]; then
+    mkdir -p "$2/bin"
+    exit 0
+  fi
+  shift
+done
+EOS
+chmod u+x ~/bin/cargo
+export PATH="$HOME/bin:$PATH"
+export MISE_CARGO_BINSTALL=0
+
+cat >mise.toml <<'EOS'
+[tools]
+"cargo:ignored-option-test" = { version = "1.0.0", asset_pattern = "*.tar.gz" }
+EOS
+assert_fail "mise install" "is not used by the cargo backend"
