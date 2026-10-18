@@ -4656,7 +4656,11 @@ pub trait Backend: Debug + Send + Sync {
         } else {
             self.prepare_install_version(&ctx, tv).await?
         };
-        if let Some(spec) = self.option_spec() {
+        // A tool stub's fields (`bin`, checksums such as `blake3`) are its own format, which
+        // is turned into backend options elsewhere.
+        if !matches!(tv.request.source(), crate::toolset::ToolSource::ToolStub(_))
+            && let Some(spec) = self.option_spec()
+        {
             spec.check(
                 &crate::install_layout::resolver::redact_credentials(&self.ba().short),
                 &self.get_type(),
