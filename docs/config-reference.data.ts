@@ -96,14 +96,15 @@ function first<T>(nodes: Schema[], pick: (n: Schema) => T | undefined) {
 }
 
 // A short type such as `string | string[]`, `table` or `boolean`.
-export function typeLabel(root: Schema, nodes: Schema[]): string {
+export function typeLabel(root: Schema, nodes: Schema[], depth = 0): string {
   const labels = new Set<string>();
   const add = (n: Schema) => {
     const types = Array.isArray(n.type) ? n.type : n.type ? [n.type] : [];
     for (const t of types) {
       if (t === "array") {
         const items = expand(root, n.items ?? {});
-        const inner = typeLabel(root, items);
+        // a list of lists stops naming its items after a few levels
+        const inner = depth > 3 ? "any" : typeLabel(root, items, depth + 1);
         labels.add(
           inner === "any"
             ? "array"
@@ -143,6 +144,32 @@ function placeholderChildren(root: Schema, nodes: Schema[]): Schema[] {
     }
   }
   return out;
+}
+
+// A readable name for a `patternProperties` key: `^github:` is `<github:…>`, and
+// `^(core:)?python(\[.*\])?$` is `python`.
+export function patternLabel(pattern: string): string {
+  const s = pattern
+    .replace(/^\^/, "")
+    .replace(/\$$/, "")
+    .replace("(\\[.*\\])?", "")
+    .replace("(core:)?", "");
+  const prefixes = s.match(/^\((.*)\):$/);
+  if (prefixes) {
+    return prefixes[1]
+      .split("|")
+      .map((p) => `<${p}:…>`)
+      .join(" | ");
+  }
+  if (s.endsWith(":")) return `<${s}…>`;
+  const names = s.match(/^\((.*)\)$/);
+  if (names) {
+    return names[1]
+      .split("|")
+      .filter((n) => !n.startsWith("core:"))
+      .join(" | ");
+  }
+  return s;
 }
 
 const placeholders: Record<string, string> = {
@@ -210,21 +237,46 @@ export function describeKey(
       );
     }
   }
-  if (key.children.length === 0) {
-    // An open table: its keys are names the user picks.
-    const value = placeholderChildren(root, nodes);
-    if (value.some((n) => n.properties)) {
-      const placeholder = placeholders[path] ?? "<key>";
+  // An open table: its other keys are names the user picks.
+  const value = placeholderChildren(root, nodes);
+  const named = key.children.length > 0;
+  let shared = new Set<string>();
+  if (value.length > 0) {
+    const placeholder = placeholders[path] ?? "<key>";
+    const entry = describeKey(
+      root,
+      placeholder,
+      { allOf: value },
+      path,
+      render,
+      depth + 1,
+    );
+    shared = new Set(
+      entry.children.map((c) => c.path.slice(entry.path.length + 1)),
+    );
+    key.children.push(entry);
+  }
+  // Keys matched by pattern, such as the backend-specific options of `[tools]`: each lists
+  // only what it adds to the open-table entry above.
+  for (const n of nodes) {
+    for (const [pattern, patternSchema] of Object.entries(
+      n.patternProperties ?? {},
+    )) {
       const entry = describeKey(
         root,
-        placeholder,
-        { allOf: value },
+        patternLabel(pattern),
+        patternSchema as Schema,
         path,
         render,
         depth + 1,
       );
+      entry.children = entry.children.filter(
+        (c) => !shared.has(c.path.slice(entry.path.length + 1)),
+      );
       if (entry.children.length > 0) key.children.push(entry);
     }
+  }
+  if (!named) {
     // A list of tables: describe one item.
     const items = nodes.flatMap((n) => (n.items ? expand(root, n.items) : []));
     if (items.some((n) => n.properties)) {
