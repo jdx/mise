@@ -58,12 +58,16 @@ cat <<'EOF' >shapes.toml
 [env]
 DATABASE_URL = { required = true }
 
+[vars]
+test_mode = { default = "headless" }
+
 [tools]
 "asdf:mise-plugins/mise-foo" = { version = "1", mirror = "eu" }
 EOF
 assert_contains "mise config explain --file shapes.toml" "env.DATABASE_URL.required"
 assert_contains "mise config explain --file shapes.toml" "a variable without a value must be required"
 assert_not_contains "mise config explain --file shapes.toml" "not a key mise reads"
+assert_not_contains "mise config explain --file shapes.toml" "age-encrypted"
 
 # A config whose settings fail to load can still be explained by name, also from --cd.
 # schema: invalid

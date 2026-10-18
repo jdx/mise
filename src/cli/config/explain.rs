@@ -245,11 +245,12 @@ fn accepts_any_key(path: &[&str]) -> bool {
     })
 }
 
-/// A value as far as matching it to a shape needs: its JSON type, and the value itself when it
-/// is a scalar a `const` or `enum` can name.
+/// A value as far as matching it to a shape needs: its JSON type, the value itself when it is
+/// a scalar a `const` or `enum` can name, and a table's keys for `required`.
 struct Written {
     json_type: &'static str,
     scalar: Option<Value>,
+    keys: Vec<String>,
 }
 
 impl Written {
@@ -261,9 +262,17 @@ impl Written {
             Item::Value(toml_edit::Value::Boolean(b)) => Some(Value::from(*b.value())),
             _ => None,
         };
+        let keys = match item {
+            Item::Table(t) => t.iter().map(|(k, _)| k.to_string()).collect(),
+            Item::Value(toml_edit::Value::InlineTable(t)) => {
+                t.iter().map(|(k, _)| k.to_string()).collect()
+            }
+            _ => vec![],
+        };
         Self {
             json_type: json_type(item),
             scalar,
+            keys,
         }
     }
 
@@ -319,6 +328,16 @@ fn fits(root: &Value, node: &Value, value: &Written, depth: usize) -> bool {
         _ => true,
     };
     if !typed {
+        return false;
+    }
+    // `required` names the keys a table shape needs; a value that is not a table ignores it.
+    if value.json_type == "object"
+        && let Some(Value::Array(required)) = node.get("required")
+        && !required
+            .iter()
+            .filter_map(Value::as_str)
+            .all(|key| value.keys.iter().any(|k| k == key))
+    {
         return false;
     }
     let alternatives = |key: &str| node.get(key).and_then(Value::as_array);
