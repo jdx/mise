@@ -172,14 +172,18 @@ pub struct FirewallRuleTomlConfig {
     /// stable managed rule identifier
     #[schemars(length(min = 1, max = 64), regex(pattern = r"^[A-Za-z0-9_-]+$"))]
     pub name: String,
+    /// present adds the rule; absent removes a rule mise added earlier
     #[serde(default)]
     pub state: FirewallRuleState,
+    /// traffic direction the rule matches
     #[serde(default)]
     pub direction: FirewallDirection,
+    /// what to do with matching traffic; limit needs incoming TCP and is not available on firewalld
     #[serde(default)]
     pub action: FirewallAction,
     /// single port number or inclusive range
     pub port: Option<FirewallPortToml>,
+    /// protocol to match; any when unset, and UFW supports only tcp and udp
     pub protocol: Option<FirewallProtocol>,
     /// source IPv4 or IPv6 CIDR network
     pub source: Option<String>,
