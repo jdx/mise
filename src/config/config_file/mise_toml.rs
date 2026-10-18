@@ -491,7 +491,7 @@ impl MiseToml {
     ) -> eyre::Result<Self> {
         let mut merged = self.clone();
         for (cache, body) in fragments.iter().rev() {
-            let fragment = Self::parse_remote_fragment(body, &self.path)?;
+            let fragment = Self::parse_remote_fragment(body, &self.path, Some(cache))?;
             merged.merge_fragment_below(fragment);
             merged.included_paths.push(cache.clone());
         }
@@ -502,7 +502,15 @@ impl MiseToml {
     /// `min_version` it does not meet counts like any other reason it cannot
     /// load. Trust is not checked: the including file was loaded first, and
     /// `include` is not something a config can use without trust.
-    pub(crate) fn parse_remote_fragment(body: &str, including: &Path) -> eyre::Result<Self> {
+    ///
+    /// `source` is the file the body was read from, for the line an unknown
+    /// key warns with. Without one the body is only checked, quietly: it is
+    /// checked before it is cached, and warns when it loads.
+    pub(crate) fn parse_remote_fragment(
+        body: &str,
+        including: &Path,
+        source: Option<&Path>,
+    ) -> eyre::Result<Self> {
         if let Ok(toml::Value::Table(table)) = toml::from_str::<toml::Value>(body) {
             // Only what is resolved from the merged config. `[settings]` and the
             // monorepo keys are read before any include exists, tasks are
@@ -533,7 +541,7 @@ impl MiseToml {
                 }
             }
         }
-        let fragment = Self::parse_body(body, including, false)?;
+        let fragment = Self::parse_body(body, including, source, false)?;
         if let Some(spec) = &fragment.min_version {
             crate::config::Config::enforce_min_version_spec(spec)?;
         }
@@ -616,12 +624,23 @@ impl MiseToml {
     }
 
     pub fn from_str(body: &str, path: &Path) -> eyre::Result<Self> {
-        Self::parse_body(body, path, true)
+        Self::parse_body(body, path, Some(path), true)
     }
 
-    fn parse_body(body: &str, path: &Path, check_trust: bool) -> eyre::Result<Self> {
+    /// `path` is the config the body belongs to, and `source` the file it was read from, which
+    /// differs for an include. Without a `source`, unknown keys are not reported.
+    fn parse_body(
+        body: &str,
+        path: &Path,
+        source: Option<&Path>,
+        check_trust: bool,
+    ) -> eyre::Result<Self> {
+        let Some(source) = source else {
+            return Self::parse_body_reporting(body, path, check_trust, &mut |_| {});
+        };
+        let unknown = super::unknown_key::UnknownKeys::new(source, Some(body));
         Self::parse_body_reporting(body, path, check_trust, &mut |field| {
-            warn!("unknown field in {}: {field}", display_path(path));
+            warn!("{}", unknown.message(&super::unknown_key::segments(field)));
         })
     }
 
@@ -631,14 +650,14 @@ impl MiseToml {
         body: &str,
         path: &Path,
         check_trust: bool,
-        on_unknown: &mut dyn FnMut(String),
+        on_unknown: &mut dyn FnMut(&serde_ignored::Path),
     ) -> eyre::Result<Self> {
         if check_trust && !Self::is_trust_exempt(body, path) {
             trust_check(path)?;
         }
         trace!("parsing: {}", display_path(path));
         let des = toml::Deserializer::parse(body).map_err(|e| toml_parse_error(&e, body, path))?;
-        let de_res = serde_ignored::deserialize(des, |p| on_unknown(p.to_string()));
+        let de_res = serde_ignored::deserialize(des, |p| on_unknown(&p));
         let mut rf: MiseToml = match de_res {
             Ok(rf) => rf,
             Err(err) => {
@@ -4820,7 +4839,7 @@ run = "cargo build"
             ("[redactions]\nenv = [\"X\"]\n", "redactions"),
             ("[secrets.fnox]\n", "secrets"),
         ] {
-            let err = MiseToml::parse_remote_fragment(body, including)
+            let err = MiseToml::parse_remote_fragment(body, including, None)
                 .unwrap_err()
                 .to_string();
             assert!(err.contains(key) && err.contains("not supported"), "{err}");
