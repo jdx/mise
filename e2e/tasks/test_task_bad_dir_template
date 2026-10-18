@@ -15,4 +15,6 @@ assert_contains "mise tasks ls" "ok"
 assert_contains "mise tasks info ok" "Task: ok"
 assert "mise tasks ls --json 2>/dev/null | jq -c '[.[] | select(.name == \"bad\") | .dir]'" '[null]'
 assert_contains "mise tasks validate --json 2>&1 || true" "invalid-directory-template"
-assert_fail "mise run bad" "of task bad in"
+output="$(quiet_assert_fail "mise run bad")"
+assert_contains_text "$output" "of task bad in"
+assert_contains_text "$output" "mise.toml"

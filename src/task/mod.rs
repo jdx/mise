@@ -2148,11 +2148,20 @@ impl Task {
     }
 
     pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
-        if let Some(dir) = self.dir.clone().or_else(|| {
-            self.cf(config)
-                .as_ref()
-                .and_then(|cf| cf.task_config().dir.clone())
-        }) {
+        // Remember where the template came from: an inherited `task_config.dir` lives in the
+        // config file, not in the task's own source (which may be a script).
+        let cf = self.cf(config);
+        let (dir, dir_source) = match &self.dir {
+            Some(dir) => (Some(dir.clone()), self.config_source.clone()),
+            None => (
+                cf.as_ref().and_then(|cf| cf.task_config().dir.clone()),
+                cf.as_ref().map_or_else(
+                    || self.config_source.clone(),
+                    |cf| cf.get_path().to_path_buf(),
+                ),
+            ),
+        };
+        if let Some(dir) = dir {
             let dir = if contains_template_syntax(&dir) {
                 let config_root = self.config_root.clone().unwrap_or_default();
                 let mut tera = get_tera(Some(&config_root));
@@ -2161,7 +2170,7 @@ impl Task {
                     format!(
                         "failed to render `dir` of task {} in {}",
                         self.name,
-                        file::display_path(&self.config_source)
+                        file::display_path(&dir_source)
                     )
                 })?
             } else {
