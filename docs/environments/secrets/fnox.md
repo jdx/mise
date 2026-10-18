@@ -30,41 +30,42 @@ mise secrets is experimental. Enable it with `experimental = true` under
 
 ## Why not `[env]`? {#why-not-env}
 
-A value in `[env]`, whether plain, [SOPS](/environments/secrets/sops.html) or
-[age](/environments/secrets/age.html), is decrypted every time mise loads the
-config, so it reaches everything that loads that config:
+mise loads every `[env]` value, and decrypts
+[SOPS](/environments/secrets/sops.html) and
+[age](/environments/secrets/age.html) values, each time it loads the config, so
+the value reaches everything that loads that config:
 
-|                                     | `[env]` value    | fnox grant                    |
-| ----------------------------------- | ---------------- | ----------------------------- |
-| Your activated shell and `mise env` | Yes              | No                            |
-| Every task and its dependencies     | Yes              | Only tasks that list the key  |
-| `mise x` from your shell            | Yes              | Only with `--secrets`         |
-| Hooks and shims you run yourself    | Yes              | No                            |
-| When the value is fetched           | Each config load | When a granted task starts    |
-| Redacted in task output             | When marked      | Unless the task is `raw`      |
-| Works without a password manager    | Yes              | Yes, with fnox's age provider |
+|                                     | `[env]` value    | fnox grant                                             |
+| ----------------------------------- | ---------------- | ------------------------------------------------------ |
+| Your activated shell and `mise env` | Yes              | No                                                     |
+| Every task and its dependencies     | Yes              | Only tasks that list the key                           |
+| `mise x` from your shell            | Yes              | Only with `--secrets`                                  |
+| Hooks and shims you run yourself    | Yes              | No                                                     |
+| When the value is fetched           | Each config load | When a granted task starts                             |
+| Redacted in task output             | When marked      | Yes, see [raw output](#redaction-raw-output-and-stdin) |
+| Works without a password manager    | Yes              | Yes, with fnox's age provider                          |
 
 Use a grant when a secret should reach one task, such as a deploy key, and not
 every tool you run in the project.
 
 ## Set up {#quick-start}
 
-### 1. Enable the feature and add fnox
+### 1. Add fnox
 
 ```sh
-mise settings --local experimental=true
 mise use fnox
 ```
 
-`--local` writes the setting to the project's `mise.toml`, so teammates and CI
-get it too; without it, only your global config has it. mise needs fnox 1.39.0
-or newer. It looks for the fnox CLI in the project's tools first, then on
-`PATH`.
+mise needs fnox 1.39.0 or newer. It looks for the fnox CLI in the project's
+tools first, then on `PATH`.
 
 ### 2. Name fnox as the source and grant a key
 
 ```mise-toml [mise.toml]
 min_version = "2026.10.4"   # older mise rejects `secrets` on a task
+
+[settings]
+experimental = true         # mise secrets is experimental
 
 [secrets.fnox]
 
@@ -354,16 +355,17 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 ```
 
-- `experimental = true` must reach CI. Set it in the project's `mise.toml`
-  (`mise settings --local experimental=true`) or as `MISE_EXPERIMENTAL=1` in the
-  workflow; a setting in your global config does not travel.
+- `experimental = true` must reach CI. Set it under `[settings]` in the
+  committed `mise.toml`, or as `MISE_EXPERIMENTAL=1` in the workflow; a setting
+  in your global config or `mise.local.toml` does not travel.
 - Add the provider's CLI to the project's tools when it needs one, for example
   `mise use 1password` for `op`, so mise-action installs it with fnox.
 - The credential is an ordinary environment variable, so every process in that
   step sees it. Set it on the step that needs it, not on the whole job.
-- The values themselves are redacted in the task's output. mise-action's masks
-  cover only `[env]` values marked as sensitive, so a `mise x --secrets` step,
-  whose output mise does not redact, needs its own masks.
+- The values are redacted in the task's output. CI has no terminal, so a
+  task's `raw = true` or `interactive = true` does not turn that off there.
+  `mise x --secrets` output is never redacted, and mise-action's masks cover
+  only `[env]` values marked as sensitive, so such a step needs its own masks.
 
 Each provider uses its own credential, such as `FNOX_AGE_KEY` for age-encrypted
 values or OIDC for AWS; fnox's [CI guide](https://fnox.jdx.dev/guide/ci.html)
@@ -387,7 +389,8 @@ enabled = true
   per run to check the grants.
 - On a miss, when a key is not cached or needs a lease, mise runs
   `fnox env --json` on your terminal. fnox resolves the values, prompts if it
-  must, and stores them in the daemon, so the next run hits.
+  must, and stores them in the daemon, so the next run hits for every key that
+  does not need a lease.
 - mise runs the fnox CLI and does not use the daemon when fnox's config sets
   `[daemon] enabled = false` or `FNOX_DAEMON=0` is set, when no daemon is
   running, when the daemon speaks a different protocol or its socket is not
@@ -430,7 +433,8 @@ too; add it to `allow_env`.
 A task that receives secrets always has its output redacted, so mise ignores
 `--raw` and the `raw` setting for it and does not connect stdin. Set
 `raw = true` or `interactive = true` on the task to hand it the terminal; its
-output is then not redacted.
+output is then not redacted. This applies only when mise runs in a terminal:
+without one, as in CI, mise warns and still redacts the task's output.
 
 ### Artifact cache {#artifact-cache}
 
