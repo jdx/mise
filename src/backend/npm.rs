@@ -2894,6 +2894,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "trust_policy_excludes".into(),
         "allow_low_downloads".into(),
         "allow_exotic_deps".into(),
+        "checksum".into(),
     ]
 }
 
