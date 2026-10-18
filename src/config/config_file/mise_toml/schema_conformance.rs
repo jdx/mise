@@ -581,45 +581,12 @@ fn schema_keys_match_parser() {
         .keys()
         .map(String::as_str)
         .collect();
-    let parsed: BTreeSet<&str> = serde_fields::<MiseToml>().iter().copied().collect();
+    let parsed: BTreeSet<&str> = mise_config::de::struct_fields::<MiseToml>()
+        .iter()
+        .copied()
+        .collect();
     assert_eq!(
         declared, parsed,
         "MiseTomlDecl in crates/mise-config and MiseToml read different top-level keys"
     );
-}
-
-/// The fields a derived `Deserialize` reads, as serde hands them to `deserialize_struct`.
-fn serde_fields<T: serde::de::DeserializeOwned>() -> &'static [&'static str] {
-    use serde::de::{self, Visitor};
-
-    struct Fields<'a>(&'a mut &'static [&'static str]);
-
-    impl<'de> de::Deserializer<'de> for Fields<'_> {
-        type Error = de::value::Error;
-
-        fn deserialize_any<V: Visitor<'de>>(self, _: V) -> Result<V::Value, Self::Error> {
-            Err(de::Error::custom("not a struct"))
-        }
-
-        fn deserialize_struct<V: Visitor<'de>>(
-            self,
-            _: &'static str,
-            fields: &'static [&'static str],
-            _: V,
-        ) -> Result<V::Value, Self::Error> {
-            *self.0 = fields;
-            Err(de::Error::custom("only the field names were wanted"))
-        }
-
-        serde::forward_to_deserialize_any! {
-            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf
-            option unit unit_struct newtype_struct seq tuple tuple_struct map enum identifier
-            ignored_any
-        }
-    }
-
-    let mut fields: &'static [&'static str] = &[];
-    let _ = T::deserialize(Fields(&mut fields));
-    assert!(!fields.is_empty(), "not a derived struct");
-    fields
 }

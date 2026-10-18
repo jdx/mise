@@ -13,12 +13,13 @@ the settings that change how tasks run. New to tasks? Start with
 Set properties in a `[tasks.<name>]` table in `mise.toml`, in a
 [TOML task file](/tasks/task-discovery.html#included-toml-files), or in `#MISE`
 comments at the top of a file task. File-task headers accept the same
-properties except `run`, `run_windows`, `file`, `vars`, `timeout`, and the
-`deny_*` and `allow_*` [sandbox properties](#sandbox). Arguments use `#USAGE`
-lines instead of `usage`. mise ignores those keys in a header with an
-`unknown field(s)` warning. To set them for a file task, use a
-`[tasks.<name>]` block; see
-[configuring file tasks from TOML](/tasks/task-discovery.html#configuring-file-tasks-from-toml).
+properties and values, except `run`, `run_windows` and `file`, since the script
+is the command, and `usage`, since arguments use `#USAGE` lines. mise warns
+about those four and ignores them. A header that sets a property to a value of
+the wrong type gets a warning and that property is ignored, so one broken
+script does not stop the other tasks loading. A bad `confirm` or `deny_*`
+value is an error instead, so a typo cannot remove a confirmation prompt or a
+sandbox restriction.
 To share properties between tasks, use [task templates](/tasks/templates.html).
 
 ::: warning Experimental

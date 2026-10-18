@@ -65,3 +65,167 @@ where
 
     deserializer.deserialize_any(ArrVisitor(std::marker::PhantomData))
 }
+
+/// The keys a derived `Deserialize` struct reads: the field list serde hands to
+/// `deserialize_struct`, renames applied and skipped fields left out.
+///
+/// # Panics
+///
+/// When `T` does not deserialize through `deserialize_struct`, so is not a derived struct.
+pub fn struct_fields<T: de::DeserializeOwned>() -> &'static [&'static str] {
+    struct Fields<'a>(&'a mut &'static [&'static str]);
+
+    impl<'de> de::Deserializer<'de> for Fields<'_> {
+        type Error = de::value::Error;
+
+        fn deserialize_any<V: de::Visitor<'de>>(self, _: V) -> Result<V::Value, Self::Error> {
+            Err(de::Error::custom("not a struct"))
+        }
+
+        fn deserialize_struct<V: de::Visitor<'de>>(
+            self,
+            _: &'static str,
+            fields: &'static [&'static str],
+            _: V,
+        ) -> Result<V::Value, Self::Error> {
+            *self.0 = fields;
+            Err(de::Error::custom("only the field names were wanted"))
+        }
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf
+            option unit unit_struct newtype_struct seq tuple tuple_struct map enum identifier
+            ignored_any
+        }
+    }
+
+    let mut fields: &'static [&'static str] = &[];
+    let _ = T::deserialize(Fields(&mut fields));
+    assert!(!fields.is_empty(), "not a derived struct");
+    fields
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Deserialize, Debug, PartialEq, Eq)]
+    #[serde(untagged)]
+    enum TestItem {
+        String(String),
+        Object { a: String, b: i64 },
+    }
+
+    impl FromStr for TestItem {
+        type Err = String;
+
+        fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+            Ok(TestItem::String(s.to_string()))
+        }
+    }
+
+    #[derive(Deserialize, Debug, PartialEq)]
+    struct TestStruct {
+        #[serde(default, deserialize_with = "deserialize_arr")]
+        arr: Vec<TestItem>,
+    }
+
+    #[test]
+    fn test_deserialize_arr_string() {
+        let toml_str = r#"arr = "hello""#;
+        let expected = TestStruct {
+            arr: vec![TestItem::String("hello".to_string())],
+        };
+        let actual: TestStruct = toml::from_str(toml_str).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_deserialize_arr_string_list() {
+        let toml_str = r#"arr = ["hello", "world"]"#;
+        let expected = TestStruct {
+            arr: vec![
+                TestItem::String("hello".to_string()),
+                TestItem::String("world".to_string()),
+            ],
+        };
+        let actual: TestStruct = toml::from_str(toml_str).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_deserialize_arr_map() {
+        let toml_str = r#"arr = { a = "foo", b = 123 }"#;
+        let expected = TestStruct {
+            arr: vec![TestItem::Object {
+                a: "foo".to_string(),
+                b: 123,
+            }],
+        };
+        let actual: TestStruct = toml::from_str(toml_str).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_deserialize_arr_map_list() {
+        let toml_str = r#"
+        arr = [
+            { a = "foo", b = 123 },
+            { a = "bar", b = 456 },
+        ]
+        "#;
+        let expected = TestStruct {
+            arr: vec![
+                TestItem::Object {
+                    a: "foo".to_string(),
+                    b: 123,
+                },
+                TestItem::Object {
+                    a: "bar".to_string(),
+                    b: 456,
+                },
+            ],
+        };
+        let actual: TestStruct = toml::from_str(toml_str).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_deserialize_arr_mixed_list() {
+        let toml_str = r#"
+        arr = [
+            "hello",
+            { a = "foo", b = 123 },
+        ]
+        "#;
+        let expected = TestStruct {
+            arr: vec![
+                TestItem::String("hello".to_string()),
+                TestItem::Object {
+                    a: "foo".to_string(),
+                    b: 123,
+                },
+            ],
+        };
+        let actual: TestStruct = toml::from_str(toml_str).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn struct_fields_lists_serde_names() {
+        #[derive(Deserialize)]
+        struct Example {
+            plain: String,
+            #[serde(rename = "renamed")]
+            original: String,
+            #[serde(skip)]
+            skipped: String,
+        }
+        assert_eq!(struct_fields::<Example>(), ["plain", "renamed"]);
+        let example: Example = toml::from_str("plain = \"a\"\nrenamed = \"b\"").unwrap();
+        assert_eq!(
+            [example.plain, example.original, example.skipped],
+            ["a", "b", ""]
+        );
+    }
+}
