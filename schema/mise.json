@@ -1073,34 +1073,34 @@
       ]
     },
     "hook_current_shell_script_table": {
-      "unevaluatedProperties": false,
+      "type": "object",
+      "required": ["script", "shell"],
       "properties": {
         "script": {
           "description": "script or scripts to evaluate in the active shell for enter/leave/cd hooks",
           "$ref": "#/$defs/hook_script_value"
         },
         "shell": {
-          "description": "active shell name for current-shell hooks, such as \"bash\"",
-          "type": "string"
+          "type": "string",
+          "description": "active shell name for current-shell hooks, such as \"bash\""
         }
       },
-      "required": ["script", "shell"],
-      "type": "object"
+      "unevaluatedProperties": false
     },
     "hook_current_shell_scripts_table": {
-      "unevaluatedProperties": false,
+      "type": "object",
+      "required": ["scripts", "shell"],
       "properties": {
         "scripts": {
           "description": "scripts to evaluate in the active shell for enter/leave/cd hooks",
           "$ref": "#/$defs/hook_scripts_value"
         },
         "shell": {
-          "description": "active shell name for current-shell hooks, such as \"bash\"",
-          "type": "string"
+          "type": "string",
+          "description": "active shell name for current-shell hooks, such as \"bash\""
         }
       },
-      "required": ["scripts", "shell"],
-      "type": "object"
+      "unevaluatedProperties": false
     },
     "hook_definition": {
       "oneOf": [
@@ -1108,11 +1108,11 @@
           "$ref": "#/$defs/hook_definition_item"
         },
         {
+          "type": "array",
           "description": "scripts/tasks to run",
           "items": {
             "$ref": "#/$defs/hook_definition_item"
-          },
-          "type": "array"
+          }
         }
       ]
     },
@@ -1147,11 +1147,11 @@
           "$ref": "#/$defs/hook_install_definition_item"
         },
         {
+          "type": "array",
           "description": "install hooks to run",
           "items": {
             "$ref": "#/$defs/hook_install_definition_item"
-          },
-          "type": "array"
+          }
         }
       ]
     },
@@ -1175,61 +1175,47 @@
       ]
     },
     "hook_install_script_table": {
+      "type": "object",
       "deprecated": true,
-      "unevaluatedProperties": false,
       "properties": {
         "script": {
-          "deprecated": true,
           "description": "deprecated alias for run in preinstall/postinstall hooks; executes in a subprocess",
-          "$ref": "#/$defs/hook_script_value"
+          "$ref": "#/$defs/hook_script_value",
+          "deprecated": true
         },
         "shell": {
-          "deprecated": true,
+          "type": "string",
           "description": "ignored for preinstall/postinstall hooks that use script; use a run hook to select an inline shell",
-          "type": "string"
+          "deprecated": true
         }
       },
       "required": ["script"],
-      "type": "object"
+      "unevaluatedProperties": false
     },
     "hook_install_scripts_table": {
+      "type": "object",
       "deprecated": true,
-      "unevaluatedProperties": false,
       "properties": {
         "scripts": {
-          "deprecated": true,
           "description": "deprecated alias for run in preinstall/postinstall hooks; joins the scripts and executes them in a subprocess",
-          "$ref": "#/$defs/hook_scripts_value"
+          "$ref": "#/$defs/hook_scripts_value",
+          "deprecated": true
         },
         "shell": {
-          "deprecated": true,
+          "type": "string",
           "description": "ignored for preinstall/postinstall hooks that use scripts; use a run hook to select an inline shell",
-          "type": "string"
+          "deprecated": true
         }
       },
       "required": ["scripts"],
-      "type": "object"
+      "unevaluatedProperties": false
     },
     "hook_run_string": {
-      "description": "inline hook command to run",
-      "type": "string"
+      "type": "string",
+      "description": "inline hook command to run"
     },
     "hook_run_table": {
-      "unevaluatedProperties": false,
-      "properties": {
-        "run": {
-          "description": "inline hook command to run",
-          "type": "string"
-        },
-        "run_windows": {
-          "description": "inline hook command to run on Windows",
-          "type": "string"
-        },
-        "shell": {
-          "description": "inline shell command to use for run hooks, such as \"bash -c\"",
-          "type": "string"
-        }
-      },
+      "type": "object",
       "anyOf": [
         {
           "required": ["run"]
@@ -1238,7 +1224,21 @@
           "required": ["run_windows"]
         }
       ],
-      "type": "object"
+      "properties": {
+        "run": {
+          "type": "string",
+          "description": "inline hook command to run"
+        },
+        "run_windows": {
+          "type": "string",
+          "description": "inline hook command to run on Windows"
+        },
+        "shell": {
+          "type": "string",
+          "description": "inline shell command to use for run hooks, such as \"bash -c\""
+        }
+      },
+      "unevaluatedProperties": false
     },
     "hook_script_value": {
       "oneOf": [
@@ -1260,45 +1260,46 @@
       }
     },
     "hook_spawned_script_table": {
+      "type": "object",
       "deprecated": true,
-      "unevaluatedProperties": false,
       "properties": {
         "script": {
-          "deprecated": true,
           "description": "deprecated alias for run when an enter/leave/cd hook has no shell",
-          "$ref": "#/$defs/hook_script_value"
+          "$ref": "#/$defs/hook_script_value",
+          "deprecated": true
         }
       },
       "required": ["script"],
-      "type": "object"
+      "unevaluatedProperties": false
     },
     "hook_spawned_scripts_table": {
+      "type": "object",
       "deprecated": true,
-      "unevaluatedProperties": false,
       "properties": {
         "scripts": {
-          "deprecated": true,
           "description": "deprecated alias for run when an enter/leave/cd hook has no shell",
-          "$ref": "#/$defs/hook_scripts_value"
+          "$ref": "#/$defs/hook_scripts_value",
+          "deprecated": true
         }
       },
       "required": ["scripts"],
-      "type": "object"
+      "unevaluatedProperties": false
     },
     "hook_task_ref": {
-      "unevaluatedProperties": false,
+      "type": "object",
+      "required": ["task"],
       "properties": {
         "task": {
-          "description": "mise task to run",
-          "type": "string"
+          "type": "string",
+          "description": "mise task to run"
         }
       },
-      "required": ["task"],
-      "type": "object"
+      "unevaluatedProperties": false
     },
     "hooks": {
-      "description": "hooks to run",
       "type": "object",
+      "description": "hooks to run",
+      "additionalProperties": false,
       "properties": {
         "enter": {
           "$ref": "#/$defs/hook_definition"
@@ -1315,8 +1316,7 @@
         "postinstall": {
           "$ref": "#/$defs/hook_install_definition"
         }
-      },
-      "additionalProperties": false
+      }
     },
     "launchd_calendar_interval": {
       "type": "object",

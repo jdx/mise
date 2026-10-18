@@ -22,6 +22,12 @@ use crate::alias::Alias;
 use crate::daemons::{DaemonInit, DaemonPort, DaemonProxy, DaemonProxyIdleTimeout, DaemonProxyTls};
 use crate::deps::DepsProviderDecl;
 use crate::doctor::DoctorConfig;
+use crate::hooks::{
+    HookCurrentShellScriptTable, HookCurrentShellScriptsTable, HookDefinition, HookDefinitionItem,
+    HookInstallDefinition, HookInstallDefinitionItem, HookInstallScriptTable,
+    HookInstallScriptsTable, HookRunString, HookRunTableDecl, HookScripts, HookSpawnedScriptTable,
+    HookSpawnedScriptsTable, HookTaskRef, HooksDecl,
+};
 use crate::launchd::LaunchdCalendarInterval;
 use crate::mise_toml::MiseTomlDecl;
 use crate::monorepo::MonorepoConfig;
@@ -106,6 +112,49 @@ fn derived_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Value)> {
             fragment::<DaemonProxyIdleTimeout>(generator),
         ),
         ("daemon_init", fragment::<DaemonInit>(generator)),
+        ("hook_run_string", fragment::<HookRunString>(generator)),
+        ("hook_run_table", fragment::<HookRunTableDecl>(generator)),
+        ("hook_script_value", fragment::<HookScripts>(generator)),
+        ("hook_scripts_value", fragment::<Vec<String>>(generator)),
+        (
+            "hook_current_shell_script_table",
+            fragment::<HookCurrentShellScriptTable>(generator),
+        ),
+        (
+            "hook_current_shell_scripts_table",
+            fragment::<HookCurrentShellScriptsTable>(generator),
+        ),
+        (
+            "hook_spawned_script_table",
+            fragment::<HookSpawnedScriptTable>(generator),
+        ),
+        (
+            "hook_spawned_scripts_table",
+            fragment::<HookSpawnedScriptsTable>(generator),
+        ),
+        (
+            "hook_install_script_table",
+            fragment::<HookInstallScriptTable>(generator),
+        ),
+        (
+            "hook_install_scripts_table",
+            fragment::<HookInstallScriptsTable>(generator),
+        ),
+        ("hook_task_ref", fragment::<HookTaskRef>(generator)),
+        (
+            "hook_definition_item",
+            fragment::<HookDefinitionItem>(generator),
+        ),
+        ("hook_definition", fragment::<HookDefinition>(generator)),
+        (
+            "hook_install_definition_item",
+            fragment::<HookInstallDefinitionItem>(generator),
+        ),
+        (
+            "hook_install_definition",
+            fragment::<HookInstallDefinition>(generator),
+        ),
+        ("hooks", fragment::<HooksDecl>(generator)),
         ("doctor", fragment::<DoctorConfig>(generator)),
         (
             "launchd_calendar_interval",
@@ -130,7 +179,6 @@ fn hand_written_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Valu
             ("tool_alias_entry", Alias::json_schema(generator)),
             ("tool_alias_versions", crate::alias::versions_schema()),
         ])
-        .chain(crate::hooks::schema_defs())
         .chain(crate::mise_toml::schema_defs())
         .chain(crate::bootstrap::schema::defs())
         .map(|(name, schema)| (name, schema.to_value()))
@@ -218,6 +266,21 @@ pub(crate) mod refs {
         bootstrap_remote_install_mise,
         doctor,
         env,
+        hook_current_shell_script_table,
+        hook_current_shell_scripts_table,
+        hook_definition,
+        hook_definition_item,
+        hook_install_definition,
+        hook_install_definition_item,
+        hook_install_script_table,
+        hook_install_scripts_table,
+        hook_run_string,
+        hook_run_table,
+        hook_script_value,
+        hook_scripts_value,
+        hook_spawned_script_table,
+        hook_spawned_scripts_table,
+        hook_task_ref,
         hooks,
         launchd_calendar_interval,
         monorepo,

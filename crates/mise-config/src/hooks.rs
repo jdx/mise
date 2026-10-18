@@ -1,8 +1,8 @@
 //! `[hooks]`: commands, scripts and tasks run on `cd`, on entering or leaving a project, and
 //! around tool installs.
 
-mod schema;
-pub(crate) use schema::defs as schema_defs;
+mod decl;
+pub use decl::*;
 
 use std::fmt::Formatter;
 
@@ -32,8 +32,9 @@ pub enum Hooks {
     Postinstall,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
 pub enum HookScripts {
     One(String),
     Many(Vec<String>),
@@ -207,4 +208,67 @@ pub struct HookRunTable {
     pub run: Option<String>,
     pub run_windows: Option<String>,
     pub shell: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use schemars::{JsonSchema, schema_for};
+    use std::collections::BTreeSet;
+
+    fn keys<T: JsonSchema>() -> BTreeSet<String> {
+        schema_for!(T)
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+            .map(|properties| properties.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    // The schema is generated from the `Hook*` declaration types, and the parser reads
+    // `HookTable`. A key added to one without the other fails here.
+    #[test]
+    fn the_declared_hook_keys_are_the_keys_the_parser_reads() {
+        let declared: BTreeSet<String> = [
+            keys::<HookRunTableDecl>(),
+            keys::<HookCurrentShellScriptTable>(),
+            keys::<HookCurrentShellScriptsTable>(),
+            keys::<HookSpawnedScriptTable>(),
+            keys::<HookSpawnedScriptsTable>(),
+            keys::<HookInstallScriptTable>(),
+            keys::<HookInstallScriptsTable>(),
+            keys::<HookTaskRef>(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let read: BTreeSet<String> = de_fields::<HookTable>();
+        assert_eq!(declared, read);
+    }
+
+    fn de_fields<T: serde::de::DeserializeOwned>() -> BTreeSet<String> {
+        crate::de::struct_fields::<T>()
+            .iter()
+            .map(|field| field.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn the_hook_events_are_the_events_of_the_schema() {
+        // Naming every variant, so a new event fails to compile here until the schema has it.
+        let _ = |event: Hooks| match event {
+            Hooks::Enter | Hooks::Leave | Hooks::Cd | Hooks::Preinstall | Hooks::Postinstall => {}
+        };
+        let declared = keys::<HooksDecl>();
+        let events: BTreeSet<String> = [
+            Hooks::Enter,
+            Hooks::Leave,
+            Hooks::Cd,
+            Hooks::Preinstall,
+            Hooks::Postinstall,
+        ]
+        .iter()
+        .map(|event| event.to_string().to_lowercase())
+        .collect();
+        assert_eq!(declared, events);
+    }
 }
