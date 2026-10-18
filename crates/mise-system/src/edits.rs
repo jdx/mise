@@ -86,13 +86,7 @@ pub(crate) struct EditTomlTable {
     pub merge: Option<MergeSetting>,
 }
 
-/// the value of an entry's `merge` key
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
-#[serde(untagged)]
-pub enum MergeSetting {
-    Bool(bool),
-    Mode(String),
-}
+pub use mise_config::dotfiles::MergeSetting;
 
 /// where a block's content comes from
 #[derive(Debug, Clone, Eq, PartialEq)]

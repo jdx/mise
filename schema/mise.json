@@ -6880,6 +6880,7 @@
     },
     "dotfiles": {
       "type": "object",
+      "description": "dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path or a logical name when every variant overrides the target; an omitted source for the latter resolves the relative key under dotfiles.root",
       "additionalProperties": {
         "oneOf": [
           {
@@ -6887,30 +6888,31 @@
             "description": "source path for a whole-file dotfile entry"
           },
           {
-            "description": "whole-file dotfile entry or file edit entry",
             "type": "object",
+            "description": "whole-file dotfile entry or file edit entry",
+            "additionalProperties": false,
             "properties": {
               "encrypt": {
-                "description": "encrypt tracked file contents before storing them in Git; the live file remains plaintext",
                 "type": "boolean",
+                "description": "encrypt tracked file contents before storing them in Git; the live file remains plaintext",
                 "default": false
               },
               "allow_plaintext": {
-                "description": "allow this directly tracked credential-named file to be saved in plaintext history and any connected origin",
                 "type": "boolean",
+                "description": "allow this directly tracked credential-named file to be saved in plaintext history and any connected origin",
                 "default": false
               },
               "source": {
-                "description": "source file or directory",
-                "type": "string"
+                "type": "string",
+                "description": "source file or directory"
               },
               "content": {
-                "description": "literal inline file content; alternative to source",
-                "type": "string"
+                "type": "string",
+                "description": "literal inline file content; alternative to source"
               },
               "mode": {
-                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. \"absent\" removes a file or symlink at the target and takes no source. \"track\" saves the file's history where it is, and \"track-local\" saves it in this machine's local-only history, which is never shared",
                 "type": "string",
+                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. \"absent\" removes a file or symlink at the target and takes no source. \"track\" saves the file's history where it is, and \"track-local\" saves it in this machine's local-only history, which is never shared",
                 "anyOf": [
                   {
                     "enum": [
@@ -6929,50 +6931,58 @@
                 ]
               },
               "exclude": {
-                "description": "glob patterns to skip when the mode walks a directory (symlink-each, copy with a directory source, or a tracked directory, where they are relative to the tracked path); a pattern without \"/\" matches any path component, one with \"/\" is anchored to the root",
                 "type": "array",
+                "description": "glob patterns to skip when the mode walks a directory (symlink-each, copy with a directory source, or a tracked directory, where they are relative to the tracked path); a pattern without \"/\" matches any path component, one with \"/\" is anchored to the root",
                 "items": {
                   "type": "string"
                 }
               },
               "include": {
-                "description": "history only (mode = \"track\"): the only paths of the tracked directory that are captured, relative to it and matched like \"exclude\"; without it the whole tree is captured with the builtin credential filtering, and an explicit \"exclude\" still wins. A selected file is captured even when it looks like a credential store, in plaintext unless the entry sets encrypt",
                 "type": "array",
+                "description": "history only (mode = \"track\"): the only paths of the tracked directory that are captured, relative to it and matched like \"exclude\"; without it the whole tree is captured with the builtin credential filtering, and an explicit \"exclude\" still wins. A selected file is captured even when it looks like a credential store, in plaintext unless the entry sets encrypt",
                 "items": {
                   "type": "string"
                 }
               },
               "manifest": {
-                "description": "source manifest used to select managed files from a directory",
                 "type": "string",
+                "description": "source manifest used to select managed files from a directory",
                 "enum": ["git"]
               },
               "remove_empty": {
-                "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force",
                 "type": "boolean",
+                "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force",
                 "default": false
               },
               "dot_prefix": {
-                "description": "symlink-each and directory copy only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names",
                 "type": "boolean",
+                "description": "symlink-each and directory copy only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names",
                 "default": false
               },
               "relative": {
-                "description": "symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)",
-                "type": "boolean"
+                "type": "boolean",
+                "description": "symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)"
               },
               "permissions": {
-                "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
                 "type": "string",
+                "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
                 "pattern": "^(0o)?[0-7]{1,4}$"
               },
+              "autosave": {
+                "type": "boolean",
+                "description": "track only: false saves the path only on `mise dotfiles save <path>`"
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "false turns off an entry inherited from another config file"
+              },
               "block": {
-                "description": "block content, maintained between marker comments",
-                "type": "string"
+                "type": "string",
+                "description": "block content, maintained between marker comments"
               },
               "template": {
-                "description": "template engine to render block content with; currently only \"tera\"",
                 "type": "string",
+                "description": "template engine to render block content with; currently only \"tera\"",
                 "anyOf": [
                   {
                     "enum": ["tera"]
@@ -6983,12 +6993,12 @@
                 ]
               },
               "line": {
-                "description": "exact line to ensure exists",
-                "type": "string"
+                "type": "string",
+                "description": "exact line to ensure exists"
               },
               "position": {
-                "description": "where to insert a missing line",
                 "type": "string",
+                "description": "where to insert a missing line",
                 "default": "append",
                 "anyOf": [
                   {
@@ -7000,8 +7010,8 @@
                 ]
               },
               "comment": {
-                "description": "comment prefix for edit marker lines; inferred from the file extension when omitted",
-                "type": "string"
+                "type": "string",
+                "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
               },
               "merge": {
                 "description": "edit entry: true sets the keys of source (default: the target's path under dotfiles.root) on a JSON, TOML, or YAML target and leaves the target's other keys to the application that also writes it; \"missing\" sets only the keys the target has no value for; the format comes from the target's extension",
@@ -7015,8 +7025,8 @@
                 ]
               },
               "variants": {
-                "description": "OS/profile variants: history streams for track mode, or optional destinations for deployment modes",
                 "type": "array",
+                "description": "OS/profile variants: history streams for track mode, or optional destinations for deployment modes",
                 "items": {
                   "type": "object",
                   "properties": {
@@ -7034,19 +7044,19 @@
                       ]
                     },
                     "profile": {
-                      "description": "mise environment selected with -E or MISE_ENV",
-                      "type": "string"
+                      "type": "string",
+                      "description": "mise environment selected with -E or MISE_ENV"
                     },
                     "default": {
                       "type": "boolean"
                     },
                     "machine": {
-                      "description": "track mode only: a separate stream on every machine, never applied on another machine; must be the only variant and cannot be combined with encrypt",
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "track mode only: a separate stream on every machine, never applied on another machine; must be the only variant and cannot be combined with encrypt"
                     },
                     "target": {
-                      "description": "deployment destination override; requires either an explicit source or a safe relative entry key when every variant has a target, and is not supported in track mode",
-                      "type": "string"
+                      "type": "string",
+                      "description": "deployment destination override; requires either an explicit source or a safe relative entry key when every variant has a target, and is not supported in track mode"
                     }
                   },
                   "additionalProperties": false
@@ -7369,19 +7379,14 @@
             ]
           }
         ]
-      },
-      "description": "dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path or a logical name when every variant overrides the target; an omitted source for the latter resolves the relative key under dotfiles.root"
+      }
     },
     "dotfile_groups": {
       "type": "object",
       "description": "named directory trees of dotfiles, applied with `mise dotfiles apply` or `mise bootstrap` while [bootstrap] dotfile_groups selects them (or is unset)",
-      "propertyNames": {
-        "pattern": "^[A-Za-z0-9_.-]+$"
-      },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["root"],
         "properties": {
           "root": {
             "type": "string",
@@ -7407,8 +7412,8 @@
           },
           "dot_prefix": {
             "type": "boolean",
-            "default": false,
-            "description": "deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles"
+            "description": "deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles",
+            "default": false
           },
           "manifest": {
             "type": "string",
@@ -7435,7 +7440,11 @@
               ]
             }
           }
-        }
+        },
+        "required": ["root"]
+      },
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_.-]+$"
       }
     },
     "bootstrap": {
