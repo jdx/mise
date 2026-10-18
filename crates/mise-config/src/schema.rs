@@ -19,6 +19,7 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde_json::{Map, Value, json};
 
 use crate::alias::Alias;
+use crate::daemons::{DaemonInit, DaemonPort, DaemonProxy, DaemonProxyIdleTimeout, DaemonProxyTls};
 use crate::deps::DepsProviderDecl;
 use crate::doctor::DoctorConfig;
 use crate::launchd::LaunchdCalendarInterval;
@@ -97,6 +98,14 @@ fn derived_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Value)> {
         ("monorepo", fragment::<MonorepoConfig>(generator)),
         ("watch_files", watch_files),
         ("deps_provider", fragment::<DepsProviderDecl>(generator)),
+        ("daemon_port", fragment::<DaemonPort>(generator)),
+        ("daemon_proxy", fragment::<DaemonProxy>(generator)),
+        ("daemon_proxy_tls", fragment::<DaemonProxyTls>(generator)),
+        (
+            "daemon_proxy_idle_timeout",
+            fragment::<DaemonProxyIdleTimeout>(generator),
+        ),
+        ("daemon_init", fragment::<DaemonInit>(generator)),
         ("doctor", fragment::<DoctorConfig>(generator)),
         (
             "launchd_calendar_interval",
@@ -123,7 +132,6 @@ fn hand_written_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Valu
         ])
         .chain(crate::hooks::schema_defs())
         .chain(crate::mise_toml::schema_defs())
-        .chain(crate::daemons::schema::defs())
         .chain(crate::bootstrap::schema::defs())
         .map(|(name, schema)| (name, schema.to_value()))
         .collect()
@@ -192,6 +200,11 @@ pub(crate) mod refs {
     }
 
     refs!(
+        daemon_init,
+        daemon_port,
+        daemon_proxy,
+        daemon_proxy_idle_timeout,
+        daemon_proxy_tls,
         bootstrap_apt_sources,
         bootstrap_dnf_repos,
         bootstrap_file_phase,
