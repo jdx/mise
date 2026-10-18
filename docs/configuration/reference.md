@@ -26,6 +26,8 @@ plain Markdown, one file per section, starting at
 scripts.
 
 To see what each key in one of your own files does, run
-[`mise config explain`](/cli/config/explain.html).
+[`mise config explain`](/cli/config/explain.html), or paste the file into the
+[mise.toml playground](/configuration/playground.html), which explains each key
+as you hover it.
 
 <ConfigReference />

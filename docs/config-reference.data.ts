@@ -1,6 +1,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { createMarkdownRenderer } from "vitepress";
+import {
+  choices,
+  expand,
+  patternLabels,
+  placeholders,
+  typeLabel,
+} from "./.vitepress/mise-toml/schema.ts";
 
 // The mise.toml reference, read from schema/mise.json. The schema is generated
 // from mise-config's declaration types and their doc comments, so this page and
@@ -54,29 +61,6 @@ async function markdownRenderer() {
   return createMarkdownRenderer(path.resolve("docs"));
 }
 
-// `node` and every schema it stands for through `$ref` and the combinators.
-export function expand(root: Schema, node: Schema, depth = 0): Schema[] {
-  if (!node || typeof node !== "object" || depth > 32) return [];
-  const out = [node];
-  const ref = node.$ref;
-  if (typeof ref === "string" && ref.startsWith("#/")) {
-    const target = ref
-      .slice(2)
-      .split("/")
-      .reduce(
-        (n: any, k) => n?.[k.replaceAll("~1", "/").replaceAll("~0", "~")],
-        root,
-      );
-    out.push(...expand(root, target, depth + 1));
-  }
-  for (const combinator of ["allOf", "oneOf", "anyOf"]) {
-    for (const variant of node[combinator] ?? []) {
-      out.push(...expand(root, variant, depth + 1));
-    }
-  }
-  return out;
-}
-
 // The schemas `node` is, through `$ref` and `allOf` but not the alternatives of `oneOf` or
 // `anyOf`: a deprecated alternative does not make the key deprecated.
 function itself(root: Schema, node: Schema, depth = 0): Schema[] {
@@ -106,46 +90,6 @@ function first<T>(nodes: Schema[], pick: (n: Schema) => T | undefined) {
   return undefined;
 }
 
-// A short type such as `string | string[]`, `table` or `boolean`.
-export function typeLabel(root: Schema, nodes: Schema[], depth = 0): string {
-  const labels = new Set<string>();
-  const add = (n: Schema) => {
-    const types = Array.isArray(n.type) ? n.type : n.type ? [n.type] : [];
-    for (const t of types) {
-      if (t === "array") {
-        const items = expand(root, n.items ?? {});
-        // a list of lists stops naming its items after a few levels
-        const inner = depth > 3 ? "any" : typeLabel(root, items, depth + 1);
-        labels.add(
-          inner === "any"
-            ? "array"
-            : `${inner.includes(" ") ? `(${inner})` : inner}[]`,
-        );
-      } else if (t === "object") {
-        labels.add("table");
-      } else if (t === "null") {
-        // TOML has no null
-      } else {
-        labels.add(t);
-      }
-    }
-    if (n.const !== undefined) labels.add(JSON.stringify(n.const));
-  };
-  for (const n of nodes) {
-    // a branch of a combinator speaks for its own type
-    if (n.type || n.const !== undefined) add(n);
-  }
-  return labels.size ? [...labels].join(" | ") : "any";
-}
-
-function choices(nodes: Schema[]): string[] {
-  const values = new Set<string>();
-  for (const n of nodes) {
-    for (const v of n.enum ?? []) values.add(JSON.stringify(v));
-  }
-  return [...values];
-}
-
 // The schemas a table gives the keys it does not name, as written: expanding them
 // here would make each alternative shape look like the key itself.
 function placeholderChildren(nodes: Schema[]): Schema[] {
@@ -153,41 +97,6 @@ function placeholderChildren(nodes: Schema[]): Schema[] {
     .map((n) => n.additionalProperties)
     .filter((v) => v && typeof v === "object");
 }
-
-// Readable names for a `patternProperties` key: `^github:` is `<github:…>`,
-// `^(pypi|pipx):` is `<pypi:…>` and `<pipx:…>`, and `^(core:)?python(\[.*\])?$` is
-// `python`.
-export function patternLabels(pattern: string): string[] {
-  const s = pattern
-    .replace(/^\^/, "")
-    .replace(/\$$/, "")
-    .replace("(\\[.*\\])?", "")
-    .replace("(core:)?", "");
-  const prefixes = s.match(/^\((.*)\):$/);
-  if (prefixes) return prefixes[1].split("|").map((p) => `<${p}:…>`);
-  if (s.endsWith(":")) return [`<${s}…>`];
-  const names = s.match(/^\((.*)\)$/);
-  if (names) return names[1].split("|").filter((n) => !n.startsWith("core:"));
-  return [s];
-}
-
-const placeholders: Record<string, string> = {
-  tasks: "<name>",
-  task_templates: "<name>",
-  tools: "<tool>",
-  env: "<NAME>",
-  vars: "<name>",
-  alias: "<tool>",
-  tool_alias: "<tool>",
-  plugins: "<name>",
-  shell_alias: "<name>",
-  wrappers: "<command>",
-  daemons: "<name>",
-  daemon_groups: "<name>",
-  daemon_providers: "<name>",
-  dotfiles: "<target>",
-  dotfile_groups: "<name>",
-};
 
 // Every key below `key`, at any depth.
 function descendants(key: Key): Key[] {
