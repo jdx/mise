@@ -125,7 +125,7 @@ fn load_local(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
         bail!("a config include must be a file: {}", path.display());
     }
     let body = file::read_to_string(&path)?;
-    MiseToml::parse_remote_fragment(&body, parent, Some(&path))
+    MiseToml::parse_remote_fragment(&body, parent, None)
         .wrap_err_with(|| format!("invalid config include {reference}"))?;
     Ok((path, body))
 }

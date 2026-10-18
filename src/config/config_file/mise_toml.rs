@@ -504,7 +504,8 @@ impl MiseToml {
     /// `include` is not something a config can use without trust.
     ///
     /// `source` is the file the body was read from, for the line an unknown
-    /// key warns with; a body fetched but not yet cached has none.
+    /// key warns with. Without one the body is only checked, quietly: it is
+    /// checked before it is cached, and warns when it loads.
     pub(crate) fn parse_remote_fragment(
         body: &str,
         including: &Path,
@@ -627,17 +628,17 @@ impl MiseToml {
     }
 
     /// `path` is the config the body belongs to, and `source` the file it was read from, which
-    /// differs for an include.
+    /// differs for an include. Without a `source`, unknown keys are not reported.
     fn parse_body(
         body: &str,
         path: &Path,
         source: Option<&Path>,
         check_trust: bool,
     ) -> eyre::Result<Self> {
-        let unknown = match source {
-            Some(source) => super::unknown_key::UnknownKeys::new(source, Some(body)),
-            None => super::unknown_key::UnknownKeys::new(path, None),
+        let Some(source) = source else {
+            return Self::parse_body_reporting(body, path, check_trust, &mut |_| {});
         };
+        let unknown = super::unknown_key::UnknownKeys::new(source, Some(body));
         Self::parse_body_reporting(body, path, check_trust, &mut |field| {
             warn!("{}", unknown.message(&super::unknown_key::segments(field)));
         })
