@@ -4188,6 +4188,31 @@ pub fn load_command_wrappers<'a>(
     Ok(wrappers)
 }
 
+/// The config file whose `[wrappers]` entry for `name` wins in [`load_command_wrappers`]: the
+/// most local one, skipping project files in safe mode. `None` for a wrapper no file declares.
+pub fn command_wrapper_source(config_files: &ConfigMap, name: &str) -> Result<Option<PathBuf>> {
+    let safe_mode = Settings::safe_mode();
+    for config_file in config_files.values() {
+        if safe_mode && !is_global_config(config_file.get_path()) {
+            continue;
+        }
+        if config_file.command_wrappers()?.contains_key(name) {
+            return Ok(Some(config_file.get_path().to_path_buf()));
+        }
+    }
+    Ok(None)
+}
+
+/// Adds the template variables of a value declared in the config file at `path`, as its other
+/// values get them: `config_root` and `config_source`.
+pub fn insert_config_file_template_vars(ctx: &mut tera::Context, path: &Path) {
+    ctx.insert("config_root", &config_file::config_root::config_root(path));
+    ctx.insert(
+        "config_source",
+        &config_file::config_root::config_source(path),
+    );
+}
+
 /// Expands a `[plugins]` value to a URL, keeping any `#ref` outside the
 /// expansion so `owner/repo#v1` doesn't become `…/repo#v1.git`.
 fn plugin_entry_to_url(entry: &str) -> String {
