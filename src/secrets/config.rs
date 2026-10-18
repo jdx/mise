@@ -269,10 +269,16 @@ mod tests {
         }
         let unknown = parse("[secrets.fnox]\nnot_a_key = \"dev\"\n").unwrap_err();
         assert!(unknown.to_string().contains("unknown field"), "{unknown}");
-        let supported = unknown.to_string();
-        for key in declared {
-            assert!(supported.contains(key), "{supported} omits `{key}`");
-        }
+        // The keys the parser lists as supported are exactly the declared ones, so a key added
+        // to the parser alone fails here too.
+        let message = unknown.to_string();
+        let listed: std::collections::BTreeSet<&str> = message
+            .split_once("(supported: ")
+            .and_then(|(_, rest)| rest.split_once(')'))
+            .map(|(keys, _)| keys.split(", ").collect())
+            .expect("the error lists the supported keys");
+        let declared: std::collections::BTreeSet<&str> = declared.iter().copied().collect();
+        assert_eq!(listed, declared);
     }
 
     #[test]
