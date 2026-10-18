@@ -42,9 +42,10 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions
 use crate::watch_files::WatchFile;
 use crate::{env, file};
 use mise_config::bootstrap::BootstrapTomlConfig;
-use mise_config::de::deserialize_arr;
 use mise_config::dotfiles::DotfilesTomlConfig;
+use mise_config::mise_toml::MiseTomlDecl;
 use mise_config::packages::PackageTomlConfig;
+use mise_config::task::TaskDecls;
 
 use super::diagnostic::toml_parse_error;
 use super::min_version::MinVersionSpec;
@@ -342,102 +343,59 @@ fn replace_tool_entries_preserving_position(
     }
 }
 
-#[derive(Default, Deserialize)]
+/// A loaded `mise.toml`: what it declares, deserialized through [`MiseTomlDecl`], plus the
+/// state loading adds (its path, template context, hash and editable document).
+#[derive(Default)]
 pub struct MiseToml {
-    #[serde(rename = "_")]
     custom: Option<toml::Value>,
-    #[serde(
-        default,
-        deserialize_with = "mise_config::min_version::deserialize_min_version"
-    )]
     min_version: Option<MinVersionSpec>,
-    #[serde(skip)]
     context: TeraContext,
-    #[serde(skip)]
     path: PathBuf,
     /// Hash of the text this config was parsed from, so a command can tell that the
     /// file changed after it was loaded.
-    #[serde(skip)]
     loaded_hash: String,
-    #[serde(default, deserialize_with = "deserialize_arr")]
     include: Vec<String>,
     /// The cache files of the remote `include` fragments merged into this
     /// config, so `hook-env` notices when one is refreshed.
-    #[serde(skip)]
     included_paths: Vec<PathBuf>,
-    #[serde(default, deserialize_with = "deserialize_arr")]
     env_file: Vec<String>,
-    #[serde(default, deserialize_with = "deserialize_arr")]
     dotenv: Vec<String>,
-    #[serde(default, deserialize_with = "deserialize_root_env")]
     env: EnvList,
-    #[serde(default, deserialize_with = "deserialize_arr")]
     env_path: Vec<String>,
-    #[serde(default)]
     alias: AliasMap,
-    #[serde(default)]
     tool_alias: AliasMap,
-    #[serde(default)]
     shell_alias: IndexMap<String, String>,
-    #[serde(default)]
     daemons: IndexMap<String, crate::daemons::Declaration>,
-    #[serde(default)]
     daemons_settings: Option<crate::daemons::DaemonSettings>,
-    #[serde(default)]
     daemon_providers: IndexMap<String, toml::Table>,
-    #[serde(default)]
     daemon_groups: IndexMap<String, crate::daemons::GroupDeclaration>,
-    #[serde(default)]
     wrappers: IndexMap<String, CommandWrapper>,
-    #[serde(skip)]
     doc: Mutex<OnceCell<DocumentMut>>,
-    #[serde(default)]
     hooks: IndexMap<Hooks, HookDef>,
-    #[serde(default)]
     tools: Mutex<IndexMap<BackendArg, MiseTomlToolList>>,
-    #[serde(default)]
     plugins: HashMap<String, String>,
-    #[serde(default)]
     redactions: Redactions,
     /// Raw on purpose: a malformed `[secrets]` must not fail the whole file.
-    #[serde(default)]
     secrets: Option<toml::Value>,
-    #[serde(default)]
     task_config: TaskConfig,
-    #[serde(default)]
     tool_config: ToolConfig,
-    #[serde(default)]
     tasks: Tasks,
-    #[serde(default)]
     task_templates: TaskTemplates,
-    #[serde(default)]
     watch_files: Vec<WatchFile>,
-    #[serde(default)]
     deps: Option<crate::deps::DepsDecl>,
-    #[serde(default)]
     oci: Option<OciConfig>,
-    #[serde(default)]
     bootstrap: Option<BootstrapTomlConfig>,
-    #[serde(default)]
     doctor: crate::config::doctor::DoctorConfig,
-    #[serde(default)]
     dotfiles: Option<DotfilesTomlConfig>,
-    #[serde(default)]
     dotfile_groups: Option<mise_config::dotfiles::DotfileGroupsTomlConfig>,
-    #[serde(default)]
     history: Option<mise_config::history::HistoryTomlConfig>,
-    #[serde(default, deserialize_with = "deserialize_vars")]
     vars: EnvList,
-    #[serde(default)]
     settings: SettingsPartial,
     /// Marks this config as a monorepo root, enabling target path syntax for tasks
-    #[serde(default)]
     monorepo_root: Option<bool>,
     /// Legacy name for monorepo_root, retained during its deprecation period
-    #[serde(default)]
     experimental_monorepo_root: Option<bool>,
     /// Configuration for monorepo and workspace discovery
-    #[serde(default)]
     monorepo: Option<MonorepoConfig>,
 }
 
@@ -468,8 +426,6 @@ pub(crate) struct Tasks(pub BTreeMap<String, Task>);
 pub(crate) struct TaskTemplates(pub IndexMap<String, TaskTemplate>);
 
 pub use mise_config::env::EnvList;
-use mise_config::env::deserialize_root_env;
-pub(crate) use mise_config::env::deserialize_vars;
 
 pub use mise_config::monorepo::MonorepoConfig;
 
@@ -2334,114 +2290,88 @@ impl MiseTomlTool {
     }
 }
 
+impl<'de> de::Deserialize<'de> for MiseToml {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        MiseTomlDecl::<MiseTomlTool, SettingsPartial>::deserialize(deserializer)
+            .map(Self::from_decl)
+    }
+}
+
+impl From<TaskDecls> for Tasks {
+    fn from(decls: TaskDecls) -> Self {
+        let tasks = decls
+            .0
+            .into_iter()
+            .map(|(name, decl)| {
+                let mut task = Task::from_decl(decl);
+                task.name.clone_from(&name);
+                (name, task)
+            })
+            .collect();
+        Tasks(tasks)
+    }
+}
+
 impl<'de> de::Deserialize<'de> for Tasks {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: de::Deserializer<'de>,
     {
-        struct TasksVisitor;
-
-        impl<'de> Visitor<'de> for TasksVisitor {
-            type Value = Tasks;
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("task, string, or array of strings")
-            }
-
-            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
-            where
-                M: de::MapAccess<'de>,
-            {
-                struct TaskDef(Task);
-                impl<'de> de::Deserialize<'de> for TaskDef {
-                    fn deserialize<D>(deserializer: D) -> std::result::Result<TaskDef, D::Error>
-                    where
-                        D: de::Deserializer<'de>,
-                    {
-                        struct TaskDefVisitor;
-                        impl<'de> Visitor<'de> for TaskDefVisitor {
-                            type Value = TaskDef;
-                            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                                formatter.write_str("task definition")
-                            }
-
-                            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-                            where
-                                E: de::Error,
-                            {
-                                Ok(TaskDef(Task {
-                                    run: vec![crate::task::RunEntry::Script(v.to_string())],
-                                    ..Default::default()
-                                }))
-                            }
-
-                            fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error>
-                            where
-                                S: de::SeqAccess<'de>,
-                            {
-                                let mut run = vec![];
-                                while let Some(s) = seq.next_element::<crate::task::RunEntry>()? {
-                                    run.push(s);
-                                }
-                                Ok(TaskDef(Task {
-                                    run,
-                                    ..Default::default()
-                                }))
-                            }
-
-                            fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
-                            where
-                                M: de::MapAccess<'de>,
-                            {
-                                let decl = crate::task::TaskDecl::deserialize(
-                                    de::value::MapAccessDeserializer::new(map),
-                                )?;
-                                Ok(TaskDef(Task::from_decl(decl)))
-                            }
-                        }
-                        deserializer.deserialize_any(TaskDefVisitor)
-                    }
-                }
-                let mut tasks = BTreeMap::new();
-                while let Some(name) = map.next_key::<String>()? {
-                    let mut task = map.next_value::<TaskDef>()?.0;
-                    task.name.clone_from(&name);
-                    tasks.insert(name, task);
-                }
-                Ok(Tasks(tasks))
-            }
-        }
-
-        deserializer.deserialize_any(TasksVisitor)
+        TaskDecls::deserialize(deserializer).map(Tasks::from)
     }
 }
 
-impl<'de> de::Deserialize<'de> for TaskTemplates {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: de::Deserializer<'de>,
-    {
-        struct TaskTemplatesVisitor;
-
-        impl<'de> Visitor<'de> for TaskTemplatesVisitor {
-            type Value = TaskTemplates;
-            fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-                formatter.write_str("map of task template names to template definitions")
-            }
-
-            fn visit_map<M>(self, mut map: M) -> std::result::Result<Self::Value, M::Error>
-            where
-                M: de::MapAccess<'de>,
-            {
-                let mut templates = IndexMap::new();
-                while let Some(name) = map.next_key::<String>()? {
-                    let template: TaskTemplate = map.next_value()?;
-                    templates.insert(name, template);
-                }
-                Ok(TaskTemplates(templates))
-            }
+impl MiseToml {
+    /// A file's declarations, with the state loading adds (its path, hash and document) empty.
+    fn from_decl(decl: MiseTomlDecl<MiseTomlTool, SettingsPartial>) -> Self {
+        let tools = decl
+            .tools
+            .into_iter()
+            .map(|(key, list)| (BackendArg::from(key), MiseTomlToolList(list.0)))
+            .collect();
+        Self {
+            custom: decl.custom,
+            min_version: decl.min_version,
+            include: decl.include,
+            env_file: decl.env_file,
+            dotenv: decl.dotenv,
+            env: decl.env,
+            env_path: decl.env_path,
+            alias: decl.alias,
+            tool_alias: decl.tool_alias,
+            shell_alias: decl.shell_alias,
+            daemons: decl.daemons,
+            daemons_settings: decl.daemons_settings,
+            daemon_providers: decl.daemon_providers,
+            daemon_groups: decl.daemon_groups,
+            wrappers: decl.wrappers,
+            hooks: decl.hooks,
+            tools: Mutex::new(tools),
+            plugins: decl.plugins.into_iter().collect(),
+            redactions: Redactions(decl.redactions.into_iter().collect()),
+            secrets: decl.secrets,
+            task_config: decl.task_config,
+            tool_config: decl.tool_config,
+            tasks: decl.tasks.into(),
+            task_templates: TaskTemplates(decl.task_templates.0),
+            watch_files: decl.watch_files,
+            deps: decl.deps,
+            oci: decl.oci,
+            bootstrap: decl.bootstrap,
+            doctor: decl.doctor,
+            dotfiles: decl.dotfiles,
+            dotfile_groups: decl.dotfile_groups,
+            history: decl.history,
+            vars: decl.vars,
+            settings: decl.settings,
+            monorepo_root: decl.monorepo_root,
+            experimental_monorepo_root: decl.experimental_monorepo_root,
+            monorepo: decl.monorepo,
+            ..Default::default()
         }
-
-        deserializer.deserialize_any(TaskTemplatesVisitor)
     }
 }
 

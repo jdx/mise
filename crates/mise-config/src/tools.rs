@@ -16,7 +16,7 @@ pub(crate) mod schema;
 pub(crate) use schema::defs as schema_defs;
 
 /// `[tools]` as written: tool key (`node`, `"cargo:ripgrep"`, `"node[os=linux]"`) to its versions.
-pub type ToolsDecl = IndexMap<String, ToolSpecList>;
+pub type ToolsDecl<T = ToolSpec> = IndexMap<String, ToolSpecList<T>>;
 
 /// The value of one `[tools]` key: a version string, a table, or a list of either.
 ///
