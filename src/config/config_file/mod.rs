@@ -1468,15 +1468,7 @@ pub struct TaskConfig {
     pub input_groups: IndexMap<String, Vec<String>>,
 }
 
-/// Policy applied to tools declared by configs sharing this config's root.
-///
-/// Unlike `[settings]`, this is intentionally config-root-owned rather than
-/// an invocation-wide merged value.
-#[derive(Clone, Debug, Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct ToolConfig {
-    pub locked: bool,
-}
+pub use mise_config::tool_config::ToolConfig;
 
 /// Deliberately not `#[cfg(unix)]` like the module below: the bug these cover is
 /// one that only shows up once `canonicalize` rewrites the path, which is the

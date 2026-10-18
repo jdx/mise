@@ -3085,14 +3085,14 @@
       }
     },
     "tool_config": {
-      "description": "policy for tools declared by configs sharing the containing config root",
       "type": "object",
-      "unevaluatedProperties": false,
+      "description": "policy for tools declared by configs sharing the containing config root",
+      "additionalProperties": false,
       "properties": {
         "locked": {
-          "default": false,
+          "type": "boolean",
           "description": "require tools declared by this config root to resolve and install from their lockfiles",
-          "type": "boolean"
+          "default": false
         }
       }
     },
@@ -6451,21 +6451,19 @@
       ]
     },
     "doctor": {
-      "description": "Project diagnostic checks, run explicitly with mise doctor project.",
       "type": "object",
-      "additionalProperties": true,
+      "description": "Project diagnostic checks, run explicitly with mise doctor project.",
       "properties": {
         "checks": {
           "type": "object",
           "additionalProperties": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["run"],
             "properties": {
               "run": {
                 "type": "string",
-                "minLength": 1,
-                "description": "Diagnostic command. Exit zero to pass; other exit codes fail."
+                "description": "Diagnostic command. Exit zero to pass; other exit codes fail.",
+                "minLength": 1
               },
               "description": {
                 "type": "string",
@@ -6484,18 +6482,20 @@
                 "description": "Working directory. Relative paths resolve from the declaring config's root (the invocation directory for global and system config); a leading ~/ and absolute paths are used as given."
               },
               "shell": {
-                "description": "Shell command, including the command flag, as in tasks.",
                 "type": "string",
+                "description": "Shell command, including the command flag, as in tasks.",
                 "examples": ["bash -c", "pwsh -Command"]
               },
               "os": {
-                "$ref": "#/$defs/os_filter",
-                "description": "OS or OS/arch selectors; omit to run everywhere."
+                "description": "OS or OS/arch selectors; omit to run everywhere.",
+                "$ref": "#/$defs/os_filter"
               }
-            }
+            },
+            "required": ["run"]
           }
         }
-      }
+      },
+      "additionalProperties": true
     }
   },
   "unevaluatedProperties": false,
@@ -6530,8 +6530,8 @@
       "additionalProperties": {
         "oneOf": [
           {
-            "description": "command to run",
             "type": "string",
+            "description": "command to run",
             "minLength": 1,
             "pattern": ".*\\S.*"
           },
@@ -6539,21 +6539,21 @@
             "type": "object",
             "properties": {
               "command": {
-                "description": "command to run",
                 "type": "string",
+                "description": "command to run",
                 "minLength": 1,
                 "pattern": ".*\\S.*"
               },
               "args": {
-                "description": "arguments inserted before the intercepted command's arguments",
                 "type": "array",
+                "description": "arguments inserted before the intercepted command's arguments",
                 "items": {
                   "type": "string"
                 }
               },
               "env": {
-                "description": "environment variables set for the wrapper",
                 "type": "object",
+                "description": "environment variables set for the wrapper",
                 "additionalProperties": {
                   "type": "string"
                 }

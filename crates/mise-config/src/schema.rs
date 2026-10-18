@@ -15,9 +15,13 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde_json::Value;
 
 use crate::bootstrap::BootstrapTomlConfig;
+use crate::doctor::DoctorConfig;
 use crate::history::HistoryTomlConfig;
 use crate::launchd::LaunchdCalendarInterval;
 use crate::remote::InstallMiseTomlConfig;
+use crate::tool_config::ToolConfig;
+use crate::watch_files::WatchFile;
+use crate::wrappers::CommandWrapper;
 
 /// Each generated fragment, keyed by the JSON pointer it replaces in `schema/mise.json`.
 pub fn fragments() -> Vec<(&'static str, Value)> {
@@ -30,6 +34,16 @@ pub fn fragments() -> Vec<(&'static str, Value)> {
         (
             "/properties/history",
             fragment::<HistoryTomlConfig>(&mut generator),
+        ),
+        (
+            "/properties/wrappers/additionalProperties",
+            fragment::<CommandWrapper>(&mut generator),
+        ),
+        ("/$defs/doctor", fragment::<DoctorConfig>(&mut generator)),
+        ("/$defs/tool_config", fragment::<ToolConfig>(&mut generator)),
+        (
+            "/$defs/watch_files/items",
+            fragment::<WatchFile>(&mut generator),
         ),
         (
             "/$defs/bootstrap_remote_install_mise",
