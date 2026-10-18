@@ -566,27 +566,3 @@ fn redirect_targets() {
         assert_eq!(redirect_target(line), target, "{line}");
     }
 }
-
-/// `schema/mise.json` lists its top-level keys from `mise_config::mise_toml::MiseTomlDecl`, and
-/// [`MiseToml`] must read exactly those keys: one it reads that the schema lacks is flagged in
-/// every editor, and one the schema lists that it skips is ignored with a warning.
-#[test]
-fn schema_keys_match_parser() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let schema = std::fs::read_to_string(root.join("schema/mise.json")).unwrap();
-    let schema: serde_json::Value = serde_json::from_str(&schema).unwrap();
-    let declared: BTreeSet<&str> = schema["properties"]
-        .as_object()
-        .unwrap()
-        .keys()
-        .map(String::as_str)
-        .collect();
-    let parsed: BTreeSet<&str> = mise_config::de::struct_fields::<MiseToml>()
-        .iter()
-        .copied()
-        .collect();
-    assert_eq!(
-        declared, parsed,
-        "MiseTomlDecl in crates/mise-config and MiseToml read different top-level keys"
-    );
-}

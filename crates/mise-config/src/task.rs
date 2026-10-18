@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 mod confirm;
 mod decl;
+mod decls;
 mod dep;
 mod outputs;
 mod schema;
@@ -17,6 +18,7 @@ mod secrets;
 
 pub use confirm::TaskConfirm;
 pub use decl::{TaskDecl, TaskTemplate};
+pub use decls::{TaskDecls, TaskTemplateDecls};
 pub use dep::TaskDep;
 pub use outputs::TaskOutputs;
 pub(crate) use schema::{defs as schema_defs, task_template as template_schema};
