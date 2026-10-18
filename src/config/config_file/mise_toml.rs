@@ -38,7 +38,7 @@ use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
 use crate::task::workspace::WorkspaceProjectOverride;
-use crate::task::{Task, TaskTemplate, TaskTomlBoolPresence};
+use crate::task::{Task, TaskTemplate};
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
 use crate::watch_files::WatchFile;
@@ -413,7 +413,7 @@ pub struct MiseToml {
     #[serde(default)]
     watch_files: Vec<WatchFile>,
     #[serde(default)]
-    deps: Option<DepsConfig>,
+    deps: Option<crate::deps::DepsDecl>,
     #[serde(default)]
     oci: Option<OciConfig>,
     #[serde(default)]
@@ -2021,9 +2021,10 @@ impl ConfigFile for MiseToml {
     }
 
     fn deps_config(&self) -> eyre::Result<Option<DepsConfig>> {
-        let Some(mut deps) = self.deps.clone() else {
+        let Some(decl) = self.deps.clone() else {
             return Ok(None);
         };
+        let mut deps = DepsConfig::from_decl(decl);
         let context = self.template_context();
         for (provider_id, provider) in &mut deps.providers {
             provider.template_context = Some(DepsTemplateContext {
@@ -2474,41 +2475,6 @@ impl<'de> de::Deserialize<'de> for MiseTomlTool {
     }
 }
 
-struct TaskBoolPresenceMapAccess<'a, M> {
-    inner: M,
-    presence: &'a mut TaskTomlBoolPresence,
-}
-
-impl<'de, M> de::MapAccess<'de> for TaskBoolPresenceMapAccess<'_, M>
-where
-    M: de::MapAccess<'de>,
-{
-    type Error = M::Error;
-
-    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
-    where
-        K: de::DeserializeSeed<'de>,
-    {
-        let Some(key) = self.inner.next_key::<String>()? else {
-            return Ok(None);
-        };
-        self.presence.record(&key);
-        seed.deserialize(de::value::StringDeserializer::<M::Error>::new(key))
-            .map(Some)
-    }
-
-    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::DeserializeSeed<'de>,
-    {
-        self.inner.next_value_seed(seed)
-    }
-
-    fn size_hint(&self) -> Option<usize> {
-        self.inner.size_hint()
-    }
-}
-
 impl<'de> de::Deserialize<'de> for Tasks {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -2567,15 +2533,10 @@ impl<'de> de::Deserialize<'de> for Tasks {
                             where
                                 M: de::MapAccess<'de>,
                             {
-                                let mut presence = TaskTomlBoolPresence::default();
-                                let map = TaskBoolPresenceMapAccess {
-                                    inner: map,
-                                    presence: &mut presence,
-                                };
-                                let mut task =
-                                    Task::deserialize(de::value::MapAccessDeserializer::new(map))?;
-                                task.toml_bool_presence = presence;
-                                Ok(TaskDef(task))
+                                let decl = crate::task::TaskDecl::deserialize(
+                                    de::value::MapAccessDeserializer::new(map),
+                                )?;
+                                Ok(TaskDef(Task::from_decl(decl)))
                             }
                         }
                         deserializer.deserialize_any(TaskDefVisitor)

@@ -7,9 +7,7 @@ use std::sync::Arc;
 use super::SecretName;
 use crate::task::{Task, TaskKey, TaskRunPhase, task_key};
 
-pub const G7_TEXT: &str = "secrets is not allowed in [task_templates.<t>] or monorepo.task_defaults; list secrets on each task so every grant is visible on the task and in mise secrets ls";
-
-pub use mise_config::task::TaskSecrets;
+pub use mise_config::task::{G7_TEXT, TaskSecrets};
 
 /// Launchers that start tasks without a person asking for them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -12,8 +12,8 @@ use crate::hash::hash_to_str;
 use crate::{dirs, env};
 
 pub use engine::{DepsEngine, DepsOptions, DepsStepResult};
-pub(crate) use rule::DepsConfig;
 pub(crate) use rule::DepsTemplateContext;
+pub(crate) use rule::{DepsConfig, DepsDecl};
 
 pub(crate) mod deps_ordering;
 mod engine;
