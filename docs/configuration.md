@@ -569,6 +569,9 @@ _.source = "scripts/env.sh"
 | `[history]`                         | What dotfiles history captures                                          | [History](/dotfiles/history.html)                                  |
 | `[_]`                               | Free-form data that mise ignores                                        | [`[_]`](#free-form-data)                                           |
 
+Every key, with its type and description, is listed in the
+[mise.toml reference](/configuration/reference.html).
+
 Version requests, prefixes such as `prefix:1.25`, and `.tool-versions` are
 described in [Version requests and version files](/dev-tools/versions.html).
 A global tool can update itself with
