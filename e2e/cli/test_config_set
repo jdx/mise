@@ -109,3 +109,10 @@ printf '[env]\n_.python.venv = { path = ".venv", create = true }\n' >mise.toml
 mise config set env._.python.venv.path .venv2
 assert "mise config get env._.python.venv.path" ".venv2"
 assert "mise config get env._.python.venv.create" "true"
+
+# A key with a dot in its name is quoted, as in TOML, and stays one key.
+printf '[tasks."hello.sh"]\nrun = "echo hi"\n' >mise.toml
+mise config set 'tasks."hello.sh".dir' sub
+assert "mise config get 'tasks.\"hello.sh\".dir'" "sub"
+assert "mise config get 'tasks.\"hello\\u002esh\".run'" "echo hi"
+assert_not_contains "cat mise.toml" "[tasks.hello"

@@ -3588,6 +3588,8 @@ Print help
 .TP
 \fB<KEY>\fR
 Dotted key path to print, such as `tools.python`; omit to print the whole file
+
+Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
 \fBExamples:\fR
 .PP
 Print the python request
@@ -3701,6 +3703,8 @@ Print help
 .TP
 \fB<KEY>\fR
 Dotted key path to set, such as `tools.python`
+
+Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
 .TP
 \fB<VALUE>\fR
 The value to set the key to (optional if provided as KEY=VALUE)

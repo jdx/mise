@@ -19,6 +19,8 @@ use std::path::PathBuf;
 )]
 pub(super) struct ConfigGet {
     /// Dotted key path to print, such as `tools.python`; omit to print the whole file
+    ///
+    /// Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
     #[usage(complete = complete_key)]
     pub key: Option<String>,
 
@@ -67,8 +69,8 @@ impl ConfigGet {
             let config: toml::Value = toml::de::from_str(&content)?;
             let mut value = &config;
             if let Some(key) = &self.key {
-                for k in key.split('.') {
-                    value = value.get(k).ok_or_else(|| {
+                for k in super::keys::split_path(key) {
+                    value = value.get(&k).ok_or_else(|| {
                         eyre::eyre!("Key not found: {} in {}", key, display_path(&file))
                     })?;
                 }

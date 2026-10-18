@@ -53,6 +53,8 @@ use std::path::PathBuf;
 )]
 pub(super) struct ConfigSet {
     /// Dotted key path to set, such as `tools.python`
+    ///
+    /// Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
     #[usage(complete = complete_key)]
     pub key: String,
 
@@ -159,7 +161,7 @@ impl ConfigSet {
         };
         let mut config: toml_edit::DocumentMut = raw.parse()?;
         let mut container = config.as_item_mut();
-        let parts = full_key.split('.').collect::<Vec<&str>>();
+        let parts = super::keys::split_path(&full_key);
         let last_key = parts.last().unwrap();
         for (idx, part) in parts.iter().take(parts.len() - 1).enumerate() {
             container = container
@@ -170,7 +172,7 @@ impl ConfigSet {
                         parts[..idx].join(".")
                     )
                 })?
-                .entry(part)
+                .entry(part.as_str())
                 .or_insert({
                     let mut t = toml_edit::Table::new();
                     t.set_implicit(true);

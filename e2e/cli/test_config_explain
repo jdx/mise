@@ -127,3 +127,4 @@ EOF
 assert "mise config explain --file dots.toml tasks.hello --json | jq -r 'map(.key) | join(\" \")'" "tasks.hello tasks.hello.run"
 assert "mise config explain --file dots.toml 'tasks.\"hello.sh\"' --json | jq -r 'map(.key) | join(\" \")'" 'tasks."hello.sh" tasks."hello.sh".run'
 assert "mise config explain --file dots.toml 'tasks.\"hello.sh\"' --json | jq -r '.[0].path | join(\"|\")'" "tasks|hello.sh"
+assert "mise config explain --file dots.toml 'tasks.\"hello\\u002esh\"' --json | jq -r '.[0].key'" 'tasks."hello.sh"'

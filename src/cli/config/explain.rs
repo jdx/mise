@@ -1,3 +1,4 @@
+use super::keys::{quote_key, split_path};
 use crate::config::schema;
 use crate::file::display_path;
 use eyre::{Result, bail};
@@ -154,34 +155,6 @@ impl Explained {
         } else {
             description.to_string()
         }
-    }
-}
-
-/// A dotted key path split into its keys, honoring TOML quotes: `tasks."build.sh"` is `tasks`
-/// and `build.sh`, not three keys.
-fn split_path(path: &str) -> Vec<String> {
-    let mut keys = vec![String::new()];
-    let mut quote = None;
-    for c in path.chars() {
-        match (quote, c) {
-            (None, '"' | '\'') => quote = Some(c),
-            (Some(q), c) if c == q => quote = None,
-            (None, '.') => keys.push(String::new()),
-            (_, c) => keys.last_mut().expect("starts with a key").push(c),
-        }
-    }
-    keys
-}
-
-/// A key as it is printed in a path: quoted when its name would not split back into itself,
-/// such as the task `build.sh`.
-fn quote_key(name: &str) -> String {
-    if !name.is_empty() && !name.contains(['.', '"', '\'']) && !name.contains(char::is_whitespace) {
-        name.to_string()
-    } else if name.contains('"') {
-        format!("'{name}'")
-    } else {
-        format!("\"{name}\"")
     }
 }
 

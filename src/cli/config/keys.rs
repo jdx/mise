@@ -1,4 +1,6 @@
-//! Completion for the dotted keys `config get` and `config set` take.
+//! Completion for the dotted keys `config get`, `config set` and `config explain` take, and
+//! how those keys are written: TOML's dotted keys, where a key with a dot in its name is
+//! quoted (`tasks."build.sh"`).
 //!
 //! The known keys come from `schema/mise.json`, walked through `$ref`, `allOf`, `oneOf` and
 //! `anyOf` so that `tools.node.` reaches a tool's options and `settings.python.` reaches the
@@ -12,24 +14,76 @@ use std::collections::{BTreeMap, btree_map};
 use std::path::{Path, PathBuf};
 use usage_rs::complete::{Candidate, CompleteCtx};
 
+/// The byte offsets of the dots in `path` that separate its keys: those outside quotes.
+fn separators(path: &str) -> Vec<usize> {
+    let mut dots = vec![];
+    let mut quote = None;
+    let mut escaped = false;
+    for (i, c) in path.char_indices() {
+        match quote {
+            Some(_) if escaped => escaped = false,
+            Some('"') if c == '\\' => escaped = true,
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None if c == '"' || c == '\'' => quote = Some(c),
+            None if c == '.' => dots.push(i),
+            None => {}
+        }
+    }
+    dots
+}
+
+/// A dotted key path split into its keys. A quoted key is read as TOML reads it, escapes
+/// included, so `tasks."build.sh"` and `tasks."build\u002esh"` are both `tasks` and `build.sh`.
+/// An unquoted key is taken as written, so `tools.asdf:mise-plugins/mise-foo` needs no quotes.
+pub(super) fn split_path(path: &str) -> Vec<String> {
+    let mut keys = vec![];
+    let mut start = 0;
+    for dot in separators(path).into_iter().chain([path.len()]) {
+        let key = &path[start..dot];
+        let quoted = key
+            .starts_with(['"', '\''])
+            .then(|| toml_edit::Key::parse(key).ok())
+            .flatten()
+            .and_then(|parsed| parsed.into_iter().next());
+        keys.push(quoted.map_or_else(|| key.to_string(), |k| k.get().to_string()));
+        start = dot + 1;
+    }
+    keys
+}
+
+/// A key as it is written in a path: as is, unless its name would not split back into itself,
+/// such as the task `build.sh`, which TOML quotes.
+pub(super) fn quote_key(name: &str) -> String {
+    let plain = !name.is_empty()
+        && !name.contains(['.', '"', '\'', '\\'])
+        && !name.contains(|c: char| c.is_whitespace() || c.is_control());
+    if plain {
+        name.to_string()
+    } else {
+        toml_edit::Key::new(name).display_repr().into_owned()
+    }
+}
+
 /// Candidates for a dotted key being typed as `prefix`, against the TOML at `file`.
 pub(super) fn candidates(prefix: &str, file: Option<&Path>) -> Vec<Candidate<'static>> {
     // `config set KEY=VALUE`: past the `=` is a value, not a key.
     if prefix.contains('=') {
         return vec![];
     }
-    let (parent, _) = prefix.rsplit_once('.').unwrap_or(("", prefix));
-    let path: Vec<&str> = if parent.is_empty() {
+    // The parent stays as typed, so every candidate starts with what the shell has.
+    let parent = separators(prefix).last().map_or("", |&dot| &prefix[..dot]);
+    let path: Vec<String> = if parent.is_empty() {
         vec![]
     } else {
-        parent.split('.').collect()
+        split_path(parent)
     };
 
     let root = &*SCHEMA;
     let mut nodes = vec![];
     expand(root, root, &mut nodes);
     for segment in &path {
-        nodes = child(root, &nodes, segment);
+        nodes = child(root, &nodes, segment.as_str());
     }
 
     // Keyed by name, so a key the schema knows and the file also sets appears once, with the
@@ -60,9 +114,9 @@ pub(super) fn candidates(prefix: &str, file: Option<&Path>) -> Vec<Candidate<'st
     keys.into_iter()
         .map(|(key, description)| {
             let value = if parent.is_empty() {
-                key
+                quote_key(&key)
             } else {
-                format!("{parent}.{key}")
+                format!("{parent}.{}", quote_key(&key))
             };
             match description {
                 Some(description) => Candidate::described(value, first_line(&description)),
@@ -86,7 +140,7 @@ fn first_line(description: &str) -> String {
 }
 
 /// The keys the table at `path` already has in `file`.
-fn file_keys(file: Option<&Path>, path: &[&str]) -> Vec<String> {
+fn file_keys(file: Option<&Path>, path: &[String]) -> Vec<String> {
     let Some(content) = file.and_then(|file| std::fs::read_to_string(file).ok()) else {
         return vec![];
     };
@@ -94,7 +148,7 @@ fn file_keys(file: Option<&Path>, path: &[&str]) -> Vec<String> {
         return vec![];
     };
     for segment in path {
-        match value.get(segment) {
+        match value.get(segment.as_str()) {
             Some(child) => value = child.clone(),
             None => return vec![],
         }
@@ -206,5 +260,58 @@ mod tests {
     #[test]
     fn values_are_not_completed_as_keys() {
         assert!(candidates("tools.node=", None).is_empty());
+    }
+
+    #[test]
+    fn quoted_keys_split_as_toml_reads_them() {
+        assert_eq!(split_path("tasks.build"), ["tasks", "build"]);
+        assert_eq!(
+            split_path(r#"tasks."build.sh".run"#),
+            ["tasks", "build.sh", "run"]
+        );
+        assert_eq!(
+            split_path(r#"tasks."build\u002esh""#),
+            ["tasks", "build.sh"]
+        );
+        assert_eq!(split_path("tasks.'build.sh'"), ["tasks", "build.sh"]);
+        assert_eq!(
+            split_path(r#"tasks."say \"hi\".sh""#),
+            ["tasks", r#"say "hi".sh"#]
+        );
+        assert_eq!(
+            split_path("tools.asdf:mise-plugins/mise-foo.version"),
+            ["tools", "asdf:mise-plugins/mise-foo", "version"]
+        );
+    }
+
+    #[test]
+    fn a_quoted_key_splits_back_into_its_name() {
+        for name in [
+            "build",
+            "asdf:mise-plugins/mise-foo",
+            "build.sh",
+            r#"say "hi""#,
+            r#"it's "x""#,
+            "a b",
+            "",
+        ] {
+            let path = format!("tasks.{}", quote_key(name));
+            assert_eq!(split_path(&path), ["tasks", name], "{path}");
+        }
+        assert_eq!(quote_key("build"), "build");
+        assert_eq!(quote_key("build.sh"), r#""build.sh""#);
+    }
+
+    #[test]
+    fn a_task_with_a_dot_in_its_name_completes_quoted() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("mise.toml");
+        std::fs::write(&file, "[tasks.\"hello.sh\"]\nrun = \"echo\"\n").unwrap();
+        assert_eq!(values("tasks.", Some(&file)), [r#"tasks."hello.sh""#]);
+        let task = values(r#"tasks."hello.sh"."#, Some(&file));
+        assert!(
+            task.contains(&r#"tasks."hello.sh".run"#.to_string()),
+            "{task:?}"
+        );
     }
 }
