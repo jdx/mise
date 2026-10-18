@@ -6991,8 +6991,10 @@ dependencies = [
  "eyre",
  "indexmap 2.14.2",
  "mise-bootstrap",
+ "schemars 1.2.3",
  "serde",
  "serde_ignored",
+ "serde_json",
  "toml 1.1.8+spec-1.1.0",
 ]
 
@@ -10102,6 +10104,7 @@ checksum = "ab508826f74a77ca9d5aba6ff19b522583ee3eaf28a19384ff3d0e5835fadf6e"
 dependencies = [
  "chrono",
  "dyn-clone",
+ "indexmap 2.14.2",
  "ref-cast",
  "schemars_derive",
  "serde",

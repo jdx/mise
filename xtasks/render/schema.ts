@@ -248,8 +248,65 @@ function buildSettings(
 
 const settings = buildSettings(doc);
 
+// The sections whose types live in crates/mise-config, generated from those types.
+function generatedFragments(): Record<string, unknown> {
+  const result = spawnSync(
+    "cargo",
+    [
+      "run",
+      "--quiet",
+      // Like CI's other cargo commands: the lint runner's rustc can be older than the MSRV.
+      "--ignore-rust-version",
+      "--package",
+      "mise-config",
+      "--example",
+      "render-schema",
+    ],
+    {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "inherit"],
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  );
+  if (result.error) {
+    throw new Error(`cargo failed to spawn: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `mise-config's render-schema example exited with status ${result.status}`,
+    );
+  }
+  return JSON.parse(result.stdout);
+}
+
+// Replaces the value at a JSON pointer. The key must already exist, so a mistyped pointer
+// fails instead of adding a section nothing references.
+function replaceAtPointer(root: JsonObject, pointer: string, value: unknown) {
+  const keys = pointer
+    .split("/")
+    .slice(1)
+    .map((key) => key.replaceAll("~1", "/").replaceAll("~0", "~"));
+  const last = keys.pop();
+  let node: unknown = root;
+  for (const key of keys) {
+    node = (node as JsonObject | undefined)?.[key];
+  }
+  if (
+    last === undefined ||
+    typeof node !== "object" ||
+    node === null ||
+    !(last in node)
+  ) {
+    throw new Error(`schema/mise.json has no ${pointer} to replace`);
+  }
+  (node as JsonObject)[last] = value;
+}
+
 const schema = JSON.parse(fs.readFileSync("schema/mise.json", "utf-8"));
 schema["$defs"].settings.properties = settings;
+for (const [pointer, fragment] of Object.entries(generatedFragments())) {
+  replaceAtPointer(schema, pointer, fragment);
+}
 
 writeFormattedJson("schema/mise.json", schema);
 writeFormattedJson("schema/mise-task.json", buildTaskSchema(schema));

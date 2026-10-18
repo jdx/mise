@@ -9066,23 +9066,25 @@
       "properties": {
         "encryption": {
           "type": "object",
+          "additionalProperties": false,
           "properties": {
             "recipients": {
               "type": "array",
+              "description": "shared age, SSH, or age-plugin public recipients for all encrypted dotfiles",
               "items": {
                 "type": "string"
               },
-              "description": "shared age, SSH, or age-plugin public recipients for all encrypted dotfiles"
+              "default": []
             }
-          },
-          "additionalProperties": false
+          }
         },
         "exclude": {
           "type": "array",
           "description": "globs never captured by dotfiles history; a `!glob` entry re-includes a path an earlier glob excluded",
           "items": {
             "type": "string"
-          }
+          },
+          "default": []
         },
         "git_email": {
           "type": "string",
@@ -9098,11 +9100,13 @@
           "description": "commands run once after a rollback or undo writes a path matching the glob (trusted global or system config only)",
           "additionalProperties": {
             "type": "string"
-          }
+          },
+          "default": {}
         },
         "origin": {
           "type": "object",
           "description": "the setup repository this machine publishes to and fetches from; machine-local, written by `mise bootstrap dotfiles origin set`",
+          "additionalProperties": false,
           "properties": {
             "url": {
               "type": "string",
@@ -9114,8 +9118,7 @@
               "default": "main"
             }
           },
-          "required": ["url"],
-          "additionalProperties": false
+          "required": ["url"]
         }
       },
       "additionalProperties": false

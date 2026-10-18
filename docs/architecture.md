@@ -221,6 +221,7 @@ produced it.
 | `completions/`                                                                         | The usage spec, through `mise completion <shell>`                                                            | `mise run render:completions`                 |
 | `docs/.vitepress/cli_commands.ts` and the idiomatic version file table                 | `src/cli/` and the `idiomatic_files` keys in `registry/*.toml`                                               | `mise run render:help`                        |
 | The settings part of `schema/mise.json`, `schema/miserc.json`, `schema/mise-task.json` | `settings.toml`; `mise-task.json` also copies the task definitions from `schema/mise.json`                   | `mise run render:schema`                      |
+| The `[history]` part of `schema/mise.json`                                             | The types and doc comments in `crates/mise-config`, through its `render-schema` example                      | `mise run render:schema`                      |
 | `docs/public/llms.txt`                                                                 | Page titles and leads, and `docs/.vitepress/sidebar.ts`                                                      | `mise run render:llms`                        |
 | `Settings` types                                                                       | `settings.toml`                                                                                              | Every build (`crates/mise-settings/build.rs`) |
 | The registry compiled into mise                                                        | `registry/*.toml`                                                                                            | Every build (`build.rs`)                      |
@@ -228,7 +229,9 @@ produced it.
 
 `mise run render` runs every `render:*` task. The rest of `schema/mise.json` is
 written by hand: change it when you change config syntax, then run
-`mise run render:schema`.
+`mise run render:schema`. Sections move to `crates/mise-config` one at a time.
+For those, change the types and doc comments, not the JSON; a `mise-config`
+test fails while the committed file is stale.
 
 ## Tests {#tests}
 
