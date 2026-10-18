@@ -100,7 +100,7 @@ pub struct ServiceTomlConfig {
     /// text the service manager shows for the service; user scope only
     #[serde(default)]
     pub description: Option<String>,
-    /// when to restart the process after it exits: on-failure, always, or never; user scope only
+    /// when to restart the process after it exits: on-failure, always, or never; on Windows, always and on-failure both retry failed runs only; user scope only
     #[serde(default)]
     #[schemars(extend("default" = "on-failure"))]
     pub restart: Option<ServiceRestart>,
