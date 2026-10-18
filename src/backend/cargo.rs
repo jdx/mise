@@ -20,6 +20,7 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::apply_rename_exe;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::env::GITHUB_TOKEN;
@@ -44,6 +45,8 @@ struct CargoInstallState {
     features: Vec<String>,
     default_features: bool,
     bin: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rename_exe: Option<String>,
     #[serde(rename = "crate")]
     crate_name: Option<String>,
     locked: bool,
@@ -67,6 +70,10 @@ impl<'a> CargoOptions<'a> {
 
     fn bin_for_target(&self, target: &PlatformTarget) -> Option<String> {
         self.values.platform_string_for_target("bin", target)
+    }
+
+    fn rename_exe(&self) -> Option<&toml::Value> {
+        self.values.raw().opts.get("rename_exe")
     }
 
     pub(super) fn locked(&self) -> bool {
@@ -126,6 +133,7 @@ impl<'a> CargoOptions<'a> {
             features,
             default_features: !self.default_features_disabled(),
             bin: self.bin(),
+            rename_exe: self.rename_exe().map(ToString::to_string),
             crate_name: self.crate_arg(),
             locked: self.locked(),
         }
@@ -225,6 +233,50 @@ impl Backend for CargoBackend {
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
+        let tv = self.install_crate(ctx, tv).await?;
+        let request_options = tv.request.options();
+        let opts = CargoOptions::new(&request_options);
+        if let Some(rename_exe) = opts.rename_exe() {
+            let tool_name = opts.bin().unwrap_or_else(|| self.tool_name());
+            apply_rename_exe(&tv.install_path().join("bin"), rename_exe, Some(&tool_name))?;
+        }
+        Ok(tv)
+    }
+
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> Result<BTreeMap<String, String>> {
+        let opts = request.options();
+        Ok(CargoOptions::new(&opts).lockfile_options(target))
+    }
+
+    /// `cargo.registry_name` makes `cargo install` take the crate from another registry,
+    /// where the same name and version can be different code.
+    fn install_identity_options(&self, tv: &ToolVersion) -> BTreeMap<String, String> {
+        let mut options = super::static_helpers::request_identity_options(self, tv);
+        if let Some(registry) = &Settings::get().cargo.registry_name {
+            options.insert("cargo.registry".to_string(), registry.clone());
+        }
+        options
+    }
+}
+
+/// Returns install-time-only option keys for Cargo backend.
+pub(crate) fn install_time_option_keys() -> Vec<String> {
+    vec![
+        "features".into(),
+        "default-features".into(),
+        "bin".into(),
+        "rename_exe".into(),
+        "crate".into(),
+        "locked".into(),
+    ]
+}
+
+impl CargoBackend {
+    async fn install_crate(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion> {
         // Check if cargo is available
         self.warn_if_dependency_missing(
             &ctx.config,
@@ -352,38 +404,6 @@ impl Backend for CargoBackend {
         Ok(tv.clone())
     }
 
-    fn resolve_lockfile_options(
-        &self,
-        request: &ToolRequest,
-        target: &PlatformTarget,
-    ) -> Result<BTreeMap<String, String>> {
-        let opts = request.options();
-        Ok(CargoOptions::new(&opts).lockfile_options(target))
-    }
-
-    /// `cargo.registry_name` makes `cargo install` take the crate from another registry,
-    /// where the same name and version can be different code.
-    fn install_identity_options(&self, tv: &ToolVersion) -> BTreeMap<String, String> {
-        let mut options = super::static_helpers::request_identity_options(self, tv);
-        if let Some(registry) = &Settings::get().cargo.registry_name {
-            options.insert("cargo.registry".to_string(), registry.clone());
-        }
-        options
-    }
-}
-
-/// Returns install-time-only option keys for Cargo backend.
-pub(crate) fn install_time_option_keys() -> Vec<String> {
-    vec![
-        "features".into(),
-        "default-features".into(),
-        "bin".into(),
-        "crate".into(),
-        "locked".into(),
-    ]
-}
-
-impl CargoBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }

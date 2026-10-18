@@ -145,6 +145,19 @@ Install one executable from a crate that has several:
 "cargo:sqlx-cli" = { version = "latest", bin = "sqlx" }
 ```
 
+### `rename_exe`
+
+Rename the installed executable, for example to avoid a clash with another tool
+on `PATH`:
+
+```toml
+[tools."cargo:https://github.com/Michael-F-Bryan/wit-lsp"]
+version = "rev:c90addb21d37f2bd62a9474adca1dd8f6320d437"
+crate = "wit-cli"
+bin = "wit"
+rename_exe = "wit-lsp"
+```
+
 ### `crate`
 
 Choose the crate to install from a Git repository that contains several, such
