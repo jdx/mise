@@ -101,7 +101,7 @@ fn derived_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Value)> {
     let task_template = crate::task::template_schema(&task_props);
     let mut watch_files = fragment::<Vec<WatchFile>>(generator);
     watch_files["description"] = "files to watch for changes".into();
-    vec![
+    let mut defs = vec![
         ("task_props", task_props),
         ("task_template", task_template),
         ("task_config", fragment::<TaskConfig>(generator)),
@@ -209,7 +209,9 @@ fn derived_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Value)> {
             "bootstrap_remote_install_mise",
             fragment::<InstallMiseTomlConfig>(generator),
         ),
-    ]
+    ];
+    defs.extend(crate::tools::option_defs(generator));
+    defs
 }
 
 /// The `$defs` entries written by hand next to their parsers. They skip the generator's
@@ -334,6 +336,9 @@ pub(crate) mod refs {
         os_filter,
         task_config,
         task_watch,
+        tool_bool,
+        tool_bool_text,
+        tool_platforms,
         tool_config,
         vars,
         watch_files,
@@ -424,7 +429,17 @@ fn strip_hand_written(value: &mut Value) {
     }
 }
 
-fn fragment<T: JsonSchema>(generator: &mut SchemaGenerator) -> Value {
+/// [`fragment`] without the `additionalProperties: false` the generator adds to an object, for a
+/// schema another one composes with `allOf` and closes itself.
+pub(crate) fn open_fragment<T: JsonSchema>(generator: &mut SchemaGenerator) -> Value {
+    let mut schema = fragment::<T>(generator);
+    if let Some(object) = schema.as_object_mut() {
+        object.remove("additionalProperties");
+    }
+    schema
+}
+
+pub(crate) fn fragment<T: JsonSchema>(generator: &mut SchemaGenerator) -> Value {
     let mut schema = generator.root_schema_for::<T>();
     let object = schema.ensure_object();
     // The root-only keys belong to the whole file, not to one of its sections.
@@ -534,6 +549,45 @@ mod tests {
             if let Some(pointer) = first_difference(&committed, &generated, String::new()) {
                 panic!(
                     "{path} differs from mise-config at {pointer}; run `mise run render:schema`"
+                );
+            }
+        }
+    }
+
+    // The platform tables of `[tools]` point at single options of other definitions by JSON
+    // pointer, so a renamed or removed option leaves a reference to nothing.
+    #[test]
+    fn every_reference_in_the_schema_resolves() {
+        fn collect(value: &Value, refs: &mut Vec<String>) {
+            match value {
+                Value::Object(object) => {
+                    for (key, value) in object {
+                        match (key.as_str(), value) {
+                            ("$ref", Value::String(target)) => refs.push(target.clone()),
+                            _ => collect(value, refs),
+                        }
+                    }
+                }
+                Value::Array(items) => items.iter().for_each(|item| collect(item, refs)),
+                _ => {}
+            }
+        }
+
+        let settings = std::fs::read_to_string(format!("{ROOT}/settings.toml")).unwrap();
+        for (path, schema) in render(&settings) {
+            let mut refs = vec![];
+            collect(&schema, &mut refs);
+            assert!(
+                !refs.is_empty() || path.ends_with("miserc.json"),
+                "{path} has no references"
+            );
+            for target in refs {
+                let pointer = target
+                    .strip_prefix('#')
+                    .unwrap_or_else(|| panic!("{path}: {target} is not a local reference"));
+                assert!(
+                    schema.pointer(pointer).is_some(),
+                    "{path}: {target} points at nothing"
                 );
             }
         }
