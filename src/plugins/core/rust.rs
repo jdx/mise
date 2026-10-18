@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::{collections::BTreeMap, collections::BTreeSet, ffi::OsString, sync::Arc};
 
 use crate::args::BackendArg;
@@ -30,9 +29,6 @@ pub(super) struct RustPlugin {
     /// Channels `rustup check` reported an update for in this run, so the install
     /// that follows an upgrade does not ask rustup (and the network) again.
     updatable_channels: std::sync::Mutex<BTreeSet<String>>,
-    /// Whether the last remote listing lacked the numbered releases because
-    /// GitHub was unreachable, so the backend does not keep it in the cache.
-    degraded_listing: AtomicBool,
 }
 
 const RUST_DEFAULT_DIST_SERVER: &str = "https://static.rust-lang.org";
@@ -279,7 +275,6 @@ impl RustPlugin {
         Self {
             ba: plugins::core::new_backend_arg("rust").into(),
             updatable_channels: Default::default(),
-            degraded_listing: Default::default(),
         }
     }
 
@@ -647,15 +642,17 @@ impl Backend for RustPlugin {
             .map(|server| crate::hash::hash_to_str(&server.trim_end_matches('/'))))
     }
 
-    fn remote_listing_is_degraded(&self) -> bool {
-        self.degraded_listing.load(Ordering::Relaxed)
+    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        Ok(self._list_remote_versions_checked(config).await?.0)
     }
 
-    async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+    async fn _list_remote_versions_checked(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<(Vec<VersionInfo>, bool)> {
         let mirrored = rustup_dist_server(&config.env().await?).is_some();
         let (releases, degraded) =
             releases_or_channels_only(github::list_releases("rust-lang/rust").await, mirrored)?;
-        self.degraded_listing.store(degraded, Ordering::Relaxed);
         let mut versions: Vec<VersionInfo> = releases
             .into_iter()
             .map(|r| {
@@ -693,7 +690,7 @@ impl Backend for RustPlugin {
                 ..Default::default()
             },
         ]);
-        Ok(versions)
+        Ok((versions, degraded))
     }
 
     fn is_rolling_channel(&self, version: &str) -> bool {
