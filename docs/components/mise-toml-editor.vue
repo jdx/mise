@@ -319,7 +319,7 @@ function reset() {
   line-height: 1.7;
 }
 
-.mise-toml-editor .mte-host .cm-editor {
+.mise-toml-editor:not(.compact) .mte-host .cm-editor {
   max-height: 32em;
 }
 
