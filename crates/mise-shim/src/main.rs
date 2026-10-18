@@ -59,6 +59,7 @@ fn paths_eq(a: &Path, b: &Path) -> bool {
 }
 
 fn main() -> ExitCode {
+    keep_embedded_tags();
     match run() {
         Ok(code) => ExitCode::from(code as u8),
         Err(err) => {
@@ -66,6 +67,14 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `#[used]` only keeps a static through compilation: the MSVC linker still drops one nothing
+/// references (`/OPT:REF`), which is what happened to the version tag in the LTO release build.
+/// Taking the address through `black_box` gives both statics a reference the optimizer cannot remove.
+fn keep_embedded_tags() {
+    std::hint::black_box(&NATIVE_SHIM_MARKER);
+    std::hint::black_box(&MISE_SHIM_VERSION_TAG_BYTES);
 }
 
 fn run() -> Result<i32, String> {
