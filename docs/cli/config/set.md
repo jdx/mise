@@ -30,7 +30,7 @@ or `false` as text, and `--type integer` for a number.
 ## Arguments
 - **`<KEY>`** — Dotted key path to set, such as `tools.python`
 
-  Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
+  Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
 - **`[VALUE]`** — The value to set the key to (optional if provided as KEY=VALUE)
 
 ## Flags

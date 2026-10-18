@@ -128,3 +128,6 @@ assert "mise config explain --file dots.toml tasks.hello --json | jq -r 'map(.ke
 assert "mise config explain --file dots.toml 'tasks.\"hello.sh\"' --json | jq -r 'map(.key) | join(\" \")'" 'tasks."hello.sh" tasks."hello.sh".run'
 assert "mise config explain --file dots.toml 'tasks.\"hello.sh\"' --json | jq -r '.[0].path | join(\"|\")'" "tasks|hello.sh"
 assert "mise config explain --file dots.toml 'tasks.\"hello\\u002esh\"' --json | jq -r '.[0].key'" 'tasks."hello.sh"'
+# Without the quotes, tasks.hello still means the task hello, and tasks.hello.sh finds hello.sh
+# only because nothing under hello is named sh.
+assert "mise config explain --file dots.toml tasks.hello.sh --json | jq -r 'map(.key) | join(\" \")'" 'tasks."hello.sh" tasks."hello.sh".run'

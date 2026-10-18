@@ -2516,7 +2516,7 @@ Defaults to the highest-precedence loaded TOML file other than the global overri
         arg "[KEY]" help="Dotted key path to describe, with the keys under it; omit for the whole file" help_long=#"""
 Dotted key path to describe, with the keys under it; omit for the whole file
 
-Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
+Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
 """# required=#false
         example #"""
 mise config explain
@@ -2559,7 +2559,7 @@ For a directory, mise reads the TOML config file already there, such as `.mise.t
         arg "[KEY]" help="Dotted key path to print, such as `tools.python`; omit to print the whole file" help_long=#"""
 Dotted key path to print, such as `tools.python`; omit to print the whole file
 
-Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
+Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
 """# required=#false
         example #"""
 mise config get tools.python
@@ -2655,7 +2655,7 @@ For a directory, mise edits the TOML config file already there, such as `.mise.t
         arg <KEY> help="Dotted key path to set, such as `tools.python`" help_long=#"""
 Dotted key path to set, such as `tools.python`
 
-Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
+Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
 """#
         arg "[VALUE]" help="The value to set the key to (optional if provided as KEY=VALUE)" required=#false
         example "mise config set tools.python 3.13" help="Request python 3.13"

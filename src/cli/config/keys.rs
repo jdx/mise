@@ -52,6 +52,42 @@ pub(super) fn split_path(path: &str) -> Vec<String> {
     keys
 }
 
+/// `keys`, with keys joined back with dots where that reaches further into the file, as
+/// `exists` says of each path from the top. A shell removes the quotes from `tasks."build.sh"`
+/// unless the whole path is quoted too, and bash inserts a completion as written, so
+/// `tasks.build.sh` still has to find the task `build.sh`. The keys as split win a tie, so a
+/// `build` task with a key `sh` is taken first; keys past what the file has stay split.
+pub(super) fn rejoin(keys: Vec<String>, exists: impl Fn(&[String]) -> bool) -> Vec<String> {
+    let (reached, mut path) = furthest(&keys, 0, &mut vec![], &exists);
+    path.extend(keys[reached..].iter().cloned());
+    path
+}
+
+/// How far into `keys` the file goes from `start`, below the keys already `found`, and the
+/// path that gets there.
+fn furthest(
+    keys: &[String],
+    start: usize,
+    found: &mut Vec<String>,
+    exists: &dyn Fn(&[String]) -> bool,
+) -> (usize, Vec<String>) {
+    let mut best = (start, found.clone());
+    for end in start + 1..=keys.len() {
+        if best.0 == keys.len() {
+            break;
+        }
+        found.push(keys[start..end].join("."));
+        if exists(found) {
+            let reached = furthest(keys, end, found, exists);
+            if reached.0 > best.0 {
+                best = reached;
+            }
+        }
+        found.pop();
+    }
+    best
+}
+
 /// A key as it is written in a path: as is, unless its name would not split back into itself,
 /// such as the task `build.sh`, which TOML quotes.
 pub(super) fn quote_key(name: &str) -> String {
@@ -312,6 +348,46 @@ mod tests {
         assert!(
             task.contains(&r#"tasks."hello.sh".run"#.to_string()),
             "{task:?}"
+        );
+    }
+
+    #[test]
+    fn a_path_the_shell_unquoted_finds_the_dotted_key() {
+        let keys = |path: &str| split_path(path);
+        let exists = |known: &'static [&'static [&'static str]]| {
+            move |path: &[String]| {
+                known
+                    .iter()
+                    .any(|k| k.starts_with(&path.iter().map(String::as_str).collect::<Vec<_>>()))
+            }
+        };
+        // only `hello.sh`: the split keys are joined back
+        let only_dotted: &[&[&str]] = &[&["tasks", "hello.sh", "run"]];
+        assert_eq!(
+            rejoin(keys("tasks.hello.sh.run"), exists(only_dotted)),
+            ["tasks", "hello.sh", "run"]
+        );
+        // a `hello` task is in the way, so the path stays as split
+        let both: &[&[&str]] = &[&["tasks", "hello.sh", "run"], &["tasks", "hello", "sh"]];
+        assert_eq!(
+            rejoin(keys("tasks.hello.sh"), exists(both)),
+            ["tasks", "hello", "sh"]
+        );
+        // both exist, but only hello.sh goes on: it is the one meant
+        let longer: &[&[&str]] = &[&["tasks", "hello.sh", "run"], &["tasks", "hello", "run"]];
+        assert_eq!(
+            rejoin(keys("tasks.hello.sh.run"), exists(longer)),
+            ["tasks", "hello.sh", "run"]
+        );
+        // a key the file lacks yet, below the dotted name
+        assert_eq!(
+            rejoin(keys("tasks.hello.sh.dir"), exists(only_dotted)),
+            ["tasks", "hello.sh", "dir"]
+        );
+        // nothing matches: as split
+        assert_eq!(
+            rejoin(keys("tasks.new.sh"), exists(&[])),
+            ["tasks", "new", "sh"]
         );
     }
 }

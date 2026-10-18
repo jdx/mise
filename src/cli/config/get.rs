@@ -20,7 +20,9 @@ use std::path::PathBuf;
 pub(super) struct ConfigGet {
     /// Dotted key path to print, such as `tools.python`; omit to print the whole file
     ///
-    /// Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
+    /// Quote a key with a dot in its name as TOML does, inside shell quotes:
+    /// `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when
+    /// there is no key `build` in the way.
     #[usage(complete = complete_key)]
     pub key: Option<String>,
 
@@ -69,7 +71,12 @@ impl ConfigGet {
             let config: toml::Value = toml::de::from_str(&content)?;
             let mut value = &config;
             if let Some(key) = &self.key {
-                for k in super::keys::split_path(key) {
+                let path = super::keys::rejoin(super::keys::split_path(key), |path| {
+                    path.iter()
+                        .try_fold(&config, |value, k| value.get(k))
+                        .is_some()
+                });
+                for k in path {
                     value = value.get(&k).ok_or_else(|| {
                         eyre::eyre!("Key not found: {} in {}", key, display_path(&file))
                     })?;

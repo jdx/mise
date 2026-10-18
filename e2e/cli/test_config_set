@@ -116,3 +116,11 @@ mise config set 'tasks."hello.sh".dir' sub
 assert "mise config get 'tasks.\"hello.sh\".dir'" "sub"
 assert "mise config get 'tasks.\"hello\\u002esh\".run'" "echo hi"
 assert_not_contains "cat mise.toml" "[tasks.hello"
+# A shell that removed the quotes still reaches the one task named hello.sh.
+assert "mise config get tasks.hello.sh.dir" "sub"
+mise config set tasks.hello.sh.dir other
+assert "mise config get 'tasks.\"hello.sh\".dir'" "other"
+assert_not_contains "cat mise.toml" "[tasks.hello"
+mise config set tasks.hello.sh.description greeting
+assert "mise config get 'tasks.\"hello.sh\".description'" "greeting"
+assert_not_contains "cat mise.toml" "[tasks.hello"

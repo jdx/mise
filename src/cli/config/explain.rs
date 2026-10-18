@@ -1,4 +1,4 @@
-use super::keys::{quote_key, split_path};
+use super::keys::{quote_key, rejoin, split_path};
 use crate::config::schema;
 use crate::file::display_path;
 use eyre::{Result, bail};
@@ -32,7 +32,9 @@ use toml_edit::{Item, TableLike};
 pub(super) struct ConfigExplain {
     /// Dotted key path to describe, with the keys under it; omit for the whole file
     ///
-    /// Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
+    /// Quote a key with a dot in its name as TOML does, inside shell quotes:
+    /// `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when
+    /// there is no key `build` in the way.
     #[usage(complete = complete_key)]
     pub key: Option<String>,
 
@@ -121,7 +123,9 @@ impl ConfigExplain {
         // A table split across headers is walked as one, so put its keys back in file order.
         keys.sort_by_key(|k| k.line);
         if let Some(prefix) = &self.key {
-            let wanted = split_path(prefix);
+            let wanted = rejoin(split_path(prefix), |path| {
+                keys.iter().any(|k| k.path.starts_with(path))
+            });
             keys.retain(|k| k.path.starts_with(&wanted));
             if keys.is_empty() {
                 bail!("Key not found: {prefix} in {}", display_path(&file));

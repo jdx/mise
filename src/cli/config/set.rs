@@ -54,7 +54,9 @@ use std::path::PathBuf;
 pub(super) struct ConfigSet {
     /// Dotted key path to set, such as `tools.python`
     ///
-    /// Quote a key with a dot in its name, as in TOML: `tasks."build.sh"`.
+    /// Quote a key with a dot in its name as TOML does, inside shell quotes:
+    /// `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when
+    /// there is no key `build` in the way.
     #[usage(complete = complete_key)]
     pub key: String,
 
@@ -160,8 +162,12 @@ impl ConfigSet {
             Err(error) => return Err(error.into()),
         };
         let mut config: toml_edit::DocumentMut = raw.parse()?;
+        let parts = super::keys::rejoin(super::keys::split_path(&full_key), |path| {
+            path.iter()
+                .try_fold(config.as_item(), |item, k| item.get(k))
+                .is_some()
+        });
         let mut container = config.as_item_mut();
-        let parts = super::keys::split_path(&full_key);
         let last_key = parts.last().unwrap();
         for (idx, part) in parts.iter().take(parts.len() - 1).enumerate() {
             container = container
