@@ -250,6 +250,32 @@ fn test_extract_archive_zip() {
 }
 
 #[test]
+fn test_extract_archive_7z_dest_with_parent_dir() {
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let src_dir = dir.path().join("src");
+    std::fs::create_dir_all(src_dir.join("pkg")).unwrap();
+    std::fs::write(src_dir.join("pkg").join("tool"), "hello world").unwrap();
+    let archive_path = dir.path().join("test.7z");
+    sevenz_rust2::compress_to_path(&src_dir, &archive_path).unwrap();
+
+    // a localized mise under a subdirectory has a data dir like `tools/../.mise`
+    std::fs::create_dir_all(dir.path().join("tools")).unwrap();
+    let dest_dir = dir.path().join("tools").join("..").join("out_dir");
+    extract_archive(
+        &archive_path,
+        &dest_dir,
+        ExtractionFormat::SevenZip,
+        &ExtractOptions::default(),
+    )
+    .unwrap();
+
+    let content = std::fs::read_to_string(dir.path().join("out_dir/pkg/tool")).unwrap();
+    assert_eq!(content, "hello world");
+}
+
+#[test]
 fn test_extract_archive_7z() {
     use std::io::Cursor;
     use tempfile::tempdir;

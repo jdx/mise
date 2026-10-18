@@ -2613,6 +2613,22 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
             archive.file_name().unwrap().to_string_lossy()
         ));
     }
+    // sevenz-rust2 rejects any `..` in an entry's destination path, but `dest`
+    // can legitimately contain one (e.g. a localized mise under `tools/../.mise`).
+    let resolved_dest;
+    let dest = if dest
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        // canonicalize follows symlinks, so `..` means what the caller's path means
+        create_dir_all(dest)?;
+        resolved_dest = dest
+            .canonicalize()
+            .wrap_err_with(|| format!("failed to resolve {}", display_path(dest)))?;
+        &resolved_dest
+    } else {
+        dest
+    };
     run_blocking(|| {
         sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
             let dest_path = dest.join(
