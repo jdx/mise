@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# A broken `dir` template in one task must not break the other tasks or `tasks validate`.
+cat <<EOF >mise.toml
+[tasks.ok]
+run = "echo ok"
+
+[tasks.bad]
+run = "echo bad"
+dir = "{{ nonexistent_var }}"
+EOF
+
+assert "mise run ok" "ok"
+assert_contains "mise tasks ls" "ok"
+assert_contains "mise tasks info ok" "Task: ok"
+assert_contains "mise tasks ls --json" '"name": "ok"'
+assert_contains "mise tasks validate --json 2>&1 || true" "invalid-directory-template"
+assert_fail "mise run bad" 'failed to render `dir` of task bad'
