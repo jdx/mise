@@ -3627,19 +3627,7 @@ impl AquaBackend {
                 .into_iter()
                 .map(|link| link.src)
                 .collect();
-            for bin_path in &bin_paths {
-                // bin_path should exist, but doesn't when the registry is outdated
-                if bin_path.exists() {
-                    file::make_executable(bin_path)?;
-                } else if let Some(alt) = candidates
-                    .iter()
-                    .find(|c| c.exists() && c.file_name() == bin_path.file_name())
-                {
-                    file::make_executable(alt)?;
-                } else {
-                    warn!("bin path does not exist: {}", bin_path.display());
-                }
-            }
+            Self::make_bins_executable(&bin_paths, &candidates)?;
         }
 
         let srcs = Self::srcs_for_platform(pkg, v, &install_path, os(), arch())?;
@@ -3655,6 +3643,25 @@ impl AquaBackend {
             self.create_symlink_bin_dir(tv, &srcs)?;
         }
 
+        Ok(())
+    }
+
+    /// Marks each expected binary executable, falling back to an alternate layout (such as a
+    /// macOS universal archive) when the expected path is absent.
+    fn make_bins_executable(bin_paths: &[PathBuf], candidates: &[PathBuf]) -> Result<()> {
+        for bin_path in bin_paths {
+            // bin_path should exist, but doesn't when the registry is outdated
+            if bin_path.exists() {
+                file::make_executable(bin_path)?;
+            } else if let Some(alt) = candidates
+                .iter()
+                .find(|c| c.exists() && c.file_name() == bin_path.file_name())
+            {
+                file::make_executable(alt)?;
+            } else {
+                warn!("bin path does not exist: {}", bin_path.display());
+            }
+        }
         Ok(())
     }
 
@@ -5697,5 +5704,24 @@ no_asset: true
         )
         .unwrap();
         assert_eq!(paths.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_make_bins_executable_falls_back_to_universal_layout() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let universal = dir
+            .path()
+            .join("fastfetch-macos-universal/usr/bin/fastfetch");
+        std::fs::create_dir_all(universal.parent().unwrap()).unwrap();
+        std::fs::write(&universal, "").unwrap();
+        std::fs::set_permissions(&universal, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let expected = dir.path().join("fastfetch-macos-aarch64/usr/bin/fastfetch");
+
+        AquaBackend::make_bins_executable(&[expected], std::slice::from_ref(&universal)).unwrap();
+
+        let mode = std::fs::metadata(&universal).unwrap().permissions().mode();
+        assert_ne!(mode & 0o111, 0);
     }
 }
