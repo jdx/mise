@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 
-use crate::schema::refs;
+use crate::schema::{EnvVarValue, refs};
 
 // A task, or a template, may name its aliases as one string or a list of them.
 #[derive(JsonSchema)]
@@ -29,6 +29,7 @@ pub enum TaskAlias {
 #[derive(JsonSchema)]
 pub struct TaskAliasName(pub String);
 
+/// prompt to answer before this task's own command runs, after its dependencies
 #[derive(JsonSchema)]
 #[serde(untagged)]
 #[schemars(transform = crate::schema::one_of)]
@@ -56,7 +57,8 @@ pub struct TaskConfirmTable {
 
 // `depends`, `depends_post` and `wait_for` take the same shapes and say what they are for.
 macro_rules! task_dependencies {
-    ($name:ident, $what:literal) => {
+    ($name:ident, $doc:literal, $what:literal) => {
+        #[doc = $doc]
         #[derive(JsonSchema)]
         #[serde(untagged)]
         #[schemars(transform = crate::schema::one_of)]
@@ -70,9 +72,21 @@ macro_rules! task_dependencies {
     };
 }
 
-task_dependencies!(TaskDepends, "task with args to run before this task");
-task_dependencies!(TaskDependsPost, "task with args to run after this task");
-task_dependencies!(TaskWaitFor, "task with args to wait for completion first");
+task_dependencies!(
+    TaskDepends,
+    "tasks that must finish before this task runs",
+    "task with args to run before this task"
+);
+task_dependencies!(
+    TaskDependsPost,
+    "tasks to run after this task finishes",
+    "task with args to run after this task"
+);
+task_dependencies!(
+    TaskWaitFor,
+    "tasks to wait for if they are already scheduled, without adding them to the run",
+    "task with args to wait for completion first"
+);
 
 fn dependency_items(_: &mut SchemaGenerator) -> Schema {
     json_schema!({"type": "array", "items": {"$ref": "#/$defs/task_dependency_item"}})
@@ -93,9 +107,12 @@ pub enum TaskDependencyItem {
 #[serde(deny_unknown_fields)]
 #[schemars(transform = crate::schema::unevaluated)]
 pub struct TaskDependencyTable {
+    /// task name, alias, or pattern
     pub task: String,
+    /// arguments to pass to the task
     pub args: Option<Vec<String>>,
-    pub env: Option<BTreeMap<String, String>>,
+    /// environment variables to set for this dependency only
+    pub env: Option<BTreeMap<String, EnvVarValue>>,
     /// do not fail when the task name or pattern has no matches
     pub optional: Option<bool>,
 }
@@ -113,6 +130,7 @@ pub enum TaskDaemonsDecl {
     Many(Vec<String>),
 }
 
+/// files or directories this task creates; compared with `sources` to skip the task when it is up to date
 #[derive(JsonSchema)]
 #[serde(untagged)]
 #[schemars(transform = crate::schema::one_of)]
@@ -136,6 +154,7 @@ pub struct TaskOutputsAuto {
     pub auto: bool,
 }
 
+/// files this task reads; mise skips the task when none changed since its outputs were written
 #[derive(JsonSchema)]
 #[serde(untagged)]
 #[schemars(transform = crate::schema::one_of)]
@@ -184,6 +203,10 @@ pub struct TaskConfigCacheDecl {
     pub command_inputs: Option<Vec<String>>,
 }
 
+/// source patterns in this group, relative to the config root; may reference other groups with @group:<name>
+#[derive(JsonSchema)]
+pub struct TaskInputGroup(pub Vec<String>);
+
 /// deprecated no-op; use mbx for Rust action caching instead: https://mr-boxington.jdx.dev/getting-started
 #[derive(JsonSchema)]
 #[serde(untagged)]
@@ -197,7 +220,8 @@ pub enum RustCacheDecl {
 #[serde(deny_unknown_fields)]
 #[schemars(transform = crate::schema::unevaluated)]
 pub struct RustCacheTable {
-    #[schemars(extend("default" = true))]
+    /// deprecated no-op
+    #[schemars(extend("default" = true, "deprecated" = true))]
     pub enabled: Option<bool>,
     /// deprecated no-op
     #[schemars(extend("default" = false, "deprecated" = true))]
@@ -265,7 +289,7 @@ pub struct TaskRunSingle {
     /// arguments to pass to the task
     pub args: Option<Vec<String>>,
     /// environment variables to set for the task
-    pub env: Option<BTreeMap<String, String>>,
+    pub env: Option<BTreeMap<String, EnvVarValue>>,
 }
 
 #[derive(JsonSchema)]

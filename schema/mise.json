@@ -576,7 +576,8 @@
           "type": "object",
           "description": "Environment variables to set",
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "description": "value of this environment variable"
           }
         },
         "dir": {
@@ -607,8 +608,10 @@
       "properties": {
         "checks": {
           "type": "object",
+          "description": "Checks run by mise doctor project, keyed by check name.",
           "additionalProperties": {
             "type": "object",
+            "description": "A check: a command that passes when it exits zero.",
             "additionalProperties": false,
             "properties": {
               "run": {
@@ -657,6 +660,7 @@
           "description": "environment modules",
           "properties": {
             "file": {
+              "description": "files to load variables from (dotenv, json, yaml, or toml)",
               "oneOf": [
                 {
                   "$ref": "#/$defs/env_directive"
@@ -683,14 +687,17 @@
               ]
             },
             "path": {
+              "description": "directories to add to the front of PATH",
               "oneOf": [
                 {
                   "type": "object",
                   "properties": {
                     "path": {
+                      "description": "directory to add to PATH, or a list of them",
                       "$ref": "#/$defs/env_path"
                     },
                     "paths": {
+                      "description": "directories to add to PATH",
                       "$ref": "#/$defs/env_paths"
                     },
                     "tools": {
@@ -735,6 +742,7 @@
                         "type": "object",
                         "properties": {
                           "path": {
+                            "description": "directory to add to PATH, or a list of them",
                             "$ref": "#/$defs/env_path"
                           },
                           "tools": {
@@ -753,6 +761,7 @@
               "additionalProperties": false,
               "properties": {
                 "venv": {
+                  "description": "python virtual environment to activate",
                   "oneOf": [
                     {
                       "type": "string",
@@ -798,6 +807,7 @@
               }
             },
             "source": {
+              "description": "bash scripts to run, taking the variables they export",
               "oneOf": [
                 {
                   "$ref": "#/$defs/env_directive"
@@ -977,9 +987,11 @@
       "type": "object",
       "properties": {
         "path": {
+          "description": "file to load, or a list of them; may be a glob pattern",
           "$ref": "#/$defs/env_path"
         },
         "paths": {
+          "description": "files to load; each may be a glob pattern",
           "$ref": "#/$defs/env_paths"
         },
         "tools": {
@@ -1313,18 +1325,23 @@
       "additionalProperties": false,
       "properties": {
         "enter": {
+          "description": "hooks to run when an activated shell moves into the project",
           "$ref": "#/$defs/hook_definition"
         },
         "leave": {
+          "description": "hooks to run when an activated shell moves out of the project",
           "$ref": "#/$defs/hook_definition"
         },
         "cd": {
+          "description": "hooks to run when an activated shell changes to a directory inside the project",
           "$ref": "#/$defs/hook_definition"
         },
         "preinstall": {
+          "description": "hooks to run before mise installs tools",
           "$ref": "#/$defs/hook_install_definition"
         },
         "postinstall": {
+          "description": "hooks to run after mise installs tools",
           "$ref": "#/$defs/hook_install_definition"
         }
       }
@@ -1411,7 +1428,8 @@
           "type": "object",
           "description": "Short names for configured monorepo task roots. Keys are single path segments; values are paths in config_roots.",
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "description": "Config root this alias names, as listed in config_roots"
           }
         },
         "lockfile": {
@@ -1430,6 +1448,7 @@
           "description": "Explicit additions, removals, and overrides applied to provider-inferred workspace projects",
           "additionalProperties": {
             "type": "object",
+            "description": "Changes to the workspace project with this ID, or a new project when the ID is new",
             "properties": {
               "remove": {
                 "type": "boolean",
@@ -3678,7 +3697,9 @@
               "properties": {
                 "enabled": {
                   "type": "boolean",
-                  "default": true
+                  "description": "deprecated no-op",
+                  "default": true,
+                  "deprecated": true
                 },
                 "verify": {
                   "type": "boolean",
@@ -3717,6 +3738,7 @@
           "description": "experimental reusable config-root-relative source groups referenced with @group:<name>",
           "additionalProperties": {
             "type": "array",
+            "description": "source patterns in this group, relative to the config root; may reference other groups with @group:<name>",
             "items": {
               "type": "string"
             }
@@ -3763,18 +3785,22 @@
       "description": "task dependency with args, env, and optional flag",
       "properties": {
         "task": {
-          "type": "string"
+          "type": "string",
+          "description": "task name, alias, or pattern"
         },
         "args": {
           "type": "array",
+          "description": "arguments to pass to the task",
           "items": {
             "type": "string"
           }
         },
         "env": {
           "type": "object",
+          "description": "environment variables to set for this dependency only",
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "description": "value of this environment variable"
           }
         },
         "optional": {
@@ -3806,6 +3832,7 @@
           ]
         },
         "confirm": {
+          "description": "prompt to answer before this task's own command runs, after its dependencies",
           "oneOf": [
             {
               "type": "string",
@@ -3839,6 +3866,7 @@
           ]
         },
         "depends": {
+          "description": "tasks that must finish before this task runs",
           "oneOf": [
             {
               "type": "string",
@@ -3877,6 +3905,7 @@
           ]
         },
         "depends_post": {
+          "description": "tasks to run after this task finishes",
           "oneOf": [
             {
               "type": "string",
@@ -3895,6 +3924,7 @@
           ]
         },
         "wait_for": {
+          "description": "tasks to wait for if they are already scheduled, without adding them to the run",
           "oneOf": [
             {
               "type": "string",
@@ -4002,6 +4032,7 @@
           "default": false
         },
         "outputs": {
+          "description": "files or directories this task creates; compared with `sources` to skip the task when it is up to date",
           "oneOf": [
             {
               "type": "array",
@@ -4071,7 +4102,9 @@
               "properties": {
                 "enabled": {
                   "type": "boolean",
-                  "default": true
+                  "description": "deprecated no-op",
+                  "default": true,
+                  "deprecated": true
                 },
                 "verify": {
                   "type": "boolean",
@@ -4161,6 +4194,7 @@
           "description": "Execute an external script"
         },
         "sources": {
+          "description": "files this task reads; mise skips the task when none changed since its outputs were written",
           "oneOf": [
             {
               "type": "array",
@@ -4298,7 +4332,8 @@
               "type": "object",
               "description": "environment variables to set for the task",
               "additionalProperties": {
-                "type": "string"
+                "type": "string",
+                "description": "value of this environment variable"
               }
             }
           },
@@ -4433,9 +4468,11 @@
                       "type": "object",
                       "properties": {
                         "run": {
+                          "description": "command to run after the tool installs",
                           "type": "string"
                         },
                         "when": {
+                          "description": "install runs the command only when mise installs the tool; always runs it on every mise install and mise use",
                           "type": "string",
                           "enum": ["install", "always"],
                           "default": "install"
@@ -4474,6 +4511,7 @@
       ]
     },
     "tool_alias_entry": {
+      "description": "the backend this tool name points to, or a table with its backend and version aliases",
       "oneOf": [
         {
           "description": "where the alias goes",
@@ -4550,7 +4588,8 @@
           "type": "object",
           "description": "values for aqua registry template variables",
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "description": "value of this aqua registry template variable"
           }
         }
       }
@@ -4649,7 +4688,8 @@
             {
               "type": "object",
               "additionalProperties": {
-                "type": "string"
+                "type": "string",
+                "description": "new name for the executables matching this glob"
               }
             }
           ]
@@ -4671,6 +4711,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object",
         "properties": {
           "bin": {
@@ -4999,7 +5040,8 @@
             {
               "type": "object",
               "additionalProperties": {
-                "type": "string"
+                "type": "string",
+                "description": "new name for the executables matching this glob"
               }
             }
           ]
@@ -5017,6 +5059,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object",
         "properties": {
           "asset_pattern": {
@@ -5326,13 +5369,15 @@
           "type": "object",
           "description": "request headers sent with the download, version_list_url and checksum_url requests; values are tera templated (e.g. Bearer {{ env.TOKEN }})",
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "description": "value of this request header; tera templated"
           }
         },
         "headers_forward": {
           "type": "object",
           "description": "hosts each header in headers may follow a redirect to; exact hosts or *.suffix, and a header with no entry is never forwarded",
           "additionalProperties": {
+            "description": "hosts this header may follow a redirect to: exact hosts or *.suffix",
             "oneOf": [
               {
                 "type": "string"
@@ -5415,7 +5460,8 @@
             {
               "type": "object",
               "additionalProperties": {
-                "type": "string"
+                "type": "string",
+                "description": "new name for the executables matching this glob"
               }
             }
           ]
@@ -5457,6 +5503,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object",
         "properties": {
           "url": {
@@ -5738,6 +5785,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object"
       }
     },
@@ -5949,7 +5997,8 @@
             {
               "type": "object",
               "additionalProperties": {
-                "type": "string"
+                "type": "string",
+                "description": "new name for the executables matching this glob"
               }
             }
           ]
@@ -5995,6 +6044,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object",
         "properties": {
           "url": {
@@ -6170,6 +6220,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object",
         "properties": {
           "provider": {
@@ -6268,6 +6319,7 @@
         "pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"
       },
       "additionalProperties": {
+        "description": "options for this platform, overriding the same options set for the whole tool",
         "type": "object",
         "properties": {
           "bin_path": {
@@ -6285,6 +6337,7 @@
           "description": "vars modules",
           "properties": {
             "file": {
+              "description": "files to load variables from (dotenv, json, yaml, or toml)",
               "oneOf": [
                 {
                   "$ref": "#/$defs/env_directive"
@@ -6311,6 +6364,7 @@
               ]
             },
             "source": {
+              "description": "bash scripts to run, taking the variables they export",
               "oneOf": [
                 {
                   "$ref": "#/$defs/env_directive"
@@ -6360,6 +6414,7 @@
             "required": ["value"],
             "properties": {
               "value": {
+                "description": "value of variable",
                 "oneOf": [
                   {
                     "type": "string"
@@ -6416,6 +6471,7 @@
                 "$ref": "#/$defs/env_redact"
               },
               "required": {
+                "description": "fail unless the process environment, a higher-precedence config file, or a saved answer supplies a value: true, or help text shown in the error",
                 "oneOf": [
                   {
                     "const": true
@@ -6581,7 +6637,8 @@
                 "type": "object",
                 "description": "environment variables set for the wrapper",
                 "additionalProperties": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "value of this environment variable"
                 }
               }
             },
@@ -6745,7 +6802,7 @@
     },
     "deps": {
       "type": "object",
-      "description": "configure deps providers",
+      "description": "[experimental] configure deps providers",
       "properties": {
         "disable": {
           "type": "array",
@@ -6806,7 +6863,7 @@
     },
     "oci": {
       "type": "object",
-      "description": "configuration for `mise oci build`",
+      "description": "[experimental] configuration for `mise oci build`",
       "additionalProperties": false,
       "properties": {
         "from": {
@@ -6883,14 +6940,16 @@
           "type": "object",
           "description": "Extra env vars baked into the image config",
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "description": "value of this environment variable"
           }
         },
         "labels": {
           "type": "object",
           "description": "Labels baked into the image config",
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "description": "value of this image label"
           }
         }
       }
@@ -6904,6 +6963,7 @@
       "type": "object",
       "description": "dotfiles applied with `mise dotfiles apply` or `mise bootstrap`, keyed by target path or a logical name when every variant overrides the target; an omitted source for the latter resolves the relative key under dotfiles.root",
       "additionalProperties": {
+        "description": "a dotfile: the source path of a whole-file entry, or a table describing a whole-file entry or an edit",
         "oneOf": [
           {
             "type": "string",
@@ -7053,6 +7113,7 @@
                   "type": "object",
                   "properties": {
                     "os": {
+                      "description": "operating system (linux, macos, windows, or unix), optionally with an architecture such as linux/arm64; a list matches any of its values",
                       "oneOf": [
                         {
                           "type": "string"
@@ -7070,7 +7131,8 @@
                       "description": "mise environment selected with -E or MISE_ENV"
                     },
                     "default": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "true marks the fallback for machines that match no other variant; takes no os or profile"
                     },
                     "machine": {
                       "type": "boolean",
@@ -7408,6 +7470,7 @@
       "description": "named directory trees of dotfiles, applied with `mise dotfiles apply` or `mise bootstrap` while [bootstrap] dotfile_groups selects them (or is unset)",
       "additionalProperties": {
         "type": "object",
+        "description": "a directory tree of dotfiles deployed into a target directory",
         "additionalProperties": false,
         "properties": {
           "root": {
@@ -7450,6 +7513,7 @@
             "type": "object",
             "description": "whole-file entries for parts of the tree, keyed by target path inside the group's target and written like [dotfiles] entries; each is cut out of the walk. A missing source is found under the root at the entry's path inside the target, and a relative source starts at the root",
             "additionalProperties": {
+              "description": "a whole-file entry for a path inside the group's target: its source path, or a table as in [dotfiles]",
               "oneOf": [
                 {
                   "type": "string",
@@ -9231,6 +9295,7 @@
       "properties": {
         "encryption": {
           "type": "object",
+          "description": "encryption for dotfiles tracked with encrypt = true",
           "additionalProperties": false,
           "properties": {
             "recipients": {
@@ -9260,9 +9325,10 @@
         },
         "reload": {
           "type": "object",
-          "description": "commands run once after a rollback or undo writes a path matching the glob (trusted global or system config only)",
+          "description": "commands run once after a rollback, undo, pull, or dotfiles apply writes a path matching the glob (trusted global or system config only)",
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "description": "command to run once when a rollback, undo, pull, or dotfiles apply writes a path matching this glob"
           }
         },
         "origin": {
@@ -9310,6 +9376,7 @@
     "tools": {
       "patternProperties": {
         "^github:": {
+          "description": "a tool installed with the github backend",
           "oneOf": [
             {
               "type": "array",
@@ -9323,6 +9390,7 @@
           ]
         },
         "^gitlab:": {
+          "description": "a tool installed with the gitlab backend",
           "oneOf": [
             {
               "type": "array",
@@ -9336,6 +9404,7 @@
           ]
         },
         "^forgejo:": {
+          "description": "a tool installed with the forgejo backend",
           "oneOf": [
             {
               "type": "array",
@@ -9349,6 +9418,7 @@
           ]
         },
         "^ubi:": {
+          "description": "a tool installed with the ubi backend",
           "oneOf": [
             {
               "type": "array",
@@ -9362,6 +9432,7 @@
           ]
         },
         "^http:": {
+          "description": "a tool installed with the http backend",
           "oneOf": [
             {
               "type": "array",
@@ -9375,6 +9446,7 @@
           ]
         },
         "^s3:": {
+          "description": "a tool installed with the s3 backend",
           "oneOf": [
             {
               "type": "array",
@@ -9388,6 +9460,7 @@
           ]
         },
         "^aqua:": {
+          "description": "a tool installed with the aqua backend",
           "oneOf": [
             {
               "type": "array",
@@ -9401,6 +9474,7 @@
           ]
         },
         "^cargo:": {
+          "description": "a tool installed with the cargo backend",
           "oneOf": [
             {
               "type": "array",
@@ -9414,6 +9488,7 @@
           ]
         },
         "^npm:": {
+          "description": "a tool installed with the npm backend",
           "oneOf": [
             {
               "type": "array",
@@ -9427,6 +9502,7 @@
           ]
         },
         "^(pypi|pipx):": {
+          "description": "a tool installed with the pypi backend",
           "oneOf": [
             {
               "type": "array",
@@ -9440,6 +9516,7 @@
           ]
         },
         "^gem:": {
+          "description": "a tool installed with the gem backend",
           "oneOf": [
             {
               "type": "array",
@@ -9453,6 +9530,7 @@
           ]
         },
         "^go:": {
+          "description": "a tool installed with the go backend",
           "oneOf": [
             {
               "type": "array",
@@ -9466,6 +9544,7 @@
           ]
         },
         "^conda:": {
+          "description": "a tool installed with the conda backend",
           "oneOf": [
             {
               "type": "array",
@@ -9479,6 +9558,7 @@
           ]
         },
         "^spm:": {
+          "description": "a tool installed with the spm backend",
           "oneOf": [
             {
               "type": "array",
@@ -9492,6 +9572,7 @@
           ]
         },
         "^packslip:": {
+          "description": "a tool installed with the packslip backend",
           "oneOf": [
             {
               "type": "array",
@@ -9505,6 +9586,7 @@
           ]
         },
         "^spinel:": {
+          "description": "a tool installed with the spinel backend",
           "oneOf": [
             {
               "type": "array",
@@ -9518,6 +9600,7 @@
           ]
         },
         "^(core:)?python(\\[.*\\])?$": {
+          "description": "the core python tool",
           "oneOf": [
             {
               "type": "array",
@@ -9531,6 +9614,7 @@
           ]
         },
         "^(core:)?java(\\[.*\\])?$": {
+          "description": "the core java tool",
           "oneOf": [
             {
               "type": "array",
@@ -9544,6 +9628,7 @@
           ]
         },
         "^(core:)?rust(\\[.*\\])?$": {
+          "description": "the core rust tool",
           "oneOf": [
             {
               "type": "array",
@@ -9557,6 +9642,7 @@
           ]
         },
         "^(core:dotnet|dotnet|dotnet-core)(\\[.*\\])?$": {
+          "description": "the core dotnet tool",
           "oneOf": [
             {
               "type": "array",
@@ -9571,6 +9657,7 @@
         }
       },
       "additionalProperties": {
+        "description": "a version of the tool, or a table with its version and options",
         "oneOf": [
           {
             "items": {
@@ -9600,6 +9687,7 @@
     },
     "_": {
       "type": "object",
+      "description": "free-form data for your own use; mise never reads it",
       "additionalProperties": true
     },
     "doctor": {
@@ -9609,6 +9697,7 @@
       "type": "object",
       "description": "Experimental project daemons: custom pitchfork commands or managed presets.",
       "additionalProperties": {
+        "description": "A daemon: a version request for the preset of the same name, or a table describing a custom command, task, preset, another project's daemon, or a shared provider.",
         "oneOf": [
           {
             "type": "string",
@@ -9618,13 +9707,15 @@
             "type": "object",
             "properties": {
               "run": {
-                "type": "string"
+                "type": "string",
+                "description": "Shell command for the daemon's long-running process."
               },
               "init": {
                 "$ref": "#/$defs/daemon_init"
               },
               "mise": {
-                "type": "boolean"
+                "type": "boolean",
+                "description": "false runs the process and its setup without the project's tool environment."
               },
               "port": {
                 "oneOf": [
@@ -9734,10 +9825,12 @@
               },
               "preset": {
                 "type": "string",
+                "description": "Service preset that supplies the daemon's command, port and data directory.",
                 "enum": ["cockroachdb", "nats", "postgres", "redis", "spicedb"]
               },
               "version": {
-                "type": "string"
+                "type": "string",
+                "description": "Version request for the preset's tool."
               },
               "port": {
                 "$ref": "#/$defs/daemon_port"
@@ -9747,15 +9840,18 @@
                 "description": "Overrides for the preset's additional named ports.",
                 "additionalProperties": {
                   "type": "integer",
-                  "maximum": 65535,
-                  "minimum": 1
+                  "description": "Port for this named port of the preset.",
+                  "minimum": 1,
+                  "maximum": 65535
                 }
               },
               "options": {
-                "type": "object"
+                "type": "object",
+                "description": "Preset options, such as `database`."
               },
               "run": {
-                "type": "string"
+                "type": "string",
+                "description": "Shell command that replaces the preset's command."
               },
               "init": {
                 "$ref": "#/$defs/daemon_init"
@@ -9832,34 +9928,42 @@
       "description": "Experimental shared servers owned by the user. Only allowed in global configuration.",
       "additionalProperties": {
         "type": "object",
+        "description": "A PostgreSQL, CockroachDB or NATS server that every checkout shares, with a separate database or NATS account for each.",
         "additionalProperties": false,
         "properties": {
           "preset": {
+            "description": "Service preset that runs the server.",
             "enum": ["postgres", "cockroachdb", "nats"]
           },
           "version": {
-            "type": "string"
+            "type": "string",
+            "description": "Version request for the preset's tool."
           },
           "port": {
             "$ref": "#/$defs/daemon_port"
           },
           "ports": {
             "type": "object",
+            "description": "Overrides for the preset's additional named ports.",
             "additionalProperties": {
               "type": "integer",
-              "maximum": 65535,
-              "minimum": 1
+              "description": "Port for this named port of the preset.",
+              "minimum": 1,
+              "maximum": 65535
             }
           },
           "options": {
-            "type": "object"
+            "type": "object",
+            "description": "Preset options, such as `database`."
           },
           "data_dir": {
             "type": "string",
+            "description": "Persistent server data directory; a relative path resolves inside the provider's state directory. Defaults to $MISE_STATE_DIR/daemon-providers/<name>/data.",
             "minLength": 1
           },
           "tool": {
-            "type": "string"
+            "type": "string",
+            "description": "Tool to install the server from, in place of the preset's default."
           }
         },
         "required": ["preset", "version"]

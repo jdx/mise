@@ -286,13 +286,17 @@ pub(crate) fn tools() -> Schema {
             let wrapper = json!({"$ref": format!("#/$defs/{}", b.def)});
             (
                 b.pattern.to_string(),
-                json!({"oneOf": [{"type": "array", "items": wrapper}, wrapper]}),
+                json!({
+                    "description": b.description,
+                    "oneOf": [{"type": "array", "items": wrapper}, wrapper]
+                }),
             )
         })
         .collect();
     json_schema!({
         "patternProperties": patterns,
         "additionalProperties": {
+            "description": "a version of the tool, or a table with its version and options",
             "oneOf": [{"items": {"$ref": "#/$defs/tool"}, "type": "array"}, {"$ref": "#/$defs/tool"}]
         },
         "type": "object"
@@ -363,7 +367,11 @@ fn platform_table(table: &PlatformTable) -> Schema {
         "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
         "type": "object",
         "propertyNames": {"pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"},
-        "additionalProperties": {"type": "object", "properties": properties}
+        "additionalProperties": {
+            "description": "options for this platform, overriding the same options set for the whole tool",
+            "type": "object",
+            "properties": properties
+        }
     })
 }
 
@@ -425,8 +433,12 @@ fn tool() -> Schema {
                                     {
                                         "type": "object",
                                         "properties": {
-                                            "run": {"type": "string"},
+                                            "run": {
+                                                "description": "command to run after the tool installs",
+                                                "type": "string"
+                                            },
                                             "when": {
+                                                "description": "install runs the command only when mise installs the tool; always runs it on every mise install and mise use",
                                                 "type": "string",
                                                 "enum": ["install", "always"],
                                                 "default": "install"
@@ -484,6 +496,9 @@ fn tool_platforms() -> Schema {
         "description": "per-platform option overrides keyed by <os>-<arch>, such as linux-x64 or macos-arm64",
         "type": "object",
         "propertyNames": {"pattern": "^[A-Za-z]+-[A-Za-z0-9_]+$"},
-        "additionalProperties": {"type": "object"}
+        "additionalProperties": {
+            "description": "options for this platform, overriding the same options set for the whole tool",
+            "type": "object"
+        }
     })
 }

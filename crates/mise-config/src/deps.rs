@@ -46,6 +46,7 @@ pub struct DepsProviderDecl {
     pub outputs: Option<Vec<String>>,
     /// Environment variables to set
     #[serde(default)]
+    #[schemars(with = "BTreeMap<String, crate::schema::EnvVarValue>")]
     pub env: BTreeMap<String, String>,
     /// Working directory for the command
     pub dir: Option<String>,

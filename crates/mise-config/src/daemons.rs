@@ -178,6 +178,7 @@ pub enum DaemonCommandPort {
 
 // One `[daemons]` entry. Which shape a table is follows from its keys, so each names the keys
 // that belong to another shape in `not`.
+/// A daemon: a version request for the preset of the same name, or a table describing a custom command, task, preset, another project's daemon, or a shared provider.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
 #[schemars(transform = crate::schema::one_of)]
@@ -205,10 +206,12 @@ pub enum DaemonDecl {
     ]}
 ))]
 pub struct DaemonCommandDecl {
+    /// Shell command for the daemon's long-running process.
     pub run: String,
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_init")]
     pub init: Option<DaemonInit>,
+    /// false runs the process and its setup without the project's tool environment.
     pub mise: Option<bool>,
     pub port: Option<DaemonCommandPort>,
     #[serde(default)]
@@ -267,17 +270,21 @@ pub struct DaemonPresetDecl {
     /// Persistent preset data directory, relative to the declaring project root or absolute. Defaults to mise state storage.
     #[schemars(length(min = 1))]
     pub data_dir: Option<String>,
+    /// Service preset that supplies the daemon's command, port and data directory.
     #[schemars(schema_with = "preset_names")]
     pub preset: String,
+    /// Version request for the preset's tool.
     pub version: String,
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_port")]
     pub port: Option<DaemonPort>,
     /// Overrides for the preset's additional named ports.
     pub ports: Option<std::collections::BTreeMap<String, DaemonPortNumber>>,
+    /// Preset options, such as `database`.
     #[serde(default)]
     #[schemars(schema_with = "any_table")]
     pub options: Option<toml::Table>,
+    /// Shell command that replaces the preset's command.
     pub run: Option<String>,
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_init")]
@@ -293,6 +300,7 @@ pub struct DaemonPresetDecl {
     pub proxy_idle_timeout: Option<DaemonProxyIdleTimeout>,
 }
 
+/// Port for this named port of the preset.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct DaemonPortNumber(#[schemars(range(min = 1, max = 65535))] pub u16);
 
@@ -317,20 +325,27 @@ pub struct DaemonProviderRefDecl {
 }
 
 // One `[daemon_providers]` entry: a shared server owned by the user.
+/// A PostgreSQL, CockroachDB or NATS server that every checkout shares, with a separate database or NATS account for each.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DaemonProviderDecl {
+    /// Service preset that runs the server.
     #[schemars(schema_with = "provider_preset_names")]
     pub preset: String,
+    /// Version request for the preset's tool.
     pub version: String,
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_port")]
     pub port: Option<DaemonPort>,
+    /// Overrides for the preset's additional named ports.
     pub ports: Option<std::collections::BTreeMap<String, DaemonPortNumber>>,
+    /// Preset options, such as `database`.
     #[serde(default)]
     #[schemars(schema_with = "any_table")]
     pub options: Option<toml::Table>,
+    /// Persistent server data directory; a relative path resolves inside the provider's state directory. Defaults to $MISE_STATE_DIR/daemon-providers/<name>/data.
     #[schemars(length(min = 1))]
     pub data_dir: Option<String>,
+    /// Tool to install the server from, in place of the preset's default.
     pub tool: Option<String>,
 }

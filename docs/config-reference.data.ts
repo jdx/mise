@@ -8,6 +8,7 @@ import {
   placeholders,
   typeLabel,
 } from "./.vitepress/mise-toml/schema.ts";
+import { grouped, guides } from "./components/config-reference-sections.ts";
 
 // The mise.toml reference, read from schema/mise.json. The schema is generated
 // from mise-config's declaration types and their doc comments, so this page and
@@ -30,6 +31,9 @@ export type Key = {
   count: number;
   // another key with exactly the keys this one has, listed there instead of here
   sameAs?: string;
+  // when the table this key is in has alternative forms (`run` or `task` in a
+  // `[[watch_files]]` entry), the forms that have this key; absent when every form does
+  forms?: number[];
   children: Key[];
 };
 
@@ -88,6 +92,31 @@ function first<T>(nodes: Schema[], pick: (n: Schema) => T | undefined) {
     if (v !== undefined) return v;
   }
   return undefined;
+}
+
+// The keys each alternative form of a table names, when the table is one of several forms
+// (`oneOf` or `anyOf`, reached through `$ref` and `allOf`, and the forms of those forms);
+// forms with no keys of their own, such as a plain string, are left out. Empty when the
+// table has fewer than two such forms.
+function formKeys(root: Schema, schema: Schema): Set<string>[] {
+  const leaves = (node: Schema, depth = 0): Schema[] => {
+    const alternatives = itself(root, node).find(
+      (n) => !n[MERGED] && (n.oneOf ?? n.anyOf),
+    );
+    if (!alternatives || depth > 8) return [node];
+    return (alternatives.oneOf ?? alternatives.anyOf).flatMap((n: Schema) =>
+      leaves(n, depth + 1),
+    );
+  };
+  const forms = leaves(schema)
+    .map(
+      (form) =>
+        new Set(
+          itself(root, form).flatMap((n) => Object.keys(n.properties ?? {})),
+        ),
+    )
+    .filter((keys) => keys.size > 0);
+  return forms.length < 2 ? [] : forms;
 }
 
 // The schemas a table gives the keys it does not name, as written: expanding them
@@ -196,17 +225,19 @@ export function describeKey(
       named.set(child, schemas);
     }
   }
+  const forms = formKeys(root, schema);
   for (const [child, schemas] of named) {
-    key.children.push(
-      describeKey(
-        root,
-        child,
-        schemas.length === 1 ? schemas[0] : { anyOf: schemas, [MERGED]: true },
-        path,
-        render,
-        depth + 1,
-      ),
+    const entry = describeKey(
+      root,
+      child,
+      schemas.length === 1 ? schemas[0] : { anyOf: schemas, [MERGED]: true },
+      path,
+      render,
+      depth + 1,
     );
+    const having = forms.flatMap((keys, i) => (keys.has(child) ? [i] : []));
+    if (having.length > 0 && having.length < forms.length) entry.forms = having;
+    key.children.push(entry);
   }
   // An open table: its other keys are names the user picks.
   const value = placeholderChildren(nodes);
@@ -287,6 +318,7 @@ function shape(key: Key, cache: Map<Key, string>): string {
         c.default,
         c.deprecated,
         c.experimental,
+        c.forms,
         c.link,
         shape(c, cache),
       ]),
@@ -431,7 +463,7 @@ and \`<list>[].<key>\` is a key of each table in a list.`;
         .join("\n\n") + "\n",
     );
   }
-  const index = keys.map((key) => {
+  const entry = (key: Key) => {
     const count =
       key.count > 0 && `(${key.count === 1 ? "1 key" : `${key.count} keys`})`;
     const summary = [
@@ -445,9 +477,19 @@ and \`<list>[].<key>\` is a key of each table in a list.`;
     ]
       .filter(Boolean)
       .join(" ");
-    const entry = `- [\`${key.path}\`](${SITE_URL}/${file(key.path)})`;
-    return summary ? `${entry}: ${summary}` : entry;
-  });
+    const guide = guides[key.path];
+    const line = [
+      `- [\`${key.path}\`](${SITE_URL}/${file(key.path)})`,
+      summary && `: ${summary}`,
+      guide && `. Guide: [${guide.text}](${SITE_URL}${guide.link})`,
+    ]
+      .filter(Boolean)
+      .join("");
+    return line;
+  };
+  const index = grouped(keys).map(
+    (group) => `## ${group.title}\n\n${group.keys.map(entry).join("\n")}`,
+  );
   files.set(
     "configuration/reference.md",
     `# mise.toml reference
@@ -456,16 +498,27 @@ Every key mise reads from a mise.toml, generated from ${SITE_URL}/schema/mise.js
 with a file for each top-level section. ${conventions} The same reference as a
 page you can filter and browse: ${SITE_URL}/configuration/reference.html
 
-${index.join("\n")}
+${index.join("\n\n")}
 `,
   );
   return files;
+}
+
+// Descriptions write placeholders such as `git::<url>//<path>`, which Markdown would read as
+// HTML tags and drop. Outside code spans, a `<` is text unless it starts an autolink.
+function literalAngles(s: string): string {
+  return s
+    .split(/(`[^`]*`)/)
+    .map((part, i) =>
+      i % 2 === 1 ? part : part.replace(/<(?!https?:\/\/)/g, "&lt;"),
+    )
+    .join("");
 }
 
 export default {
   watch: ["../schema/mise.json"],
   async load(): Promise<Key[]> {
     const md = await markdownRenderer();
-    return referenceKeys((s) => md.renderInline(s, {}));
+    return referenceKeys((s) => md.renderInline(literalAngles(s), {}));
   },
 };

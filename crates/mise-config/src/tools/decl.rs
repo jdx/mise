@@ -27,8 +27,24 @@ pub enum IntegerOrString {
 #[schemars(transform = crate::schema::one_of)]
 pub enum RenameExe {
     Name(String),
-    Globs(std::collections::BTreeMap<String, String>),
+    Globs(std::collections::BTreeMap<String, RenameExeTarget>),
 }
+
+/// new name for the executables matching this glob
+#[derive(JsonSchema)]
+pub struct RenameExeTarget(pub String);
+
+/// value of this request header; tera templated
+#[derive(JsonSchema)]
+pub struct HttpHeaderValue(pub String);
+
+/// hosts this header may follow a redirect to: exact hosts or *.suffix
+#[derive(JsonSchema)]
+pub struct HttpHeaderForwardHosts(pub OneOrManyStrings);
+
+/// value of this aqua registry template variable
+#[derive(JsonSchema)]
+pub struct AquaVarValue(pub String);
 
 #[derive(JsonSchema)]
 #[serde(untagged)]
@@ -182,9 +198,9 @@ pub struct ToolHttpOptions {
     /// expr-lang expression extracting algo:hash from the checksum_url manifest
     pub checksum_expr: Option<String>,
     /// request headers sent with the download, version_list_url and checksum_url requests; values are tera templated (e.g. Bearer {{ env.TOKEN }})
-    pub headers: Option<std::collections::BTreeMap<String, String>>,
+    pub headers: Option<std::collections::BTreeMap<String, HttpHeaderValue>>,
     /// hosts each header in headers may follow a redirect to; exact hosts or *.suffix, and a header with no entry is never forwarded
-    pub headers_forward: Option<std::collections::BTreeMap<String, OneOrManyStrings>>,
+    pub headers_forward: Option<std::collections::BTreeMap<String, HttpHeaderForwardHosts>>,
     /// expected artifact size in bytes
     pub size: Option<IntegerOrString>,
     /// force the archive format instead of detecting it from the url
@@ -263,7 +279,7 @@ pub struct ToolAquaOptions {
     /// expected oidc issuer for slsa provenance; requires slsa_signer_identity
     pub slsa_signer_issuer: Option<String>,
     /// values for aqua registry template variables
-    pub vars: Option<std::collections::BTreeMap<String, String>>,
+    pub vars: Option<std::collections::BTreeMap<String, AquaVarValue>>,
 }
 
 #[derive(JsonSchema)]

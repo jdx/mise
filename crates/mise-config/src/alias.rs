@@ -77,6 +77,7 @@ impl JsonSchema for Alias {
 
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
         json_schema!({
+            "description": "the backend this tool name points to, or a table with its backend and version aliases",
             "oneOf": [
                 {"description": "where the alias goes", "type": "string"},
                 {

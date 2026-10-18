@@ -47,6 +47,11 @@ use crate::task::{TaskConfig, TaskDecl};
 use crate::tool_config::ToolConfig;
 use crate::watch_files::WatchFile;
 
+/// value of this environment variable
+// The schema of an environment table's values, for the tables whose values are plain strings.
+#[derive(JsonSchema)]
+pub struct EnvVarValue(pub String);
+
 pub(crate) const DRAFT: &str = "https://json-schema.org/draft/2020-12/schema";
 
 /// Each schema file, keyed by its path from the repository root, given the text of mise's
