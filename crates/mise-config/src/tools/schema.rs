@@ -778,6 +778,8 @@ fn tool_http_platforms() -> Schema {
             "type": "object",
             "properties": {
                 "url": {"$ref": "#/$defs/tool_http_options/properties/url"},
+                "headers": {"$ref": "#/$defs/tool_http_options/properties/headers"},
+                "headers_forward": {"$ref": "#/$defs/tool_http_options/properties/headers_forward"},
                 "checksum": {"$ref": "#/$defs/tool_http_options/properties/checksum"},
                 "checksum_url": {"$ref": "#/$defs/tool_http_options/properties/checksum_url"},
                 "size": {"$ref": "#/$defs/tool_http_options/properties/size"},

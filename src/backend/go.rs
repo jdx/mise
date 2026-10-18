@@ -52,6 +52,10 @@ impl<'a> GoOptions<'a> {
 
 #[async_trait]
 impl Backend for GoBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_go_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Go
     }
