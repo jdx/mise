@@ -5305,13 +5305,12 @@ fn describe(req: &FileRequest) -> Result<String> {
             // Windows copies each file (see `link_path`), so say `cp` rather than promise links
             let files = walk_source_files(req)?;
             let copies = windows_each_copies(&files);
-            if copies == 0 {
-                format!("{ln} {src}/* into {tgt}/ ({} files){removals}", files.len())
-            } else {
-                format!(
-                    "cp {copies} and {ln} {} of {src}/* into {tgt}/{removals}",
-                    files.len() - copies
-                )
+            match (copies, files.len() - copies) {
+                (0, links) => format!("{ln} {src}/* into {tgt}/ ({links} files){removals}"),
+                (copies, 0) => format!("cp {src}/* into {tgt}/ ({copies} files){removals}"),
+                (copies, links) => {
+                    format!("cp {copies} and {ln} {links} of {src}/* into {tgt}/{removals}")
+                }
             }
         }
         FileMode::Copy if req.source.is_dir() => format!("cp -r {src} {tgt}"),
