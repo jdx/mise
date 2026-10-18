@@ -6563,7 +6563,10 @@ async fn load_tasks_includes(
                     let mut tera = crate::tera::get_tera(Some(config_root.as_ref()));
                     let tera_ctx = task.tera_ctx(&config).await?;
                     // A broken template stays raw so `Task::dir` reports it for this task only.
-                    render_str(&mut tera, dir, &tera_ctx).unwrap_or_else(|_| dir.clone())
+                    render_str(&mut tera, dir, &tera_ctx).unwrap_or_else(|err| {
+                        debug!("failed to render task_config dir {dir:?}: {err:#}");
+                        dir.clone()
+                    })
                 } else {
                     dir.clone()
                 });
