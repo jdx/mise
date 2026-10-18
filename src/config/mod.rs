@@ -5204,7 +5204,13 @@ async fn inferred_workspace_tasks(
                 continue;
             }
             inferred.suggestions.apply_after_defaults(&mut task);
-            if let Err(err) = task.render(config, &project_root).await {
+            // `render` leaves a broken `dir` template raw, but an inferred task is not
+            // user-authored, so drop it instead of failing later.
+            let rendered = match task.render(config, &project_root).await {
+                Ok(()) => task.dir(config).await.map(|_| ()),
+                Err(err) => Err(err),
+            };
+            if let Err(err) = rendered {
                 warn!(
                     "Failed to render inferred task {} in {}: {err:#}. Task will not be available.",
                     task.name,
@@ -6559,7 +6565,11 @@ async fn load_tasks_includes(
                 task.dir = Some(if contains_template_syntax(dir) {
                     let mut tera = crate::tera::get_tera(Some(config_root.as_ref()));
                     let tera_ctx = task.tera_ctx(&config).await?;
-                    render_str(&mut tera, dir, &tera_ctx)?
+                    // A broken template stays raw so `Task::dir` reports it for this task only.
+                    render_str(&mut tera, dir, &tera_ctx).unwrap_or_else(|err| {
+                        debug!("failed to render task_config dir {dir:?}: {err:#}");
+                        dir.clone()
+                    })
                 } else {
                     dir.clone()
                 });

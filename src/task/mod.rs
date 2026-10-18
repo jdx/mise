@@ -8,7 +8,7 @@ use crate::tera::{TeraEngine, contains_template_syntax, get_tera, render_str};
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
 use console::{measure_text_width, truncate_str};
-use eyre::{Result, bail, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use globset::{GlobBuilder, GlobMatcher};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -2018,7 +2018,9 @@ impl Task {
         config: &Arc<Config>,
         strict: bool,
     ) -> Result<usage::Spec> {
-        let dir = self.dir(config).await?;
+        // The directory only feeds script parsing here. A broken `dir` template is reported
+        // by `mise tasks validate` and when the task runs, so it does not fail the spec.
+        let dir = self.dir(config).await.unwrap_or(None);
         let mut spec = if let Some(file) = self.file_path(config).await? {
             let env = self.usage_include_env(config, &file);
             if strict {
@@ -2146,16 +2148,25 @@ impl Task {
     }
 
     pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
-        if let Some(dir) = self.dir.clone().or_else(|| {
+        let dir = self.dir.clone().or_else(|| {
             self.cf(config)
                 .as_ref()
                 .and_then(|cf| cf.task_config().dir.clone())
-        }) {
+        });
+        if let Some(dir) = dir {
             let dir = if contains_template_syntax(&dir) {
                 let config_root = self.config_root.clone().unwrap_or_default();
                 let mut tera = get_tera(Some(&config_root));
                 let tera_ctx = self.tera_ctx(config).await?;
-                render_str(&mut tera, &dir, &tera_ctx)?
+                render_str(&mut tera, &dir, &tera_ctx).with_context(|| {
+                    // The template may be inherited from `task_config`, so name it as well as
+                    // the task's own source.
+                    format!(
+                        "failed to render `dir` template {dir:?} of task {} (defined in {})",
+                        self.name,
+                        file::display_path(&self.config_source)
+                    )
+                })?
             } else {
                 dir
             };
@@ -2765,10 +2776,14 @@ impl Task {
         render_task_deps(&mut self.depends_post, &mut tera, &tera_ctx, true)?;
         render_task_deps(&mut self.wait_for, &mut tera, &tera_ctx, true)?;
         render_task_daemons(self.daemons.as_mut(), &mut tera, &tera_ctx, true)?;
+        // A broken `dir` template only affects this task. Leave it unrendered so it is
+        // reported where the task is used (`Task::dir`) or by `mise tasks validate`,
+        // instead of failing every task command.
         if let Some(dir) = &mut self.dir
             && contains_template_syntax(dir)
+            && let Ok(rendered) = render_str(&mut tera, dir, &tera_ctx)
         {
-            *dir = render_str(&mut tera, dir, &tera_ctx)?;
+            *dir = rendered;
         }
         if let Some(shell) = &mut self.shell
             && contains_template_syntax(shell)
