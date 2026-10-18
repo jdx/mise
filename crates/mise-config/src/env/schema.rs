@@ -31,6 +31,7 @@ pub(crate) fn defs() -> Vec<(&'static str, Schema)> {
 fn env() -> Schema {
     json_schema!({
         "additionalProperties": {
+            "description": "an environment variable: its value, or a table with `value`, `default`, `required` or `age`",
             "oneOf": [
                 {
                     "type": "object",

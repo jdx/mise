@@ -639,6 +639,7 @@
     },
     "env": {
       "additionalProperties": {
+        "description": "an environment variable: its value, or a table with `value`, `default`, `required` or `age`",
         "oneOf": [
           {
             "type": "object",

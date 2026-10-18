@@ -135,41 +135,29 @@ function choices(nodes: Schema[]): string[] {
   return [...values];
 }
 
-// The schemas a table gives the keys it does not name.
-function placeholderChildren(root: Schema, nodes: Schema[]): Schema[] {
-  const out: Schema[] = [];
-  for (const n of nodes) {
-    if (n.additionalProperties && typeof n.additionalProperties === "object") {
-      out.push(...expand(root, n.additionalProperties));
-    }
-  }
-  return out;
+// The schemas a table gives the keys it does not name, as written: expanding them
+// here would make each alternative shape look like the key itself.
+function placeholderChildren(nodes: Schema[]): Schema[] {
+  return nodes
+    .map((n) => n.additionalProperties)
+    .filter((v) => v && typeof v === "object");
 }
 
-// A readable name for a `patternProperties` key: `^github:` is `<github:…>`, and
-// `^(core:)?python(\[.*\])?$` is `python`.
-export function patternLabel(pattern: string): string {
+// Readable names for a `patternProperties` key: `^github:` is `<github:…>`,
+// `^(pypi|pipx):` is `<pypi:…>` and `<pipx:…>`, and `^(core:)?python(\[.*\])?$` is
+// `python`.
+export function patternLabels(pattern: string): string[] {
   const s = pattern
     .replace(/^\^/, "")
     .replace(/\$$/, "")
     .replace("(\\[.*\\])?", "")
     .replace("(core:)?", "");
   const prefixes = s.match(/^\((.*)\):$/);
-  if (prefixes) {
-    return prefixes[1]
-      .split("|")
-      .map((p) => `<${p}:…>`)
-      .join(" | ");
-  }
-  if (s.endsWith(":")) return `<${s}…>`;
+  if (prefixes) return prefixes[1].split("|").map((p) => `<${p}:…>`);
+  if (s.endsWith(":")) return [`<${s}…>`];
   const names = s.match(/^\((.*)\)$/);
-  if (names) {
-    return names[1]
-      .split("|")
-      .filter((n) => !n.startsWith("core:"))
-      .join(" | ");
-  }
-  return s;
+  if (names) return names[1].split("|").filter((n) => !n.startsWith("core:"));
+  return [s];
 }
 
 const placeholders: Record<string, string> = {
@@ -200,10 +188,14 @@ export function describeKey(
 ): Key {
   const nodes = expand(root, schema);
   const path = parent ? `${parent}.${name}` : name;
+  // The key's own description, else the one its alternative shapes agree on: one of
+  // several differing alternatives would misdescribe the others.
+  const alternatives = new Set(
+    nodes.map((n) => n.description).filter((d) => d !== undefined),
+  );
   const description: string =
     first(itself(root, schema), (n) => n.description) ??
-    first(nodes, (n) => n.description) ??
-    "";
+    (alternatives.size === 1 ? [...alternatives][0] : "");
   const experimental = /^\[?experimental\]?\b/i.test(description);
   const defaultValue = first(nodes, (n) => n.default);
   const key: Key = {
@@ -238,7 +230,7 @@ export function describeKey(
     }
   }
   // An open table: its other keys are names the user picks.
-  const value = placeholderChildren(root, nodes);
+  const value = placeholderChildren(nodes);
   const named = key.children.length > 0;
   let shared = new Set<string>();
   if (value.length > 0) {
@@ -246,7 +238,7 @@ export function describeKey(
     const entry = describeKey(
       root,
       placeholder,
-      { allOf: value },
+      value.length === 1 ? value[0] : { allOf: value },
       path,
       render,
       depth + 1,
@@ -262,18 +254,20 @@ export function describeKey(
     for (const [pattern, patternSchema] of Object.entries(
       n.patternProperties ?? {},
     )) {
-      const entry = describeKey(
-        root,
-        patternLabel(pattern),
-        patternSchema as Schema,
-        path,
-        render,
-        depth + 1,
-      );
-      entry.children = entry.children.filter(
-        (c) => !shared.has(c.path.slice(entry.path.length + 1)),
-      );
-      if (entry.children.length > 0) key.children.push(entry);
+      for (const label of patternLabels(pattern)) {
+        const entry = describeKey(
+          root,
+          label,
+          patternSchema as Schema,
+          path,
+          render,
+          depth + 1,
+        );
+        entry.children = entry.children.filter(
+          (c) => !shared.has(c.path.slice(entry.path.length + 1)),
+        );
+        if (entry.children.length > 0) key.children.push(entry);
+      }
     }
   }
   if (!named) {
