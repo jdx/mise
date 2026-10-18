@@ -750,10 +750,28 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                     )));
                                 }
                             }
+                            let kind = match &raw_value {
+                                toml::Value::Array(_) => Some("an array"),
+                                toml::Value::Float(_) => Some("a float"),
+                                toml::Value::Datetime(_) => Some("a date"),
+                                _ => None,
+                            };
+                            if let Some(kind) = kind {
+                                return Err(serde::de::Error::custom(format!(
+                                    "Environment variable '{key}' cannot be {kind}. Set it to a string, integer or boolean, or to a table with `value`, `default`, `required` or `age`."
+                                )));
+                            }
                             let val_result = raw_value.try_into::<Val>().map_err(|e| {
+                                // `Val` is untagged, whose own error only says no shape matched.
+                                let e = e.to_string();
+                                let detail = if e.contains("untagged enum Val") {
+                                    "`value` and `default` take a string, integer or boolean, `required` a boolean or help text, and `age` an encrypted string or a table with `value`".to_string()
+                                } else {
+                                    e
+                                };
                                 serde::de::Error::custom(format!(
                                     "failed to parse environment variable '{}': {}",
-                                    key, e
+                                    key, detail
                                 ))
                             })?;
 
