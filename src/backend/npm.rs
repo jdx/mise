@@ -778,6 +778,10 @@ impl Backend for NPMBackend {
         AUBE_OPERATION_WEIGHTS.to_vec()
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_npm_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Npm
     }
