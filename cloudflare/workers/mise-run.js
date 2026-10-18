@@ -30,6 +30,10 @@ async function handleRequest(request) {
     case "/bash":
       targetUrl = "https://mise.jdx.dev/mise.run/bash";
       break;
+    case "/powershell":
+    case "/pwsh":
+      targetUrl = "https://mise.jdx.dev/install.ps1";
+      break;
     case "/fish":
       targetUrl = "https://mise.jdx.dev/mise.run/fish";
       break;

@@ -50,7 +50,7 @@ for platform in windows-arm64 windows-x64; do
 done
 aws s3api head-object --bucket mise --key "$TAG/SHASUMS256.txt" >/dev/null
 
-for installer in install.sh install.sh.sig install.sh.minisig; do
+for installer in install.sh install.sh.sig install.sh.minisig install.ps1 install.ps1.sig install.ps1.minisig; do
 	aws s3api head-object --bucket mise --key "$TAG/$installer" >/dev/null
 done
 
@@ -71,7 +71,7 @@ aws s3 cp "$release_index" s3://mise/releases.tsv \
 
 # Promote the installer only after publishing the index it requires. The release
 # staging job uploads these files under the tag without changing the public URL.
-for installer in install.sh install.sh.sig install.sh.minisig; do
+for installer in install.sh install.sh.sig install.sh.minisig install.ps1 install.ps1.sig install.ps1.minisig; do
 	aws s3 cp "s3://mise/$TAG/$installer" "s3://mise/$installer" \
 		--cache-control "max-age=86400,s-maxage=86400,public,immutable" \
 		--no-progress --content-type "text/plain"
