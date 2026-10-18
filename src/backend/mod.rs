@@ -4522,6 +4522,16 @@ pub trait Backend: Debug + Send + Sync {
         Ok(BTreeMap::new())
     }
 
+    /// Resolves a version alias that depends on remote data, such as an `lts`
+    /// channel that moves with each release. `get_aliases` is synchronous and
+    /// runs on every config load, so it can only hold fixed mappings.
+    ///
+    /// Config-defined and `get_aliases` entries win; this is asked last, and
+    /// `None` leaves the version as written.
+    async fn resolve_dynamic_alias(&self, _version: &str) -> eyre::Result<Option<String>> {
+        Ok(None)
+    }
+
     /// Returns a list of idiomatic filenames for this tool.
     ///
     /// This method is additive:

@@ -1252,6 +1252,9 @@ impl Config {
         if let Some(alias) = backend.get_aliases()?.get(v) {
             return Ok(alias.clone());
         }
+        if let Some(alias) = backend.resolve_dynamic_alias(v).await? {
+            return Ok(alias);
+        }
         Ok(v.to_string())
     }
 

@@ -40,9 +40,18 @@ To install .NET global tools such as `dotnet-ef`, use the
 | Request                             | Installs                             |
 | ----------------------------------- | ------------------------------------ |
 | `dotnet@10`                         | The newest .NET 10 SDK               |
+| `dotnet@lts`                        | The newest SDK in the current LTS    |
+| `dotnet@sts`                        | The newest SDK in the current STS    |
 | `dotnet@8.0.425`                    | That SDK release                     |
 | `dotnet[runtime=dotnet]@8.0.14`     | Only the .NET runtime 8.0.14         |
 | `dotnet[runtime=aspnetcore]@8.0.14` | Only the ASP.NET Core runtime 8.0.14 |
+
+`lts` and `sts` follow Microsoft's release index: the newest channel of that
+type that is in `active` or `maintenance` support, so previews, `go-live`
+releases and end-of-life channels are skipped. They resolve to an SDK in that
+channel, and a version you define under `[tool_alias.dotnet.versions]` with the
+same name takes precedence. They do not apply to
+[runtime-only installs](#runtime-only-installs), which need an exact version.
 
 mise lists SDK versions from its
 [versions host](/configuration/settings.html#use_versions_host), or from
