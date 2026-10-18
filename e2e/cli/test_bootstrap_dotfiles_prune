@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+# `mise bootstrap --prune-dotfiles` runs the pruning of `mise dot apply --prune`
+# in the dotfiles phase.
+DOTS="$HOME/.dotfiles"
+mkdir -p "$DOTS/home"
+echo "bashrc" >"$DOTS/home/.bashrc"
+echo "profile" >"$DOTS/home/.profile"
+echo "zshrc" >"$DOTS/home/.zshrc"
+
+cat <<EOF2 >mise.toml
+[dotfile_groups.home]
+root = "home"
+target = "~"
+mode = "copy"
+EOF2
+
+assert_succeed "mise bootstrap --only dotfiles --yes"
+assert "cat $HOME/.bashrc" "bashrc"
+assert "cat $HOME/.profile" "profile"
+assert "cat $HOME/.zshrc" "zshrc"
+
+# A copy the source no longer provides is orphaned; without the flag it stays.
+rm "$DOTS/home/.profile"
+assert_succeed "mise bootstrap --only dotfiles --yes"
+assert "cat $HOME/.profile" "profile"
+assert_contains "mise dot status" "orphaned"
+
+# A dry run reports it and removes nothing.
+assert_contains "mise bootstrap --only dotfiles --prune-dotfiles --dry-run" "rm ~/.profile"
+assert "cat $HOME/.profile" "profile"
+
+# Pruning removes the orphan and leaves what the group still deploys.
+assert_succeed "mise bootstrap --only dotfiles --prune-dotfiles --yes"
+assert_fail "test -e $HOME/.profile"
+assert "cat $HOME/.bashrc" "bashrc"
+assert_not_contains "mise dot status" "orphaned"
+
+# Skipping the dotfiles phase skips the prune with it.
+rm "$DOTS/home/.zshrc"
+assert_succeed "mise bootstrap --skip dotfiles --prune-dotfiles --yes"
+assert "cat $HOME/.zshrc" "zshrc"
+
+# A copy that was edited since mise wrote it is skipped, not removed.
+echo "edited" >"$HOME/.zshrc"
+assert_succeed "mise bootstrap --only dotfiles --prune-dotfiles --yes"
+assert "cat $HOME/.zshrc" "edited"
+
+# Even when no entries remain, the prune still runs.
+rm "$DOTS/home/.bashrc"
+assert_succeed "mise bootstrap --only dotfiles --prune-dotfiles --yes"
+assert_fail "test -e $HOME/.bashrc"

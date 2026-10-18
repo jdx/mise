@@ -11,7 +11,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use usage_rs::spec::ValueEnum;
 
-use super::dotfiles::{Dotfiles, DotfilesApply, write_and_reload};
+use super::dotfiles::{Dotfiles, DotfilesApply, prune_orphans, write_and_reload};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
@@ -161,6 +161,18 @@ pub(crate) struct Bootstrap {
     /// Overwrite existing files that conflict with whole-file dotfile entries
     #[usage(long)]
     force_dotfiles: bool,
+
+    /// Remove files that dotfile groups deployed but no active entry deploys
+    /// now
+    ///
+    /// The same pruning as `mise dot apply --prune`, run at the end of the
+    /// dotfiles phase before its post hook: files of a group that is no longer
+    /// selected or declared, and files a group stopped deploying because of a
+    /// new `exclude` or a deleted source. Changed copies stay in place, and
+    /// mise asks before removing anything unless `--yes` is given or there is
+    /// no terminal. With `--dry-run`, nothing is removed.
+    #[usage(long)]
+    prune_dotfiles: bool,
 
     /// Run only these parts
     ///
@@ -2226,9 +2238,13 @@ impl Bootstrap {
             if edits.is_empty() {
                 debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
             }
+            if self.prune_dotfiles {
+                // before anything is written, like `mise dot apply --prune`
+                super::dotfiles::ensure_prune_sees_every_group(&config)?;
+            }
             // the same [history.reload] commands `mise dot apply` runs, for
             // the targets this phase writes
-            if (!files.is_empty() || !edits.is_empty())
+            if (!files.is_empty() || !edits.is_empty() || self.prune_dotfiles)
                 && !write_and_reload(self.dry_run, |written| {
                     self.apply_dotfiles(&config, &files, &edits, &secrets, written)
                 })?
@@ -2666,6 +2682,10 @@ impl Bootstrap {
             if !system::edits::apply(config, edits, &opts, written)? {
                 return Ok(false);
             }
+        }
+        if self.prune_dotfiles {
+            info!("bootstrap: pruning dotfiles");
+            prune_orphans(config, self.dry_run, false, self.yes, written)?;
         }
         Ok(true)
     }

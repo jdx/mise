@@ -58,6 +58,9 @@ resource-level changes.
 - **`-y --yes`** — Skip confirmation prompts
 - **`--skip-dirty`** — Skip configured repositories with local changes instead of failing
 - **`--force-dotfiles`** — Overwrite existing files that conflict with whole-file dotfile entries
+- **`--prune-dotfiles`** — Remove files that dotfile groups deployed but no active entry deploys now
+
+  The same pruning as `mise dot apply --prune`, run at the end of the dotfiles phase before its post hook: files of a group that is no longer selected or declared, and files a group stopped deploying because of a new `exclude` or a deleted source. Changed copies stay in place, and mise asks before removing anything unless `--yes` is given or there is no terminal. With `--dry-run`, nothing is removed.
 - **`--only <PART>`** — Run only these parts
 
   Repeat the flag or separate parts with commas. Cannot be combined with `--skip`.

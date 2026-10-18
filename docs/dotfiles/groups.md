@@ -131,8 +131,9 @@ missing, it warns about the group instead of listing its files.
 To remove orphaned files, or every file of one group:
 
 ```sh
-mise dot apply --prune          # apply, then remove orphaned files
-mise dot unapply --group work   # remove one group's files
+mise dot apply --prune           # apply, then remove orphaned files
+mise bootstrap --prune-dotfiles  # the same, as part of a bootstrap run
+mise dot unapply --group work    # remove one group's files
 ```
 
 `--prune` and `unapply --group` remove a link only while it still points at

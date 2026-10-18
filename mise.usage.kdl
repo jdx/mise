@@ -612,6 +612,13 @@ Hooks and the `bootstrap` task are printed instead of run.
     flag "-y --yes" help="Skip confirmation prompts"
     flag --skip-dirty help="Skip configured repositories with local changes instead of failing"
     flag --force-dotfiles help="Overwrite existing files that conflict with whole-file dotfile entries"
+    flag --prune-dotfiles help="Remove files that dotfile groups deployed but no active entry deploys now" {
+        long_help #"""
+Remove files that dotfile groups deployed but no active entry deploys now
+
+The same pruning as `mise dot apply --prune`, run at the end of the dotfiles phase before its post hook: files of a group that is no longer selected or declared, and files a group stopped deploying because of a new `exclude` or a deleted source. Changed copies stay in place, and mise asks before removing anything unless `--yes` is given or there is no terminal. With `--dry-run`, nothing is removed.
+"""#
+    }
     flag --only help="Run only these parts" var=#true conflicts=--skip {
         long_help #"""
 Run only these parts
