@@ -111,6 +111,20 @@ impl AquaPackage {
         self.finish_asset(asset, v, os)
     }
 
+    /// The `(with_ext, without_appended_ext)` asset names for a macOS universal build, which
+    /// some releases ship in place of per-architecture assets.
+    pub fn darwin_universal_assets(
+        &self,
+        v: &str,
+        os: &str,
+        arch: &str,
+    ) -> Result<(String, String)> {
+        let mut ctx = HashMap::default();
+        ctx.insert("Arch".to_string(), "universal".to_string());
+        let asset = self.asset_without_appended_ext(v, &ctx, os, arch)?;
+        Ok((self.finish_asset(asset.clone(), v, os)?, asset))
+    }
+
     /// Get all possible asset strings for this package, version and platform
     pub fn asset_strs(&self, v: &str, os: &str, arch: &str) -> Result<IndexSet<String>> {
         let mut strs = IndexSet::new();
@@ -118,11 +132,9 @@ impl AquaPackage {
         strs.insert(self.finish_asset(asset.clone(), v, os)?);
         strs.insert(asset);
         if os == "darwin" {
-            let mut ctx = HashMap::default();
-            ctx.insert("Arch".to_string(), "universal".to_string());
-            let asset = self.asset_without_appended_ext(v, &ctx, os, arch)?;
-            strs.insert(self.finish_asset(asset.clone(), v, os)?);
-            strs.insert(asset);
+            let (with_ext, without_ext) = self.darwin_universal_assets(v, os, arch)?;
+            strs.insert(with_ext);
+            strs.insert(without_ext);
         } else if os == "windows" {
             let mut ctx = HashMap::default();
             if arch == "arm64" {
