@@ -120,6 +120,9 @@
     $parts = @($raw -split ';' | Where-Object { $_ })
     $norm = @($parts | ForEach-Object { $_.TrimEnd('\') })
     $added = @($Dirs | Where-Object { $norm -notcontains $_.TrimEnd('\') })
+    # Update this session first so `mise` works right away, even in a terminal
+    # opened before an earlier run saved these directories to the registry.
+    foreach ($d in $Dirs) { if (($env:Path -split ';') -notcontains $d) { $env:Path = "$d;$env:Path" } }
     if ($added.Count -eq 0) {
       Write-Info 'mise: user Path already contains the mise directories'
       return
@@ -128,19 +131,19 @@
     foreach ($d in $added) { Write-Info "mise: added to user Path: $d" }
     # Make the change visible to new processes without a logoff.
     try {
-      Add-Type -Namespace MiseInstall -Name Native -MemberDefinition '[DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Auto)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);'
+      if (-not ('MiseInstall.Native' -as [type])) {
+        Add-Type -Namespace MiseInstall -Name Native -MemberDefinition '[DllImport("user32.dll", SetLastError=true, CharSet=CharSet.Auto)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);'
+      }
       $result = [UIntPtr]::Zero
       [void][MiseInstall.Native]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$result)
     } catch { Write-Debug2 "could not broadcast the environment change: $_" }
-    # Also update this session so `mise` works right away.
-    foreach ($d in $added) { if (($env:Path -split ';') -notcontains $d) { $env:Path = "$d;$env:Path" } }
   }
 
   $version = Resolve-Release
   $arch = Get-Arch
   $installPath = $env:MISE_INSTALL_PATH
   if (-not $installPath) { $installPath = Join-Path $HOME '.local\bin\mise.exe' }
-  $installPath = [IO.Path]::GetFullPath($installPath)
+  $installPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($installPath)
   if (Test-Path -LiteralPath $installPath -PathType Container) {
     Stop-Install "MISE_INSTALL_PATH '$installPath' is a directory. Set it to a file path, e.g. '$(Join-Path $installPath 'mise.exe')'."
   }
@@ -215,13 +218,20 @@
       }
       foreach ($name in $targets.Keys) {
         $dest = $targets[$name]
+        $old = $null
         if (Test-Path -LiteralPath $dest) {
-          # A running exe cannot be overwritten but can be renamed.
+          # A running exe cannot be overwritten but can be renamed. Keep it until
+          # the new one is in place so a failed copy cannot leave no mise at all.
           $old = "$dest.old-$PID"
           Move-Item -LiteralPath $dest -Destination $old -Force
-          Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
         }
-        Copy-Item -LiteralPath (Join-Path $binDir $name) -Destination $dest -Force
+        try {
+          Copy-Item -LiteralPath (Join-Path $binDir $name) -Destination $dest -Force
+        } catch {
+          if ($old) { Move-Item -LiteralPath $old -Destination $dest -Force -ErrorAction SilentlyContinue }
+          throw
+        }
+        if ($old) { Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue }
       }
     } finally {
       Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
@@ -232,16 +242,27 @@
   if ($env:MISE_INSTALL_MODIFY_PATH -ne '0' -and $env:MISE_INSTALL_MODIFY_PATH -ne 'false') {
     $dirs = @($installDir)
     if (Test-Flag $env:MISE_INSTALL_SHIMS_PATH) {
-      $data = if ($env:MISE_DATA_DIR) { $env:MISE_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'mise' }
-      $dirs += Join-Path $data 'shims'
+      # Same precedence as mise: MISE_SHIMS_DIR, else <data dir>\shims where the
+      # data dir is MISE_DATA_DIR, else %XDG_DATA_HOME%\mise, else %LOCALAPPDATA%\mise.
+      if ($env:MISE_SHIMS_DIR) {
+        $shims = $env:MISE_SHIMS_DIR
+      } else {
+        if ($env:MISE_DATA_DIR) { $data = $env:MISE_DATA_DIR }
+        elseif ($env:XDG_DATA_HOME) { $data = Join-Path $env:XDG_DATA_HOME 'mise' }
+        else { $data = Join-Path $env:LOCALAPPDATA 'mise' }
+        $shims = Join-Path $data 'shims'
+      }
+      $dirs += $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($shims)
     }
     Add-ToUserPath $dirs
   }
 
   if ($env:MISE_INSTALL_HELP -ne '0') {
     Write-Info 'mise: to activate mise in PowerShell, run:'
-    Write-Info '  New-Item -ItemType File -Path $PROFILE -Force | Out-Null'
-    Write-Info "  Add-Content -Path `$PROFILE -Value '(& `"$installPath`" activate pwsh) | Out-String | Invoke-Expression'"
+    # Double single quotes so a path like C:\Users\O'Brien stays one literal.
+    $quoted = $installPath.Replace("'", "''")
+    Write-Info '  if (-not (Test-Path $PROFILE)) { New-Item -ItemType File -Path $PROFILE -Force | Out-Null }'
+    Write-Info "  Add-Content -Path `$PROFILE -Value '(& ''$quoted'' activate pwsh) | Out-String | Invoke-Expression'"
     Write-Info 'mise: run `mise doctor` to verify this is set up correctly'
   }
 }
