@@ -190,8 +190,11 @@ function rows() {
 
 function onTreeKey(event) {
   const list = rows();
-  const at = list.findIndex((r) => r.dataset.path === selected.value);
-  const key = selectedKey.value;
+  // the focused row, which after "Collapse all" or a filter can be another than the selected key
+  const current =
+    event.target.closest?.("[data-path]")?.dataset.path ?? selected.value;
+  const at = list.findIndex((r) => r.dataset.path === current);
+  const key = current ? index.value.byPath.get(current) : undefined;
   const move = (i) => {
     const row = list[Math.max(0, Math.min(list.length - 1, i))];
     if (row) select(row.dataset.path, { focus: true });
