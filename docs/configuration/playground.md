@@ -33,8 +33,9 @@ experimental = true
 Hover any key or value to see what it does, its type and the values it takes.
 Press <kbd>Ctrl</kbd>+<kbd>Space</kbd> for completions; mistakes are marked as
 you type. The [mise.toml reference](/configuration/reference.html) has every
-key. Nothing leaves your browser, and **Copy link** puts the config in the
-page's address so you can share it.
+key. Editing happens in your browser. **Copy link** puts the config in the
+page's address so you can share it, which means anyone who opens that link, and
+the docs server that serves it, receives the config. Leave secrets out of it.
 
 To see what each key of a file on disk does, run
 [`mise config explain`](/cli/config/explain.html).
