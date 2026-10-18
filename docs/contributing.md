@@ -252,7 +252,8 @@ not have to change your default toolchain.
 
 ### Schema conformance {#schema-conformance}
 
-`schema/mise.json` is written by hand, so a unit test checks it against the
+`schema/mise.json` is generated from the declaration types in
+`crates/mise-config`, not from the parser, so a unit test checks it against the
 parser: `cargo test schema_matches_parser` parses every `toml` block in `docs/`
 and every mise config an E2E test writes with a heredoc, validates each against
 the schema, and fails when the two disagree. Fix the schema, then run

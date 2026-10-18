@@ -566,3 +566,60 @@ fn redirect_targets() {
         assert_eq!(redirect_target(line), target, "{line}");
     }
 }
+
+/// `schema/mise.json` lists its top-level keys from `mise_config::mise_toml::MiseTomlDecl`, and
+/// [`MiseToml`] must read exactly those keys: one it reads that the schema lacks is flagged in
+/// every editor, and one the schema lists that it skips is ignored with a warning.
+#[test]
+fn schema_keys_match_parser() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let schema = std::fs::read_to_string(root.join("schema/mise.json")).unwrap();
+    let schema: serde_json::Value = serde_json::from_str(&schema).unwrap();
+    let declared: BTreeSet<&str> = schema["properties"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    let parsed: BTreeSet<&str> = serde_fields::<MiseToml>().iter().copied().collect();
+    assert_eq!(
+        declared, parsed,
+        "MiseTomlDecl in crates/mise-config and MiseToml read different top-level keys"
+    );
+}
+
+/// The fields a derived `Deserialize` reads, as serde hands them to `deserialize_struct`.
+fn serde_fields<T: serde::de::DeserializeOwned>() -> &'static [&'static str] {
+    use serde::de::{self, Visitor};
+
+    struct Fields<'a>(&'a mut &'static [&'static str]);
+
+    impl<'de> de::Deserializer<'de> for Fields<'_> {
+        type Error = de::value::Error;
+
+        fn deserialize_any<V: Visitor<'de>>(self, _: V) -> Result<V::Value, Self::Error> {
+            Err(de::Error::custom("not a struct"))
+        }
+
+        fn deserialize_struct<V: Visitor<'de>>(
+            self,
+            _: &'static str,
+            fields: &'static [&'static str],
+            _: V,
+        ) -> Result<V::Value, Self::Error> {
+            *self.0 = fields;
+            Err(de::Error::custom("only the field names were wanted"))
+        }
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf
+            option unit unit_struct newtype_struct seq tuple tuple_struct map enum identifier
+            ignored_any
+        }
+    }
+
+    let mut fields: &'static [&'static str] = &[];
+    let _ = T::deserialize(Fields(&mut fields));
+    assert!(!fields.is_empty(), "not a derived struct");
+    fields
+}

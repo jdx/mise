@@ -1,11 +1,14 @@
-//! Prints the generated schema fragments as one JSON object, keyed by JSON pointer.
+//! Writes `schema/mise.json`, `schema/mise-task.json` and `schema/miserc.json`.
 //!
-//! `mise run render:schema` runs this and writes each fragment into `schema/mise.json`.
+//! `mise run render:schema` runs this, then formats the files.
+
+use std::path::Path;
 
 fn main() {
-    let fragments: serde_json::Map<String, serde_json::Value> = mise_config::schema::fragments()
-        .into_iter()
-        .map(|(pointer, schema)| (pointer.to_string(), schema))
-        .collect();
-    println!("{}", serde_json::to_string_pretty(&fragments).unwrap());
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let settings = std::fs::read_to_string(root.join("settings.toml")).unwrap();
+    for (path, schema) in mise_config::schema::render(&settings) {
+        let json = serde_json::to_string_pretty(&schema).unwrap();
+        std::fs::write(root.join(path), json + "\n").unwrap();
+    }
 }

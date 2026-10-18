@@ -1,5 +1,7 @@
 //! `[daemons]`, `[daemons_settings]` and `[daemon_groups]`.
 
+pub(crate) mod schema;
+
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -7,7 +9,7 @@ use serde::Deserialize;
 // to users. Notes for Rust readers go in plain comments.
 
 // A `[daemons]` entry. A definition stays a raw table that mise-daemons checks when it builds the
-// daemon, so its schema is still written by hand in schema/mise.json.
+// daemon, so its schema is written by hand in `schema.rs`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum Declaration {

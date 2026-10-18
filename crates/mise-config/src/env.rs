@@ -12,7 +12,7 @@ use serde::de::Visitor;
 use serde::{Deserialize, Deserializer, de};
 
 mod schema;
-pub(crate) use schema::fragments as schema_fragments;
+pub(crate) use schema::defs as schema_defs;
 
 static DISPLAY_PATH: OnceLock<fn(&str) -> String> = OnceLock::new();
 

@@ -1,3 +1,5 @@
+pub(crate) mod schema;
+
 use indexmap::IndexMap;
 use schemars::JsonSchema;
 use serde::Deserialize;
