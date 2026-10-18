@@ -4895,6 +4895,8 @@ pkg@1.2.0 '1.2.0'
         )
         .unwrap();
         assert!(!config.contains_key("allowedUnpopularPackages"));
+        // Without allow_builds, the user's ignore-scripts stays in charge.
+        assert!(!config.contains_key("ignoreScripts"));
         assert!(!install_path.join(".npmrc").exists());
     }
 
