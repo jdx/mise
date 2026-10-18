@@ -254,6 +254,27 @@ mod tests {
         SecretsToml::from_value(&val(s), Path::new("/p/mise.toml"))
     }
 
+    // The schema is generated from `mise_config::secrets::FnoxDecl`; this parser reads the same
+    // keys. A key added to one without the other fails here.
+    #[test]
+    fn the_fnox_keys_match_the_declaration() {
+        let declared = mise_config::de::struct_fields::<mise_config::secrets::FnoxDecl>();
+        for key in declared {
+            let table = format!("[secrets.fnox]\n{key} = \"dev\"\n");
+            let parsed = parse(&table);
+            assert!(
+                parsed.is_ok(),
+                "the declaration lists `{key}`, which the parser rejects: {parsed:?}"
+            );
+        }
+        let unknown = parse("[secrets.fnox]\nnot_a_key = \"dev\"\n").unwrap_err();
+        assert!(unknown.to_string().contains("unknown field"), "{unknown}");
+        let supported = unknown.to_string();
+        for key in declared {
+            assert!(supported.contains(key), "{supported} omits `{key}`");
+        }
+    }
+
     #[test]
     fn parses_fnox() {
         let p = parse("[secrets.fnox]\n").unwrap();

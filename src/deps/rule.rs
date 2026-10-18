@@ -19,24 +19,7 @@ pub(crate) struct DepsTemplateContext {
     pub(crate) context: TeraContext,
 }
 
-/// List of built-in provider names that have specialized implementations
-pub(super) const BUILTIN_PROVIDERS: &[&str] = &[
-    "npm",
-    "yarn",
-    "pnpm",
-    "bun",           // Node.js
-    "aube",          // Node.js
-    "deno",          // Deno
-    "go",            // Go
-    "pip",           // Python (requirements.txt)
-    "poetry",        // Python (poetry)
-    "uv",            // Python (uv)
-    "bundler",       // Ruby
-    "composer",      // PHP
-    "dart",          // Dart
-    "flutter",       // Flutter
-    "git-submodule", // Git
-];
+pub(super) use mise_config::deps::BUILTIN_PROVIDERS;
 
 /// A deps provider (built-in or custom), as declared in [`DepsProviderDecl`] plus what mise
 /// needs to render it.
