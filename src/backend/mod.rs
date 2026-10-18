@@ -914,6 +914,153 @@ pub(crate) fn is_install_time_option_key_for_type(backend_type: &BackendType, ke
             .any(|itk| key.starts_with("platforms.") && key.ends_with(&format!(".{itk}")))
 }
 
+/// The options a backend reads, as documented by the named `schema/mise.json` definitions
+/// (`schema_matches_parser` keeps those in step with the parser). Any other option is an
+/// error, so only a backend whose options are a fixed set should declare one.
+#[derive(Debug, Clone, Copy)]
+pub struct OptionSpec {
+    schema_defs: &'static [&'static str],
+    /// The schema definitions for the options a platform override may carry. A backend that
+    /// has none accepts anything it knows at the top level.
+    platform_defs: &'static [&'static str],
+}
+
+impl OptionSpec {
+    pub const fn new(schema_defs: &'static [&'static str]) -> Self {
+        Self {
+            schema_defs,
+            platform_defs: &[],
+        }
+    }
+
+    pub const fn with_platforms(
+        schema_defs: &'static [&'static str],
+        platform_defs: &'static [&'static str],
+    ) -> Self {
+        Self {
+            schema_defs,
+            platform_defs,
+        }
+    }
+
+    fn platform_schema_keys(def: &str) -> HashSet<String> {
+        static SCHEMA: LazyLock<serde_json::Value> = LazyLock::new(|| {
+            serde_json::from_str(include_str!("../../schema/mise.json")).unwrap_or_default()
+        });
+        SCHEMA["$defs"][def]["additionalProperties"]["properties"]
+            .as_object()
+            .map(|props| props.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    fn schema_keys(def: &str) -> HashSet<String> {
+        static SCHEMA: LazyLock<serde_json::Value> = LazyLock::new(|| {
+            serde_json::from_str(include_str!("../../schema/mise.json")).unwrap_or_default()
+        });
+        SCHEMA["$defs"][def]["properties"]
+            .as_object()
+            .map(|props| props.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// The options every tool may carry, whatever its backend.
+    fn shared_keys() -> HashSet<String> {
+        Self::schema_keys("tool_options")
+            .into_iter()
+            .chain(
+                crate::toolset::EPHEMERAL_OPT_KEYS
+                    .iter()
+                    .chain(&["lazy", "lazy_bins", "os", "depends", "install_env"])
+                    .map(|k| k.to_string()),
+            )
+            .collect()
+    }
+
+    fn known_keys(&self, backend_type: &BackendType) -> HashSet<String> {
+        self.schema_defs
+            .iter()
+            .flat_map(|def| Self::schema_keys(def))
+            .chain(Self::shared_keys())
+            .chain(install_time_option_keys_for_type(backend_type))
+            .collect()
+    }
+
+    fn is_known(known: &HashSet<String>, key: &str) -> bool {
+        known.contains(key) || Self::is_flat_platform(known, key)
+    }
+
+    /// The flat per-platform form of an option the backend reads in a platform override:
+    /// `platform_<os>_<arch>_<key>`.
+    fn is_flat_platform(platform_known: &HashSet<String>, key: &str) -> bool {
+        key.strip_prefix("platforms_")
+            .or_else(|| key.strip_prefix("platform_"))
+            .is_some_and(|rest| {
+                platform_known.iter().any(|k| {
+                    rest.strip_suffix(k.as_str())
+                        .and_then(|p| p.strip_suffix('_'))
+                        .is_some_and(|platform| platform.contains(['_', '-']))
+                })
+            })
+    }
+
+    /// Returns the options that are not known, including those inside `platforms`.
+    pub(crate) fn unknown_keys(
+        &self,
+        backend_type: &BackendType,
+        opts: &ToolVersionOptions,
+    ) -> Vec<String> {
+        let known = self.known_keys(backend_type);
+        // A backend that declares no platform options reads none from a platform override, so
+        // only the options every tool shares are accepted there.
+        let platform_known = if self.platform_defs.is_empty() {
+            Self::shared_keys()
+        } else {
+            self.platform_defs
+                .iter()
+                .flat_map(|def| Self::platform_schema_keys(def))
+                .collect()
+        };
+        let mut unknown = vec![];
+        for (key, value) in &opts.opts {
+            if key == "platforms" || key == "platform" {
+                for platform in value.as_table().into_iter().flat_map(|t| t.values()) {
+                    for inner in platform.as_table().into_iter().flat_map(|t| t.keys()) {
+                        if !Self::is_known(&platform_known, inner) {
+                            unknown.push(format!("{key}.{inner}"));
+                        }
+                    }
+                }
+            } else if !known.contains(key) && !Self::is_flat_platform(&platform_known, key) {
+                unknown.push(key.clone());
+            }
+        }
+        unknown.sort();
+        unknown.dedup();
+        unknown
+    }
+
+    /// Fails on the first unknown option, other than the `allowed` keys, such as the ones a
+    /// tool stub file adds to a tool's options.
+    pub(crate) fn check(
+        &self,
+        tool: &str,
+        backend_type: &BackendType,
+        opts: &ToolVersionOptions,
+        allowed: &[&str],
+    ) -> eyre::Result<()> {
+        if let Some(key) = self.unknown_keys(backend_type, opts).iter().find(|key| {
+            let name = key.rsplit('.').next().unwrap_or(key);
+            !allowed.contains(&name)
+        }) {
+            bail!(
+                "{tool}: option `{key}` is not used by the {backend_type} backend\n\
+                hint: Remove it, or check the spelling against the backend's documented options"
+            );
+        }
+        Ok(())
+    }
+}
+
 /// Normalize idiomatic file contents by removing comments and empty lines.
 /// Full-line and inline comments are supported by .python-version, .nvmrc, etc.
 pub(crate) fn normalize_idiomatic_contents(contents: &str) -> String {
@@ -2782,6 +2929,12 @@ pub trait Backend: Debug + Send + Sync {
         static_helpers::request_identity_options(self, tv)
     }
 
+    /// Declares which tool options this backend reads, so an option it never reads can be
+    /// reported instead of silently ignored. `None` (the default) leaves the options unchecked.
+    fn option_spec(&self) -> Option<OptionSpec> {
+        None
+    }
+
     /// Returns all platform variants that should be locked for a given base platform.
     ///
     /// Some tools have compile-time variants (e.g., bun has baseline/musl variants)
@@ -4518,6 +4671,21 @@ pub trait Backend: Debug + Send + Sync {
         } else {
             self.prepare_install_version(&ctx, tv).await?
         };
+        if let Some(spec) = self.option_spec() {
+            // A tool stub file adds its own `bin` field to the tool's options.
+            let stub_keys: &[&str] =
+                if matches!(tv.request.source(), crate::toolset::ToolSource::ToolStub(_)) {
+                    &["bin"]
+                } else {
+                    &[]
+                };
+            spec.check(
+                &crate::install_layout::resolver::redact_credentials(&self.ba().short),
+                &self.get_type(),
+                &tv.request.options(),
+                stub_keys,
+            )?;
+        }
         // Toolset installs preflight these options before doing any work, but
         // direct callers such as `install-into` must be protected here too.
         tv.request.ensure_safe_install_options()?;
@@ -8320,4 +8488,167 @@ pub async fn reset() -> Result<()> {
     TOOLS_INCLUDE_INSTALLED.store(false, std::sync::atomic::Ordering::SeqCst);
     *cached = Some(tools);
     Ok(())
+}
+
+#[cfg(test)]
+mod option_spec_tests {
+    use super::*;
+
+    fn opts(toml: &str) -> ToolVersionOptions {
+        crate::toolset::parse_tool_options(toml)
+    }
+
+    #[test]
+    fn reports_options_the_backend_does_not_read() {
+        let spec = OptionSpec::new(&["tool_cargo_options"]);
+        let o = opts("bin=x,asset_pattern=y,rename_exe=z");
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Cargo, &o),
+            vec!["asset_pattern"]
+        );
+    }
+
+    #[test]
+    fn reports_unknown_options_inside_platforms() {
+        let spec = OptionSpec::with_platforms(&["tool_cargo_options"], &["tool_cargo_platforms"]);
+        let mut o = ToolVersionOptions::default();
+        let platform: toml::Table =
+            toml::from_str("[linux-x64]\nasset_pattern = \"x\"\nbin = \"y\"").unwrap();
+        o.opts
+            .insert("platforms".into(), toml::Value::Table(platform));
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Cargo, &o),
+            vec!["platforms.asset_pattern"]
+        );
+    }
+
+    #[test]
+    fn accepts_shared_and_flat_platform_options() {
+        let spec = OptionSpec::with_platforms(&["tool_http_options"], &["tool_http_platforms"]);
+        let o = opts(
+            "postinstall=x,minimum_release_age=7d,install_before=1d,version_order=semver,prerelease=true,platform_linux_x64_url=u,platforms_macos_arm64_checksum=c",
+        );
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Http, &o),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Http, &opts("platform_linux_x64_nonsense=u")),
+            vec!["platform_linux_x64_nonsense"]
+        );
+        // A platform with no arch is not a spelling the install path reads.
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Http, &opts("platform_linux_url=u")),
+            vec!["platform_linux_url"]
+        );
+    }
+
+    #[test]
+    fn platform_overrides_are_checked_against_the_platform_options() {
+        let spec = OptionSpec::with_platforms(&["tool_cargo_options"], &["tool_cargo_platforms"]);
+        // `features` is a cargo option, but cargo reads it only at the top level.
+        let mut o = opts("platform_linux_x64_features=x,platform_linux_x64_bin=b");
+        let platform: toml::Table =
+            toml::from_str("[linux-x64]\nfeatures = \"x\"\nbin = \"y\"").unwrap();
+        o.opts
+            .insert("platforms".into(), toml::Value::Table(platform));
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Cargo, &o),
+            vec!["platform_linux_x64_features", "platforms.features"]
+        );
+    }
+
+    #[test]
+    fn http_platform_overrides_accept_headers() {
+        let spec = OptionSpec::with_platforms(&["tool_http_options"], &["tool_http_platforms"]);
+        let o = opts("platform_linux_x64_headers=x,platform_linux_x64_headers_forward=y");
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Http, &o),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn backends_without_platform_options_reject_them_in_overrides() {
+        let spec = OptionSpec::new(&["tool_cargo_options"]);
+        let mut o = ToolVersionOptions::default();
+        let platform: toml::Table =
+            toml::from_str("[linux-x64]\nbin = \"y\"\npostinstall = \"z\"").unwrap();
+        o.opts
+            .insert("platforms".into(), toml::Value::Table(platform));
+        assert_eq!(
+            spec.unknown_keys(&BackendType::Cargo, &o),
+            vec!["platforms.bin"]
+        );
+    }
+
+    #[test]
+    fn stub_keys_are_allowed_inside_platform_overrides_too() {
+        let spec = OptionSpec::new(&["tool_cargo_options"]);
+        let mut o = ToolVersionOptions::default();
+        let platform: toml::Table = toml::from_str("[linux-x64]\nbin = \"y\"").unwrap();
+        o.opts
+            .insert("platforms".into(), toml::Value::Table(platform));
+        assert!(
+            spec.check("cargo:x", &BackendType::Cargo, &o, &["bin"])
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn check_fails_on_an_unknown_option() {
+        let o = opts("nonsense=1");
+        let err = OptionSpec::new(&["tool_cargo_options"])
+            .check("cargo:x", &BackendType::Cargo, &o, &[])
+            .unwrap_err();
+        assert!(err.to_string().contains("option `nonsense` is not used"));
+    }
+
+    #[test]
+    fn every_schema_documented_option_is_accepted() {
+        for (backend_type, defs) in [
+            (BackendType::Cargo, &["tool_cargo_options"][..]),
+            (BackendType::Conda, &["tool_conda_options"]),
+            (BackendType::Gem, &["tool_gem_options"]),
+            (
+                BackendType::Github,
+                &["tool_github_options", "tool_forge_options"],
+            ),
+            (
+                BackendType::Gitlab,
+                &["tool_gitlab_options", "tool_forge_options"],
+            ),
+            (
+                BackendType::Forgejo,
+                &["tool_forgejo_options", "tool_forge_options"],
+            ),
+            (BackendType::Go, &["tool_go_options"]),
+            (BackendType::Http, &["tool_http_options"]),
+            (BackendType::Npm, &["tool_npm_options"]),
+            (BackendType::Packslip, &["tool_packslip_options"]),
+            (BackendType::Pipx, &["tool_pypi_options"]),
+            (BackendType::S3, &["tool_s3_options"]),
+            (BackendType::Spinel, &["tool_spinel_options"]),
+            (BackendType::Spm, &["tool_spm_options"]),
+            (BackendType::Ubi, &["tool_ubi_options"]),
+        ] {
+            let documented: Vec<String> = defs
+                .iter()
+                .flat_map(|d| OptionSpec::schema_keys(d))
+                .collect();
+            assert!(
+                !documented.is_empty(),
+                "{backend_type:?}: no schema options"
+            );
+            let mut o = ToolVersionOptions::default();
+            for key in documented {
+                o.opts.insert(key, toml::Value::Boolean(true));
+            }
+            assert_eq!(
+                OptionSpec::new(defs).unknown_keys(&backend_type, &o),
+                Vec::<String>::new(),
+                "{backend_type:?}"
+            );
+        }
+    }
 }

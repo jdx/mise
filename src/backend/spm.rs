@@ -159,6 +159,13 @@ impl<'a> SpmOptions<'a> {
 
 #[async_trait]
 impl Backend for SPMBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::with_platforms(
+            &["tool_spm_options"],
+            &["tool_spm_platforms"],
+        ))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Spm
     }
