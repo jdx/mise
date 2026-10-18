@@ -124,3 +124,17 @@ assert_not_contains "cat mise.toml" "[tasks.hello"
 mise config set tasks.hello.sh.description greeting
 assert "mise config get 'tasks.\"hello.sh\".description'" "greeting"
 assert_not_contains "cat mise.toml" "[tasks.hello"
+
+# A setting reached through a quoted key still gets its type.
+printf '' >mise.toml
+mise config set 'settings."jobs"' 4
+assert "mise config get settings.jobs" "4"
+assert_contains "cat mise.toml" "jobs = 4"
+
+# Quoted keys keep their edges even where the dotted name exists.
+printf '[_]\n"a.b" = "keep"\n' >mise.toml
+mise config set '_."a"."b"' new
+assert "mise config get '_.\"a.b\"'" "keep"
+# Unquoted, the keys as split win once both spellings exist.
+assert "mise config get '_.a.b'" "new"
+assert "mise config get '_.\"a\".\"b\"'" "new"

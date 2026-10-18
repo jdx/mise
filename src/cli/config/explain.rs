@@ -1,4 +1,4 @@
-use super::keys::{quote_key, rejoin, split_path};
+use super::keys::{quote_key, rejoin, split_keys};
 use crate::config::schema;
 use crate::file::display_path;
 use eyre::{Result, bail};
@@ -123,7 +123,7 @@ impl ConfigExplain {
         // A table split across headers is walked as one, so put its keys back in file order.
         keys.sort_by_key(|k| k.line);
         if let Some(prefix) = &self.key {
-            let wanted = rejoin(split_path(prefix), |path| {
+            let wanted = rejoin(split_keys(prefix), |path| {
                 keys.iter().any(|k| k.path.starts_with(path))
             });
             keys.retain(|k| k.path.starts_with(&wanted));
@@ -218,15 +218,15 @@ fn explain(path: &[String], line: usize, item: &Item, parent_value: &Written) ->
         .copied()
         .filter(|node| fits(root, node, parent_value, false, 0))
         .collect();
-    let forms = if forms.is_empty() {
-        parent_nodes.clone()
-    } else {
-        forms
-    };
+    // A table no shape fits, such as a daemon with none of `run`, `task` or `preset`, is
+    // judged by every shape's names; one that is open only because no key picks it out
+    // would otherwise take a typo.
+    let fitted = !forms.is_empty();
+    let forms = if fitted { forms } else { parent_nodes.clone() };
     let named = forms
         .iter()
         .any(|node| schema::direct_child(node, name).is_some());
-    let known = named || accepts_any_key(&forms);
+    let known = named || (fitted && accepts_any_key(&forms));
     // The nearest key those shapes name; another shape's key, or the key itself, is no fix.
     let suggestion = (!known)
         .then(|| {
