@@ -413,6 +413,9 @@ Manage config files
 \fIAliases: \fRcfg, toml
 .RE
 .TP
+\fBconfig explain\fR
+Describe each key in a mise TOML file
+.TP
 \fBconfig get\fR
 Print a value from one mise TOML file
 .TP
@@ -3495,6 +3498,61 @@ they use.
 .TP
 \fB\-h, \-\-help\fR
 Print help
+.SH "MISE CONFIG EXPLAIN"
+Describe each key in a mise TOML file
+
+Lists every key the file sets, with its line and what it does, from the same schema
+editors use to check a config. A key mise does not read is marked, with the known key it
+most likely meant, and so is a deprecated one. Reads the highest\-precedence loaded TOML
+file by default; select another with `\-\-file`, `\-\-global`, or `\-\-system`.
+.PP
+\fBUsage:\fR mise config explain [OPTIONS] [<KEY>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-f, \-\-file, \-\-path\fR \fI<FILE>\fR
+Config file to read, or a directory whose config file to read
+
+Defaults to the highest\-precedence loaded TOML file other than the global override files.
+.TP
+\fB\-g, \-\-global\fR
+Read the global config file
+.TP
+\fB\-\-system\fR
+Read the system config file
+.TP
+\fB\-\-override\fR
+Read the global override file, `config.override.toml`
+.TP
+\fB\-J, \-\-json\fR
+Print the keys as JSON
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<KEY>\fR
+Dotted key path to describe, with the keys under it; omit for the whole file
+\fBExamples:\fR
+.PP
+Describe the keys of the project config
+.PP
+.RS 4
+mise config explain
+~/src/app/mise.toml
+   1  tools                  dev tools to use
+   2  tools.node             a version of the tool, or a table with its version and options
+   4  settings               mise settings
+   5  settings.experimantal  not a key mise reads; did you mean experimental?
+.RE
+.PP
+Describe only the keys under [tasks]
+.PP
+.RS 4
+mise config explain tasks
+.RE
 .SH "MISE CONFIG GET"
 Print a value from one mise TOML file
 

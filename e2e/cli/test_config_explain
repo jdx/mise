@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# mise config explain describes each key a config file sets.
+
+# schema: invalid
+cat <<'EOF' >mise.toml
+[tools]
+node = "22"
+
+[settings]
+experimantal = true
+
+[tasks.build]
+run = "echo build"
+EOF
+
+assert_contains "mise config explain" "tools.node             a version of the tool"
+assert_contains "mise config explain" "settings.experimantal  not a key mise reads; did you mean experimental?"
+assert_contains "mise config explain" "tasks.build.run        script to run"
+
+# A key path limits the output to that key and the keys under it.
+assert_not_contains "mise config explain tasks" "tools"
+assert_contains "mise config explain tasks" "tasks.build"
+
+assert "mise config explain settings.experimantal --json | jq -r '.[0].suggestion'" "experimental"
+assert "mise config explain tools --json | jq -r '.[1].line'" "2"
+assert_fail "mise config explain nope" "Key not found: nope"

@@ -299,6 +299,7 @@
 - [mise cache task](https://mise.jdx.dev/cli/cache/task.html): [experimental] Inspect artifact cache entries for a task
 - [mise completion](https://mise.jdx.dev/cli/completion.html): Generate shell completions
 - [mise config](https://mise.jdx.dev/cli/config.html): Manage config files
+- [mise config explain](https://mise.jdx.dev/cli/config/explain.html): Describe each key in a mise TOML file
 - [mise config get](https://mise.jdx.dev/cli/config/get.html): Print a value from one mise TOML file
 - [mise config ls](https://mise.jdx.dev/cli/config/ls.html): List config files currently in use, from lowest to highest precedence
 - [mise config set](https://mise.jdx.dev/cli/config/set.html): Set a value in one mise TOML file

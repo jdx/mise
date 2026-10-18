@@ -2,7 +2,7 @@ pub use mise_util::fuzzy::*;
 
 /// The name closest to `typo`, ignoring case, if it is at most two edits away (a swap of two
 /// neighbouring letters counts as one).
-pub(crate) fn nearest<'a>(typo: &str, names: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+pub fn nearest<'a>(typo: &str, names: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
     let typo = typo.to_lowercase();
     names
         .into_iter()

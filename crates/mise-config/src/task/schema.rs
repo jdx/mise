@@ -371,6 +371,7 @@ pub(super) fn task_config_includes(_: &mut SchemaGenerator) -> Schema {
 
 fn task() -> Schema {
     json_schema!({
+        "description": "a task: a script, a list of scripts and task references, or a table",
         "oneOf": [
             {"description": "script to run", "type": "string"},
             {

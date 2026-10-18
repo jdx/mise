@@ -3565,6 +3565,7 @@
       }
     },
     "task": {
+      "description": "a task: a script, a list of scripts and task references, or a table",
       "oneOf": [
         {
           "description": "script to run",
@@ -4332,6 +4333,7 @@
       }
     },
     "tool": {
+      "description": "a version of the tool, or a table with its version and options",
       "oneOf": [
         {
           "description": "version of the tool to install",

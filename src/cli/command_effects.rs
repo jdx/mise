@@ -169,6 +169,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("cache task", Read),
     ("completion", Read),
     ("config", Read),
+    ("config explain", Read),
     ("config get", Read),
     ("config ls", Read),
     ("config set", Write),

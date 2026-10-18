@@ -5,6 +5,7 @@ use crate::config::{
 use eyre::Result;
 use std::path::PathBuf;
 
+mod explain;
 mod get;
 mod keys;
 mod ls;
@@ -26,6 +27,7 @@ pub(crate) struct Config {
 
 #[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
+    Explain(explain::ConfigExplain),
     Get(get::ConfigGet),
     #[usage(visible_alias = "list")]
     Ls(ls::ConfigLs),
@@ -35,6 +37,7 @@ enum Commands {
 impl Commands {
     pub(crate) async fn run(self) -> Result<()> {
         match self {
+            Self::Explain(cmd) => cmd.run(),
             Self::Get(cmd) => cmd.run(),
             Self::Ls(cmd) => cmd.run().await,
             Self::Set(cmd) => cmd.run(),
