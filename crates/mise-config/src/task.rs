@@ -184,19 +184,10 @@ pub enum RunEntry {
 }
 
 // Written by hand rather than `#[serde(untagged)]`, so an entry that matches no shape says which
-// shapes there are. A table with both `task` and `tasks` is a single task, as it was untagged.
+// shapes there are. A table reads as untagged did: as a single task when it has `task`, which then
+// ignores `tasks`, and otherwise as a task group, which ignores `args` and `env`.
 impl<'de> Deserialize<'de> for RunEntry {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        struct RunTable {
-            task: Option<String>,
-            #[serde(default)]
-            args: Vec<String>,
-            #[serde(default)]
-            env: IndexMap<String, String>,
-            tasks: Option<Vec<String>>,
-        }
-
         struct RunEntryVisitor;
 
         impl<'de> serde::de::Visitor<'de> for RunEntryVisitor {
@@ -214,23 +205,80 @@ impl<'de> Deserialize<'de> for RunEntry {
                 self,
                 map: M,
             ) -> Result<Self::Value, M::Error> {
-                let table =
-                    RunTable::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
-                match (table.task, table.tasks) {
-                    (Some(task), _) => Ok(RunEntry::SingleTask {
-                        task,
-                        args: table.args,
-                        env: table.env,
-                    }),
-                    (None, Some(tasks)) => Ok(RunEntry::TaskGroup { tasks }),
-                    (None, None) => Err(serde::de::Error::custom(
-                        "a run entry table needs `task` (one task) or `tasks` (tasks run in parallel)",
-                    )),
+                use serde::de::Error;
+
+                // Buffered, so only the keys the chosen shape reads are checked.
+                let mut table =
+                    toml::Table::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                let field = |table: &mut toml::Table, key: &str| table.remove(key);
+                if let Some(task) = field(&mut table, "task") {
+                    let task = task
+                        .try_into()
+                        .map_err(|e| M::Error::custom(format!("`task`: {e}")))?;
+                    let args = field(&mut table, "args")
+                        .map(toml::Value::try_into)
+                        .transpose()
+                        .map_err(|e| M::Error::custom(format!("`args`: {e}")))?
+                        .unwrap_or_default();
+                    let env = field(&mut table, "env")
+                        .map(toml::Value::try_into)
+                        .transpose()
+                        .map_err(|e| M::Error::custom(format!("`env`: {e}")))?
+                        .unwrap_or_default();
+                    return Ok(RunEntry::SingleTask { task, args, env });
                 }
+                if let Some(tasks) = field(&mut table, "tasks") {
+                    let tasks = tasks
+                        .try_into()
+                        .map_err(|e| M::Error::custom(format!("`tasks`: {e}")))?;
+                    return Ok(RunEntry::TaskGroup { tasks });
+                }
+                Err(M::Error::custom(
+                    "a run entry table needs `task` (one task) or `tasks` (tasks run in parallel)",
+                ))
             }
         }
 
         deserializer.deserialize_any(RunEntryVisitor)
+    }
+}
+
+#[cfg(test)]
+mod run_entry_tests {
+    use super::RunEntry;
+
+    fn parse(value: &str) -> Result<RunEntry, toml::de::Error> {
+        #[derive(serde::Deserialize)]
+        struct Wrapper {
+            run: RunEntry,
+        }
+        toml::from_str::<Wrapper>(&format!("run = {value}")).map(|w| w.run)
+    }
+
+    #[test]
+    fn a_table_reads_as_untagged_did() {
+        // `task` wins, and `tasks` beside it is not read, whatever its type.
+        assert!(matches!(
+            parse(r#"{ task = "lint", tasks = "ignored" }"#).unwrap(),
+            RunEntry::SingleTask { task, .. } if task == "lint"
+        ));
+        // a group does not read `args` or `env`
+        assert!(matches!(
+            parse(r#"{ tasks = ["a", "b"], args = 1 }"#).unwrap(),
+            RunEntry::TaskGroup { tasks } if tasks == ["a", "b"]
+        ));
+        assert!(
+            parse(r#"{ task = "lint", args = 1 }"#)
+                .unwrap_err()
+                .to_string()
+                .contains("`args`")
+        );
+        assert!(
+            parse(r#"{ tsk = "lint" }"#)
+                .unwrap_err()
+                .to_string()
+                .contains("needs `task`")
+        );
     }
 }
 
