@@ -19,6 +19,7 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde_json::{Map, Value, json};
 
 use crate::alias::Alias;
+use crate::deps::DepsProviderDecl;
 use crate::doctor::DoctorConfig;
 use crate::launchd::LaunchdCalendarInterval;
 use crate::mise_toml::MiseTomlDecl;
@@ -95,6 +96,7 @@ fn derived_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Value)> {
         ("tool_config", fragment::<ToolConfig>(generator)),
         ("monorepo", fragment::<MonorepoConfig>(generator)),
         ("watch_files", watch_files),
+        ("deps_provider", fragment::<DepsProviderDecl>(generator)),
         ("doctor", fragment::<DoctorConfig>(generator)),
         (
             "launchd_calendar_interval",
@@ -121,7 +123,6 @@ fn hand_written_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Valu
         ])
         .chain(crate::hooks::schema_defs())
         .chain(crate::mise_toml::schema_defs())
-        .chain(crate::deps::schema::defs())
         .chain(crate::daemons::schema::defs())
         .chain(crate::bootstrap::schema::defs())
         .map(|(name, schema)| (name, schema.to_value()))

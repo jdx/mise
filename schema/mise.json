@@ -536,36 +536,37 @@
     },
     "deps_provider": {
       "type": "object",
+      "description": "Prepare provider configuration",
       "properties": {
         "auto": {
           "type": "boolean",
-          "default": false,
-          "description": "Auto-run before `mise x` and `mise run`"
-        },
-        "sources": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Files/patterns to check for changes"
-        },
-        "outputs": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Files/directories that should be newer than sources"
+          "description": "Auto-run before `mise x` and `mise run`",
+          "default": false
         },
         "run": {
           "type": "string",
           "description": "Command to run when stale"
         },
+        "sources": {
+          "type": "array",
+          "description": "Files/patterns to check for changes",
+          "items": {
+            "type": "string"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "description": "Files/directories that should be newer than sources",
+          "items": {
+            "type": "string"
+          }
+        },
         "env": {
           "type": "object",
+          "description": "Environment variables to set",
           "additionalProperties": {
             "type": "string"
-          },
-          "description": "Environment variables to set"
+          }
         },
         "dir": {
           "type": "string",
@@ -577,18 +578,17 @@
         },
         "depends": {
           "type": "array",
+          "description": "Other deps providers that must complete before this one runs",
           "items": {
             "type": "string"
-          },
-          "description": "Other deps providers that must complete before this one runs"
+          }
         },
         "timeout": {
           "type": "string",
           "description": "Timeout for the run command (e.g., \"30s\", \"5m\", \"1h\")"
         }
       },
-      "unevaluatedProperties": false,
-      "description": "Prepare provider configuration"
+      "unevaluatedProperties": false
     },
     "doctor": {
       "type": "object",
@@ -6691,10 +6691,11 @@
     },
     "secrets": {
       "type": "object",
+      "description": "[experimental] Sources for mise secrets: values resolved only when mise starts a task or `mise x` command that was granted them. Project config only.",
       "properties": {
         "fnox": {
-          "description": "Use fnox (fnox.toml discovered from this config's directory). https://mise.jdx.dev/environments/secrets/fnox.html",
           "type": "object",
+          "description": "Use fnox (fnox.toml discovered from this config's directory). https://mise.jdx.dev/environments/secrets/fnox.html",
           "additionalProperties": false,
           "properties": {
             "profile": {
@@ -6704,7 +6705,7 @@
           }
         }
       },
-      "description": "[experimental] Sources for mise secrets: values resolved only when mise starts a task or `mise x` command that was granted them. Project config only."
+      "additionalProperties": true
     },
     "redactions": {
       "type": "array",
@@ -6723,13 +6724,14 @@
     },
     "deps": {
       "type": "object",
+      "description": "configure deps providers",
       "properties": {
         "disable": {
           "type": "array",
+          "description": "Disable specific deps providers",
           "items": {
             "type": "string"
-          },
-          "description": "Disable specific deps providers"
+          }
         },
         "npm": {
           "$ref": "#/$defs/deps_provider"
@@ -6779,8 +6781,7 @@
       },
       "additionalProperties": {
         "$ref": "#/$defs/deps_provider"
-      },
-      "description": "configure deps providers"
+      }
     },
     "oci": {
       "type": "object",

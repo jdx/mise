@@ -93,7 +93,7 @@ pub struct MiseTomlDecl<T = ToolSpec, S = toml::Table> {
     /// [experimental] Sources for mise secrets: values resolved only when mise starts a task or `mise x` command that was granted them. Project config only.
     // Raw on purpose: a malformed `[secrets]` must not fail the whole file.
     #[serde(default)]
-    #[schemars(schema_with = "secrets")]
+    #[schemars(with = "Option<crate::secrets::SecretsDecl>")]
     pub secrets: Option<toml::Value>,
     /// env or vars keys to redact from logs
     #[serde(default)]
@@ -104,7 +104,6 @@ pub struct MiseTomlDecl<T = ToolSpec, S = toml::Table> {
     pub plugins: IndexMap<String, String>,
     /// configure deps providers
     #[serde(default)]
-    #[schemars(schema_with = "deps")]
     pub deps: Option<DepsDecl>,
     #[serde(default)]
     pub oci: Option<OciConfig>,
@@ -251,32 +250,8 @@ fn one_or_many(one: &str, many: &str) -> Schema {
     })
 }
 
-// Raw on purpose in mise: a malformed `[secrets]` must not fail the whole file.
-fn secrets(_: &mut SchemaGenerator) -> Schema {
-    hand_written(json_schema!({
-        "type": "object",
-        "properties": {
-            "fnox": {
-                "description": "Use fnox (fnox.toml discovered from this config's directory). https://mise.jdx.dev/environments/secrets/fnox.html",
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                    "profile": {
-                        "type": "string",
-                        "description": "fnox profile (fnox -P); defaults to FNOX_PROFILE, then \"default\""
-                    }
-                }
-            }
-        }
-    }))
-}
-
 fn tools(_: &mut SchemaGenerator) -> Schema {
     hand_written(crate::tools::schema::tools())
-}
-
-fn deps(_: &mut SchemaGenerator) -> Schema {
-    hand_written(crate::deps::schema::deps())
 }
 
 fn dotfiles(generator: &mut SchemaGenerator) -> Schema {
