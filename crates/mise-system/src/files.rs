@@ -661,6 +661,7 @@ pub fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
 pub fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     let mut composed: IndexMap<PathBuf, Vec<FileRequest>> = IndexMap::new();
     let trusted_roots = global_composed_roots(config);
+    crate::dotfile_groups::reset_unexpanded();
     let selection = crate::dotfile_groups::selection(&config.config_files());
     // a deselected group is kept, disabled, out of the conflict checks: only
     // the groups a machine applies have to agree with each other

@@ -303,6 +303,8 @@ pub(crate) fn prune_orphans(
     yes: bool,
     written: &mut Vec<PathBuf>,
 ) -> Result<()> {
+    // checked against this config, which an earlier apply may have replaced
+    super::ensure_prune_sees_every_group(config)?;
     let active = system::files::files_from_config(config)?;
     let opts = system::dotfile_groups::RemoveOpts { dry_run, force };
     let orphaned = system::dotfile_groups::orphaned(&active);

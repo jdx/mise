@@ -76,3 +76,33 @@ cat <<EOF2 >"$src/config.toml"
 EOF2
 assert_succeed "mise bootstrap --only dotfiles --prune-dotfiles --yes"
 assert_fail "test -e ~/.greeting"
+
+# A group that failed to expand keeps its files, but not once the config the
+# apply wrote no longer declares it.
+mkdir -p "$src/broken"
+echo 'hi' >"$src/broken/.hi"
+cat <<EOF2 >"$src/config.toml"
+[dotfiles]
+"$config" = { source = "$src/config.toml", mode = "copy" }
+
+[dotfile_groups.broken]
+root = "$src/broken"
+target = "~"
+mode = "copy"
+EOF2
+cp "$src/config.toml" "$config"
+assert_succeed "mise bootstrap --only dotfiles --yes"
+assert "cat ~/.hi" "hi"
+cat <<EOF2 >"$src/config.toml"
+[dotfiles]
+"$config" = { source = "$src/config.toml", mode = "copy" }
+
+[dotfile_groups.broken]
+target = "~"
+EOF2
+cp "$src/config.toml" "$config"
+assert_succeed "mise bootstrap --only dotfiles --prune-dotfiles --yes"
+assert "cat ~/.hi" "hi"
+printf '[dotfiles]\n"%s" = { source = "%s/config.toml", mode = "copy" }\n' "$config" "$src" >"$src/config.toml"
+assert_succeed "mise bootstrap --only dotfiles --prune-dotfiles --yes"
+assert_fail "test -e ~/.hi"
