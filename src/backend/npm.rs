@@ -928,10 +928,22 @@ impl Backend for NPMBackend {
                 .collect::<Vec<_>>();
             // mise's own variables (`MISE_OFFLINE`, ...) and `PATH` change with
             // how mise runs, not with where npm reads versions from, so they
-            // stay out of the key: an offline run must find the online list.
+            // stay out of the key (an offline run must find the online list)
+            // unless an `.npmrc` interpolates them (`registry=${MISE_ENV}`).
+            static VAR_REF: LazyLock<regex::Regex> =
+                LazyLock::new(|| regex::Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)").unwrap());
+            let referenced = npmrcs
+                .iter()
+                .flatten()
+                .flat_map(|rc| VAR_REF.captures_iter(rc))
+                .map(|cap| cap[1].to_string())
+                .collect::<HashSet<_>>();
             let env = env
                 .iter()
-                .filter(|(key, _)| !key.starts_with("MISE_") && !key.eq_ignore_ascii_case("path"))
+                .filter(|(key, _)| {
+                    referenced.contains(key.as_str())
+                        || !(key.starts_with("MISE_") || key.eq_ignore_ascii_case("path"))
+                })
                 .collect::<BTreeMap<_, _>>();
             return Ok(Some(crate::hash::hash_to_str(&(env, npmrcs))));
         }
