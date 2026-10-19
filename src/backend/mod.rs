@@ -4100,6 +4100,7 @@ pub trait Backend: Debug + Send + Sync {
         before: Timestamp,
     ) -> Option<String> {
         let backend = self.ba().full();
+        let tool = self.ba().short.clone();
         // Reuse an answer this run already paid for; the error message
         // below asks for the same versions again.
         match on_demand_release_date(&backend, candidate) {
@@ -4108,7 +4109,7 @@ pub trait Backend: Debug + Send + Sync {
                 Ok(created_at) => {
                     remember_on_demand_release_date(&backend, candidate, created_at.as_deref());
                     if created_at.is_none() {
-                        note_undated_release(&backend, candidate, before, None);
+                        note_undated_release(&tool, candidate, before, None);
                     }
                     created_at
                 }
@@ -4125,7 +4126,7 @@ pub trait Backend: Debug + Send + Sync {
                         "{}@{candidate}: could not read its release date to check the {before} cutoff, allowing it: {err:#}",
                         self.id()
                     );
-                    note_undated_release(&backend, candidate, before, Some(format!("{err:#}")));
+                    note_undated_release(&tool, candidate, before, Some(format!("{err:#}")));
                     None
                 }
             },
@@ -6865,7 +6866,7 @@ mod latest_version_tests {
         assert_eq!(backend.lazy_date_calls(), 1);
         // The failure is recorded for the install-time warning, not logged at
         // resolution, and it keeps the reason apart from "no date".
-        let (recorded, err) = unchecked_release(&backend.ba().full(), "3.0.0").unwrap();
+        let (recorded, err) = unchecked_release(&backend.ba().short, "3.0.0").unwrap();
         assert_eq!(recorded, before);
         assert!(err.is_some());
     }
@@ -6886,7 +6887,7 @@ mod latest_version_tests {
                 .as_deref(),
             Some("3.0.0")
         );
-        let id = backend.ba().full();
+        let id = backend.ba().short.clone();
         assert_eq!(unchecked_release_cutoff(&id, "3.0.0"), Some(before));
         assert_eq!(unchecked_release_cutoff(&id, "2.0.0"), None);
     }
@@ -6920,7 +6921,7 @@ mod latest_version_tests {
             Some("1.0.0")
         );
         assert_eq!(
-            unchecked_release_cutoff(&backend.ba().full(), "1.0.0"),
+            unchecked_release_cutoff(&backend.ba().short, "1.0.0"),
             Some(before)
         );
     }
@@ -8584,7 +8585,12 @@ fn evict_oldest_release_dates<V>(dates: &mut IndexMap<(String, String), V>, limi
 }
 
 /// Versions a release-age cutoff let through because no date could be found,
-/// keyed like [`ON_DEMAND_RELEASE_DATES`], with the cutoff that went unchecked.
+/// keyed by the tool's short name and version, with the cutoff that went
+/// unchecked.
+///
+/// The short name rather than the full backend: a registry entry that routes by
+/// version (`nub` on GitHub from 0.9.5, on npm below it) lists a version through
+/// one backend and installs it through another, but both carry the short name.
 ///
 /// Resolution only records them. Resolution also runs for `mise env`, `mise ls`
 /// and `mise outdated`, which a shell prompt can trigger on every command, so
@@ -8596,7 +8602,7 @@ type UndatedReleases = IndexMap<(String, String), (Timestamp, Option<String>)>;
 static UNDATED_RELEASES: LazyLock<Mutex<UndatedReleases>> = LazyLock::new(Default::default);
 
 fn note_undated_release(
-    backend: &str,
+    tool: &str,
     version: &str,
     before: Timestamp,
     lookup_error: Option<String>,
@@ -8604,7 +8610,7 @@ fn note_undated_release(
     if let Ok(mut undated) = UNDATED_RELEASES.lock() {
         evict_oldest_release_dates(&mut undated, ON_DEMAND_RELEASE_DATE_LIMIT);
         undated.insert(
-            (backend.to_string(), version.to_string()),
+            (tool.to_string(), version.to_string()),
             (before, lookup_error),
         );
     }
@@ -8612,26 +8618,27 @@ fn note_undated_release(
 
 /// What went unchecked for `version`, if resolution picked it without a
 /// release date: the cutoff, and the lookup error if one was raised.
-fn unchecked_release(backend: &str, version: &str) -> Option<(Timestamp, Option<String>)> {
+fn unchecked_release(tool: &str, version: &str) -> Option<(Timestamp, Option<String>)> {
     UNDATED_RELEASES
         .lock()
         .ok()?
-        .get(&(backend.to_string(), version.to_string()))
+        .get(&(tool.to_string(), version.to_string()))
         .cloned()
 }
 
 /// The cutoff that went unchecked for `version`, if resolution picked it
 /// without a release date.
 #[cfg(test)]
-fn unchecked_release_cutoff(backend: &str, version: &str) -> Option<Timestamp> {
-    unchecked_release(backend, version).map(|(before, _)| before)
+fn unchecked_release_cutoff(tool: &str, version: &str) -> Option<Timestamp> {
+    unchecked_release(tool, version).map(|(before, _)| before)
 }
 
 /// Warn that `version` is about to be installed although the release-age cutoff
 /// could not check it, because its backend returned no release date for it.
 /// Silent for a version resolution did not pick under a cutoff.
-pub(crate) fn warn_if_release_date_unchecked(backend: &str, version: &str) {
-    match unchecked_release(backend, version) {
+pub(crate) fn warn_if_release_date_unchecked(ba: &BackendArg, version: &str) {
+    let backend = ba.full();
+    match unchecked_release(&ba.short, version) {
         Some((before, Some(err))) => warn_once!(
             "{backend}@{version}: could not read its release date to check the {before} cutoff, allowing it: {err} (exclude it with minimum_release_age_excludes to silence this)"
         ),

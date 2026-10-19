@@ -895,7 +895,7 @@ impl Toolset {
         // date, so it needs no cutoff check of its own: an upgrade installs what
         // it picked as an exact pin, which has no `before_date` here.
         if !opts.dry_run {
-            crate::backend::warn_if_release_date_unchecked(&tv.ba().full(), &tv.version);
+            crate::backend::warn_if_release_date_unchecked(tv.ba(), &tv.version);
         }
 
         let ctx = InstallContext {
