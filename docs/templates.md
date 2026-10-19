@@ -199,19 +199,19 @@ These read a file and parse it, so a template can use one value from a file that
 already records it instead of repeating it in `mise.toml`. Relative paths
 resolve like `read_file()`, from the directory of the config file.
 
-Tera does not parse `.key` straight after a function call. Bind the result with
-`set` first, then use `.key`, `[0]` and `["key"]` on it:
+Index into the result with `["key"]` and `[0]`:
 
 ```toml
 [tools]
-node = "{% set pkg = read_json(path='package.json') %}{{ pkg.volta.node }}"
-pnpm = "{% set pkg = read_json(path='package.json') %}{{ pkg.packageManager | split(pat='@') | last }}"
-pulumi = "{% set p = read_yaml(path='Pulumi.yaml') %}{{ p.requiredPulumiVersion }}"
-mytool = "{% set p = read_toml(path='pyproject.toml') %}{{ p.tool.mytool.version }}"
+node = "{{ read_json(path='package.json')['volta']['node'] }}"
+pnpm = "{{ read_json(path='package.json')['packageManager'] | split(pat='@') | last }}"
+pulumi = "{{ read_yaml(path='Pulumi.yaml')['requiredPulumiVersion'] }}"
+mytool = "{{ read_toml(path='pyproject.toml')['tool']['mytool']['version'] }}"
 ```
 
-The `get` filter also works in one expression:
-<span v-pre>`{{ read_json(path='package.json') | get(key='volta') | get(key='node') }}`</span>.
+Tera does not parse `.key` straight after a call. To read several values from one
+file, bind the result with `set` first, where `.key` works:
+<span v-pre>`{% set pkg = read_json(path='package.json') %}{{ pkg.volta.node }}`</span>.
 
 - A file that cannot be read or parsed fails with an error naming the function
   and the file.

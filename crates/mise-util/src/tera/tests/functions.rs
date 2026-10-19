@@ -337,8 +337,8 @@ fn read_structured_cases(dir: &Path) {
     tera_ctx.insert("cwd", dir.to_str().unwrap());
     let mut tera = get_tera(Some(dir));
     let mut render = |input: &str| render_str(&mut tera, input, &tera_ctx);
-    // Neither engine parses `.key` straight after a call, and the v1 engine does not parse
-    // `[key]` there either, so a result is bound with `set` or reached with `get`
+    // Neither engine parses `.key` straight after a call, so these bind with `set` or use `get`
+    // (v2 also takes `['key']`, below)
     for (input, expected) in [
         (
             "{% set pkg = read_json(path='package.json') %}{{ pkg.volta.node }}",
@@ -375,6 +375,23 @@ fn read_structured_cases(dir: &Path) {
         ),
     ] {
         assert_eq!(render(input).unwrap(), expected, "{input}");
+    }
+    if !use_tera_v1() {
+        for (input, expected) in [
+            (
+                "{{ read_json(path='package.json')['volta']['node'] }}",
+                "20.1.0",
+            ),
+            ("{{ read_json(path='package.json')['names'][1] }}", "b"),
+            ("{{ read_json(path='package.json')['my-key'] }}", "7"),
+            (
+                "{{ read_toml(path='pyproject.toml')['tool']['mytool']['version'] }}",
+                "1.2.3",
+            ),
+        ] {
+            assert_eq!(render(input).unwrap(), expected, "{input}");
+        }
+        assert!(render("{{ read_json(path='package.json')['volta']['deno'] }}").is_err());
     }
     let err = format!(
         "{:?}",
