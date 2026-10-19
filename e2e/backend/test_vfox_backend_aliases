@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# A backend plugin can return `aliases` from BackendListVersions, so a moving
+# name like `recommended` resolves to the version it points at: it installs
+# into that version's directory and the lockfile records the version.
+
+BACKEND_DIR="$PWD/vfox-alias-backend"
+mkdir -p "$BACKEND_DIR/hooks"
+cat >"$BACKEND_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "alias-backend"
+PLUGIN.version = "0.1.0"
+PLUGIN.homepage = "https://example.com"
+PLUGIN.license = "MIT"
+PLUGIN.description = "alias backend test plugin"
+LUA
+cat >"$BACKEND_DIR/hooks/backend_list_versions.lua" <<'LUA'
+function PLUGIN:BackendListVersions(ctx)
+  return {
+    versions = { "1.0.0", "2.0.0", "3.0.0" },
+    aliases = { recommended = "2.0.0" },
+  }
+end
+LUA
+cat >"$BACKEND_DIR/hooks/backend_install.lua" <<'LUA'
+function PLUGIN:BackendInstall(ctx)
+  return {}
+end
+LUA
+cat >"$BACKEND_DIR/hooks/backend_exec_env.lua" <<'LUA'
+function PLUGIN:BackendExecEnv(ctx)
+  return { env_vars = {} }
+end
+LUA
+mise plugins link alias-backend "$BACKEND_DIR"
+
+mise install alias-backend:tool@recommended
+assert_contains "mise ls alias-backend:tool" "2.0.0"
+assert_not_contains "mise ls alias-backend:tool" "recommended"
+assert_not_contains "ls $MISE_DATA_DIR/installs/alias-backend-tool" "recommended"
+
+# a config alias wins over the plugin's
+cat >mise.toml <<'TOML'
+[tool_alias."alias-backend:tool".versions]
+recommended = "3.0.0"
+
+[tools]
+"alias-backend:tool" = "recommended"
+TOML
+mise install
+assert_contains "mise ls alias-backend:tool" "3.0.0"

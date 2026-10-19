@@ -222,6 +222,23 @@ RFC 3339 timestamp. mise uses it for
 cutoff never hides an undated version. Return dates whenever the registry
 publishes them.
 
+If the registry has moving names, such as GHCup's `recommended` GHC, return
+them as `aliases`, a table from each name to the version it points at:
+
+```lua
+return {
+  versions = { "9.8.4", "9.10.3", "9.14.1" },
+  aliases = { recommended = "9.10.3" },
+}
+```
+
+mise then resolves `tool@recommended` to `9.10.3`, installs into `9.10.3/` and
+records `9.10.3` in the lockfile, so the tool follows the name as it moves.
+Aliases in your config win. A requested version that starts with a digit, or is
+`latest`, `system` or contains `:`, is never looked up as an alias. mise
+ignores `aliases` before the release that added it, so plugins can return it
+right away.
+
 ### BackendInstall
 
 | `ctx` field     | Value                                                 | Example                                                      |

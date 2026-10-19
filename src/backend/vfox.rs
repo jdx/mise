@@ -28,6 +28,18 @@ use crate::plugins::vfox_plugin::VfoxPlugin;
 use crate::toolset::{ToolOptions, ToolVersion, Toolset, install_state};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
+type AliasCaches = HashMap<String, Arc<CacheManager<BTreeMap<String, String>>>>;
+
+/// Whether `version` can name a plugin alias like `recommended`. Pinned
+/// versions, `latest`, `system` and `ref:`-style requests never do, so they
+/// skip the lookup.
+fn could_be_alias(version: &str) -> bool {
+    !version.is_empty()
+        && !version.starts_with(|c: char| c.is_ascii_digit())
+        && !matches!(version, "latest" | "system")
+        && !version.contains(':')
+}
+
 #[derive(Debug)]
 pub(crate) struct VfoxBackend {
     ba: Arc<BackendArg>,
@@ -345,11 +357,12 @@ impl Backend for VfoxBackend {
                         .await?
                         .into_backend_options()
                         .into_map();
-                    let versions = vfox
-                        .backend_list_versions(&this.pathname, tool_name, opts)
+                    let listing = vfox
+                        .backend_list_versions_and_aliases(&this.pathname, tool_name, opts)
                         .await
                         .wrap_err("Backend list versions method failed")?;
-                    return Ok(versions
+                    return Ok(listing
+                        .versions
                         .into_iter()
                         .map(|v| VersionInfo {
                             version: v.version,
@@ -376,6 +389,15 @@ impl Backend for VfoxBackend {
             Settings::get().fetch_remote_versions_timeout(),
         )
         .await
+    }
+
+    async fn resolve_dynamic_alias(&self, version: &str) -> eyre::Result<Option<String>> {
+        if !self.is_backend_plugin() || !could_be_alias(version) {
+            return Ok(None);
+        }
+        let config = Config::get().await?;
+        let aliases = self.backend_aliases(&config).await?;
+        Ok(aliases.get(version).cloned())
     }
 
     async fn install_version_(
@@ -667,6 +689,55 @@ impl VfoxBackend {
                 info!("{}", line);
             }
         });
+    }
+
+    /// The aliases a backend plugin reports from `BackendListVersions`, cached
+    /// like the version list so resolving `@recommended` doesn't run the plugin
+    /// every time.
+    async fn backend_aliases(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<BTreeMap<String, String>> {
+        static CACHES: OnceLock<std::sync::Mutex<AliasCaches>> = OnceLock::new();
+        let cache = {
+            let mut caches = CACHES.get_or_init(Default::default).lock().unwrap();
+            caches
+                .entry(self.ba.full())
+                .or_insert_with(|| {
+                    Arc::new(
+                        CacheManagerBuilder::new(self.ba.cache_path().join("aliases.msgpack.z"))
+                            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+                            .build(),
+                    )
+                })
+                .clone()
+        };
+        // Offline, an expired cache still answers rather than failing the resolve.
+        if Settings::get().offline()
+            && let Ok(aliases) = cache.get_cached()
+        {
+            return Ok(aliases);
+        }
+        let aliases = cache
+            .get_or_try_init_async(async || {
+                let (mut vfox, _log_rx) = self.plugin.vfox()?;
+                self.ensure_plugin_installed(config).await?;
+                if let Ok(dep_env) = self.dependency_env(config).await {
+                    vfox.cmd_env = Some(dep_env.into_iter().collect());
+                }
+                let opts = config
+                    .get_tool_opts_with_overrides(&self.ba)
+                    .await?
+                    .into_backend_options()
+                    .into_map();
+                let listing = vfox
+                    .backend_list_versions_and_aliases(&self.pathname, self.get_tool_name()?, opts)
+                    .await
+                    .wrap_err("Backend list versions method failed")?;
+                Ok(listing.aliases)
+            })
+            .await?;
+        Ok(aliases.clone())
     }
 
     fn is_backend_plugin(&self) -> bool {
@@ -1035,6 +1106,16 @@ fn valid_created_at(plugin: &str, created_at: Option<String>) -> Option<String> 
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_could_be_alias() {
+        assert!(could_be_alias("recommended"));
+        assert!(!could_be_alias("9.10.3"));
+        assert!(!could_be_alias("latest"));
+        assert!(!could_be_alias("system"));
+        assert!(!could_be_alias("ref:main"));
+        assert!(!could_be_alias(""));
+    }
 
     #[test]
     fn test_valid_created_at() {
