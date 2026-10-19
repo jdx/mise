@@ -55,6 +55,7 @@ tokio = { version = "1", features = [
   "time",
 ] }
 url = "2"
+zip = { version = "9", default-features = false, features = ["deflate"] }
 xx = { version = "2", default-features = false, features = [
   "archive",
   "hash",
