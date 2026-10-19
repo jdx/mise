@@ -394,7 +394,10 @@ async fn test_backend_list_versions_with_cmd_env() {
         .backend_list_versions("dummy-backend", "test-tool", IndexMap::new())
         .await
         .unwrap();
-    assert_eq!(versions, vec!["hello".to_string()]);
+    assert_eq!(
+        versions.into_iter().map(|v| v.version).collect::<Vec<_>>(),
+        vec!["hello".to_string()]
+    );
 }
 
 #[tokio::test]
@@ -404,7 +407,10 @@ async fn test_backend_list_versions_without_cmd_env() {
         .backend_list_versions("dummy-backend", "test-tool", IndexMap::new())
         .await
         .unwrap();
-    assert_eq!(versions, vec!["fallback".to_string()]);
+    assert_eq!(
+        versions.into_iter().map(|v| v.version).collect::<Vec<_>>(),
+        vec!["fallback".to_string()]
+    );
 }
 
 #[tokio::test]

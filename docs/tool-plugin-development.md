@@ -201,15 +201,26 @@ message, except where a hook's section below says otherwise.
 Return a list of tables, newest first, ordered by the publisher's release
 policy:
 
-| Field      | Required | Value                                                              |
-| ---------- | -------- | ------------------------------------------------------------------ |
-| `version`  | yes      | The version string, unchanged apart from a documented prefix       |
-| `rolling`  | no       | `true` for a channel whose contents change, such as `nightly`      |
-| `checksum` | no       | For a rolling channel, the SHA-256 of the current platform's asset |
+| Field        | Required | Value                                                              |
+| ------------ | -------- | ------------------------------------------------------------------ |
+| `version`    | yes      | The version string, unchanged apart from a documented prefix       |
+| `rolling`    | no       | `true` for a channel whose contents change, such as `nightly`      |
+| `checksum`   | no       | For a rolling channel, the SHA-256 of the current platform's asset |
+| `created_at` | no       | When the version was released, as an RFC 3339 timestamp            |
 
 mise reverses the list into its own oldest-first order. `BackendListVersions` in
 a backend plugin returns oldest first instead. `Available` receives no tool
 options, so the version list cannot depend on them.
+
+#### Release dates {#release-dates}
+
+Return `created_at` when the publisher's index says when a version was
+released, such as `created_at = "2026-01-31T12:00:00Z"`. mise uses it for
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age) and
+`--before`: a version with no date, or one mise cannot parse as RFC 3339, is
+treated as undated, and an undated version is never hidden by a cutoff. If the
+publisher exposes dates, return them, or the cooldown silently lets new releases
+through.
 
 #### Rolling releases {#rolling-releases}
 

@@ -103,7 +103,7 @@ pub struct GithubCommitPerson {
 }
 
 /// Tag with date information
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GithubTagWithDate {
     pub name: String,
     pub date: Option<String>,
@@ -139,6 +139,9 @@ static RELEASE_CACHE: Lazy<RwLock<CacheGroup<GithubRelease>>> = Lazy::new(Defaul
 
 static TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<String>>>> = Lazy::new(Default::default);
 
+static DATED_TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<GithubTagWithDate>>>> =
+    Lazy::new(Default::default);
+
 static RELEASE_VERSIONS_CACHE: Lazy<RwLock<CacheGroup<Vec<ReleaseVersion>>>> =
     Lazy::new(Default::default);
 
@@ -166,6 +169,21 @@ async fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>
                 .build()
         });
     TAGS_CACHE.read().await
+}
+
+async fn get_dated_tags_cache(
+    key: &str,
+) -> RwLockReadGuard<'_, CacheGroup<Vec<GithubTagWithDate>>> {
+    DATED_TAGS_CACHE
+        .write()
+        .await
+        .entry(key.to_string())
+        .or_insert_with(|| {
+            CacheManagerBuilder::new(cache_dir().join(format!("{key}-dated-tags.msgpack.z")))
+                .with_fresh_duration(crate::network::fetch_remote_versions_cache(&Settings::get()))
+                .build()
+        });
+    DATED_TAGS_CACHE.read().await
 }
 
 async fn get_releases_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<GithubRelease>>> {
@@ -957,6 +975,96 @@ async fn list_tags_from_api(api_url: &str, repo: &str, list_all: bool) -> Result
     }
 
     Ok(tags.into_iter().map(|t| t.name).collect())
+}
+
+/// List `repo`'s tags with the commit dates mise-versions already knows, at the
+/// request cost of [`list_tags`].
+///
+/// Unlike [`list_tags_with_dates`] this never asks GitHub for a commit per tag,
+/// which for a repository with thousands of tags is thousands of requests. A tag
+/// mise-versions has no date for, and every tag when mise-versions is not the
+/// source, comes back with `date: None`; date those one at a time with
+/// [`tag_commit_date`], for the few versions a release-age cutoff decides on.
+pub async fn list_tags_with_known_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> {
+    let key = tags_cache_key(API_URL, repo);
+    let cache = get_dated_tags_cache(&key).await;
+    let cache = cache.get(&key).unwrap();
+    cached_or_stale(cache, async || {
+        list_tags_with_known_dates_(API_URL, repo, *env::MISE_LIST_ALL_VERSIONS).await
+    })
+    .await
+}
+
+/// `list_all` is a parameter for the reason given on [`list_tags_`].
+async fn list_tags_with_known_dates_(
+    api_url: &str,
+    repo: &str,
+    list_all: bool,
+) -> Result<Vec<GithubTagWithDate>> {
+    if mirrors_github_tags(api_url, repo) {
+        if let Some(list) = whole_list(repo, crate::versions_host::GithubList::Tags).await {
+            return Ok(list
+                .tags
+                .into_iter()
+                .map(|t| GithubTagWithDate {
+                    name: t.tag,
+                    date: t.date.filter(|d| !d.is_empty()),
+                })
+                .collect());
+        }
+        // `dates=1` costs no more requests than the undated page.
+        let mirrored = list_mirrored_tags(repo, list_all, true).await.map(|tags| {
+            tags.map(|tags| {
+                tags.into_iter()
+                    .map(|t| GithubTagWithDate {
+                        name: t.name,
+                        date: t.date.filter(|d| !d.is_empty()),
+                    })
+                    .collect()
+            })
+        });
+        let listed = mirror_or_github(&format!("tags of {repo}"), mirrored, async || {
+            list_tags_from_api(api_url, repo, list_all)
+                .await
+                .map(|tags| Some(undated_tags(tags)))
+        })
+        .await?;
+        match listed {
+            Some(tags) => return Ok(tags),
+            None => ensure_private_repo_lookup(repo, &format!("GitHub repository {repo}"))?,
+        }
+    }
+    list_tags_from_api(api_url, repo, list_all)
+        .await
+        .map(undated_tags)
+}
+
+fn undated_tags(tags: Vec<String>) -> Vec<GithubTagWithDate> {
+    tags.into_iter()
+        .map(|name| GithubTagWithDate { name, date: None })
+        .collect()
+}
+
+/// A tag's name goes in the path as GitHub resolves a ref: each segment is
+/// encoded, the `/` between them is not.
+fn tag_commit_url(api_url: &str, repo: &str, tag: &str) -> String {
+    let tag = tag
+        .split('/')
+        .map(|segment| urlencoding::encode(segment).into_owned())
+        .collect::<Vec<_>>()
+        .join("/");
+    format!("{api_url}/repos/{repo}/commits/{tag}")
+}
+
+/// The committer date of the commit `tag` points at: one request, for a single
+/// tag whose date a release-age cutoff needs.
+pub async fn tag_commit_date(repo: &str, tag: &str) -> Result<Option<String>> {
+    let url = tag_commit_url(API_URL, repo, tag);
+    let headers = get_headers(&url)?;
+    let commit = crate::http::HTTP_FETCH
+        .json_with_headers::<GithubCommit, _>(&url, &headers)
+        .await?;
+    Ok(Some(commit.commit.committer.date))
 }
 
 /// List tags with their commit dates. This is slower than `list_tags` as it requires
