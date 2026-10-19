@@ -12343,6 +12343,7 @@ dependencies = [
  "usage-rs",
  "wiremock",
  "xx",
+ "zip 9.0.4",
 ]
 
 [[package]]

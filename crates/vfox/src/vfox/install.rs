@@ -396,7 +396,11 @@ impl Vfox {
             xx::archive::untar_bz2(file, tmp.path())?;
             move_to_install()?;
         } else if filename.ends_with(".zip") {
-            xx::archive::unzip(file, tmp.path())?;
+            // `ZipArchive::extract` creates symlink entries (rejecting ones that escape the
+            // destination); `xx::archive::unzip` would write them as regular files.
+            zip::ZipArchive::new(std::fs::File::open(file)?)
+                .and_then(|mut archive| archive.extract(tmp.path()))
+                .map_err(|err| format!("failed to extract {file:?}: {err}"))?;
             move_to_install()?;
         } else {
             file::mv(file, install_dir.join(&filename))?;
@@ -457,5 +461,28 @@ mod tests {
             .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
             .collect();
         assert_eq!(entries, vec!["tool-abcd1234".to_string()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_keeps_symlinks() {
+        use std::io::Write;
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default().unix_permissions(0o755);
+            zip.start_file("tool-1.0/bin/tool", options).unwrap();
+            zip.write_all(b"#!/bin/sh\n").unwrap();
+            zip.add_symlink("tool-1.0/bin/tool-link", "tool", options)
+                .unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        Vfox::test().extract(&archive, &install_dir).unwrap();
+
+        let link = install_dir.join("bin/tool-link");
+        assert!(link.is_symlink());
+        assert_eq!(std::fs::read_link(&link).unwrap(), Path::new("tool"));
     }
 }
