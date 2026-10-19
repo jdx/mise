@@ -72,6 +72,8 @@ struct ComposeContainer {
     exit_code: i64,
     #[serde(skip)]
     config_hash: Option<String>,
+    #[serde(skip)]
+    one_off: bool,
 }
 
 pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
@@ -577,6 +579,9 @@ impl ComposeRequest {
         for (container, line) in containers.iter_mut().zip(lines) {
             let labels: HashMap<String, String> = serde_json::from_str(line)?;
             container.config_hash = labels.get("com.docker.compose.config-hash").cloned();
+            container.one_off = labels
+                .get("com.docker.compose.oneoff")
+                .is_some_and(|value| value == "True");
         }
         Ok(())
     }
@@ -989,11 +994,11 @@ fn resolved_references_override(
     model: &serde_json::Value,
     containers: &[ComposeContainer],
 ) -> Option<String> {
-    // compose picks the container with the lowest canonical name
+    // compose ignores one-off containers and picks the lowest canonical name
     let container_id = |service: &str| {
         containers
             .iter()
-            .filter(|container| container.service == service)
+            .filter(|container| container.service == service && !container.one_off)
             .min_by(|a, b| a.name.cmp(&b.name))
             .map(|container| container.id.as_str())
     };
@@ -1274,6 +1279,7 @@ mod tests {
     #[test]
     fn pins_service_references_to_container_ids() {
         let container = |id: &str, name: &str, service: &str| ComposeContainer {
+            one_off: name.starts_with("a-"),
             id: id.to_string(),
             name: name.to_string(),
             service: service.to_string(),
@@ -1287,6 +1293,7 @@ mod tests {
             container("b2", "p-vpn-2", "vpn"),
             container("a1", "p-vpn-1", "vpn"),
             container("def", "p-app-1", "app"),
+            container("oo", "a-vpn-run-1", "vpn"),
         ];
         let model = serde_json::json!({"services": {
             "vpn": {},
@@ -1318,6 +1325,7 @@ mod tests {
             health: "healthy".to_string(),
             exit_code: 0,
             config_hash: Some("same".to_string()),
+            one_off: false,
             name: String::new(),
         };
         request.inspection = Some(ComposeInspection::Present {
@@ -1349,6 +1357,7 @@ mod tests {
                 health: "healthy".to_string(),
                 exit_code: 0,
                 config_hash: Some("same".to_string()),
+                one_off: false,
                 name: String::new(),
             }],
             config_hashes: HashMap::from([("api".to_string(), "same".to_string())]),
@@ -1377,6 +1386,7 @@ mod tests {
                 health: String::new(),
                 exit_code: 0,
                 config_hash: None,
+                one_off: false,
                 name: String::new(),
             }],
             config_hashes: HashMap::new(),
@@ -1404,6 +1414,7 @@ mod tests {
                     health: String::new(),
                     exit_code: 0,
                     config_hash: None,
+                    one_off: false,
                     name: String::new(),
                 },
                 ComposeContainer {
@@ -1413,6 +1424,7 @@ mod tests {
                     health: String::new(),
                     exit_code: 0,
                     config_hash: None,
+                    one_off: false,
                     name: String::new(),
                 },
             ],
@@ -1446,6 +1458,7 @@ mod tests {
                 health: String::new(),
                 exit_code: 0,
                 config_hash: None,
+                one_off: false,
                 name: String::new(),
             }],
             config_hashes: HashMap::new(),
