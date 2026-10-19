@@ -8,10 +8,12 @@ function PLUGIN:Available(ctx)
     -- Sort versions (newest first)
     table.sort(versions, util.version_compare)
 
+    local dates = util.get_release_dates()
+
     -- Convert to vfox format
     local result = {}
     for _, v in ipairs(versions) do
-        table.insert(result, { version = v })
+        table.insert(result, { version = v, created_at = dates[v] })
     end
 
     return result
