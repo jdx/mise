@@ -1765,44 +1765,55 @@ export function exampleFor(path: string): string | undefined {
   const option = platforms && platformOptions[platforms[1]];
   if (platforms && option) {
     const name = `${platforms[1]}:${option.repository}`;
-    const [key, value] = option.setting;
-    const table = (platform: string) =>
-      `[tools."${name}".${platforms[2]}.${platform}]\n${key} = ${value}\n`;
+    const table = (platform: string, value: string) =>
+      `[tools."${name}".${platforms[2]}.${platform}]\n${option.key} = ${value}\n`;
+    const linux = table("linux-x64", option.linux);
     return `[tools."${name}"]\nversion = "1.2.3"\n\n${
       platforms[3]
-        ? table("linux-x64")
-        : `${table("linux-x64")}\n${table("macos-arm64")}`
+        ? linux
+        : `${linux}\n${table("macos-arm64", option.macos ?? option.linux)}`
     }`;
   }
   return undefined;
 }
 
-// A repository and an option a platform can set, for each backend with platform tables.
+// A repository and an option a platform can set, for each backend with platform tables:
+// its value on Linux, and on macOS when it differs.
 const platformOptions: Record<
   string,
-  { repository: string; setting: [string, string] }
+  { repository: string; key: string; linux: string; macos?: string }
 > = {
   github: {
     repository: "owner/tool",
-    setting: ["asset_pattern", '"tool-*-linux-amd64.tar.gz"'],
+    key: "asset_pattern",
+    linux: '"tool-*-linux-amd64.tar.gz"',
+    macos: '"tool-*-darwin-arm64.tar.gz"',
   },
   gitlab: {
     repository: "group/tool",
-    setting: ["asset_pattern", '"tool-*-linux-amd64.tar.gz"'],
+    key: "asset_pattern",
+    linux: '"tool-*-linux-amd64.tar.gz"',
+    macos: '"tool-*-darwin-arm64.tar.gz"',
   },
   forgejo: {
     repository: "owner/tool",
-    setting: ["asset_pattern", '"tool-*-linux-amd64.tar.gz"'],
+    key: "asset_pattern",
+    linux: '"tool-*-linux-amd64.tar.gz"',
+    macos: '"tool-*-darwin-arm64.tar.gz"',
   },
-  ubi: { repository: "owner/tool", setting: ["bin_path", '"bin"'] },
+  ubi: { repository: "owner/tool", key: "bin_path", linux: '"bin"' },
   http: {
     repository: "my-tool",
-    setting: ["url", '"https://example.com/tool-1.2.3-linux-amd64.tar.gz"'],
+    key: "url",
+    linux: '"https://example.com/tool-1.2.3-linux-amd64.tar.gz"',
+    macos: '"https://example.com/tool-1.2.3-darwin-arm64.tar.gz"',
   },
   s3: {
     repository: "my-tool",
-    setting: ["url", '"s3://my-bucket/tools/tool-1.2.3-linux-amd64.tar.gz"'],
+    key: "url",
+    linux: '"s3://my-bucket/tools/tool-1.2.3-linux-amd64.tar.gz"',
+    macos: '"s3://my-bucket/tools/tool-1.2.3-darwin-arm64.tar.gz"',
   },
-  cargo: { repository: "cargo-edit", setting: ["bin", '"cargo-add"'] },
-  spm: { repository: "owner/tool", setting: ["filter_bins", '["tool"]'] },
+  cargo: { repository: "cargo-edit", key: "bin", linux: '"cargo-add"' },
+  spm: { repository: "owner/tool", key: "filter_bins", linux: '["tool"]' },
 };
