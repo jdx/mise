@@ -522,6 +522,15 @@ impl Backend for S3Backend {
         true
     }
 
+    /// `AWS_ENDPOINT_URL` points the AWS SDK at another S3-compatible service
+    /// than the one the shared versions host listed.
+    async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
+        Ok(["AWS_ENDPOINT_URL_S3", "AWS_ENDPOINT_URL"]
+            .into_iter()
+            .find_map(|key| std::env::var(key).ok().filter(|value| !value.is_empty()))
+            .map(|endpoint| hash::hash_to_str(&endpoint)))
+    }
+
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
         &[
             "version_list_url",

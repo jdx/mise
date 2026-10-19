@@ -331,33 +331,6 @@ pub(crate) fn release_tag_from_download_url(url: &str, repo_web_url: &str) -> Op
     urlencoding::decode(tag).ok().map(|tag| tag.into_owned())
 }
 
-/// Whether the versions host may serve this backend type's remote version list.
-///
-/// Only a subset of backends benefit from the versions host cache — those
-/// whose upstream listing is rate-limited (github API) or not otherwise
-/// available. Package-registry backends (npm, pipx, cargo, gem, go, conda,
-/// dotnet, spm) and http/s3 with an explicit version_list_url already have
-/// canonical, always-fresh sources, so the cache would only add latency and
-/// staleness risk. Note: this asymmetrically overrides
-/// `settings.use_versions_host = true` — the setting can still disable the
-/// host globally, but cannot re-enable it for backends that are not on this
-/// allowlist.
-fn versions_host_applies(backend_type: &BackendType, listing_opts: &ToolVersionOptions) -> bool {
-    match backend_type {
-        BackendType::Github
-        | BackendType::Gitlab
-        | BackendType::Forgejo
-        | BackendType::Ubi
-        | BackendType::Aqua
-        | BackendType::Core
-        | BackendType::Asdf
-        | BackendType::Vfox
-        | BackendType::VfoxBackend(_) => true,
-        BackendType::Http | BackendType::S3 => !listing_opts.contains_key("version_list_url"),
-        _ => false,
-    }
-}
-
 pub(crate) fn toolset_semver_version(ts: &Toolset, tool: &str) -> Option<String> {
     let tvl = ts
         .versions
@@ -2009,6 +1982,80 @@ mod tests {
         assert_eq!(tool("aqua:example/not-in-the-registry"), None);
     }
 
+    /// No backend type is excluded from the versions host: a registry tool on
+    /// the package-registry backends, which an allowlist once skipped, reads
+    /// its published list like any other.
+    #[test]
+    fn test_every_backend_type_may_use_the_versions_host() {
+        for tool in [
+            "cowsay",       // npm
+            "ansible-core", // pipx
+            "tokei",        // cargo
+            "bashly",       // gem
+            "ginkgo",       // go
+            "clang-format", // conda
+            "danger-swift", // spm
+        ] {
+            let backend = get(&BackendArg::from(tool)).unwrap();
+            assert_eq!(
+                backend.versions_host_tool(),
+                Ok(tool.to_string()),
+                "{tool} on {}",
+                backend.get_type()
+            );
+            assert_eq!(backend.versions_host_skip_reason(), None);
+        }
+    }
+
+    /// A registry or channel that settings or the environment redirect lists
+    /// other versions than the published list, so it makes a cache context,
+    /// which keeps the versions host out of the way.
+    #[tokio::test]
+    async fn test_redirected_sources_make_a_cache_context() {
+        use confique::Layer;
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+
+        // Conda's versions depend on the platform, which one shared list
+        // cannot describe, so it always lists from its channel.
+        let platform = rattler_conda_types::Subdir::current().unwrap();
+        let conda = get(&BackendArg::from("clang-format")).unwrap();
+        assert_eq!(
+            conda.remote_version_cache_context(&config).await.unwrap(),
+            Some(format!("conda-forge@{platform}"))
+        );
+        let mut partial = crate::config::settings::SettingsPartial::empty();
+        partial.conda.channel = Some("bioconda".to_string());
+        Settings::reset(Some(partial));
+        assert_eq!(
+            conda.remote_version_cache_context(&config).await.unwrap(),
+            Some(format!("bioconda@{platform}"))
+        );
+
+        let pipx = get(&BackendArg::from("ansible-core")).unwrap();
+        let mut partial = crate::config::settings::SettingsPartial::empty();
+        partial.pypi.registry_url = Some("https://pypi.example.com/pypi/{}/json".to_string());
+        Settings::reset(Some(partial));
+        assert!(
+            pipx.remote_version_cache_context(&config)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        Settings::reset(None);
+        assert_eq!(
+            pipx.remote_version_cache_context(&config).await.unwrap(),
+            None
+        );
+
+        // The public npm registry is the default; no `.npmrc` here redirects it.
+        let npm = get(&BackendArg::from("cowsay")).unwrap();
+        assert_eq!(
+            npm.remote_version_cache_context(&config).await.unwrap(),
+            None
+        );
+    }
+
     #[test]
     fn test_explicit_packslip_arg_reads_the_catalog_of_the_registry_tool_preferring_it() {
         let tool = |arg: &str, shape: bool| versions_host_tool(&BackendArg::from(arg), shape);
@@ -3149,12 +3196,12 @@ pub trait Backend: Debug + Send + Sync {
     /// Results are cached. Backends can override `_list_remote_versions_with_info`
     /// to provide timestamp information.
     ///
-    /// For backends that query canonical, always-fresh sources (npm, pipx, cargo,
-    /// gem, go, and http/s3 with `version_list_url`), the versions host cache is
-    /// skipped and the upstream is queried directly. For all other backends this
-    /// method first tries the versions host (mise-versions.jdx.dev) which provides
-    /// version info with created_at timestamps, and falls back to the backend's
-    /// `_list_remote_versions_with_info` implementation on failure.
+    /// This method first tries the versions host (mise-versions.jdx.dev), which
+    /// provides version info with created_at timestamps, and falls back to the
+    /// backend's `_list_remote_versions_with_info` implementation on failure.
+    /// The host is skipped when local options or a redirected source (see
+    /// `remote_version_cache_context`) make the listing differ from the
+    /// published one.
     ///
     /// In offline mode, this reads the existing remote-versions cache without
     /// fetching or writing. If no cache exists, it returns an empty list.
@@ -3273,7 +3320,7 @@ pub trait Backend: Debug + Send + Sync {
             );
             None
         } else {
-            match self.versions_host_tool(listing_opts) {
+            match self.versions_host_tool() {
                 Ok(tool) => Some(tool),
                 Err(reason) => {
                     trace!("Skipping versions host for {} because {reason}", ba.short);
@@ -3460,7 +3507,7 @@ pub trait Backend: Debug + Send + Sync {
             return None;
         }
         let opts = resolved_opts.effective();
-        let tool = self.versions_host_tool(opts).ok()?;
+        let tool = self.versions_host_tool().ok()?;
         if self
             .remote_version_cache_context_for(config, opts, false)
             .await
@@ -5837,22 +5884,15 @@ pub trait Backend: Debug + Send + Sync {
     /// Why the versions host cannot serve this backend's remote version list,
     /// or `None` when it can. Ignores `use_versions_host` and cache contexts,
     /// which callers check themselves.
-    fn versions_host_skip_reason(&self, listing_opts: &ToolVersionOptions) -> Option<String> {
-        self.versions_host_tool(listing_opts).err()
+    fn versions_host_skip_reason(&self) -> Option<String> {
+        self.versions_host_tool().err()
     }
 
     /// The tool whose list on the versions host is this backend's remote
     /// version list, or why the versions host cannot serve it. Ignores
     /// `use_versions_host` and cache contexts, which callers check themselves.
-    fn versions_host_tool(
-        &self,
-        listing_opts: &ToolVersionOptions,
-    ) -> std::result::Result<String, String> {
+    fn versions_host_tool(&self) -> std::result::Result<String, String> {
         let ba = self.ba();
-        let backend_type = self.get_type();
-        if !versions_host_applies(&backend_type, listing_opts) {
-            return Err(format!("{backend_type} backend has a direct source"));
-        }
         let tool;
         if let Some(plugin) = self.plugin()
             && let Ok(Some(remote_url)) = plugin.get_remote_url()
@@ -5930,7 +5970,7 @@ pub trait Backend: Debug + Send + Sync {
         // the other listings are always direct, so their one entry is correct.
         if context.is_none()
             && !Settings::get().use_versions_host
-            && self.versions_host_skip_reason(listing_opts).is_none()
+            && self.versions_host_skip_reason().is_none()
         {
             return Ok(Some("direct".to_string()));
         }
@@ -6334,9 +6374,7 @@ async fn versions_index_tool<B: Backend + ?Sized>(
         return Err(unavailable);
     }
     let listing_opts = resolved_opts.effective();
-    let tool = backend
-        .versions_host_tool(listing_opts)
-        .map_err(|_| unavailable)?;
+    let tool = backend.versions_host_tool().map_err(|_| unavailable)?;
     if !matches!(
         backend
             .remote_version_cache_context_for(config, listing_opts, false)

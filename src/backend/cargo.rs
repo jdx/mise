@@ -210,6 +210,12 @@ impl Backend for CargoBackend {
         Ok(self.install_state_matches(tv))
     }
 
+    /// `cargo.registry_name` installs from another registry, so the crates.io
+    /// list the shared versions host publishes does not describe it.
+    async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
+        Ok(Settings::get().cargo.registry_name.clone())
+    }
+
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         if self.git_url().is_some() {
             // TODO: maybe fetch tags/branches from git?

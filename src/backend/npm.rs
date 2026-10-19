@@ -896,6 +896,76 @@ impl Backend for NPMBackend {
         options
     }
 
+    /// A registry other than npmjs.org, from `.npmrc` or `NPM_CONFIG_*`, lists
+    /// its own versions, which the shared versions host cannot know.
+    ///
+    /// `npm.shell_out` lists through `npm view` in the dependency environment,
+    /// whose registry settings mise does not interpret, so it always lists
+    /// directly. Its cache is keyed by what `npm` reads there, so one
+    /// registry's list is not reused for another.
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        if Settings::get().npm.shell_out {
+            let env = self.dependency_env(config).await?;
+            // `npm view` resolves its registry from the whole environment, since
+            // an `.npmrc` can interpolate any variable (`registry=${REGISTRY}`),
+            // and from the `.npmrc` files it finds: the global config, the user config (under
+            // `HOME`, `USERPROFILE`, or `NPM_CONFIG_USERCONFIG`) and the one in
+            // the prefix it runs in. Hash all of them.
+            let env_path = |name: &str| {
+                env.iter()
+                    .find(|(key, _)| key.eq_ignore_ascii_case(name))
+                    .map(|(_, path)| PathBuf::from(path))
+            };
+            let user_config = env_path("npm_config_userconfig");
+            // The global config: the file `NPM_CONFIG_GLOBALCONFIG` names, or
+            // `etc/npmrc` under the prefix an environment variable sets.
+            let global_configs = env_path("npm_config_globalconfig").into_iter().chain(
+                ["npm_config_prefix", "prefix"]
+                    .into_iter()
+                    .filter_map(env_path)
+                    .map(|prefix| prefix.join("etc").join("npmrc")),
+            );
+            let homes = ["HOME", "USERPROFILE"]
+                .into_iter()
+                .filter_map(|key| env.get(key))
+                .map(|home| PathBuf::from(home).join(".npmrc"));
+            let prefix = Self::npm_meta_prefix().ok().map(|dir| dir.join(".npmrc"));
+            let npmrcs = user_config
+                .into_iter()
+                .chain(global_configs)
+                .chain(homes)
+                .chain(prefix)
+                .map(|path| std::fs::read_to_string(path).ok())
+                .collect::<Vec<_>>();
+            // Only what decides npm's registry stays in the key: its own
+            // `NPM_CONFIG_*` settings, the variables that locate its config
+            // files, and any variable an `.npmrc` interpolates
+            // (`registry=${MISE_ENV}`). The rest of the environment (mise's
+            // `MISE_OFFLINE`, session state, `PATH`) changes with how mise runs
+            // and would only miss the cache, an offline run most of all.
+            static VAR_REF: LazyLock<regex::Regex> =
+                LazyLock::new(|| regex::Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)").unwrap());
+            let referenced = npmrcs
+                .iter()
+                .flatten()
+                .flat_map(|rc| VAR_REF.captures_iter(rc))
+                .map(|cap| cap[1].to_ascii_lowercase())
+                .collect::<HashSet<_>>();
+            let env = env
+                .iter()
+                .filter(|(key, _)| {
+                    let key = key.to_ascii_lowercase();
+                    referenced.contains(&key)
+                        || key.starts_with("npm_config_")
+                        || matches!(key.as_str(), "home" | "userprofile" | "prefix")
+                })
+                .collect::<BTreeMap<_, _>>();
+            return Ok(Some(crate::hash::hash_to_str(&(env, npmrcs))));
+        }
+        let registry = npm_registry::package_registry(&self.tool_name());
+        Ok((!npm_registry::is_public_registry(&registry)).then_some(registry))
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let name = self.tool_name();
         if is_git_spec(&name) {

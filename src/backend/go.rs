@@ -78,7 +78,7 @@ impl Backend for GoBackend {
 
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
         let env = self.dependency_env(config).await?;
-        Ok(Some(go_routing_cache_context(&env)))
+        Ok(go_routing_cache_context(&env))
     }
 
     /// List Go module versions through the configured proxy or Go's module command.
@@ -838,8 +838,9 @@ fn go_native_resolution_enabled(env: &BTreeMap<String, String>) -> bool {
         .any(|key| env.get(*key).is_some_and(|value| !value.is_empty()))
 }
 
-/// Digest the effective Go module-routing settings for version-cache isolation.
-fn go_routing_cache_context(env: &BTreeMap<String, String>) -> String {
+/// Digest the effective Go module-routing settings for version-cache isolation,
+/// or `None` for the default routing, which the shared versions host lists.
+fn go_routing_cache_context(env: &BTreeMap<String, String>) -> Option<String> {
     let goproxy = env
         .get("GOPROXY")
         .filter(|value| !value.is_empty())
@@ -852,7 +853,10 @@ fn go_routing_cache_context(env: &BTreeMap<String, String>) -> String {
         .filter(|value| !value.is_empty())
         .map(String::as_str)
         .unwrap_or(goprivate);
-    hash_to_str(&(goproxy, goprivate, gonoproxy))
+    if goproxy == DEFAULT_GOPROXY && goprivate.is_empty() && gonoproxy.is_empty() {
+        return None;
+    }
+    Some(hash_to_str(&(goproxy, goprivate, gonoproxy)))
 }
 
 /// Parse GOPROXY value per https://go.dev/ref/mod#goproxy-protocol:
@@ -1260,6 +1264,10 @@ mod tests {
             ("GOPRIVATE".to_string(), String::new()),
             ("GONOPROXY".to_string(), String::new()),
         ]));
+        assert_eq!(
+            default, None,
+            "default routing is served by the versions host"
+        );
         assert_eq!(default, explicit_default);
 
         for (key, value) in [
@@ -1273,6 +1281,7 @@ mod tests {
             let context =
                 go_routing_cache_context(&BTreeMap::from([(key.to_string(), value.to_string())]));
             assert_ne!(default, context, "{key} must partition the cache");
+            let context = context.expect("non-default routing has a context");
             assert!(!context.contains(value));
             assert!(!context.contains("secret"));
         }

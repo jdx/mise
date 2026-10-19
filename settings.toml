@@ -4555,6 +4555,22 @@ repositories, GitHub Enterprise, custom GitHub API URLs, and installs with this
 setting off need normal [GitHub authentication](/dev-tools/github-tokens.html)
 to stay within GitHub's rate limits.
 
+Every backend's list may come from the host, including `npm:`, `pipx:`,
+`cargo:`, `gem:` and `go:` tools, when the tool is a registry tool on its
+registry backend. The host is skipped for a tool whose source you have
+redirected, because its list describes the public one: an npm registry from
+`.npmrc` or `NPM_CONFIG_REGISTRY` (or any registry under `npm.shell_out`),
+[`pypi.registry_url`](#pypi.registry_url),
+[`cargo.registry_name`](#cargo.registry_name), a `GOPROXY`, `GOPRIVATE` or
+`GONOPROXY` other than the default, a gem source or a primary `gem sources`
+entry other than rubygems.org, [`dotnet.registry_url`](#dotnet.registry_url), an
+`AWS_ENDPOINT_URL` for S3, or a local tool option that changes the listing.
+`conda:` tools always list from their channel, since which versions exist
+depends on the platform.
+The host's list can trail a brand-new release, which the default
+[`minimum_release_age`](#minimum_release_age) hides anyway. Set this to `false`
+to list straight from the source.
+
 When [`url_replacements`](#url_replacements) reroutes `api.github.com`, or a
 repository's release or attestation API paths, mise does not use this host for
 that GitHub metadata; the replacement is the only source, because this host
