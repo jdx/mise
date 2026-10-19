@@ -431,16 +431,23 @@ function reset() {
   color: var(--vp-c-text-2);
 }
 
-.mte-card code,
-.cm-completionInfo code {
+/* Scoped to the editor: it sits in a code block, and `.vp-doc [class*='language-'] code`
+   would make each of these a full-width block with the block's padding. */
+.mise-toml-editor .mte-card code,
+.mise-toml-editor .cm-completionInfo code {
+  display: inline;
+  width: auto;
+  min-width: 0;
   padding: 1px 4px;
   border-radius: 4px;
   background: var(--vp-c-default-soft);
+  color: inherit;
   font-family: var(--vp-font-family-mono);
   font-size: 0.9em;
+  line-height: inherit;
 }
 
-.mte-card code.mte-chosen {
+.mise-toml-editor .mte-card code.mte-chosen {
   background: var(--vp-c-brand-soft);
   color: var(--vp-c-brand-1);
 }

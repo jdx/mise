@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+cat >package.json <<'JSON'
+{"volta": {"node": "20.1.0"}, "packageManager": "pnpm@9.12.0"}
+JSON
+cat >Pulumi.yaml <<'YAML'
+name: my-project
+requiredPulumiVersion: "3.270.0"
+YAML
+cat >pyproject.toml <<'TOML'
+[tool.mytool]
+version = "1.2.3"
+TOML
+
+cat >mise.toml <<'TOML'
+[env]
+NODE = "{{ read_json(path='package.json')['volta']['node'] }}"
+PNPM = "{{ read_json(path='package.json')['packageManager'] | split(pat='@') | last }}"
+PULUMI = "{{ read_yaml(path='Pulumi.yaml')['requiredPulumiVersion'] }}"
+MYTOOL = "{{ read_toml(path='pyproject.toml')['tool']['mytool']['version'] }}"
+SET = "{% set pkg = read_json(path='package.json') %}{{ pkg.volta.node }}"
+TOML
+
+assert "mise env --json | jq -r .NODE" "20.1.0"
+assert "mise env --json | jq -r .PNPM" "9.12.0"
+assert "mise env --json | jq -r .PULUMI" "3.270.0"
+assert "mise env --json | jq -r .MYTOOL" "1.2.3"
+assert "mise env --json | jq -r .SET" "20.1.0"
+
+# a missing key is an error instead of an empty value
+cat >mise.toml <<'TOML'
+[env]
+MISSING = "{{ read_json(path='package.json')['volta']['deno'] }}"
+TOML
+assert_fail "mise env --json"
+
+# unreadable input names the function
+echo '{nope' >package.json
+cat >mise.toml <<'TOML'
+[env]
+BAD = "{{ read_json(path='package.json') }}"
+TOML
+assert_fail_contains "mise env --json" "failed to parse file"

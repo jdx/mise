@@ -39,6 +39,33 @@ function util.get_versions()
     return versions
 end
 
+--- Map of release tag -> published_at (RFC 3339) from GitHub releases.
+--- Tags without a published release are simply absent (no date reported).
+--- @return table dates
+function util.get_release_dates()
+    local json = require("json")
+    local dates = {}
+    for page = 1, 5 do
+        local content = util.fetch("https://api.github.com/repos/tavianator/bfs/releases?per_page=100&page=" .. page)
+        if not content then
+            break
+        end
+        local ok, releases = pcall(json.decode, content)
+        if not ok or type(releases) ~= "table" or #releases == 0 then
+            break
+        end
+        for _, rel in ipairs(releases) do
+            if rel.tag_name and rel.published_at and not rel.draft then
+                dates[rel.tag_name] = rel.published_at
+            end
+        end
+        if #releases < 100 then
+            break
+        end
+    end
+    return dates
+end
+
 --- Compare version strings for sorting (descending - newest first)
 --- @param a string First version
 --- @param b string Second version

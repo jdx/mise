@@ -136,6 +136,9 @@ and selected versions that are not installed, are left out.
 | --------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `exec(command, [cache_key], [cache_duration])`            | string  | Runs `command` with the default inline shell and returns its output without the trailing newline. See [`exec()`](#exec).                                                                                                                              |
 | `read_file(path)`                                         | string  | Returns a file's contents. Relative paths resolve from the template's directory, not from `cwd`; see [`exec()`](#exec).                                                                                                                               |
+| `read_json(path)`                                         | any     | Parses a JSON file. See [`read_json()`](#read-structured).                                                                                                                                                                                            |
+| `read_yaml(path)`                                         | any     | Parses a YAML file. See [`read_json()`](#read-structured).                                                                                                                                                                                            |
+| `read_toml(path)`                                         | any     | Parses a TOML file. See [`read_json()`](#read-structured).                                                                                                                                                                                            |
 | `get_env(name, [default])`                                | string  | Returns a variable from the environment mise started with, or `default` when it is unset. An empty value is returned as is. It does not see `[env]` values; prefer <span v-pre>`{{ env.NAME \| default(value="...") }}`</span>.                       |
 | `arch([x64=...], [arm64=...])`                            | string  | The CPU architecture: `x64`, `arm64`, or another Rust architecture name. Pass a keyword named after an architecture to rename it, as in <span v-pre>`{{ arch(x64="amd64", arm64="aarch64") }}`</span>.                                                |
 | `os([linux=...], [macos=...], [windows=...])`             | string  | The operating system: `linux`, `macos`, or `windows`. Keywords rename it the same way, as in <span v-pre>`{{ os(macos="darwin") }}`</span>.                                                                                                           |
@@ -189,6 +192,39 @@ disabled, so a hook command that calls `exec()` stops the preview with
 `exec() is disabled during dry run`. `[vars]` and `[env]` are still rendered
 when the config loads, so their `exec()` calls run even under `--dry-run`.
 :::
+
+### read_json(), read_yaml() and read_toml() {#read-structured}
+
+These read a file and parse it, so a template can use one value from a file that
+already records it instead of repeating it in `mise.toml`. Relative paths
+resolve like `read_file()`, from the directory of the config file.
+
+Index into the result with `["key"]` and `[0]`:
+
+```toml
+[tools]
+node = "{{ read_json(path='package.json')['volta']['node'] }}"
+pnpm = "{{ read_json(path='package.json')['packageManager'] | split(pat='@') | last }}"
+pulumi = "{{ read_yaml(path='Pulumi.yaml')['requiredPulumiVersion'] }}"
+mytool = "{{ read_toml(path='pyproject.toml')['tool']['mytool']['version'] }}"
+```
+
+Tera does not parse `.key` straight after a call. To read several values from one
+file, bind the result with `set` first, where `.key` works:
+<span v-pre>`{% set pkg = read_json(path='package.json') %}{{ pkg.volta.node }}`</span>.
+
+- A file that cannot be read or parsed fails with an error naming the function
+  and the file.
+- A key that is not there is an error. Add
+  <span v-pre>`| default(value="...")`</span> for a fallback.
+- TOML dates and times are strings.
+- YAML follows mise's other YAML reads: only `true` and `false` are booleans, so
+  `yes` and `on` stay strings. An unquoted number such as `3.270` is a number
+  and renders as `3.27`, so quote versions in the file.
+
+They need a [trusted](/security.html#configuration-trust) config, are refused in
+[safe mode](/security.html#safe-mode), and are not available in `.miserc.toml`,
+like `read_file()`.
 
 ## Filters {#filters}
 
@@ -427,7 +463,7 @@ available:
 - All [filters](#filters) and [tests](#tests)
 
 Not available: `mise_env` (which `.miserc.toml` itself sets), `exec()`,
-`read_file()`, `mise_bin`, `mise_pid`, `vars`, and `tools`.
+`read_file()`, `read_json()`, `read_yaml()`, `read_toml()`, `mise_bin`, `mise_pid`, `vars`, and `tools`.
 
 <div v-pre>
 

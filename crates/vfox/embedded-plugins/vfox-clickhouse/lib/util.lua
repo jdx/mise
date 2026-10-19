@@ -1,5 +1,7 @@
 --- Utility functions for the clickhouse vfox plugin
 
+local json = require("json")
+
 local util = {}
 
 --- Fetch content from a URL using curl
@@ -20,23 +22,33 @@ end
 
 --- Get all version tags from GitHub releases (only lts and stable)
 --- @return table versions List of version strings
+--- @return table dates Map of version string to RFC 3339 release date
 function util.get_versions()
     local versions = {}
+    local dates = {}
     local url = "https://api.github.com/repos/ClickHouse/ClickHouse/releases?per_page=100"
     local content = util.fetch(url)
     if not content then
-        return versions
+        return versions, dates
     end
 
-    -- Parse JSON to extract tag names (versions)
-    for tag in content:gmatch('"tag_name"%s*:%s*"v([^"]+)"') do
+    -- Parse JSON to extract tag names (versions) and release dates
+    local ok, releases = pcall(json.decode, content)
+    if not ok or type(releases) ~= "table" then
+        return versions, dates
+    end
+    for _, release in ipairs(releases) do
+        local tag = type(release.tag_name) == "string" and release.tag_name:match("^v(.+)$")
         -- Only include lts and stable releases
-        if tag:match("%-lts$") or tag:match("%-stable$") then
+        if tag and (tag:match("%-lts$") or tag:match("%-stable$")) then
             table.insert(versions, tag)
+            if type(release.published_at) == "string" and dates[tag] == nil then
+                dates[tag] = release.published_at
+            end
         end
     end
 
-    return versions
+    return versions, dates
 end
 
 --- Compare version strings for sorting (descending - newest first)

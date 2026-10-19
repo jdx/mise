@@ -722,9 +722,9 @@ impl HttpBackend {
             let _ = file::remove_all(&tmp_path);
             return Err(err);
         }
-        if let Err(err) = std::fs::rename(&tmp_path, &cache_path) {
+        if let Err(err) = file::rename(&tmp_path, &cache_path) {
             let _ = file::remove_all(&tmp_path);
-            return Err(err.into());
+            return Err(err);
         }
 
         // Write metadata
@@ -777,9 +777,9 @@ impl HttpBackend {
             let _ = file::remove_all(&tmp_path);
             return Err(err);
         }
-        if let Err(err) = std::fs::rename(&tmp_path, &install_path) {
+        if let Err(err) = file::rename(&tmp_path, &install_path) {
             let _ = file::remove_all(&tmp_path);
-            return Err(err.into());
+            return Err(err);
         }
         Ok(())
     }

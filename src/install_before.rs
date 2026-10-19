@@ -7,7 +7,6 @@ use jiff::{Span, Timestamp};
 
 use crate::args::{BackendArg, split_bracketed_opts};
 use crate::backend::Backend;
-use crate::backend::backend_type::BackendType;
 use crate::config::{Config, Settings};
 use crate::duration::{parse_duration, parse_into_timestamp};
 
@@ -225,7 +224,7 @@ fn resolve_before_date_with_excludes(
             Some(before.to_string()),
         )));
     }
-    if !excluded && backend_arg.is_some_and(default_minimum_release_age_applies) {
+    if !excluded && backend_arg.is_some() {
         return Ok(Some((
             parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE)?,
             BeforeDateSource::Default,
@@ -233,25 +232,6 @@ fn resolve_before_date_with_excludes(
         )));
     }
     Ok(None)
-}
-
-fn default_minimum_release_age_applies(backend_arg: &BackendArg) -> bool {
-    matches!(
-        backend_arg.backend_type(),
-        BackendType::Aqua
-            | BackendType::Cargo
-            | BackendType::Core
-            | BackendType::Forgejo
-            | BackendType::Gem
-            | BackendType::Github
-            | BackendType::Gitlab
-            | BackendType::Go
-            | BackendType::Npm
-            | BackendType::Packslip
-            | BackendType::Pipx
-            | BackendType::Spm
-            | BackendType::Ubi
-    )
 }
 
 fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
@@ -612,10 +592,24 @@ mod tests {
     }
 
     #[test]
-    fn test_effective_before_date_skips_default_for_unsupported_backend() {
+    fn test_effective_before_date_falls_back_to_default_for_every_backend() {
         let _settings = crate::test::SettingsGuard::lock();
         Settings::reset(None);
-        assert_eq!(resolved_tool_timestamp("asdf:tiny", None, None), None);
+        let default =
+            Some(crate::duration::parse_into_timestamp(DEFAULT_MINIMUM_RELEASE_AGE).unwrap());
+        for backend in [
+            "asdf:tiny",
+            "vfox:jdx/vfox-yarn",
+            "conda:make",
+            "http:dart",
+            "dotnet:Foo",
+        ] {
+            assert_eq!(
+                resolved_tool_timestamp(backend, None, None),
+                default,
+                "{backend}"
+            );
+        }
     }
 
     #[test]
@@ -718,9 +712,12 @@ mod tests {
         );
         Settings::reset(None);
 
-        // Backend without release timestamps → no cutoff, no value
+        // The default reaches backends without release timestamps too
         let asdf_ba: BackendArg = "asdf:tiny".into();
-        assert_eq!(effective_minimum_release_age_for_tool(&asdf_ba, None), None);
+        assert_eq!(
+            effective_minimum_release_age_for_tool(&asdf_ba, None).as_deref(),
+            Some(DEFAULT_MINIMUM_RELEASE_AGE)
+        );
     }
 
     #[test]

@@ -28,6 +28,10 @@ git -C "$TOOL_DIR" init -q
 git -C "$TOOL_DIR" add .
 git -C "$TOOL_DIR" -c user.name="mise" -c user.email="mise@example.com" commit -q -m "initial plugin"
 
+# Every backend gets the default cutoff, which would hide the 2099 versions
+# below; turn it off until the cutoff itself is under test.
+export MISE_MINIMUM_RELEASE_AGE=0s
+
 TOOL="vfox:file://$TOOL_DIR"
 assert_contains "mise ls-remote '$TOOL'" "3.0.0"
 assert_not_contains "mise ls-remote '$TOOL' --before 2026-01-01" "3.0.0"

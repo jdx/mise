@@ -146,8 +146,8 @@ pub struct EnvDirectiveOptions {
     pub required: RequiredValue,
     #[serde(default)]
     pub expand: bool,
-    /// `_.file` only: look for a relative path in the current directory and each parent
-    /// directory, rather than only in the config file's directory.
+    /// `_.file` only: look for the file in the config file's directory and each parent
+    /// directory. An absolute path starts at its own directory.
     #[serde(default)]
     pub find_up: bool,
     /// `[vars]` only: ask for this value once and remember the answer on this machine.
@@ -508,7 +508,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                             /// directory. A path that is not plain stands alone, in list order, as it
                             /// would as a separate entry: a template or `$VAR` can depend on a value
                             /// an earlier file in the list loaded, so it has to resolve after that
-                            /// file, and an absolute path or `~` has no directory to search.
+                            /// file, and an absolute path or `~` starts at its own directory.
                             fn group_find_up_files(
                                 paths: Vec<String>,
                                 options: EnvDirectiveOptions,

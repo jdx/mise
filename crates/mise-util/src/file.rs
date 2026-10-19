@@ -373,7 +373,10 @@ pub fn try_rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> std::io::Re
 
 #[cfg(windows)]
 fn do_rename(from: &Path, to: &Path) -> std::io::Result<()> {
-    const MAX_ATTEMPTS: u32 = 5;
+    // Renaming a freshly extracted directory fails while antivirus is still scanning the files
+    // inside it, which takes tens of seconds for a multi-gigabyte archive such as flutter's.
+    const MAX_ATTEMPTS: u32 = 20;
+    const MAX_DELAY_MS: u64 = 5000;
     let mut last_err = None;
     for attempt in 0..MAX_ATTEMPTS {
         match fs::rename(from, to) {
@@ -381,10 +384,11 @@ fn do_rename(from: &Path, to: &Path) -> std::io::Result<()> {
             Err(e) if matches!(e.raw_os_error(), Some(5) | Some(32)) => {
                 // ERROR_ACCESS_DENIED (5) or ERROR_SHARING_VIOLATION (32):
                 // likely a transient lock from antivirus or the OS.
-                // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
+                // Exponential backoff from 50ms, capped at 5s (about a minute in total).
                 last_err = Some(e);
                 if attempt + 1 < MAX_ATTEMPTS {
-                    std::thread::sleep(std::time::Duration::from_millis(50 * (1 << attempt)));
+                    let delay = (50u64 << attempt).min(MAX_DELAY_MS);
+                    std::thread::sleep(std::time::Duration::from_millis(delay));
                 }
             }
             Err(e) => return Err(e),

@@ -352,7 +352,10 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
             }
         }
         toml::Value::Table(table) => {
+            // `{ enabled = false }` turns off an inherited whole-file entry
+            let only_enabled = table.len() == 1 && table.contains_key("enabled");
             let is_whole_file_table = table.is_empty()
+                || only_enabled
                 || table.contains_key("mode")
                 || table.contains_key("remove_empty")
                 || (table.contains_key("source")
@@ -2095,6 +2098,12 @@ mod tests {
         assert!(edit_entry_from_toml("~/a/config.toml/shared", value).is_some());
         let value: toml::Value = toml::from_str("source = \"s.toml\"").unwrap();
         assert!(edit_entry_from_toml("~/a/config.toml", value).is_none());
+    }
+
+    #[test]
+    fn an_enabled_only_table_is_a_whole_file_entry() {
+        let value: toml::Value = toml::from_str("enabled = false").unwrap();
+        assert!(edit_entry_from_toml("~/.config/foo", value).is_none());
     }
 
     #[cfg(unix)]

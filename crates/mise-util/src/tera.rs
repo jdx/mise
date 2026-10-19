@@ -1291,9 +1291,15 @@ pub fn get_tera_v2(dir: Option<&Path>) -> Tera {
     if Settings::get().safe {
         tera.register_function("exec", safe_disabled_fn("exec"));
         tera.register_function("read_file", safe_disabled_fn("read_file"));
+        for (name, _) in STRUCTURED_FORMATS {
+            tera.register_function(name, safe_disabled_fn(name));
+        }
     } else {
         tera.register_function("exec", tera_exec(dir.clone(), env::PRISTINE_ENV.clone()));
-        tera.register_function("read_file", tera_read_file(dir));
+        tera.register_function("read_file", tera_read_file(dir.clone()));
+        for (name, format) in STRUCTURED_FORMATS {
+            tera.register_function(name, tera_read_structured(name, format, dir.clone()));
+        }
     }
     tera
 }
@@ -1304,9 +1310,15 @@ fn get_tera_v1(dir: Option<&Path>) -> tera1::Tera {
     if Settings::get().safe {
         tera.register_function("exec", safe_disabled_fn_v1("exec"));
         tera.register_function("read_file", safe_disabled_fn_v1("read_file"));
+        for (name, _) in STRUCTURED_FORMATS {
+            tera.register_function(name, safe_disabled_fn_v1(name));
+        }
     } else {
         tera.register_function("exec", tera1_exec(dir.clone(), env::PRISTINE_ENV.clone()));
-        tera.register_function("read_file", tera1_read_file(dir));
+        tera.register_function("read_file", tera1_read_file(dir.clone()));
+        for (name, format) in STRUCTURED_FORMATS {
+            tera.register_function(name, tera1_read_structured(name, format, dir.clone()));
+        }
     }
     tera
 }
@@ -1376,6 +1388,11 @@ pub fn get_tera_for_oci(dir: Option<&Path>) -> TeraEngine {
         tera.register_function("read_file", move |_: &HashMap<String, JsonValue>| {
             Err(tera1_err(FILE_MESSAGE))
         });
+        for (name, _) in STRUCTURED_FORMATS {
+            tera.register_function(name, move |_: &HashMap<String, JsonValue>| {
+                Err(tera1_err(FILE_MESSAGE))
+            });
+        }
         TeraEngine::V1(Box::new(tera))
     } else {
         let mut tera = get_tera_v2(dir);
@@ -1390,6 +1407,11 @@ pub fn get_tera_for_oci(dir: Option<&Path>) -> TeraEngine {
             "read_file",
             move |_: Kwargs, _: &State| -> TeraResult<Value> { Err(tera_err(FILE_MESSAGE)) },
         );
+        for (name, _) in STRUCTURED_FORMATS {
+            tera.register_function(name, move |_: Kwargs, _: &State| -> TeraResult<Value> {
+                Err(tera_err(FILE_MESSAGE))
+            });
+        }
         TeraEngine::V2(Box::new(tera))
     }
 }
@@ -1970,6 +1992,86 @@ pub fn tera_read_file(dir: Option<PathBuf>) -> impl Fn(Kwargs, &State) -> TeraRe
             }
             _ => Err(tera_err("read_file path must be a string")),
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum StructuredFormat {
+    Json,
+    Yaml,
+    Toml,
+}
+
+/// The template functions that read a file and parse it, with the format each parses.
+const STRUCTURED_FORMATS: [(&str, StructuredFormat); 3] = [
+    ("read_json", StructuredFormat::Json),
+    ("read_yaml", StructuredFormat::Yaml),
+    ("read_toml", StructuredFormat::Toml),
+];
+
+/// Reads and parses `path` for `read_json`, `read_yaml` and `read_toml`. The result is a plain
+/// value, so a template reaches into it with `.key`, `["key"]` and `[0]`.
+fn read_structured(
+    name: &str,
+    format: StructuredFormat,
+    dir: Option<&Path>,
+    path_str: &str,
+) -> Result<JsonValue, String> {
+    let path = match dir {
+        Some(base_dir) => base_dir.join(path_str),
+        None => PathBuf::from(path_str),
+    };
+    track_tera_file(&path);
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("{name}({}): failed to read file: {e}", path.display()))?;
+    let parsed = match format {
+        StructuredFormat::Json => serde_json::from_str(&text).map_err(|e| e.to_string()),
+        StructuredFormat::Yaml => crate::yaml::from_str(&text).map_err(|e| e.to_string()),
+        StructuredFormat::Toml => toml::from_str::<toml::Value>(&text)
+            .map(toml_to_json)
+            .map_err(|e| e.to_string()),
+    };
+    parsed.map_err(|e| format!("{name}({}): failed to parse file: {e}", path.display()))
+}
+
+/// TOML dates and times become strings: serializing a `toml::Value` to JSON would wrap them in
+/// an internal marker table.
+fn toml_to_json(value: toml::Value) -> JsonValue {
+    match value {
+        toml::Value::String(s) => json!(s),
+        toml::Value::Integer(i) => json!(i),
+        toml::Value::Float(f) => json!(f),
+        toml::Value::Boolean(b) => json!(b),
+        toml::Value::Datetime(d) => json!(d.to_string()),
+        toml::Value::Array(a) => JsonValue::Array(a.into_iter().map(toml_to_json).collect()),
+        toml::Value::Table(t) => {
+            JsonValue::Object(t.into_iter().map(|(k, v)| (k, toml_to_json(v))).collect())
+        }
+    }
+}
+
+fn tera_read_structured(
+    name: &'static str,
+    format: StructuredFormat,
+    dir: Option<PathBuf>,
+) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
+    move |args: Kwargs, _: &State| -> TeraResult<Value> {
+        let Some(path_str) = args.get::<String>("path")? else {
+            return Err(tera_err(format!("{name} path must be a string")));
+        };
+        let value = read_structured(name, format, dir.as_deref(), &path_str).map_err(tera_err)?;
+        Ok(Value::from_serializable(&value))
+    }
+}
+
+fn tera1_read_structured(
+    name: &'static str,
+    format: StructuredFormat,
+    dir: Option<PathBuf>,
+) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+        let path_str = json_str_arg(args, "path")?;
+        read_structured(name, format, dir.as_deref(), path_str).map_err(tera1_err)
     }
 }
 
