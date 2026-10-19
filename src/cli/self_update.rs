@@ -1003,7 +1003,12 @@ impl SelfUpdate {
             }
         };
 
-        let dest = env::MISE_BIN
+        // mise-shim.exe ships beside the real mise.exe. MISE_BIN may be a link to it (winget puts
+        // one in WinGet/Links), and renaming over a link beside it would replace the link with a
+        // copy and leave the real mise-shim.exe stale.
+        let real_bin =
+            dunce::canonicalize(&*env::MISE_BIN).unwrap_or_else(|_| env::MISE_BIN.clone());
+        let dest = real_bin
             .parent()
             .expect("MISE_BIN should have a parent directory")
             .join("mise-shim.exe");
