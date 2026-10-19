@@ -16,6 +16,7 @@ use crate::args::ToolArg;
 use crate::config::Config;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::env_directive::EnvDirective;
+use crate::task::GetMatchingExt;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, Toolset, ToolsetBuilder};
 
 pub async fn config_for_root(config: &Arc<Config>, root: &Path) -> Result<Arc<Config>> {
@@ -380,12 +381,14 @@ impl DaemonSetExt for DaemonSet {
         if self.daemons.values().all(|d| d.task.is_none()) {
             return Ok(());
         }
-        let tasks = config.tasks_with_aliases().await?;
+        let all_tasks = config.tasks().await?;
+        let tasks = crate::task::build_task_ref_map(all_tasks.iter());
         for daemon in self.daemons.values() {
             let Some(task) = &daemon.task else {
                 continue;
             };
-            if !tasks.contains_key(task) {
+            // Resolve like `mise run`, so a file task matches without its extension.
+            if tasks.get_matching(task)?.is_empty() {
                 bail!("daemon {} runs unknown task {task:?}", daemon.name);
             }
         }

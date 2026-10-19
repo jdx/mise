@@ -289,6 +289,19 @@ task = "missing"
 TOML
 assert_fail_contains "mise run --dry-run dev 2>&1" 'daemon api runs unknown task "missing"'
 
+# A file task resolves by its name without the script extension (#14740).
+mkdir -p mise-tasks
+printf '#!/usr/bin/env bash\necho worker\n' >mise-tasks/worker.sh
+chmod +x mise-tasks/worker.sh
+cat >mise.toml <<'TOML'
+[tasks.dev]
+daemons = ["api"]
+run = "echo dev"
+[daemons.api]
+task = "worker"
+TOML
+assert_not_contains "mise run --dry-run dev 2>&1" 'unknown task'
+
 # A task that requires daemons starts them through pitchfork before it runs, and
 # the task the daemon supervises keeps its own depends.
 cat >mise.toml <<'TOML'
