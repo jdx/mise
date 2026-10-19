@@ -254,6 +254,49 @@ are available, such as `fromJSON`, `keys`, `filter`, `map` and `split`. mise add
 versioning, and use `sortVersions()` when the expression needs a sorted value
 along the way.
 
+### `version_date_expr` and `version_date_url` {#version-date-expr}
+
+A version list without dates cannot take part in
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age): a
+version with no release date is never held back by the cooldown. When the
+upstream publishes dates, `version_date_expr` reads them. It is an
+[expr-lang](https://expr-lang.org/) expression that receives `body` (the
+`version_list_url` response), `bodies` (see below) and `versions` (the list that
+`version_expr` produced), and returns a list of `[version, date]` pairs, or a map
+of version to date. A date is an RFC 3339 timestamp, an HTTP date such as a `Last-Modified` value,
+or a `YYYY-MM-DD` day; mise skips and warns about any other form.
+
+```toml
+[tools."http:my-tool"]
+version = "latest"
+url = "https://example.com/releases/my-tool-v{{ version }}.tar.gz"
+version_list_url = "https://example.com/releases.json"
+version_expr = 'map(fromJSON(body).releases, { #.version })'
+version_date_expr = 'map(fromJSON(body).releases, { [#.version, #.published_at] })'
+```
+
+Versions that the expression leaves out stay undated, and a version the expression
+names that is not in the list is ignored. A malformed expression fails the listing.
+
+When the dates live somewhere other than the version list, set `version_date_url`.
+`body` is then that response, not the version list. An upstream that pages its
+listing needs `version_date_next_expr`, which sees each page as `body` and its
+address as `url`, and returns the address of the next page, or `nil` after the last.
+`bodies` holds every page in order. The next page must be on the same host, because
+`headers` are sent with every request, and mise stops after 100 pages.
+
+<!-- schema: skip -->
+
+```toml
+# GCS object listing: 1000 objects a page, with a token for the next one
+version_date_url = "https://storage.googleapis.com/storage/v1/b/my-bucket/o?prefix=releases/"
+version_date_next_expr = 'fromJSON(body).nextPageToken != nil ? split(url, "&pageToken=")[0] + "&pageToken=" + fromJSON(body).nextPageToken : nil'
+version_date_expr = 'map(flatten(map(bodies, { fromJSON(#).items })), { [split(#.name, "/")[1], #.timeCreated] })'
+```
+
+`version_date_url` and `version_date_next_expr` require `version_date_expr`, and
+all three are sent the same `headers` as `version_list_url`.
+
 ### `version_order` {#version-order}
 
 Many JSON indexes list versions newest first, which makes the last entry, and so

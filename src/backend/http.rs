@@ -30,7 +30,7 @@ use async_trait::async_trait;
 use eyre::{Result, WrapErr, bail};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -275,6 +275,18 @@ impl<'a> HttpOptions<'a> {
 
     fn version_expr(&self) -> Option<&'a str> {
         self.values.str("version_expr")
+    }
+
+    fn version_date_expr(&self) -> Option<&'a str> {
+        self.values.str("version_date_expr")
+    }
+
+    fn version_date_url(&self) -> Option<&'a str> {
+        self.values.str("version_date_url")
+    }
+
+    fn version_date_next_expr(&self) -> Option<&'a str> {
+        self.values.str("version_date_next_expr")
     }
 
     fn url_platforms(&self) -> Vec<String> {
@@ -1104,8 +1116,9 @@ impl HttpBackend {
     // Version listing
     // -------------------------------------------------------------------------
 
-    /// Fetch versions from version_list_url if configured
-    async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<String>> {
+    /// Fetch versions from version_list_url if configured, with release dates from
+    /// `version_date_expr` when it is set.
+    async fn fetch_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = HttpOptions::new(&raw_opts);
 
@@ -1119,7 +1132,41 @@ impl HttpBackend {
         let version_expr = opts.version_expr();
 
         let headers = opts.headers(None)?;
-        version_list::fetch_versions(&url, &headers, regex, json_path, version_expr).await
+        let (versions, body) =
+            version_list::fetch_versions_with_body(&url, &headers, regex, json_path, version_expr)
+                .await?;
+
+        let dates = if let Some(date_expr) = opts.version_date_expr() {
+            let bodies = match opts.version_date_url() {
+                Some(date_url) => {
+                    version_list::fetch_date_sources(
+                        date_url,
+                        opts.version_date_next_expr(),
+                        &headers,
+                    )
+                    .await?
+                }
+                None if opts.version_date_next_expr().is_some() => {
+                    bail!("`version_date_next_expr` requires `version_date_url`")
+                }
+                None => vec![body],
+            };
+            version_list::eval_version_dates(date_expr, &bodies, &versions)
+                .wrap_err_with(|| format!("failed to evaluate version_date_expr for {}", self.ba))?
+        } else if opts.version_date_url().is_some() || opts.version_date_next_expr().is_some() {
+            bail!("`version_date_url` and `version_date_next_expr` require `version_date_expr`");
+        } else {
+            HashMap::new()
+        };
+
+        Ok(versions
+            .into_iter()
+            .map(|version| VersionInfo {
+                created_at: dates.get(&version).cloned(),
+                version,
+                ..Default::default()
+            })
+            .collect())
     }
 
     // -------------------------------------------------------------------------
@@ -1259,6 +1306,9 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "version_regex".into(),
         "version_json_path".into(),
         "version_expr".into(),
+        "version_date_url".into(),
+        "version_date_next_expr".into(),
+        "version_date_expr".into(),
         "format".into(),
         "rename_exe".into(),
         "windows_script_interpreter".into(),
@@ -1319,6 +1369,9 @@ impl Backend for HttpBackend {
             "version_regex",
             "version_json_path",
             "version_expr",
+            "version_date_url",
+            "version_date_next_expr",
+            "version_date_expr",
             "headers",
             "headers_forward",
         ]
@@ -1336,6 +1389,9 @@ impl Backend for HttpBackend {
             "version_regex",
             "version_json_path",
             "version_expr",
+            "version_date_url",
+            "version_date_next_expr",
+            "version_date_expr",
             "checksum_url",
             "checksum_expr",
             "headers",
@@ -1429,14 +1485,7 @@ impl Backend for HttpBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let versions = self.fetch_versions(config).await?;
-        Ok(versions
-            .into_iter()
-            .map(|v| VersionInfo {
-                version: v,
-                ..Default::default()
-            })
-            .collect())
+        self.fetch_versions(config).await
     }
 
     /// An http tool with no URL for this platform cannot be installed, and the options say so
