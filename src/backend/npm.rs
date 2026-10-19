@@ -936,12 +936,12 @@ impl Backend for NPMBackend {
                 .iter()
                 .flatten()
                 .flat_map(|rc| VAR_REF.captures_iter(rc))
-                .map(|cap| cap[1].to_string())
+                .map(|cap| cap[1].to_ascii_lowercase())
                 .collect::<HashSet<_>>();
             let env = env
                 .iter()
                 .filter(|(key, _)| {
-                    referenced.contains(key.as_str())
+                    referenced.contains(&key.to_ascii_lowercase())
                         || !(key.starts_with("MISE_") || key.eq_ignore_ascii_case("path"))
                 })
                 .collect::<BTreeMap<_, _>>();
