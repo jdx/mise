@@ -35,20 +35,19 @@ const RUST_DEFAULT_DIST_SERVER: &str = "https://static.rust-lang.org";
 const RUST_MINIMAL_PROFILE_COMPONENTS: &[&str] = &["cargo", "rust-std", "rustc"];
 const RUST_DEFAULT_PROFILE_COMPONENTS: &[&str] = &["clippy", "rust-docs", "rustfmt"];
 
-fn parse_channel_manifest_date(manifest: &str) -> Result<jiff::civil::Date> {
-    let manifest: toml::Value =
-        toml::from_str(manifest).wrap_err("failed to parse the Rust channel manifest")?;
+fn parse_channel_manifest_date(manifest: &str, channel: &str) -> Result<jiff::civil::Date> {
+    let manifest: toml::Value = toml::from_str(manifest)
+        .wrap_err_with(|| format!("failed to parse the Rust {channel} channel manifest"))?;
     let date = manifest
         .get("date")
         .and_then(toml::Value::as_str)
-        .ok_or_else(|| eyre::eyre!("Rust channel manifest is missing its date"))?;
+        .ok_or_else(|| eyre::eyre!("Rust {channel} channel manifest is missing its date"))?;
     date.parse::<jiff::civil::Date>()
-        .wrap_err_with(|| format!("invalid Rust channel manifest date: {date}"))
+        .wrap_err_with(|| format!("invalid Rust {channel} channel manifest date: {date}"))
 }
 
 fn parse_nightly_manifest(manifest: &str) -> Result<String> {
-    let date =
-        parse_channel_manifest_date(manifest).wrap_err("invalid Rust nightly channel manifest")?;
+    let date = parse_channel_manifest_date(manifest, "nightly")?;
     Ok(format!("nightly-{date}"))
 }
 
@@ -81,7 +80,7 @@ async fn current_channel_created_at(
         .await
         .inspect_err(|err| debug!("failed to fetch the Rust {channel} channel manifest: {err:#}"))
         .ok()?;
-    parse_channel_manifest_date(&manifest)
+    parse_channel_manifest_date(&manifest, channel)
         .inspect_err(|err| debug!("{err:#}"))
         .ok()
         .map(channel_created_at)
@@ -1849,8 +1848,11 @@ mod tests {
 
     #[test]
     fn channels_are_dated_by_the_build_they_point_at() {
-        let date = parse_channel_manifest_date("manifest-version = \"2\"\ndate = \"2026-09-18\"\n")
-            .unwrap();
+        let date = parse_channel_manifest_date(
+            "manifest-version = \"2\"\ndate = \"2026-09-18\"\n",
+            "stable",
+        )
+        .unwrap();
         assert_eq!(channel_created_at(date), "2026-09-18T00:00:00Z");
         assert_eq!(
             dated_nightly_created_at("nightly-2026-10-18").as_deref(),
