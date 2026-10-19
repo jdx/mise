@@ -804,12 +804,15 @@ const MAX_MISSING_DATE_LOOKUPS: usize = 5;
 /// lacks are looked up one by one.
 async fn erlang_release_dates(kerl_output: &str) -> Result<HashMap<String, String>> {
     let repo = "erlang/otp";
-    // Each request is bounded on its own, so a slow lookup of one recent
-    // release costs only that date, not the ones already read.
-    let releases = plugins::core::run_fetch_task_with_timeout_async(async || {
-        github::list_release_versions(github::API_URL, repo, false).await
-    })
-    .await?;
+    // One deadline covers every request, and a lookup that misses it costs
+    // only its own date, not the ones already read.
+    let deadline = tokio::time::Instant::now() + Settings::get().fetch_remote_versions_timeout();
+    let releases = tokio::time::timeout_at(
+        deadline,
+        github::list_release_versions(github::API_URL, repo, false),
+    )
+    .await
+    .map_err(|_| eyre::eyre!("timed out reading erlang releases from GitHub"))??;
     let mut dates = release_dates(&releases);
     let missing = kerl_versions(kerl_output, &HashMap::new())
         .into_iter()
@@ -820,15 +823,15 @@ async fn erlang_release_dates(kerl_output: &str) -> Result<HashMap<String, Strin
         .collect::<Vec<_>>();
     for version in missing {
         let tag = ErlangPlugin::release_tag(&version);
-        let release = plugins::core::run_fetch_task_with_timeout_async(async || {
-            github::get_release(repo, &tag).await
-        })
-        .await;
-        match release {
-            Ok(release) => {
+        match tokio::time::timeout_at(deadline, github::get_release(repo, &tag)).await {
+            Ok(Ok(release)) => {
                 dates.insert(version, release.released_at().to_string());
             }
-            Err(err) => debug!("no GitHub release for erlang {version}: {err}"),
+            Ok(Err(err)) => debug!("no GitHub release for erlang {version}: {err}"),
+            Err(_) => {
+                debug!("timed out looking up the GitHub release for erlang {version}");
+                break;
+            }
         }
     }
     Ok(dates)
