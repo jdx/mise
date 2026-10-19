@@ -4076,6 +4076,12 @@ pub trait Backend: Debug + Send + Sync {
                 None => match self.fetch_version_created_at(config, candidate).await {
                     Ok(created_at) => {
                         remember_on_demand_release_date(&backend, candidate, created_at.as_deref());
+                        if created_at.is_none() {
+                            warn_once!(
+                                "{}@{candidate} has no release date, so the {before} cutoff cannot be checked and it is allowed",
+                                self.id()
+                            );
+                        }
                         created_at
                     }
                     Err(err) => {
