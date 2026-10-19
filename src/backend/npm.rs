@@ -912,17 +912,24 @@ impl Backend for NPMBackend {
                 .filter(|(key, _)| key.to_ascii_lowercase().starts_with("npm_config_"))
                 .map(|(key, value)| (key.to_ascii_lowercase(), value.as_str()))
                 .collect::<BTreeMap<_, _>>();
-            let userconfig = env
+            // Node's `os.homedir()` reads `HOME` on Unix and `USERPROFILE` on
+            // Windows, and `NPM_CONFIG_USERCONFIG` overrides both, so hash
+            // every file `npm` could take its user config from.
+            let homes = ["HOME", "USERPROFILE"].map(|key| env.get(key));
+            let npmrcs = env
                 .iter()
                 .find(|(key, _)| key.eq_ignore_ascii_case("npm_config_userconfig"))
                 .map(|(_, path)| PathBuf::from(path))
-                .or_else(|| {
-                    let home = env.get("HOME").or_else(|| env.get("USERPROFILE"))?;
-                    Some(PathBuf::from(home).join(".npmrc"))
-                });
-            let npmrc = userconfig.and_then(|path| std::fs::read_to_string(path).ok());
-            let home = env.get("HOME").or_else(|| env.get("USERPROFILE"));
-            return Ok(Some(crate::hash::hash_to_str(&(npm_config, home, npmrc))));
+                .into_iter()
+                .chain(
+                    homes
+                        .iter()
+                        .flatten()
+                        .map(|home| PathBuf::from(home).join(".npmrc")),
+                )
+                .map(|path| std::fs::read_to_string(path).ok())
+                .collect::<Vec<_>>();
+            return Ok(Some(crate::hash::hash_to_str(&(npm_config, homes, npmrcs))));
         }
         let registry = npm_registry::package_registry(&self.tool_name());
         Ok((!npm_registry::is_public_registry(&registry)).then_some(registry))
