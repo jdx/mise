@@ -145,7 +145,8 @@ fn value_items(
         .collect()
 }
 
-/// The table a line belongs to, and whether the cursor is inside a multiline string.
+/// The table a line belongs to, and whether the cursor is inside a value that spans lines: a
+/// multiline string, or an array or inline table still open.
 ///
 /// The table is the nearest header above the line that is not itself string content. A header
 /// of an array of tables (`[[watch_files]]`) names its latest element, so the path ends in an
@@ -153,10 +154,10 @@ fn value_items(
 /// cursor's line up to the cursor.
 fn scan(index: &LineIndex, line: usize, before: &str) -> (Vec<String>, bool) {
     let mut table = vec![];
-    let mut open = None;
+    let mut state = State::default();
     for l in 0..line {
         let text = index.line(l);
-        if open.is_none()
+        if state.is_closed()
             && let Some(rest) = text.trim().strip_prefix('[')
         {
             let array = rest.starts_with('[');
@@ -167,25 +168,41 @@ fn scan(index: &LineIndex, line: usize, before: &str) -> (Vec<String>, bool) {
                 table.push("0".to_string());
             }
         }
-        open = advance(text, open);
+        state = advance(text, state);
     }
-    (table, advance(before, open).is_some())
+    // Brackets on the cursor's own line are the header or value being typed.
+    let inside = state.depth > 0 || advance(before, state).open.is_some();
+    (table, inside)
 }
 
-/// The quote of the multiline string still open at the end of `text`, given the one open at its
-/// start. Triple quotes only count outside comments and single-line strings.
-fn advance(text: &str, mut open: Option<char>) -> Option<char> {
+/// What is still open at a line break: a multiline string (by its quote) and the arrays and
+/// inline tables that have not closed.
+#[derive(Clone, Copy, Default)]
+struct State {
+    open: Option<char>,
+    depth: usize,
+}
+
+impl State {
+    fn is_closed(self) -> bool {
+        self.open.is_none() && self.depth == 0
+    }
+}
+
+/// The state at the end of `text`, given the state at its start. Quotes and brackets only count
+/// outside comments and single-line strings.
+fn advance(text: &str, mut state: State) -> State {
     let chars: Vec<char> = text.chars().collect();
     let triple = |i: usize, q: char| chars.get(i..i + 3) == Some(&[q, q, q][..]);
     let mut single = None;
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
-        if let Some(q) = open {
+        if let Some(q) = state.open {
             if q == '"' && c == '\\' {
                 i += 2;
             } else if triple(i, q) {
-                open = None;
+                state.open = None;
                 i += 3;
             } else {
                 i += 1;
@@ -204,17 +221,19 @@ fn advance(text: &str, mut open: Option<char>) -> Option<char> {
             match c {
                 '#' => break,
                 '"' | '\'' if triple(i, c) => {
-                    open = Some(c);
+                    state.open = Some(c);
                     i += 3;
                     continue;
                 }
                 '"' | '\'' => single = Some(c),
+                '[' | '{' => state.depth += 1,
+                ']' | '}' => state.depth = state.depth.saturating_sub(1),
                 _ => {}
             }
         }
         i += 1;
     }
-    open
+    state
 }
 
 fn unquoted_equals(text: &str) -> Option<usize> {
@@ -341,6 +360,14 @@ mod tests {
     #[test]
     fn a_multiline_string_opened_on_the_cursor_line_completes_nothing() {
         assert!(labels("[settings]\nnote = \"\"\"co|").is_empty());
+    }
+
+    #[test]
+    fn multiline_arrays_are_not_tables() {
+        let text = "[settings]\nlist = [\n  [\"a\"],\n  [[1]],\n]\nco|";
+        assert_eq!(labels(text), ["color"]);
+        assert!(labels("[settings]\nlist = [\n  [\"a\"],\n  |").is_empty());
+        assert!(labels("[settings]\nt = {\n|").is_empty());
     }
 
     #[test]
