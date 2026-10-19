@@ -2321,7 +2321,7 @@
         },
         "version_date_expr": {
           "type": "string",
-          "description": "expr-lang expression mapping each version to its release date, as a map or a list of {version, date} maps (variables: body, bodies, versions)"
+          "description": "expr-lang expression mapping each version to its release date, as a list of [version, date] pairs or a map of version to date (variables: body, bodies, versions)"
         }
       }
     },

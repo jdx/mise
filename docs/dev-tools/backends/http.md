@@ -290,7 +290,7 @@ address as `url`, and returns the address of the next page, or `nil` after the l
 ```toml
 # GCS object listing: 1000 objects a page, with a token for the next one
 version_date_url = "https://storage.googleapis.com/storage/v1/b/my-bucket/o?prefix=releases/"
-version_date_next_expr = 'fromJSON(body).nextPageToken != nil ? url + "&pageToken=" + fromJSON(body).nextPageToken : nil'
+version_date_next_expr = 'fromJSON(body).nextPageToken != nil ? split(url, "&pageToken=")[0] + "&pageToken=" + fromJSON(body).nextPageToken : nil'
 version_date_expr = 'map(flatten(map(bodies, { fromJSON(#).items })), { [split(#.name, "/")[1], #.timeCreated] })'
 ```
 
