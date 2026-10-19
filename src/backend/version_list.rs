@@ -12,21 +12,25 @@
 /// - `version_regex`: Regex pattern to extract versions (first capturing group or full match)
 /// - `version_json_path`: JQ-like path to extract versions from JSON (e.g., `.[].version`)
 /// - `version_expr`: Expression using expr-lang syntax to extract versions
+/// - `version_date_url`: URL holding release dates, when not `version_list_url`
+/// - `version_date_next_expr`: Expression naming the next page of `version_date_url`
+/// - `version_date_expr`: Expression using expr-lang syntax to map each version to its release date
 use crate::backend::jq;
 use expr::{Context, Environment, Value};
 use eyre::Result;
 use regex::Regex;
 use reqwest::header::HeaderMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-/// Fetch and parse versions from a version list URL
-pub(crate) async fn fetch_versions(
+/// Fetch and parse versions from a version list URL, also returning the trimmed body
+/// they came from so `version_date_expr` can read it without a second request.
+pub(crate) async fn fetch_versions_with_body(
     version_list_url: &str,
     headers: &HeaderMap,
     version_regex: Option<&str>,
     version_json_path: Option<&str>,
     version_expr: Option<&str>,
-) -> Result<Vec<String>> {
+) -> Result<(Vec<String>, String)> {
     use crate::http::HTTP;
 
     let content = if version_regex.is_some() {
@@ -47,7 +51,8 @@ pub(crate) async fn fetch_versions(
     let content = content.trim();
 
     // Parse versions based on format
-    parse_version_list(content, version_regex, version_json_path, version_expr)
+    let versions = parse_version_list(content, version_regex, version_json_path, version_expr)?;
+    Ok((versions, content.to_string()))
 }
 
 /// Parse version list from content using optional regex pattern, JSON path, or expr
@@ -138,18 +143,25 @@ pub(crate) fn parse_version_list(
 /// The previously extracted version list is always injected as a `versions`
 /// variable so the expression can post-process it (e.g. sortVersions).
 fn eval_version_expr(expr_str: &str, body: &str, versions: &[String]) -> Result<Vec<String>> {
-    use versions::Versioning;
-
     let mut ctx = Context::default();
     ctx.insert("body".to_string(), Value::String(body.to_string()));
-    ctx.insert(
-        "versions".to_string(),
-        Value::Array(versions.iter().map(|v| Value::String(v.clone())).collect()),
-    );
+    ctx.insert("versions".to_string(), string_array(versions));
 
     // expr-lang 1.0+ has built-in fromJSON, keys, values, len, toJSON functions
-    let mut env = Environment::new();
+    let env = expr_environment();
+    let result = env.eval(expr_str, &ctx)?;
+    value_to_strings(result)
+}
 
+fn string_array(items: &[String]) -> Value {
+    Value::Array(items.iter().map(|v| Value::String(v.clone())).collect())
+}
+
+/// The expr environment shared by `version_expr` and `version_date_expr`.
+fn expr_environment() -> Environment<'static> {
+    use versions::Versioning;
+
+    let mut env = Environment::new();
     // Add sortVersions function for semver-aware sorting
     env.add_function("sortVersions", |c| {
         if c.args.len() != 1 {
@@ -171,9 +183,7 @@ fn eval_version_expr(expr_str: &str, body: &str, versions: &[String]) -> Result<
             versions.into_iter().map(Value::String).collect(),
         ))
     });
-
-    let result = env.eval(expr_str, &ctx)?;
-    value_to_strings(result)
+    env
 }
 
 /// Convert expr Value to a list of strings
@@ -199,6 +209,152 @@ fn value_to_strings(value: Value) -> Result<Vec<String>> {
             Ok(vec![])
         }
     }
+}
+
+/// The most pages `version_date_next_expr` may chain before the listing fails, so an
+/// expression that never returns an empty answer cannot loop forever.
+const MAX_DATE_PAGES: usize = 100;
+
+/// Fetch the pages `version_date_expr` reads: `first_url`, then whatever
+/// `next_expr` names after each page until it answers nothing. `next_expr` sees
+/// `body` (the page just fetched) and `url` (its address), and must name a page on
+/// the same host, since `headers` follow every request.
+pub(crate) async fn fetch_date_sources(
+    first_url: &str,
+    next_expr: Option<&str>,
+    headers: &HeaderMap,
+) -> Result<Vec<String>> {
+    use crate::http::HTTP;
+
+    let origin = url::Url::parse(first_url)?.origin();
+    let mut bodies = Vec::new();
+    let mut url = first_url.to_string();
+    loop {
+        let body = HTTP
+            .get_text_request(&url)
+            .headers(headers)
+            .allow_html()
+            .send()
+            .await?;
+        let body = body.trim().to_string();
+        let next = match next_expr {
+            Some(expr) => next_date_url(expr, &body, &url)?,
+            None => None,
+        };
+        bodies.push(body);
+        let Some(next) = next else {
+            return Ok(bodies);
+        };
+        if url::Url::parse(&next)?.origin() != origin {
+            eyre::bail!(
+                "version_date_next_expr named {next}, which is not on the host of {first_url}"
+            );
+        }
+        if next == url || bodies.len() >= MAX_DATE_PAGES {
+            eyre::bail!(
+                "version_date_next_expr did not finish after {} pages of {first_url}",
+                bodies.len()
+            );
+        }
+        url = next;
+    }
+}
+
+/// Evaluate `version_date_next_expr` for one fetched page.
+fn next_date_url(expr_str: &str, body: &str, url: &str) -> Result<Option<String>> {
+    let mut ctx = Context::default();
+    ctx.insert("body".to_string(), Value::String(body.to_string()));
+    ctx.insert("url".to_string(), Value::String(url.to_string()));
+    match expr_environment().eval(expr_str, &ctx)? {
+        Value::Nil => Ok(None),
+        Value::String(next) if next.is_empty() => Ok(None),
+        Value::String(next) => Ok(Some(next)),
+        _ => eyre::bail!("version_date_next_expr must return a url string or nil"),
+    }
+}
+
+/// Evaluate `version_date_expr` and return each version's release date.
+///
+/// The expression sees `body` (the first page), `bodies` (every page, for a paged `version_date_url`) and
+/// `versions` (the resolved list). It returns a list of `[version, date]` pairs
+/// or a map of version to date. Entries for versions that are not in
+/// `versions`, or whose date is empty, are dropped, so a version missing from
+/// the date source stays undated rather than failing the listing.
+pub(crate) fn eval_version_dates(
+    expr_str: &str,
+    bodies: &[String],
+    versions: &[String],
+) -> Result<HashMap<String, String>> {
+    let mut ctx = Context::default();
+    ctx.insert(
+        "body".to_string(),
+        Value::String(bodies.first().cloned().unwrap_or_default()),
+    );
+    ctx.insert("bodies".to_string(), string_array(bodies));
+    ctx.insert("versions".to_string(), string_array(versions));
+
+    let result = expr_environment().eval(expr_str, &ctx)?;
+    let mut pairs = Vec::new();
+    match result {
+        Value::Map(map) => {
+            for (version, date) in map {
+                pairs.push((Some(version), value_as_string(&date)));
+            }
+        }
+        Value::KeyedMap(entries) => {
+            for (version, date) in entries {
+                pairs.push((value_as_string(&version), value_as_string(&date)));
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                match item {
+                    Value::Array(pair) if pair.len() == 2 => {
+                        pairs.push((value_as_string(&pair[0]), value_as_string(&pair[1])));
+                    }
+                    _ => eyre::bail!("version_date_expr must return [version, date] pairs"),
+                }
+            }
+        }
+        _ => eyre::bail!("version_date_expr must return [version, date] pairs or a map"),
+    }
+
+    let known: HashSet<&str> = versions.iter().map(String::as_str).collect();
+    let mut dates = HashMap::new();
+    let mut unreadable = Vec::new();
+    for (version, date) in pairs {
+        let (Some(version), Some(date)) = (version, date) else {
+            continue;
+        };
+        let date = date.trim();
+        if date.is_empty() || !known.contains(version.as_str()) {
+            continue;
+        }
+        match normalize_date(date) {
+            Some(date) => {
+                dates.insert(version, date);
+            }
+            None => unreadable.push(date.to_string()),
+        }
+    }
+    if let Some(example) = unreadable.first() {
+        warn!(
+            "version_date_expr returned {} dates mise cannot read, such as {example:?}; \
+             use RFC 3339, an HTTP date or YYYY-MM-DD",
+            unreadable.len()
+        );
+    }
+    Ok(dates)
+}
+
+/// A date `created_at` can hold: what `parse_into_timestamp` reads, plus the RFC 2822
+/// form of an HTTP `Last-Modified` header (`Thu, 15 Oct 2026 11:33:41 GMT`).
+fn normalize_date(date: &str) -> Option<String> {
+    if crate::duration::parse_into_timestamp(date).is_ok() {
+        return Some(date.to_string());
+    }
+    let zoned = jiff::fmt::rfc2822::parse(date).ok()?;
+    Some(zoned.timestamp().to_string())
 }
 
 fn value_as_string(value: &Value) -> Option<String> {
@@ -439,5 +595,85 @@ mod tests {
         )
         .unwrap();
         assert_eq!(versions, vec!["4.9.9", "4.10.1", "4.21.3"]);
+    }
+
+    fn strings(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn test_version_dates_from_pairs() {
+        let body = r#"{"releases":[
+            {"version":"1.0.0","date":"2024-01-02T03:04:05Z"},
+            {"version":"2.0.0","date":"2024-05-06"},
+            {"version":"9.9.9","date":"2024-07-08"}
+        ]}"#;
+        let dates = eval_version_dates(
+            "map(fromJSON(body).releases, { [#.version, #.date] })",
+            &[body.to_string()],
+            &strings(&["1.0.0", "2.0.0", "3.0.0"]),
+        )
+        .unwrap();
+        assert_eq!(dates.len(), 2);
+        assert_eq!(dates["1.0.0"], "2024-01-02T03:04:05Z");
+        assert_eq!(dates["2.0.0"], "2024-05-06");
+    }
+
+    #[test]
+    fn test_version_dates_from_from_pairs() {
+        let dates = eval_version_dates(
+            r#"fromPairs([["1.0.0", "2024-01-02"]])"#,
+            &[String::new()],
+            &strings(&["1.0.0"]),
+        )
+        .unwrap();
+        assert_eq!(dates["1.0.0"], "2024-01-02");
+    }
+
+    #[test]
+    fn test_version_dates_from_map() {
+        let dates = eval_version_dates(
+            r#"{"1.0.0": "2024-01-02", "2.0.0": ""}"#,
+            &[String::new()],
+            &strings(&["1.0.0", "2.0.0"]),
+        )
+        .unwrap();
+        assert_eq!(dates.len(), 1);
+        assert_eq!(dates["1.0.0"], "2024-01-02");
+    }
+
+    #[test]
+    fn test_version_dates_read_every_page() {
+        let pages = [
+            r#"[{"v":"1.0.0","d":"2024-01-02"}]"#.to_string(),
+            r#"[{"v":"2.0.0","d":"2024-03-04"}]"#.to_string(),
+        ];
+        let dates = eval_version_dates(
+            "map(concat(fromJSON(bodies[0]), fromJSON(bodies[1])), { [#.v, #.d] })",
+            &pages,
+            &strings(&["1.0.0", "2.0.0"]),
+        )
+        .unwrap();
+        assert_eq!(dates["1.0.0"], "2024-01-02");
+        assert_eq!(dates["2.0.0"], "2024-03-04");
+    }
+
+    #[test]
+    fn test_version_dates_accept_http_dates_and_drop_unreadable_ones() {
+        let dates = eval_version_dates(
+            r#"{"1.0.0": "Thu, 15 Oct 2026 11:33:41 GMT", "2.0.0": "last tuesday"}"#,
+            &[String::new()],
+            &strings(&["1.0.0", "2.0.0"]),
+        )
+        .unwrap();
+        assert_eq!(dates.len(), 1);
+        assert_eq!(dates["1.0.0"], "2026-10-15T11:33:41Z");
+    }
+
+    #[test]
+    fn test_version_dates_reject_other_shapes() {
+        assert!(eval_version_dates("\"2024-01-02\"", &[String::new()], &[]).is_err());
+        assert!(eval_version_dates("[1, 2]", &[String::new()], &[]).is_err());
+        assert!(eval_version_dates("[[1, 2, 3]]", &[String::new()], &[]).is_err());
     }
 }
