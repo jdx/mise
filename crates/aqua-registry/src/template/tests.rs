@@ -230,3 +230,42 @@ fn test_render_vars_property_in_function_arg() {
     let ctx = hashmap(vec![("Vars.channel", "stable")]);
     assert_eq!(render(tmpl, &ctx).unwrap(), "Stable");
 }
+
+#[test]
+fn test_render_unterminated_string_fails() {
+    let tmpl = r#"{{ "unterminated }}"#;
+    let ctx = HashMap::new();
+    assert!(render(tmpl, &ctx).is_err());
+}
+
+#[test]
+fn test_lex_string_escapes_and_unicode() {
+    // Normal string with Unicode
+    let tokens = lex(r#""café""#).unwrap();
+    assert_eq!(tokens, vec![Token::String("café")]);
+
+    // String with escaped quote inside
+    let tokens = lex(r#""hello\"world""#).unwrap();
+    assert_eq!(tokens, vec![Token::String(r#"hello\"world"#)]);
+
+    // String with escaped backslash before closing quote
+    let tokens = lex(r#""hello\\""#).unwrap();
+    assert_eq!(tokens, vec![Token::String(r#"hello\\"#)]);
+
+    // Unicode preceding escaped quote
+    let tokens = lex(r#""café\"world""#).unwrap();
+    assert_eq!(tokens, vec![Token::String(r#"café\"world"#)]);
+
+    // Unterminated strings with escaped quotes should fail
+    assert!(lex(r#""unterminated\""#).is_err());
+    assert!(lex(r#""café\""#).is_err());
+    assert!(lex(r#""escaped\"quote\""#).is_err());
+
+    // Triple backslash before quote: \\\" is an escaped quote -> unterminated
+    assert!(lex(r#""test\\\""#).is_err());
+
+    // Quadruple backslash before quote: \\\\" is an escaped backslash pair -> valid terminated
+    let tokens = lex(r#""test\\\\""#).unwrap();
+    assert_eq!(tokens, vec![Token::String(r#"test\\\\"#)]);
+}
+

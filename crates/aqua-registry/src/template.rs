@@ -136,12 +136,18 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
             tokens.push(Token::Pipe);
             code = &code[1..];
         } else if code.starts_with('"') {
+            let mut found = false;
             for (end, _) in code[1..].match_indices('"') {
-                if code.chars().nth(end) != Some('\\') {
-                    tokens.push(Token::String(&code[1..end + 1]));
+                let slash_count = code[1..=end].bytes().rev().take_while(|&b| b == b'\\').count();
+                if slash_count % 2 == 0 {
+                    tokens.push(Token::String(&code[1..=end]));
                     code = &code[end + 2..];
+                    found = true;
                     break;
                 }
+            }
+            if !found {
+                bail!("unterminated string literal");
             }
         } else if code.starts_with(".") {
             if let Some(first_end) = dotted_identifier_end(code) {
