@@ -4103,7 +4103,7 @@ pub trait Backend: Debug + Send + Sync {
         let tool = self.ba().short.clone();
         // Reuse an answer this run already paid for; the error message
         // below asks for the same versions again.
-        match on_demand_release_date(&backend, candidate) {
+        let created_at = match on_demand_release_date(&backend, candidate) {
             Some(created_at) => Some(created_at),
             None => match self.fetch_version_created_at(config, candidate).await {
                 Ok(created_at) => {
@@ -4130,7 +4130,13 @@ pub trait Backend: Debug + Send + Sync {
                     None
                 }
             },
+        };
+        if created_at.is_some() {
+            // A lookup that failed earlier may have left a record; this one
+            // checked the cutoff, so the install must not say it could not.
+            clear_undated_release(&tool, candidate);
         }
+        created_at
     }
 
     /// Get the latest version, optionally filtered by release date.
@@ -6872,6 +6878,33 @@ mod latest_version_tests {
     }
 
     #[tokio::test]
+    async fn test_a_successful_date_lookup_clears_an_earlier_failure_record() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = partially_dated_backend("test-lookup-retry")
+            .with_lazy_dates(&[("3.0.0", "2025-01-01")]);
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+        // An earlier resolution failed to read 3.0.0's date.
+        note_undated_release(
+            &backend.ba().short,
+            "3.0.0",
+            before,
+            Some("timed out".to_string()),
+        );
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("3.0.0")
+        );
+        // This lookup read a date, so the install has nothing to warn about.
+        assert_eq!(unchecked_release(&backend.ba().short, "3.0.0"), None);
+    }
+
+    #[tokio::test]
     async fn test_undated_version_picked_under_a_cutoff_is_recorded_for_install() {
         let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
@@ -8613,6 +8646,12 @@ fn note_undated_release(
             (tool.to_string(), version.to_string()),
             (before, lookup_error),
         );
+    }
+}
+
+fn clear_undated_release(tool: &str, version: &str) {
+    if let Ok(mut undated) = UNDATED_RELEASES.lock() {
+        undated.shift_remove(&(tool.to_string(), version.to_string()));
     }
 }
 
