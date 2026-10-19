@@ -20,8 +20,8 @@ use http::Extensions;
 use itertools::Itertools;
 use rattler::install::{InstallDriver, InstallOptions, PythonInfo, link_package};
 use rattler_conda_types::{
-    Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, ParseStrictness, RepoDataRecord,
-    Subdir as CondaPlatform, prefix::Prefix, prefix_record::PathsEntry,
+    Channel, ChannelConfig, GenericVirtualPackage, MatchSpec, PackageRecord, ParseStrictness,
+    RepoDataRecord, Subdir as CondaPlatform, prefix::Prefix, prefix_record::PathsEntry,
 };
 use rattler_repodata_gateway::{Gateway, RepoData};
 use rattler_solve::{
@@ -1043,6 +1043,41 @@ impl CondaBackend {
     }
 }
 
+/// Builds one `VersionInfo` per distinct version from repodata records.
+///
+/// A version has many builds and platform records, each with its own upload
+/// `timestamp`. The earliest one is the date the version first became available,
+/// which is the release date `minimum_release_age` should judge. A record's
+/// `indexed_timestamp` (when the channel first listed it) is preferred over
+/// `timestamp` (the build start, which the builder supplies). Records with
+/// neither, or with a non-positive one, don't date the version.
+fn collect_version_infos<'a>(
+    records: impl IntoIterator<Item = &'a PackageRecord>,
+) -> Vec<VersionInfo> {
+    let mut by_version: BTreeMap<String, Option<jiff::Timestamp>> = BTreeMap::new();
+    for record in records {
+        let ts = record
+            .indexed_timestamp
+            .or(record.timestamp)
+            .map(|t| t.jiff_timestamp())
+            .filter(|t| t.as_second() > 0);
+        let earliest = by_version.entry(record.version.to_string()).or_insert(None);
+        *earliest = match (*earliest, ts) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+    }
+    by_version
+        .into_iter()
+        .map(|(version, ts)| VersionInfo {
+            version,
+            created_at: ts.map(|t| t.to_string()),
+            ..Default::default()
+        })
+        .sorted_by_cached_key(|v| Versioning::new(&v.version))
+        .collect()
+}
+
 #[async_trait]
 impl Backend for CondaBackend {
     fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
@@ -1091,22 +1126,11 @@ impl Backend for CondaBackend {
             .map_err(|e| eyre::eyre!("failed to list versions for '{}': {}", tool_name, e))?
             .to_vec();
 
-        // Collect unique versions across all repodata results
-        let mut version_set: std::collections::HashSet<String> = std::collections::HashSet::new();
-        for data in &repodata {
-            for record in data {
-                version_set.insert(record.package_record.version.to_string());
-            }
-        }
-
-        let versions = version_set
-            .into_iter()
-            .map(|version| VersionInfo {
-                version,
-                ..Default::default()
-            })
-            .sorted_by_cached_key(|v| Versioning::new(&v.version))
-            .collect();
+        let versions = collect_version_infos(
+            repodata
+                .iter()
+                .flat_map(|data| data.into_iter().map(|record| &record.package_record)),
+        );
 
         Ok(versions)
     }
@@ -1288,6 +1312,57 @@ mod tests {
             url: Url::parse(url).unwrap(),
             channel: None,
         }
+    }
+
+    #[test]
+    fn version_infos_use_earliest_timestamp() {
+        use rattler_conda_types::utils::TimestampMs;
+        let ms =
+            |s: &str| TimestampMs::from_timestamp_millis(s.parse::<jiff::Timestamp>().unwrap());
+        let mut a = make_record("vim", "9.1.0", "a_0", "https://x.invalid/a.conda").package_record;
+        a.timestamp = Some(ms("2024-03-02T00:00:00Z"));
+        let mut b = make_record("vim", "9.1.0", "b_1", "https://x.invalid/b.conda").package_record;
+        b.timestamp = Some(ms("2024-03-01T00:00:00Z"));
+        let c = make_record("vim", "9.1.0", "c_2", "https://x.invalid/c.conda").package_record;
+        let undated =
+            make_record("vim", "9.0.0", "a_0", "https://x.invalid/d.conda").package_record;
+        let infos = super::collect_version_infos([&a, &b, &c, &undated]);
+        assert_eq!(infos.len(), 2);
+        assert_eq!(infos[0].version, "9.0.0");
+        assert_eq!(infos[0].created_at, None);
+        assert_eq!(infos[1].version, "9.1.0");
+        assert_eq!(infos[1].created_at.as_deref(), Some("2024-03-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn version_infos_prefer_indexed_timestamp() {
+        use rattler_conda_types::utils::TimestampMs;
+        let ms = |s: &str| TimestampMs::from_timestamp_millis(s.parse().unwrap());
+        let mut a = make_record("vim", "9.1.0", "a_0", "https://x.invalid/a.conda").package_record;
+        a.timestamp = Some(ms("2020-01-01T00:00:00Z"));
+        a.indexed_timestamp = Some(ms("2024-03-01T00:00:00Z"));
+        let infos = super::collect_version_infos([&a]);
+        assert_eq!(infos[0].created_at.as_deref(), Some("2024-03-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn minimum_release_age_hides_too_new_conda_version() {
+        use rattler_conda_types::utils::TimestampMs;
+        let mut new =
+            make_record("vim", "9.2.0", "a_0", "https://x.invalid/a.conda").package_record;
+        new.timestamp = Some(TimestampMs::from_timestamp_millis(
+            "2024-06-10T00:00:00Z".parse().unwrap(),
+        ));
+        let mut old =
+            make_record("vim", "9.1.0", "a_0", "https://x.invalid/b.conda").package_record;
+        old.timestamp = Some(TimestampMs::from_timestamp_millis(
+            "2024-01-01T00:00:00Z".parse().unwrap(),
+        ));
+        let infos = super::collect_version_infos([&new, &old]);
+        let cutoff: jiff::Timestamp = "2024-06-01T00:00:00Z".parse().unwrap();
+        let kept = crate::backend::VersionInfo::filter_by_date(infos, cutoff);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].version, "9.1.0");
     }
 
     #[test]
