@@ -901,35 +901,32 @@ impl Backend for NPMBackend {
     ///
     /// `npm.shell_out` lists through `npm view` in the dependency environment,
     /// whose registry settings mise does not interpret, so it always lists
-    /// directly. Its cache is keyed by what `npm` reads there: that
-    /// environment's `NPM_CONFIG_*` variables, `HOME`, and the user `.npmrc`
-    /// they select, so one registry's list is not reused for another.
+    /// directly. Its cache is keyed by what `npm` reads there, so one
+    /// registry's list is not reused for another.
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
         if Settings::get().npm.shell_out {
             let env = self.dependency_env(config).await?;
-            let npm_config = env
-                .iter()
-                .filter(|(key, _)| key.to_ascii_lowercase().starts_with("npm_config_"))
-                .map(|(key, value)| (key.to_ascii_lowercase(), value.as_str()))
-                .collect::<BTreeMap<_, _>>();
-            // Node's `os.homedir()` reads `HOME` on Unix and `USERPROFILE` on
-            // Windows, and `NPM_CONFIG_USERCONFIG` overrides both, so hash
-            // every file `npm` could take its user config from.
-            let homes = ["HOME", "USERPROFILE"].map(|key| env.get(key));
-            let npmrcs = env
+            // `npm view` resolves its registry from the whole environment, since
+            // an `.npmrc` can interpolate any variable (`registry=${REGISTRY}`),
+            // and from the `.npmrc` files it finds: the user config (under
+            // `HOME`, `USERPROFILE`, or `NPM_CONFIG_USERCONFIG`) and the one in
+            // the prefix it runs in. Hash all of them.
+            let user_config = env
                 .iter()
                 .find(|(key, _)| key.eq_ignore_ascii_case("npm_config_userconfig"))
-                .map(|(_, path)| PathBuf::from(path))
+                .map(|(_, path)| PathBuf::from(path));
+            let homes = ["HOME", "USERPROFILE"]
                 .into_iter()
-                .chain(
-                    homes
-                        .iter()
-                        .flatten()
-                        .map(|home| PathBuf::from(home).join(".npmrc")),
-                )
+                .filter_map(|key| env.get(key))
+                .map(|home| PathBuf::from(home).join(".npmrc"));
+            let prefix = Self::npm_meta_prefix().ok().map(|dir| dir.join(".npmrc"));
+            let npmrcs = user_config
+                .into_iter()
+                .chain(homes)
+                .chain(prefix)
                 .map(|path| std::fs::read_to_string(path).ok())
                 .collect::<Vec<_>>();
-            return Ok(Some(crate::hash::hash_to_str(&(npm_config, homes, npmrcs))));
+            return Ok(Some(crate::hash::hash_to_str(&(env, npmrcs))));
         }
         let registry = npm_registry::package_registry(&self.tool_name());
         Ok((!npm_registry::is_public_registry(&registry)).then_some(registry))
