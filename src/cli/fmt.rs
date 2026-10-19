@@ -105,6 +105,11 @@ impl Fmt {
     }
 }
 
+/// `toml` as `mise fmt` writes it: sorted, then formatted.
+pub(super) fn format_document(toml: &str) -> Result<String> {
+    format(sort(toml.to_string())?)
+}
+
 /// Put the document's top-level keys and its unordered lists into a canonical
 /// order. Whitespace and layout are left to [`format`].
 fn sort(toml: String) -> Result<String> {

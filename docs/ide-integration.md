@@ -94,6 +94,41 @@ These community plugins integrate with mise:
 | Neovim         | [miser.nvim](https://github.com/carldaws/miser.nvim)                                   | Starts language servers and formatters for the tools in `mise.toml`, and runs mise tasks from Neovim.                               |
 | Emacs          | [mise.el](https://github.com/eki3z/mise.el)                                            | Loads the mise environment for each buffer.                                                                                         |
 
+## Language server {#language-server}
+
+`mise lsp` runs a [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
+server for mise config files. It reads the same schema mise validates configs
+against, so what it reports follows the installed mise. It serves `mise.toml`,
+`.mise.toml`, `mise.<env>.toml`, `mise.local.toml`, `mise/config.toml` and the
+files of a `conf.d`, and ignores every other file, so attaching it to the TOML
+language leaves `Cargo.toml` and `pyproject.toml` alone.
+
+It provides:
+
+- **Diagnostics**: TOML syntax errors, unknown keys with a "did you mean"
+  suggestion, values of the wrong type, and deprecated keys.
+- **Completion** of keys and of values that have a fixed set, such as booleans
+  and enums.
+- **Hover** documentation for keys.
+- **Formatting**, the same as [`mise fmt`](/cli/fmt.html).
+
+The server only parses a config. It never renders templates or runs anything,
+so opening an untrusted file is safe.
+
+Configure your editor to start `mise lsp` for mise config files. For Neovim:
+
+```lua
+vim.lsp.config("mise", {
+  cmd = { "mise", "lsp" },
+  filetypes = { "toml" },
+  root_markers = { "mise.toml", ".mise.toml" },
+})
+vim.lsp.enable("mise")
+```
+
+Other editors with a generic LSP client, such as Helix and Emacs, take the same
+command. See the [`mise lsp`](/cli/lsp.html) reference.
+
 ## VS Code {#vscode}
 
 The [mise-vscode extension](https://hverlin.github.io/mise-vscode/) can

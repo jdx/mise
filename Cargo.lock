@@ -6855,6 +6855,7 @@ dependencies = [
  "mise-daemons",
  "mise-dotenv",
  "mise-interactive-config",
+ "mise-lsp",
  "mise-oci",
  "mise-settings",
  "mise-system",
@@ -7060,6 +7061,16 @@ dependencies = [
  "toml_edit 0.25.17+spec-1.1.0",
  "unicode-width 0.2.2",
  "xx",
+]
+
+[[package]]
+name = "mise-lsp"
+version = "0.1.0"
+dependencies = [
+ "jsonschema",
+ "regex",
+ "serde_json",
+ "toml_edit 0.25.17+spec-1.1.0",
 ]
 
 [[package]]

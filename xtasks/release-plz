@@ -394,6 +394,7 @@ if [[ $cur_version != "$latest_version" ]]; then
 	MISE_DAEMONS_VERSION=""
 	MISE_BREW_METADATA_VERSION=""
 	MISE_BOOTSTRAP_VERSION=""
+	MISE_LSP_VERSION=""
 
 	# Publish in dependency order: mise-settings needs mise-cache-core, and
 	# mise-util needs mise-agent-env, mise-cache-core, mise-settings and
@@ -411,6 +412,10 @@ if [[ $cur_version != "$latest_version" ]]; then
 
 	bump_and_publish_subcrate "mise-dotenv" "crates/mise-dotenv" "MISE_DOTENV_VERSION"
 	cargo add -p mise "mise-dotenv@$MISE_DOTENV_VERSION"
+
+	# mise-lsp has no workspace dependencies: mise hands it the schema at run time.
+	bump_and_publish_subcrate "mise-lsp" "crates/mise-lsp" "MISE_LSP_VERSION"
+	cargo add -p mise "mise-lsp@$MISE_LSP_VERSION"
 
 	# mise-settings re-exports TaskOutput from mise-config, so mise-config and its only
 	# workspace dependency, mise-bootstrap, publish first.

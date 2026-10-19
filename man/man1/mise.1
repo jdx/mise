@@ -701,6 +701,9 @@ List tool versions available to install
 \fIAliases: \fRlist\-all, list\-remote
 .RE
 .TP
+\fBlsp\fR
+Run the language server for mise config files over stdin/stdout
+.TP
 \fBmcp\fR
 Run the Model Context Protocol server over stdin/stdout
 .TP
@@ -7391,6 +7394,41 @@ Include release dates, as JSON
 .PP
 .RS 4
 mise ls\-remote github:cli/cli \-\-json
+.RE
+.SH "MISE LSP"
+Run the language server for mise config files over stdin/stdout
+
+Editors start this command and exchange Language Server Protocol messages with it. It
+serves `mise.toml` and the other config files mise loads (`.mise.toml`, `mise.<env>.toml`,
+`mise.local.toml`, `mise/config.toml`, and the files of a `conf.d`) and ignores every other
+file, so it can be attached to the TOML language without touching `Cargo.toml` or
+`pyproject.toml`.
+
+It offers:
+\- diagnostics: TOML syntax errors, unknown keys with a suggestion, values of the wrong type,
+  and deprecated keys
+\- completion of keys and of values that have a fixed set
+\- hover documentation for keys
+\- formatting, as `mise fmt` does
+
+The server only parses a config. It never renders templates or runs anything, so opening an
+untrusted file is safe.
+
+See https://mise.jdx.dev/ide\-integration.html for editor configuration.
+.PP
+\fBUsage:\fR mise lsp [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBExamples:\fR
+.PP
+Start the server; an editor's LSP configuration runs this command
+.PP
+.RS 4
+mise lsp
 .RE
 .SH "MISE MCP"
 Run the Model Context Protocol server over stdin/stdout

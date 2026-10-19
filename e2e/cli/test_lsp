@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# `mise lsp` speaks LSP over stdio: Content-Length framed JSON-RPC.
+frame() {
+  printf 'Content-Length: %s\r\n\r\n%s' "${#1}" "$1"
+}
+
+uri="file://$PWD/mise.toml"
+text='[settings]\ncolr = true\n'
+
+session() {
+  frame '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
+  frame "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"$uri\",\"text\":\"$text\"}}}"
+  frame "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"textDocument/hover\",\"params\":{\"textDocument\":{\"uri\":\"$uri\"},\"position\":{\"line\":0,\"character\":2}}}"
+  frame '{"jsonrpc":"2.0","id":3,"method":"shutdown"}'
+  frame '{"jsonrpc":"2.0","method":"exit"}'
+}
+
+out="$(session | mise lsp)"
+assert_contains "echo '$out'" '"hoverProvider":true'
+assert_contains "echo '$out'" 'unknown key `colr`; did you mean `color`?'
+assert_contains "echo '$out'" '**settings**'
+
+# files that are not mise configs get nothing
+uri="file://$PWD/Cargo.toml"
+out="$(session | mise lsp)"
+assert_contains "echo '$out'" '"diagnostics":[]'

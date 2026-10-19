@@ -20,6 +20,7 @@ members = [
   "crates/mise-system",
   "crates/mise-config",
   "crates/mise-dotenv",
+  "crates/mise-lsp",
 ]
 
 [package]
@@ -144,6 +145,7 @@ futures-util = "0.3"
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
 mise-settings = { path = "crates/mise-settings", version = "2026" }
 mise-daemons = { path = "crates/mise-daemons", version = "0.1" }
+mise-lsp = { path = "crates/mise-lsp", version = "0.1" }
 mise-oci = { path = "crates/mise-oci", version = "0.1" }
 mise-system = { path = "crates/mise-system", version = "0.1" }
 mise-config = { path = "crates/mise-config", version = "0.1" }
