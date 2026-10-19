@@ -12,6 +12,11 @@ checksum_url = "https://releases.hashicorp.com/nomad-pack/{{ version }}/nomad-pa
 url = 'https://releases.hashicorp.com/nomad-pack/{{ version }}/nomad-pack_{{ version }}_{{ os(macos="darwin") }}_{{ arch(x64="amd64") }}.zip'
 version_expr = 'fromJSON(body).versions | keys() | sortVersions()'
 version_list_url = "https://releases.hashicorp.com/nomad-pack/index.json"
+# index.json lists versions without dates; the releases API has timestamp_created,
+# at most 20 releases a page, newest first, and takes the last timestamp as `after`.
+version_date_expr = 'map(flatten(map(bodies, { fromJSON(#) })), { [#.version, #.timestamp_created] })'
+version_date_next_expr = 'len(fromJSON(body)) == 20 ? split(url, "&after=")[0] + "&after=" + last(fromJSON(body)).timestamp_created : nil'
+version_date_url = "https://api.releases.hashicorp.com/v1/releases/nomad-pack?limit=20"
 
 [[backends]]
 full = "asdf:mise-plugins/mise-hashicorp"
