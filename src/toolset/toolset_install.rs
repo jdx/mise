@@ -1111,9 +1111,11 @@ impl Toolset {
             if !plugin.is_installed() {
                 // An unprefixed packslip entry already resolved to vfox, so
                 // only an explicit non-vfox prefix can reach this.
-                if url.starts_with("packslip:") && plugin_type != PluginType::Vfox {
+                if url.starts_with("packslip:")
+                    && !matches!(plugin_type, PluginType::Vfox | PluginType::VfoxBackend)
+                {
                     eyre::bail!(
-                        "plugin {plugin_key}: packslip plugin sources require the vfox plugin type"
+                        "plugin {plugin_key}: packslip plugin sources require the vfox or vfox-backend plugin type"
                     );
                 }
                 plugin
