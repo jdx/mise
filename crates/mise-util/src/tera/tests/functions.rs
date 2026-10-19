@@ -416,23 +416,44 @@ fn read_structured_cases(dir: &Path) {
 }
 
 #[test]
-fn test_read_structured_files_refused_in_safe_mode() {
+fn test_read_structured_files_refused_in_safe_mode_and_oci() {
     let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
-    let mut settings = mise_settings::SettingsPartial::empty();
-    settings.safe = Some(true);
-    crate::testing::reset_settings(Some(settings));
-    let mut tera = get_tera(None);
-    let ctx = BASE_CONTEXT.clone();
-    for name in ["read_json", "read_yaml", "read_toml"] {
-        let err = render_str(&mut tera, &format!("{{{{ {name}(path='x') }}}}"), &ctx)
-            .unwrap_err()
-            .to_string();
-        assert!(
-            format!("{err:?}").contains(&format!("{name}() is disabled in safe mode")),
-            "{name}: {err:?}"
-        );
+    for v1 in [false, true] {
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.safe = Some(true);
+        settings.tera_v1 = Some(v1);
+        crate::testing::reset_settings(Some(settings));
+        let mut tera = get_tera(None);
+        for name in ["read_json", "read_yaml", "read_toml"] {
+            assert_refused(
+                &mut tera,
+                name,
+                &format!("{name}() is disabled in safe mode"),
+            );
+        }
+        // OCI dotfile templates must not read host files, even outside safe mode
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.tera_v1 = Some(v1);
+        crate::testing::reset_settings(Some(settings));
+        let mut tera = get_tera_for_oci(None);
+        for name in ["read_json", "read_yaml", "read_toml"] {
+            assert_refused(&mut tera, name, "host file access is disabled");
+        }
     }
     crate::testing::reset_settings(None);
+}
+
+fn assert_refused(tera: &mut TeraEngine, name: &str, message: &str) {
+    let err = render_str(
+        tera,
+        &format!("{{{{ {name}(path='x') }}}}"),
+        &BASE_CONTEXT.clone(),
+    )
+    .unwrap_err();
+    assert!(
+        format!("{err:?}").contains(message),
+        "{name}: {err:?} should contain {message}"
+    );
 }
 
 #[test]
