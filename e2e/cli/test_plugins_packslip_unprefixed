@@ -52,5 +52,20 @@ cat >mise.toml <<'EOF'
 [plugins]
 "asdf:asdf-bfs" = "packslip:mise-plugins/vfox-bfs#0.1.0-dev.2"
 EOF
-assert_fail_contains "mise install" "packslip plugin sources require the vfox plugin type"
+assert_fail_contains "mise install" "packslip plugin sources require the vfox or vfox-backend plugin type"
+assert "test ! -e git-invoked"
+
+# The vfox-backend prefix is accepted in [plugins] and on the command line.
+# The signed fixture is a tool plugin, so this only covers the prefix; the type
+# is still detected from the installed files.
+cat >mise.toml <<'EOF'
+[plugins]
+"vfox-backend:backend-bfs" = "packslip:mise-plugins/vfox-bfs#0.1.0-dev.2"
+EOF
+mise install
+assert "test -f '$MISE_DATA_DIR/plugins/backend-bfs/metadata.lua'"
+assert_contains "cat '$MISE_DATA_DIR/plugins/backend-bfs/.mise-packslip-plugin.json'" '"version": "0.1.0-dev.2"'
+rm mise.toml
+mise plugins install vfox-backend:cli-bfs 'packslip:mise-plugins/vfox-bfs#0.1.0-dev.2'
+assert "test -f '$MISE_DATA_DIR/plugins/cli-bfs/metadata.lua'"
 assert "test ! -e git-invoked"
