@@ -292,16 +292,11 @@ jobs:
     name: build-tarball-windows-${{matrix.arch}}
     # Each arch builds on a native runner. Cross-compiling arm64 on the x64 runner
     # with fat LTO and panic=unwind ran past the 150-minute timeout.
-    # The x64 build runs on self-hosted Windows runners for trusted runs. The release PR's dry run uses
-    # the shared trusted runner (repository variable WINDOWS_SELF_HOSTED=true). A real release (tag push or
-    # manual dispatch) uses a separate runner and account that never runs pull requests, so the binary that
-    # gets signed is not built where pull-request code has run (repository variable
-    # WINDOWS_RELEASE_SELF_HOSTED=true, and only when the run starts from a v* tag (a tag push or a
-    # dispatch from the tag) or a dispatch from main, release or mise, the refs that runner accepts; a
-    # dispatch from any other branch builds on the hosted runner).
-    # Either variable unset falls back to the hosted runner. Each runner also enforces this itself.
-    # arm64 stays on a hosted native runner.
-    runs-on: ${{ matrix.arch == 'x64' && !(github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev'))) && ((github.event_name == 'pull_request' && vars.WINDOWS_SELF_HOSTED == 'true' && fromJSON('["self-hosted", "jdx-win-trusted-v1"]')) || (github.event_name != 'pull_request' && vars.WINDOWS_RELEASE_SELF_HOSTED == 'true' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || github.ref == 'refs/heads/mise') && fromJSON('["self-hosted", "jdx-win-release-v1"]'))) || matrix.runner }}
+    # The release PR's dry run builds x64 on the shared trusted self-hosted runner (repository variable
+    # WINDOWS_SELF_HOSTED=true; unset falls back to the hosted runner). A real release (tag push or manual
+    # dispatch) always builds on a GitHub-hosted runner: SignPath Foundation requires every job of a run
+    # it signs to run on GitHub-hosted runners. arm64 stays on a hosted native runner.
+    runs-on: ${{ matrix.arch == 'x64' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.user.login == 'jdx' || github.event.pull_request.user.login == 'mise-en-dev') && vars.WINDOWS_SELF_HOSTED == 'true' && fromJSON('["self-hosted", "jdx-win-trusted-v1"]') || matrix.runner }}
     # Matches the Linux tarball job. Fat LTO's link varied from ~65 minutes to
     # past this timeout on windows-latest depending on memory pressure, so
     # scripts/build-tarball.ps1 builds with thin LTO on hosted runners and with
@@ -328,10 +323,69 @@ jobs:
           ARCH: ${{matrix.arch}}
       - name: Smoke-test vfox Lua errors
         run: scripts/smoke-test-vfox-lua-error.ps1 dist/mise/bin/mise.exe
+      # The release job globs artifacts/*/mise-<version>-<platform>.zip, so the unsigned zip must not
+      # share the final name.
+      - name: Mark zip as unsigned
+        shell: pwsh
+        run: |
+          foreach ($zip in @(Get-ChildItem dist/*.zip)) {
+            Rename-Item $zip.FullName "unsigned-$($zip.Name)"
+          }
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unsigned-tarball-${{matrix.target}}
+          path: dist/*.zip
+          if-no-files-found: error
+  # Authenticode-signs mise.exe and mise-shim.exe with SignPath Foundation. Only tag runs submit a
+  # signing request; dry runs pass the unsigned zip through under the name the release job expects.
+  sign-windows:
+    needs: [build-tarball-windows]
+    if: ${{ !cancelled() && needs.build-tarball-windows.result == 'success' }}
+    name: sign-windows-${{matrix.target}}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-pc-windows-msvc, x86_64-pc-windows-msvc]
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: unsigned-tarball-${{matrix.target}}
+          path: dist
+      - name: Upload unsigned zip for SignPath
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: upload-unsigned
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signpath-unsigned-${{matrix.target}}
+          path: dist/unsigned-*.zip
+          if-no-files-found: error
+      - name: Sign with SignPath
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: mise
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY || 'release-signing' }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          # The production policy requires a manual approval in SignPath.
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed
+      - name: Restore the release zip name
+        run: |
+          src=dist
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then src=signed; fi
+          mkdir final
+          for f in "$src"/unsigned-*.zip; do
+            cp "$f" "final/$(basename "$f" | sed 's/^unsigned-//')"
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tarball-${{matrix.target}}
-          path: dist/*.zip
+          path: final/*.zip
           if-no-files-found: error
   e2e-linux:
     needs: [gate, build-tarball-linux]
@@ -447,7 +501,7 @@ jobs:
       - e2e-linux
       - build-tarball-linux
       - build-tarball-macos
-      - build-tarball-windows
+      - sign-windows
     # Run even when a build failed: this is the required `release` check on
     # main, and a skipped required check counts as passed. The steps below
     # turn an unarmed release PR or a failed build into an explicit failure.
@@ -464,7 +518,7 @@ jobs:
           for result in \
             "${{ needs.build-tarball-linux.result }}" \
             "${{ needs.build-tarball-macos.result }}" \
-            "${{ needs.build-tarball-windows.result }}" \
+            "${{ needs.sign-windows.result }}" \
             "${{ needs.rpm.result }}" \
             "${{ needs.deb.result }}"; do
             if [ "$result" != "success" ]; then
@@ -482,7 +536,7 @@ jobs:
             echo "::error::One or more required jobs did not succeed:"
             echo "  build-tarball-linux: ${{ needs.build-tarball-linux.result }}"
             echo "  build-tarball-macos: ${{ needs.build-tarball-macos.result }}"
-            echo "  build-tarball-windows: ${{ needs.build-tarball-windows.result }}"
+            echo "  sign-windows: ${{ needs.sign-windows.result }}"
             echo "  e2e-linux: ${{ needs.e2e-linux.result }} (expected $expected_e2e)"
             echo "  rpm: ${{ needs.rpm.result }}"
             echo "  deb: ${{ needs.deb.result }}"

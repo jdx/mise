@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration for the Windows release zips
+  (unsigned-mise-v<version>-windows-<arch>.zip, see scripts/build-tarball.ps1).
+  Paste this into the project's artifact configuration in SignPath.
+  actions/upload-artifact wraps the release zip in another zip, hence the
+  nested zip-file elements.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <zip-file path="unsigned-mise-v*-windows-*.zip">
+      <directory path="mise/bin">
+        <pe-file path="mise.exe">
+          <authenticode-sign/>
+        </pe-file>
+        <pe-file path="mise-shim.exe">
+          <authenticode-sign/>
+        </pe-file>
+      </directory>
+    </zip-file>
+  </zip-file>
+</artifact-configuration>
