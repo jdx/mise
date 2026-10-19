@@ -97,9 +97,6 @@ impl Middleware for UrlReplacementMiddleware {
     }
 }
 
-/// The `conda.channel` default, whose package lists the versions host publishes.
-const DEFAULT_CONDA_CHANNEL: &str = "conda-forge";
-
 impl<'a> CondaOptions<'a> {
     fn new(raw: &'a ToolVersionOptions) -> Self {
         Self {
@@ -1117,13 +1114,17 @@ impl Backend for CondaBackend {
         true
     }
 
-    /// A channel other than conda-forge, from the `channel` option or
-    /// `conda.channel`, lists its own packages, which the shared versions host
-    /// cannot know.
+    /// The versions available depend on the channel (the `channel` option or
+    /// `conda.channel`) and on this machine's platform, which the shared
+    /// versions host's one list cannot describe, so conda lists from its
+    /// channel and caches per channel and platform.
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let channel = CondaOptions::new(&raw_opts).channel_name();
-        Ok((channel != DEFAULT_CONDA_CHANNEL).then_some(channel))
+        Ok(Some(format!(
+            "{channel}@{}",
+            Self::current_conda_platform()?
+        )))
     }
 
     async fn install_version_(

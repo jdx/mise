@@ -2016,17 +2016,20 @@ mod tests {
         let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
 
+        // Conda's versions depend on the platform, which one shared list
+        // cannot describe, so it always lists from its channel.
+        let platform = rattler_conda_types::Subdir::current().unwrap();
         let conda = get(&BackendArg::from("clang-format")).unwrap();
         assert_eq!(
             conda.remote_version_cache_context(&config).await.unwrap(),
-            None
+            Some(format!("conda-forge@{platform}"))
         );
         let mut partial = crate::config::settings::SettingsPartial::empty();
         partial.conda.channel = Some("bioconda".to_string());
         Settings::reset(Some(partial));
         assert_eq!(
             conda.remote_version_cache_context(&config).await.unwrap(),
-            Some("bioconda".to_string())
+            Some(format!("bioconda@{platform}"))
         );
 
         let pipx = get(&BackendArg::from("ansible-core")).unwrap();
