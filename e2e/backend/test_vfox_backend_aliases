@@ -57,10 +57,10 @@ assert_contains "mise ls alias-backend:tool" "3.0.0"
 # a config alias wins over the plugin's
 cat >mise.toml <<'TOML'
 [tool_alias."alias-backend:tool".versions]
-recommended = "3.0.0"
+recommended = "1.0.0"
 
 [tools]
 "alias-backend:tool" = "recommended"
 TOML
 mise install
-assert_contains "mise ls alias-backend:tool" "3.0.0"
+assert_contains "mise ls alias-backend:tool" "1.0.0"
