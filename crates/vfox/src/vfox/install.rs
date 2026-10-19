@@ -417,10 +417,11 @@ impl Vfox {
     }
 }
 
-/// Fails if a symlink under `root` points outside of it, comparing the link target
-/// lexically so a missing target is not an error.
+/// Fails if a symlink under `root` points outside of it. A link that resolves is checked
+/// by its real path, so chains of links are followed; a dangling one is compared lexically.
 fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
     use std::path::Component;
+    let real_root = root.canonicalize()?;
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
         for entry in std::fs::read_dir(&dir)? {
@@ -432,15 +433,21 @@ fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
                 let target = std::fs::read_link(&path)?;
                 // depth below `root` of the directory holding the link
                 let mut depth = path.strip_prefix(root).unwrap().components().count() as i64 - 1;
-                let mut escapes = target.is_absolute();
-                for component in target.components() {
-                    match component {
-                        Component::ParentDir => depth -= 1,
-                        Component::Normal(_) => depth += 1,
-                        _ => {}
+                let escapes = match path.canonicalize() {
+                    Ok(real) => !real.starts_with(&real_root),
+                    Err(_) => {
+                        let mut escapes = target.is_absolute();
+                        for component in target.components() {
+                            match component {
+                                Component::ParentDir => depth -= 1,
+                                Component::Normal(_) => depth += 1,
+                                _ => {}
+                            }
+                            escapes |= depth < 0;
+                        }
+                        escapes
                     }
-                    escapes |= depth < 0;
-                }
+                };
                 if escapes {
                     return Err(format!(
                         "symlink {path:?} points outside of the install directory: {target:?}"
@@ -552,6 +559,25 @@ mod tests {
             // inside the extraction directory, but a sibling of the install directory
             zip.add_symlink("tool-1.0/bin/link", "../../other-tool", options)
                 .unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        assert!(Vfox::test().extract(&archive, &install_dir).is_err());
+        assert!(!install_dir.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_rejects_chained_symlinks_that_escape_once_stripped() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            // each link stays inside the extraction directory; together they leave the
+            // install directory once the top-level directory is stripped
+            zip.add_symlink("tool-1.0/x/up", "..", options).unwrap();
+            zip.add_symlink("tool-1.0/y", "x/up/..", options).unwrap();
             zip.finish().unwrap();
         }
         let install_dir = temp.path().join("installs/tool-abcd1234");
