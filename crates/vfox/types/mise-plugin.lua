@@ -31,6 +31,7 @@ ARCH_TYPE = ""
 ---@field note? string Optional note about the version
 ---@field rolling? boolean If true, this is a rolling release (e.g. "nightly")
 ---@field checksum? string Checksum for detecting changes in rolling releases
+---@field created_at? string RFC 3339 release date, e.g. "2026-01-31T12:00:00Z"
 
 ---@class AvailableCtx
 ---@field args string[] Command-line arguments
@@ -116,8 +117,12 @@ ARCH_TYPE = ""
 ---@class BackendListVersionsCtx
 ---@field tool string Tool name
 
+---@class BackendVersion
+---@field version string Version string
+---@field created_at? string RFC 3339 release date, e.g. "2026-01-31T12:00:00Z"
+
 ---@class BackendListVersionsResult
----@field versions string[] List of available versions
+---@field versions (string|BackendVersion)[] Available versions, as strings or tables
 
 ---@class BackendInstallCtx
 ---@field tool string Tool name
