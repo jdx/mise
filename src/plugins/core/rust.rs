@@ -783,6 +783,7 @@ impl Backend for RustPlugin {
         config: &Arc<Config>,
         version: &str,
         before: jiff::Timestamp,
+        prefer_offline: bool,
     ) -> Result<Option<String>> {
         if let Some(target) = cutoff_channel_target(version) {
             return Ok(Some(target));
@@ -791,7 +792,7 @@ impl Backend for RustPlugin {
             return Ok(None);
         }
         // Looking up the build costs the network, which prefer-offline avoids.
-        if Settings::get().prefer_offline() {
+        if prefer_offline {
             return Ok(None);
         }
         // Manifests are dated by day, so only a build from a day before the cutoff's own day is

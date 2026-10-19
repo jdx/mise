@@ -3611,11 +3611,13 @@ pub trait Backend: Debug + Send + Sync {
     /// release date of its own, so the cutoff cannot be applied to it as it is: a backend
     /// maps it to the concrete release the channel pointed at then, or errors when the
     /// channel's current build is too new and nothing older can stand in for it.
+    /// `prefer_offline` asks a mapping that needs the network to leave the channel as written.
     async fn channel_for_cutoff(
         &self,
         _config: &Arc<Config>,
         _version: &str,
         _before: Timestamp,
+        _prefer_offline: bool,
     ) -> eyre::Result<Option<String>> {
         Ok(None)
     }
