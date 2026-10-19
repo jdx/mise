@@ -790,19 +790,24 @@ impl Backend for RustPlugin {
         if !matches!(version, "beta" | "nightly") {
             return Ok(None);
         }
-        // The build the cutoff allows is the newest dated one on or before the cutoff's day.
+        // Looking up the build costs the network, which prefer-offline avoids.
+        if Settings::get().prefer_offline() {
+            return Ok(None);
+        }
+        // Manifests are dated by day, so only a build from a day before the cutoff's own day is
+        // surely old enough; the newest such one is the build the cutoff allows.
         let config_env = config.env().await?;
+        let day = before.to_zoned(jiff::tz::TimeZone::UTC).date();
         let current = current_channel_created_at(version, &config_env)
             .await
-            .and_then(|ts| ts.parse::<jiff::Timestamp>().ok());
+            .and_then(|ts| ts.parse::<jiff::Timestamp>().ok())
+            .map(|ts| ts.to_zoned(jiff::tz::TimeZone::UTC).date());
         // Already old enough: pin to that build so a lockfile or an upgrade cannot move it.
-        if let Some(ts) = current.filter(|ts| *ts < before) {
-            let date = ts.to_zoned(jiff::tz::TimeZone::UTC).date();
+        if let Some(date) = current.filter(|date| *date < day) {
             return Ok(Some(format!("{version}-{date}")));
         }
         let server = rustup_dist_server(&config_env);
-        let day = before.to_zoned(jiff::tz::TimeZone::UTC).date();
-        for date in (0..=cutoff_lookback_days(version))
+        for date in (1..=cutoff_lookback_days(version))
             .filter_map(|n| day.checked_sub(jiff::Span::new().days(n)).ok())
         {
             let url = dated_channel_manifest_url_for(server.as_deref(), version, date);
