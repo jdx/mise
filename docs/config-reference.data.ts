@@ -8,6 +8,7 @@ import {
   placeholders,
   typeLabel,
 } from "./.vitepress/mise-toml/schema.ts";
+import { exampleFor } from "./components/config-reference-examples.ts";
 import { grouped, guides } from "./components/config-reference-sections.ts";
 
 // The mise.toml reference, read from schema/mise.json. The schema is generated
@@ -445,6 +446,16 @@ export function referenceMarkdown(keys: Key[]): Map<string, string> {
         ...below(c),
       ];
     });
+  // Each key below `key` that has an example, with the example; the key's own first.
+  const examplesOf = (key: Key): string => {
+    const shown = [key, ...descendants(key)].flatMap((k) => {
+      const text = exampleFor(k.path);
+      return text === undefined
+        ? []
+        : [`### \`${k.path}\`\n\n\`\`\`toml\n${text}\`\`\``];
+    });
+    return shown.length > 0 ? `## Examples\n\n${shown.join("\n\n")}` : "";
+  };
   const conventions = `Names in angle brackets, such as \`tasks.<name>\`, stand for a key you choose,
 and \`<list>[].<key>\` is a key of each table in a list.`;
 
@@ -458,6 +469,7 @@ and \`<list>[].<key>\` is a key of each table in a list.`;
         `Type: ${about(key)}`,
         details(key),
         below(key).join("\n"),
+        examplesOf(key),
       ]
         .filter(Boolean)
         .join("\n\n") + "\n",
