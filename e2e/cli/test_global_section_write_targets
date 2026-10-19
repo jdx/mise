@@ -132,12 +132,23 @@ assert_fail_contains "mise use --global --dry-run dummy@2 fresh@1 2>&1" "run sep
 # Missing removals do not make an existing update look like a new declaration.
 mise use --global --dry-run dummy@2 --remove missing-tool
 
-# Invalid defaults fail before writing an unreadable config file.
-cat >invalid-relative.toml <<'EOF'
+# Relative targets resolve against the config file that declares them, so shared dotfiles
+# work with any MISE_CONFIG_DIR.
+mkdir -p relative-config/conf.d
+cat >relative-config/conf.d/settings.toml <<EOF
+[settings.write_targets]
+tools = "relative-tools.toml"
+packages = "{{ xdg_config_home }}/mise/relative-packages.toml"
+EOF
+MISE_CONFIG_DIR="$PWD/relative-config" mise use --global dummy@system
+assert_contains "cat relative-config/conf.d/relative-tools.toml" 'dummy = "system"'
+
+# A relative target that mise would not load still fails before writing an unreadable file.
+cat >invalid-relative.toml <<EOF
 [settings.write_targets]
 tools = "relative-tools.toml"
 EOF
-assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/invalid-relative.toml mise use --global --dry-run invalid-relative@system 2>&1" "settings.write_targets.tools must resolve to an absolute path"
+assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/invalid-relative.toml mise use --global --dry-run invalid-relative@system 2>&1" "settings.write_targets.tools must name a global config file that mise loads"
 
 mkdir invalid-target-directory
 cat >invalid-directory.toml <<EOF

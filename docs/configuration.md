@@ -414,10 +414,20 @@ dotfiles = "~/.config/mise/conf.d/30-dotfiles.toml"
 New declarations from `mise use --global`,
 `mise bootstrap packages use --global`,
 `mise bootstrap packages import --global`, and `mise dotfiles add` (which
-writes global config by default) then go to those files. A target must be an
-absolute path (or start with `~/`) to a file mise loads from the global config
-directory: `config.toml`, `mise.toml`, or a `conf.d` fragment. A path such as
-`~/.config/mise/tools.toml` is not loaded, so mise rejects it.
+writes global config by default) then go to those files. A target must point to
+a file mise loads from the global config directory: `config.toml`, `mise.toml`,
+or a `conf.d` fragment. A path such as `~/.config/mise/tools.toml` is not
+loaded, so mise rejects it.
+
+A target can be absolute, start with `~/`, or be relative to the config file
+that sets it, meaning the directory that file is in. It may also use
+[templates](/templates.html) such as <code v-pre>{{ xdg_config_home }}</code>, so dotfiles shared between machines don't need to hardcode
+the config directory:
+
+```toml [~/.config/mise/conf.d/settings.toml]
+[settings.write_targets]
+tools = "tools.toml" # ~/.config/mise/conf.d/tools.toml
+```
 
 Only new entries move. An existing tool, package, or dotfile stays in the file
 that declares it, and when one command updates entries found in more than one
