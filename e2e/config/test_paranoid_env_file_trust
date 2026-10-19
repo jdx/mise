@@ -40,7 +40,7 @@ rm mise.toml .env
 mkdir -p home-config proj/sub
 cat <<'EOS' >home-config/config.toml
 [env]
-_.file = [{ path = ".env.find", find_up = true }]
+_.file = [{ path = "{{cwd}}/.env.find", find_up = true }]
 EOS
 echo "FIND_UP_TEST=found" >proj/.env.find
 export MISE_GLOBAL_CONFIG_FILE="$PWD/home-config/config.toml"

@@ -1,27 +1,51 @@
 #!/usr/bin/env bash
 
-# `find_up = true` on `_.file` searches the current directory and each parent, so a
-# global config can load project dotenv files; the nearest file wins.
-mkdir -p proj/sub/deep
+# `find_up = true` on `_.file` searches the config's directory and each parent, and a relative
+# path starts at the config root like any other. An absolute path starts at its own directory, so
+# a global config can load project dotenv files with `{{cwd}}`; the nearest file wins.
+mkdir -p proj/sub/deep other
 echo 'FROM_PROJ=proj' >proj/.env
 echo 'SHARED=proj' >>proj/.env
 echo 'SHARED=sub' >proj/sub/.env
 echo 'LOCAL_ONLY=local' >proj/sub/.env.local
 
-cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+# A project config searches up from its own directory, wherever mise runs from.
+cat >proj/sub/mise.toml <<'TOML'
 [env]
 _.file = [
   { path = ".env", find_up = true },
   { path = ".env.local", find_up = true },
 ]
 TOML
+assert "cd proj/sub/deep && mise env -s bash | grep FROM_PROJ" "export FROM_PROJ=proj"
+assert "cd proj/sub/deep && mise env -s bash | grep SHARED" "export SHARED=sub"
+assert "cd proj/sub/deep && mise env -s bash | grep LOCAL_ONLY" "export LOCAL_ONLY=local"
+rm proj/sub/mise.toml
 
+# A relative find_up in a global config starts at the config root, not the current directory.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[env]
+_.file = { path = ".env", find_up = true }
+TOML
+echo 'GLOBAL_ONLY=home' >"$HOME/.env"
+assert_contains "cd proj/sub/deep && mise env -s bash" "GLOBAL_ONLY=home"
+assert_not_contains "cd proj/sub/deep && mise env -s bash" "FROM_PROJ"
+
+# With `{{cwd}}` a global config searches up from wherever mise runs; the nearest file wins.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[env]
+_.file = [
+  { path = "{{cwd}}/.env", find_up = true },
+  { path = "{{cwd}}/.env.local", find_up = true },
+]
+TOML
 assert "cd proj/sub/deep && mise env -s bash | grep FROM_PROJ" "export FROM_PROJ=proj"
 assert "cd proj/sub/deep && mise env -s bash | grep SHARED" "export SHARED=sub"
 assert "cd proj/sub/deep && mise env -s bash | grep LOCAL_ONLY" "export LOCAL_ONLY=local"
 assert_not_contains "cd proj && mise env -s bash" "LOCAL_ONLY"
+assert_not_contains "cd other && mise env -s bash" "FROM_PROJ"
 
-# A find_up file depends on the current directory, so it must not be served from the env cache.
+# A find_up file depends on the filesystem, so it must not be served from the env cache.
 export MISE_ENV_CACHE=1
 export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
 assert_contains "cd proj/sub && mise env -s bash" "LOCAL_ONLY=local"
