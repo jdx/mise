@@ -417,10 +417,10 @@ impl Vfox {
     }
 }
 
-/// Fails if a symlink under `root` points outside of it. A link that resolves is checked
-/// by its real path, so chains of links are followed; a dangling one is compared lexically.
+/// Fails if a symlink under `root` points outside of it. Each target is resolved component
+/// by component, following every link on the way, so chains and links through linked
+/// directories are checked; components that do not exist are taken as written.
 fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
-    use std::path::Component;
     let real_root = root.canonicalize()?;
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
@@ -431,24 +431,9 @@ fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
                 dirs.push(path);
             } else if kind.is_symlink() {
                 let target = std::fs::read_link(&path)?;
-                // depth below `root` of the directory holding the link
-                let mut depth = path.strip_prefix(root).unwrap().components().count() as i64 - 1;
-                let escapes = match path.canonicalize() {
-                    Ok(real) => !real.starts_with(&real_root),
-                    Err(_) => {
-                        let mut escapes = target.is_absolute();
-                        for component in target.components() {
-                            match component {
-                                Component::ParentDir => depth -= 1,
-                                Component::Normal(_) => depth += 1,
-                                _ => {}
-                            }
-                            escapes |= depth < 0;
-                        }
-                        escapes
-                    }
-                };
-                if escapes {
+                let resolved =
+                    resolve_link_target(&path.parent().unwrap().canonicalize()?, &target)?;
+                if !resolved.starts_with(&real_root) {
                     return Err(format!(
                         "symlink {path:?} points outside of the install directory: {target:?}"
                     )
@@ -458,6 +443,44 @@ fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Resolves `target` as seen from the directory `base`, which must already be real.
+fn resolve_link_target(base: &Path, target: &Path) -> Result<PathBuf> {
+    use std::collections::VecDeque;
+    use std::path::Component;
+    const MAX_LINKS: usize = 40;
+    let mut current = base.to_path_buf();
+    let mut pending: VecDeque<PathBuf> = target
+        .components()
+        .map(|c| PathBuf::from(c.as_os_str()))
+        .collect();
+    let mut followed = 0;
+    while let Some(part) = pending.pop_front() {
+        match Path::new(&part).components().next().unwrap() {
+            Component::Prefix(_) | Component::RootDir => current = part,
+            Component::CurDir => {}
+            Component::ParentDir => {
+                current.pop();
+            }
+            Component::Normal(name) => {
+                let candidate = current.join(name);
+                match std::fs::read_link(&candidate) {
+                    Ok(link) => {
+                        followed += 1;
+                        if followed > MAX_LINKS {
+                            return Err(format!("too many levels of symlinks: {target:?}").into());
+                        }
+                        for part in link.components().rev() {
+                            pending.push_front(PathBuf::from(part.as_os_str()));
+                        }
+                    }
+                    Err(_) => current = candidate,
+                }
+            }
+        }
+    }
+    Ok(current)
 }
 
 /// The name prefix of the directory an archive is extracted into before it is moved to
@@ -578,6 +601,24 @@ mod tests {
             // install directory once the top-level directory is stripped
             zip.add_symlink("tool-1.0/x/up", "..", options).unwrap();
             zip.add_symlink("tool-1.0/y", "x/up/..", options).unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        assert!(Vfox::test().extract(&archive, &install_dir).is_err());
+        assert!(!install_dir.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_rejects_dangling_links_through_a_linked_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            zip.add_symlink("tool-1.0/alias", "..", options).unwrap();
+            zip.add_symlink("tool-1.0/link", "alias/../missing/outside", options)
+                .unwrap();
             zip.finish().unwrap();
         }
         let install_dir = temp.path().join("installs/tool-abcd1234");
