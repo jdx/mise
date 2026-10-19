@@ -4240,6 +4240,7 @@ pub trait Backend: Debug + Send + Sync {
             let version = latest.version.clone();
             match before_date {
                 Some(before) => {
+                    let mut undated = false;
                     let allowed = if latest.created_at.is_some() {
                         latest_stable_candidate_allowed_by_before_date(
                             &version,
@@ -4256,9 +4257,13 @@ pub trait Backend: Debug + Send + Sync {
                             .await?;
                         fallback_refresh = false;
                         let info = versions.iter().find(|v| v.version == version);
+                        undated = info.is_some_and(|v| v.created_at.is_none());
                         latest_stable_candidate_allowed_by_before_date(&version, info, before)
                     };
                     if allowed {
+                        if undated {
+                            note_undated_release(&self.ba().full(), &version, before);
+                        }
                         return Ok(Some(version));
                     }
                 }
@@ -6447,16 +6452,11 @@ fn latest_stable_candidate_allowed_by_before_date(
         return false;
     };
     let Some(created_at) = info.created_at.as_deref() else {
-        if before > crate::duration::process_now() {
-            debug!(
-                "Latest stable version {version} has no release date metadata, but the cutoff is in the future"
-            );
-            return true;
-        }
-        debug!(
-            "Latest stable version {version} has no release date metadata; falling back to full version list"
-        );
-        return false;
+        // The same rule as `VersionInfo::filter_by_date`: a version the backend
+        // cannot date is allowed, so a plugin's own stable choice is kept
+        // rather than replaced by whatever the full list ends with.
+        debug!("Latest stable version {version} has no release date metadata, allowing it");
+        return true;
     };
     match parse_into_timestamp(created_at) {
         Ok(created) => created < before,
@@ -6833,6 +6833,40 @@ mod latest_version_tests {
         let id = backend.ba().full();
         assert_eq!(unchecked_release_cutoff(&id, "3.0.0"), Some(before));
         assert_eq!(unchecked_release_cutoff(&id, "2.0.0"), None);
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_keeps_a_plugins_undated_stable_choice() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        // Neither version has a date, and the plugin deliberately calls the
+        // older one stable (the way an asdf `bin/latest-stable` can).
+        let backend = LatestBackend::new("test-undated-stable")
+            .with_stable_result(Some("1.0.0"))
+            .with_remote_versions(vec![
+                VersionInfo {
+                    version: "1.0.0".to_string(),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "2.0.0".to_string(),
+                    ..Default::default()
+                },
+            ]);
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.0")
+        );
+        assert_eq!(
+            unchecked_release_cutoff(&backend.ba().full(), "1.0.0"),
+            Some(before)
+        );
     }
 
     #[tokio::test]
@@ -7217,14 +7251,16 @@ mod latest_version_tests {
     }
 
     #[test]
-    fn test_latest_stable_candidate_rejects_unverified_cutoff_metadata() {
+    fn test_latest_stable_candidate_allows_undated_but_rejects_unverifiable_metadata() {
         let _settings = crate::test::SettingsGuard::lock();
         let before = crate::duration::parse_into_timestamp("2024-06-01").unwrap();
 
         assert!(!latest_stable_candidate_allowed_by_before_date(
             "1.0.0", None, before
         ));
-        assert!(!latest_stable_candidate_allowed_by_before_date(
+        // The listing itself has no date for it: allowed, like every other
+        // undated version, so a plugin's own stable choice survives the cutoff.
+        assert!(latest_stable_candidate_allowed_by_before_date(
             "1.0.0",
             Some(&VersionInfo {
                 version: "1.0.0".to_string(),
