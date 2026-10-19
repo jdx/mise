@@ -364,7 +364,7 @@ impl PIPXBackend {
     ) -> Result<CmdLineRunner<'static>> {
         let registry = self.get_registry_url(config).await?;
         let index = uv_index_url(&registry)?;
-        Ok(CmdLineRunner::new(uv)
+        let mut cmd = CmdLineRunner::new(uv)
             .current_dir(project)
             .envs(config.env().await?)
             .env_values(tv.install_env())
@@ -372,7 +372,14 @@ impl PIPXBackend {
             .env_remove("UV_PROJECT")
             .env_remove("UV_WORKING_DIR")
             .env_remove("UV_PROJECT_ENVIRONMENT")
-            .env_remove("VIRTUAL_ENV"))
+            .env_remove("VIRTUAL_ENV");
+        // The lock runs with `--no-config`, which also skips a `keyring-provider` in
+        // the user's uv.toml, so the setting that authenticates mise's own index
+        // requests has to reach uv here too.
+        if Settings::get().pypi.keyring_provider.as_deref() == Some("subprocess") {
+            cmd = cmd.env("UV_KEYRING_PROVIDER", "subprocess");
+        }
+        Ok(cmd)
     }
 
     /// The Python range a published release declares, or an empty string when it
@@ -387,14 +394,17 @@ impl PIPXBackend {
         // build backend. Simple-only indexes expose it on wheel links.
         if registry.ends_with("/json") {
             let url = registry.replace("{}", &format!("{package}/{version}"));
-            let metadata: Value = HTTP_FETCH.json(&url).await?;
+            let (url, headers) = keyring::index_request(registry, &url).await?;
+            let metadata: Value = HTTP_FETCH.json_with_headers(url, &headers).await?;
             Ok(metadata
                 .pointer("/info/requires_python")
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_owned())
         } else {
-            let html = HTTP_FETCH.get_html(registry.replace("{}", package)).await?;
+            let (url, headers) =
+                keyring::index_request(registry, &registry.replace("{}", package)).await?;
+            let html = HTTP_FETCH.get_html_with_headers(url, &headers).await?;
             simple_index_python_requirement(package, version, &html)
         }
     }
@@ -783,7 +793,7 @@ fn simple_index_python_requirement(package: &str, version: &str, html: &str) -> 
     Ok(constraints.into_iter().next().unwrap())
 }
 
-fn uv_index_url(registry: &str) -> Result<String> {
+pub(super) fn uv_index_url(registry: &str) -> Result<String> {
     let base = registry.split("{}").next().unwrap_or(registry);
     let mut url = url::Url::parse(base)?;
     if url
