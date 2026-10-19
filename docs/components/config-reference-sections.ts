@@ -405,7 +405,8 @@ const taskConfigIds: Record<string, true> = {
 
 // The guide that explains `path`, a key at any depth, and failing that its section.
 export function guideFor(path: string): Guide | undefined {
-  const segments = path.split(".");
+  // `watch_files[].run` is a key of `watch_files`, so a list marker does not change the guide
+  const segments = path.split(".").map((s) => s.replace(/\[\]$/, ""));
   for (let n = segments.length; n > 0; n--) {
     const above = segments.slice(0, n).join(".");
     const guide = keyGuides[above] ?? ruleGuide(above);
