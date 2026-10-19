@@ -1,5 +1,71 @@
 # Changelog
 
+## [2026.10.15](https://github.com/jdx/mise/releases/tag/v2026.10.15) - 2026-10-19
+
+### 🚀 Features
+
+- **(backend)** serve every backend's version list from the versions host by @jdx in [#14700](https://github.com/jdx/mise/pull/14700)
+- **(bootstrap)** add --prune-dotfiles to remove orphaned dotfiles by @jdx in [#14681](https://github.com/jdx/mise/pull/14681)
+- **(config)** add read_json, read_yaml and read_toml template functions by @jdx in [#14705](https://github.com/jdx/mise/pull/14705)
+- **(config)** apply the default minimum_release_age to every backend by @jdx in [#14701](https://github.com/jdx/mise/pull/14701)
+- **(dotfiles)** add dotfiles.windows_symlinks to link files instead of copying on Windows by @jdx in [#14682](https://github.com/jdx/mise/pull/14682)
+- **(dotnet)** add lts and sts version aliases by @jdx in [#14683](https://github.com/jdx/mise/pull/14683)
+- **(http)** read release dates for http versions by @jdx in [#14696](https://github.com/jdx/mise/pull/14696)
+- **(install)** add a PowerShell installer at mise.run/powershell by @jdx in [#14660](https://github.com/jdx/mise/pull/14660)
+- **(task)** add -a as a short alias for tasks --all by @williamsjokvist in [#14674](https://github.com/jdx/mise/pull/14674)
+- **(vfox)** let plugins report release dates for minimum_release_age by @jdx in [#14695](https://github.com/jdx/mise/pull/14695)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** find binaries in macOS universal archives by @jdx in [#14665](https://github.com/jdx/mise/pull/14665)
+- **(aqua)** date github_tag versions so minimum_release_age applies by @jdx in [#14691](https://github.com/jdx/mise/pull/14691)
+- **(backend)** warn when minimum_release_age cannot check a version's date by @jdx in [#14694](https://github.com/jdx/mise/pull/14694)
+- **(conda)** report release dates so minimum_release_age applies by @jdx in [#14693](https://github.com/jdx/mise/pull/14693)
+- **(core)** date dotnet, deno and erlang versions for minimum_release_age by @jdx in [#14692](https://github.com/jdx/mise/pull/14692)
+- **(core)** date more ruby, python and rust versions so minimum_release_age applies by @jdx in [#14697](https://github.com/jdx/mise/pull/14697)
+- **(dotfiles)** report copies instead of symlinks for symlink-each on Windows by @jdx in [#14654](https://github.com/jdx/mise/pull/14654)
+- **(fmt)** keep multiline inline tables intact by @jdx in [#14670](https://github.com/jdx/mise/pull/14670)
+- **(http)** retry the install rename on Windows when antivirus holds the files by @jdx in [#14703](https://github.com/jdx/mise/pull/14703)
+- **(install)** extract 7z archives when the data dir contains `..` by @jdx in [#14657](https://github.com/jdx/mise/pull/14657)
+- **(npm)** run allow_builds scripts despite ignore-scripts in .npmrc by @jdx in [#14661](https://github.com/jdx/mise/pull/14661)
+- **(npm)** pin aube-lock.yaml so a user's lockfile settings don't break mise lock by @jdx in [#14659](https://github.com/jdx/mise/pull/14659)
+- **(rust)** list channels when GitHub is unreachable behind a mirror by @jdx in [#14662](https://github.com/jdx/mise/pull/14662)
+- **(shim)** keep the version tag in the Windows release mise-shim.exe by @jdx in [#14656](https://github.com/jdx/mise/pull/14656)
+- **(task)** keep task commands working when one task's dir template is broken by @jdx in [#14680](https://github.com/jdx/mise/pull/14680)
+
+### 🚜 Refactor
+
+- **(schema)** generate the [deps] and [secrets] schema from their types by @jdx in [#14658](https://github.com/jdx/mise/pull/14658)
+- **(schema)** generate the [daemons] and [daemon_providers] schema from types by @jdx in [#14663](https://github.com/jdx/mise/pull/14663)
+- **(schema)** generate the [hooks] schema from declaration types by @jdx in [#14666](https://github.com/jdx/mise/pull/14666)
+- **(schema)** generate the [bootstrap] raw-value schema from declaration types by @jdx in [#14668](https://github.com/jdx/mise/pull/14668)
+- **(schema)** generate the [tools] option schemas from declaration types by @jdx in [#14669](https://github.com/jdx/mise/pull/14669)
+- **(schema)** generate the [env] and [vars] schema from declaration types by @jdx in [#14671](https://github.com/jdx/mise/pull/14671)
+- **(schema)** generate the multi-shape task field schemas from declaration types by @jdx in [#14672](https://github.com/jdx/mise/pull/14672)
+
+### 📚 Documentation
+
+- **(config)** add an interactive mise.toml editor and playground by @jdx in [#14673](https://github.com/jdx/mise/pull/14673)
+- **(config)** hover over keys in every mise.toml example by @jdx in [#14686](https://github.com/jdx/mise/pull/14686)
+- **(config)** turn the mise.toml reference into a key explorer by @jdx in [#14687](https://github.com/jdx/mise/pull/14687)
+- **(config)** show a real example for every mise.toml reference key by @jdx in [#14690](https://github.com/jdx/mise/pull/14690)
+- **(dotnet)** explain how private feeds authenticate by @jdx in [#14679](https://github.com/jdx/mise/pull/14679)
+- **(schema)** describe the remaining bootstrap keys by @jdx in [#14688](https://github.com/jdx/mise/pull/14688)
+- **(secrets)** add setup, CI and migration guidance to the fnox page by @jdx in [#14675](https://github.com/jdx/mise/pull/14675)
+- record the landing-page showreel against current mise so its cache fills by @jdx in [#14685](https://github.com/jdx/mise/pull/14685)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#14708](https://github.com/jdx/mise/pull/14708)
+
+### 📦 Registry
+
+- add release dates to dart, flutter, nim, julia and other http tools by @jdx in [#14698](https://github.com/jdx/mise/pull/14698)
+
+### Ci
+
+- **(release)** publish releases staged before install.ps1 existed by @jdx in [#14684](https://github.com/jdx/mise/pull/14684)
+
 ## [2026.10.14](https://github.com/jdx/mise/releases/tag/v2026.10.14) - 2026-10-18
 
 ### 🚀 Features
