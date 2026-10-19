@@ -38,6 +38,22 @@ assert_contains "mise ls alias-backend:tool" "2.0.0"
 assert_not_contains "mise ls alias-backend:tool" "recommended"
 assert_not_contains "ls $MISE_DATA_DIR/installs/alias-backend-tool" "recommended"
 
+# the lockfile records the version, never the alias name
+cat >mise.toml <<'TOML'
+[tools]
+"alias-backend:tool" = "recommended"
+TOML
+touch mise.lock
+mise lock
+assert_contains "cat mise.lock" 'version = "2.0.0"'
+assert_not_contains "cat mise.lock" 'version = "recommended"'
+rm mise.lock
+
+# a plugin update that moves the alias is followed without waiting for the cache
+sed -i 's/recommended = "2.0.0"/recommended = "3.0.0"/' "$BACKEND_DIR/hooks/backend_list_versions.lua"
+mise install alias-backend:tool@recommended
+assert_contains "mise ls alias-backend:tool" "3.0.0"
+
 # a config alias wins over the plugin's
 cat >mise.toml <<'TOML'
 [tool_alias."alias-backend:tool".versions]

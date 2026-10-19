@@ -704,37 +704,51 @@ impl VfoxBackend {
             caches
                 .entry(self.ba.full())
                 .or_insert_with(|| {
-                    Arc::new(
+                    let mut cm =
                         CacheManagerBuilder::new(self.ba.cache_path().join("aliases.msgpack.z"))
-                            .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-                            .build(),
-                    )
+                            .with_fresh_duration(Settings::get().fetch_remote_versions_cache());
+                    // A plugin update can move an alias, so it expires the cache.
+                    if let Some(plugin_path) = self.plugin().map(|p| p.path()) {
+                        cm = cm
+                            .with_fresh_file(plugin_path.clone())
+                            .with_fresh_file(plugin_path.join("hooks/backend_list_versions.lua"));
+                    }
+                    Arc::new(cm.build())
                 })
                 .clone()
         };
-        // Offline, an expired cache still answers rather than failing the resolve.
-        if Settings::get().offline()
-            && let Ok(aliases) = cache.get_cached()
-        {
-            return Ok(aliases);
+        // Offline, an expired cache still answers and a missing one means no
+        // aliases, so the plugin never contacts its registry.
+        if Settings::get().offline() {
+            return Ok(cache.get_cached().unwrap_or_default());
         }
         let aliases = cache
             .get_or_try_init_async(async || {
-                let (mut vfox, _log_rx) = self.plugin.vfox()?;
-                self.ensure_plugin_installed(config).await?;
-                if let Ok(dep_env) = self.dependency_env(config).await {
-                    vfox.cmd_env = Some(dep_env.into_iter().collect());
-                }
-                let opts = config
-                    .get_tool_opts_with_overrides(&self.ba)
-                    .await?
-                    .into_backend_options()
-                    .into_map();
-                let listing = vfox
-                    .backend_list_versions_and_aliases(&self.pathname, self.get_tool_name()?, opts)
-                    .await
-                    .wrap_err("Backend list versions method failed")?;
-                Ok(listing.aliases)
+                timeout::run_with_timeout_async(
+                    || async {
+                        let (mut vfox, _log_rx) = self.plugin.vfox()?;
+                        self.ensure_plugin_installed(config).await?;
+                        if let Ok(dep_env) = self.dependency_env(config).await {
+                            vfox.cmd_env = Some(dep_env.into_iter().collect());
+                        }
+                        let opts = config
+                            .get_tool_opts_with_overrides(&self.ba)
+                            .await?
+                            .into_backend_options()
+                            .into_map();
+                        let listing = vfox
+                            .backend_list_versions_and_aliases(
+                                &self.pathname,
+                                self.get_tool_name()?,
+                                opts,
+                            )
+                            .await
+                            .wrap_err("Backend list versions method failed")?;
+                        Ok(listing.aliases)
+                    },
+                    Settings::get().fetch_remote_versions_timeout(),
+                )
+                .await
             })
             .await?;
         Ok(aliases.clone())
