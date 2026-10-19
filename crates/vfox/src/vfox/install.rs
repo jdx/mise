@@ -485,4 +485,21 @@ mod tests {
         assert!(link.is_symlink());
         assert_eq!(std::fs::read_link(&link).unwrap(), Path::new("tool"));
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_rejects_symlinks_that_escape_the_install_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            zip.add_symlink("tool-1.0/escape", "../../../outside", options)
+                .unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        assert!(Vfox::test().extract(&archive, &install_dir).is_err());
+        assert!(!install_dir.exists());
+    }
 }
