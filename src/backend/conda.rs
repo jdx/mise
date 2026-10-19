@@ -2,10 +2,7 @@ use crate::args::BackendArg;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::{
-    MISE_BINS_DIR, VersionInfo, filter_cached_prereleases, mark_prerelease,
-    runtime_path_for_install_path,
-};
+use crate::backend::{MISE_BINS_DIR, VersionInfo, runtime_path_for_install_path};
 use crate::config::Config;
 use crate::config::Settings;
 use crate::http::{HTTP, apply_url_replacements};
@@ -99,6 +96,9 @@ impl Middleware for UrlReplacementMiddleware {
         next.run(request, extensions).await
     }
 }
+
+/// The `conda.channel` default, whose package lists the versions host publishes.
+const DEFAULT_CONDA_CHANNEL: &str = "conda-forge";
 
 impl<'a> CondaOptions<'a> {
     fn new(raw: &'a ToolVersionOptions) -> Self {
@@ -1111,25 +1111,19 @@ impl Backend for CondaBackend {
         Ok(versions)
     }
 
-    /// Override to bypass the shared remote_versions cache since conda's
-    /// channel option affects which versions are available. Conda always
-    /// queries the channel directly, so the `_refresh` flag is irrelevant.
-    async fn list_remote_versions_with_info_and_options(
-        &self,
-        config: &Arc<Config>,
-        _listing_opts: &ToolVersionOptions,
-        selection_opts: &ToolVersionOptions,
-        _refresh: bool,
-        _has_local_version_listing_override: bool,
-    ) -> Result<Vec<VersionInfo>> {
-        let want_prereleases = self.include_prereleases(selection_opts);
-        let versions = self
-            ._list_remote_versions(config)
-            .await?
-            .into_iter()
-            .map(mark_prerelease)
-            .collect();
-        Ok(filter_cached_prereleases(versions, want_prereleases))
+    /// Versions are not marked as pre-releases by the channel, so the shared
+    /// listing marks the ones whose version looks like one.
+    fn mark_prereleases_from_version_pattern(&self) -> bool {
+        true
+    }
+
+    /// A channel other than conda-forge, from the `channel` option or
+    /// `conda.channel`, lists its own packages, which the shared versions host
+    /// cannot know.
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let channel = CondaOptions::new(&raw_opts).channel_name();
+        Ok((channel != DEFAULT_CONDA_CHANNEL).then_some(channel))
     }
 
     async fn install_version_(

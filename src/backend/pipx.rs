@@ -384,7 +384,10 @@ impl Backend for PIPXBackend {
 
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
         match self.tool_name().parse()? {
-            PipxRequest::Pypi(_) => self.get_registry_url(config).await.map(Some),
+            PipxRequest::Pypi(_) => {
+                let registry_url = self.get_registry_url(config).await?;
+                Ok((registry_url != DEFAULT_REGISTRY_URL).then_some(registry_url))
+            }
             PipxRequest::Git(_) => Ok(None),
         }
     }
@@ -1242,7 +1245,7 @@ impl PIPXBackend {
             .pypi
             .registry_url
             .clone()
-            .unwrap_or_else(|| "https://pypi.org/pypi/{}/json".to_string());
+            .unwrap_or_else(|| DEFAULT_REGISTRY_URL.to_string());
 
         // Remove {} placeholders and trailing slashes
         let mut url = registry_url

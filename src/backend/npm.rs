@@ -896,6 +896,13 @@ impl Backend for NPMBackend {
         options
     }
 
+    /// A registry other than npmjs.org, from `.npmrc` or `NPM_CONFIG_*`, lists
+    /// its own versions, which the shared versions host cannot know.
+    async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
+        let registry = npm_registry::package_registry(&self.tool_name());
+        Ok((!npm_registry::is_public_registry(&registry)).then_some(registry))
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let name = self.tool_name();
         if is_git_spec(&name) {
