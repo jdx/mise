@@ -492,6 +492,11 @@ impl ComposeRequest {
         containers: &[ComposeContainer],
     ) -> Result<HashMap<String, String>> {
         let hash_args = ["config".to_string(), "--hash=*".to_string()];
+        // `--file` turns off compose's own file discovery (`COMPOSE_FILE`, `.env`,
+        // override files), so only pin references when the files are explicit.
+        if self.files.is_empty() {
+            return parse_config_hashes(&self.compose_output(&hash_args)?);
+        }
         let model: serde_json::Value = serde_json::from_str(&self.compose_output(&[
             "config".to_string(),
             "--format".to_string(),
@@ -505,22 +510,10 @@ impl ComposeRequest {
             .suffix(".yaml")
             .tempfile()?;
         std::io::Write::write_all(&mut file, override_yaml.as_bytes())?;
-        let mut args = Vec::new();
-        if self.files.is_empty() {
-            // `--file` turns off default discovery (and `COMPOSE_FILE`), so
-            // select the files compose would have picked ourselves.
-            let defaults = default_compose_files(&self.project_dir);
-            if defaults.is_empty() {
-                return parse_config_hashes(&self.compose_output(&hash_args)?);
-            }
-            for file in defaults {
-                args.extend(["--file".to_string(), file.to_string_lossy().to_string()]);
-            }
-        }
-        args.extend([
+        let mut args = vec![
             "--file".to_string(),
             file.path().to_string_lossy().to_string(),
-        ]);
+        ];
         args.extend(hash_args);
         parse_config_hashes(&self.compose_output(&args)?)
     }
@@ -1063,46 +1056,6 @@ fn resolved_references_override(
         }
     }
     Some(yaml)
-}
-
-/// The files compose selects when none are passed: `COMPOSE_FILE`, else the
-/// first default name found walking up from the project directory, plus its
-/// override file.
-fn default_compose_files(project_dir: &Path) -> Vec<PathBuf> {
-    if let Some(value) = std::env::var_os("COMPOSE_FILE").filter(|v| !v.is_empty()) {
-        let separator = std::env::var("COMPOSE_PATH_SEPARATOR")
-            .ok()
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| if cfg!(windows) { ";" } else { ":" }.to_string());
-        return value
-            .to_string_lossy()
-            .split(separator.as_str())
-            .filter(|file| !file.is_empty())
-            .map(|file| project_dir.join(file))
-            .collect();
-    }
-    const BASES: [&str; 4] = [
-        "compose.yaml",
-        "compose.yml",
-        "docker-compose.yml",
-        "docker-compose.yaml",
-    ];
-    for dir in project_dir.ancestors() {
-        let Some(base) = BASES.iter().find(|name| dir.join(name).is_file()) else {
-            continue;
-        };
-        let mut files = vec![dir.join(base)];
-        let stem = base.rsplit_once('.').map_or(*base, |(stem, _)| stem);
-        for ext in ["yaml", "yml"] {
-            let over = dir.join(format!("{stem}.override.{ext}"));
-            if over.is_file() {
-                files.push(over);
-                break;
-            }
-        }
-        return files;
-    }
-    vec![]
 }
 
 fn parse_config_hashes(output: &str) -> Result<HashMap<String, String>> {
