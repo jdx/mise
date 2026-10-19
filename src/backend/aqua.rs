@@ -421,12 +421,26 @@ impl Backend for AquaBackend {
         {
             return Ok(None);
         }
-        let Some((_, tag)) = self
-            .get_version_tags()
-            .await?
-            .into_iter()
-            .find(|(v, _)| v == version)
-        else {
+        // The tag comes from the same dated listing the candidate came from, not
+        // the names-only cache, which refreshes separately and can lag a new tag.
+        let target = PlatformTarget::from_current();
+        let (target_os, target_arch) = Self::to_aqua_platform(&target);
+        let target_libc = Self::target_variant_libc(&target, None);
+        let mut tag = None;
+        for (candidate, _, _) in get_tags_with_release_dates(&pkg).await? {
+            if let Ok(Some((v, _))) = versioned_package_from_tag(
+                &pkg,
+                &candidate,
+                target_os,
+                target_arch,
+                target_libc.as_deref(),
+            ) && v == version
+            {
+                tag = Some(candidate);
+                break;
+            }
+        }
+        let Some(tag) = tag else {
             return Ok(None);
         };
         github::tag_commit_date(&format!("{}/{}", pkg.repo_owner, pkg.repo_name), &tag).await
