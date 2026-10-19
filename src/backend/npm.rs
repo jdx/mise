@@ -900,10 +900,19 @@ impl Backend for NPMBackend {
     /// its own versions, which the shared versions host cannot know.
     ///
     /// `npm.shell_out` lists through `npm view` in the dependency environment,
-    /// whose registry settings mise does not read, so it always lists directly.
-    async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
+    /// whose registry settings mise does not interpret, so it always lists
+    /// directly. Its cache is keyed by that environment's `NPM_CONFIG_*`
+    /// variables, so one registry's list is not reused for another.
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
         if Settings::get().npm.shell_out {
-            return Ok(Some("shell_out".to_string()));
+            let env = self.dependency_env(config).await?;
+            let npm_config = env
+                .iter()
+                .filter(|(key, _)| key.to_ascii_lowercase().starts_with("npm_config_"))
+                .map(|(key, value)| (key.to_ascii_lowercase(), value.as_str()))
+                .collect::<BTreeMap<_, _>>();
+            let registry = npm_registry::package_registry(&self.tool_name());
+            return Ok(Some(crate::hash::hash_to_str(&(npm_config, registry))));
         }
         let registry = npm_registry::package_registry(&self.tool_name());
         Ok((!npm_registry::is_public_registry(&registry)).then_some(registry))
