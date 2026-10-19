@@ -62,7 +62,8 @@ idea:
   contain template syntax or list `secrets`.
 - A [`.miserc.toml`](/configuration.html#miserc) never needs trust. It only
   holds early settings that choose which config files load, and its templates
-  cannot call `exec()` or `read_file()`.
+  cannot call `exec()`, `read_file()`, `read_json()`, `read_yaml()`, or
+  `read_toml()`.
 
 [Paranoid mode](/paranoid.html) removes these exemptions apart from
 `.miserc.toml`: every other config file outside global and system config needs
@@ -197,7 +198,8 @@ build scripts, such as a `cargo:` crate's `build.rs`.
 
 These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
 
-- `exec()` and `read_file()` in templates, in any config.
+- `exec()`, `read_file()`, `read_json()`, `read_yaml()`, and `read_toml()` in
+  templates, in any config.
 - Running tasks.
 - The tool options `postinstall` and `install_env`.
 - asdf plugin scripts, so tools from the `asdf:` backend cannot list or install
