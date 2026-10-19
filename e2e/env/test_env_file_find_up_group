@@ -108,3 +108,12 @@ TOML
 printf 'EXAMPLE=extra\n' >extra.env
 assert_contains "mise env --dotenv" "EXAMPLE=extra"
 rm mise.toml
+
+# An absolute path with `..` starts at the directory it names, so it never visits the directories
+# it climbed out of: project/.env is below workspace and is not searched.
+cat >mise.toml <<TOML
+[env]
+_.file = { path = "$PWD/../.env", find_up = true }
+TOML
+assert_contains "mise env --dotenv" "ONLY_PARENT=1"
+assert_not_contains "mise env --dotenv" "ONLY_PROJECT"

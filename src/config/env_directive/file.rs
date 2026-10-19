@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use rops::file::format::{JsonFileFormat, TomlFileFormat, YamlFileFormat};
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::Arc,
 };
 
@@ -126,6 +126,22 @@ impl<'de> serde::Deserialize<'de> for YamlEnvValue {
     }
 }
 
+/// Resolves `.` and `..` components lexically, so the parents of `/repo/pkg/..` are those of
+/// `/repo`, not `/repo/pkg`.
+fn normalize_dots(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 impl EnvResults {
     pub(super) async fn file(
         ctx: &mut EnvDirectiveContext<'_>,
@@ -157,7 +173,7 @@ impl EnvResults {
                 let pattern = file::replace_path(pattern);
                 let (start, name) = if pattern.is_absolute() {
                     match (pattern.parent(), pattern.file_name()) {
-                        (Some(dir), Some(name)) => (dir.to_path_buf(), PathBuf::from(name)),
+                        (Some(dir), Some(name)) => (normalize_dots(dir), PathBuf::from(name)),
                         _ => continue,
                     }
                 } else {
