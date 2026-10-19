@@ -222,11 +222,11 @@ unset MISE_GLOBAL_CONFIG_FILE
 
 # Services that reference another service (network_mode: service:X) are hashed
 # by compose after the reference is resolved to a container id, so mise must
-# pin the reference the same way, keeping the project's own compose files.
+# pin the reference the same way, keeping the compose files compose discovers.
 refs_compose="$PWD/refs-compose"
 refs_engine="$PWD/refs-engine"
 mkdir -p refs-project
-touch refs-project/compose.yaml
+touch refs-project/compose.yaml refs-project/compose.override.yaml
 cat >"$refs_compose" <<'EOF'
 #!/bin/sh
 case " $* " in
@@ -237,7 +237,7 @@ case " $* " in
   for arg in "$@"; do
     case "$arg" in *override*) override=$arg ;; esac
   done
-  case " $* " in *" --file /recorded/compose.yaml "*) ;; *) exit 3 ;; esac
+  case " $* " in *refs-project/compose.yaml*refs-project/compose.override.yaml*) ;; *) exit 3 ;; esac
   printf 'vpn vpn-hash\n'
   if grep -q 'container:vpn-1' "$override"; then
     echo 'app app-hash'
@@ -259,7 +259,7 @@ for id in "$@"; do
   vpn-1) h=vpn-hash ;;
   *) continue ;;
   esac
-  printf '{"com.docker.compose.config-hash":"%s","com.docker.compose.project.config_files":"/recorded/compose.yaml"}\n' "$h"
+  printf '{"com.docker.compose.config-hash":"%s"}\n' "$h"
 done
 EOF
 cat >mise.toml <<EOF
