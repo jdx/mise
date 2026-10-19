@@ -251,7 +251,8 @@ Dotfiles are written as files in the image:
 - An `absent` entry, or a `remove_empty` template that renders empty, adds an
   OCI whiteout, so a file the base image has at that path is hidden.
 - Templates that call `secret()` fail the build. Templates render without the
-  `env` context, and calling `get_env()`, `exec()`, or `read_file()` fails the
+  `env` context, and calling `get_env()`, `exec()`, `read_file()`, `read_json()`, `read_yaml()`, or
+  `read_toml()` fails the
   build, because those values could be recovered from an image layer.
 - Tracked files and permissions-only entries are left out.
 
