@@ -898,7 +898,13 @@ impl Backend for NPMBackend {
 
     /// A registry other than npmjs.org, from `.npmrc` or `NPM_CONFIG_*`, lists
     /// its own versions, which the shared versions host cannot know.
+    ///
+    /// `npm.shell_out` lists through `npm view` in the dependency environment,
+    /// whose registry settings mise does not read, so it always lists directly.
     async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
+        if Settings::get().npm.shell_out {
+            return Ok(Some("shell_out".to_string()));
+        }
         let registry = npm_registry::package_registry(&self.tool_name());
         Ok((!npm_registry::is_public_registry(&registry)).then_some(registry))
     }
