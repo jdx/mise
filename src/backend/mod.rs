@@ -3193,12 +3193,12 @@ pub trait Backend: Debug + Send + Sync {
     /// Results are cached. Backends can override `_list_remote_versions_with_info`
     /// to provide timestamp information.
     ///
-    /// For backends that query canonical, always-fresh sources (npm, pipx, cargo,
-    /// gem, go, and http/s3 with `version_list_url`), the versions host cache is
-    /// skipped and the upstream is queried directly. For all other backends this
-    /// method first tries the versions host (mise-versions.jdx.dev) which provides
-    /// version info with created_at timestamps, and falls back to the backend's
-    /// `_list_remote_versions_with_info` implementation on failure.
+    /// This method first tries the versions host (mise-versions.jdx.dev), which
+    /// provides version info with created_at timestamps, and falls back to the
+    /// backend's `_list_remote_versions_with_info` implementation on failure.
+    /// The host is skipped when local options or a redirected source (see
+    /// `remote_version_cache_context`) make the listing differ from the
+    /// published one.
     ///
     /// In offline mode, this reads the existing remote-versions cache without
     /// fetching or writing. If no cache exists, it returns an empty list.

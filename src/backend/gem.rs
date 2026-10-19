@@ -18,12 +18,16 @@ use indoc::formatdoc;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::OnceCell as TokioOnceCell;
 use url::Url;
 
 /// The source `gem` uses when none is configured.
 const DEFAULT_GEM_SOURCE: &str = "https://rubygems.org/";
+
+/// Set once `gem sources` fails, so the versions-host check stops retrying it.
+static GEM_SOURCE_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
 
 /// Cached gem source URL, memoized globally after first successful detection
 static GEM_SOURCE: TokioOnceCell<String> = TokioOnceCell::const_new();
@@ -85,9 +89,16 @@ impl Backend for GemBackend {
         if let Some(source) = self.configured_source(config).await? {
             return Ok(Some(hash::hash_to_str(&source.as_str())));
         }
-        Ok(self
-            .detect_gem_source(config)
-            .await
+        // A machine where `gem sources` cannot run keeps failing; asking again
+        // on every listing, cache hits included, would spawn it each time.
+        if GEM_SOURCE_UNAVAILABLE.load(Ordering::Relaxed) {
+            return Ok(None);
+        }
+        let source = self.detect_gem_source(config).await;
+        if source.is_err() {
+            GEM_SOURCE_UNAVAILABLE.store(true, Ordering::Relaxed);
+        }
+        Ok(source
             .ok()
             .filter(|source| *source != DEFAULT_GEM_SOURCE)
             .map(|source| hash::hash_to_str(&source)))
