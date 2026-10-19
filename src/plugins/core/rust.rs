@@ -35,16 +35,51 @@ const RUST_DEFAULT_DIST_SERVER: &str = "https://static.rust-lang.org";
 const RUST_MINIMAL_PROFILE_COMPONENTS: &[&str] = &["cargo", "rust-std", "rustc"];
 const RUST_DEFAULT_PROFILE_COMPONENTS: &[&str] = &["clippy", "rust-docs", "rustfmt"];
 
-fn parse_nightly_manifest(manifest: &str) -> Result<String> {
+fn parse_channel_manifest_date(manifest: &str) -> Result<jiff::civil::Date> {
     let manifest: toml::Value =
-        toml::from_str(manifest).wrap_err("failed to parse the Rust nightly channel manifest")?;
+        toml::from_str(manifest).wrap_err("failed to parse the Rust channel manifest")?;
     let date = manifest
         .get("date")
         .and_then(toml::Value::as_str)
-        .ok_or_else(|| eyre::eyre!("Rust nightly channel manifest is missing its date"))?;
+        .ok_or_else(|| eyre::eyre!("Rust channel manifest is missing its date"))?;
     date.parse::<jiff::civil::Date>()
-        .wrap_err_with(|| format!("invalid Rust nightly channel manifest date: {date}"))?;
+        .wrap_err_with(|| format!("invalid Rust channel manifest date: {date}"))
+}
+
+fn parse_nightly_manifest(manifest: &str) -> Result<String> {
+    let date =
+        parse_channel_manifest_date(manifest).wrap_err("invalid Rust nightly channel manifest")?;
     Ok(format!("nightly-{date}"))
+}
+
+/// A channel's date as a `created_at` timestamp. Rolling channels have no release date of their
+/// own, so this is the date of the build they point at right now.
+fn channel_created_at(date: jiff::civil::Date) -> String {
+    format!("{date}T00:00:00Z")
+}
+
+/// The date of the build a `nightly-YYYY-MM-DD` version names, which is in the name itself.
+fn dated_nightly_created_at(version: &str) -> Option<String> {
+    let date = version.strip_prefix("nightly-")?.parse().ok()?;
+    Some(channel_created_at(date))
+}
+
+/// The date the beta or stable channel currently points at, or `None` when its manifest can't be
+/// read: an undated entry is better than failing the whole listing.
+async fn current_channel_created_at(
+    channel: &str,
+    config_env: &IndexMap<String, String>,
+) -> Option<String> {
+    let url = channel_manifest_url_for(rustup_dist_server(config_env).as_deref(), channel);
+    let manifest = HTTP_FETCH
+        .get_text_cached(&url)
+        .await
+        .inspect_err(|err| debug!("failed to fetch the Rust {channel} channel manifest: {err:#}"))
+        .ok()?;
+    parse_channel_manifest_date(&manifest)
+        .inspect_err(|err| debug!("{err:#}"))
+        .ok()
+        .map(channel_created_at)
 }
 
 /// Where the nightly channel manifest lives. Honors `RUSTUP_DIST_SERVER`, the
@@ -109,11 +144,15 @@ fn releases_or_channels_only<T>(
 }
 
 fn nightly_manifest_url_for(dist_server: Option<&str>) -> String {
+    channel_manifest_url_for(dist_server, "nightly")
+}
+
+fn channel_manifest_url_for(dist_server: Option<&str>, channel: &str) -> String {
     let server = dist_server
         .map(|s| s.trim_end_matches('/'))
         .filter(|s| !s.is_empty())
         .unwrap_or(RUST_DEFAULT_DIST_SERVER);
-    format!("{server}/dist/channel-rust-nightly.toml")
+    format!("{server}/dist/channel-rust-{channel}.toml")
 }
 
 async fn current_nightly_version(config: &Arc<Config>) -> Result<String> {
@@ -666,31 +705,51 @@ impl Backend for RustPlugin {
             })
             .rev()
             .collect();
-        if let Ok(current_nightly) = current_nightly_version(config).await {
-            versions.push(VersionInfo {
-                version: current_nightly,
-                ..Default::default()
-            });
-        }
+        let config_env = config.env().await?;
+        let (beta_created_at, stable_created_at) = tokio::join!(
+            current_channel_created_at("beta", &config_env),
+            current_channel_created_at("stable", &config_env),
+        );
+        let nightly_created_at = match current_nightly_version(config).await {
+            Ok(current_nightly) => {
+                let created_at = dated_nightly_created_at(&current_nightly);
+                versions.push(VersionInfo {
+                    version: current_nightly,
+                    created_at: created_at.clone(),
+                    ..Default::default()
+                });
+                created_at
+            }
+            Err(_) => None,
+        };
+        // The rolling channels carry no release date of their own, so each takes the date of the
+        // build it points at right now. A cutoff then hides `nightly` (built today) and any
+        // channel whose current build is newer than the cutoff, instead of passing it undated.
         versions.extend([
-            // Special channels - these are rolling releases that should always be updated
             VersionInfo {
                 version: "nightly".into(),
+                created_at: nightly_created_at,
                 rolling: true,
                 ..Default::default()
             },
             VersionInfo {
                 version: "beta".into(),
+                created_at: beta_created_at,
                 rolling: true,
                 ..Default::default()
             },
             VersionInfo {
                 version: "stable".into(),
+                created_at: stable_created_at,
                 rolling: true,
                 ..Default::default()
             },
         ]);
         Ok((versions, degraded))
+    }
+
+    fn channel_for_cutoff(&self, version: &str) -> Option<String> {
+        (version == "stable").then(|| "latest".to_string())
     }
 
     fn is_rolling_channel(&self, version: &str) -> bool {
@@ -1711,6 +1770,43 @@ mod tests {
         assert_eq!(
             parse_nightly_manifest("manifest-version = \"2\"\ndate = \"2026-08-13\"\n").unwrap(),
             "nightly-2026-08-13"
+        );
+    }
+
+    #[test]
+    fn channels_are_dated_by_the_build_they_point_at() {
+        let date = parse_channel_manifest_date("manifest-version = \"2\"\ndate = \"2026-09-18\"\n")
+            .unwrap();
+        assert_eq!(channel_created_at(date), "2026-09-18T00:00:00Z");
+        assert_eq!(
+            dated_nightly_created_at("nightly-2026-10-18").as_deref(),
+            Some("2026-10-18T00:00:00Z")
+        );
+        assert_eq!(dated_nightly_created_at("nightly"), None);
+        assert_eq!(dated_nightly_created_at("nightly-2026-13-40"), None);
+        assert_eq!(dated_nightly_created_at("1.90.0"), None);
+    }
+
+    #[test]
+    fn a_cutoff_resolves_stable_to_the_newest_old_enough_release() {
+        let plugin = RustPlugin::new();
+        assert_eq!(
+            plugin.channel_for_cutoff("stable").as_deref(),
+            Some("latest")
+        );
+        assert_eq!(plugin.channel_for_cutoff("beta"), None);
+        assert_eq!(plugin.channel_for_cutoff("1.90.0"), None);
+    }
+
+    #[test]
+    fn test_channel_manifest_url_for_each_channel() {
+        assert_eq!(
+            channel_manifest_url_for(Some("https://m.example.com/"), "stable"),
+            "https://m.example.com/dist/channel-rust-stable.toml"
+        );
+        assert_eq!(
+            channel_manifest_url_for(None, "beta"),
+            "https://static.rust-lang.org/dist/channel-rust-beta.toml"
         );
     }
 

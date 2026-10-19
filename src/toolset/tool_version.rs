@@ -852,6 +852,12 @@ impl ToolVersion {
             _ => (),
         }
 
+        // A release-age cutoff pins a moving channel to the release it pointed at then.
+        let v = match (opts.before_date, backend.channel_for_cutoff(&v)) {
+            (Some(_), Some(version)) => version,
+            _ => v,
+        };
+
         let build = |v| Ok(Self::new(request.clone(), v));
 
         if v.matches('.').count() >= 2 {

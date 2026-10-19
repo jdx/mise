@@ -3606,6 +3606,15 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
+    /// The version to resolve in place of the moving channel `version` once a
+    /// release-age cutoff is active, or `None` to resolve it as written. A channel
+    /// has no release date of its own, so a cutoff cannot be applied to it; mapping
+    /// it to `latest` gives the newest release old enough, which is what the
+    /// channel pointed at when the cutoff was.
+    fn channel_for_cutoff(&self, _version: &str) -> Option<String> {
+        None
+    }
+
     /// Whether a rolling channel must be resolved to a concrete version before it
     /// can be used. Backends that opt in fail in offline mode when neither a lock
     /// entry nor a concrete installed channel build is available.
