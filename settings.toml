@@ -2842,7 +2842,9 @@ username but no password, such as an Azure Artifacts feed written as
 `https://VssSessionToken@pkgs.dev.azure.com/.../simple/{}/`. The printed password
 is sent as HTTP Basic credentials when mise lists versions and locks. This is
 the same value and lookup uv's `keyring-provider = "subprocess"` uses, so
-`mise lock` reaches the index the way `mise install` does through uv. The
+`mise lock` reaches the index the way `mise install` does through uv. mise also
+sets `UV_KEYRING_PROVIDER=subprocess` for the `uv lock` it runs, which ignores
+`uv.toml`. The
 `keyring` executable must be on `PATH`; if it is missing or has no entry, the
 request goes out without credentials. The password is never written to the
 lockfile or the version cache. See

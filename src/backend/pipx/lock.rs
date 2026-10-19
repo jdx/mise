@@ -364,7 +364,7 @@ impl PIPXBackend {
     ) -> Result<CmdLineRunner<'static>> {
         let registry = self.get_registry_url(config).await?;
         let index = uv_index_url(&registry)?;
-        Ok(CmdLineRunner::new(uv)
+        let mut cmd = CmdLineRunner::new(uv)
             .current_dir(project)
             .envs(config.env().await?)
             .env_values(tv.install_env())
@@ -372,7 +372,14 @@ impl PIPXBackend {
             .env_remove("UV_PROJECT")
             .env_remove("UV_WORKING_DIR")
             .env_remove("UV_PROJECT_ENVIRONMENT")
-            .env_remove("VIRTUAL_ENV"))
+            .env_remove("VIRTUAL_ENV");
+        // The lock runs with `--no-config`, which also skips a `keyring-provider` in
+        // the user's uv.toml, so the setting that authenticates mise's own index
+        // requests has to reach uv here too.
+        if Settings::get().pypi.keyring_provider.as_deref() == Some("subprocess") {
+            cmd = cmd.env("UV_KEYRING_PROVIDER", "subprocess");
+        }
+        Ok(cmd)
     }
 
     /// The Python range a published release declares, or an empty string when it
