@@ -476,6 +476,15 @@ mod tests {
             zip.write_all(b"#!/bin/sh\n").unwrap();
             zip.add_symlink("tool-1.0/bin/tool-link", "tool", options)
                 .unwrap();
+            zip.start_file("tool-1.0/lib/node_modules/npm/bin/npm-cli.js", options)
+                .unwrap();
+            zip.write_all(b"// npm\n").unwrap();
+            zip.add_symlink(
+                "tool-1.0/bin/npm",
+                "../lib/node_modules/npm/bin/npm-cli.js",
+                options,
+            )
+            .unwrap();
             zip.finish().unwrap();
         }
         let install_dir = temp.path().join("installs/tool-abcd1234");
@@ -484,6 +493,10 @@ mod tests {
         let link = install_dir.join("bin/tool-link");
         assert!(link.is_symlink());
         assert_eq!(std::fs::read_link(&link).unwrap(), Path::new("tool"));
+        // a link into a sibling directory, checked after the top-level directory is stripped
+        let npm = install_dir.join("bin/npm");
+        assert!(npm.is_symlink());
+        assert_eq!(std::fs::read_to_string(&npm).unwrap(), "// npm\n");
     }
 
     #[cfg(unix)]
