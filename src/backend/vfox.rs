@@ -1020,11 +1020,12 @@ fn verified_attestation_to_provenance(att: vfox::VerifiedAttestation) -> Provena
     }
 }
 
-/// Passes a plugin-reported release date through only if mise can parse it, so
-/// a malformed date leaves the version undated instead of failing the listing.
+/// Passes a plugin-reported release date through only if it is an absolute
+/// RFC 3339 timestamp (not a relative duration like `1d`, which
+/// `parse_into_timestamp` also accepts), so a malformed date leaves the version undated instead of failing the listing.
 fn valid_created_at(plugin: &str, created_at: Option<String>) -> Option<String> {
     let ts = created_at?;
-    if crate::duration::parse_into_timestamp(&ts).is_err() {
+    if ts.parse::<jiff::Timestamp>().is_err() {
         trace!("vfox plugin {plugin} returned an invalid created_at {ts:?}; leaving it undated");
         return None;
     }
@@ -1040,6 +1041,8 @@ mod test {
         let ok = Some("2026-01-31T12:00:00Z".to_string());
         assert_eq!(valid_created_at("p", ok.clone()), ok);
         assert_eq!(valid_created_at("p", Some("yesterday-ish".into())), None);
+        assert_eq!(valid_created_at("p", Some("1d".into())), None);
+        assert_eq!(valid_created_at("p", Some("2026-01-31".into())), None);
         assert_eq!(valid_created_at("p", None), None);
     }
 
