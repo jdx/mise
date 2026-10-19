@@ -421,6 +421,9 @@ impl Vfox {
 /// by component, following every link on the way, so chains and links through linked
 /// directories are checked; components that do not exist are taken as written.
 fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
+    if std::fs::symlink_metadata(root)?.file_type().is_symlink() {
+        return Err(format!("the archive's top-level entry is a symlink: {root:?}").into());
+    }
     let real_root = root.canonicalize()?;
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
@@ -431,9 +434,8 @@ fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
                 dirs.push(path);
             } else if kind.is_symlink() {
                 let target = std::fs::read_link(&path)?;
-                let resolved =
-                    resolve_link_target(&path.parent().unwrap().canonicalize()?, &target)?;
-                if !resolved.starts_with(&real_root) {
+                let base = path.parent().unwrap().canonicalize()?;
+                if !link_target_stays_within(&real_root, &base, &target) {
                     return Err(format!(
                         "symlink {path:?} points outside of the install directory: {target:?}"
                     )
@@ -445,15 +447,18 @@ fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Resolves `target` as seen from the directory `base`, which must already be real.
-fn resolve_link_target(base: &Path, target: &Path) -> Result<PathBuf> {
+/// Resolves `target` as seen from the directory `base` (already real), following every
+/// link on the way, and reports whether each step stays under `root`. Components that do
+/// not exist are taken as written. A chain of links that loops without leaving `root` is
+/// harmless, so the walk stops after `MAX_LINKS` links and accepts it.
+fn link_target_stays_within(root: &Path, base: &Path, target: &Path) -> bool {
     use std::collections::VecDeque;
     use std::path::Component;
     const MAX_LINKS: usize = 40;
     let mut current = base.to_path_buf();
     let mut pending: VecDeque<PathBuf> = target
         .components()
-        .map(|c| PathBuf::from(c.as_os_str()))
+        .map(|part| PathBuf::from(part.as_os_str()))
         .collect();
     let mut followed = 0;
     while let Some(part) = pending.pop_front() {
@@ -469,7 +474,7 @@ fn resolve_link_target(base: &Path, target: &Path) -> Result<PathBuf> {
                     Ok(link) => {
                         followed += 1;
                         if followed > MAX_LINKS {
-                            return Err(format!("too many levels of symlinks: {target:?}").into());
+                            return true;
                         }
                         for part in link.components().rev() {
                             pending.push_front(PathBuf::from(part.as_os_str()));
@@ -479,8 +484,11 @@ fn resolve_link_target(base: &Path, target: &Path) -> Result<PathBuf> {
                 }
             }
         }
+        if !current.starts_with(root) {
+            return false;
+        }
     }
-    Ok(current)
+    true
 }
 
 /// The name prefix of the directory an archive is extracted into before it is moved to
@@ -624,6 +632,39 @@ mod tests {
         let install_dir = temp.path().join("installs/tool-abcd1234");
         assert!(Vfox::test().extract(&archive, &install_dir).is_err());
         assert!(!install_dir.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_rejects_a_symlink_as_the_top_level_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            zip.add_symlink("a", ".", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        assert!(Vfox::test().extract(&archive, &install_dir).is_err());
+        assert!(!install_dir.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_accepts_symlink_loops_that_stay_inside() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            zip.add_symlink("tool-1.0/a", "b", options).unwrap();
+            zip.add_symlink("tool-1.0/b", "a", options).unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        Vfox::test().extract(&archive, &install_dir).unwrap();
+        assert!(install_dir.join("a").is_symlink());
     }
 
     #[cfg(unix)]
