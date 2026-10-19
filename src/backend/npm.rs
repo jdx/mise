@@ -926,6 +926,13 @@ impl Backend for NPMBackend {
                 .chain(prefix)
                 .map(|path| std::fs::read_to_string(path).ok())
                 .collect::<Vec<_>>();
+            // mise's own variables (`MISE_OFFLINE`, ...) and `PATH` change with
+            // how mise runs, not with where npm reads versions from, so they
+            // stay out of the key: an offline run must find the online list.
+            let env = env
+                .iter()
+                .filter(|(key, _)| !key.starts_with("MISE_") && !key.eq_ignore_ascii_case("path"))
+                .collect::<BTreeMap<_, _>>();
             return Ok(Some(crate::hash::hash_to_str(&(env, npmrcs))));
         }
         let registry = npm_registry::package_registry(&self.tool_name());
