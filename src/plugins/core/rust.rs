@@ -58,6 +58,19 @@ fn channel_created_at(date: jiff::civil::Date) -> String {
     format!("{date}T00:00:00Z")
 }
 
+/// What the channels with a concrete stand-in resolve to under the release-age cutoff `before`:
+/// `stable` is the newest release old enough, and `nightly` is the nightly of the cutoff's day.
+fn cutoff_channel_target(version: &str, before: jiff::Timestamp) -> Option<String> {
+    match version {
+        "stable" => Some("latest".to_string()),
+        "nightly" => Some(format!(
+            "nightly-{}",
+            before.to_zoned(jiff::tz::TimeZone::UTC).date()
+        )),
+        _ => None,
+    }
+}
+
 /// The date of the build a `nightly-YYYY-MM-DD` version names, which is in the name itself.
 fn dated_nightly_created_at(version: &str) -> Option<String> {
     let date = version.strip_prefix("nightly-")?.parse().ok()?;
@@ -147,6 +160,14 @@ fn nightly_manifest_url_for(dist_server: Option<&str>) -> String {
     channel_manifest_url_for(dist_server, "nightly")
 }
 
+/// How far back from a release-age cutoff to look for the beta that was current then.
+const BETA_CUTOFF_LOOKBACK_DAYS: i64 = 90;
+
+fn dated_beta_manifest_url_for(dist_server: Option<&str>, date: jiff::civil::Date) -> String {
+    let url = channel_manifest_url_for(dist_server, "beta");
+    url.replace("/dist/", &format!("/dist/{date}/"))
+}
+
 fn channel_manifest_url_for(dist_server: Option<&str>, channel: &str) -> String {
     let server = dist_server
         .map(|s| s.trim_end_matches('/'))
@@ -167,6 +188,12 @@ async fn current_nightly_version(config: &Arc<Config>) -> Result<String> {
 fn is_dated_nightly(version: &str) -> bool {
     version
         .strip_prefix("nightly-")
+        .is_some_and(|date| date.parse::<jiff::civil::Date>().is_ok())
+}
+
+fn is_dated_beta(version: &str) -> bool {
+    version
+        .strip_prefix("beta-")
         .is_some_and(|date| date.parse::<jiff::civil::Date>().is_ok())
 }
 
@@ -748,8 +775,44 @@ impl Backend for RustPlugin {
         Ok((versions, degraded))
     }
 
-    fn channel_for_cutoff(&self, version: &str) -> Option<String> {
-        (version == "stable").then(|| "latest".to_string())
+    async fn channel_for_cutoff(
+        &self,
+        config: &Arc<Config>,
+        version: &str,
+        before: jiff::Timestamp,
+    ) -> Result<Option<String>> {
+        if let Some(target) = cutoff_channel_target(version, before) {
+            return Ok(Some(target));
+        }
+        if version != "beta" {
+            return Ok(None);
+        }
+        // A beta is only published when the train moves, so the one the cutoff allows is the
+        // newest dated beta on or before the cutoff's day.
+        let config_env = config.env().await?;
+        let current = current_channel_created_at("beta", &config_env)
+            .await
+            .and_then(|ts| ts.parse::<jiff::Timestamp>().ok());
+        if current.is_some_and(|ts| ts < before) {
+            return Ok(None);
+        }
+        let server = rustup_dist_server(&config_env);
+        let day = before.to_zoned(jiff::tz::TimeZone::UTC).date();
+        for date in (0..=BETA_CUTOFF_LOOKBACK_DAYS)
+            .filter_map(|n| day.checked_sub(jiff::Span::new().days(n)).ok())
+        {
+            let url = dated_beta_manifest_url_for(server.as_deref(), date);
+            if HTTP_FETCH
+                .head(&url)
+                .await
+                .is_ok_and(|rsp| rsp.status().is_success())
+            {
+                return Ok(Some(format!("beta-{date}")));
+            }
+        }
+        bail!(
+            "no rust beta build found within {BETA_CUTOFF_LOOKBACK_DAYS} days before the release-age cutoff"
+        )
     }
 
     fn is_rolling_channel(&self, version: &str) -> bool {
@@ -779,7 +842,7 @@ impl Backend for RustPlugin {
     }
 
     fn is_exact_version(&self, version: &str) -> bool {
-        is_dated_nightly(version)
+        is_dated_nightly(version) || is_dated_beta(version)
     }
 
     async fn resolve_exact_version(
@@ -787,7 +850,7 @@ impl Backend for RustPlugin {
         _config: &Arc<Config>,
         version: &str,
     ) -> Result<Option<String>> {
-        Ok(is_dated_nightly(version).then(|| version.to_string()))
+        Ok((is_dated_nightly(version) || is_dated_beta(version)).then(|| version.to_string()))
     }
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
@@ -1788,14 +1851,30 @@ mod tests {
     }
 
     #[test]
-    fn a_cutoff_resolves_stable_to_the_newest_old_enough_release() {
-        let plugin = RustPlugin::new();
+    fn a_cutoff_resolves_channels_to_what_they_pointed_at() {
+        let before: jiff::Timestamp = "2026-09-20T13:00:00Z".parse().unwrap();
         assert_eq!(
-            plugin.channel_for_cutoff("stable").as_deref(),
+            cutoff_channel_target("stable", before).as_deref(),
             Some("latest")
         );
-        assert_eq!(plugin.channel_for_cutoff("beta"), None);
-        assert_eq!(plugin.channel_for_cutoff("1.90.0"), None);
+        assert_eq!(
+            cutoff_channel_target("nightly", before).as_deref(),
+            Some("nightly-2026-09-20")
+        );
+        assert_eq!(cutoff_channel_target("beta", before), None);
+        assert_eq!(cutoff_channel_target("1.90.0", before), None);
+    }
+
+    #[test]
+    fn dated_betas_are_exact_versions() {
+        assert!(is_dated_beta("beta-2026-09-01"));
+        assert!(!is_dated_beta("beta"));
+        assert!(!is_dated_beta("beta-x86_64-unknown-linux-gnu"));
+        assert!(!is_moving_channel("beta-2026-09-01"));
+        assert_eq!(
+            dated_beta_manifest_url_for(None, "2026-09-01".parse().unwrap()),
+            "https://static.rust-lang.org/dist/2026-09-01/channel-rust-beta.toml"
+        );
     }
 
     #[test]

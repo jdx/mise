@@ -1952,10 +1952,9 @@ mod tests {
         git("2026-02-02T00:00:00Z", &["commit", "-q", "-m", "final"]);
 
         let created_at = git_python_build_definition_created_at(repo).unwrap();
-        assert_eq!(
-            created_at.get("3.15.0").map(String::as_str),
-            Some("2026-02-02T00:00:00Z")
-        );
+        // Git spells UTC `Z` or `+00:00` depending on its version, so compare instants.
+        let created: jiff::Timestamp = created_at["3.15.0"].parse().unwrap();
+        assert_eq!(created, "2026-02-02T00:00:00Z".parse().unwrap());
     }
 
     #[test]

@@ -856,9 +856,10 @@ impl ToolVersion {
         // pointed at then. The built-in default and a cutoff in the future (how
         // `--minimum-release-age 0s` turns the cooldown off) leave the channel alone.
         let v = match opts.before_date {
-            Some(before) if !opts.before_date_from_default && before < Timestamp::now() => {
-                backend.channel_for_cutoff(&v).unwrap_or(v)
-            }
+            Some(before) if !opts.before_date_from_default && before < Timestamp::now() => backend
+                .channel_for_cutoff(config, &v, before)
+                .await?
+                .unwrap_or(v),
             _ => v,
         };
 
