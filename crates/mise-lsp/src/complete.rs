@@ -167,6 +167,8 @@ fn scan(index: &LineIndex, line: usize, before: &str) -> (Vec<String>, bool) {
             if array {
                 table.push("0".to_string());
             }
+            // A header's brackets are not values, even when it is unfinished.
+            continue;
         }
         state = advance(text, state);
     }
@@ -195,6 +197,7 @@ fn advance(text: &str, mut state: State) -> State {
     let chars: Vec<char> = text.chars().collect();
     let triple = |i: usize, q: char| chars.get(i..i + 3) == Some(&[q, q, q][..]);
     let mut single = None;
+    let mut closing = 0;
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
@@ -203,7 +206,13 @@ fn advance(text: &str, mut state: State) -> State {
                 i += 2;
             } else if triple(i, q) {
                 state.open = None;
+                // Up to two more quotes belong to the string's end: `'''it's''''`.
                 i += 3;
+                while i < chars.len() && chars[i] == q && closing < 2 {
+                    i += 1;
+                    closing += 1;
+                }
+                closing = 0;
             } else {
                 i += 1;
             }
@@ -368,6 +377,17 @@ mod tests {
         assert_eq!(labels(text), ["color"]);
         assert!(labels("[settings]\nlist = [\n  [\"a\"],\n  |").is_empty());
         assert!(labels("[settings]\nt = {\n|").is_empty());
+    }
+
+    #[test]
+    fn quotes_before_a_closing_delimiter_belong_to_the_string() {
+        let text = "[settings]\nrun = [\'\'\'echo \'one\'\'\'\', \'\'\'echo two\'\'\']\nco|";
+        assert_eq!(labels(text), ["color"]);
+    }
+
+    #[test]
+    fn an_unfinished_header_does_not_hide_later_ones() {
+        assert_eq!(labels("[settings\n[settings]\nco|"), ["color"]);
     }
 
     #[test]
