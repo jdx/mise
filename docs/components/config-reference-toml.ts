@@ -5,6 +5,7 @@
 // config.
 
 import { exampleFor } from "./config-reference-examples.ts";
+import { valueFor } from "./config-reference-values.ts";
 
 export type SnippetKey = {
   path: string;
@@ -36,13 +37,54 @@ const examples: Record<string, string> = {
   dotfile_groups: "nvim",
   platforms: "linux-x64",
   platform: "linux-x64",
+  install_env: "MAKEFLAGS",
+  headers: "Authorization",
+  headers_forward: "Authorization",
+  reload: "~/.zshrc",
+  labels: "org.opencontainers.image.source",
+  input_groups: "lockfiles",
+  path_aliases: "web",
+  ports: "replication",
+  environment: "PORT",
+  metadata: "owner",
+  options: "database",
+  versions: "lts",
+  entries: "init.lua",
+  rename_exe: "tool-*",
+  checks: "database",
+  projects: "packages/web",
+  task_defaults: "build",
+};
+
+// Example names that depend on where the placeholder is, by the path above it, for sections
+// that use the same placeholder for different things.
+const pathExamples: Record<string, string> = {
+  "tools.<aqua:…>.vars": "flavor",
+  "tool_alias.<tool>": "lts",
+  "bootstrap.files": "/etc/motd",
+  "bootstrap.directories": "/srv/app",
+  "bootstrap.remote.hosts": "build",
+  "bootstrap.services": "notes-sync",
+  "bootstrap.compose": "app",
+  "bootstrap.packages": "brew:ripgrep",
+  "bootstrap.repos": "~/src/mise",
+  "bootstrap.macos.defaults": "com.apple.dock",
+  "bootstrap.macos.defaults.<key>": "autohide",
+  "bootstrap.macos.launchd.agents": "backup",
+  "bootstrap.linux.systemd.units": "sync-notes",
+  "bootstrap.apt.sources": "docker",
+  "bootstrap.dnf.repos": "ghostty",
+  "bootstrap.brew.taps": "my-org",
+  "bootstrap.secrets": "GITHUB_TOKEN",
+  "bootstrap.groups": "deploy",
+  "bootstrap.users": "deploy",
 };
 
 // `<github:…>` is `github:cli/cli`; the rest of the backends get a generic name.
 const backendExamples: Record<string, string> = {
   github: "github:cli/cli",
   gitlab: "gitlab:gitlab-org/cli",
-  forgejo: "forgejo:example/tool",
+  forgejo: "forgejo:forgejo/runner",
   aqua: "aqua:BurntSushi/ripgrep",
   cargo: "cargo:ripgrep",
   npm: "npm:prettier",
@@ -52,6 +94,11 @@ const backendExamples: Record<string, string> = {
   go: "go:golang.org/x/tools/gopls",
   http: "http:my-tool",
   s3: "s3:my-tool",
+  ubi: "ubi:goreleaser/goreleaser",
+  spm: "spm:nicklockwood/SwiftFormat",
+  packslip: "packslip:github.com/jdx/hk",
+  spinel: "spinel:tobi/try",
+  conda: "conda:ffmpeg",
 };
 
 // Sections whose entries are usually one line (`node = "22"`), even where a table works too.
@@ -78,10 +125,15 @@ const preferred = [
   "path",
 ];
 
-function exampleName(segment: string, parent: string | undefined): string {
+function exampleName(
+  segment: string,
+  parent: string | undefined,
+  parentPath = "",
+): string {
   const backend = segment.match(/^<([a-z0-9-]+):…>$/);
   if (backend) return backendExamples[backend[1]] ?? `${backend[1]}:example`;
   if (!/^<.*>$/.test(segment)) return segment;
+  if (pathExamples[parentPath]) return pathExamples[parentPath];
   if (parent && examples[parent]) return examples[parent];
   if (segment === "<NAME>") return "EXAMPLE";
   return "example";
@@ -190,6 +242,8 @@ function stringValue(name: string): string {
 }
 
 function value(key: SnippetKey, name = own(key)): string {
+  const written = valueFor(key.path);
+  if (written !== undefined) return written;
   if (key.default !== undefined) {
     try {
       return toml(JSON.parse(key.default));
@@ -234,7 +288,8 @@ function openEntry(key: SnippetKey): SnippetKey | undefined {
 // `prefix` is a dotted key already written out.
 function entryLine(key: SnippetKey, name: string, prefix = ""): string {
   const written = prefix + tomlKey(name);
-  if (scalarForm(key)) return `${written} = ${value(key, name)}`;
+  if (scalarForm(key) || valueFor(key.path) !== undefined)
+    return `${written} = ${value(key, name)}`;
   // `[env]`'s `_` holds directives, written `_.file = …`
   const first = key.children.find((c) => !isOpen(c) && !c.deprecated);
   if (name === "_" && first) return entryLine(first, own(first), `${written}.`);
@@ -247,7 +302,12 @@ function childLines(key: SnippetKey, limit = 4): string[] {
   const open = openEntry(key);
   if (open) {
     const segs = segments(open.path);
-    lines.push(entryLine(open, exampleName(segs.at(-1)!, segs.at(-2))));
+    lines.push(
+      entryLine(
+        open,
+        exampleName(segs.at(-1)!, segs.at(-2), segs.slice(0, -1).join(".")),
+      ),
+    );
   }
   const rank = (c: SnippetKey) => {
     const i = preferred.indexOf(own(c));
@@ -290,7 +350,13 @@ function header(segs: string[]): { line?: string; prefix: string } {
     return { line, prefix: `${segs.slice(underscore).join(".")}.` };
   }
   const names = segs.map((s, i) =>
-    tomlKey(exampleName(unlist(s), segs[i - 1] && unlist(segs[i - 1]))),
+    tomlKey(
+      exampleName(
+        unlist(s),
+        segs[i - 1] && unlist(segs[i - 1]),
+        segs.slice(0, i).join("."),
+      ),
+    ),
   );
   const joined = names.join(".");
   return {
@@ -346,6 +412,7 @@ function lineForm(key: SnippetKey): string[] {
   const name = exampleName(
     unlist(own(key)),
     parent.at(-1) && unlist(parent.at(-1)!),
+    parent.join("."),
   );
   lines.push(prefix + entryLine(key, name));
   return lines;
@@ -368,13 +435,22 @@ export function generated(key: SnippetKey): string {
   if (!takesTable(key)) return lineForm(key).join("\n");
   if (!scalarForm(key)) return tableForm(key).join("\n");
   const entry = segs.length === 2 && isOpen(key);
+  // The second form is shown as a comment: both written out would define the key twice.
+  const commented = (lines: string[]) =>
+    lines.map((line) => (line === "" ? "#" : `# ${line}`));
   // a task is usually a table; a tool is usually a version
   if (entry && !shortForm.has(segs[0])) {
-    return [...tableForm(key), "", "# or, in short:", ...lineForm(key)].join(
-      "\n",
-    );
+    return [
+      ...tableForm(key),
+      "",
+      "# or, in short:",
+      ...commented(lineForm(key)),
+    ].join("\n");
   }
-  return [...lineForm(key), "", "# or, as a table:", ...tableForm(key)].join(
-    "\n",
-  );
+  return [
+    ...lineForm(key),
+    "",
+    "# or, as a table:",
+    ...commented(tableForm(key)),
+  ].join("\n");
 }

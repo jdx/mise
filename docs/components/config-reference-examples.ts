@@ -1113,22 +1113,610 @@ root = "nvim"
 target = "~/.config/nvim"
 mode = "symlink-each"
 `,
+
+  // ---------------------------------------------------------------- more tools
+  "tools.<forgejo:…>": toml`
+[tools."forgejo:forgejo/runner"]
+version = "latest"
+api_url = "https://code.forgejo.org/api/v1"
+bin = "forgejo-runner"
+`,
+  "tools.<s3:…>": toml`
+[tools."s3:my-tool"]
+version = "1.0.0"
+url = "s3://my-bucket/tools/my-tool-v{{ version }}.tar.gz"
+region = "us-east-1"
+`,
+  "tools.<pipx:…>": toml`
+[tools]
+"pipx:black" = "latest"
+
+[tools."pipx:httpie"]
+version = "latest"
+extras = ["socks"]
+`,
+  "tools.<spm:…>": toml`
+[tools]
+"spm:nicklockwood/SwiftFormat" = "latest"
+
+[tools."spm:patricklorran/ios-settings"]
+version = "latest"
+provider = "gitlab"
+`,
+  "tools.<packslip:…>": toml`
+[tools]
+"packslip:github.com/jdx/hk" = "latest"
+
+[tools."packslip:github.com/example/tool"]
+version = "latest"
+variant = "fips"
+`,
+  "tools.<spinel:…>": toml`
+[settings]
+experimental = true
+
+[tools."spinel:tobi/try"]
+version = "1.10.1"
+entrypoint = "try.rb"
+bin = "try"
+tag_prefix = "v"
+`,
+  "tools.dotnet-core": toml`
+[tools.dotnet-core]
+version = "9"
+runtime = "aspnetcore"
+`,
+  "tools.<tool>.platforms.<key>": toml`
+[tools."http:my-cli"]
+version = "1.2.3"
+
+[tools."http:my-cli".platforms.linux-x64]
+url = "https://example.com/my-cli-1.2.3-linux-amd64.tar.gz"
+`,
+  "tools.<tool>.platform": toml`
+# \`platform\` is another name for \`platforms\`
+[tools."http:my-cli"]
+version = "1.2.3"
+
+[tools."http:my-cli".platform]
+linux-x64 = { url = "https://example.com/my-cli-1.2.3-linux-amd64.tar.gz" }
+macos-arm64 = { url = "https://example.com/my-cli-1.2.3-darwin-arm64.tar.gz" }
+`,
+  "tools.<tool>.platform.<key>": toml`
+[tools."http:my-cli"]
+version = "1.2.3"
+
+[tools."http:my-cli".platform.macos-arm64]
+url = "https://example.com/my-cli-1.2.3-darwin-arm64.tar.gz"
+`,
+  "tools.<github:…>.platforms.<key>": toml`
+[tools."github:BurntSushi/ripgrep"]
+version = "14"
+
+[tools."github:BurntSushi/ripgrep".platforms.macos-arm64]
+asset_pattern = "ripgrep-*-aarch64-apple-darwin.tar.gz"
+`,
+
+  // ---------------------------------------------------------------- env and vars, more
+  "env._.python": toml`
+[env._.python]
+venv = { path = ".venv", create = true }
+`,
+  "env.<NAME>.age": toml`
+# \`mise set --age-encrypt API_KEY=…\` writes this
+[env]
+API_KEY = { age = "YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBN..." }
+
+# or, to set options on it
+[env.DB_PASSWORD]
+age = { value = "YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBN...", format = "zstd", redact = true }
+`,
+  "vars.<name>.age": toml`
+[vars.api_key]
+age = { value = "YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBN...", format = "zstd" }
+`,
+  "vars._.source": toml`
+[vars._]
+source = "scripts/vars.sh"
+`,
+  secrets: toml`
+[secrets.fnox]
+profile = "production"
+`,
+  "hooks.enter.script": toml`
+# Evaluated in the shell, so it can change the shell itself
+[[hooks.enter]]
+shell = "bash"
+script = "source .venv/bin/activate"
+`,
+  "hooks.enter.scripts": toml`
+[[hooks.enter]]
+shell = "bash"
+scripts = ["source .venv/bin/activate", "export APP_ENV=development"]
+`,
+
+  // ---------------------------------------------------------------- bootstrap
   bootstrap: toml`
+# A machine, described: ~/.config/mise/config.toml, applied by \`mise bootstrap\`
 [bootstrap.mise_shell_activate]
 zsh = true
 
+[bootstrap.user]
+login_shell = "zsh"
+
 [bootstrap.packages]
-git = "latest"
-ripgrep = "latest"
+"brew:git" = "latest"
+"brew:ripgrep" = "latest"
+"apt:build-essential" = "latest"
+
+[bootstrap.repos."~/src/dotfiles"]
+url = "https://github.com/me/dotfiles.git"
+
+[tools]
+node = "24"
 `,
   "bootstrap.mise_shell_activate": toml`
 [bootstrap.mise_shell_activate]
-zsh = true
-fish = "auto"
+zsh = true                 # \`mise activate\` in ~/.zshrc, shims in ~/.zprofile
+fish = "auto"              # activation at the prompt, shims in scripts
+bash = { enabled = true, mode = "shims" }
+`,
+  "bootstrap.user": toml`
+[bootstrap.user]
+login_shell = "zsh"
 `,
   "bootstrap.user.login_shell": toml`
 [bootstrap.user]
 login_shell = "zsh"
+`,
+  "bootstrap.packages": toml`
+[bootstrap.packages]
+"apt:libssl-dev" = "latest"
+"brew:postgresql@16" = "16"
+"brew-cask:visual-studio-code" = "latest"
+"snap:code" = { channel = "latest/stable", classic = true }
+`,
+  "bootstrap.packages.<key>": toml`
+[bootstrap.packages]
+"brew:ripgrep" = "latest"
+
+[bootstrap.packages."apt:postgresql-16"]
+version = "16"
+os = "linux"
+`,
+  "bootstrap.repos": toml`
+[bootstrap.repos."~/src/mise"]
+url = "https://github.com/jdx/mise.git"
+ref = "main"
+
+[bootstrap.repos."~/src/linux"]
+url = "https://github.com/torvalds/linux.git"
+depth = 1
+filter = "blob:none"
+`,
+  "bootstrap.repos.<key>": toml`
+[bootstrap.repos."~/src/mise"]
+url = "https://github.com/jdx/mise.git"
+ref = "main"
+submodules = true
+`,
+  "bootstrap.plugins": toml`
+[bootstrap.plugins]
+brew = "https://github.com/my-org/mise-package-plugin"
+`,
+  "bootstrap.files": toml`
+[bootstrap.files."/etc/ssh/sshd_config.d/10-hardening.conf"]
+content = """
+PermitRootLogin no
+PasswordAuthentication no
+"""
+mode = "0644"
+notify = ["sshd"]
+os = "linux"
+`,
+  "bootstrap.files.<key>": toml`
+[bootstrap.files."/etc/motd"]
+source = "files/motd.tera"
+template = true
+owner = "root"
+group = "root"
+mode = "0644"
+`,
+  "bootstrap.directories": toml`
+[bootstrap.directories."/srv/app"]
+owner = "deploy"
+group = "deploy"
+mode = "0750"
+`,
+  "bootstrap.directories.<key>": toml`
+[bootstrap.directories."/srv/app/cache"]
+owner = "deploy"
+mode = "0700"
+phase = "post-packages"
+`,
+  "bootstrap.services": toml`
+[bootstrap.services.sshd]
+state = "running"
+enabled = true
+
+[bootstrap.services.notes-sync]
+scope = "user"
+command = "mise run sync-notes"
+restart = "on-failure"
+`,
+  "bootstrap.services.<key>": toml`
+[bootstrap.services.notes-sync]
+scope = "user"
+command = "mise run sync-notes"
+description = "Sync notes"
+working_directory = "~/notes"
+environment = { RSYNC_RSH = "ssh" }
+`,
+  "bootstrap.compose": toml`
+[bootstrap.compose.app]
+project_dir = "/srv/app"
+files = ["compose.yaml"]
+depends_on = ["package:apt:docker.io", "service:docker"]
+`,
+  "bootstrap.compose.<key>": toml`
+[bootstrap.compose.app]
+project_dir = "/srv/app"
+files = ["compose.yaml", "compose.prod.yaml"]
+profiles = ["prod"]
+oneshot = ["migrate"]
+pull = "always"
+`,
+  "bootstrap.remote": toml`
+[bootstrap.remote]
+source = "."
+install_mise = true
+exclude = ["node_modules", "target"]
+
+[bootstrap.remote.hosts.build]
+host = "build.example.com"
+user = "deploy"
+tags = ["ci"]
+`,
+  "bootstrap.remote.hosts": toml`
+[bootstrap.remote.hosts.build]
+host = "build.example.com"
+user = "deploy"
+
+[bootstrap.remote.hosts.staging]
+host = "10.0.4.12"
+user = "deploy"
+port = 2222
+tags = ["staging"]
+`,
+  "bootstrap.remote.hosts.<key>": toml`
+[bootstrap.remote.hosts.build]
+host = "build.example.com"
+user = "deploy"
+identity_file = "~/.ssh/id_ed25519"
+ssh_options = ["StrictHostKeyChecking=accept-new"]
+tags = ["ci"]
+`,
+  "bootstrap.hooks": toml`
+[bootstrap.hooks]
+pre-packages = "echo starting"
+post-tools = ["mise run build", "mise run test"]
+final = { run = "echo finished" }
+`,
+  "bootstrap.secrets": toml`
+[bootstrap.secrets]
+GITHUB_TOKEN = "GITHUB_TOKEN"
+
+[bootstrap.secrets.NPM_TOKEN]
+env = "NPM_TOKEN"
+description = "Token for the private registry"
+`,
+  "bootstrap.groups": toml`
+[bootstrap.groups.deploy]
+gid = 1500
+`,
+  "bootstrap.groups.<key>": toml`
+[bootstrap.groups.deploy]
+gid = 1500
+system = false
+`,
+  "bootstrap.users": toml`
+[bootstrap.users.deploy]
+group = "deploy"
+groups = ["docker", "sudo"]
+shell = "/bin/zsh"
+home = "/home/deploy"
+create_home = true
+`,
+  "bootstrap.users.<key>": toml`
+[bootstrap.users.deploy]
+uid = 1500
+group = "deploy"
+groups = ["docker"]
+comment = "Deploy user"
+`,
+  "bootstrap.apt": toml`
+[bootstrap.apt.sources.docker]
+uris = "https://download.docker.com/linux/ubuntu"
+suites = "noble"
+components = "stable"
+key = "https://download.docker.com/linux/ubuntu/gpg"
+fingerprint = "9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+
+[bootstrap.packages]
+"apt:docker-ce" = "latest"
+`,
+  "bootstrap.apt.sources": toml`
+[bootstrap.apt.sources.git]
+ppa = "git-core/ppa"
+`,
+  "bootstrap.apt.sources.<key>": toml`
+[bootstrap.apt.sources.docker]
+uris = "https://download.docker.com/linux/ubuntu"
+suites = "noble"
+components = "stable"
+key = "https://download.docker.com/linux/ubuntu/gpg"
+fingerprint = "9DC858229FC7DD38854AE2D88D81803C0EBFCD88"
+`,
+  "bootstrap.dnf": toml`
+[bootstrap.dnf.repos.ghostty]
+copr = "scottames/ghostty"
+
+[bootstrap.packages]
+"dnf:ghostty" = "latest"
+`,
+  "bootstrap.dnf.repos": toml`
+[bootstrap.dnf.repos.ghostty]
+copr = "scottames/ghostty"
+`,
+  "bootstrap.dnf.repos.<key>": toml`
+[bootstrap.dnf.repos.ghostty]
+copr = "scottames/ghostty"
+`,
+  "bootstrap.brew": toml`
+[bootstrap.brew]
+adopt = true
+
+[bootstrap.brew.taps]
+my-org = "https://github.com/my-org/homebrew-tools.git"
+`,
+  "bootstrap.brew.taps": toml`
+[bootstrap.brew.taps]
+my-org = "https://github.com/my-org/homebrew-tools.git"
+`,
+  "bootstrap.macos": toml`
+[bootstrap.macos.dock]
+autohide = true
+orientation = "left"
+tilesize = 48
+
+[bootstrap.macos.finder]
+show_pathbar = true
+preferred_view_style = "column"
+
+[bootstrap.macos.keyboard]
+key_repeat = 2
+initial_key_repeat = 15
+
+[bootstrap.macos.trackpad]
+tap_to_click = true
+`,
+  "bootstrap.macos.dock": toml`
+[bootstrap.macos.dock]
+apps = ["/Applications/Safari.app", "~/Applications/Zed.app"]
+autohide = true
+orientation = "left"
+tilesize = 48
+show_recents = false
+`,
+  "bootstrap.macos.finder": toml`
+[bootstrap.macos.finder]
+show_all_files = true
+show_pathbar = true
+show_status_bar = true
+preferred_view_style = "column"
+`,
+  "bootstrap.macos.keyboard": toml`
+[bootstrap.macos.keyboard]
+key_repeat = 2
+initial_key_repeat = 15
+press_and_hold = false
+automatic_capitalization = false
+`,
+  "bootstrap.macos.trackpad": toml`
+[bootstrap.macos.trackpad]
+tap_to_click = true
+three_finger_drag = true
+`,
+  "bootstrap.macos.defaults": toml`
+[bootstrap.macos.defaults."com.apple.screencapture"]
+location = "~/Screenshots"
+type = "png"
+
+[bootstrap.macos.defaults.NSGlobalDomain]
+AppleShowAllExtensions = true
+NSAutomaticQuoteSubstitutionEnabled = false
+`,
+  "bootstrap.macos.defaults.<key>": toml`
+[bootstrap.macos.defaults."com.apple.screencapture"]
+location = "~/Screenshots"
+type = "png"
+disable-shadow = true
+`,
+  "bootstrap.macos.defaults.<key>.<key>.<key>": toml`
+[bootstrap.macos.defaults."com.apple.finder".FXInfoPanesExpanded]
+General = true
+Preview = false
+`,
+  "bootstrap.macos.defaults.<key>.<key>.<key>.<key>": toml`
+[bootstrap.macos.defaults."com.apple.symbolichotkeys".AppleSymbolicHotKeys."64"]
+enabled = false
+`,
+  "bootstrap.macos.defaults.<key>.<key>.<key>.<key>.<key>": toml`
+[bootstrap.macos.defaults."com.apple.symbolichotkeys".AppleSymbolicHotKeys."64".value]
+parameters = [32, 49, 1048576]
+type = "standard"
+`,
+  "bootstrap.macos.defaults_entries": toml`
+[[bootstrap.macos.defaults_entries]]
+domain = "com.apple.finder"
+key = "FXPreferredViewStyle"
+value = "clmv"
+
+[[bootstrap.macos.defaults_entries]]
+domain = "com.apple.dock"
+key = "persistent-apps"
+host = "current"
+value = []
+`,
+  "bootstrap.macos.launchd": toml`
+[bootstrap.macos.launchd.agents.backup]
+program = "/usr/local/bin/backup"
+args = ["--quiet"]
+start_calendar_interval = { hour = 2, minute = 30 }
+`,
+  "bootstrap.macos.launchd.agents": toml`
+[bootstrap.macos.launchd.agents.sync]
+program = "/usr/local/bin/sync-notes"
+run_at_load = true
+start_interval = 3600
+`,
+  "bootstrap.macos.launchd.agents.<key>": toml`
+[bootstrap.macos.launchd.agents.backup]
+program = "/usr/local/bin/backup"
+args = ["--quiet"]
+start_calendar_interval = { hour = 2, minute = 30 }
+stdout_path = "~/Library/Logs/backup.log"
+stderr_path = "~/Library/Logs/backup.err"
+`,
+  "bootstrap.macos.launchd.agents.<key>.start_calendar_interval": toml`
+# Every Monday at 02:30
+[bootstrap.macos.launchd.agents.backup]
+program = "/usr/local/bin/backup"
+
+[bootstrap.macos.launchd.agents.backup.start_calendar_interval]
+weekday = 1
+hour = 2
+minute = 30
+`,
+  "bootstrap.macos.login_items": toml`
+[bootstrap.macos.login_items]
+apps = ["/Applications/Rectangle.app", "~/Applications/Raycast.app"]
+exclusive = false
+`,
+  "bootstrap.linux": toml`
+[bootstrap.linux.firewall]
+default_incoming = "deny"
+
+[[bootstrap.linux.firewall.rules]]
+name = "ssh"
+port = 22
+protocol = "tcp"
+
+[bootstrap.linux.systemd.units.sync-notes]
+exec_start = "/usr/bin/rsync -a %h/notes /mnt/backup"
+on_calendar = "daily"
+`,
+  "bootstrap.linux.firewall": toml`
+[bootstrap.linux.firewall]
+backend = "ufw"
+default_incoming = "deny"
+default_outgoing = "allow"
+
+[[bootstrap.linux.firewall.rules]]
+name = "ssh"
+port = 22
+protocol = "tcp"
+action = "limit"
+
+[[bootstrap.linux.firewall.rules]]
+name = "https"
+port = 443
+protocol = "tcp"
+`,
+  "bootstrap.linux.firewall.rules": toml`
+[[bootstrap.linux.firewall.rules]]
+name = "postgres-from-vpn"
+port = 5432
+protocol = "tcp"
+source = "10.8.0.0/24"
+`,
+  "bootstrap.linux.systemd": toml`
+[bootstrap.linux.systemd.units.sync-notes]
+description = "Sync notes"
+exec_start = "/usr/bin/rsync -a %h/notes /mnt/backup"
+on_calendar = "daily"
+persistent = true
+`,
+  "bootstrap.linux.systemd.units": toml`
+[bootstrap.linux.systemd.units.sync-notes]
+exec_start = "/usr/bin/rsync -a %h/notes /mnt/backup"
+type = "oneshot"
+on_calendar = "daily"
+`,
+  "bootstrap.linux.systemd.units.<key>": toml`
+[bootstrap.linux.systemd.units.sync-notes]
+description = "Sync notes"
+type = "oneshot"
+exec_start = "/usr/bin/rsync -a %h/notes /mnt/backup"
+on_calendar = "daily"
+persistent = true
+`,
+
+  // ---------------------------------------------------------------- depends and run, as tables
+  "tasks.<name>.depends.task": toml`
+[tasks.release]
+depends = [{ task = "build", args = ["--release"] }]
+run = "cargo publish"
+`,
+  "tasks.<name>.depends.args": toml`
+[tasks.release]
+depends = [{ task = "build", args = ["--release"] }]
+run = "cargo publish"
+`,
+  "tasks.<name>.depends.env": toml`
+[tasks.release]
+depends = [{ task = "build", env = { CARGO_INCREMENTAL = "0" } }]
+run = "cargo publish"
+`,
+  "tasks.<name>.depends.env.<NAME>": toml`
+[tasks.release]
+depends = [{ task = "build", env = { CARGO_INCREMENTAL = "0" } }]
+run = "cargo publish"
+`,
+  "tasks.<name>.depends.optional": toml`
+# Run lint first if the project defines it; no error if it does not
+[tasks.test]
+depends = [{ task = "lint", optional = true }]
+run = "cargo test"
+`,
+  "tasks.<name>.run.task": toml`
+[tasks.release]
+run = [
+  { task = "build", args = ["--release"] },
+  "cargo publish",
+]
+`,
+  "tasks.<name>.run.args": toml`
+[tasks.ci]
+run = [{ task = "lint", args = ["--fix"] }]
+`,
+  "tasks.<name>.run.env": toml`
+[tasks.ci]
+run = [{ task = "test", env = { CI = "1" } }]
+`,
+  "tasks.<name>.run.env.<NAME>": toml`
+[tasks.ci]
+run = [{ task = "test", env = { CI = "1" } }]
+`,
+  "tasks.<name>.run.tasks": toml`
+# Run these tasks in parallel, then the next entry
+[tasks.ci]
+run = [{ tasks = ["lint", "test"] }, "echo done"]
+`,
+  "bootstrap.macos.defaults.<key>.<key>.<key>.<key>.<key>.<key>": toml`
+[bootstrap.macos.defaults."com.apple.symbolichotkeys".AppleSymbolicHotKeys."64".value]
+parameters = [32, 49, 1048576]
+type = "standard"
 `,
 };
 
@@ -1141,11 +1729,80 @@ const taskSections = { tasks: "build", task_templates: "ci" } as const;
 // `[tasks.build.tools]` where `tools.python` shows `[tools]`.
 export function exampleFor(path: string): string | undefined {
   if (path in examples) return examples[path];
+  // a task template takes the keys of a task
+  const template = path.match(/^task_templates\.<name>\.(.+)$/);
+  if (template && `tasks.<name>.${template[1]}` in examples) {
+    return examples[`tasks.<name>.${template[1]}`].replace(
+      /^(\[\[?)tasks\./gm,
+      "$1task_templates.",
+    );
+  }
   const task = path.match(
     /^(tasks|task_templates)\.<name>\.((?:tools|env|vars)\..+)$/,
   );
-  const base = task && examples[task[2]];
-  if (!task || base === undefined) return undefined;
-  const prefix = `${task[1]}.${taskSections[task[1] as keyof typeof taskSections]}`;
-  return base.replace(/^(\[\[?)(tools|env|vars)\b/gm, `$1${prefix}.$2`);
+  const base = task && exampleFor(task[2]);
+  if (task && base !== undefined) {
+    const prefix = `${task[1]}.${taskSections[task[1] as keyof typeof taskSections]}`;
+    return base.replace(/^(\[\[?)(tools|env|vars)\b/gm, `$1${prefix}.$2`);
+  }
+  // a deps provider takes the keys of npm's
+  const provider = path.match(/^deps\.([a-z-]+)$/);
+  if (
+    provider &&
+    path !== "deps.npm" &&
+    path !== "deps.disable" &&
+    "deps.npm" in examples
+  ) {
+    return examples["deps.npm"].replace(
+      /^\[deps\.npm\]/m,
+      `[deps.${provider[1]}]`,
+    );
+  }
+  // a backend's platform tables take that backend's own options
+  const platforms = path.match(
+    /^tools\.<([a-z0-9-]+):…>\.(platforms?)(\.<key>)?$/,
+  );
+  const option = platforms && platformOptions[platforms[1]];
+  if (platforms && option) {
+    const name = `${platforms[1]}:${option.repository}`;
+    const [key, value] = option.setting;
+    const table = (platform: string) =>
+      `[tools."${name}".${platforms[2]}.${platform}]\n${key} = ${value}\n`;
+    return `[tools."${name}"]\nversion = "1.2.3"\n\n${
+      platforms[3]
+        ? table("linux-x64")
+        : `${table("linux-x64")}\n${table("macos-arm64")}`
+    }`;
+  }
+  return undefined;
 }
+
+// A repository and an option a platform can set, for each backend with platform tables.
+const platformOptions: Record<
+  string,
+  { repository: string; setting: [string, string] }
+> = {
+  github: {
+    repository: "owner/tool",
+    setting: ["asset_pattern", '"tool-*-linux-amd64.tar.gz"'],
+  },
+  gitlab: {
+    repository: "group/tool",
+    setting: ["asset_pattern", '"tool-*-linux-amd64.tar.gz"'],
+  },
+  forgejo: {
+    repository: "owner/tool",
+    setting: ["asset_pattern", '"tool-*-linux-amd64.tar.gz"'],
+  },
+  ubi: { repository: "owner/tool", setting: ["bin_path", '"bin"'] },
+  http: {
+    repository: "my-tool",
+    setting: ["url", '"https://example.com/tool-1.2.3-linux-amd64.tar.gz"'],
+  },
+  s3: {
+    repository: "my-tool",
+    setting: ["url", '"s3://my-bucket/tools/tool-1.2.3-linux-amd64.tar.gz"'],
+  },
+  cargo: { repository: "cargo-edit", setting: ["bin", '"cargo-add"'] },
+  spm: { repository: "owner/tool", setting: ["filter_bins", '["tool"]'] },
+};
