@@ -402,6 +402,12 @@ impl Vfox {
                 .and_then(|mut archive| archive.extract(tmp.path()))
                 .map_err(|err| format!("failed to extract {file:?}: {err}"))?;
             move_to_install()?;
+            // `extract` only checks links against the temporary directory; stripping a
+            // top-level directory moves them, so check them against the install directory.
+            if let Err(err) = ensure_symlinks_stay_within(install_dir) {
+                let _ = file::remove_dir_all(install_dir);
+                return Err(err);
+            }
         } else {
             file::mv(file, install_dir.join(&filename))?;
             #[cfg(unix)]
@@ -409,6 +415,42 @@ impl Vfox {
         }
         Ok(())
     }
+}
+
+/// Fails if a symlink under `root` points outside of it, comparing the link target
+/// lexically so a missing target is not an error.
+fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
+    use std::path::Component;
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir)? {
+            let path = entry?.path();
+            let kind = std::fs::symlink_metadata(&path)?.file_type();
+            if kind.is_dir() {
+                dirs.push(path);
+            } else if kind.is_symlink() {
+                let target = std::fs::read_link(&path)?;
+                // depth below `root` of the directory holding the link
+                let mut depth = path.strip_prefix(root).unwrap().components().count() as i64 - 1;
+                let mut escapes = target.is_absolute();
+                for component in target.components() {
+                    match component {
+                        Component::ParentDir => depth -= 1,
+                        Component::Normal(_) => depth += 1,
+                        _ => {}
+                    }
+                    escapes |= depth < 0;
+                }
+                if escapes {
+                    return Err(format!(
+                        "symlink {path:?} points outside of the install directory: {target:?}"
+                    )
+                    .into());
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The name prefix of the directory an archive is extracted into before it is moved to
@@ -497,6 +539,24 @@ mod tests {
         let npm = install_dir.join("bin/npm");
         assert!(npm.is_symlink());
         assert_eq!(std::fs::read_to_string(&npm).unwrap(), "// npm\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_rejects_symlinks_that_escape_once_the_top_level_directory_is_stripped() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            // inside the extraction directory, but a sibling of the install directory
+            zip.add_symlink("tool-1.0/bin/link", "../../other-tool", options)
+                .unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        assert!(Vfox::test().extract(&archive, &install_dir).is_err());
+        assert!(!install_dir.exists());
     }
 
     #[cfg(unix)]
