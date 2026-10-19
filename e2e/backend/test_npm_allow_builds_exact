@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Regression for #14707: `allow_builds = ["pkg"]` must approve exactly the
+# listed packages, not also the packages on aube's built-in trust list.
+
+cat >mise.toml <<'TOML'
+[tools]
+node = "20"
+"npm:node-pty" = { version = "1.0.0", allow_builds = ["unrelated-package"] }
+TOML
+
+assert_succeed "mise install"
+
+# node-pty is on aube's built-in trust list, but it is not in `allow_builds`,
+# so its `node-gyp rebuild` install script must not have run.
+pkg_dir="$(find "$MISE_DATA_DIR/installs/npm-node-pty/1.0.0" -type d -name node-pty | head -1)"
+assert_succeed "test -n \"$pkg_dir\""
+binding="$(find "$pkg_dir" -path '*/build/Release/*.node' | head -1)"
+assert_succeed "test -z \"$binding\""

@@ -2350,6 +2350,15 @@ impl NPMBackend {
             // scripts `allow_builds` approved. Project config outranks it.
             config.insert("ignoreScripts".to_string(), toml::Value::Boolean(false));
         }
+        if matches!(allow_builds, AllowBuilds::Packages(_)) {
+            // aube merges its bundled trusted-dependencies list into every
+            // allowlist, so a package list would approve far more than it
+            // names. An explicit list means exactly those packages.
+            config.insert(
+                "useDefaultTrustedDependencies".to_string(),
+                toml::Value::Boolean(false),
+            );
+        }
         if let Some(before_date) = before_date {
             let minutes = Self::build_aube_minimum_release_age(elapsed_seconds_ceil(
                 before_date,
@@ -4541,6 +4550,11 @@ pkg@1.2.0 '1.2.0'
         );
         // Approved builds must run even if the user's .npmrc ignores scripts.
         assert_eq!(config["ignoreScripts"], toml::Value::Boolean(false));
+        // A package list approves exactly those packages, not aube's defaults.
+        assert_eq!(
+            config["useDefaultTrustedDependencies"],
+            toml::Value::Boolean(false)
+        );
         assert_eq!(
             std::fs::read_to_string(install_path.join("aube-workspace.yaml")).unwrap(),
             "packages:\n  - .\n"
@@ -4979,6 +4993,7 @@ pkg@1.2.0 '1.2.0'
         assert!(!config.contains_key("allowedUnpopularPackages"));
         // Without allow_builds, the user's ignore-scripts stays in charge.
         assert!(!config.contains_key("ignoreScripts"));
+        assert!(!config.contains_key("useDefaultTrustedDependencies"));
         assert!(!install_path.join(".npmrc").exists());
     }
 
