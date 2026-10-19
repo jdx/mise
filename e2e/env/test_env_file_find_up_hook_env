@@ -42,3 +42,7 @@ TOML
 cd sub || exit 1
 _mise_hook
 assert "echo $FROM_PROJ" "edited"
+# Only the absolute path can find the file from a directory outside the project.
+cd ../../other || exit 1
+_mise_hook
+assert "echo $FROM_PROJ" "edited"

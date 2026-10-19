@@ -27,6 +27,8 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [env]
 _.file = { path = ".env", find_up = true }
 TOML
+echo 'GLOBAL_ONLY=home' >"$HOME/.env"
+assert_contains "cd proj/sub/deep && mise env -s bash" "GLOBAL_ONLY=home"
 assert_not_contains "cd proj/sub/deep && mise env -s bash" "FROM_PROJ"
 
 # With `{{cwd}}` a global config searches up from wherever mise runs; the nearest file wins.
