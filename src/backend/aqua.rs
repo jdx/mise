@@ -405,6 +405,50 @@ impl Backend for AquaBackend {
         Ok(versions)
     }
 
+    /// Date one `github_tag` version for the release-age cutoff: the listing
+    /// dates only what mise-versions knows, and a commit lookup for every tag
+    /// would cost thousands of requests, so resolution asks for the few
+    /// candidates it is deciding on.
+    async fn fetch_version_created_at(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> Result<Option<String>> {
+        let pkg = AQUA_REGISTRY.package(&self.id).await?;
+        if pkg.version_source.as_deref() != Some("github_tag")
+            || pkg.repo_owner.is_empty()
+            || pkg.repo_name.is_empty()
+        {
+            return Ok(None);
+        }
+        // The tag comes from the same dated listing the candidate came from, not
+        // the names-only cache, which refreshes separately and can lag a new tag.
+        let target = PlatformTarget::from_current();
+        let (target_os, target_arch) = Self::to_aqua_platform(&target);
+        let target_libc = Self::target_variant_libc(&target, None);
+        let mut tag = None;
+        // Newest first and only tags with an asset, the same selection
+        // `_list_remote_versions` makes, so the date is the listed version's.
+        for (candidate, _, _) in get_tags_with_release_dates(&pkg).await?.into_iter().rev() {
+            if let Ok(Some((v, versioned_pkg))) = versioned_package_from_tag(
+                &pkg,
+                &candidate,
+                target_os,
+                target_arch,
+                target_libc.as_deref(),
+            ) && v == version
+                && package_has_asset(&versioned_pkg)
+            {
+                tag = Some(candidate);
+                break;
+            }
+        }
+        let Some(tag) = tag else {
+            return Ok(None);
+        };
+        github::tag_commit_date(&format!("{}/{}", pkg.repo_owner, pkg.repo_name), &tag).await
+    }
+
     // No `latest_stable_version` override: the trait tries
     // `latest_stable_version_info` first and only falls back to the string
     // variant when it returns `None`. Delegating one to the other would repeat
@@ -4254,6 +4298,10 @@ pub(crate) fn is_install_time_option_key(key: &str) -> bool {
 mod tests;
 
 async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
+    if pkg.version_source.as_deref() == Some("github_tag") {
+        // Names only: resolving a tag needs no dates.
+        return github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await;
+    }
     Ok(get_tags_with_release_dates(pkg)
         .await?
         .into_iter()
@@ -4350,9 +4398,14 @@ async fn get_tags_with_release_dates(
     pkg: &AquaPackage,
 ) -> Result<Vec<(String, Option<String>, Option<bool>)>> {
     if let Some("github_tag") = pkg.version_source.as_deref() {
-        // Tags don't have created_at timestamps or a prerelease flag
-        let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
-        return Ok(versions.into_iter().map(|v| (v, None, None)).collect());
+        // Tags carry no prerelease flag. Their dates are the ones mise-versions
+        // already has; the rest stay `None` and are dated one at a time by
+        // `fetch_version_created_at`, since a commit lookup per tag is thousands
+        // of requests for a repository like aws/aws-cli.
+        let tags =
+            github::list_tags_with_known_dates(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))
+                .await?;
+        return Ok(tags.into_iter().map(|t| (t.name, t.date, None)).collect());
     }
     let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
     let releases = github::list_release_versions(github::API_URL, &repo, false).await?;
