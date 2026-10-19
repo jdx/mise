@@ -6478,6 +6478,14 @@ mod latest_version_tests {
     use confique::Layer;
     use pretty_assertions::assert_eq;
     use std::fs;
+
+    /// These tests exercise the latest-stable fast path, which a release-age
+    /// cutoff bypasses; every backend now gets the 24h default, so switch it off.
+    fn without_default_release_age() {
+        let mut partial = SettingsPartial::empty();
+        partial.minimum_release_age = Some("0s".to_string());
+        Settings::reset(Some(partial));
+    }
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[derive(Debug)]
@@ -6871,6 +6879,7 @@ mod latest_version_tests {
         let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-latest-stable");
+        without_default_release_age();
 
         assert_eq!(
             backend
@@ -6898,6 +6907,7 @@ mod latest_version_tests {
     #[tokio::test]
     async fn test_semver_order_preserves_latest_fast_path() {
         let _settings = crate::test::SettingsGuard::lock();
+        without_default_release_age();
         let config = Config::get().await.unwrap();
         let backend = LatestBackend::new("test-semver-order[version_order=semver]")
             .with_remote_versions(vec![
@@ -6980,7 +6990,7 @@ mod latest_version_tests {
     #[tokio::test]
     async fn test_prerelease_selection_skips_latest_stable_fast_path() {
         let _settings = crate::test::SettingsGuard::lock();
-        Settings::reset(None);
+        without_default_release_age();
         let config = Config::get().await.unwrap();
         let mut backend =
             LatestBackend::new("test-prerelease-latest").with_stable_result(Some("1.0.0"));
@@ -7941,6 +7951,7 @@ mod latest_version_tests {
 
         let mut partial = SettingsPartial::empty();
         partial.offline = Some(true);
+        partial.minimum_release_age = Some("0s".to_string());
         Settings::reset(Some(partial));
         let latest = backend.latest_version(&config, None, None).await.unwrap();
         Settings::reset(None);
@@ -8513,7 +8524,7 @@ fn unchecked_release_cutoff(backend: &str, version: &str) -> Option<Timestamp> {
 pub(crate) fn warn_if_release_date_unchecked(backend: &str, version: &str) {
     if let Some(before) = unchecked_release_cutoff(backend, version) {
         warn_once!(
-            "{backend}@{version} has no release date, so the {before} cutoff cannot be checked and it is allowed"
+            "{backend}@{version} has no release date, so the {before} cutoff cannot be checked and it is allowed (exclude it with minimum_release_age_excludes to silence this)"
         );
     }
 }

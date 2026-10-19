@@ -2131,11 +2131,12 @@ duration such as `7d`, `6mo` or `1y`, or a cutoff date such as `2024-06-01` or
 minimum_release_age = "7d"
 ```
 
-The `24h` default applies to aqua, cargo, core, forgejo, gem, github, gitlab,
-go, npm, packslip, pypi, spm and ubi tools. Tools from asdf, vfox (including
-vfox plugin backends), conda, dotnet, http, s3 and spinel get no default
-cutoff. A value you set applies to every backend, except for tools in
-[`minimum_release_age_excludes`](#minimum_release_age_excludes).
+The `24h` default applies to every backend, except for tools in
+[`minimum_release_age_excludes`](#minimum_release_age_excludes). A backend can
+only hold back versions it knows a release date for. When mise installs a
+version that has none, it warns that the cutoff could not be checked; see
+[Which backends have a default](/security.html#which-backends-have-a-default).
+A value you set applies to every backend.
 
 The cutoff applies when mise resolves a version request such as `node@22` or
 `latest`, for backends that report release dates. Exact versions such as
