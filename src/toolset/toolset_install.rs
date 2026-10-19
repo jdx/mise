@@ -891,7 +891,10 @@ impl Toolset {
             tv.install_path_is_explicit = true;
         }
         let before_date = transitive_dependency_before_date(tr, &tv);
-        if before_date.is_some() && !opts.dry_run {
+        // Silent unless resolution picked this version under a cutoff without a
+        // date, so it needs no cutoff check of its own: an upgrade installs what
+        // it picked as an exact pin, which has no `before_date` here.
+        if !opts.dry_run {
             crate::backend::warn_if_release_date_unchecked(&tv.ba().full(), &tv.version);
         }
 
