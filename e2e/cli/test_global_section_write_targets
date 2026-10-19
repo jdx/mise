@@ -132,12 +132,33 @@ assert_fail_contains "mise use --global --dry-run dummy@2 fresh@1 2>&1" "run sep
 # Missing removals do not make an existing update look like a new declaration.
 mise use --global --dry-run dummy@2 --remove missing-tool
 
-# Invalid defaults fail before writing an unreadable config file.
-cat >invalid-relative.toml <<'EOF'
+# Relative targets resolve against the config root of the file that declares them, which is
+# $HOME for a global file.
+mkdir -p "$HOME/relative-config/conf.d"
+cat >"$HOME/relative-config/conf.d/settings.toml" <<EOF
+[settings.write_targets]
+tools = "relative-config/conf.d/relative-tools.toml"
+packages = "{{ config_source | dirname }}/relative-packages.toml"
+EOF
+MISE_CONFIG_DIR="$HOME/relative-config" mise use --global dummy@system
+assert_contains "cat $HOME/relative-config/conf.d/relative-tools.toml" 'dummy = "system"'
+# The declaring file's own directory is available as a template.
+MISE_CONFIG_DIR="$HOME/relative-config" mise bootstrap packages use --global --no-install pacman:ripgrep
+assert_contains "cat $HOME/relative-config/conf.d/relative-packages.toml" '"pacman:ripgrep" = "latest"'
+
+# A target whose template fails to render is rejected rather than ignored.
+cat >invalid-template.toml <<EOF
+[settings.write_targets]
+tools = "{{ missing_variable }}"
+EOF
+assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/invalid-template.toml mise use --global --dry-run invalid-template@system 2>&1" "settings.write_targets.tools must resolve to an absolute path"
+
+# A relative target that mise would not load still fails before writing an unreadable file.
+cat >invalid-relative.toml <<EOF
 [settings.write_targets]
 tools = "relative-tools.toml"
 EOF
-assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/invalid-relative.toml mise use --global --dry-run invalid-relative@system 2>&1" "settings.write_targets.tools must resolve to an absolute path"
+assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/invalid-relative.toml mise use --global --dry-run invalid-relative@system 2>&1" "settings.write_targets.tools must name a global config file that mise loads"
 
 mkdir invalid-target-directory
 cat >invalid-directory.toml <<EOF

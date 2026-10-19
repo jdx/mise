@@ -699,13 +699,16 @@ fn resolve_task_disable_paths(settings: &mut toml::Table, path: &Path) {
     }
 }
 
-/// Resolve age identity paths while the settings file that declared them is
-/// still known. Once settings layers are merged, a relative `PathBuf` no
-/// longer carries enough information to distinguish two config roots.
-fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
-    let Some(age) = settings.get_mut("age").and_then(toml::Value::as_table_mut) else {
-        return Ok(());
-    };
+/// Build a resolver for path settings declared in the settings file at `path`.
+///
+/// The returned closure takes a `label` (e.g. `settings.age.key_file`) and a TOML value. It
+/// renders the value as a tera template (`config_root`, `xdg_config_home`, ...), then joins a
+/// relative result to `base`. Absolute and `~/` paths are kept as written. Render errors name
+/// `label` and the file.
+fn settings_path_resolver<'a>(
+    path: &'a Path,
+    base: PathBuf,
+) -> impl FnMut(&str, &mut toml::Value) -> Result<()> + 'a {
     let config_root = crate::config::config_file::config_root::config_root(path);
     let mut tera = crate::tera::get_miserc_tera();
     let mut context = tera::Context::new();
@@ -724,14 +727,14 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
     context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
     context.insert("system_brew_prefix", &env::system_brew_prefix());
 
-    let mut resolve = |setting: &str, target: &mut toml::Value| -> Result<()> {
+    move |label: &str, target: &mut toml::Value| -> Result<()> {
         let Some(value) = target.as_str() else {
             return Ok(());
         };
         let rendered = if crate::tera::contains_template_syntax(value) {
             crate::tera::render_str(&mut tera, value, &context).map_err(|err| {
                 eyre!(
-                    "failed to render settings.age.{setting} in {}: {err}",
+                    "failed to render {label} in {}: {err}",
                     file::display_path(path)
                 )
             })?
@@ -745,7 +748,7 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
         {
             rendered_path.to_path_buf()
         } else {
-            let joined = config_root.join(rendered_path);
+            let joined = base.join(rendered_path);
             joined
                 .absolutize()
                 .map(|p| p.into_owned())
@@ -753,19 +756,53 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
         };
         *target = toml::Value::String(resolved.to_string_lossy().into_owned());
         Ok(())
-    };
+    }
+}
 
+/// Resolve age identity paths while the settings file that declared them is
+/// still known. Once settings layers are merged, a relative `PathBuf` no
+/// longer carries enough information to distinguish two config roots.
+fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
+    let Some(age) = settings.get_mut("age").and_then(toml::Value::as_table_mut) else {
+        return Ok(());
+    };
+    let config_root = crate::config::config_file::config_root::config_root(path);
+    let mut resolve = settings_path_resolver(path, config_root);
     if let Some(key_file) = age.get_mut("key_file") {
-        resolve("key_file", key_file)?;
+        resolve("settings.age.key_file", key_file)?;
     }
     for setting in ["identity_files", "ssh_identity_files"] {
         if let Some(values) = age.get_mut(setting).and_then(toml::Value::as_array_mut) {
             for value in values {
-                resolve(setting, value)?;
+                resolve(&format!("settings.age.{setting}"), value)?;
             }
         }
     }
     Ok(())
+}
+
+/// Resolve `write_targets` paths against the config root of the declaring settings file, for the
+/// same reason as [`resolve_age_paths`]. Templates such as `{{ xdg_config_home }}` let dotfiles
+/// shared between machines name a global fragment without hardcoding the config directory.
+fn resolve_write_target_paths(settings: &mut toml::Table, path: &Path) {
+    let Some(targets) = settings
+        .get_mut("write_targets")
+        .and_then(toml::Value::as_table_mut)
+    else {
+        return;
+    };
+    let config_root = crate::config::config_file::config_root::config_root(path);
+    let mut resolve = settings_path_resolver(path, config_root);
+    for section in ["tools", "packages", "dotfiles"] {
+        if let Some(target) = targets.get_mut(section)
+            && let Err(err) = resolve(&format!("settings.write_targets.{section}"), target)
+        {
+            // Dropping the whole settings layer would silently send global writes to the
+            // default file. The unrendered template is not an absolute path, so the write
+            // fails in `configured_global_write_path` instead.
+            warn!("{err}");
+        }
+    }
 }
 
 /// mise behavior layered on the generated [`Settings`] type, which lives in the
@@ -1081,6 +1118,7 @@ impl SettingsExt for Settings {
             // never rewritten.
             resolve_aqua_registry_paths(settings, path);
             resolve_age_paths(settings, path)?;
+            resolve_write_target_paths(settings, path);
             resolve_task_disable_paths(settings, path);
         }
         if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
@@ -2802,6 +2840,55 @@ mod tests {
         assert_eq!(
             settings["age"]["identity_files"][0].as_str(),
             Some("~/identity.txt")
+        );
+    }
+
+    #[test]
+    fn write_targets_resolve_against_the_declaring_config_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("mise.toml");
+        let mut settings = toml::from_str::<toml::Table>(
+            r#"
+            [write_targets]
+            tools = "tools.toml"
+            packages = "{{ xdg_config_home }}/mise/packages.toml"
+            dotfiles = "~/dotfiles.toml"
+            "#,
+        )
+        .unwrap();
+
+        resolve_write_target_paths(&mut settings, &config_path);
+
+        assert_eq!(
+            settings["write_targets"]["tools"].as_str(),
+            Some(dir.path().join("tools.toml").to_str().unwrap())
+        );
+        assert_eq!(
+            Path::new(settings["write_targets"]["packages"].as_str().unwrap()),
+            env::XDG_CONFIG_HOME.join("mise/packages.toml")
+        );
+        assert_eq!(
+            settings["write_targets"]["dotfiles"].as_str(),
+            Some("~/dotfiles.toml")
+        );
+    }
+
+    #[test]
+    fn invalid_write_target_template_is_left_for_the_write_check_to_reject() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = toml::from_str::<toml::Table>(
+            r#"
+            [write_targets]
+            tools = "{{ missing_variable }}"
+            "#,
+        )
+        .unwrap();
+
+        resolve_write_target_paths(&mut settings, &dir.path().join("mise.toml"));
+
+        assert_eq!(
+            settings["write_targets"]["tools"].as_str(),
+            Some("{{ missing_variable }}")
         );
     }
 
