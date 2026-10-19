@@ -98,10 +98,6 @@ function ancestors(path) {
   return out;
 }
 
-function section(path) {
-  return ancestors(path)[0] ?? path;
-}
-
 function setHash(path) {
   const url = new URL(window.location.href);
   url.hash = path ? encodeURIComponent(path).replace(/%2E/g, ".") : "";
@@ -376,12 +372,7 @@ function firstSentence(html) {
       <button v-if="selected" type="button" class="back" @click="select(null)">
         ‹ All keys
       </button>
-      <ConfigKeyDetail
-        v-if="selectedKey"
-        :item="selectedKey"
-        :index="index"
-        :section="section(selectedKey.path)"
-      />
+      <ConfigKeyDetail v-if="selectedKey" :item="selectedKey" :index="index" />
       <div v-else-if="matches" class="results">
         <h2 class="pane-title">
           {{ matches.hits.length }}

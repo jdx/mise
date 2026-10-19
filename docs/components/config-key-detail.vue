@@ -2,15 +2,14 @@
 // The selected key of the mise.toml reference: what it is, where it goes in a mise.toml,
 // and the keys inside it.
 import { computed, inject, ref } from "vue";
-import { guides } from "/components/config-reference-sections.ts";
-import { highlight, snippet } from "/components/config-reference-toml.ts";
+import MiseTomlEditor from "/components/mise-toml-editor.vue";
+import { guideFor } from "/components/config-reference-sections.ts";
+import { snippet } from "/components/config-reference-toml.ts";
 
 const props = defineProps({
   item: { type: Object, required: true },
   // { byPath, parents } of the whole reference
   index: { type: Object, required: true },
-  // the top-level section the key is in
-  section: { type: String, required: true },
 });
 
 const { select } = inject("configReference");
@@ -56,8 +55,7 @@ const usedBy = computed(() =>
 const toml = computed(() =>
   snippet({ ...props.item, children: children.value }),
 );
-const tomlHtml = computed(() => highlight(toml.value));
-const guide = computed(() => guides[props.section]);
+const guide = computed(() => guideFor(props.item.path));
 
 const copied = ref("");
 async function copy(what, text) {
@@ -136,15 +134,15 @@ function link(path) {
       <a :href="item.link">the settings reference</a>.
     </p>
 
-    <div class="snippet">
-      <div class="snippet-head">
-        <span>mise.toml</span>
-        <button type="button" class="ghost" @click="copy('toml', toml)">
-          {{ copied === "toml" ? "Copied" : "Copy" }}
-        </button>
-      </div>
-      <pre><code v-html="tomlHtml"></code></pre>
-    </div>
+    <!-- keyed by the path, so each key gets its own editor; hover a key in it for its docs -->
+    <MiseTomlEditor
+      :key="item.path"
+      class="snippet"
+      :code="toml"
+      title="mise.toml"
+      compact
+      readonly
+    />
 
     <section v-if="children.length > 0" class="keys">
       <h3 class="keys-title">
@@ -309,57 +307,6 @@ function link(path) {
 
 .snippet {
   margin: 16px 0 24px;
-  border-radius: 10px;
-  background: var(--vp-code-block-bg);
-  overflow: hidden;
-}
-
-.snippet-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px 6px 16px;
-  border-bottom: 1px solid var(--vp-c-divider);
-  font-size: 12px;
-  color: var(--vp-c-text-3);
-}
-
-.snippet pre {
-  margin: 0;
-  padding: 14px 16px;
-  overflow-x: auto;
-  font-family: var(--vp-font-family-mono);
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.snippet pre code {
-  padding: 0;
-  background: none;
-  font-size: inherit;
-  color: var(--vp-c-text-1);
-}
-
-.snippet :deep(.t-header) {
-  color: var(--vp-c-purple-1);
-  font-weight: 600;
-}
-
-.snippet :deep(.t-key) {
-  color: var(--vp-c-indigo-1);
-}
-
-.snippet :deep(.t-string) {
-  color: var(--vp-c-green-1);
-}
-
-.snippet :deep(.t-literal) {
-  color: var(--vp-c-yellow-1);
-}
-
-.snippet :deep(.t-comment) {
-  color: var(--vp-c-text-3);
-  font-style: italic;
 }
 
 .keys h3.keys-title {

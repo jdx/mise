@@ -143,3 +143,291 @@ export function grouped<K extends Named>(
     out.push({ title: "Deprecated", keys: deprecated });
   return out;
 }
+
+// Guides for a key more specific than its section's. A key without one uses the guide of
+// the nearest key above it that has one, and then its section's.
+const keyGuides: Record<string, Guide> = {
+  "tools.<tool>": { text: "Tool options", link: "/dev-tools/#tool-options" },
+  "tools.<tool>.version": {
+    text: "Version requests",
+    link: "/dev-tools/versions.html#request-syntax",
+  },
+  "tools.<tool>.os": {
+    text: "OS-specific tools",
+    link: "/dev-tools/#os-specific-tools",
+  },
+  "tools.<tool>.depends": {
+    text: "Tool dependencies",
+    link: "/dev-tools/#tool-dependencies",
+  },
+  "tools.<tool>.postinstall": {
+    text: "Tool postinstall commands",
+    link: "/dev-tools/#tool-postinstall-commands",
+  },
+  "tools.<tool>.install_env": {
+    text: "Variables in tool options",
+    link: "/dev-tools/#templates-in-tool-configuration",
+  },
+  "tools.<tool>.auto_update": {
+    text: "Automatic tool updates",
+    link: "/dev-tools/#automatic-tool-updates",
+  },
+  "tools.<tool>.lazy": {
+    text: "Lazy tools",
+    link: "/dev-tools/shims.html#lazy-tools",
+  },
+  "tools.<tool>.version_order": {
+    text: "Version ordering",
+    link: "/dev-tools/versions.html#version-ordering",
+  },
+  "tools.<github:…>": {
+    text: "The github backend",
+    link: "/dev-tools/backends/github.html#tool-options",
+  },
+  "tools.<github:…>.asset_pattern": {
+    text: "Selecting GitHub assets",
+    link: "/dev-tools/backends/github.html#selecting-assets",
+  },
+  "tools.<github:…>.platforms": {
+    text: "Per-platform options",
+    link: "/dev-tools/backends/github.html#per-platform-options",
+  },
+  "tools.<github:…>.version_prefix": {
+    text: "Choosing versions",
+    link: "/dev-tools/backends/github.html#choosing-versions",
+  },
+  "tools.<github:…>.bin": {
+    text: "Extracting and naming executables",
+    link: "/dev-tools/backends/github.html#extracting-and-naming-executables",
+  },
+  "tools.<gitlab:…>": {
+    text: "The gitlab backend",
+    link: "/dev-tools/backends/gitlab.html",
+  },
+  "tools.<forgejo:…>": {
+    text: "The forgejo backend",
+    link: "/dev-tools/backends/forgejo.html",
+  },
+  "tools.<ubi:…>": {
+    text: "The ubi backend",
+    link: "/dev-tools/backends/ubi.html",
+  },
+  "tools.<http:…>": {
+    text: "The http backend",
+    link: "/dev-tools/backends/http.html",
+  },
+  "tools.<s3:…>": {
+    text: "The s3 backend",
+    link: "/dev-tools/backends/s3.html",
+  },
+  "tools.<aqua:…>": {
+    text: "The aqua backend",
+    link: "/dev-tools/backends/aqua.html",
+  },
+  "tools.<cargo:…>": {
+    text: "The cargo backend",
+    link: "/dev-tools/backends/cargo.html",
+  },
+  "tools.<npm:…>": {
+    text: "The npm backend",
+    link: "/dev-tools/backends/npm.html",
+  },
+  "tools.<pypi:…>": {
+    text: "The pypi backend",
+    link: "/dev-tools/backends/pypi.html",
+  },
+  "tools.<pipx:…>": {
+    text: "The pypi backend",
+    link: "/dev-tools/backends/pypi.html",
+  },
+  "tools.<gem:…>": {
+    text: "The gem backend",
+    link: "/dev-tools/backends/gem.html",
+  },
+  "tools.<go:…>": {
+    text: "The go backend",
+    link: "/dev-tools/backends/go.html",
+  },
+  "tools.<conda:…>": {
+    text: "The conda backend",
+    link: "/dev-tools/backends/conda.html",
+  },
+  "tools.<spm:…>": {
+    text: "The spm backend",
+    link: "/dev-tools/backends/spm.html",
+  },
+  "tools.<packslip:…>": {
+    text: "The packslip backend",
+    link: "/dev-tools/backends/packslip.html",
+  },
+  "tools.<spinel:…>": {
+    text: "The spinel backend",
+    link: "/dev-tools/backends/spinel.html",
+  },
+  "tools.python": { text: "Python", link: "/lang/python.html" },
+  "tools.java": { text: "Java", link: "/lang/java.html" },
+  "tools.rust": { text: "Rust", link: "/lang/rust.html" },
+  "tools.dotnet": { text: ".NET", link: "/dev-tools/backends/dotnet.html" },
+  "env._": { text: "Env directives", link: "/environments/#env-directives" },
+  "env._.file": { text: "env._.file", link: "/environments/#env-file" },
+  "env._.path": { text: "env._.path", link: "/environments/#env-path" },
+  "env._.source": { text: "env._.source", link: "/environments/#env-source" },
+  "env._.python.venv": {
+    text: "env._.python.venv",
+    link: "/environments/#env-python-venv",
+  },
+  "env.<NAME>.default": {
+    text: "Defaults",
+    link: "/environments/#defaults",
+  },
+  "env.<NAME>.required": {
+    text: "Required variables",
+    link: "/environments/#required-variables",
+  },
+  "env.<NAME>.redact": {
+    text: "Redaction",
+    link: "/environments/secrets/#redaction",
+  },
+  "env.<NAME>.tools": {
+    text: "Values that tools set",
+    link: "/environments/#lazy-eval",
+  },
+  "vars.<name>.prompt": {
+    text: "Ask once and remember",
+    link: "/configuration/vars.html#prompt",
+  },
+  "hooks.enter": {
+    text: "Directory hooks",
+    link: "/hooks.html#directory-hooks",
+  },
+  "hooks.leave": {
+    text: "Directory hooks",
+    link: "/hooks.html#directory-hooks",
+  },
+  "hooks.cd": { text: "Directory hooks", link: "/hooks.html#directory-hooks" },
+  "hooks.preinstall": {
+    text: "Install hooks",
+    link: "/hooks.html#preinstall-postinstall-hook",
+  },
+  "hooks.postinstall": {
+    text: "Install hooks",
+    link: "/hooks.html#preinstall-postinstall-hook",
+  },
+  watch_files: { text: "Watch files", link: "/hooks.html#watch-files-hook" },
+  "tasks.<name>.run": {
+    text: "Task commands",
+    link: "/tasks/task-configuration.html#run",
+  },
+  "daemons.<name>.port": {
+    text: "Ports, URLs, and worktrees",
+    link: "/daemons/worktrees.html#automatic-ports",
+  },
+  "monorepo.path_aliases": {
+    text: "Path aliases",
+    link: "/tasks/monorepo.html#short-names-for-project-paths",
+  },
+  "monorepo.config_roots": {
+    text: "Config roots",
+    link: "/tasks/monorepo.html#explicit-config-roots",
+  },
+  "oci.copy": {
+    text: "Copy files into the image",
+    link: "/dev-tools/mise-oci.html#copy-files-into-the-image",
+  },
+};
+
+// The ids of the headings in /tasks/task-configuration.html, by the property they describe.
+const taskProperties: Record<string, string> = {
+  run: "run",
+  run_windows: "run-windows",
+  file: "file",
+  shell: "shell",
+  dir: "dir",
+  usage: "usage",
+  raw_args: "raw-args",
+  extends: "extends",
+  description: "description",
+  alias: "alias",
+  hide: "hide",
+  confirm: "confirm",
+  depends: "depends",
+  depends_post: "depends-post",
+  wait_for: "wait-for",
+  daemons: "daemons",
+  env: "env",
+  vars: "task-vars",
+  secrets: "secrets",
+  tools: "tools",
+  skip_if: "skip-if",
+  sources: "sources",
+  outputs: "outputs",
+  watch: "watch",
+  cache: "cache",
+  timeout: "timeout",
+  raw: "raw",
+  interactive: "interactive",
+  output: "output",
+  quiet: "quiet",
+  silent: "silent",
+};
+
+function ruleGuide(path: string): Guide | undefined {
+  const task = path.match(/^tasks\.<name>\.([a-z_]+)$/);
+  const id = task && taskProperties[task[1]];
+  if (id) {
+    return {
+      text: `The ${task[1]} property`,
+      link: `/tasks/task-configuration.html#${id}`,
+    };
+  }
+  const config = path.match(/^task_config\.([a-z_]+)$/);
+  if (config && config[1] in taskConfigIds) {
+    return {
+      text: `task_config.${config[1]}`,
+      link: `/tasks/task-configuration.html#task_config.${config[1]}`,
+    };
+  }
+  return undefined;
+}
+
+const taskConfigIds: Record<string, true> = {
+  cascade: true,
+  dir: true,
+  shell: true,
+  includes: true,
+  excludes: true,
+  cache: true,
+  global_inputs: true,
+  input_groups: true,
+  global_env: true,
+  global_pass_through_env: true,
+};
+
+// The guide that explains `path`, a key at any depth, and failing that its section.
+export function guideFor(path: string): Guide | undefined {
+  const segments = path.split(".");
+  for (let n = segments.length; n > 0; n--) {
+    const above = segments.slice(0, n).join(".");
+    const guide = keyGuides[above] ?? ruleGuide(above);
+    if (guide) return guide;
+  }
+  return guides[segments[0]];
+}
+
+// Every guide link the reference can show, for the test that they still lead somewhere.
+export function allGuides(): Guide[] {
+  const taskGuides = Object.keys(taskProperties).flatMap((p) => {
+    const guide = ruleGuide(`tasks.<name>.${p}`);
+    return guide ? [guide] : [];
+  });
+  const configGuides = Object.keys(taskConfigIds).flatMap((p) => {
+    const guide = ruleGuide(`task_config.${p}`);
+    return guide ? [guide] : [];
+  });
+  return [
+    ...Object.values(guides),
+    ...Object.values(keyGuides),
+    ...taskGuides,
+    ...configGuides,
+  ];
+}

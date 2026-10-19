@@ -1,6 +1,10 @@
-// The mise.toml snippet the reference shows for a key: where the key goes, with a placeholder
-// value of its type. Names the reader picks (`<name>`, `<tool>`) become example names so the
-// snippet reads like a real config.
+// The mise.toml snippet the reference shows for a key. A hand-written example for the key
+// (config-reference-examples.ts) is used when there is one. Otherwise the snippet is written
+// from the key's type: where the key goes, with a placeholder value of its type. Names the
+// reader picks (`<name>`, `<tool>`) become example names so the snippet reads like a real
+// config.
+
+import { exampleFor } from "./config-reference-examples.ts";
 
 export type SnippetKey = {
   path: string;
@@ -142,7 +146,50 @@ function placeholder(type: string): string {
   }
 }
 
-function value(key: SnippetKey): string {
+// Values for string keys that are named for what they hold, wherever they appear, so the
+// generated snippet reads `timeout = "5m"` rather than `timeout = "…"`.
+const stringHints: Record<string, string> = {
+  description: "Run the tests",
+  hint: "Run `mise install` first",
+  message: "Continue?",
+  dir: "{{ config_root }}/app",
+  shell: "bash -c",
+  timeout: "5m",
+  file: "scripts/build.sh",
+  path: "./bin",
+  prefix: "v",
+  source: "config/settings.toml",
+  target: "~/.config/app",
+  root: "config",
+  url: "https://example.com/app.tar.gz",
+  api_url: "https://github.example.com/api/v3",
+  version: "latest",
+  tag: "ghcr.io/my-org/app:latest",
+  from: "debian:bookworm-slim",
+  profile: "default",
+  region: "us-east-1",
+  branch: "main",
+  backend: "aqua:owner/tool",
+  checksum: "sha256:…",
+  bin: "tool",
+  bin_path: "bin",
+  asset_pattern: "tool-*-linux-amd64.tar.gz",
+  matching: "linux",
+  command: "cargo",
+  run: "echo hello",
+  task: "build",
+  skip_if: "test -f dist/app",
+  usage: 'arg "<file>"',
+  cwd: "{{ config_root }}",
+};
+
+// A placeholder for a string, from the key's name; `"…"` when it gives no hint.
+function stringValue(name: string): string {
+  const hint = stringHints[name];
+  return hint === undefined ? '"…"' : JSON.stringify(hint);
+}
+
+function value(key: SnippetKey, name = own(key)): string {
   if (key.default !== undefined) {
     try {
       return toml(JSON.parse(key.default));
@@ -157,7 +204,15 @@ function value(key: SnippetKey): string {
   // `choices` are written as TOML already
   if (key.choices.length > 0) return key.choices[0];
   // a key that takes a list or a table often takes a plain string too, and that reads best
-  return placeholder(types.includes("string") ? "string" : types[0]);
+  const type = types.includes("string") ? "string" : types[0];
+  const item = type.endsWith("[]")
+    ? alternatives(type.slice(0, -2).replace(/^\((.*)\)$/, "$1"))[0]
+    : type;
+  if (item === "string") {
+    const hint = stringValue(unlist(name));
+    if (hint !== '"…"') return type.endsWith("[]") ? `[${hint}]` : hint;
+  }
+  return placeholder(type);
 }
 
 const isTableType = (t: string) => t === "table" || t === "table[]";
@@ -179,7 +234,7 @@ function openEntry(key: SnippetKey): SnippetKey | undefined {
 // `prefix` is a dotted key already written out.
 function entryLine(key: SnippetKey, name: string, prefix = ""): string {
   const written = prefix + tomlKey(name);
-  if (scalarForm(key)) return `${written} = ${value(key)}`;
+  if (scalarForm(key)) return `${written} = ${value(key, name)}`;
   // `[env]`'s `_` holds directives, written `_.file = …`
   const first = key.children.find((c) => !isOpen(c) && !c.deprecated);
   if (name === "_" && first) return entryLine(first, own(first), `${written}.`);
@@ -296,7 +351,19 @@ function lineForm(key: SnippetKey): string[] {
   return lines;
 }
 
+// Whether the reference has a hand-written example for `path`.
+export function hasExample(path: string): boolean {
+  return exampleFor(path) !== undefined;
+}
+
 export function snippet(key: SnippetKey): string {
+  const example = exampleFor(key.path);
+  if (example !== undefined) return example.trimEnd();
+  return generated(key);
+}
+
+// The snippet written from the key's type alone.
+export function generated(key: SnippetKey): string {
   const segs = segments(key.path);
   if (!takesTable(key)) return lineForm(key).join("\n");
   if (!scalarForm(key)) return tableForm(key).join("\n");
@@ -310,30 +377,4 @@ export function snippet(key: SnippetKey): string {
   return [...lineForm(key), "", "# or, as a table:", ...tableForm(key)].join(
     "\n",
   );
-}
-
-const escape = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-// The snippet as HTML with a span around each kind of token, for the page's own colors.
-export function highlight(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => {
-      if (line.startsWith("#"))
-        return `<span class="t-comment">${escape(line)}</span>`;
-      if (line.startsWith("["))
-        return `<span class="t-header">${escape(line)}</span>`;
-      const eq = line.indexOf(" = ");
-      if (eq < 0) return escape(line);
-      const valueHtml = escape(line.slice(eq + 3)).replace(
-        /("(?:[^"\\]|\\.)*")|\b(true|false|\d+)\b/g,
-        (m, str) =>
-          str
-            ? `<span class="t-string">${m}</span>`
-            : `<span class="t-literal">${m}</span>`,
-      );
-      return `<span class="t-key">${escape(line.slice(0, eq))}</span> = ${valueHtml}`;
-    })
-    .join("\n");
 }
