@@ -3960,8 +3960,14 @@ pub trait Backend: Debug + Send + Sync {
         // version — takes the last entry of this list, so the cutoff has to be
         // exact by the time it is returned.
         if let Some(before) = before_date {
-            self.drop_matches_hidden_by_cutoff(config, &mut versions, before, selection_opts)
-                .await?;
+            self.drop_matches_hidden_by_cutoff(
+                config,
+                &mut versions,
+                before,
+                selection_opts,
+                query,
+            )
+            .await?;
         }
         Ok(versions)
     }
@@ -4088,8 +4094,14 @@ pub trait Backend: Debug + Send + Sync {
             // `list_versions_matching_with_selection_options` already did this
             // for the list above; this branch built its own.
             if let Some(before) = before_date {
-                self.drop_matches_hidden_by_cutoff(config, &mut matches, before, selection_opts)
-                    .await?;
+                self.drop_matches_hidden_by_cutoff(
+                    config,
+                    &mut matches,
+                    before,
+                    selection_opts,
+                    query,
+                )
+                .await?;
             }
         }
         Ok(find_match_in_list(&matches, query))
@@ -4114,6 +4126,7 @@ pub trait Backend: Debug + Send + Sync {
         matches: &mut Vec<String>,
         before: Timestamp,
         selection_opts: &ToolVersionOptions,
+        query: &str,
     ) -> eyre::Result<()> {
         if matches.is_empty() {
             return Ok(());
@@ -4132,7 +4145,9 @@ pub trait Backend: Debug + Send + Sync {
                 break;
             }
             let created_at = self
-                .release_date_for_cutoff(config, candidate, before)
+                // A version the request named in full is the user's own choice,
+                // not one the cutoff picked, so it needs no warning.
+                .release_date_for_cutoff(config, candidate, before, candidate != query)
                 .await;
             let info = VersionInfo {
                 version: candidate.clone(),
@@ -4161,6 +4176,7 @@ pub trait Backend: Debug + Send + Sync {
         config: &Arc<Config>,
         candidate: &str,
         before: Timestamp,
+        record_unchecked: bool,
     ) -> Option<String> {
         let backend = self.ba().full();
         let tool = self.ba().short.clone();
@@ -4171,7 +4187,7 @@ pub trait Backend: Debug + Send + Sync {
             None => match self.fetch_version_created_at(config, candidate).await {
                 Ok(created_at) => {
                     remember_on_demand_release_date(&backend, candidate, created_at.as_deref());
-                    if created_at.is_none() {
+                    if created_at.is_none() && record_unchecked {
                         note_undated_release(&tool, candidate, before, None);
                     }
                     created_at
@@ -4189,7 +4205,9 @@ pub trait Backend: Debug + Send + Sync {
                         "{}@{candidate}: could not read its release date to check the {before} cutoff, allowing it: {err:#}",
                         self.id()
                     );
-                    note_undated_release(&tool, candidate, before, Some(format!("{err:#}")));
+                    if record_unchecked {
+                        note_undated_release(&tool, candidate, before, Some(format!("{err:#}")));
+                    }
                     None
                 }
             },
@@ -4350,7 +4368,7 @@ pub trait Backend: Debug + Send + Sync {
                             let dated = VersionInfo {
                                 version: version.clone(),
                                 created_at: self
-                                    .release_date_for_cutoff(config, &version, before)
+                                    .release_date_for_cutoff(config, &version, before, true)
                                     .await,
                                 ..Default::default()
                             };
@@ -6929,6 +6947,26 @@ mod latest_version_tests {
         let (recorded, err) = unchecked_release(&backend.ba().short, "3.0.0").unwrap();
         assert_eq!(recorded, before);
         assert!(err.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_an_exactly_named_undated_version_is_not_recorded() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = partially_dated_backend("test-exact-pin-unrecorded");
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        // 3.0.0 is undated, but the request names it in full: the user chose
+        // it, so there is nothing to warn about at install.
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("3.0.0".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("3.0.0")
+        );
+        assert_eq!(unchecked_release(&backend.ba().short, "3.0.0"), None);
     }
 
     #[tokio::test]
