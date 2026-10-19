@@ -388,6 +388,7 @@ mod tests {
     #[test]
     fn an_unfinished_header_does_not_hide_later_ones() {
         assert_eq!(labels("[settings\n[settings]\nco|"), ["color"]);
+        assert_eq!(labels("[settings\nco|"), ["color"]);
     }
 
     #[test]
