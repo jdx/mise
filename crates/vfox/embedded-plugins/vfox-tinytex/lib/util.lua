@@ -57,8 +57,7 @@ function util.get_versions()
     for _, release in ipairs(releases) do
       local version = release.tag_name:match("^v(.+)$")
       if version then
-        local created_at = type(release.published_at) == "string" and release.published_at or nil
-        table.insert(versions, { version = version, created_at = created_at })
+        table.insert(versions, { version = version })
       end
     end
   end

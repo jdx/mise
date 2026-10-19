@@ -49,16 +49,8 @@ function util.get_versions()
   end
 
   local versions = {}
-  -- The listing prints "YYYY-MM-DD HH:MM" after each directory.
-  local dates = {}
-  for version, day, time in resp.body:gmatch(
-    'href="([0-9][^"/]+)/"[^>]*>[^<]*</a>%s+(%d%d%d%d%-%d%d%-%d%d) (%d%d:%d%d)'
-  ) do
-    dates[version] = day .. "T" .. time .. ":00Z"
-  end
-
   for version in resp.body:gmatch('href="([0-9][^"/]+)/"') do
-    table.insert(versions, { version = version, created_at = dates[version] })
+    table.insert(versions, { version = version })
   end
 
   table.sort(versions, version_gt)

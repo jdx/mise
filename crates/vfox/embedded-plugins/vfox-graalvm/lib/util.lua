@@ -115,16 +115,15 @@ local function add_versions_from_releases(versions, seen, url, handler)
   end
   for _, release in ipairs(json.decode(resp.body)) do
     if release.prerelease == false and release.assets and #release.assets > 0 then
-      handler(versions, seen, release.tag_name, release.published_at)
+      handler(versions, seen, release.tag_name)
     end
   end
 end
 
-local function add_version(versions, seen, version, published_at)
+local function add_version(versions, seen, version)
   if version and not seen[version] then
     seen[version] = true
-    local created_at = type(published_at) == "string" and published_at or nil
-    table.insert(versions, { version = version, created_at = created_at })
+    table.insert(versions, { version = version })
   end
 end
 
@@ -136,10 +135,10 @@ function util.get_versions()
     versions,
     seen,
     "https://api.github.com/repos/oracle/graal/releases?per_page=100",
-    function(out, seen_versions, tag, published_at)
+    function(out, seen_versions, tag)
       local version = tag:match("^vm%-(.+)$")
       if version then
-        add_version(out, seen_versions, version, published_at)
+        add_version(out, seen_versions, version)
       end
     end
   )
@@ -148,17 +147,17 @@ function util.get_versions()
     versions,
     seen,
     "https://api.github.com/repos/graalvm/graalvm-ce-builds/releases?per_page=100",
-    function(out, seen_versions, tag, published_at)
+    function(out, seen_versions, tag)
       local vm_version = tag:match("^vm%-(.+)$")
       if vm_version then
-        add_version(out, seen_versions, vm_version .. "-java8", published_at)
-        add_version(out, seen_versions, vm_version .. "-java11", published_at)
+        add_version(out, seen_versions, vm_version .. "-java8")
+        add_version(out, seen_versions, vm_version .. "-java11")
         return
       end
 
       local jdk_version = tag:match("^jdk%-(.+)$")
       if jdk_version and jdk_version:match("^%d+") then
-        add_version(out, seen_versions, jdk_version, published_at)
+        add_version(out, seen_versions, jdk_version)
       end
     end
   )

@@ -16,14 +16,12 @@ local available_versions = nil
 --- Fetch versions from GCS with pagination
 local function fetch_versions()
     local versions = {}
-    -- Upload time of each version's linux archive, keyed by version
-    local created = {}
     local seen = {}
     local page_token = nil
 
     repeat
         -- Build URL with query parameters
-        local url = GCS_API_URL .. "?prefix=" .. GCS_PREFIX .. "&fields=kind,nextPageToken,items(name,timeCreated)"
+        local url = GCS_API_URL .. "?prefix=" .. GCS_PREFIX .. "&fields=kind,nextPageToken,items(name)"
         if page_token then
             url = url .. "&pageToken=" .. page_token
         end
@@ -47,18 +45,13 @@ local function fetch_versions()
             if version and not seen[version] then
                 seen[version] = true
                 table.insert(versions, version)
-                -- timeCreated is RFC 3339 UTC, e.g. 2026-01-31T12:00:00.000Z
-                local t = item.timeCreated
-                if type(t) == "string" and t:match("^%d%d%d%d%-%d%d%-%d%dT") then
-                    created[version] = t
-                end
             end
         end
 
         page_token = data.nextPageToken
     until page_token == nil
 
-    return versions, created
+    return versions
 end
 
 --- Compare version strings for sorting
@@ -90,7 +83,7 @@ function PLUGIN:Available(ctx)
         return available_versions
     end
 
-    local versions, created = fetch_versions()
+    local versions = fetch_versions()
 
     -- Sort versions in descending order (newest first) to match vfox conventions
     table.sort(versions, compare_versions)
@@ -101,7 +94,6 @@ function PLUGIN:Available(ctx)
         table.insert(result, {
             version = version,
             note = "",
-            created_at = created[version],
         })
     end
 
