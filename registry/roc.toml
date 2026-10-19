@@ -1,0 +1,8 @@
+backends = [
+  { full = "github:roc-lang/nightlies", options = { prerelease = true } },
+]
+bins = ["roc"]
+description = "A fast, friendly, functional programming language"
+test = { cmd = "roc version", expected = "{{version}}" }
+url = "https://www.roc-lang.org"
+version_order = "source"
