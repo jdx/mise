@@ -14,7 +14,9 @@ use crate::hooks::available::AvailableVersion;
 use crate::hooks::backend_exec_env::BackendExecEnvContext;
 use crate::hooks::backend_install::BackendInstallContext;
 use crate::hooks::backend_list_tools::BackendListToolsContext;
-use crate::hooks::backend_list_versions::{BackendListVersionsContext, BackendVersion};
+use crate::hooks::backend_list_versions::{
+    BackendListVersionsContext, BackendListVersionsResponse, BackendVersion,
+};
 use crate::hooks::backend_search_tools::BackendSearchToolsContext;
 use crate::hooks::backend_tools::BackendTool;
 use crate::hooks::backend_uninstall::BackendUninstallContext;

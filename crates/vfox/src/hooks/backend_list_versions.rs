@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use indexmap::IndexMap;
 
 use crate::{Plugin, error::Result};
@@ -12,6 +14,9 @@ pub struct BackendListVersionsContext {
 #[derive(Debug, Clone)]
 pub struct BackendListVersionsResponse {
     pub versions: Vec<BackendVersion>,
+    /// Moving names the registry publishes, such as `recommended`, mapped to
+    /// the version they currently point at
+    pub aliases: BTreeMap<String, String>,
 }
 
 /// One entry of the `versions` list. A plugin returns either a plain version
@@ -66,6 +71,9 @@ impl FromLua for BackendListVersionsResponse {
         match value {
             Value::Table(table) => Ok(BackendListVersionsResponse {
                 versions: table.get::<Vec<BackendVersion>>("versions")?,
+                aliases: table
+                    .get::<Option<BTreeMap<String, String>>>("aliases")?
+                    .unwrap_or_default(),
             }),
             _ => Err(LuaError::FromLuaConversionError {
                 from: value.type_name(),
@@ -105,6 +113,16 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn test_response_aliases_are_optional() {
+        let r = eval_response(r#"return { versions = { "1.0.0" } }"#);
+        assert!(r.aliases.is_empty());
+        let r = eval_response(
+            r#"return { versions = { "1.0.0" }, aliases = { recommended = "1.0.0" } }"#,
+        );
+        assert_eq!(r.aliases["recommended"], "1.0.0");
     }
 
     #[test]
