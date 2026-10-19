@@ -323,6 +323,10 @@ jobs:
           ARCH: ${{matrix.arch}}
       - name: Smoke-test vfox Lua errors
         run: scripts/smoke-test-vfox-lua-error.ps1 dist/mise/bin/mise.exe
+      # The release job globs artifacts/*/mise-<version>-<platform>.zip, so the unsigned zip must not
+      # share the final name.
+      - name: Mark zip as unsigned
+        run: Get-ChildItem dist/*.zip | Rename-Item -NewName { "unsigned-" + $_.Name }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unsigned-tarball-${{matrix.target}}
@@ -351,7 +355,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: signpath-unsigned-${{matrix.target}}
-          path: dist/*.zip
+          path: dist/unsigned-*.zip
           if-no-files-found: error
       - name: Sign with SignPath
         if: startsWith(github.ref, 'refs/tags/v')
@@ -364,15 +368,18 @@ jobs:
           github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
           wait-for-completion: true
           output-artifact-directory: signed
-      - name: Replace zip with signed zip
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Restore the release zip name
         run: |
-          rm dist/*.zip
-          cp signed/*.zip dist/
+          src=dist
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then src=signed; fi
+          mkdir final
+          for f in "$src"/unsigned-*.zip; do
+            cp "$f" "final/$(basename "$f" | sed 's/^unsigned-//')"
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tarball-${{matrix.target}}
-          path: dist/*.zip
+          path: final/*.zip
           if-no-files-found: error
   e2e-linux:
     needs: [gate, build-tarball-linux]
