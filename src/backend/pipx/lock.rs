@@ -394,7 +394,7 @@ impl PIPXBackend {
         // build backend. Simple-only indexes expose it on wheel links.
         if registry.ends_with("/json") {
             let url = registry.replace("{}", &format!("{package}/{version}"));
-            let (url, headers) = keyring::index_request(&url).await?;
+            let (url, headers) = keyring::index_request(registry, &url).await?;
             let metadata: Value = HTTP_FETCH.json_with_headers(url, &headers).await?;
             Ok(metadata
                 .pointer("/info/requires_python")
@@ -402,7 +402,8 @@ impl PIPXBackend {
                 .unwrap_or("")
                 .to_owned())
         } else {
-            let (url, headers) = keyring::index_request(&registry.replace("{}", package)).await?;
+            let (url, headers) =
+                keyring::index_request(registry, &registry.replace("{}", package)).await?;
             let html = HTTP_FETCH.get_html_with_headers(url, &headers).await?;
             simple_index_python_requirement(package, version, &html)
         }
@@ -792,7 +793,7 @@ fn simple_index_python_requirement(package: &str, version: &str, html: &str) -> 
     Ok(constraints.into_iter().next().unwrap())
 }
 
-fn uv_index_url(registry: &str) -> Result<String> {
+pub(super) fn uv_index_url(registry: &str) -> Result<String> {
     let base = registry.split("{}").next().unwrap_or(registry);
     let mut url = url::Url::parse(base)?;
     if url

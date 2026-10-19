@@ -399,15 +399,18 @@ impl Backend for PIPXBackend {
                 let registry_url = self.get_registry_url(config).await?;
                 if registry_url.contains("/json") {
                     debug!("Fetching JSON for {}", package);
-                    let (url, headers) =
-                        keyring::index_request(&registry_url.replace("{}", &package)).await?;
+                    let (url, headers) = keyring::index_request(
+                        &registry_url,
+                        &registry_url.replace("{}", &package),
+                    )
+                    .await?;
                     let data: PypiPackage = HTTP_FETCH.json_with_headers(url, &headers).await?;
 
                     Self::versions_from_pypi_package(data)
                 } else {
                     debug!("Fetching simple index for {}", package);
                     let url = registry_url.replace("{}", &package);
-                    Self::fetch_simple_index(&package, url).await?
+                    Self::fetch_simple_index(&registry_url, &package, url).await?
                 }
             }
             PipxRequest::Git(source) => match PipxRequest::github_repo(&source.repo) {
@@ -468,13 +471,14 @@ impl Backend for PIPXBackend {
                         let url = registry_url.replace("{}", &package);
                         let versions = if registry_url.contains("/json") {
                             debug!("Fetching JSON for {}", package);
-                            let (url, headers) = keyring::index_request(&url).await?;
+                            let (url, headers) =
+                                keyring::index_request(&registry_url, &url).await?;
                             let pkg: PypiPackage =
                                 HTTP_FETCH.json_with_headers(url, &headers).await?;
                             Self::versions_from_pypi_package(pkg)
                         } else {
                             debug!("Fetching simple index for {}", package);
-                            Self::fetch_simple_index(&package, url).await?
+                            Self::fetch_simple_index(&registry_url, &package, url).await?
                         };
                         Ok(Self::latest_stable(versions))
                     })
@@ -1016,7 +1020,11 @@ impl PIPXBackend {
     /// Lists versions from a PEP 503/691 simple index. Asks for the PEP 691 JSON
     /// form so PEP 700's `upload-time` is available for `minimum_release_age`,
     /// and falls back to parsing HTML for indexes that only serve PEP 503.
-    async fn fetch_simple_index(package: &str, url: String) -> Result<Vec<VersionInfo>> {
+    async fn fetch_simple_index(
+        registry: &str,
+        package: &str,
+        url: String,
+    ) -> Result<Vec<VersionInfo>> {
         let mut headers = HeaderMap::new();
         headers.insert(
             ACCEPT,
@@ -1024,7 +1032,7 @@ impl PIPXBackend {
                 "application/vnd.pypi.simple.v1+json, application/vnd.pypi.simple.v1+html;q=0.2, text/html;q=0.01",
             ),
         );
-        let (url, auth) = keyring::index_request(&url).await?;
+        let (url, auth) = keyring::index_request(registry, &url).await?;
         headers.extend(auth);
         let resp = HTTP_FETCH.get_async_with_headers(url, &headers).await?;
         let content_type = resp

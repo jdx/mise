@@ -62,7 +62,7 @@ assert_fail "mise ls-remote pipx:mytool" "401"
 export MISE_PYPI_KEYRING_PROVIDER=subprocess
 mise cache clear
 assert "mise ls-remote pipx:mytool" "1.2.3"
-assert_contains "cat $HOME/keyring.log" "get http://tester@127.0.0.1:$port/simple/mytool/ tester"
+assert_contains "cat $HOME/keyring.log" "get http://tester@127.0.0.1:$port/simple/ tester"
 
 # A keyring with no entry leaves the request unauthenticated.
 echo '#!/usr/bin/env bash

@@ -9,8 +9,10 @@ use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 
 /// The URL to request and the headers to send with it. A URL with a username
 /// and no password gets a Basic `Authorization` header from the keyring, and its
-/// userinfo is dropped so the empty password is not sent as well.
-pub(super) async fn index_request(url: &str) -> Result<(Url, HeaderMap)> {
+/// userinfo is dropped so the empty password is not sent as well. The keyring is
+/// asked about the index URL uv installs from (`registry` with its `{}` removed),
+/// not the package page, because that is the URL its entry is stored under.
+pub(super) async fn index_request(registry: &str, url: &str) -> Result<(Url, HeaderMap)> {
     let mut url = Url::parse(url)?;
     let mut headers = crate::http::with_host_auth(&url, &HeaderMap::new())?;
     if Settings::get().pypi.keyring_provider.as_deref() != Some("subprocess")
@@ -20,9 +22,9 @@ pub(super) async fn index_request(url: &str) -> Result<(Url, HeaderMap)> {
         return Ok((url, headers));
     }
     let username = percent_decode(url.username());
-    let lookup = url.clone();
+    let service = super::lock::uv_index_url(registry)?;
     let name = username.clone();
-    let password = tokio::task::spawn_blocking(move || keyring_get(lookup.as_str(), &name)).await?;
+    let password = tokio::task::spawn_blocking(move || keyring_get(&service, &name)).await?;
     match password {
         Some(password) => {
             headers.insert(AUTHORIZATION, basic_auth(&username, &password)?);
