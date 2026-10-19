@@ -282,7 +282,7 @@ runtime = "aspnetcore"
   // ---------------------------------------------------------------- tool_alias, alias
   tool_alias: toml`
 [tool_alias]
-# \`node\` now installs from a mirror, and \`tf\` is another name for terraform.
+# \`tf\` is another name for terraform, and \`my-cli\` installs from a GitHub release.
 tf = "terraform"
 my-cli = "github:my-org/my-cli"
 `,

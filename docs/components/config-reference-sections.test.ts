@@ -74,5 +74,13 @@ test("a key's guide is the nearest one above it, then its section's", () => {
     "/dev-tools/#tool-options",
   );
   assert.equal(guideFor("daemons.<name>.run")?.link, "/daemons.html");
+  assert.equal(
+    guideFor("watch_files[].patterns")?.link,
+    "/hooks.html#watch-files-hook",
+  );
+  assert.equal(
+    guideFor("oci.copy[].host")?.link,
+    "/dev-tools/mise-oci.html#copy-files-into-the-image",
+  );
   assert.equal(guideFor("nothing"), undefined);
 });
