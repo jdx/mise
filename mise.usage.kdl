@@ -1781,7 +1781,7 @@ trusted config mise has tracked, still declares it.
             example "mise bootstrap packages prune --manager vscode --dry-run" help="Preview removals for a package plugin named vscode"
         }
         cmd status help="Show the state of packages from `[bootstrap.packages]`" effect=read {
-            alias ls
+            alias ls list
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with status 1 if any package differs from the config (all are still listed)"
             flag "-h --help" help="Print help" action=help builtin=#true

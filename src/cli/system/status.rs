@@ -9,7 +9,7 @@ use crate::ui::table::MiseTable;
 /// Show the state of packages from `[bootstrap.packages]`
 #[derive(Debug, usage_rs::Args)]
 #[usage(
-    visible_alias = "ls",
+    visible_aliases = ["ls", "list"],
     verbatim_doc_comment,
     example(
         "mise bootstrap packages status",

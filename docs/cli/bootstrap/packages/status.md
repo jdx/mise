@@ -6,7 +6,7 @@ description: "Show the state of packages from `[bootstrap.packages]`"
 # `mise bootstrap packages status`
 
 - **Usage:** `mise bootstrap packages status [-J --json] [--missing]`
-- **Aliases:** `ls`
+- **Aliases:** `ls`, `list`
 - **Effect:** read-only
 - **Source code:** [`src/cli/system/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/system/status.rs)
 
