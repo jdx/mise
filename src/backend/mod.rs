@@ -3606,6 +3606,22 @@ pub trait Backend: Debug + Send + Sync {
         Ok(None)
     }
 
+    /// The version to resolve in place of the moving channel `version` under an explicit
+    /// release-age cutoff `before`, or `None` to resolve it as written. A channel has no
+    /// release date of its own, so the cutoff cannot be applied to it as it is: a backend
+    /// maps it to the concrete release the channel pointed at then, or errors when the
+    /// channel's current build is too new and nothing older can stand in for it.
+    /// `prefer_offline` asks a mapping that needs the network to leave the channel as written.
+    async fn channel_for_cutoff(
+        &self,
+        _config: &Arc<Config>,
+        _version: &str,
+        _before: Timestamp,
+        _prefer_offline: bool,
+    ) -> eyre::Result<Option<String>> {
+        Ok(None)
+    }
+
     /// Whether a rolling channel must be resolved to a concrete version before it
     /// can be used. Backends that opt in fail in offline mode when neither a lock
     /// entry nor a concrete installed channel build is available.
