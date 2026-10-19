@@ -21,6 +21,7 @@ case "$action" in
 config)
   case " $* " in
   *" --services "*) echo cache ;;
+  *" --format json "*) echo '{"services":{"cache":{}}}' ;;
   *" --hash=* "*) printf 'cache '; cat "$root/hash" ;;
   *) exit 2 ;;
   esac
@@ -172,6 +173,7 @@ root=$(dirname "$0")
 printf '%s\n' "$@" >"$root/template-compose-args"
 case " $* " in
 *" config --services "*) echo cache ;;
+*" config --format json "*) echo '{"services":{"cache":{}}}' ;;
 *" config --hash=* "*) echo "cache template-hash" ;;
 *" ps "*) ;;
 *) exit 2 ;;

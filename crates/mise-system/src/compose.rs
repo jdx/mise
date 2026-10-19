@@ -463,28 +463,54 @@ impl ComposeRequest {
             }
             self.services.iter().cloned().collect()
         };
-        let config_hashes = if self.state == ComposeState::Running {
-            parse_config_hashes(
-                &self.compose_output(&["config".to_string(), "--hash=*".to_string()])?,
-            )?
-        } else {
-            HashMap::new()
-        };
         let mut containers = parse_ps(&self.compose_output(&[
             "ps".to_string(),
             "--all".to_string(),
             "--format".to_string(),
             "json".to_string(),
         ])?)?;
-        if self.state == ComposeState::Running {
+        let config_hashes = if self.state == ComposeState::Running {
             self.add_container_hashes(&mut containers)?;
-        }
+            self.desired_config_hashes(&containers)?
+        } else {
+            HashMap::new()
+        };
         Ok(ComposeInspection::Present {
             configured_services,
             target_services,
             containers,
             config_hashes,
         })
+    }
+
+    /// `compose config --hash` hashes services as written, but compose stamps
+    /// containers with a hash taken after resolving `service:` references
+    /// (`network_mode`, `ipc`, `pid`, `volumes_from`) to container ids. Pin those
+    /// references with an override file so both sides hash the same model.
+    fn desired_config_hashes(
+        &self,
+        containers: &[ComposeContainer],
+    ) -> Result<HashMap<String, String>> {
+        let hash_args = ["config".to_string(), "--hash=*".to_string()];
+        let model: serde_json::Value = serde_json::from_str(&self.compose_output(&[
+            "config".to_string(),
+            "--format".to_string(),
+            "json".to_string(),
+        ])?)?;
+        let Some(override_yaml) = resolved_references_override(&model, containers) else {
+            return parse_config_hashes(&self.compose_output(&hash_args)?);
+        };
+        let mut file = tempfile::Builder::new()
+            .prefix("mise-compose-override-")
+            .suffix(".yaml")
+            .tempfile()?;
+        std::io::Write::write_all(&mut file, override_yaml.as_bytes())?;
+        let mut args = vec![
+            "--file".to_string(),
+            file.path().to_string_lossy().to_string(),
+        ];
+        args.extend(hash_args);
+        parse_config_hashes(&self.compose_output(&args)?)
     }
 
     fn running_is_converged(
@@ -948,6 +974,85 @@ fn parse_ps(output: &str) -> Result<Vec<ComposeContainer>> {
         .collect()
 }
 
+/// Builds a compose override that replaces `service:X` references with
+/// `container:<id>`, or `None` when no service uses one.
+fn resolved_references_override(
+    model: &serde_json::Value,
+    containers: &[ComposeContainer],
+) -> Option<String> {
+    let container_id = |service: &str| {
+        containers
+            .iter()
+            .find(|container| container.service == service)
+            .map(|container| container.id.as_str())
+    };
+    let mut services = serde_json::Map::new();
+    for (name, service) in model.get("services")?.as_object()? {
+        let mut resolved = serde_json::Map::new();
+        for key in ["network_mode", "ipc", "pid"] {
+            if let Some(target) = service
+                .get(key)
+                .and_then(|value| value.as_str())
+                .and_then(|value| value.strip_prefix("service:"))
+                && let Some(id) = container_id(target)
+            {
+                resolved.insert(key.into(), format!("container:{id}").into());
+            }
+        }
+        if let Some(volumes_from) = service.get("volumes_from").and_then(|v| v.as_array()) {
+            let mut changed = false;
+            let entries = volumes_from
+                .iter()
+                .map(|entry| {
+                    let Some(text) = entry.as_str() else {
+                        return entry.clone();
+                    };
+                    if text.starts_with("container:") {
+                        return entry.clone();
+                    }
+                    let text = text.strip_prefix("service:").unwrap_or(text);
+                    let (target, mode) = match text.split_once(':') {
+                        Some((target, mode)) => (target, Some(mode)),
+                        None => (text, None),
+                    };
+                    match container_id(target) {
+                        Some(id) => {
+                            changed = true;
+                            match mode {
+                                Some(mode) => format!("container:{id}:{mode}").into(),
+                                None => format!("container:{id}").into(),
+                            }
+                        }
+                        None => entry.clone(),
+                    }
+                })
+                .collect::<Vec<_>>();
+            if changed {
+                resolved.insert("volumes_from".into(), entries.into());
+            }
+        }
+        if !resolved.is_empty() {
+            services.insert(name.clone(), resolved.into());
+        }
+    }
+    if services.is_empty() {
+        return None;
+    }
+    // JSON is valid YAML; `!override` makes compose replace rather than merge lists.
+    let mut yaml = String::from("services:\n");
+    for (name, keys) in &services {
+        yaml.push_str(&format!("  {}:\n", serde_json::to_string(name).ok()?));
+        for (key, value) in keys.as_object()? {
+            let tag = if value.is_array() { "!override " } else { "" };
+            yaml.push_str(&format!(
+                "    {key}: {tag}{}\n",
+                serde_json::to_string(value).ok()?
+            ));
+        }
+    }
+    Some(yaml)
+}
+
 fn parse_config_hashes(output: &str) -> Result<HashMap<String, String>> {
     output
         .lines()
@@ -1196,6 +1301,29 @@ mod tests {
                 format!("{}/compose/compose.yaml", config_root.display())
             )]
         );
+    }
+
+    #[test]
+    fn pins_service_references_to_container_ids() {
+        let container = |id: &str, service: &str| ComposeContainer {
+            id: id.to_string(),
+            service: service.to_string(),
+            state: "running".to_string(),
+            health: String::new(),
+            exit_code: 0,
+            config_hash: None,
+        };
+        let containers = [container("abc", "vpn"), container("def", "app")];
+        let model = serde_json::json!({"services": {
+            "vpn": {},
+            "app": {"network_mode": "service:vpn", "volumes_from": ["vpn:ro", "container:x"]},
+        }});
+        assert_eq!(
+            resolved_references_override(&model, &containers).unwrap(),
+            "services:\n  \"app\":\n    network_mode: \"container:abc\"\n    volumes_from: !override [\"container:abc:ro\",\"container:x\"]\n"
+        );
+        let plain = serde_json::json!({"services": {"vpn": {}, "app": {"network_mode": "host"}}});
+        assert_eq!(resolved_references_override(&plain, &containers), None);
     }
 
     #[test]
