@@ -396,14 +396,16 @@ impl Backend for VfoxBackend {
             return Ok(None);
         }
         let config = Config::get().await?;
-        // The lookup is optional: `v1.2.3` may be a literal release, and a registry
-        // outage must not stop it resolving as written.
+        // `v1.2.3` may be a literal release, so an installed version resolves as
+        // written when the lookup fails. Anything else could be an alias name, and
+        // passing it through would install under that name, so the error stands.
         match self.backend_aliases(&config).await {
             Ok(aliases) => Ok(aliases.get(version).cloned()),
-            Err(err) => {
+            Err(err) if self.list_installed_versions().iter().any(|v| v == version) => {
                 debug!("vfox alias lookup for {} failed: {err:#}", self.pathname);
                 Ok(None)
             }
+            Err(err) => Err(err),
         }
     }
 
