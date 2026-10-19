@@ -701,9 +701,10 @@ fn resolve_task_disable_paths(settings: &mut toml::Table, path: &Path) {
 
 /// Build a resolver for path settings declared in the settings file at `path`.
 ///
-/// Each value is rendered as a tera template (`config_root`, `xdg_config_home`, ...), then a
-/// relative result is joined to `base`. Absolute and `~/` paths are kept as written. Errors name `label` (e.g. `settings.age.key_file`) and the
-/// file.
+/// The returned closure takes a `label` (e.g. `settings.age.key_file`) and a TOML value. It
+/// renders the value as a tera template (`config_root`, `xdg_config_home`, ...), then joins a
+/// relative result to `base`. Absolute and `~/` paths are kept as written. Render errors name
+/// `label` and the file.
 fn settings_path_resolver<'a>(
     path: &'a Path,
     base: PathBuf,
@@ -801,7 +802,7 @@ fn resolve_write_target_paths(settings: &mut toml::Table, path: &Path) {
             // Dropping the whole settings layer would silently send global writes to the
             // default file. The unrendered template is not an absolute path, so the write
             // fails in `configured_global_write_path` instead.
-            debug!("{err}");
+            warn!("{err}");
         }
     }
 }
