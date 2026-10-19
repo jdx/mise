@@ -1047,15 +1047,18 @@ impl CondaBackend {
 ///
 /// A version has many builds and platform records, each with its own upload
 /// `timestamp`. The earliest one is the date the version first became available,
-/// which is the release date `minimum_release_age` should judge. Records without
-/// a timestamp (or with a non-positive one) don't date the version.
+/// which is the release date `minimum_release_age` should judge. A record's
+/// `indexed_timestamp` (when the channel first listed it) is preferred over
+/// `timestamp` (the build start, which the builder supplies). Records with
+/// neither, or with a non-positive one, don't date the version.
 fn collect_version_infos<'a>(
     records: impl IntoIterator<Item = &'a PackageRecord>,
 ) -> Vec<VersionInfo> {
     let mut by_version: BTreeMap<String, Option<jiff::Timestamp>> = BTreeMap::new();
     for record in records {
         let ts = record
-            .timestamp
+            .indexed_timestamp
+            .or(record.timestamp)
             .map(|t| t.jiff_timestamp())
             .filter(|t| t.as_second() > 0);
         let earliest = by_version.entry(record.version.to_string()).or_insert(None);
@@ -1329,6 +1332,17 @@ mod tests {
         assert_eq!(infos[0].created_at, None);
         assert_eq!(infos[1].version, "9.1.0");
         assert_eq!(infos[1].created_at.as_deref(), Some("2024-03-01T00:00:00Z"));
+    }
+
+    #[test]
+    fn version_infos_prefer_indexed_timestamp() {
+        use rattler_conda_types::utils::TimestampMs;
+        let ms = |s: &str| TimestampMs::from_timestamp_millis(s.parse().unwrap());
+        let mut a = make_record("vim", "9.1.0", "a_0", "https://x.invalid/a.conda").package_record;
+        a.timestamp = Some(ms("2020-01-01T00:00:00Z"));
+        a.indexed_timestamp = Some(ms("2024-03-01T00:00:00Z"));
+        let infos = super::collect_version_infos([&a]);
+        assert_eq!(infos[0].created_at.as_deref(), Some("2024-03-01T00:00:00Z"));
     }
 
     #[test]
