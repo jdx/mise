@@ -4146,8 +4146,15 @@ pub trait Backend: Debug + Send + Sync {
             }
             let created_at = self
                 // A version the request named in full is the user's own choice,
-                // not one the cutoff picked, so it needs no warning.
-                .release_date_for_cutoff(config, candidate, before, candidate != query)
+                // not one the cutoff picked, so it needs no warning. `latest` and
+                // rolling channels are moving pointers, even when a backend lists
+                // one as a literal version, so they are not pins.
+                .release_date_for_cutoff(
+                    config,
+                    candidate,
+                    before,
+                    candidate != query || query == "latest" || self.is_rolling_channel(query),
+                )
                 .await;
             let info = VersionInfo {
                 version: candidate.clone(),
@@ -6967,6 +6974,38 @@ mod latest_version_tests {
             Some("3.0.0")
         );
         assert_eq!(unchecked_release(&backend.ba().short, "3.0.0"), None);
+    }
+
+    #[tokio::test]
+    async fn test_a_version_literally_named_latest_is_still_recorded() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        // The listing ends on a version actually called `latest`; the request
+        // `latest` is a moving pointer, not a pin on it.
+        let backend = LatestBackend::new("test-literal-latest")
+            .with_stable_result(None)
+            .with_remote_versions(vec![
+                VersionInfo {
+                    version: "1.0.0".to_string(),
+                    created_at: Some("2024-01-01".to_string()),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "latest".to_string(),
+                    ..Default::default()
+                },
+            ]);
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        let picked = backend
+            .latest_version(&config, Some("latest".to_string()), Some(before))
+            .await
+            .unwrap();
+        assert_eq!(picked.as_deref(), Some("latest"));
+        assert_eq!(
+            unchecked_release_cutoff(&backend.ba().short, "latest"),
+            Some(before)
+        );
     }
 
     #[tokio::test]
