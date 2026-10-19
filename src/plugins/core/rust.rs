@@ -795,8 +795,10 @@ impl Backend for RustPlugin {
         let current = current_channel_created_at(version, &config_env)
             .await
             .and_then(|ts| ts.parse::<jiff::Timestamp>().ok());
-        if current.is_some_and(|ts| ts < before) {
-            return Ok(None);
+        // Already old enough: pin to that build so a lockfile or an upgrade cannot move it.
+        if let Some(ts) = current.filter(|ts| *ts < before) {
+            let date = ts.to_zoned(jiff::tz::TimeZone::UTC).date();
+            return Ok(Some(format!("{version}-{date}")));
         }
         let server = rustup_dist_server(&config_env);
         let day = before.to_zoned(jiff::tz::TimeZone::UTC).date();
