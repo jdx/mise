@@ -139,26 +139,7 @@ impl Backend for DotnetPlugin {
         let channels: Vec<ChannelReleases> =
             parallel::parallel(urls, |url| async move { HTTP_FETCH.json(&url).await }).await?;
 
-        let mut versions = std::collections::BTreeSet::new();
-        for channel_data in &channels {
-            for release in &channel_data.releases {
-                let sdk_iter = release.sdk.iter();
-                let sdks_iter = release.sdks.iter().flatten();
-                for sdk in sdk_iter.chain(sdks_iter) {
-                    if let Some(ref version) = sdk.version {
-                        versions.insert(SortedVersion(version.clone()));
-                    }
-                }
-            }
-        }
-
-        Ok(versions
-            .into_iter()
-            .map(|v| VersionInfo {
-                version: v.0,
-                ..Default::default()
-            })
-            .collect())
+        Ok(sdk_versions(&channels))
     }
 
     async fn resolve_dynamic_alias(&self, version: &str) -> Result<Option<String>> {
@@ -502,6 +483,8 @@ struct ChannelReleases {
 
 #[derive(Deserialize)]
 struct Release {
+    #[serde(rename = "release-date")]
+    release_date: Option<String>,
     sdk: Option<Sdk>,
     sdks: Option<Vec<Sdk>>,
 }
@@ -509,6 +492,35 @@ struct Release {
 #[derive(Deserialize)]
 struct Sdk {
     version: Option<String>,
+}
+
+/// Every SDK version the channels list, oldest first, dated with the release
+/// that first shipped it. Runtime-only releases repeat the SDKs of earlier
+/// ones, so a version keeps the earliest `release-date` it appears under.
+fn sdk_versions(channels: &[ChannelReleases]) -> Vec<VersionInfo> {
+    let mut versions: std::collections::BTreeMap<SortedVersion, Option<String>> =
+        Default::default();
+    for release in channels.iter().flat_map(|c| &c.releases) {
+        let date = release.release_date.as_ref().filter(|d| !d.is_empty());
+        let sdks = release.sdk.iter().chain(release.sdks.iter().flatten());
+        for version in sdks.filter_map(|sdk| sdk.version.clone()) {
+            let entry = versions.entry(SortedVersion(version)).or_default();
+            // ISO dates order lexically, so this is not a version comparison.
+            if let Some(date) = date
+                && entry.as_ref().is_none_or(|known| date < known)
+            {
+                *entry = Some(date.clone());
+            }
+        }
+    }
+    versions
+        .into_iter()
+        .map(|(v, created_at)| VersionInfo {
+            version: v.0,
+            created_at,
+            ..Default::default()
+        })
+        .collect()
 }
 
 // --- global.json ---
@@ -545,6 +557,7 @@ impl PartialOrd for SortedVersion {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::duration::parse_into_timestamp;
     use crate::toolset::ToolSource;
 
     fn opts_with_runtime(runtime: &str) -> ToolVersionOptions {
@@ -613,6 +626,47 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    fn channel_releases(json: &str) -> ChannelReleases {
+        serde_json::from_str(json).unwrap()
+    }
+
+    const CHANNEL_JSON: &str = r#"{"releases": [
+        {"release-date": "2024-02-13", "sdk": {"version": "8.0.200"},
+         "sdks": [{"version": "8.0.200"}, {"version": "8.0.101"}]},
+        {"release-date": "2024-01-09", "sdk": {"version": "8.0.101"}},
+        {"release-date": "2024-03-12", "sdk": {"version": "8.0.201"}},
+        {"release-date": "", "sdk": {"version": "8.0.300-preview.1"}}
+    ]}"#;
+
+    #[test]
+    fn sdk_versions_carry_the_earliest_release_date() {
+        let versions = sdk_versions(&[channel_releases(CHANNEL_JSON)]);
+        let dated: Vec<_> = versions
+            .iter()
+            .map(|v| (v.version.as_str(), v.created_at.as_deref()))
+            .collect();
+        assert_eq!(
+            dated,
+            [
+                ("8.0.101", Some("2024-01-09")),
+                ("8.0.200", Some("2024-02-13")),
+                ("8.0.201", Some("2024-03-12")),
+                ("8.0.300-preview.1", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn sdk_versions_released_after_the_cutoff_are_hidden() {
+        let versions = sdk_versions(&[channel_releases(CHANNEL_JSON)]);
+        let cutoff = parse_into_timestamp("2024-02-20T00:00:00Z").unwrap();
+        let kept: Vec<_> = VersionInfo::filter_by_date(versions, cutoff)
+            .into_iter()
+            .map(|v| v.version)
+            .collect();
+        assert_eq!(kept, ["8.0.101", "8.0.200", "8.0.300-preview.1"]);
     }
 
     fn channel(version: &str, release_type: &str, support_phase: &str) -> Channel {
