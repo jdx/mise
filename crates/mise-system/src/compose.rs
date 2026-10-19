@@ -505,12 +505,45 @@ impl ComposeRequest {
             .suffix(".yaml")
             .tempfile()?;
         std::io::Write::write_all(&mut file, override_yaml.as_bytes())?;
-        let mut args = vec![
+        let mut args = Vec::new();
+        if self.files.is_empty() {
+            // `--file` turns off default discovery (and `COMPOSE_FILE`), so
+            // re-select the files compose recorded on the running project.
+            args.extend(
+                self.recorded_config_files(containers)?
+                    .into_iter()
+                    .flat_map(|file| ["--file".to_string(), file]),
+            );
+        }
+        args.extend([
             "--file".to_string(),
             file.path().to_string_lossy().to_string(),
-        ];
+        ]);
         args.extend(hash_args);
         parse_config_hashes(&self.compose_output(&args)?)
+    }
+
+    fn recorded_config_files(&self, containers: &[ComposeContainer]) -> Result<Vec<String>> {
+        let Some(container) = containers.first() else {
+            return Ok(vec![]);
+        };
+        let output = self.engine_output(&[
+            "inspect".to_string(),
+            "--format".to_string(),
+            "{{json .Config.Labels}}".to_string(),
+            container.id.clone(),
+        ])?;
+        let labels: HashMap<String, String> = serde_json::from_str(output.trim())?;
+        Ok(labels
+            .get("com.docker.compose.project.config_files")
+            .map(|files| {
+                files
+                    .split(',')
+                    .filter(|file| !file.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     fn running_is_converged(
