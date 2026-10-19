@@ -427,14 +427,17 @@ impl Backend for AquaBackend {
         let (target_os, target_arch) = Self::to_aqua_platform(&target);
         let target_libc = Self::target_variant_libc(&target, None);
         let mut tag = None;
-        for (candidate, _, _) in get_tags_with_release_dates(&pkg).await? {
-            if let Ok(Some((v, _))) = versioned_package_from_tag(
+        // Newest first and only tags with an asset, the same selection
+        // `_list_remote_versions` makes, so the date is the listed version's.
+        for (candidate, _, _) in get_tags_with_release_dates(&pkg).await?.into_iter().rev() {
+            if let Ok(Some((v, versioned_pkg))) = versioned_package_from_tag(
                 &pkg,
                 &candidate,
                 target_os,
                 target_arch,
                 target_libc.as_deref(),
             ) && v == version
+                && package_has_asset(&versioned_pkg)
             {
                 tag = Some(candidate);
                 break;
