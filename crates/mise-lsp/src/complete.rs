@@ -39,7 +39,7 @@ pub(crate) fn complete(text: &str, offset: usize, schema: &Schema) -> Vec<Item> 
         return vec![];
     }
     let trimmed = before.trim_start();
-    let (table, in_string) = scan(&index, line);
+    let (table, in_string) = scan(&index, line, before);
     if in_string {
         return vec![];
     }
@@ -145,14 +145,15 @@ fn value_items(
         .collect()
 }
 
-/// The table a line belongs to, and whether the line is inside a multiline string.
+/// The table a line belongs to, and whether the cursor is inside a multiline string.
 ///
 /// The table is the nearest header above the line that is not itself string content. A header
 /// of an array of tables (`[[watch_files]]`) names its latest element, so the path ends in an
-/// index, which is how the schema walk enters an array's items.
-fn scan(index: &LineIndex, line: usize) -> (Vec<String>, bool) {
+/// index, which is how the schema walk enters an array's items. `before` is the text of the
+/// cursor's line up to the cursor.
+fn scan(index: &LineIndex, line: usize, before: &str) -> (Vec<String>, bool) {
     let mut table = vec![];
-    let mut open: Option<&str> = None;
+    let mut open = None;
     for l in 0..line {
         let text = index.line(l);
         if open.is_none()
@@ -166,16 +167,54 @@ fn scan(index: &LineIndex, line: usize) -> (Vec<String>, bool) {
                 table.push("0".to_string());
             }
         }
-        for delimiter in ["\"\"\"", "'''"] {
-            let count = text.matches(delimiter).count();
-            match open {
-                Some(d) if d == delimiter && count % 2 == 1 => open = None,
-                None if count % 2 == 1 => open = Some(delimiter),
+        open = advance(text, open);
+    }
+    (table, advance(before, open).is_some())
+}
+
+/// The quote of the multiline string still open at the end of `text`, given the one open at its
+/// start. Triple quotes only count outside comments and single-line strings.
+fn advance(text: &str, mut open: Option<char>) -> Option<char> {
+    let chars: Vec<char> = text.chars().collect();
+    let triple = |i: usize, q: char| chars.get(i..i + 3) == Some(&[q, q, q][..]);
+    let mut single = None;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if let Some(q) = open {
+            if q == '"' && c == '\\' {
+                i += 2;
+            } else if triple(i, q) {
+                open = None;
+                i += 3;
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+        if let Some(q) = single {
+            if q == '"' && c == '\\' {
+                i += 2;
+                continue;
+            }
+            if c == q {
+                single = None;
+            }
+        } else {
+            match c {
+                '#' => break,
+                '"' | '\'' if triple(i, c) => {
+                    open = Some(c);
+                    i += 3;
+                    continue;
+                }
+                '"' | '\'' => single = Some(c),
                 _ => {}
             }
         }
+        i += 1;
     }
-    (table, open.is_some())
+    open
 }
 
 fn unquoted_equals(text: &str) -> Option<usize> {
@@ -290,6 +329,18 @@ mod tests {
         let text = "[settings]\nnote = \"\"\"\n[[ -f x ]] && y\n\"\"\"\n|";
         assert_eq!(labels(text), ["color", "mode"]);
         assert!(labels("[settings]\nnote = \"\"\"\nco|").is_empty());
+    }
+
+    #[test]
+    fn triple_quotes_in_comments_and_literals_open_nothing() {
+        assert_eq!(labels("[settings]\n# \"\"\"\nco|"), ["color"]);
+        assert_eq!(labels("[settings]\nnote = '\"\"\"'\nco|"), ["color"]);
+        assert_eq!(labels("[settings]\nnote = \"a\\\"\"\"\"\nco|"), ["color"]);
+    }
+
+    #[test]
+    fn a_multiline_string_opened_on_the_cursor_line_completes_nothing() {
+        assert!(labels("[settings]\nnote = \"\"\"co|").is_empty());
     }
 
     #[test]
