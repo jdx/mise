@@ -228,6 +228,12 @@ pub struct ToolHttpOptions {
     pub version_json_path: Option<String>,
     /// expr-lang expression post-processing versions (variables: body, versions)
     pub version_expr: Option<String>,
+    /// url holding release dates; defaults to the version_list_url body
+    pub version_date_url: Option<String>,
+    /// expr-lang expression returning the url of the next page of version_date_url, or nil after the last (variables: body, url)
+    pub version_date_next_expr: Option<String>,
+    /// expr-lang expression mapping each version to its release date, as a list of [version, date] pairs or a map of version to date (variables: body, bodies, versions)
+    pub version_date_expr: Option<String>,
 }
 
 #[derive(JsonSchema)]

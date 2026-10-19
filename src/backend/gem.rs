@@ -6,6 +6,7 @@ use crate::cmd::CmdLineRunner;
 #[cfg(unix)]
 use crate::env;
 use crate::file;
+use crate::hash;
 use crate::http::HTTP_FETCH;
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
@@ -17,9 +18,22 @@ use indoc::formatdoc;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
 use std::path::Path;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::OnceCell as TokioOnceCell;
 use url::Url;
+
+/// The source `gem` uses when none is configured.
+const DEFAULT_GEM_SOURCE: &str = "https://rubygems.org/";
+
+/// When `gem sources` last failed, so the versions-host check does not spawn it
+/// on every listing. The failure expires, since the cause may be transient
+/// (Ruby not installed yet) and the registry matters once it can be read.
+static GEM_SOURCE_FAILED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// How long a failed `gem sources` is remembered.
+const GEM_SOURCE_RETRY_AFTER: Duration = Duration::from_secs(30);
 
 /// Cached gem source URL, memoized globally after first successful detection
 static GEM_SOURCE: TokioOnceCell<String> = TokioOnceCell::const_new();
@@ -70,6 +84,34 @@ impl Backend for GemBackend {
     /// the digest, so an ordinary rubygems.org tool keeps one shared entry.
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
         &["source"]
+    }
+
+    /// A `source` option or a primary `gem sources` entry other than
+    /// rubygems.org lists its own gems, which the shared versions host cannot
+    /// know. The context is a digest, since a source may carry a credential.
+    /// A machine where `gem sources` cannot run lists from rubygems.org, as
+    /// listing does.
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        if let Some(source) = self.configured_source(config).await? {
+            return Ok(Some(hash::hash_to_str(&source.as_str())));
+        }
+        // A machine where `gem sources` cannot run usually keeps failing; asking again
+        // on every listing, cache hits included, would spawn it each time.
+        let recently_failed = GEM_SOURCE_FAILED_AT
+            .lock()
+            .unwrap()
+            .is_some_and(|at| at.elapsed() < GEM_SOURCE_RETRY_AFTER);
+        if recently_failed {
+            return Ok(None);
+        }
+        let source = self.detect_gem_source(config).await;
+        if source.is_err() {
+            *GEM_SOURCE_FAILED_AT.lock().unwrap() = Some(Instant::now());
+        }
+        Ok(source
+            .ok()
+            .filter(|source| *source != DEFAULT_GEM_SOURCE)
+            .map(|source| hash::hash_to_str(&source)))
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -240,14 +282,22 @@ impl GemBackend {
     /// Get the primary gem source URL using the mise-managed Ruby environment.
     /// The result is memoized globally after first successful detection.
     async fn get_gem_source(&self, config: &Arc<Config>) -> &'static str {
-        const DEFAULT_SOURCE: &str = "https://rubygems.org/";
+        match self.detect_gem_source(config).await {
+            Ok(source) => source,
+            Err(e) => {
+                warn!("{e}, falling back to rubygems.org");
+                DEFAULT_GEM_SOURCE
+            }
+        }
+    }
 
+    /// The primary `gem sources` entry, memoized only on success.
+    async fn detect_gem_source(&self, config: &Arc<Config>) -> Result<&'static str> {
         // Get the mise-managed Ruby environment
         let env = self.dependency_env(config).await.unwrap_or_default();
         let gem = self.spawn_program(config, None, "gem").await;
 
-        // Try to initialize the source - only memoize on success
-        match GEM_SOURCE
+        GEM_SOURCE
             .get_or_try_init(|| async {
                 let output = crate::cmd::cmd_read_async(&gem, &["sources"], &env)
                     .await
@@ -256,13 +306,7 @@ impl GemBackend {
                 Ok::<_, eyre::Report>(parse_gem_source_output(&output))
             })
             .await
-        {
-            Ok(source) => source.as_str(),
-            Err(e) => {
-                warn!("{e}, falling back to rubygems.org");
-                DEFAULT_SOURCE
-            }
-        }
+            .map(String::as_str)
     }
 }
 

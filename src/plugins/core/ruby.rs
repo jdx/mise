@@ -18,7 +18,7 @@ use crate::duration::DAILY;
 use crate::env::PATH_KEY;
 use crate::git::{CloneOptions, Git};
 use crate::github::{self, GithubRelease};
-use crate::http::HTTP;
+use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
@@ -26,6 +26,52 @@ use crate::plugins::PluginSource;
 use crate::toolset::{ToolRequest, ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 use crate::{file, hash, plugins, timeout};
+
+/// ruby-lang.org's table of every MRI release, with its date.
+const RUBY_LANG_RELEASES_URL: &str =
+    "https://raw.githubusercontent.com/ruby/www.ruby-lang.org/master/_data/releases.yml";
+
+/// Maven Central's directory of jruby distributions, one entry per release.
+const JRUBY_MAVEN_LISTING_URL: &str = "https://repo1.maven.org/maven2/org/jruby/jruby-dist/";
+
+/// Reads the `- version:` / `date:` pairs of ruby-lang.org's `releases.yml` into timestamps.
+fn parse_ruby_lang_releases(index: &str) -> HashMap<String, String> {
+    let mut dates = HashMap::new();
+    let mut version = None;
+    for line in index.lines() {
+        if let Some(v) = line.strip_prefix("- version:") {
+            version = Some(v.trim().to_string());
+        } else if let Some(d) = line.strip_prefix("  date:")
+            && let Some(v) = version.take()
+            && let Some(ts) = date_to_timestamp(d.trim())
+        {
+            dates.insert(v, ts);
+        }
+    }
+    dates
+}
+
+/// Turns `YYYY-MM-DD` into a UTC timestamp, or `None` for any other shape.
+fn date_to_timestamp(date: &str) -> Option<String> {
+    date.parse::<jiff::civil::Date>()
+        .ok()
+        .map(|d| format!("{d}T00:00:00Z"))
+}
+
+/// Reads an Apache-style directory listing (`<a href="9.4.9.0/">` then `YYYY-MM-DD HH:MM`) into
+/// timestamps keyed by directory name.
+fn parse_maven_listing(listing: &str) -> HashMap<String, String> {
+    regex!(r#"href="(\d[^/"]*)/"[^\n]*?(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})"#)
+        .captures_iter(listing)
+        .map(|c| (c[1].to_string(), format!("{}T{}:00Z", &c[2], &c[3])))
+        .collect()
+}
+
+/// oracle/truffleruby tags releases `vm-<version>` up to 22.x and `graal-<version>` after.
+fn truffleruby_tag_to_version(tag: &str) -> Option<&str> {
+    tag.strip_prefix("vm-")
+        .or_else(|| tag.strip_prefix("graal-"))
+}
 
 #[derive(Debug)]
 pub(super) struct RubyPlugin {
@@ -507,7 +553,13 @@ impl RubyPlugin {
         }
     }
 
-    /// Fetch publication timestamps for Ruby versions from GitHub releases.
+    /// Fetch publication timestamps for ruby-build definitions, keyed by definition name.
+    ///
+    /// MRI comes from ruby/ruby's GitHub releases, which only cover the recent versions, then from
+    /// ruby-lang.org's release index for the rest. jruby comes from Maven Central's `jruby-dist`
+    /// listing and truffleruby from oracle/truffleruby's GitHub releases. Rolling `-dev`
+    /// definitions and the other implementations (rubinius, mruby, ree, ...) publish no release
+    /// date, so they stay undated.
     async fn fetch_ruby_release_dates(&self) -> Result<HashMap<String, String>> {
         let mut dates = HashMap::new();
         match github::list_releases("ruby/ruby").await {
@@ -523,6 +575,53 @@ impl RubyPlugin {
                     return Err(err).wrap_err("failed to fetch Ruby release metadata");
                 }
                 debug!("Failed to fetch Ruby release dates: {err}");
+            }
+        }
+        match HTTP_FETCH.get_text_cached(RUBY_LANG_RELEASES_URL).await {
+            Ok(index) => {
+                for (version, date) in parse_ruby_lang_releases(&index) {
+                    dates.entry(version).or_insert(date);
+                }
+            }
+            Err(err) => {
+                if strict_metadata() {
+                    return Err(err).wrap_err("failed to fetch the ruby-lang.org release index");
+                }
+                debug!("Failed to fetch the ruby-lang.org release index: {err}");
+            }
+        }
+        match HTTP_FETCH.get_html(JRUBY_MAVEN_LISTING_URL).await {
+            Ok(listing) => {
+                for (version, date) in parse_maven_listing(&listing) {
+                    dates.insert(format!("jruby-{version}"), date);
+                }
+            }
+            Err(err) => {
+                if strict_metadata() {
+                    return Err(err).wrap_err("failed to fetch the jruby release listing");
+                }
+                debug!("Failed to fetch the jruby release listing: {err}");
+            }
+        }
+        match github::list_releases_including_prereleases("oracle/truffleruby").await {
+            Ok(releases) => {
+                for release in releases {
+                    if let Some(version) = truffleruby_tag_to_version(&release.tag_name) {
+                        // The GraalVM build ships from the same release as the native one.
+                        for name in ["truffleruby", "truffleruby+graalvm"] {
+                            dates.insert(
+                                format!("{name}-{version}"),
+                                release.released_at().to_string(),
+                            );
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                if strict_metadata() {
+                    return Err(err).wrap_err("failed to fetch TruffleRuby release metadata");
+                }
+                debug!("Failed to fetch TruffleRuby release dates: {err}");
             }
         }
         Ok(dates)
@@ -932,6 +1031,51 @@ mod tests {
             .find(|platform| platform != &Platform::current())
             .unwrap();
         PlatformTarget::new(platform)
+    }
+
+    #[test]
+    fn test_parse_ruby_lang_releases() {
+        let index = "\
+# comment
+- version: 4.1.0-preview1
+  date: 2026-10-12
+  tag: v4.1.0-preview1
+- version: 1.8.7-p374
+  date: 2013-06-27
+- version: 9.9.9
+  date: not-a-date
+- version: 2.1.10
+  date: 2016-04-01
+";
+        let dates = parse_ruby_lang_releases(index);
+        assert_eq!(dates.len(), 3);
+        assert_eq!(dates["4.1.0-preview1"], "2026-10-12T00:00:00Z");
+        assert_eq!(dates["1.8.7-p374"], "2013-06-27T00:00:00Z");
+        assert_eq!(dates["2.1.10"], "2016-04-01T00:00:00Z");
+    }
+
+    #[test]
+    fn test_parse_maven_listing() {
+        let listing = r#"<a href="../">../</a>
+<a href="1.7.27/" title="1.7.27/">1.7.27/</a>                                            2019-05-16 09:12         -
+<a href="9.4.9.0/" title="9.4.9.0/">9.4.9.0/</a>                                          2024-04-23 18:30         -
+<a href="maven-metadata.xml" title="maven-metadata.xml">maven-metadata.xml</a>            2026-09-21 22:30       1234
+"#;
+        let dates = parse_maven_listing(listing);
+        assert_eq!(dates.len(), 2);
+        assert_eq!(dates["1.7.27"], "2019-05-16T09:12:00Z");
+        assert_eq!(dates["9.4.9.0"], "2024-04-23T18:30:00Z");
+    }
+
+    #[test]
+    fn test_truffleruby_tag_to_version() {
+        assert_eq!(truffleruby_tag_to_version("vm-22.3.1"), Some("22.3.1"));
+        assert_eq!(truffleruby_tag_to_version("graal-24.2.0"), Some("24.2.0"));
+        assert_eq!(
+            truffleruby_tag_to_version("vm-1.0.0-rc10"),
+            Some("1.0.0-rc10")
+        );
+        assert_eq!(truffleruby_tag_to_version("v1.0.0"), None);
     }
 
     #[test]

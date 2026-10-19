@@ -5493,6 +5493,18 @@
         "version_expr": {
           "type": "string",
           "description": "expr-lang expression post-processing versions (variables: body, versions)"
+        },
+        "version_date_url": {
+          "type": "string",
+          "description": "url holding release dates; defaults to the version_list_url body"
+        },
+        "version_date_next_expr": {
+          "type": "string",
+          "description": "expr-lang expression returning the url of the next page of version_date_url, or nil after the last (variables: body, url)"
+        },
+        "version_date_expr": {
+          "type": "string",
+          "description": "expr-lang expression mapping each version to its release date, as a list of [version, date] pairs or a map of version to date (variables: body, bodies, versions)"
         }
       }
     },

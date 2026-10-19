@@ -61,6 +61,12 @@ export const values: Record<string, string> = {
   "tools.<http:…>.headers.<key>": '"Bearer {{ env.ARTIFACTS_TOKEN }}"',
   "tools.<http:…>.headers_forward": '{ Authorization = ["*.example.com"] }',
   "tools.<http:…>.headers_forward.<key>": '["cdn.example.com"]',
+  "tools.<http:…>.version_date_url":
+    '"https://api.example.com/releases?limit=20"',
+  "tools.<http:…>.version_date_next_expr":
+    '"fromJSON(body).next != nil ? fromJSON(body).next : nil"',
+  "tools.<http:…>.version_date_expr":
+    '"map(fromJSON(body), { [#.version, #.published_at] })"',
   "tools.<http:…>.shared_extraction": "true",
   "tools.<http:…>.windows_script_interpreter": '"powershell"',
   "tools.<s3:…>.url":

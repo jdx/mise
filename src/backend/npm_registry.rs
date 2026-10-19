@@ -177,6 +177,17 @@ pub(crate) fn search_registry(query: &str) -> String {
     CONFIG.registry_for(&routing_name).to_string()
 }
 
+/// The registry `.npmrc` and `NPM_CONFIG_*` route metadata queries for `name` to.
+pub(crate) fn package_registry(name: &str) -> String {
+    CONFIG.registry_for(name).to_string()
+}
+
+/// Whether `registry` is the public npm registry, whose lists the versions
+/// host publishes.
+pub(crate) fn is_public_registry(registry: &str) -> bool {
+    registry.trim_end_matches('/') == "https://registry.npmjs.org"
+}
+
 /// Download the exact npm registry tarball for a package version, honoring
 /// user npm registry and authentication configuration.
 pub(crate) async fn download_tarball(name: &str, version: &str, path: &Path) -> Result<()> {
