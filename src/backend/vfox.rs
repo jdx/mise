@@ -396,8 +396,15 @@ impl Backend for VfoxBackend {
             return Ok(None);
         }
         let config = Config::get().await?;
-        let aliases = self.backend_aliases(&config).await?;
-        Ok(aliases.get(version).cloned())
+        // The lookup is optional: `v1.2.3` may be a literal release, and a registry
+        // outage must not stop it resolving as written.
+        match self.backend_aliases(&config).await {
+            Ok(aliases) => Ok(aliases.get(version).cloned()),
+            Err(err) => {
+                debug!("vfox alias lookup for {} failed: {err:#}", self.pathname);
+                Ok(None)
+            }
+        }
     }
 
     async fn install_version_(
