@@ -908,13 +908,23 @@ impl Backend for NPMBackend {
             let env = self.dependency_env(config).await?;
             // `npm view` resolves its registry from the whole environment, since
             // an `.npmrc` can interpolate any variable (`registry=${REGISTRY}`),
-            // and from the `.npmrc` files it finds: the user config (under
+            // and from the `.npmrc` files it finds: the global config, the user config (under
             // `HOME`, `USERPROFILE`, or `NPM_CONFIG_USERCONFIG`) and the one in
             // the prefix it runs in. Hash all of them.
-            let user_config = env
-                .iter()
-                .find(|(key, _)| key.eq_ignore_ascii_case("npm_config_userconfig"))
-                .map(|(_, path)| PathBuf::from(path));
+            let env_path = |name: &str| {
+                env.iter()
+                    .find(|(key, _)| key.eq_ignore_ascii_case(name))
+                    .map(|(_, path)| PathBuf::from(path))
+            };
+            let user_config = env_path("npm_config_userconfig");
+            // The global config: the file `NPM_CONFIG_GLOBALCONFIG` names, or
+            // `etc/npmrc` under the prefix an environment variable sets.
+            let global_configs = env_path("npm_config_globalconfig").into_iter().chain(
+                ["npm_config_prefix", "prefix"]
+                    .into_iter()
+                    .filter_map(env_path)
+                    .map(|prefix| prefix.join("etc").join("npmrc")),
+            );
             let homes = ["HOME", "USERPROFILE"]
                 .into_iter()
                 .filter_map(|key| env.get(key))
@@ -922,6 +932,7 @@ impl Backend for NPMBackend {
             let prefix = Self::npm_meta_prefix().ok().map(|dir| dir.join(".npmrc"));
             let npmrcs = user_config
                 .into_iter()
+                .chain(global_configs)
                 .chain(homes)
                 .chain(prefix)
                 .map(|path| std::fs::read_to_string(path).ok())
