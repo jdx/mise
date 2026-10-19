@@ -1,3 +1,4 @@
+mod keyring;
 mod lock;
 
 use crate::args::BackendArg;
@@ -398,8 +399,9 @@ impl Backend for PIPXBackend {
                 let registry_url = self.get_registry_url(config).await?;
                 if registry_url.contains("/json") {
                     debug!("Fetching JSON for {}", package);
-                    let url = registry_url.replace("{}", &package);
-                    let data: PypiPackage = HTTP_FETCH.json(url).await?;
+                    let (url, headers) =
+                        keyring::index_request(&registry_url.replace("{}", &package)).await?;
+                    let data: PypiPackage = HTTP_FETCH.json_with_headers(url, &headers).await?;
 
                     Self::versions_from_pypi_package(data)
                 } else {
@@ -466,7 +468,9 @@ impl Backend for PIPXBackend {
                         let url = registry_url.replace("{}", &package);
                         let versions = if registry_url.contains("/json") {
                             debug!("Fetching JSON for {}", package);
-                            let pkg: PypiPackage = HTTP_FETCH.json(url).await?;
+                            let (url, headers) = keyring::index_request(&url).await?;
+                            let pkg: PypiPackage =
+                                HTTP_FETCH.json_with_headers(url, &headers).await?;
                             Self::versions_from_pypi_package(pkg)
                         } else {
                             debug!("Fetching simple index for {}", package);
@@ -1020,8 +1024,8 @@ impl PIPXBackend {
                 "application/vnd.pypi.simple.v1+json, application/vnd.pypi.simple.v1+html;q=0.2, text/html;q=0.01",
             ),
         );
-        let url = reqwest::Url::parse(&url)?;
-        let headers = crate::http::with_host_auth(&url, &headers)?;
+        let (url, auth) = keyring::index_request(&url).await?;
+        headers.extend(auth);
         let resp = HTTP_FETCH.get_async_with_headers(url, &headers).await?;
         let content_type = resp
             .headers()

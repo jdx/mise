@@ -1201,7 +1201,17 @@ impl Client {
 
     pub async fn get_html<U: IntoUrl>(&self, url: U) -> Result<String> {
         let url = url.into_url()?;
-        let resp = self.get_async(url.clone()).await?;
+        let headers = host_auth_headers(&url)?;
+        self.get_html_with_headers(url, &headers).await
+    }
+
+    pub async fn get_html_with_headers<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+    ) -> Result<String> {
+        let url = url.into_url()?;
+        let resp = self.get_async_with_headers(url.clone(), headers).await?;
         let is_html = resp
             .headers()
             .get(CONTENT_TYPE)

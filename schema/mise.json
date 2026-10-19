@@ -2741,6 +2741,11 @@
           "type": "object",
           "unevaluatedProperties": false,
           "properties": {
+            "keyring_provider": {
+              "description": "Read a `pypi:` index password from a `keyring` command when the index URL names a user but no password.",
+              "type": "string",
+              "enum": ["disabled", "subprocess"]
+            },
             "registry_url": {
               "description": "Package index URL that `pypi:` tools list versions from, with `{}` in place of the package name.",
               "type": "string"
