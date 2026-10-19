@@ -1038,7 +1038,7 @@
     },
     "env_file_find_up": {
       "type": "boolean",
-      "description": "look for a relative env._.file path in the current directory and each parent directory",
+      "description": "search the config file's directory and each parent directory for a relative env._.file path. An absolute path searches its own directory and each parent for its file name",
       "default": false
     },
     "env_path": {

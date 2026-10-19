@@ -484,7 +484,7 @@ pub struct EnvToolsDecl(pub bool);
 #[schemars(extend("default" = false))]
 pub struct EnvFileExpandDecl(pub bool);
 
-/// look for a relative env._.file path in the current directory and each parent directory
+/// search the config file's directory and each parent directory for a relative env._.file path. An absolute path searches its own directory and each parent for its file name
 #[derive(JsonSchema)]
 #[schemars(extend("default" = false))]
 pub struct EnvFileFindUpDecl(pub bool);
