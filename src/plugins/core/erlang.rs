@@ -685,11 +685,7 @@ impl Backend for ErlangPlugin {
             // kerl lists every release but no dates. erlang/otp's GitHub
             // releases carry them; without them `minimum_release_age` could not
             // hold a version back.
-            let dates = match plugins::core::run_fetch_task_with_timeout_async(async || {
-                erlang_release_dates(&output).await
-            })
-            .await
-            {
+            let dates = match erlang_release_dates(&output).await {
                 Ok(dates) => dates,
                 Err(err) => {
                     warn!("could not read erlang release dates from GitHub: {err}");
@@ -808,7 +804,12 @@ const MAX_MISSING_DATE_LOOKUPS: usize = 5;
 /// lacks are looked up one by one.
 async fn erlang_release_dates(kerl_output: &str) -> Result<HashMap<String, String>> {
     let repo = "erlang/otp";
-    let releases = github::list_release_versions(github::API_URL, repo, false).await?;
+    // Each request is bounded on its own, so a slow lookup of one recent
+    // release costs only that date, not the ones already read.
+    let releases = plugins::core::run_fetch_task_with_timeout_async(async || {
+        github::list_release_versions(github::API_URL, repo, false).await
+    })
+    .await?;
     let mut dates = release_dates(&releases);
     let missing = kerl_versions(kerl_output, &HashMap::new())
         .into_iter()
@@ -818,7 +819,12 @@ async fn erlang_release_dates(kerl_output: &str) -> Result<HashMap<String, Strin
         .map(|v| v.version)
         .collect::<Vec<_>>();
     for version in missing {
-        match github::get_release(repo, &ErlangPlugin::release_tag(&version)).await {
+        let tag = ErlangPlugin::release_tag(&version);
+        let release = plugins::core::run_fetch_task_with_timeout_async(async || {
+            github::get_release(repo, &tag).await
+        })
+        .await;
+        match release {
             Ok(release) => {
                 dates.insert(version, release.released_at().to_string());
             }
