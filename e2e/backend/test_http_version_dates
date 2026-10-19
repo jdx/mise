@@ -73,3 +73,15 @@ version_expr = 'map(fromJSON(body).releases, { #.version })'
 version_date_url = "$BASE/page1.json"
 TOML
 assert_fail_contains "mise ls-remote http:orphan" "version_date_next_expr"
+
+# A next-page expression has nothing to page without a version_date_url.
+cat <<TOML >mise.toml
+[tools."http:nourl"]
+version = "latest"
+url = "$BASE/{{ version }}"
+version_list_url = "$BASE/releases.json"
+version_expr = 'map(fromJSON(body).releases, { #.version })'
+version_date_expr = 'map(fromJSON(body).releases, { [#.version, #.published] })'
+version_date_next_expr = 'nil'
+TOML
+assert_fail_contains "mise ls-remote http:nourl" "requires"

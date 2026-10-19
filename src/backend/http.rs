@@ -1146,6 +1146,9 @@ impl HttpBackend {
                     )
                     .await?
                 }
+                None if opts.version_date_next_expr().is_some() => {
+                    bail!("`version_date_next_expr` requires `version_date_url`")
+                }
                 None => vec![body],
             };
             version_list::eval_version_dates(date_expr, &bodies, &versions)
