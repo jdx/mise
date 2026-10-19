@@ -143,6 +143,13 @@ EOF
 MISE_CONFIG_DIR="$PWD/relative-config" mise use --global dummy@system
 assert_contains "cat relative-config/conf.d/relative-tools.toml" 'dummy = "system"'
 
+# A target whose template fails to render is rejected rather than ignored.
+cat >invalid-template.toml <<EOF
+[settings.write_targets]
+tools = "{{ missing_variable }}"
+EOF
+assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/invalid-template.toml mise use --global --dry-run invalid-template@system 2>&1" "settings.write_targets.tools must resolve to an absolute path"
+
 # A relative target that mise would not load still fails before writing an unreadable file.
 cat >invalid-relative.toml <<EOF
 [settings.write_targets]

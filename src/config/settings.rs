@@ -785,21 +785,25 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
 /// root, because a global file's root is `$HOME`, which never holds a loadable target. Dotfiles
 /// shared between machines can then name a sibling fragment (`tools = "tools.toml"`) without
 /// hardcoding the config directory.
-fn resolve_write_target_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
+fn resolve_write_target_paths(settings: &mut toml::Table, path: &Path) {
     let Some(targets) = settings
         .get_mut("write_targets")
         .and_then(toml::Value::as_table_mut)
     else {
-        return Ok(());
+        return;
     };
     let base = path.parent().map(Path::to_path_buf).unwrap_or_default();
     let mut resolve = settings_path_resolver(path, base);
     for section in ["tools", "packages", "dotfiles"] {
-        if let Some(target) = targets.get_mut(section) {
-            resolve(&format!("settings.write_targets.{section}"), target)?;
+        if let Some(target) = targets.get_mut(section)
+            && let Err(err) = resolve(&format!("settings.write_targets.{section}"), target)
+        {
+            // Dropping the whole settings layer would silently send global writes to the
+            // default file. The unrendered template is not an absolute path, so the write
+            // fails in `configured_global_write_path` instead.
+            debug!("{err}");
         }
     }
-    Ok(())
 }
 
 /// mise behavior layered on the generated [`Settings`] type, which lives in the
@@ -1115,7 +1119,7 @@ impl SettingsExt for Settings {
             // never rewritten.
             resolve_aqua_registry_paths(settings, path);
             resolve_age_paths(settings, path)?;
-            resolve_write_target_paths(settings, path)?;
+            resolve_write_target_paths(settings, path);
             resolve_task_disable_paths(settings, path);
         }
         if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
@@ -2854,7 +2858,7 @@ mod tests {
         )
         .unwrap();
 
-        resolve_write_target_paths(&mut settings, &config_path).unwrap();
+        resolve_write_target_paths(&mut settings, &config_path);
 
         assert_eq!(
             settings["write_targets"]["tools"].as_str(),
@@ -2871,7 +2875,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_write_target_template_names_the_setting_and_file() {
+    fn invalid_write_target_template_is_left_for_the_write_check_to_reject() {
         let dir = tempfile::tempdir().unwrap();
         let mut settings = toml::from_str::<toml::Table>(
             r#"
@@ -2881,10 +2885,12 @@ mod tests {
         )
         .unwrap();
 
-        let err = resolve_write_target_paths(&mut settings, &dir.path().join("mise.toml"))
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("settings.write_targets.tools"), "{err}");
+        resolve_write_target_paths(&mut settings, &dir.path().join("mise.toml"));
+
+        assert_eq!(
+            settings["write_targets"]["tools"].as_str(),
+            Some("{{ missing_variable }}")
+        );
     }
 
     #[test]
