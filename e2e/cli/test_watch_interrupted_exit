@@ -24,4 +24,4 @@ assert_not_contains_text "$output" "exited with"
 status=0
 output=$(FAKE_WATCHEXEC_STATUS=2 PATH="$fake_bin:$PATH" mise watch example 2>&1) || status=$?
 assert "echo $status" "1"
-assert_contains_text "$output" "watchexec exited with"
+assert_contains_text "$output" "command watchexec exited with exit status: 2"
