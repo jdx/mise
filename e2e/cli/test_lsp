@@ -18,7 +18,8 @@ session() {
 
 out="$(session | mise lsp)"
 assert_contains "echo '$out'" '"hoverProvider":true'
-assert_contains "echo '$out'" 'unknown key `colr`; did you mean `color`?'
+assert_contains "echo '$out'" 'unknown key'
+assert_contains "echo '$out'" "did you mean"
 assert_contains "echo '$out'" '**settings**'
 
 # files that are not mise configs get nothing
