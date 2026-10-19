@@ -4077,10 +4077,7 @@ pub trait Backend: Debug + Send + Sync {
                     Ok(created_at) => {
                         remember_on_demand_release_date(&backend, candidate, created_at.as_deref());
                         if created_at.is_none() {
-                            warn_once!(
-                                "{}@{candidate} has no release date, so the {before} cutoff cannot be checked and it is allowed",
-                                self.id()
-                            );
+                            note_undated_release(&backend, candidate, before);
                         }
                         created_at
                     }
@@ -6810,6 +6807,27 @@ mod latest_version_tests {
     }
 
     #[tokio::test]
+    async fn test_undated_version_picked_under_a_cutoff_is_recorded_for_install() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = partially_dated_backend("test-undated-recorded");
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        // Resolving only records the gap; the warning belongs to install.
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("3.0.0")
+        );
+        let id = backend.ba().full();
+        assert_eq!(unchecked_release_cutoff(&id, "3.0.0"), Some(before));
+        assert_eq!(unchecked_release_cutoff(&id, "2.0.0"), None);
+    }
+
+    #[tokio::test]
     async fn test_cutoff_keeps_versions_a_backend_cannot_date() {
         let _settings = crate::test::SettingsGuard::lock();
         let config = Config::get().await.unwrap();
@@ -8456,9 +8474,47 @@ fn remember_on_demand_release_date(backend: &str, version: &str, created_at: Opt
 /// The oldest rather than the whole map: another resolution may still be
 /// relying on a date it stored to say which versions its cutoff hid. Losing one
 /// costs a repeated lookup, nothing more.
-fn evict_oldest_release_dates(dates: &mut OnDemandReleaseDates, limit: usize) {
+fn evict_oldest_release_dates<V>(dates: &mut IndexMap<(String, String), V>, limit: usize) {
     while dates.len() >= limit {
         dates.shift_remove_index(0);
+    }
+}
+
+/// Versions a release-age cutoff let through because no date could be found,
+/// keyed like [`ON_DEMAND_RELEASE_DATES`], with the cutoff that went unchecked.
+///
+/// Resolution only records them. Resolution also runs for `mise env`, `mise ls`
+/// and `mise outdated`, which a shell prompt can trigger on every command, so
+/// the warning waits until the version is about to be installed
+/// ([`warn_if_release_date_unchecked`]).
+static UNDATED_RELEASES: LazyLock<Mutex<IndexMap<(String, String), Timestamp>>> =
+    LazyLock::new(Default::default);
+
+fn note_undated_release(backend: &str, version: &str, before: Timestamp) {
+    if let Ok(mut undated) = UNDATED_RELEASES.lock() {
+        evict_oldest_release_dates(&mut undated, ON_DEMAND_RELEASE_DATE_LIMIT);
+        undated.insert((backend.to_string(), version.to_string()), before);
+    }
+}
+
+/// The cutoff that went unchecked for `version`, if resolution picked it
+/// without a release date.
+fn unchecked_release_cutoff(backend: &str, version: &str) -> Option<Timestamp> {
+    UNDATED_RELEASES
+        .lock()
+        .ok()?
+        .get(&(backend.to_string(), version.to_string()))
+        .copied()
+}
+
+/// Warn that `version` is about to be installed although the release-age cutoff
+/// could not check it, because its backend returned no release date for it.
+/// Silent for a version resolution did not pick under a cutoff.
+pub(crate) fn warn_if_release_date_unchecked(backend: &str, version: &str) {
+    if let Some(before) = unchecked_release_cutoff(backend, version) {
+        warn_once!(
+            "{backend}@{version} has no release date, so the {before} cutoff cannot be checked and it is allowed"
+        );
     }
 }
 

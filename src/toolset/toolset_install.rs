@@ -891,6 +891,9 @@ impl Toolset {
             tv.install_path_is_explicit = true;
         }
         let before_date = transitive_dependency_before_date(tr, &tv);
+        if before_date.is_some() && !opts.dry_run {
+            crate::backend::warn_if_release_date_unchecked(&tv.ba().full(), &tv.version);
+        }
 
         let ctx = InstallContext {
             config: config.clone(),
