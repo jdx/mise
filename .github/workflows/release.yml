@@ -326,7 +326,11 @@ jobs:
       # The release job globs artifacts/*/mise-<version>-<platform>.zip, so the unsigned zip must not
       # share the final name.
       - name: Mark zip as unsigned
-        run: Get-ChildItem dist/*.zip | Rename-Item -NewName { "unsigned-" + $_.Name }
+        shell: pwsh
+        run: |
+          foreach ($zip in @(Get-ChildItem dist/*.zip)) {
+            Rename-Item $zip.FullName "unsigned-$($zip.Name)"
+          }
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unsigned-tarball-${{matrix.target}}
