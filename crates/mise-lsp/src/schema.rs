@@ -192,6 +192,10 @@ pub(crate) mod tests {
                 "min_version": {"description": "minimum version of mise", "type": "string"},
                 "old": {"deprecated": true, "type": "string"},
                 "settings": {"$ref": "#/$defs/settings"},
+                "list": {
+                    "type": "array",
+                    "items": {"type": "object", "properties": {"name": {"type": "string"}}}
+                },
                 "tools": {
                     "type": "object",
                     "patternProperties": {"^node$": {"type": "string"}},
@@ -217,7 +221,7 @@ pub(crate) mod tests {
     fn keys_follow_refs() {
         let schema = sample();
         let keys: Vec<_> = schema.keys::<&str>(&[]).iter().map(|(k, _)| *k).collect();
-        assert_eq!(keys, ["min_version", "old", "settings", "tools"]);
+        assert_eq!(keys, ["list", "min_version", "old", "settings", "tools"]);
         let keys: Vec<_> = schema.keys(&["settings"]).iter().map(|(k, _)| *k).collect();
         assert_eq!(keys, ["color", "mode"]);
     }

@@ -39,29 +39,41 @@ pub(crate) fn complete(text: &str, offset: usize, schema: &Schema) -> Vec<Item> 
         return vec![];
     }
     let trimmed = before.trim_start();
+    let (table, in_string) = scan(&index, line);
+    if in_string {
+        return vec![];
+    }
     if let Some(header) = trimmed.strip_prefix('[') {
         let header = header.trim_start_matches('[');
-        return key_items(schema, &[], header, offset);
+        return key_items(schema, &[], header, after, offset);
     }
-    let table = table_path(&index, line);
     match unquoted_equals(before) {
         Some(eq) => {
             let mut path = table;
             path.extend(keypath::split(&before[..eq]));
             value_items(schema, &path, &before[eq + 1..], after, offset)
         }
-        None => key_items(schema, &table, trimmed, offset),
+        None => key_items(schema, &table, trimmed, after, offset),
     }
 }
 
 /// Keys for the segment being typed at the end of `typed`, which is a dotted key or header.
-fn key_items(schema: &Schema, table: &[String], typed: &str, offset: usize) -> Vec<Item> {
+fn key_items(
+    schema: &Schema,
+    table: &[String],
+    typed: &str,
+    after: &str,
+    offset: usize,
+) -> Vec<Item> {
     let mut segments = keypath::split(typed);
     let partial = segments.pop().unwrap_or_default();
     let mut parent = table.to_vec();
     parent.extend(segments);
     let raw = typed.rsplit('.').next().unwrap_or(typed).trim_start();
-    let replace = offset - raw.len()..offset;
+    let rest = after
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+        .unwrap_or(after.len());
+    let replace = offset - raw.len()..offset + rest;
     let needle = partial.to_lowercase();
     schema
         .keys(&parent)
@@ -95,8 +107,16 @@ fn value_items(
     offset: usize,
 ) -> Vec<Item> {
     let raw = typed.trim_start();
-    let replace = offset - raw.len()..offset;
     let quoted = raw.strip_prefix('"');
+    // The rest of the value under the cursor goes too: up to the closing quote in a string,
+    // else the rest of the word.
+    let rest = match quoted {
+        Some(_) => after.find('"').unwrap_or(after.len()),
+        None => after
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.'))
+            .unwrap_or(after.len()),
+    };
+    let replace = offset - raw.len()..offset + rest;
     let needle = quoted.unwrap_or(raw);
     schema
         .values(&schema.at(path))
@@ -104,7 +124,7 @@ fn value_items(
         .filter_map(|value| {
             let (label, insert) = match (&value, quoted.is_some()) {
                 (Value::String(s), true) => {
-                    let close = if after.starts_with('"') { "" } else { "\"" };
+                    let close = if after.contains('"') { "" } else { "\"" };
                     (s.clone(), format!("\"{s}{close}"))
                 }
                 (Value::String(s), false) => (s.clone(), format!("\"{s}\"")),
@@ -125,17 +145,37 @@ fn value_items(
         .collect()
 }
 
-/// The table a line belongs to: the nearest header above it.
-fn table_path(index: &LineIndex, line: usize) -> Vec<String> {
-    for l in (0..line).rev() {
-        let text = index.line(l).trim();
-        if let Some(rest) = text.strip_prefix('[') {
+/// The table a line belongs to, and whether the line is inside a multiline string.
+///
+/// The table is the nearest header above the line that is not itself string content. A header
+/// of an array of tables (`[[watch_files]]`) names its latest element, so the path ends in an
+/// index, which is how the schema walk enters an array's items.
+fn scan(index: &LineIndex, line: usize) -> (Vec<String>, bool) {
+    let mut table = vec![];
+    let mut open: Option<&str> = None;
+    for l in 0..line {
+        let text = index.line(l);
+        if open.is_none()
+            && let Some(rest) = text.trim().strip_prefix('[')
+        {
+            let array = rest.starts_with('[');
             let rest = rest.trim_start_matches('[');
             let end = unquoted(rest, ']').unwrap_or(rest.len());
-            return keypath::split(&rest[..end]);
+            table = keypath::split(&rest[..end]);
+            if array {
+                table.push("0".to_string());
+            }
+        }
+        for delimiter in ["\"\"\"", "'''"] {
+            let count = text.matches(delimiter).count();
+            match open {
+                Some(d) if d == delimiter && count % 2 == 1 => open = None,
+                None if count % 2 == 1 => open = Some(delimiter),
+                _ => {}
+            }
         }
     }
-    vec![]
+    (table, open.is_some())
 }
 
 fn unquoted_equals(text: &str) -> Option<usize> {
@@ -178,7 +218,7 @@ mod tests {
 
     #[test]
     fn top_level_keys_skip_deprecated_ones() {
-        assert_eq!(labels("|"), ["min_version", "settings", "tools"]);
+        assert_eq!(labels("|"), ["list", "min_version", "settings", "tools"]);
         assert_eq!(labels("se|"), ["settings"]);
     }
 
@@ -209,6 +249,47 @@ mod tests {
     #[test]
     fn comments_complete_nothing() {
         assert!(labels("# se|").is_empty());
+    }
+
+    /// Completes at the `|` and applies the first item to the text.
+    fn applied(marked: &str) -> String {
+        let offset = marked.find('|').unwrap();
+        let text = marked.replacen('|', "", 1);
+        let item = complete(&text, offset, &sample()).remove(0);
+        format!(
+            "{}{}{}",
+            &text[..item.replace.start],
+            item.insert,
+            &text[item.replace.end..]
+        )
+    }
+
+    #[test]
+    fn completing_inside_a_word_replaces_all_of_it() {
+        assert_eq!(
+            applied("[settings]\nco|lor = true"),
+            "[settings]\ncolor = true"
+        );
+        assert_eq!(
+            applied("[settings]\ncolor = tr|ue"),
+            "[settings]\ncolor = true"
+        );
+        assert_eq!(
+            applied("[settings]\nmode = \"|b\""),
+            "[settings]\nmode = \"a\""
+        );
+    }
+
+    #[test]
+    fn array_tables_enter_their_items() {
+        assert_eq!(labels("[[list]]\n|"), ["name"]);
+    }
+
+    #[test]
+    fn multiline_strings_do_not_open_tables() {
+        let text = "[settings]\nnote = \"\"\"\n[[ -f x ]] && y\n\"\"\"\n|";
+        assert_eq!(labels(text), ["color", "mode"]);
+        assert!(labels("[settings]\nnote = \"\"\"\nco|").is_empty());
     }
 
     #[test]
