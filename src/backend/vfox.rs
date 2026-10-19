@@ -352,7 +352,8 @@ impl Backend for VfoxBackend {
                     return Ok(versions
                         .into_iter()
                         .map(|v| VersionInfo {
-                            version: v,
+                            version: v.version,
+                            created_at: valid_created_at(&this.pathname, v.created_at),
                             ..Default::default()
                         })
                         .collect());
@@ -367,6 +368,7 @@ impl Backend for VfoxBackend {
                         version: v.version,
                         rolling: v.rolling,
                         checksum: v.checksum,
+                        created_at: valid_created_at(&this.pathname, v.created_at),
                         ..Default::default()
                     })
                     .collect())
@@ -1018,9 +1020,28 @@ fn verified_attestation_to_provenance(att: vfox::VerifiedAttestation) -> Provena
     }
 }
 
+/// Passes a plugin-reported release date through only if mise can parse it, so
+/// a malformed date leaves the version undated instead of failing the listing.
+fn valid_created_at(plugin: &str, created_at: Option<String>) -> Option<String> {
+    let ts = created_at?;
+    if crate::duration::parse_into_timestamp(&ts).is_err() {
+        trace!("vfox plugin {plugin} returned an invalid created_at {ts:?}; leaving it undated");
+        return None;
+    }
+    Some(ts)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn test_valid_created_at() {
+        let ok = Some("2026-01-31T12:00:00Z".to_string());
+        assert_eq!(valid_created_at("p", ok.clone()), ok);
+        assert_eq!(valid_created_at("p", Some("yesterday-ish".into())), None);
+        assert_eq!(valid_created_at("p", None), None);
+    }
 
     #[test]
     fn test_normalize_install_log() {

@@ -6,7 +6,7 @@ impl Vfox {
         sdk: &str,
         tool: &str,
         options: IndexMap<String, toml::Value>,
-    ) -> Result<Vec<String>> {
+    ) -> Result<Vec<BackendVersion>> {
         let plugin = self.get_sdk_with_env(sdk)?;
         let ctx = BackendListVersionsContext {
             tool: tool.to_string(),
