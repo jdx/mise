@@ -6,14 +6,14 @@ local json = require("json")
 --- Only published releases are listed, so older versions may have no date.
 local function add_release_dates(dates, repo, prefix)
     for page = 1, 5 do
-        local resp, err = http.get({
+        local resp, err = http.try_get({
             url = "https://api.github.com/repos/" .. repo .. "/releases?per_page=100&page=" .. page,
         })
         if err ~= nil or resp.status_code ~= 200 then
             return
         end
-        local releases = json.decode(resp.body)
-        if releases == nil or #releases == 0 then
+        local ok, releases = pcall(json.decode, resp.body)
+        if not ok or type(releases) ~= "table" or #releases == 0 then
             return
         end
         for _, rel in ipairs(releases) do

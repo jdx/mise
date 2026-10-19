@@ -29,14 +29,14 @@ end
 local function release_dates()
   local dates = {}
   for page = 1, 5 do
-    local resp, err = http.get({
+    local resp, err = http.try_get({
       url = "https://api.github.com/repos/clojure/brew-install/releases?per_page=100&page=" .. page,
     })
     if err ~= nil or resp.status_code ~= 200 then
       break
     end
-    local releases = json.decode(resp.body)
-    if releases == nil or #releases == 0 then
+    local ok, releases = pcall(json.decode, resp.body)
+    if not ok or type(releases) ~= "table" or #releases == 0 then
       break
     end
     for _, rel in ipairs(releases) do

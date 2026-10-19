@@ -8,15 +8,15 @@ local function release_dates(headers)
     local json = require("json")
     local dates = {}
     for page = 1, 5 do
-        local resp, err = http.get({
+        local resp, err = http.try_get({
             url = "https://api.github.com/repos/cisco/ChezScheme/releases?per_page=100&page=" .. page,
             headers = headers,
         })
         if err ~= nil or resp.status_code ~= 200 then
             break
         end
-        local releases = json.decode(resp.body)
-        if releases == nil or #releases == 0 then
+        local ok, releases = pcall(json.decode, resp.body)
+        if not ok or type(releases) ~= "table" or #releases == 0 then
             break
         end
         for _, rel in ipairs(releases) do

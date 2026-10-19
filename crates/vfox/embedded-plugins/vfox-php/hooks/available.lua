@@ -21,7 +21,7 @@ local function release_dates(majors)
     local json = require("json")
     local dates = {}
     for major, _ in pairs(majors) do
-        local resp, err = http.get({
+        local resp, err = http.try_get({
             url = "https://www.php.net/releases/index.php?json&max=1000&version=" .. major,
         })
         if err == nil and resp.status_code == 200 then

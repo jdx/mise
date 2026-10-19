@@ -61,7 +61,7 @@ end
 --- A failure only means no dates are reported.
 local function release_dates()
   local dates = {}
-  local resp, err = http.get({ url = "https://www.elastic.co/api/product_versions" })
+  local resp, err = http.try_get({ url = "https://www.elastic.co/api/product_versions" })
   if err ~= nil or resp.status_code ~= 200 then
     return dates
   end
