@@ -926,10 +926,12 @@ impl Backend for NPMBackend {
                 .chain(prefix)
                 .map(|path| std::fs::read_to_string(path).ok())
                 .collect::<Vec<_>>();
-            // mise's own variables (`MISE_OFFLINE`, ...) and `PATH` change with
-            // how mise runs, not with where npm reads versions from, so they
-            // stay out of the key (an offline run must find the online list)
-            // unless an `.npmrc` interpolates them (`registry=${MISE_ENV}`).
+            // Only what decides npm's registry stays in the key: its own
+            // `NPM_CONFIG_*` settings, the variables that locate its config
+            // files, and any variable an `.npmrc` interpolates
+            // (`registry=${MISE_ENV}`). The rest of the environment (mise's
+            // `MISE_OFFLINE`, session state, `PATH`) changes with how mise runs
+            // and would only miss the cache, an offline run most of all.
             static VAR_REF: LazyLock<regex::Regex> =
                 LazyLock::new(|| regex::Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)").unwrap());
             let referenced = npmrcs
@@ -941,8 +943,10 @@ impl Backend for NPMBackend {
             let env = env
                 .iter()
                 .filter(|(key, _)| {
-                    referenced.contains(&key.to_ascii_lowercase())
-                        || !(key.starts_with("MISE_") || key.eq_ignore_ascii_case("path"))
+                    let key = key.to_ascii_lowercase();
+                    referenced.contains(&key)
+                        || key.starts_with("npm_config_")
+                        || matches!(key.as_str(), "home" | "userprofile" | "prefix")
                 })
                 .collect::<BTreeMap<_, _>>();
             return Ok(Some(crate::hash::hash_to_str(&(env, npmrcs))));
