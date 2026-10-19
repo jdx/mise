@@ -18,7 +18,8 @@ use indoc::formatdoc;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::OnceCell as TokioOnceCell;
 use url::Url;
@@ -26,8 +27,13 @@ use url::Url;
 /// The source `gem` uses when none is configured.
 const DEFAULT_GEM_SOURCE: &str = "https://rubygems.org/";
 
-/// Set once `gem sources` fails, so the versions-host check stops retrying it.
-static GEM_SOURCE_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
+/// When `gem sources` last failed, so the versions-host check does not spawn it
+/// on every listing. The failure expires, since the cause may be transient
+/// (Ruby not installed yet) and the registry matters once it can be read.
+static GEM_SOURCE_FAILED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// How long a failed `gem sources` is remembered.
+const GEM_SOURCE_RETRY_AFTER: Duration = Duration::from_secs(30);
 
 /// Cached gem source URL, memoized globally after first successful detection
 static GEM_SOURCE: TokioOnceCell<String> = TokioOnceCell::const_new();
@@ -89,14 +95,18 @@ impl Backend for GemBackend {
         if let Some(source) = self.configured_source(config).await? {
             return Ok(Some(hash::hash_to_str(&source.as_str())));
         }
-        // A machine where `gem sources` cannot run keeps failing; asking again
+        // A machine where `gem sources` cannot run usually keeps failing; asking again
         // on every listing, cache hits included, would spawn it each time.
-        if GEM_SOURCE_UNAVAILABLE.load(Ordering::Relaxed) {
+        let recently_failed = GEM_SOURCE_FAILED_AT
+            .lock()
+            .unwrap()
+            .is_some_and(|at| at.elapsed() < GEM_SOURCE_RETRY_AFTER);
+        if recently_failed {
             return Ok(None);
         }
         let source = self.detect_gem_source(config).await;
         if source.is_err() {
-            GEM_SOURCE_UNAVAILABLE.store(true, Ordering::Relaxed);
+            *GEM_SOURCE_FAILED_AT.lock().unwrap() = Some(Instant::now());
         }
         Ok(source
             .ok()
