@@ -1045,10 +1045,21 @@ fn undated_tags(tags: Vec<String>) -> Vec<GithubTagWithDate> {
         .collect()
 }
 
+/// A tag's name goes in the path as GitHub resolves a ref: each segment is
+/// encoded, the `/` between them is not.
+fn tag_commit_url(api_url: &str, repo: &str, tag: &str) -> String {
+    let tag = tag
+        .split('/')
+        .map(|segment| urlencoding::encode(segment).into_owned())
+        .collect::<Vec<_>>()
+        .join("/");
+    format!("{api_url}/repos/{repo}/commits/{tag}")
+}
+
 /// The committer date of the commit `tag` points at: one request, for a single
 /// tag whose date a release-age cutoff needs.
 pub async fn tag_commit_date(repo: &str, tag: &str) -> Result<Option<String>> {
-    let url = format!("{API_URL}/repos/{repo}/commits/{tag}");
+    let url = tag_commit_url(API_URL, repo, tag);
     let headers = get_headers(&url)?;
     let commit = crate::http::HTTP_FETCH
         .json_with_headers::<GithubCommit, _>(&url, &headers)

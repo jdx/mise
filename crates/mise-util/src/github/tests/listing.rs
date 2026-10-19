@@ -518,3 +518,11 @@ fn test_list_tags_with_known_dates_makes_no_commit_requests() {
         assert!(tags.iter().all(|t| t.date.is_none()));
     });
 }
+
+#[test]
+fn test_tag_commit_url_encodes_reserved_characters() {
+    assert_eq!(
+        tag_commit_url("https://api.github.com", "o/r", "release/v1#x?%"),
+        "https://api.github.com/repos/o/r/commits/release/v1%23x%3F%25"
+    );
+}
