@@ -4055,7 +4055,6 @@ pub trait Backend: Debug + Send + Sync {
         if matches.is_empty() {
             return Ok(());
         }
-        let backend = self.ba().full();
         // Cached from the listing this candidate set was built from.
         let dated: HashSet<String> = self
             .list_remote_versions_with_info_with_selection_options(config, selection_opts, false)
@@ -4069,34 +4068,9 @@ pub trait Backend: Debug + Send + Sync {
                 // Already checked against the cutoff by `filter_by_date`.
                 break;
             }
-            // Reuse an answer this run already paid for; the error message
-            // below asks for the same versions again.
-            let created_at = match on_demand_release_date(&backend, candidate) {
-                Some(created_at) => Some(created_at),
-                None => match self.fetch_version_created_at(config, candidate).await {
-                    Ok(created_at) => {
-                        remember_on_demand_release_date(&backend, candidate, created_at.as_deref());
-                        if created_at.is_none() {
-                            note_undated_release(&backend, candidate, before);
-                        }
-                        created_at
-                    }
-                    Err(err) => {
-                        // Allow a version whose date could not be read, the same as
-                        // one from a backend that has no dates at all. These lookups
-                        // reach the network one candidate at a time, so failing the
-                        // resolution here would turn a slow proxy or VCS host into
-                        // an install error for a request that resolved fine before
-                        // the cutoff could be checked at all. Say so, though: it
-                        // means this version went in unchecked.
-                        warn!(
-                            "{}@{candidate}: could not read its release date to check the {before} cutoff, allowing it: {err:#}",
-                            self.id()
-                        );
-                        None
-                    }
-                },
-            };
+            let created_at = self
+                .release_date_for_cutoff(config, candidate, before)
+                .await;
             let info = VersionInfo {
                 version: candidate.clone(),
                 created_at,
@@ -4113,6 +4087,47 @@ pub trait Backend: Debug + Send + Sync {
             matches.pop();
         }
         Ok(())
+    }
+
+    /// The release date of `candidate`, read on demand when the listing left it
+    /// out, for checking it against `before`. `None` means no date could be
+    /// found; the version is then allowed, and recorded for the install-time
+    /// warning.
+    async fn release_date_for_cutoff(
+        &self,
+        config: &Arc<Config>,
+        candidate: &str,
+        before: Timestamp,
+    ) -> Option<String> {
+        let backend = self.ba().full();
+        // Reuse an answer this run already paid for; the error message
+        // below asks for the same versions again.
+        match on_demand_release_date(&backend, candidate) {
+            Some(created_at) => Some(created_at),
+            None => match self.fetch_version_created_at(config, candidate).await {
+                Ok(created_at) => {
+                    remember_on_demand_release_date(&backend, candidate, created_at.as_deref());
+                    if created_at.is_none() {
+                        note_undated_release(&backend, candidate, before);
+                    }
+                    created_at
+                }
+                Err(err) => {
+                    // Allow a version whose date could not be read, the same as
+                    // one from a backend that has no dates at all. These lookups
+                    // reach the network one candidate at a time, so failing the
+                    // resolution here would turn a slow proxy or VCS host into
+                    // an install error for a request that resolved fine before
+                    // the cutoff could be checked at all. Say so, though: it
+                    // means this version went in unchecked.
+                    warn!(
+                        "{}@{candidate}: could not read its release date to check the {before} cutoff, allowing it: {err:#}",
+                        self.id()
+                    );
+                    None
+                }
+            },
+        }
     }
 
     /// Get the latest version, optionally filtered by release date.
@@ -4240,7 +4255,6 @@ pub trait Backend: Debug + Send + Sync {
             let version = latest.version.clone();
             match before_date {
                 Some(before) => {
-                    let mut undated = false;
                     let allowed = if latest.created_at.is_some() {
                         latest_stable_candidate_allowed_by_before_date(
                             &version,
@@ -4257,13 +4271,27 @@ pub trait Backend: Debug + Send + Sync {
                             .await?;
                         fallback_refresh = false;
                         let info = versions.iter().find(|v| v.version == version);
-                        undated = info.is_some_and(|v| v.created_at.is_none());
-                        latest_stable_candidate_allowed_by_before_date(&version, info, before)
+                        if info.is_some_and(|v| v.created_at.is_none()) {
+                            // The listing left it undated: ask for its date the way
+                            // the list path does, so a backend that dates only part
+                            // of a listing still holds back a too-new stable pick.
+                            let dated = VersionInfo {
+                                version: version.clone(),
+                                created_at: self
+                                    .release_date_for_cutoff(config, &version, before)
+                                    .await,
+                                ..Default::default()
+                            };
+                            latest_stable_candidate_allowed_by_before_date(
+                                &version,
+                                Some(&dated),
+                                before,
+                            )
+                        } else {
+                            latest_stable_candidate_allowed_by_before_date(&version, info, before)
+                        }
                     };
                     if allowed {
-                        if undated {
-                            note_undated_release(&self.ba().full(), &version, before);
-                        }
                         return Ok(Some(version));
                     }
                 }
@@ -6688,6 +6716,27 @@ mod latest_version_tests {
         // One query per version the cutoff hid, and the walk stops at 2.0.0
         // rather than dating 1.0.0, which the listing already dated.
         assert_eq!(backend.lazy_date_calls(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_dates_an_undated_stable_pick_on_demand() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        // The stable fast path names 3.0.0, which the listing left undated; a
+        // lookup shows it is too new, so resolution falls back to 2.0.0.
+        let backend = partially_dated_backend("test-stable-lazy-date")
+            .with_stable_result(Some("3.0.0"))
+            .with_lazy_dates(&[("3.0.0", "2025-12-01"), ("2.0.0", "2025-01-01")]);
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("2.0.0")
+        );
     }
 
     #[tokio::test]

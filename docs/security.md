@@ -335,8 +335,7 @@ A backend can filter only versions it knows a release date for:
 
 Versions without a release date are not filtered. When mise installs one it
 warns that the cutoff could not be checked, so you know that version was not held
-back; pin an exact version, switch to a backend that reports dates, or exclude the
-tool to silence it. Other backends can hold back
+back; switch to a backend that reports dates, or exclude the tool to silence it. Other backends can hold back
 the tool's own version, but not the dependencies its installer or compiler
 fetches. See the [npm](/dev-tools/backends/npm.html) and
 [PyPI](/dev-tools/backends/pypi.html) backend pages for how they pass the cutoff
