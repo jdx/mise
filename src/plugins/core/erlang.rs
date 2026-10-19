@@ -685,14 +685,17 @@ impl Backend for ErlangPlugin {
             // kerl lists every release but no dates. erlang/otp's GitHub
             // releases carry them; without them `minimum_release_age` could not
             // hold a version back.
-            let dates =
-                match github::list_release_versions(github::API_URL, "erlang/otp", false).await {
-                    Ok(releases) => release_dates(&releases),
-                    Err(err) => {
-                        warn!("could not read erlang release dates from GitHub: {err}");
-                        HashMap::new()
-                    }
-                };
+            let dates = match plugins::core::run_fetch_task_with_timeout_async(async || {
+                erlang_release_dates(&output).await
+            })
+            .await
+            {
+                Ok(dates) => dates,
+                Err(err) => {
+                    warn!("could not read erlang release dates from GitHub: {err}");
+                    HashMap::new()
+                }
+            };
             kerl_versions(&output, &dates)
         };
         Ok(versions)
@@ -794,6 +797,35 @@ impl Backend for ErlangPlugin {
             _ => self.resolve_source_lock_info(&tv.version).await,
         }
     }
+}
+
+/// How many versions missing from the release list get a lookup of their own.
+const MAX_MISSING_DATE_LOOKUPS: usize = 5;
+
+/// Dates for the versions in `kerl list releases all` output (oldest first).
+/// The release list may be cached from before a new release, which would leave
+/// exactly the version a cooldown exists for undated, so the newest versions it
+/// lacks are looked up one by one.
+async fn erlang_release_dates(kerl_output: &str) -> Result<HashMap<String, String>> {
+    let repo = "erlang/otp";
+    let releases = github::list_release_versions(github::API_URL, repo, false).await?;
+    let mut dates = release_dates(&releases);
+    let missing = kerl_versions(kerl_output, &HashMap::new())
+        .into_iter()
+        .rev()
+        .filter(|v| !dates.contains_key(&v.version))
+        .take(MAX_MISSING_DATE_LOOKUPS)
+        .map(|v| v.version)
+        .collect::<Vec<_>>();
+    for version in missing {
+        match github::get_release(repo, &ErlangPlugin::release_tag(&version)).await {
+            Ok(release) => {
+                dates.insert(version, release.released_at().to_string());
+            }
+            Err(err) => debug!("no GitHub release for erlang {version}: {err}"),
+        }
+    }
+    Ok(dates)
 }
 
 /// Publication date by version, from the `OTP-X.Y` tags of erlang/otp releases.

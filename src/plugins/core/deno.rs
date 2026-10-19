@@ -116,14 +116,13 @@ impl Backend for DenoPlugin {
         let versions: DenoVersions = HTTP_FETCH.json("https://deno.com/versions.json").await?;
         // deno.com lists every version but no dates. GitHub's releases carry
         // them; without them `minimum_release_age` could not hold a version back.
-        let dates =
-            match github::list_release_versions(github::API_URL, "denoland/deno", false).await {
-                Ok(releases) => release_dates(&releases),
-                Err(err) => {
-                    warn!("could not read deno release dates from GitHub: {err}");
-                    HashMap::new()
-                }
-            };
+        let dates = match deno_release_dates(&versions.cli).await {
+            Ok(dates) => dates,
+            Err(err) => {
+                warn!("could not read deno release dates from GitHub: {err}");
+                HashMap::new()
+            }
+        };
         Ok(deno_versions(versions.cli, &dates))
     }
 
@@ -220,6 +219,35 @@ impl Backend for DenoPlugin {
 #[derive(Debug, Deserialize)]
 struct DenoVersions {
     cli: Vec<String>,
+}
+
+/// How many versions missing from the release list get a lookup of their own.
+const MAX_MISSING_DATE_LOOKUPS: usize = 5;
+
+/// Dates for the versions deno.com lists (newest first). The release list may
+/// be cached from before a new release, which would leave exactly the version
+/// a cooldown exists for undated, so the newest versions it lacks are looked
+/// up one by one.
+async fn deno_release_dates(cli: &[String]) -> Result<HashMap<String, String>> {
+    let repo = "denoland/deno";
+    let releases = github::list_release_versions(github::API_URL, repo, false).await?;
+    let mut dates = release_dates(&releases);
+    let missing = cli
+        .iter()
+        .filter_map(|v| v.strip_prefix('v'))
+        .filter(|v| !dates.contains_key(*v))
+        .take(MAX_MISSING_DATE_LOOKUPS)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    for version in missing {
+        match github::get_release(repo, &format!("v{version}")).await {
+            Ok(release) => {
+                dates.insert(version, release.released_at().to_string());
+            }
+            Err(err) => debug!("no GitHub release for deno {version}: {err}"),
+        }
+    }
+    Ok(dates)
 }
 
 /// Publication date by version, from the `vX.Y.Z` tags of denoland/deno releases.
