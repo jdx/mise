@@ -388,7 +388,7 @@ impl DaemonSetExt for DaemonSet {
                 continue;
             };
             // Resolve like `mise run`, so a file task matches without its extension.
-            if !tasks.get_matching(task).is_ok_and(|m| !m.is_empty()) {
+            if tasks.get_matching(task)?.is_empty() {
                 bail!("daemon {} runs unknown task {task:?}", daemon.name);
             }
         }
