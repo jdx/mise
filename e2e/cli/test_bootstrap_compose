@@ -21,6 +21,7 @@ case "$action" in
 config)
   case " $* " in
   *" --services "*) echo cache ;;
+  *" --format json "*) echo '{"services":{"cache":{}}}' ;;
   *" --hash=* "*) printf 'cache '; cat "$root/hash" ;;
   *) exit 2 ;;
   esac
@@ -172,6 +173,7 @@ root=$(dirname "$0")
 printf '%s\n' "$@" >"$root/template-compose-args"
 case " $* " in
 *" config --services "*) echo cache ;;
+*" config --format json "*) echo '{"services":{"cache":{}}}' ;;
 *" config --hash=* "*) echo "cache template-hash" ;;
 *" ps "*) ;;
 *) exit 2 ;;
@@ -217,3 +219,56 @@ EOF
 export MISE_GLOBAL_CONFIG_FILE="$PWD/global.toml"
 assert_contains "mise bootstrap compose status" "create"
 unset MISE_GLOBAL_CONFIG_FILE
+
+# Services that reference another service (network_mode: service:X) are hashed
+# by compose after the reference is resolved to a container id, so mise must
+# pin the reference the same way, keeping the project's explicit files.
+refs_compose="$PWD/refs-compose"
+refs_engine="$PWD/refs-engine"
+mkdir -p refs-project
+touch refs-project/compose.yaml
+cat >"$refs_compose" <<'EOF'
+#!/bin/sh
+case " $* " in
+*" config --services "*) printf 'vpn\napp\n' ;;
+*" config --format json "*) echo '{"services":{"vpn":{},"app":{"network_mode":"service:vpn"}}}' ;;
+*" config --hash=* "*)
+  override=
+  for arg in "$@"; do
+    case "$arg" in *override*) override=$arg ;; esac
+  done
+  case " $* " in *refs-project/compose.yaml*) ;; *) exit 3 ;; esac
+  printf 'vpn vpn-hash\n'
+  if grep -q 'container:vpn-1' "$override"; then
+    echo 'app app-hash'
+  else
+    echo 'app unresolved-hash'
+  fi
+  ;;
+*" ps "*)
+  printf '%s\n' '{"ID":"vpn-1","Service":"vpn","State":"running","Health":"","ExitCode":0}' '{"ID":"app-1","Service":"app","State":"running","Health":"","ExitCode":0}'
+  ;;
+*) exit 2 ;;
+esac
+EOF
+cat >"$refs_engine" <<'EOF'
+#!/bin/sh
+for id in "$@"; do
+  case "$id" in
+  app-1) h=app-hash ;;
+  vpn-1) h=vpn-hash ;;
+  *) continue ;;
+  esac
+  printf '{"com.docker.compose.config-hash":"%s"}\n' "$h"
+done
+EOF
+cat >mise.toml <<EOF
+[bootstrap.compose.refs]
+project_dir = "$PWD/refs-project"
+project_name = "mise-refs"
+files = ["compose.yaml"]
+state = "running"
+command = ["sh", "$refs_compose"]
+engine_command = ["sh", "$refs_engine"]
+EOF
+assert_contains "mise bootstrap compose status" "unchanged"

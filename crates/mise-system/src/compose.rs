@@ -62,6 +62,8 @@ enum ComposeInspection {
 struct ComposeContainer {
     #[serde(rename = "ID")]
     id: String,
+    #[serde(default)]
+    name: String,
     service: String,
     state: String,
     #[serde(default)]
@@ -70,6 +72,8 @@ struct ComposeContainer {
     exit_code: i64,
     #[serde(skip)]
     config_hash: Option<String>,
+    #[serde(skip)]
+    one_off: bool,
 }
 
 pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
@@ -463,28 +467,59 @@ impl ComposeRequest {
             }
             self.services.iter().cloned().collect()
         };
-        let config_hashes = if self.state == ComposeState::Running {
-            parse_config_hashes(
-                &self.compose_output(&["config".to_string(), "--hash=*".to_string()])?,
-            )?
-        } else {
-            HashMap::new()
-        };
         let mut containers = parse_ps(&self.compose_output(&[
             "ps".to_string(),
             "--all".to_string(),
             "--format".to_string(),
             "json".to_string(),
         ])?)?;
-        if self.state == ComposeState::Running {
+        let config_hashes = if self.state == ComposeState::Running {
             self.add_container_hashes(&mut containers)?;
-        }
+            self.desired_config_hashes(&containers)?
+        } else {
+            HashMap::new()
+        };
         Ok(ComposeInspection::Present {
             configured_services,
             target_services,
             containers,
             config_hashes,
         })
+    }
+
+    /// `compose config --hash` hashes services as written, but compose stamps
+    /// containers with a hash taken after resolving `service:` references
+    /// (`network_mode`, `ipc`, `pid`, `volumes_from`) to container ids. Pin those
+    /// references with an override file so both sides hash the same model.
+    fn desired_config_hashes(
+        &self,
+        containers: &[ComposeContainer],
+    ) -> Result<HashMap<String, String>> {
+        let hash_args = ["config".to_string(), "--hash=*".to_string()];
+        // `--file` turns off compose's own file discovery (`COMPOSE_FILE`, `.env`,
+        // override files), so only pin references when the files are explicit.
+        if self.files.is_empty() {
+            return parse_config_hashes(&self.compose_output(&hash_args)?);
+        }
+        let model: serde_json::Value = serde_json::from_str(&self.compose_output(&[
+            "config".to_string(),
+            "--format".to_string(),
+            "json".to_string(),
+        ])?)?;
+        let Some(override_yaml) = resolved_references_override(&model, containers) else {
+            return parse_config_hashes(&self.compose_output(&hash_args)?);
+        };
+        let mut file = tempfile::Builder::new()
+            .prefix("mise-compose-override-")
+            .suffix(".yaml")
+            .tempfile()?;
+        std::io::Write::write_all(&mut file, override_yaml.as_bytes())?;
+        let mut args = vec![
+            "--file".to_string(),
+            file.path().to_string_lossy().to_string(),
+        ];
+        args.extend(hash_args);
+        parse_config_hashes(&self.compose_output(&args)?)
     }
 
     fn running_is_converged(
@@ -544,6 +579,9 @@ impl ComposeRequest {
         for (container, line) in containers.iter_mut().zip(lines) {
             let labels: HashMap<String, String> = serde_json::from_str(line)?;
             container.config_hash = labels.get("com.docker.compose.config-hash").cloned();
+            container.one_off = labels
+                .get("com.docker.compose.oneoff")
+                .is_some_and(|value| value == "True");
         }
         Ok(())
     }
@@ -948,6 +986,46 @@ fn parse_ps(output: &str) -> Result<Vec<ComposeContainer>> {
         .collect()
 }
 
+/// Builds a compose override that replaces `service:X` in `network_mode`, `ipc`
+/// and `pid` with `container:<id>`, as compose does before hashing, or `None`
+/// when no service uses one. `volumes_from` is left alone: compose hashes it as
+/// a bare container id, which an override cannot express.
+fn resolved_references_override(
+    model: &serde_json::Value,
+    containers: &[ComposeContainer],
+) -> Option<String> {
+    // compose ignores one-off containers and picks the lowest canonical name
+    let container_id = |service: &str| {
+        containers
+            .iter()
+            .filter(|container| container.service == service && !container.one_off)
+            .min_by(|a, b| a.name.cmp(&b.name))
+            .map(|container| container.id.as_str())
+    };
+    let mut yaml = String::new();
+    for (name, service) in model.get("services")?.as_object()? {
+        let mut lines = String::new();
+        for key in ["network_mode", "ipc", "pid"] {
+            if let Some(target) = service
+                .get(key)
+                .and_then(|value| value.as_str())
+                .and_then(|value| value.strip_prefix("service:"))
+                && let Some(id) = container_id(target)
+            {
+                let value = serde_json::to_string(&format!("container:{id}")).ok()?;
+                lines.push_str(&format!("    {key}: {value}\n"));
+            }
+        }
+        if !lines.is_empty() {
+            yaml.push_str(&format!(
+                "  {}:\n{lines}",
+                serde_json::to_string(name).ok()?
+            ));
+        }
+    }
+    (!yaml.is_empty()).then(|| format!("services:\n{yaml}"))
+}
+
 fn parse_config_hashes(output: &str) -> Result<HashMap<String, String>> {
     output
         .lines()
@@ -1199,6 +1277,37 @@ mod tests {
     }
 
     #[test]
+    fn pins_service_references_to_container_ids() {
+        let container = |id: &str, name: &str, service: &str| ComposeContainer {
+            one_off: name.starts_with("a-"),
+            id: id.to_string(),
+            name: name.to_string(),
+            service: service.to_string(),
+            state: "running".to_string(),
+            health: String::new(),
+            exit_code: 0,
+            config_hash: None,
+        };
+        // compose resolves to the replica with the lowest canonical name
+        let containers = [
+            container("b2", "p-vpn-2", "vpn"),
+            container("a1", "p-vpn-1", "vpn"),
+            container("def", "p-app-1", "app"),
+            container("oo", "a-vpn-run-1", "vpn"),
+        ];
+        let model = serde_json::json!({"services": {
+            "vpn": {},
+            "app": {"network_mode": "service:vpn", "volumes_from": ["vpn:ro"]},
+        }});
+        assert_eq!(
+            resolved_references_override(&model, &containers).unwrap(),
+            "services:\n  \"app\":\n    network_mode: \"container:a1\"\n"
+        );
+        let plain = serde_json::json!({"services": {"vpn": {}, "app": {"network_mode": "host"}}});
+        assert_eq!(resolved_references_override(&plain, &containers), None);
+    }
+
+    #[test]
     fn parses_json_lines_and_arrays() {
         let line =
             r#"{"ID":"abc","Service":"api","State":"running","Health":"healthy","ExitCode":0}"#;
@@ -1216,6 +1325,8 @@ mod tests {
             health: "healthy".to_string(),
             exit_code: 0,
             config_hash: Some("same".to_string()),
+            one_off: false,
+            name: String::new(),
         };
         request.inspection = Some(ComposeInspection::Present {
             configured_services: IndexSet::from(["api".to_string()]),
@@ -1246,6 +1357,8 @@ mod tests {
                 health: "healthy".to_string(),
                 exit_code: 0,
                 config_hash: Some("same".to_string()),
+                one_off: false,
+                name: String::new(),
             }],
             config_hashes: HashMap::from([("api".to_string(), "same".to_string())]),
         });
@@ -1273,6 +1386,8 @@ mod tests {
                 health: String::new(),
                 exit_code: 0,
                 config_hash: None,
+                one_off: false,
+                name: String::new(),
             }],
             config_hashes: HashMap::new(),
         });
@@ -1299,6 +1414,8 @@ mod tests {
                     health: String::new(),
                     exit_code: 0,
                     config_hash: None,
+                    one_off: false,
+                    name: String::new(),
                 },
                 ComposeContainer {
                     id: "old-1".to_string(),
@@ -1307,6 +1424,8 @@ mod tests {
                     health: String::new(),
                     exit_code: 0,
                     config_hash: None,
+                    one_off: false,
+                    name: String::new(),
                 },
             ],
             config_hashes: HashMap::new(),
@@ -1339,6 +1458,8 @@ mod tests {
                 health: String::new(),
                 exit_code: 0,
                 config_hash: None,
+                one_off: false,
+                name: String::new(),
             }],
             config_hashes: HashMap::new(),
         });
