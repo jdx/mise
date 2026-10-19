@@ -4,32 +4,36 @@ use std::io::{self, BufRead, Write};
 
 use serde_json::Value;
 
-/// The next message, or `None` when the client closed the stream.
+/// The next message, or `None` when the client closed the stream. A body that is not JSON is
+/// skipped: its frame was consumed whole, so the stream is still in step and one bad message
+/// should not end the session.
 pub(crate) fn read_message(input: &mut impl BufRead) -> io::Result<Option<Value>> {
-    let mut length = None;
     loop {
-        let mut line = String::new();
-        if input.read_line(&mut line)? == 0 {
-            return Ok(None);
-        }
-        let line = line.trim_end();
-        if line.is_empty() {
-            if length.is_some() {
-                break;
+        let mut length = None;
+        loop {
+            let mut line = String::new();
+            if input.read_line(&mut line)? == 0 {
+                return Ok(None);
             }
-            continue;
+            let line = line.trim_end();
+            if line.is_empty() {
+                if length.is_some() {
+                    break;
+                }
+                continue;
+            }
+            if let Some((name, value)) = line.split_once(':')
+                && name.eq_ignore_ascii_case("content-length")
+            {
+                length = value.trim().parse::<usize>().ok();
+            }
         }
-        if let Some((name, value)) = line.split_once(':')
-            && name.eq_ignore_ascii_case("content-length")
-        {
-            length = value.trim().parse::<usize>().ok();
+        let mut body = vec![0; length.unwrap_or_default()];
+        input.read_exact(&mut body)?;
+        if let Ok(message) = serde_json::from_slice(&body) {
+            return Ok(Some(message));
         }
     }
-    let mut body = vec![0; length.unwrap_or_default()];
-    input.read_exact(&mut body)?;
-    serde_json::from_slice(&body)
-        .map(Some)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 pub(crate) fn write_message(output: &mut impl Write, message: &Value) -> io::Result<()> {
@@ -56,6 +60,16 @@ mod tests {
         );
         assert_eq!(read_message(&mut input).unwrap(), Some(json!({"id": 2})));
         assert_eq!(read_message(&mut input).unwrap(), None);
+    }
+
+    #[test]
+    fn a_malformed_body_is_skipped() {
+        let raw = "Content-Length: 4\r\n\r\nnope\
+                   Content-Length: 7\r\n\r\n{\"a\":1}";
+        assert_eq!(
+            read_message(&mut raw.as_bytes()).unwrap(),
+            Some(json!({"a": 1}))
+        );
     }
 
     #[test]
