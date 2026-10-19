@@ -853,13 +853,20 @@ impl ToolVersion {
         }
 
         // An explicit release-age cutoff in the past pins a moving channel to the release it
-        // pointed at then. The built-in default and a cutoff in the future (how
+        // pointed at then (it needs the network, so offline leaves it be). The built-in default and a cutoff in the future (how
         // `--minimum-release-age 0s` turns the cooldown off) leave the channel alone.
         let v = match opts.before_date {
-            Some(before) if !opts.before_date_from_default && before < Timestamp::now() => backend
-                .channel_for_cutoff(config, &v, before)
-                .await?
-                .unwrap_or(v),
+            Some(before)
+                if !opts.before_date_from_default
+                    && before < Timestamp::now()
+                    && !Settings::get().offline()
+                    && !opts.offline =>
+            {
+                backend
+                    .channel_for_cutoff(config, &v, before)
+                    .await?
+                    .unwrap_or(v)
+            }
             _ => v,
         };
 
