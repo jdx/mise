@@ -339,7 +339,7 @@ jobs:
     if: ${{ !cancelled() && needs.build-tarball-windows.result == 'success' }}
     name: sign-windows-${{matrix.target}}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -367,6 +367,8 @@ jobs:
           signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY || 'release-signing' }}
           github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
           wait-for-completion: true
+          # The production policy requires a manual approval in SignPath.
+          wait-for-completion-timeout-in-seconds: 3600
           output-artifact-directory: signed
       - name: Restore the release zip name
         run: |
