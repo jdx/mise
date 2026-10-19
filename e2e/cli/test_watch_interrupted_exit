@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# When watchexec ends because the user pressed Ctrl+C, `mise watch` exits
+# quietly with 130 (newer watchexec exits 130 on a second Ctrl+C) instead of
+# printing an error banner. Any other failure of watchexec is still an error.
+# A fake watchexec on PATH stands in for the real one, which would watch forever.
+mise tasks add example -- echo 'running example'
+
+fake_bin="$HOME/fake-watchexec-bin"
+mkdir -p "$fake_bin"
+ln -s "$(command -v mise)" "$fake_bin/mise"
+cat <<'SH' >"$fake_bin/watchexec"
+#!/bin/sh
+exit "${FAKE_WATCHEXEC_STATUS}"
+SH
+chmod +x "$fake_bin/watchexec"
+
+status=0
+output=$(FAKE_WATCHEXEC_STATUS=130 PATH="$fake_bin:$PATH" mise watch example 2>&1) || status=$?
+assert "echo $status" "130"
+assert_not_contains_text "$output" "ERROR"
+assert_not_contains_text "$output" "exited with"
+
+status=0
+output=$(FAKE_WATCHEXEC_STATUS=2 PATH="$fake_bin:$PATH" mise watch example 2>&1) || status=$?
+assert "echo $status" "1"
+assert_contains_text "$output" "watchexec exited with"
