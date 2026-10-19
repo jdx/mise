@@ -132,16 +132,19 @@ assert_fail_contains "mise use --global --dry-run dummy@2 fresh@1 2>&1" "run sep
 # Missing removals do not make an existing update look like a new declaration.
 mise use --global --dry-run dummy@2 --remove missing-tool
 
-# Relative targets resolve against the config file that declares them, so shared dotfiles
-# work with any MISE_CONFIG_DIR.
-mkdir -p relative-config/conf.d
-cat >relative-config/conf.d/settings.toml <<EOF
+# Relative targets resolve against the config root of the file that declares them, which is
+# $HOME for a global file.
+mkdir -p "$HOME/relative-config/conf.d"
+cat >"$HOME/relative-config/conf.d/settings.toml" <<EOF
 [settings.write_targets]
-tools = "relative-tools.toml"
-packages = "{{ xdg_config_home }}/mise/relative-packages.toml"
+tools = "relative-config/conf.d/relative-tools.toml"
+packages = "{{ config_source | dirname }}/relative-packages.toml"
 EOF
-MISE_CONFIG_DIR="$PWD/relative-config" mise use --global dummy@system
-assert_contains "cat relative-config/conf.d/relative-tools.toml" 'dummy = "system"'
+MISE_CONFIG_DIR="$HOME/relative-config" mise use --global dummy@system
+assert_contains "cat $HOME/relative-config/conf.d/relative-tools.toml" 'dummy = "system"'
+# The declaring file's own directory is available as a template.
+MISE_CONFIG_DIR="$HOME/relative-config" mise bootstrap packages use --global --no-install pacman:ripgrep
+assert_contains "cat $HOME/relative-config/conf.d/relative-packages.toml" '"pacman:ripgrep" = "latest"'
 
 # A target whose template fails to render is rejected rather than ignored.
 cat >invalid-template.toml <<EOF

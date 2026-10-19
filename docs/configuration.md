@@ -419,14 +419,16 @@ a file mise loads from the global config directory: `config.toml`, `mise.toml`,
 or a `conf.d` fragment. A path such as `~/.config/mise/tools.toml` is not
 loaded, so mise rejects it.
 
-A target can be absolute, start with `~/`, or be relative to the config file
-that sets it, meaning the directory that file is in. It may also use
-[templates](/templates.html) such as <code v-pre>{{ xdg_config_home }}</code>, so dotfiles shared between machines don't need to hardcode
-the config directory:
+A target can be absolute, start with `~/`, or be relative to the
+[`config_root`](/configuration.html#config-root) of the config file that sets
+it, as with other path settings. For a global file that is your home directory,
+so use a [template](/templates.html) to stay independent of where the config
+directory lives. <code v-pre>{{ config_source | dirname }}</code> is the
+directory of the file that sets the target:
 
 ```toml [~/.config/mise/conf.d/settings.toml]
 [settings.write_targets]
-tools = "tools.toml" # ~/.config/mise/conf.d/tools.toml
+tools = "{{ config_source | dirname }}/tools.toml" # ~/.config/mise/conf.d/tools.toml
 ```
 
 Only new entries move. An existing tool, package, or dotfile stays in the file

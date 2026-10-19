@@ -781,11 +781,9 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Resolve `write_targets` paths against the directory of the declaring settings file, for the
-/// same reason as [`resolve_age_paths`]. The file's own directory is used rather than its config
-/// root, because a global file's root is `$HOME`, which never holds a loadable target. Dotfiles
-/// shared between machines can then name a sibling fragment (`tools = "tools.toml"`) without
-/// hardcoding the config directory.
+/// Resolve `write_targets` paths against the config root of the declaring settings file, for the
+/// same reason as [`resolve_age_paths`]. Templates such as `{{ xdg_config_home }}` let dotfiles
+/// shared between machines name a global fragment without hardcoding the config directory.
 fn resolve_write_target_paths(settings: &mut toml::Table, path: &Path) {
     let Some(targets) = settings
         .get_mut("write_targets")
@@ -793,8 +791,8 @@ fn resolve_write_target_paths(settings: &mut toml::Table, path: &Path) {
     else {
         return;
     };
-    let base = path.parent().map(Path::to_path_buf).unwrap_or_default();
-    let mut resolve = settings_path_resolver(path, base);
+    let config_root = crate::config::config_file::config_root::config_root(path);
+    let mut resolve = settings_path_resolver(path, config_root);
     for section in ["tools", "packages", "dotfiles"] {
         if let Some(target) = targets.get_mut(section)
             && let Err(err) = resolve(&format!("settings.write_targets.{section}"), target)
@@ -2846,7 +2844,7 @@ mod tests {
     }
 
     #[test]
-    fn write_targets_resolve_against_the_declaring_dir() {
+    fn write_targets_resolve_against_the_declaring_config_root() {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("mise.toml");
         let mut settings = toml::from_str::<toml::Table>(

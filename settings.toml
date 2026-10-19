@@ -4729,8 +4729,8 @@ docs = """
 it writes new track entries to the global `config.toml`, or to
 `conf.d/dotfiles-tracking.toml` when another entry already manages the target.
 Existing entries stay in the file that declares them. The path may be absolute,
-start with `~/`, or be relative to the directory of the config file that sets it, and may use
-templates such as `{{ xdg_config_home }}`. It must name a file that mise loads from the global config
+start with `~/`, or be relative to the `config_root` of the config file that sets it, and may use
+templates such as `{{ config_source | dirname }}`. It must name a file that mise loads from the global config
 directory, such as `~/.config/mise/conf.d/30-dotfiles.toml`. See
 [Send global writes to separate files](/configuration.html#global-section-write-targets).
 """
@@ -4744,9 +4744,8 @@ docs = """
 Used by `mise bootstrap packages use --global` and
 `mise bootstrap packages import --global`. Existing entries stay in the file
 that declares them. The path may be absolute, start with `~/`, or be relative to
-the directory of the config file that sets it, and may use templates such as
-`{{ xdg_config_home }}`.
-It must name a file that mise loads from the global config directory, such as
+the `config_root` of the config file that sets it, and may use templates such as
+`{{ config_source | dirname }}`. It must name a file that mise loads from the global config directory, such as
 `~/.config/mise/conf.d/20-packages.toml`. See
 [Send global writes to separate files](/configuration.html#global-section-write-targets).
 """
@@ -4758,8 +4757,8 @@ type = "Path"
 description = "Global config file where `mise use --global` creates new `[tools]` entries."
 docs = """
 Existing entries stay in the file that declares them. The path may be absolute,
-start with `~/`, or be relative to the directory of the config file that sets it, and may use
-templates such as `{{ xdg_config_home }}`. It must name a file that mise loads from the global config
+start with `~/`, or be relative to the `config_root` of the config file that sets it, and may use
+templates such as `{{ config_source | dirname }}`. It must name a file that mise loads from the global config
 directory, such as `~/.config/mise/conf.d/10-tools.toml`. See
 [Send global writes to separate files](/configuration.html#global-section-write-targets).
 """
