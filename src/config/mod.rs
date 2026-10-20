@@ -1497,7 +1497,14 @@ impl Config {
                 debug!("skipping untrusted tracked config: {}", display_path(&path));
                 continue;
             }
-            let detection = match config_file::detect_config_file_type_by_filename(&path) {
+            // A tracked file keeps its original type even when the current
+            // command overrides the tool-versions filenames, so a plain
+            // `.tool-versions` is never reported as unknown.
+            let detected = config_file::detect_config_file_type_by_filename(&path).or_else(|| {
+                (path.file_name().and_then(|f| f.to_str()) == Some(".tool-versions"))
+                    .then_some(config_file::ConfigFileType::ToolVersions)
+            });
+            let detection = match detected {
                 Some(config_type) => config_file::ConfigFileDetection::Recognized(config_type),
                 None => {
                     let config_root = config_file::config_root::config_root(&path);
