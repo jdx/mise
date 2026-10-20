@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+mkdir -p "$PWD/clones/project-a"
+touch "$PWD/clones/project-a/.env"
+cat >mise.toml <<TOML
+[vars]
+repos_dir = "$PWD/clones"
+
+[doctor.checks.has_env]
+description = "project-a in {{ vars.repos_dir | split(pat='/') | last }} has a .env"
+run = 'test -f {{ vars.repos_dir | quote }}/project-a/.env'
+
+[doctor.checks.missing_env]
+run = 'test -f {{ vars.repos_dir | quote }}/project-a/.missing'
+hint = "touch {{ vars.repos_dir }}/project-a/.missing"
+TOML
+
+output="$(mise doctor project 2>&1 || true)"
+assert_contains "echo '$output'" "PASS has_env: project-a in clones has a .env"
+assert_contains "echo '$output'" "touch $PWD/clones/project-a/.missing"

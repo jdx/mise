@@ -132,7 +132,7 @@ impl Project {
         // Config files are ordered from highest to lowest precedence. Replace
         // whole named checks so a local command cannot inherit a stale remedy.
         for (path, cf) in config.config_files.iter().rev() {
-            let declared = cf.doctor_config().checks;
+            let declared = cf.doctor_config()?.checks;
             if declared.is_empty() {
                 continue;
             }

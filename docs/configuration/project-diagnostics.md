@@ -63,7 +63,10 @@ Each `[doctor.checks.<name>]` table accepts:
 | `shell`       | Program and arguments, including the command flag, such as `"bash -c"` or `"pwsh -Command"`. Defaults to [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args) or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args). |
 | `os`          | An OS or OS/architecture selector, or a list of them, such as `"linux/arm64"` or `["linux", "macos"]`. Omit it to run everywhere.                                                                                                                                                                                  |
 
-`os` accepts the same aliases as tool filters, such as `darwin`, `win`, and
+`run`, `description` and `hint` are rendered as templates with the declaring
+file's context, so `{{ vars.* }}`, `{{ env.* }}` and the other
+[template](/templates.html) values work; use the `quote` filter for paths in
+`run`. `os` accepts the same aliases as tool filters, such as `darwin`, `win`, and
 `amd64`; an empty list is rejected. `dir` can point outside the project, such as
 a sibling checkout, and is not rendered as a template. A `shell` override follows
 task quoting rules and honors

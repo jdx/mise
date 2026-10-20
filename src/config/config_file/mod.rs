@@ -266,8 +266,8 @@ pub trait ConfigFile: Debug + Send + Sync {
         None
     }
 
-    fn doctor_config(&self) -> crate::config::doctor::DoctorConfig {
-        Default::default()
+    fn doctor_config(&self) -> Result<crate::config::doctor::DoctorConfig> {
+        Ok(Default::default())
     }
 
     fn bootstrap_config(&self) -> Option<mise_config::bootstrap::BootstrapTomlConfig> {
