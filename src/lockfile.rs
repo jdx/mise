@@ -4460,7 +4460,11 @@ fn preserve_selected_python_entries(
                 tool.version == existing_tool.version && tool.options == existing_tool.options
             })
         {
-            merged_tools.push(existing_tool.clone());
+            // A shared entry may carry requests that moved to another version.
+            let mut tool = existing_tool.clone();
+            tool.specifiers
+                .retain(|specifier| unlocked.contains(specifier));
+            merged_tools.push(tool);
         }
     }
 }

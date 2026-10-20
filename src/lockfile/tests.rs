@@ -1416,7 +1416,11 @@ fn test_preserve_selected_python_entries_keeps_only_unlocked_selections() {
     };
     let existing = vec![
         python("3.15.0", "latest"),
-        python("3.14.8", "3.14"),
+        {
+            let mut tool = python("3.14.8", "3.14");
+            tool.specifiers.insert("3.14.8".to_string());
+            tool
+        },
         python("3.13.5", "3.13"),
     ];
     let mut merged = vec![python("3.15.1", "latest"), python("3.13.6", "3.13")];
@@ -1434,6 +1438,7 @@ fn test_preserve_selected_python_entries_keeps_only_unlocked_selections() {
             .collect_vec(),
         vec!["3.15.1", "3.13.6", "3.14.8"]
     );
+    assert_eq!(merged[2].specifiers, BTreeSet::from(["3.14".to_string()]));
 }
 
 #[test]
