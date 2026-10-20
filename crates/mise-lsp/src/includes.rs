@@ -86,7 +86,22 @@ fn matches(pattern: &Path, file: &Path) -> bool {
     if file == pattern || file.starts_with(pattern) {
         return true;
     }
-    let pattern = pattern.to_string_lossy();
+    glob_matches(
+        &slashes(&pattern.to_string_lossy(), cfg!(windows)),
+        &slashes(&file.to_string_lossy(), cfg!(windows)),
+    )
+}
+
+/// A path with `/` between its parts, as a glob has: `Path::join` writes `\` on Windows.
+fn slashes(path: &str, windows: bool) -> String {
+    if windows {
+        path.replace('\\', "/")
+    } else {
+        path.to_string()
+    }
+}
+
+fn glob_matches(pattern: &str, file: &str) -> bool {
     if !pattern.contains(['*', '?', '[']) {
         return false;
     }
@@ -130,8 +145,7 @@ fn matches(pattern: &Path, file: &Path) -> bool {
         }
     }
     regex.push('$');
-    let file = file.to_string_lossy().into_owned();
-    Regex::new(&regex).is_ok_and(|re| re.is_match(&file))
+    Regex::new(&regex).is_ok_and(|re| re.is_match(file))
 }
 
 /// The file a `file://` URI names, with escapes decoded.
@@ -218,6 +232,18 @@ mod tests {
         let file = root.join("mise.tasks.toml");
         std::fs::write(&file, "[build]\n").unwrap();
         assert!(is_task_include(&file));
+    }
+
+    #[test]
+    fn windows_separators_are_normalized_before_matching() {
+        let pattern = slashes(r"C:\p\*.tasks.toml", true);
+        let file = slashes(r"C:/p/mise.tasks.toml", true);
+        assert!(glob_matches(&pattern, &file));
+        let class = slashes(r"C:\p\mise.tasks.[ab].toml", true);
+        assert!(glob_matches(
+            &class,
+            &slashes(r"C:\p\mise.tasks.a.toml", true)
+        ));
     }
 
     #[test]
