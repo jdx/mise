@@ -3034,6 +3034,14 @@ pub(crate) fn update_lockfiles(
             .iter()
             .filter_map(|reference| {
                 let path = tool_stub_path(&lockfile_path, reference);
+                // A stub that moved to another lockfile selects nothing here.
+                if !path.is_file()
+                    || !lockfile_path_for_tool_stub(&path).is_some_and(|(stub_lockfile, _)| {
+                        same_file_path(&stub_lockfile, &lockfile_path)
+                    })
+                {
+                    return None;
+                }
                 crate::tool_stub::ToolStubFile::from_file(&path)
                     .and_then(|stub| stub.to_tool_request(&path))
                     .inspect_err(|err| {
@@ -3059,19 +3067,29 @@ pub(crate) fn update_lockfiles(
                 }
             };
             if let Some(dependency) = dependency {
-                let options = dependency
-                    .backend()
-                    .and_then(|backend| {
-                        backend.resolve_lockfile_options(
-                            &dependency,
-                            &PlatformTarget::new(Platform::current()),
-                        )
-                    })
-                    .unwrap_or_default();
-                selected_python_specifiers
-                    .entry(dependency.ba().short.clone())
-                    .or_default()
-                    .insert((dependency.version(), options));
+                // Options can differ per platform (`compile` applies to the host
+                // only), so keep every variant the lockfile can hold.
+                let mut platforms = existing_lockfile
+                    .all_platform_keys()
+                    .iter()
+                    .filter_map(|key| Platform::parse(key).ok())
+                    .collect_vec();
+                platforms.push(Platform::current());
+                for platform in platforms {
+                    let options = dependency
+                        .backend()
+                        .and_then(|backend| {
+                            backend.resolve_lockfile_options(
+                                &dependency,
+                                &PlatformTarget::new(platform),
+                            )
+                        })
+                        .unwrap_or_default();
+                    selected_python_specifiers
+                        .entry(dependency.ba().short.clone())
+                        .or_default()
+                        .insert((dependency.version(), options));
+                }
             }
         }
 
