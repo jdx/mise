@@ -10781,6 +10781,7 @@ version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5cf3186b87f0bfbe7e2968e844d5e8053d36e9106601a0fe988aa5be928c314a"
 dependencies = [
+ "aws-lc-rs",
  "const-oid 0.9.6",
  "der 0.7.10",
  "futures-io",
