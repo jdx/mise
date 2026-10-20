@@ -148,7 +148,13 @@ impl Project {
                 std::env::current_dir()?
             };
             for (name, check) in declared {
-                checks.insert(name, (path.clone(), root.clone(), check));
+                // A bad template only fails its own check, and only where it applies.
+                let rendered = if crate::config::doctor::applies(&check) {
+                    cf.render_doctor_check(&check).map_err(|e| format!("{e:#}"))
+                } else {
+                    Ok(check.clone())
+                };
+                checks.insert(name, (path.clone(), root.clone(), check, rendered));
             }
         }
         let mut report = Report::default();
@@ -160,7 +166,7 @@ impl Project {
         let environment = async {
             if !checks
                 .values()
-                .any(|(_, _, check)| crate::config::doctor::applies(check))
+                .any(|(_, _, check, _)| crate::config::doctor::applies(check))
             {
                 return Ok(EnvMap::default());
             }
@@ -194,12 +200,16 @@ impl Project {
             })
             .collect::<Vec<_>>();
         report.checks = stream::iter(ordered)
-            .map(|(name, (source, root, check))| {
+            .map(|(name, (source, root, check, rendered))| {
                 let environment = &environment;
                 let config = &config;
                 let outcomes = &outcomes;
                 let permits = &permits;
                 async move {
+                    let (check, render_error) = match rendered {
+                        Ok(check) => (check, None),
+                        Err(err) => (check, Some(err)),
+                    };
                     let mut result = CheckResult {
                         name,
                         description: check.description.clone(),
@@ -222,6 +232,9 @@ impl Project {
                     if let Some(dep) = unmet {
                         result.status = Status::Blocked;
                         result.message = Some(format!("Blocked: dependency {dep} did not pass"));
+                    } else if let Some(err) = render_error {
+                        result.status = Status::Error;
+                        result.message = Some(err);
                     } else if !applies {
                         result.status = Status::Skipped;
                         result.message =
@@ -272,12 +285,12 @@ impl Project {
     }
 }
 
+type CheckEntry = (PathBuf, PathBuf, DoctorCheck, Result<DoctorCheck, String>);
+
 /// Check names with every check after the checks it depends on. Rejects unknown
 /// dependencies and cycles, since either would leave a check waiting forever.
-fn dependency_order(
-    checks: &BTreeMap<String, (PathBuf, PathBuf, DoctorCheck)>,
-) -> Result<Vec<String>> {
-    for (name, (_, _, check)) in checks {
+fn dependency_order(checks: &BTreeMap<String, CheckEntry>) -> Result<Vec<String>> {
+    for (name, (_, _, check, _)) in checks {
         for dep in &check.depends {
             if !checks.contains_key(dep) {
                 bail!("Check {name} depends on unknown check {dep}");
@@ -289,7 +302,7 @@ fn dependency_order(
     while order.len() < checks.len() {
         let ready = checks
             .iter()
-            .filter(|(name, (_, _, check))| {
+            .filter(|(name, (_, _, check, _))| {
                 !done.contains(*name) && check.depends.iter().all(|dep| done.contains(dep))
             })
             .map(|(name, _)| name.clone())

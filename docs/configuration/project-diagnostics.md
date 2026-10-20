@@ -64,7 +64,10 @@ Each `[doctor.checks.<name>]` table accepts:
 | `os`          | An OS or OS/architecture selector, or a list of them, such as `"linux/arm64"` or `["linux", "macos"]`. Omit it to run everywhere.                                                                                                                                                                                  |
 | `depends`     | A check name, or a list of them, that must pass first. If one does not pass, this check is reported as `blocked` and its command does not run.                                                                                                                                                                     |
 
-`os` accepts the same aliases as tool filters, such as `darwin`, `win`, and
+`run`, `description` and `hint` are rendered as templates with the declaring
+file's context, so <code v-pre>{{ vars.name }}</code>, <code v-pre>{{ env.NAME }}</code> and the other
+[template](/templates.html) values work; use the `quote` filter for paths in
+`run`. `os` accepts the same aliases as tool filters, such as `darwin`, `win`, and
 `amd64`; an empty list is rejected. `dir` can point outside the project, such as
 a sibling checkout, and is not rendered as a template. A `shell` override follows
 task quoting rules and honors
