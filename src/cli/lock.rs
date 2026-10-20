@@ -2468,6 +2468,20 @@ impl Lock {
                     python_named || specified_versions.contains_key(&ba.full())
                 }))?;
             python_requests.extend(stub_python_requests);
+            // Generate rebuilds every tool in the returned set from scratch, so a
+            // pipx tool's Python would replace the project's own Python entries.
+            let project_python: Vec<LockTool> =
+                if !python_requests.is_empty() && Settings::get().generate_lockfiles() {
+                    all_tools
+                        .iter()
+                        .filter(|(ba, _)| {
+                            ba.short == "python" && !specified_versions.contains_key(&ba.full())
+                        })
+                        .cloned()
+                        .collect()
+                } else {
+                    Vec::new()
+                };
             // For `tool@latest`, we want upgrade semantics: resolve "latest" to an
             // installed concrete version and lock that. Writing the literal "latest"
             // string to the lockfile would be a bug. Use the backend's own resolver so
@@ -2556,6 +2570,9 @@ impl Lock {
             // Deduplicate after potential "latest" -> concrete-version resolution.
             let mut unique_tools = Vec::with_capacity(tools.len());
             for tool in tools {
+                push_unique_lock_tool(&mut unique_tools, tool);
+            }
+            for tool in project_python {
                 push_unique_lock_tool(&mut unique_tools, tool);
             }
             self.add_selected_python_locks(
