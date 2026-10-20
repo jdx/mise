@@ -29,7 +29,7 @@ jobs:
        startsWith(github.event.release.tag_name, 'v') &&
        !github.event.release.prerelease) ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Release lookups and index generation may take hours, but only because they
     # wait out a rate-limit window. This is the outer ceiling; each step sets
     # its own bound so the generous value here never applies to work that

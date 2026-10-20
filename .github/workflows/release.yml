@@ -487,7 +487,7 @@ jobs:
           path: dist/deb
           if-no-files-found: error
   release:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     outputs:
       created: ${{ steps.create-release.outputs.created }}
@@ -688,7 +688,7 @@ jobs:
   attest-release:
     needs: release
     if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.created == 'true' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       attestations: write
@@ -721,7 +721,7 @@ jobs:
       - release
       - attest-release
     if: ${{ !cancelled() && needs.release.result == 'success' && needs.attest-release.result == 'success' && needs.release.outputs.created == 'true' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       contents: write
@@ -807,7 +807,7 @@ jobs:
       - attest-release
       - packslip
     if: ${{ !cancelled() && needs.release.result == 'success' && needs.attest-release.result == 'success' && needs.packslip.result == 'success' && needs.release.outputs.created == 'true' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       contents: write
@@ -842,7 +842,7 @@ jobs:
   finish-draft-resolve:
     needs: [gate]
     if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions: {}
     outputs:
@@ -875,7 +875,7 @@ jobs:
   finish-draft-attest:
     needs: [gate, finish-draft-resolve]
     if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-resolve.result == 'success' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       attestations: write
@@ -906,7 +906,7 @@ jobs:
   finish-draft-packslip:
     needs: [gate, finish-draft-resolve, finish-draft-attest]
     if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-attest.result == 'success' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       contents: write
@@ -975,7 +975,7 @@ jobs:
     needs:
       [gate, finish-draft-resolve, finish-draft-attest, finish-draft-packslip]
     if: ${{ !cancelled() && needs.gate.outputs.finish-draft == 'true' && needs.finish-draft-packslip.result == 'success' }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       contents: write

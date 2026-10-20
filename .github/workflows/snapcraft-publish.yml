@@ -40,7 +40,7 @@ jobs:
 
   check-release:
     needs: build-snapcraft
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     outputs:
       publish: ${{ steps.release.outputs.publish }}
@@ -78,7 +78,7 @@ jobs:
       fail-fast: false
       matrix:
         artifact: [snap-ubuntu-24.04, snap-ubuntu-24.04-arm]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
