@@ -274,3 +274,9 @@ fn test_lex_string_escapes_and_unicode() {
     let tokens = lex(r#""test\\\\""#).unwrap();
     assert_eq!(tokens, vec![Token::String(r#"test\\\\"#)]);
 }
+
+#[test]
+fn test_lex_empty_string() {
+    let tokens = lex(r#""""#).unwrap();
+    assert_eq!(tokens, vec![Token::String("")]);
+}
