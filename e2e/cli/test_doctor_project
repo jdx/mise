@@ -133,3 +133,46 @@ dir = "/"
 TOML
 assert_succeed "mise --cd child doctor project --json > directories.json"
 assert_succeed "jq -e '[.checks[] | select(.name == \"parent\" or .name == \"absolute\") | .status] == [\"pass\", \"pass\"]' directories.json"
+
+# A check can depend on another; a failed dependency blocks it without running it.
+cat >mise.toml <<'TOML'
+[doctor.checks.auth]
+run = "exit 1"
+hint = "log in"
+
+[doctor.checks.project]
+depends = ["auth"]
+run = "touch dependent-ran"
+hint = "set project"
+
+[doctor.checks.ok]
+run = "true"
+
+[doctor.checks.after_ok]
+depends = "ok"
+run = "true"
+TOML
+assert_fail "mise doctor project"
+assert_contains "mise doctor project || true" "BLOCKED project"
+assert_not_contains "mise doctor project || true" "set project"
+assert "mise doctor project --json | jq -r '.checks[] | select(.name==\"project\").status'" "blocked"
+assert "mise doctor project --json | jq -r '.checks[] | select(.name==\"after_ok\").status'" "pass"
+assert_fail "test -e dependent-ran"
+
+cat >mise.toml <<'TOML'
+[doctor.checks.a]
+depends = ["b"]
+run = "true"
+
+[doctor.checks.b]
+depends = ["a"]
+run = "true"
+TOML
+assert_contains "mise doctor project || true" "dependency cycle"
+
+cat >mise.toml <<'TOML'
+[doctor.checks.a]
+depends = ["missing"]
+run = "true"
+TOML
+assert_contains "mise doctor project || true" "unknown check missing"

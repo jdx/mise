@@ -5,6 +5,7 @@ use std::time::Duration;
 use eyre::{Result, bail};
 use futures_util::{StreamExt, stream};
 use serde::Serialize;
+use tokio::sync::watch;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::doctor::DoctorCheck;
@@ -41,6 +42,7 @@ enum Status {
     Fail,
     Error,
     Skipped,
+    Blocked,
 }
 
 #[derive(Debug, Serialize)]
@@ -99,6 +101,7 @@ impl Project {
                     Status::Fail => "FAIL",
                     Status::Error => "ERROR",
                     Status::Skipped => "SKIP",
+                    Status::Blocked => "BLOCKED",
                 };
                 miseprintln!(
                     "{status} {}: {}",
@@ -172,10 +175,26 @@ impl Project {
             toolset.full_env(&config).await
         }
         .await;
-        report.checks = stream::iter(checks)
+        let order = dependency_order(&checks)?;
+        // Each check publishes whether it passed. Checks are admitted in
+        // dependency order, so a dependency is always already running (or done)
+        // when a dependent waits on it, and `jobs` cannot deadlock the wait.
+        let outcomes: BTreeMap<String, watch::Sender<Option<bool>>> = order
+            .iter()
+            .map(|name| (name.clone(), watch::channel(None).0))
+            .collect();
+        let ordered = order
+            .into_iter()
+            .map(|name| {
+                let entry = checks.remove(&name).expect("ordered from checks");
+                (name, entry)
+            })
+            .collect::<Vec<_>>();
+        report.checks = stream::iter(ordered)
             .map(|(name, (source, root, check))| {
                 let environment = &environment;
                 let config = &config;
+                let outcomes = &outcomes;
                 async move {
                     let mut result = CheckResult {
                         name,
@@ -185,7 +204,19 @@ impl Project {
                         message: None,
                         hint: check.hint.clone(),
                     };
-                    if !crate::config::doctor::applies(&check) {
+                    let mut unmet = None;
+                    for dep in &check.depends {
+                        let mut rx = outcomes[dep].subscribe();
+                        let passed = rx.wait_for(|v| v.is_some()).await.ok().and_then(|v| *v);
+                        if passed != Some(true) {
+                            unmet = Some(dep.clone());
+                            break;
+                        }
+                    }
+                    if let Some(dep) = unmet {
+                        result.status = Status::Blocked;
+                        result.message = Some(format!("Blocked: dependency {dep} did not pass"));
+                    } else if !crate::config::doctor::applies(&check) {
                         result.status = Status::Skipped;
                         result.message =
                             Some("Check does not apply to this operating system".into());
@@ -211,6 +242,7 @@ impl Project {
                             }
                         }
                     }
+                    outcomes[&result.name].send_replace(Some(result.status == Status::Pass));
                     result.message = result.message.map(|message| config.redact(&message));
                     result.hint = result.hint.map(|hint| config.redact(&hint));
                     result.description = result
@@ -227,6 +259,45 @@ impl Project {
         report.checks.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(report)
     }
+}
+
+/// Check names with every check after the checks it depends on. Rejects unknown
+/// dependencies and cycles, since either would leave a check waiting forever.
+fn dependency_order(
+    checks: &BTreeMap<String, (PathBuf, PathBuf, DoctorCheck)>,
+) -> Result<Vec<String>> {
+    for (name, (_, _, check)) in checks {
+        for dep in &check.depends {
+            if !checks.contains_key(dep) {
+                bail!("Check {name} depends on unknown check {dep}");
+            }
+        }
+    }
+    let mut order = Vec::with_capacity(checks.len());
+    let mut done = std::collections::BTreeSet::new();
+    while order.len() < checks.len() {
+        let ready = checks
+            .iter()
+            .filter(|(name, (_, _, check))| {
+                !done.contains(*name) && check.depends.iter().all(|dep| done.contains(dep))
+            })
+            .map(|(name, _)| name.clone())
+            .collect::<Vec<_>>();
+        if ready.is_empty() {
+            let cyclic = checks
+                .keys()
+                .filter(|name| !done.contains(*name))
+                .cloned()
+                .collect::<Vec<_>>();
+            bail!(
+                "Checks have a dependency cycle involving: {}",
+                cyclic.join(", ")
+            );
+        }
+        done.extend(ready.iter().cloned());
+        order.extend(ready);
+    }
+    Ok(order)
 }
 
 async fn run_check(

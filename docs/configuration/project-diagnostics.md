@@ -62,6 +62,7 @@ Each `[doctor.checks.<name>]` table accepts:
 | `dir`         | Working directory. Defaults to the [config root](/configuration.html#config-root) of the declaring file, and relative paths resolve from it; `~/` and absolute paths are used as given. In global or system config, the directory mise runs in takes the place of the config root.                                 |
 | `shell`       | Program and arguments, including the command flag, such as `"bash -c"` or `"pwsh -Command"`. Defaults to [`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args) or [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args). |
 | `os`          | An OS or OS/architecture selector, or a list of them, such as `"linux/arm64"` or `["linux", "macos"]`. Omit it to run everywhere.                                                                                                                                                                                  |
+| `depends`     | A check name, or a list of them, that must pass first. If one does not pass, this check is reported as `blocked` and its command does not run.                                                                                                                                                                     |
 
 `os` accepts the same aliases as tool filters, such as `darwin`, `win`, and
 `amd64`; an empty list is rejected. `dir` can point outside the project, such as
@@ -76,6 +77,31 @@ its hint and `dir`.
 
 Checks run in parallel, up to [`jobs`](/configuration/settings.html#jobs) at a
 time. Set `jobs = 1` to run them one at a time.
+
+## Depend on another check
+
+Use `depends` when a check only makes sense after another one passes. The
+dependent check waits for the checks it names, so a single root cause is
+reported once instead of as several failures:
+
+```toml
+[doctor.checks."examplectl:auth"]
+description = "Logged in to examplectl"
+run = "examplectl auth status"
+hint = "examplectl auth login"
+
+[doctor.checks."examplectl:project"]
+description = "The default project is set"
+depends = ["examplectl:auth"]
+run = 'test -n "$(examplectl config get project)"'
+hint = "examplectl config set project <name>"
+```
+
+When `examplectl:auth` fails, `examplectl:project` is `blocked`: it does not
+run and its hint is not shown. A dependency that ends in `fail`, `error`,
+`skipped` (excluded by `os`) or `blocked` blocks its dependents. Checks without
+`depends` run as before. A `depends` entry that names an unknown check, or a
+cycle between checks, is an error and no check runs.
 
 ## What a check sees
 
@@ -98,6 +124,7 @@ Each check ends with one of these statuses:
 | `pass`    | The command exited with status 0.                                                                                                                         |
 | `fail`    | The command exited with another status. A shell that reports a missing command this way also counts as `fail`.                                            |
 | `error`   | mise could not run or finish the check: a timeout, too much output, invalid options, a shell that failed to start, or an unavailable project environment. |
+| `blocked` | A check named in `depends` did not pass, so the command was not run. Does not fail the run by itself; the dependency already does.                        |
 | `skipped` | The check's `os` selection excludes this machine.                                                                                                         |
 
 `mise doctor project` exits with status 1 when any check fails or errors. With
