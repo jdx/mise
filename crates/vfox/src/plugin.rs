@@ -308,16 +308,18 @@ impl Plugin {
 
             let metadata = self.load_metadata()?;
             self.set_global("PLUGIN", metadata.clone())?;
-            if let Some(dir) = &self.cache_dir_path
-                && let Err(err) = std::fs::create_dir_all(dir)
-            {
-                debug!("[vfox:{}] failed to create {dir:?}: {err}", self.name);
-            }
+            // Hide the path when the directory can't be created, so a hook never
+            // writes into a directory mise promised but doesn't have
+            let cache_dir_path = self.cache_dir_path.clone().filter(|dir| {
+                std::fs::create_dir_all(dir)
+                    .inspect_err(|err| debug!("[vfox:{}] no cache dir {dir:?}: {err}", self.name))
+                    .is_ok()
+            });
             self.set_global(
                 "RUNTIME",
                 Runtime::get(
                     self.dir.clone(),
-                    self.cache_dir_path.clone(),
+                    cache_dir_path,
                     self.runtime_env_type.as_deref(),
                 ),
             )?;

@@ -62,7 +62,7 @@ the host and can select the wrong download for the platform being locked.
 
 `RUNTIME.cacheDirPath` is a directory under mise's cache directory
 (`$MISE_CACHE_DIR/plugins/<plugin-name>`) that belongs to the plugin. mise
-creates it before running a hook, and every hook of the plugin sees the same
+creates it before running a hook (`RUNTIME.cacheDirPath` is `nil` if it can't), and every hook of the plugin sees the same
 path, so a backend plugin that serves many tools can keep a large download
 there once instead of fetching it again for each tool.
 

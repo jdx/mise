@@ -622,3 +622,20 @@ async fn get_sdk_exposes_a_cache_dir_under_the_vfox_cache() {
     assert_eq!(seen, Some(expected.to_string_lossy().to_string()));
     assert!(expected.is_dir());
 }
+
+#[tokio::test]
+async fn cache_dir_is_nil_when_it_cannot_be_created() {
+    let dir = tempfile::tempdir().unwrap();
+    let blocker = dir.path().join("blocker");
+    std::fs::write(&blocker, "").unwrap();
+    let mut vfox = Vfox::test();
+    vfox.cache_dir = blocker;
+
+    let plugin = vfox.get_sdk("dummy").unwrap();
+    let seen: Option<String> = plugin
+        .eval_async(mlua::chunk! { return RUNTIME.cacheDirPath })
+        .await
+        .unwrap();
+
+    assert_eq!(seen, None);
+}
