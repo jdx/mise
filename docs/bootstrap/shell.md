@@ -229,6 +229,12 @@ shims directory, then the usual package-manager locations (`/opt/homebrew/bin`,
 path is what goes into `/etc/shells` and `chsh`, and what
 `mise bootstrap user status` shows (`resolved` in `--json`).
 
+Shells from [package manager plugins](/bootstrap/packages/plugins.html) are
+installed after the login shell step in a full `mise bootstrap` run (see the
+[run order](/bootstrap.html#how-it-runs)), so a name is not found on a first
+run. Run `mise bootstrap user apply` once the plugin packages are installed, or
+use an absolute path.
+
 If no executable is found, `status` reports `not installed`, `apply` fails
 without touching `/etc/shells` or the account, and `apply --dry-run` says the
 path is resolved after installation.
