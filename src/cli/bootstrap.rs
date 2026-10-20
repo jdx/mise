@@ -5051,6 +5051,7 @@ impl BootstrapStatus {
         let status = system::login_shell::status(&req)?;
         let (row_state, json_state, missing) = match &status.state {
             LoginShellState::Set => ("set", "set", false),
+            LoginShellState::Unresolved => ("not installed", "unresolved", true),
             LoginShellState::Differs { .. } => ("differs", "differs", true),
             LoginShellState::MissingFromShells { .. } => {
                 ("missing from /etc/shells", "missing_from_shells", true)
@@ -5068,6 +5069,7 @@ impl BootstrapStatus {
             json!({
                 "available": true,
                 "shell": status.request.shell,
+                "resolved": status.resolved,
                 "user": status.user,
                 "current": status.current,
                 "shell_listed": status.shell_listed,
@@ -6152,6 +6154,10 @@ impl BootstrapUserStatus {
                 let status = system::login_shell::status(&req)?;
                 let state = match &status.state {
                     LoginShellState::Set => "set",
+                    LoginShellState::Unresolved => {
+                        any_missing = true;
+                        "not installed"
+                    }
                     LoginShellState::Differs { .. } => {
                         any_missing = true;
                         "differs"
@@ -6167,6 +6173,7 @@ impl BootstrapUserStatus {
                         json!({
                             "available": true,
                             "shell": status.request.shell,
+                            "resolved": status.resolved,
                             "user": status.user,
                             "current": status.current,
                             "shell_listed": status.shell_listed,
@@ -6175,7 +6182,7 @@ impl BootstrapUserStatus {
                     );
                 } else {
                     rows.push(vec![
-                        status.request.shell,
+                        status.resolved.unwrap_or(status.request.shell),
                         status.current,
                         state.to_string(),
                     ]);

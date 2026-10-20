@@ -204,8 +204,34 @@ login_shell = "/opt/homebrew/bin/fish"
 
 `mise bootstrap` installs packages before it changes the login shell, so one run
 does both. When you run `mise bootstrap user apply` on its own, install the
-shell first. The path must be absolute, such as `/bin/zsh`; mise ignores a
-relative name with a warning.
+shell first. The value is an absolute path, such as `/bin/zsh`, or a bare shell
+name, as described [below](#use-a-shell-name). mise ignores a relative path
+such as `bin/zsh` with a warning.
+
+### Use a shell name {#use-a-shell-name}
+
+To share one config across machines that install the shell in different
+places, give the executable's name instead of a path:
+
+```toml
+[bootstrap.packages]
+"brew:fish" = "latest"
+
+[bootstrap.user]
+login_shell = "fish"
+```
+
+mise resolves the name when it checks or applies the setting, so after
+`bootstrap.packages` has installed the shell. It searches `PATH`, never the mise
+shims directory, then the usual package-manager locations (`/opt/homebrew/bin`,
+`/usr/local/bin`, `/home/linuxbrew/.linuxbrew/bin`, `~/.linuxbrew/bin`,
+`/usr/bin`, and `/bin`), and uses the first executable it finds. The resolved
+path is what goes into `/etc/shells` and `chsh`, and what
+`mise bootstrap user status` shows (`resolved` in `--json`).
+
+If no executable is found, `status` reports `not installed`, `apply` fails
+without touching `/etc/shells` or the account, and `apply --dry-run` says the
+path is resolved after installation.
 
 Many systems accept only shells listed in `/etc/shells`, so mise adds the path
 there when it is missing. Then, if the account's shell differs, mise runs

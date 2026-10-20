@@ -1664,9 +1664,9 @@ pub fn login_shell_from_config(config: &Config) -> Option<login_shell::LoginShel
                 warn!("[bootstrap.user].login_shell: must not be empty, ignoring entry");
                 continue;
             }
-            if !Path::new(&login_shell).is_absolute() {
+            if !Path::new(&login_shell).is_absolute() && login_shell.contains(['/', '\\']) {
                 warn!(
-                    "[bootstrap.user].login_shell: shell must be an absolute path, ignoring entry"
+                    "[bootstrap.user].login_shell: shell must be an absolute path or a bare shell name, ignoring entry"
                 );
                 continue;
             }
