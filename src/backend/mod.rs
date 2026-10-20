@@ -1151,9 +1151,14 @@ fn has_exact_case_entry(path: &Path) -> bool {
     if !cfg!(target_os = "macos") {
         return true;
     }
-    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+    let Some(name) = path.file_name() else {
         return true;
     };
+    // An empty PATH component joins to a bare name whose parent is `""`: the cwd.
+    let dir = path
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     match std::fs::read_dir(dir) {
         Ok(mut entries) => entries.any(|e| e.is_ok_and(|e| e.file_name() == name)),
         Err(_) => true,
