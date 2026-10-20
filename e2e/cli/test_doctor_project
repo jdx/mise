@@ -176,3 +176,22 @@ depends = ["missing"]
 run = "true"
 TOML
 assert_contains "mise doctor project || true" "unknown check missing"
+
+# Waiting dependents do not hold job slots, so a limited run still finishes.
+cat >mise.toml <<'TOML'
+[doctor.checks.a]
+run = "sleep 1"
+
+[doctor.checks.b]
+run = "true"
+
+[doctor.checks.c]
+depends = ["a"]
+run = "true"
+
+[doctor.checks.d]
+depends = ["b"]
+run = "true"
+TOML
+assert_succeed "MISE_JOBS=1 mise doctor project"
+assert_succeed 'MISE_JOBS=2 mise doctor project --json | jq -e "[.checks[].status] | unique == [\"pass\"]"'

@@ -176,9 +176,12 @@ impl Project {
         }
         .await;
         let order = dependency_order(&checks)?;
-        // Each check publishes whether it passed. Checks are admitted in
-        // dependency order, so a dependency is always already running (or done)
-        // when a dependent waits on it, and `jobs` cannot deadlock the wait.
+        // Each check publishes whether it passed. Every check is admitted at once
+        // and waits for its dependencies without holding anything; only running a
+        // command takes one of the `jobs` permits, so a waiting check never keeps a
+        // ready one from starting.
+        let permits = tokio::sync::Semaphore::new(crate::jobs::normalize(Settings::get().jobs));
+        let total = order.len();
         let outcomes: BTreeMap<String, watch::Sender<Option<bool>>> = order
             .iter()
             .map(|name| (name.clone(), watch::channel(None).0))
@@ -195,6 +198,7 @@ impl Project {
                 let environment = &environment;
                 let config = &config;
                 let outcomes = &outcomes;
+                let permits = &permits;
                 async move {
                     let mut result = CheckResult {
                         name,
@@ -222,7 +226,12 @@ impl Project {
                             Some("Check does not apply to this operating system".into());
                     } else {
                         match environment {
-                            Ok(environment) => match run_check(&check, &root, environment).await {
+                            Ok(environment) => match async {
+                                let _permit = permits.acquire().await?;
+                                run_check(&check, &root, environment).await
+                            }
+                            .await
+                            {
                                 Ok(output) => {
                                     if !output.status.success() {
                                         result.status = Status::Fail;
@@ -251,9 +260,9 @@ impl Project {
                     result
                 }
             })
-            // Unordered so a slow probe does not hold back admission of the
-            // remaining checks; the report is sorted by name afterwards.
-            .buffer_unordered(crate::jobs::normalize(Settings::get().jobs))
+            // Unordered so a slow probe does not hold back the others; the report
+            // is sorted by name afterwards.
+            .buffer_unordered(total)
             .collect()
             .await;
         report.checks.sort_by(|a, b| a.name.cmp(&b.name));
