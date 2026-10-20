@@ -13,3 +13,4 @@ output="$(MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=.combined-tool-versions mise pru
 assert_not_contains_text "$output" "error loading tracked config file"
 assert_not_contains_text "$output" "unknown config file type"
 assert_not_contains_text "$output" "dummy@2.0.0"
+assert_contains_text "$output" "dummy@3.0.0"
