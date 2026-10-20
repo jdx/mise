@@ -145,7 +145,13 @@ impl Project {
                 std::env::current_dir()?
             };
             for (name, check) in declared {
-                checks.insert(name, (path.clone(), root.clone(), check));
+                // A bad template only fails its own check, and only where it applies.
+                let rendered = if crate::config::doctor::applies(&check) {
+                    cf.render_doctor_check(&check).map_err(|e| format!("{e:#}"))
+                } else {
+                    Ok(check.clone())
+                };
+                checks.insert(name, (path.clone(), root.clone(), check, rendered));
             }
         }
         let mut report = Report::default();
@@ -157,7 +163,7 @@ impl Project {
         let environment = async {
             if !checks
                 .values()
-                .any(|(_, _, check)| crate::config::doctor::applies(check))
+                .any(|(_, _, check, _)| crate::config::doctor::applies(check))
             {
                 return Ok(EnvMap::default());
             }
@@ -173,10 +179,14 @@ impl Project {
         }
         .await;
         report.checks = stream::iter(checks)
-            .map(|(name, (source, root, check))| {
+            .map(|(name, (source, root, check, rendered))| {
                 let environment = &environment;
                 let config = &config;
                 async move {
+                    let (check, render_error) = match rendered {
+                        Ok(check) => (check, None),
+                        Err(err) => (check, Some(err)),
+                    };
                     let mut result = CheckResult {
                         name,
                         description: check.description.clone(),
@@ -185,7 +195,10 @@ impl Project {
                         message: None,
                         hint: check.hint.clone(),
                     };
-                    if !crate::config::doctor::applies(&check) {
+                    if let Some(err) = render_error {
+                        result.status = Status::Error;
+                        result.message = Some(err);
+                    } else if !crate::config::doctor::applies(&check) {
                         result.status = Status::Skipped;
                         result.message =
                             Some("Check does not apply to this operating system".into());
