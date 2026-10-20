@@ -405,10 +405,15 @@ mod tests {
 
     #[test]
     fn test_absolute_request_resolves_to_itself() {
+        // an absolute path on every platform, so Windows drive paths count too
+        let shell = std::env::temp_dir()
+            .join("fish")
+            .to_string_lossy()
+            .to_string();
         let request = LoginShellRequest {
-            shell: "/opt/homebrew/bin/fish".to_string(),
+            shell: shell.clone(),
         };
-        assert_eq!(request.resolve().as_deref(), Some("/opt/homebrew/bin/fish"));
+        assert_eq!(request.resolve(), Some(shell));
     }
 
     #[test]
