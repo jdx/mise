@@ -297,12 +297,13 @@ jobs:
   # A real release signs the Windows zips with SignPath, which rejects any run containing a
   # non-GitHub-hosted job, and this run builds on Namespace runners. Run release-windows.yml as its
   # own run instead and carry its signed zips over under the names the release job expects. The run
-  # can wait on a manual approval in SignPath, so allow plenty of time.
+  # can take up to 150 minutes to build and then wait up to an hour on a manual approval in SignPath, so
+  # the timeout covers both plus queueing and the artifact copy.
   sign-windows:
     needs: [gate]
     if: needs.gate.outputs.build == 'true' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 300
     permissions:
       actions: write
       contents: read
