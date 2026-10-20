@@ -64,7 +64,7 @@ Each `[doctor.checks.<name>]` table accepts:
 | `os`          | An OS or OS/architecture selector, or a list of them, such as `"linux/arm64"` or `["linux", "macos"]`. Omit it to run everywhere.                                                                                                                                                                                  |
 
 `run`, `description` and `hint` are rendered as templates with the declaring
-file's context, so `{{ vars.* }}`, `{{ env.* }}` and the other
+file's context, so <code v-pre>{{ vars.* }}</code>, <code v-pre>{{ env.* }}</code> and the other
 [template](/templates.html) values work; use the `quote` filter for paths in
 `run`. `os` accepts the same aliases as tool filters, such as `darwin`, `win`, and
 `amd64`; an empty list is rejected. `dir` can point outside the project, such as
