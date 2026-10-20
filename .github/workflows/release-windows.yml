@@ -1,0 +1,144 @@
+name: release-windows
+
+# Builds and Authenticode-signs the Windows release zips.
+#
+# SignPath Foundation validates every job of the workflow run it signs and rejects the run if any
+# job ran on a non-GitHub-hosted runner. The rest of the release builds on Namespace runners, so a
+# real release dispatches this workflow as a run of its own (see `sign-windows` in release.yml) and
+# downloads the signed zips from it. The release PR's dry run calls it in-run instead: nothing is
+# signed there, so the self-hosted Windows runner is allowed.
+run-name: release-windows ${{ inputs.request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: "Identifies the release run that dispatched this workflow"
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      request_id:
+        type: string
+        required: false
+        default: ""
+    secrets:
+      MISE_GH_TOKEN:
+        required: false
+      SIGNPATH_API_TOKEN:
+        required: false
+
+concurrency:
+  group: release-windows-${{ github.ref_name }}-${{ inputs.request_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  DRY_RUN: ${{ startsWith(github.ref, 'refs/tags/v') && '0' || '1' }}
+  RUST_BACKTRACE: 1
+  GITHUB_API_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+  GH_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+  build-tarball-windows:
+    name: build-tarball-windows-${{matrix.arch}}
+    # Each arch builds on a native runner. Cross-compiling arm64 on the x64 runner
+    # with fat LTO and panic=unwind ran past the 150-minute timeout.
+    # The release PR's dry run builds x64 on the shared trusted self-hosted runner (repository variable
+    # WINDOWS_SELF_HOSTED=true; unset falls back to the hosted runner). A real release always builds on
+    # a GitHub-hosted runner, because SignPath Foundation requires every job of a run it signs to run
+    # on GitHub-hosted runners.
+    runs-on: ${{ matrix.arch == 'x64' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && (github.event.pull_request.user.login == 'jdx' || github.event.pull_request.user.login == 'mise-en-dev') && vars.WINDOWS_SELF_HOSTED == 'true' && fromJSON('["self-hosted", "jdx-win-trusted-v1"]') || matrix.runner }}
+    # Matches the Linux tarball job. Fat LTO's link varied from ~65 minutes to
+    # past this timeout on windows-latest depending on memory pressure, so
+    # scripts/build-tarball.ps1 builds with thin LTO on hosted runners and with
+    # the profile's fat LTO on the self-hosted runner, which has the RAM for it.
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            target: aarch64-pc-windows-msvc
+            runner: windows-11-arm
+          - arch: x64
+            target: x86_64-pc-windows-msvc
+            runner: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - run: rustup target add ${{matrix.target}}
+      - run: scripts/build-tarball.ps1 ${{matrix.target}}
+        env:
+          OS: windows
+          ARCH: ${{matrix.arch}}
+      - name: Smoke-test vfox Lua errors
+        run: scripts/smoke-test-vfox-lua-error.ps1 dist/mise/bin/mise.exe
+      # The release job globs artifacts/*/mise-<version>-<platform>.zip, so the unsigned zip must not
+      # share the final name.
+      - name: Mark zip as unsigned
+        shell: pwsh
+        run: |
+          foreach ($zip in @(Get-ChildItem dist/*.zip)) {
+            Rename-Item $zip.FullName "unsigned-$($zip.Name)"
+          }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned-tarball-${{matrix.target}}
+          path: dist/*.zip
+          if-no-files-found: error
+  # Authenticode-signs mise.exe and mise-shim.exe with SignPath Foundation. Only tag runs submit a
+  # signing request; dry runs pass the unsigned zip through under the name the release job expects.
+  sign-windows:
+    needs: [build-tarball-windows]
+    name: sign-windows-${{matrix.target}}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-pc-windows-msvc, x86_64-pc-windows-msvc]
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unsigned-tarball-${{matrix.target}}
+          path: dist
+      - name: Upload unsigned zip for SignPath
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: upload-unsigned
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signpath-unsigned-${{matrix.target}}
+          path: dist/unsigned-*.zip
+          if-no-files-found: error
+      - name: Sign with SignPath
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: mise
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY || 'release-signing' }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          # The production policy requires a manual approval in SignPath.
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed
+      - name: Restore the release zip name
+        run: |
+          src=dist
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then src=signed; fi
+          mkdir final
+          for f in "$src"/unsigned-*.zip; do
+            cp "$f" "final/$(basename "$f" | sed 's/^unsigned-//')"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tarball-${{matrix.target}}
+          path: final/*.zip
+          if-no-files-found: error
