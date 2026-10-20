@@ -79,6 +79,17 @@ fn lock_tool_matches(a: &LockTool, b: &LockTool) -> bool {
         && a.1.request.source() == b.1.request.source()
 }
 
+fn selected_python_requests<'a>(
+    tools: impl IntoIterator<Item = &'a LockTool>,
+) -> Result<Vec<ToolRequest>> {
+    tools
+        .into_iter()
+        .filter_map(|(_, tv)| {
+            crate::backend::pipx::selected_python_dependency(&tv.request).transpose()
+        })
+        .collect()
+}
+
 fn push_unique_lock_tool(tools: &mut Vec<LockTool>, mut tool: LockTool) {
     // Installed-version resolution can yield an install directory name such
     // as `3.9.6~aube~<digest>`; lock the npm/PyPI version it stands for.
@@ -2007,7 +2018,12 @@ impl Lock {
 
     fn current_tool_versions(&self, tools: &[LockTool]) -> BTreeMap<String, BTreeSet<String>> {
         let mut current_versions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for (ba, tv) in tools {
+        // A filtered run prunes only the tools it names: `mise lock pipx:x` also
+        // locks the Python x selects, but must keep the project's own python.
+        let named = |ba: &crate::args::BackendArg| {
+            self.tool.is_empty() || self.tool.iter().any(|t| t.ba.short == ba.short)
+        };
+        for (ba, tv) in tools.iter().filter(|(ba, _)| named(ba)) {
             current_versions
                 .entry(ba.short.clone())
                 .or_default()
@@ -2380,6 +2396,8 @@ impl Lock {
 
         // Third pass: tool stubs that read their entries from this lockfile.
         // They are not part of any config, so nothing above sees them.
+        let python_named = self.tool.iter().any(|t| t.ba.short == "python");
+        let mut stub_python_requests = Vec::new();
         for (path, stub) in live_tool_stubs(target_lockfile_path) {
             let request = match stub.and_then(|stub| stub.to_tool_request(&path)) {
                 Ok(request) => request,
@@ -2395,6 +2413,10 @@ impl Lock {
                     .iter()
                     .any(|tool| tool.ba.as_ref() == request.ba().as_ref())
             {
+                if python_named {
+                    stub_python_requests
+                        .extend(crate::backend::pipx::selected_python_dependency(&request)?);
+                }
                 continue;
             }
             let resolve_options = request.resolve_options(context.resolve_options)?;
@@ -2422,8 +2444,15 @@ impl Lock {
         .await?;
 
         if self.tool.is_empty() {
-            self.add_selected_python_locks(config, context, target_lockfile_path, &mut all_tools)
-                .await?;
+            let requests = selected_python_requests(&all_tools)?;
+            self.add_selected_python_locks(
+                config,
+                context,
+                target_lockfile_path,
+                requests,
+                &mut all_tools,
+            )
+            .await?;
             Ok(all_tools)
         } else {
             // Build map of tool args with explicit versions
@@ -2432,6 +2461,13 @@ impl Lock {
                 .iter()
                 .map(|t| (t.ba.full(), t.tvr.clone()))
                 .collect();
+            // `mise lock python` also locks the Pythons that pipx tools and
+            // stubs select, so pruning python keeps them.
+            let mut python_requests =
+                selected_python_requests(all_tools.iter().filter(|(ba, _)| {
+                    python_named || specified_versions.contains_key(&ba.full())
+                }))?;
+            python_requests.extend(stub_python_requests);
             // For `tool@latest`, we want upgrade semantics: resolve "latest" to an
             // installed concrete version and lock that. Writing the literal "latest"
             // string to the lockfile would be a bug. Use the backend's own resolver so
@@ -2526,6 +2562,7 @@ impl Lock {
                 config,
                 context,
                 target_lockfile_path,
+                python_requests,
                 &mut unique_tools,
             )
             .await?;
@@ -2538,14 +2575,9 @@ impl Lock {
         config: &Arc<Config>,
         context: &LockCollectionContext<'_>,
         target_lockfile_path: &Path,
+        requests: Vec<ToolRequest>,
         tools: &mut Vec<LockTool>,
     ) -> Result<()> {
-        let requests = tools
-            .iter()
-            .filter_map(|(_, tv)| {
-                crate::backend::pipx::selected_python_dependency(&tv.request).transpose()
-            })
-            .collect::<Result<Vec<_>>>()?;
         for request in requests {
             let opts = request.resolve_options(context.resolve_options)?;
             let tv = request.resolve(config, &opts).await.wrap_err_with(|| {
