@@ -133,11 +133,11 @@ pub fn hook_commands(value: toml::Value) -> Option<Vec<toml::Value>> {
 
 #[derive(Debug, Default, Clone, Deserialize, JsonSchema)]
 pub struct BootstrapUserTomlConfig {
-    /// current user's desired login shell, applied with `chsh -s`; a template that must render to an absolute path
-    // The value is rendered and trimmed before the absolute-path check, so the schema also takes
-    // surrounding whitespace and a leading template.
+    /// current user's desired login shell, applied with `chsh -s`; an absolute path or a bare shell name resolved after packages are installed; may be a template
+    // The value is rendered and trimmed before the check, so the schema also takes
+    // surrounding whitespace and a leading template; a relative path with a separator is rejected.
     #[serde(default)]
-    #[schemars(regex(pattern = r"^\s*(?:/|\{[{%])"))]
+    #[schemars(regex(pattern = r"^\s*(?:/|\{[{%]|[^/\\{\s][^/\\]*$)"))]
     pub login_shell: Option<String>,
 }
 

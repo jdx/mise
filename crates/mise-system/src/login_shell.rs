@@ -3,20 +3,106 @@
 
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use eyre::Result;
 
+/// The shell as written in config: an absolute path, or a bare name such as
+/// `fish` that is resolved to an executable when the shell is checked or applied.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoginShellRequest {
     pub shell: String,
 }
 
+impl LoginShellRequest {
+    /// Absolute path to apply, or `None` when a bare name is not installed yet.
+    pub fn resolve(&self) -> Option<String> {
+        if Path::new(&self.shell).is_absolute() {
+            return Some(self.shell.clone());
+        }
+        resolve_shell_name(&self.shell, &search_dirs()).map(|p| p.to_string_lossy().to_string())
+    }
+}
+
+/// Directories package managers install into that may not be in the invoking
+/// process's `PATH`, such as right after Homebrew was installed.
+const EXTRA_SEARCH_DIRS: &[&str] = &[
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/home/linuxbrew/.linuxbrew/bin",
+    "/usr/bin",
+    "/bin",
+];
+
+fn search_dirs() -> Vec<PathBuf> {
+    search_dirs_from(
+        &mise_util::env::PATH,
+        mise_util::file::is_mise_shims_dir,
+        target_home().as_deref(),
+    )
+}
+
+/// Home of the account `chsh` changes, which is not `$HOME` under `sudo`.
+fn target_home() -> Option<PathBuf> {
+    #[cfg(unix)]
+    {
+        target_user().ok().map(|user| user.dir)
+    }
+    #[cfg(not(unix))]
+    {
+        None
+    }
+}
+
+/// `path` without mise shim directories, followed by the package-manager locations.
+fn search_dirs_from(
+    path: &[PathBuf],
+    is_shims_dir: impl Fn(&Path) -> bool,
+    home: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = path
+        .iter()
+        .filter(|dir| dir.is_absolute())
+        .cloned()
+        .collect();
+    if let Some(home) = home {
+        dirs.push(home.join(".linuxbrew/bin"));
+    }
+    dirs.extend(EXTRA_SEARCH_DIRS.iter().map(PathBuf::from));
+    dirs.retain(|dir| !is_shims_dir(dir));
+    dirs
+}
+
+/// First executable regular file called `name` in `dirs`. Never a mise shim.
+fn resolve_shell_name(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+    dirs.iter()
+        .map(|dir| dir.join(name))
+        .find(|candidate| is_executable_file(candidate))
+}
+
+fn is_executable_file(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        path.is_file()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoginShellState {
+    /// A bare shell name that no installed executable matches yet
+    Unresolved,
     Set,
-    Differs { current: String },
-    MissingFromShells { current: String },
+    Differs {
+        current: String,
+    },
+    MissingFromShells {
+        current: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +110,8 @@ pub struct LoginShellStatus {
     pub request: LoginShellRequest,
     pub user: String,
     pub current: String,
+    /// Absolute path the request resolves to, if any
+    pub resolved: Option<String>,
     pub shell_listed: bool,
     pub state: LoginShellState,
 }
@@ -43,12 +131,19 @@ pub fn unavailable_reason() -> String {
 pub fn status(request: &LoginShellRequest) -> Result<LoginShellStatus> {
     let user = target_user()?;
     let current = display_shell(user.shell);
-    let shell_listed = shell_is_listed(&request.shell)?;
-    let state = login_shell_state(&current, &request.shell, shell_listed);
+    let resolved = request.resolve();
+    let (shell_listed, state) = match &resolved {
+        Some(shell) => {
+            let listed = shell_is_listed(shell)?;
+            (listed, login_shell_state(&current, shell, listed))
+        }
+        None => (false, LoginShellState::Unresolved),
+    };
     Ok(LoginShellStatus {
         request: request.clone(),
         user: user.name,
         current,
+        resolved,
         shell_listed,
         state,
     })
@@ -69,9 +164,22 @@ fn login_shell_state(current: &str, requested: &str, shell_listed: bool) -> Logi
 }
 
 pub fn apply(request: &LoginShellRequest, dry_run: bool) -> Result<()> {
+    let Some(shell) = request.resolve() else {
+        if dry_run {
+            miseprintln!(
+                "# login_shell: `{}` is not installed yet, its path is resolved after installation",
+                request.shell
+            );
+            return Ok(());
+        }
+        eyre::bail!(
+            "login_shell: could not find an executable named `{}`, leaving the login shell unchanged",
+            request.shell
+        );
+    };
     let user = target_user()?;
-    let args = chsh_args(request, &user);
-    ensure_shell_listed(&request.shell, dry_run)?;
+    let args = chsh_args(&shell, &user);
+    ensure_shell_listed(&shell, dry_run)?;
     let display = shell_words::join(&args);
     if dry_run {
         miseprintln!("chsh {display}");
@@ -117,13 +225,13 @@ fn display_shell(shell: PathBuf) -> String {
 }
 
 #[cfg(unix)]
-fn chsh_args(request: &LoginShellRequest, user: &nix::unistd::User) -> Vec<String> {
-    chsh_args_for_user_name(request, &user.name)
+fn chsh_args(shell: &str, user: &nix::unistd::User) -> Vec<String> {
+    chsh_args_for_user_name(shell, &user.name)
 }
 
 #[cfg(unix)]
-fn chsh_args_for_user_name(request: &LoginShellRequest, user_name: &str) -> Vec<String> {
-    let mut args = vec!["-s".to_string(), request.shell.clone()];
+fn chsh_args_for_user_name(shell: &str, user_name: &str) -> Vec<String> {
+    let mut args = vec!["-s".to_string(), shell.to_string()];
     if nix::unistd::geteuid().is_root()
         && let Ok(sudo_user) = mise_util::env::var("SUDO_USER")
         && !sudo_user.is_empty()
@@ -135,8 +243,8 @@ fn chsh_args_for_user_name(request: &LoginShellRequest, user_name: &str) -> Vec<
 }
 
 #[cfg(not(unix))]
-fn chsh_args(request: &LoginShellRequest, _user: &TargetUser) -> Vec<String> {
-    vec!["-s".to_string(), request.shell.clone()]
+fn chsh_args(shell: &str, _user: &TargetUser) -> Vec<String> {
+    vec!["-s".to_string(), shell.to_string()]
 }
 
 fn shells_file() -> PathBuf {
@@ -243,6 +351,72 @@ mod tests {
     }
 
     #[test]
+    fn test_resolve_shell_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().to_path_buf();
+        assert_eq!(resolve_shell_name("fish", std::slice::from_ref(&bin)), None);
+        let fish = bin.join("fish");
+        std::fs::write(&fish, "#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // not executable yet
+            assert_eq!(resolve_shell_name("fish", std::slice::from_ref(&bin)), None);
+            std::fs::set_permissions(&fish, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert_eq!(
+            resolve_shell_name("fish", std::slice::from_ref(&bin)),
+            Some(fish)
+        );
+        let other = tempfile::tempdir().unwrap();
+        assert_eq!(
+            resolve_shell_name("fish", &[other.path().to_path_buf(), bin.clone()]),
+            Some(bin.join("fish"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_search_dirs_skip_shims_and_keep_order() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shims = tmp.path().join("shims");
+        let link = tmp.path().join("shims-link");
+        let other = tmp.path().join("bin");
+        std::fs::create_dir_all(&shims).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        std::os::unix::fs::symlink(&shims, &link).unwrap();
+        let path = vec![link, other.clone(), shims.clone()];
+        let canon = |d: &Path| d.canonicalize().unwrap_or_else(|_| d.to_path_buf());
+        let shims_canon = canon(&shims);
+        let dirs = search_dirs_from(
+            &path,
+            |d| canon(d) == shims_canon,
+            Some(Path::new("/home/u")),
+        );
+        assert_eq!(dirs[0], other);
+        assert_eq!(dirs[1], PathBuf::from("/home/u/.linuxbrew/bin"));
+        assert_eq!(dirs[2], PathBuf::from(EXTRA_SEARCH_DIRS[0]));
+        assert!(
+            !dirs
+                .iter()
+                .any(|d| d.ends_with("shims") || d.ends_with("shims-link"))
+        );
+    }
+
+    #[test]
+    fn test_absolute_request_resolves_to_itself() {
+        // an absolute path on every platform, so Windows drive paths count too
+        let shell = std::env::temp_dir()
+            .join("fish")
+            .to_string_lossy()
+            .to_string();
+        let request = LoginShellRequest {
+            shell: shell.clone(),
+        };
+        assert_eq!(request.resolve(), Some(shell));
+    }
+
+    #[test]
     fn test_shells_line_entry() {
         assert_eq!(shells_line_entry("/bin/zsh"), Some("/bin/zsh"));
         assert_eq!(shells_line_entry(" /bin/fish # comment"), Some("/bin/fish"));
@@ -254,10 +428,7 @@ mod tests {
     #[test]
     fn test_chsh_args_for_root_sudo_user() {
         unsafe { std::env::set_var("SUDO_USER", "alice") };
-        let request = LoginShellRequest {
-            shell: "/bin/zsh".to_string(),
-        };
-        let args = chsh_args_for_user_name(&request, "alice");
+        let args = chsh_args_for_user_name("/bin/zsh", "alice");
         if nix::unistd::geteuid().is_root() {
             assert_eq!(args, vec!["-s", "/bin/zsh", "alice"]);
         } else {

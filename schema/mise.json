@@ -9010,8 +9010,8 @@
           "properties": {
             "login_shell": {
               "type": "string",
-              "description": "current user's desired login shell, applied with `chsh -s`; a template that must render to an absolute path",
-              "pattern": "^\\s*(?:/|\\{[{%])"
+              "description": "current user's desired login shell, applied with `chsh -s`; an absolute path or a bare shell name resolved after packages are installed; may be a template",
+              "pattern": "^\\s*(?:/|\\{[{%]|[^/\\\\{\\s][^/\\\\]*$)"
             }
           },
           "additionalProperties": false
