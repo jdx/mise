@@ -260,7 +260,12 @@ pub(crate) fn apply_login_shell_with_report(
         return Ok(BootstrapApplyReport::default());
     }
     let needs_follow_up = status.state != LoginShellState::Set;
-    if !dry_run && !yes && console::user_attended_stderr() {
+    // an unresolved name skips the prompt so `apply` reports the error
+    if !dry_run
+        && !yes
+        && status.state != LoginShellState::Unresolved
+        && console::user_attended_stderr()
+    {
         let msg = format!("login_shell: run `chsh -s {shell}`?");
         if !crate::ui::prompt::confirm(msg)?.is_yes() {
             info!("login_shell: skipped");
