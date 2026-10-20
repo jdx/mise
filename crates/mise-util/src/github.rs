@@ -1661,7 +1661,7 @@ pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> Strin
     if browser_url == api_url {
         return browser_url.to_string();
     }
-    match crate::http::HTTP.head(browser_url).await {
+    match crate::http::HTTP.head_without_netrc(browser_url).await {
         Ok(resp) => {
             let is_html = resp
                 .headers()
