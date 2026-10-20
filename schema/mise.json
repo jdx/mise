@@ -643,6 +643,20 @@
               "os": {
                 "description": "OS or OS/arch selectors; omit to run everywhere.",
                 "$ref": "#/$defs/os_filter"
+              },
+              "depends": {
+                "description": "Names of checks that must pass first. If one does not pass, this check is reported as blocked and its command does not run.",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
               }
             },
             "required": ["run"]

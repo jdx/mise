@@ -1076,6 +1076,11 @@ run = "pg_isready --quiet"
 hint = "Start it with \`mise daemons start postgres\`."
 timeout = "5s"
 os = ["linux", "macos"]
+
+[doctor.checks.migrations]
+description = "Database migrations are applied"
+depends = ["database"]
+run = "bin/migrate --check"
 `,
 
   // ---------------------------------------------------------------- machine setup
