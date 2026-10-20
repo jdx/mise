@@ -605,3 +605,20 @@ async fn test_download_plugin_authorization_replaces_resolver_authorization() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn get_sdk_exposes_a_cache_dir_under_the_vfox_cache() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut vfox = Vfox::test();
+    vfox.cache_dir = dir.path().to_path_buf();
+
+    let plugin = vfox.get_sdk("dummy").unwrap();
+    let seen: Option<String> = plugin
+        .eval_async(mlua::chunk! { return RUNTIME.cacheDirPath })
+        .await
+        .unwrap();
+
+    let expected = dir.path().join("plugins").join("dummy");
+    assert_eq!(seen, Some(expected.to_string_lossy().to_string()));
+    assert!(expected.is_dir());
+}
