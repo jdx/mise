@@ -1971,16 +1971,28 @@ mod tests {
             path: vec![PathBuf::from("/x/bin")],
             ..Default::default()
         };
-        let pristine_path = |path: &str| {
+        let join = |dirs: &[&str]| {
+            join_paths(dirs.iter().map(PathBuf::from))
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        };
+        let pristine_path = |dirs: &[&str]| {
             let orig = [
-                (PATH_KEY.to_string(), path.to_string()),
-                ("__MISE_ORIG_PATH".into(), "/usr/bin:/x/bin".into()),
+                (PATH_KEY.to_string(), join(dirs)),
+                ("__MISE_ORIG_PATH".into(), join(&["/usr/bin", "/x/bin"])),
             ]
             .into();
             get_pristine_env(&diff, orig)[&*PATH_KEY].clone()
         };
-        assert_eq!(pristine_path("/x/bin:/usr/bin"), "/x/bin:/usr/bin");
-        assert_eq!(pristine_path("/x/bin:/usr/bin:/x/bin"), "/usr/bin:/x/bin");
+        assert_eq!(
+            pristine_path(&["/x/bin", "/usr/bin"]),
+            join(&["/x/bin", "/usr/bin"])
+        );
+        assert_eq!(
+            pristine_path(&["/x/bin", "/usr/bin", "/x/bin"]),
+            join(&["/usr/bin", "/x/bin"])
+        );
     }
 
     /// The pristine env derived from a version 1 diff must not keep managed values: a changed
