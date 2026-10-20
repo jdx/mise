@@ -146,7 +146,7 @@ jobs:
           timeout_minutes: 140
           max_attempts: 3
           command: scripts/build-tarball.sh ${{matrix.target}}
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tarball-${{matrix.target}}
           path: |
@@ -175,7 +175,7 @@ jobs:
             target: aarch64-apple-darwin
             pgo: 1
     steps:
-      - uses: apple-actions/import-codesign-certs@5142e029c445c10ffc7149d172e540235a065466 # v7.0.0
+      - uses: apple-actions/import-codesign-certs@77ba2a2a8f5cfc8c405ebf3159f767c323e238f9 # v7.1.0
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
@@ -278,7 +278,7 @@ jobs:
             exit 1
           fi
           echo "notarized: submission $id"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tarball-${{matrix.target}}
           path: |
@@ -331,7 +331,7 @@ jobs:
           foreach ($zip in @(Get-ChildItem dist/*.zip)) {
             Rename-Item $zip.FullName "unsigned-$($zip.Name)"
           }
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unsigned-tarball-${{matrix.target}}
           path: dist/*.zip
@@ -349,14 +349,14 @@ jobs:
       matrix:
         target: [aarch64-pc-windows-msvc, x86_64-pc-windows-msvc]
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: unsigned-tarball-${{matrix.target}}
           path: dist
       - name: Upload unsigned zip for SignPath
         if: startsWith(github.ref, 'refs/tags/v')
         id: upload-unsigned
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signpath-unsigned-${{matrix.target}}
           path: dist/unsigned-*.zip
@@ -382,7 +382,7 @@ jobs:
           for f in "$src"/unsigned-*.zip; do
             cp "$f" "final/$(basename "$f" | sed 's/^unsigned-//')"
           done
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tarball-${{matrix.target}}
           path: final/*.zip
@@ -411,7 +411,7 @@ jobs:
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
@@ -437,7 +437,7 @@ jobs:
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:c5639cd52cbfe83a0358c1835232a741a0b37b66541149599697f11bec6827ce
+    container: ghcr.io/jdx/mise:rpm@sha256:c66ecf37c8aa7ee407a642cb5b8dbc9710502a2f8e05f3a719b1aa9130443b71
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -445,16 +445,16 @@ jobs:
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: tarball-aarch64-unknown-linux-gnu
           path: dist
       - run: scripts/build-rpm.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rpm
           path: dist/rpmrepo
@@ -463,7 +463,7 @@ jobs:
     needs: [gate, build-tarball-linux]
     if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
-    container: ghcr.io/jdx/mise:deb@sha256:9f60faac83d15babcb0a2df3532d8dc0a2ebd1c4ba8dcc3e1af5d2c2349627f2
+    container: ghcr.io/jdx/mise:deb@sha256:62d5dc4c89568a6b20ae4536abcece720db1612a6dff03d9627c7265c2e61042
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -472,16 +472,16 @@ jobs:
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: tarball-aarch64-unknown-linux-gnu
           path: dist
       - run: scripts/build-deb.sh
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deb
           path: dist/deb
@@ -582,10 +582,10 @@ jobs:
           mkdir -p "$HOME/.local/bin"
           ln -s "$(which fdfind)" "$HOME/.local/bin/fd"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with: { path: artifacts }
       - run: ls -R artifacts
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: artifacts
           pattern: |
@@ -596,7 +596,7 @@ jobs:
           merge-multiple: true
       - run: echo "${{ secrets.MINISIGN_KEY }}" >minisign.key
       - run: ls -R artifacts
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: tarball-x86_64-unknown-linux-gnu
           path: dist
@@ -606,7 +606,7 @@ jobs:
       - run: mise x -- scripts/release.sh
       - name: Stage release assets for attestation
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-assets
           path: releases/${{ github.ref_name }}
@@ -696,7 +696,7 @@ jobs:
       id-token: write
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-assets
           path: release-assets
@@ -735,7 +735,7 @@ jobs:
       GITHUB_API_TOKEN: ""
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-assets
           path: release-assets
@@ -766,7 +766,7 @@ jobs:
       # writing it under packslip/, and an artifact holding files at two
       # depths keeps the directory, which the flat `sha256sum ./*` below
       # would then choke on.
-      - uses: jdx/packslip@2af36e792faa28130987c8af509e475c7458405d # v1.6.0
+      - uses: jdx/packslip@7b32cd29a9240927882ee18b3db1dcfd8e0328b4 # v1.7.0
         with:
           artifacts: release-assets/mise-*
           bin: mise
@@ -788,7 +788,7 @@ jobs:
       # publish-release compares the draft's assets against what this workflow
       # built, so the metadata files added here have to reach it or the diff fails.
       - name: Stage the packslip for the asset check
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-extras
           path: |
@@ -813,12 +813,12 @@ jobs:
       contents: write
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-assets
           path: release-assets
       - name: Download the packslip
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-extras
           path: release-assets
@@ -896,7 +896,7 @@ jobs:
         with:
           subject-checksums: release-assets/SHASUMS256.txt
       - name: Stage release assets
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: finish-draft-assets
           path: release-assets
@@ -917,7 +917,7 @@ jobs:
       GITHUB_API_TOKEN: ""
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: finish-draft-assets
           path: release-assets
@@ -941,7 +941,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.finish-draft-resolve.outputs.tag }}
         run: gh release upload "$TAG" mise.usage.kdl mise.bash mise.zsh mise.fish mise.powershell --clobber
-      - uses: jdx/packslip@2af36e792faa28130987c8af509e475c7458405d # v1.6.0
+      - uses: jdx/packslip@7b32cd29a9240927882ee18b3db1dcfd8e0328b4 # v1.7.0
         with:
           artifacts: release-assets/mise-*
           bin: mise
@@ -958,7 +958,7 @@ jobs:
           out: "."
           token: ${{ secrets.MISE_GH_TOKEN }}
       - name: Stage the packslip for the asset check
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: finish-draft-extras
           path: |
@@ -981,12 +981,12 @@ jobs:
       contents: write
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: finish-draft-assets
           path: release-assets
       - name: Download the packslip
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: finish-draft-extras
           path: release-assets
