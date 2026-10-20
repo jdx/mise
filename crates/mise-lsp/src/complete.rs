@@ -7,6 +7,7 @@
 //! and inline tables still open say how deep, with the key each one belongs to. What is typed
 //! since the last separator says whether the cursor is on a key or a value.
 
+use std::collections::HashMap;
 use std::ops::Range;
 
 use serde_json::Value;
@@ -252,20 +253,17 @@ impl State {
 fn scan(index: &LineIndex, line: usize, before: &str) -> (Vec<String>, State, bool) {
     let mut table = vec![];
     let mut state = State::new(vec![]);
+    // The latest element of each array of tables seen so far, by the key path of the array.
+    let mut arrays: HashMap<Vec<String>, usize> = HashMap::new();
     for l in 0..line {
         let text = index.line(l);
-        // A header of an array of tables (`[[watch_files]]`) names its latest element, so its
-        // path ends in an index, which is how the schema walk enters an array's items.
         if state.closed()
             && let Some(rest) = text.trim().strip_prefix('[')
         {
             let array = rest.starts_with('[');
             let rest = rest.trim_start_matches('[');
             let end = unquoted(rest, ']').unwrap_or(rest.len());
-            table = keypath::split(&rest[..end]);
-            if array {
-                table.push("0".to_string());
-            }
+            table = header_path(keypath::split(&rest[..end]), array, &mut arrays);
             state = State::new(table.clone());
             continue;
         }
@@ -274,6 +272,33 @@ fn scan(index: &LineIndex, line: usize, before: &str) -> (Vec<String>, State, bo
     let line_starts_closed = state.closed();
     advance(before, &mut state, false);
     (table, state, line_starts_closed)
+}
+
+/// The schema path of a header's table. Each array of tables on the way is entered at its
+/// latest element, which is how the schema walk and the parsed document name an array's items:
+/// `[[a]]`, `[[a]]`, `[a.b]` is `a.1.b`.
+fn header_path(
+    keys: Vec<String>,
+    array: bool,
+    arrays: &mut HashMap<Vec<String>, usize>,
+) -> Vec<String> {
+    let mut path = vec![];
+    for (i, key) in keys.iter().enumerate() {
+        path.push(key.clone());
+        let prefix = &keys[..=i];
+        if i + 1 == keys.len() && array {
+            // a new element ends the nested arrays of the one before it
+            arrays.retain(|k, _| !k.starts_with(prefix) || k.len() == prefix.len());
+            let n = arrays
+                .entry(prefix.to_vec())
+                .and_modify(|n| *n += 1)
+                .or_insert(0);
+            path.push(n.to_string());
+        } else if let Some(n) = arrays.get(prefix) {
+            path.push(n.to_string());
+        }
+    }
+    path
 }
 
 /// Runs `text`, a line or the start of one, through `state`. Quotes and brackets only count
@@ -528,6 +553,25 @@ mod tests {
         assert!(labels("[settings]\ncolor = true\nco|").is_empty());
         // a half-written document has no known keys yet
         assert_eq!(labels("[settings]\ncolor = \n|"), ["color", "mode"]);
+    }
+
+    #[test]
+    fn later_array_elements_have_their_own_keys() {
+        assert_eq!(labels("[[list]]\nname = \"a\"\n[[list]]\n|"), ["name"]);
+        assert!(labels("[[list]]\nname = \"a\"\n|").is_empty());
+    }
+
+    #[test]
+    fn headers_below_an_array_table_enter_its_latest_element() {
+        let mut arrays = HashMap::new();
+        let keys = |s: &[&str]| s.iter().map(|k| k.to_string()).collect::<Vec<_>>();
+        assert_eq!(header_path(keys(&["a"]), true, &mut arrays), ["a", "0"]);
+        assert_eq!(header_path(keys(&["a"]), true, &mut arrays), ["a", "1"]);
+        assert_eq!(
+            header_path(keys(&["a", "b"]), false, &mut arrays),
+            ["a", "1", "b"]
+        );
+        assert_eq!(header_path(keys(&["c"]), false, &mut arrays), ["c"]);
     }
 
     #[test]

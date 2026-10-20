@@ -40,11 +40,22 @@ fn includes_file(config: &Path, file: &Path) -> bool {
         return false;
     };
     let dir = config.parent().unwrap_or(Path::new(""));
-    // `mise/config.toml` and its kin keep tasks relative to the project, not the config dir.
-    let bases: Vec<&Path> = match dir.file_name().and_then(|n| n.to_str()) {
-        Some("mise" | ".mise" | ".config") => dir.parent().into_iter().chain([dir]).collect(),
-        _ => vec![dir],
-    };
+    // `mise/config.toml` and its kin keep tasks relative to the project, not the config dir:
+    // the project is the directory above `mise`, `.mise` or `.config`, and above `.config` for
+    // `.config/mise/config.toml`.
+    let mut bases = vec![dir];
+    if let Some(parent) = dir.parent()
+        && dir
+            .file_name()
+            .is_some_and(|n| n == "mise" || n == ".mise" || n == ".config")
+    {
+        bases.push(parent);
+        if parent.file_name().is_some_and(|n| n == ".config")
+            && let Some(project) = parent.parent()
+        {
+            bases.push(project);
+        }
+    }
     includes
         .iter()
         .any(|include| bases.iter().any(|base| matches(&base.join(include), file)))
@@ -104,8 +115,13 @@ fn matches(pattern: &Path, file: &Path) -> bool {
 
 /// The file a `file://` URI names, with escapes decoded.
 pub(crate) fn uri_path(uri: &str) -> Option<PathBuf> {
-    let path = uri.strip_prefix("file://")?;
-    Some(PathBuf::from(percent_decode(path)))
+    let path = percent_decode(uri.strip_prefix("file://")?);
+    // `file:///C:/dir/file` is the Windows path `C:/dir/file`.
+    let bytes = path.as_bytes();
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
+        return Some(PathBuf::from(&path[1..]));
+    }
+    Some(PathBuf::from(path))
 }
 
 pub(crate) fn percent_decode(s: &str) -> String {
@@ -155,6 +171,32 @@ mod tests {
     fn an_unlisted_file_is_not() {
         let (_, file) = project("[task_config]\nincludes = [\"other.toml\"]\n# unlisted\n");
         assert!(!is_task_include(&file));
+    }
+
+    #[test]
+    fn windows_drive_uris_drop_the_leading_slash() {
+        assert_eq!(
+            uri_path("file:///C:/Users/me/mise.toml").unwrap(),
+            PathBuf::from("C:/Users/me/mise.toml")
+        );
+        assert_eq!(
+            uri_path("file:///home/me/mise.toml").unwrap(),
+            PathBuf::from("/home/me/mise.toml")
+        );
+    }
+
+    #[test]
+    fn xdg_configs_include_relative_to_the_project() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-xdg-{}", std::process::id()));
+        std::fs::create_dir_all(root.join(".config/mise")).unwrap();
+        std::fs::write(
+            root.join(".config/mise/config.toml"),
+            "[task_config]\nincludes = [\"mise.tasks.toml\"]\n",
+        )
+        .unwrap();
+        let file = root.join("mise.tasks.toml");
+        std::fs::write(&file, "[build]\n").unwrap();
+        assert!(is_task_include(&file));
     }
 
     #[test]
