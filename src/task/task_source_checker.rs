@@ -1340,7 +1340,25 @@ struct CachedFileHash {
     mtime_secs: i64,
     mtime_nanos: u32,
     size: u64,
+    /// Inode change time. Unlike mtime it cannot be set from userspace, so an edit that restores
+    /// the old size and mtime (`rsync -a`, `cp -p`, `touch -r`) still invalidates the entry.
+    /// Entries written before this field existed deserialize as 0 and are rehashed once.
+    #[serde(default)]
+    ctime_secs: i64,
+    #[serde(default)]
+    ctime_nanos: i64,
     hash: String,
+}
+
+#[cfg(unix)]
+fn metadata_ctime(metadata: &fs::Metadata) -> (i64, i64) {
+    use std::os::unix::fs::MetadataExt;
+    (metadata.ctime(), metadata.ctime_nsec())
+}
+
+#[cfg(not(unix))]
+fn metadata_ctime(_metadata: &fs::Metadata) -> (i64, i64) {
+    (0, 0)
 }
 
 type ContentHashCache = BTreeMap<PathBuf, CachedFileHash>;
@@ -1388,7 +1406,10 @@ fn cached_entry_matches(entry: &CachedFileHash, metadata: &fs::Metadata) -> bool
     let Ok(dur) = mtime.duration_since(UNIX_EPOCH) else {
         return false;
     };
+    let (ctime_secs, ctime_nanos) = metadata_ctime(metadata);
     entry.size == metadata.len()
+        && entry.ctime_secs == ctime_secs
+        && entry.ctime_nanos == ctime_nanos
         && entry.mtime_secs == dur.as_secs() as i64
         && entry.mtime_nanos == dur.subsec_nanos()
 }
@@ -1398,7 +1419,10 @@ fn make_cache_entry(metadata: &fs::Metadata, hash: String) -> CachedFileHash {
         .modified()
         .ok()
         .and_then(|m| m.duration_since(UNIX_EPOCH).ok());
+    let (ctime_secs, ctime_nanos) = metadata_ctime(metadata);
     CachedFileHash {
+        ctime_secs,
+        ctime_nanos,
         mtime_secs: dur.map(|d| d.as_secs() as i64).unwrap_or(0),
         mtime_nanos: dur.map(|d| d.subsec_nanos()).unwrap_or(0),
         size: metadata.len(),
@@ -2368,6 +2392,38 @@ mod tests {
         let third = file_contents_to_hash(&metadatas, &mut cache).unwrap();
         assert_ne!(second, third);
         assert_ne!(cache.get(&a).unwrap().hash, a_hash_v1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn content_hash_cache_notices_same_size_edit_with_restored_mtime() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("a.txt");
+        std::fs::write(&a, "good\n").unwrap();
+        let before = a.metadata().unwrap();
+        let mut cache = ContentHashCache::new();
+        let first = file_contents_to_hash(&[(a.clone(), before.clone())], &mut cache).unwrap();
+
+        // Same size, mtime restored: only ctime betrays the edit. Retry until the filesystem's
+        // ctime clock has ticked so a coarse timestamp can't make the edit invisible.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let after = loop {
+            std::fs::write(&a, "fail\n").unwrap();
+            filetime::set_file_mtime(&a, filetime::FileTime::from_last_modification_time(&before))
+                .unwrap();
+            let after = a.metadata().unwrap();
+            if metadata_ctime(&after) != metadata_ctime(&before) {
+                break after;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "ctime did not advance within 10s; this filesystem's ctime resolution is too coarse for the test"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+        assert_eq!(before.len(), after.len());
+        let second = file_contents_to_hash(&[(a.clone(), after)], &mut cache).unwrap();
+        assert_ne!(first, second);
     }
 
     #[test]
