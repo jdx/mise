@@ -128,10 +128,10 @@ struct RetryState {
     use_netrc: bool,
 }
 
-fn new_retry_state(headers: &HeaderMap) -> RetryStateHandle {
+fn new_retry_state(headers: &HeaderMap, use_netrc: bool) -> RetryStateHandle {
     Arc::new(Mutex::new(RetryState {
         headers: headers.clone(),
-        use_netrc: true,
+        use_netrc,
     }))
 }
 
@@ -1112,6 +1112,38 @@ impl Client {
         self.head_async_with_headers(url, &headers).await
     }
 
+    /// HEAD without `.netrc` credentials. For reachability probes where a
+    /// credentialed request changes the answer: github.com redirects an
+    /// authenticated release download to a presigned URL that rejects HEAD.
+    pub async fn head_without_netrc<U: IntoUrl>(&self, url: U) -> Result<Response> {
+        ensure!(
+            !crate::network::offline(&Settings::get()),
+            "offline mode is enabled"
+        );
+        let url = url.into_url()?;
+        let headers = host_auth_headers(&url)?;
+        let retry_state = new_retry_state(&headers, false);
+        let resp = retry_async_with_retries(
+            "HEAD",
+            &url,
+            crate::network::http_retries(&Settings::get()),
+            || async {
+                let (headers, options) = attempt_options(&retry_state, true);
+                self.send_once_with_https_fallback_with_retry_headers(
+                    Method::HEAD,
+                    url.clone(),
+                    &headers,
+                    "HEAD",
+                    options,
+                )
+                .await
+            },
+        )
+        .await?;
+        resp.error_for_status_ref()?;
+        Ok(resp)
+    }
+
     pub async fn head_async_with_headers<U: IntoUrl>(
         &self,
         url: U,
@@ -2015,7 +2047,7 @@ impl Client {
         retries: i64,
         error_for_status: bool,
     ) -> Result<Response> {
-        let retry_state = new_retry_state(headers);
+        let retry_state = new_retry_state(headers, true);
         retry_async_with_retries(verb_label, &url, retries, || async {
             let (headers, options) = attempt_options(&retry_state, error_for_status);
             self.send_once_with_https_fallback_with_retry_headers(
@@ -2038,7 +2070,7 @@ impl Client {
         F: Fn(Response) -> Fut,
         Fut: std::future::Future<Output = Result<T>>,
     {
-        let retry_state = new_retry_state(req.headers);
+        let retry_state = new_retry_state(req.headers, true);
         retry_async_with_retries(req.verb_label, &req.url, req.retries, || async {
             let (headers, options) = attempt_options(&retry_state, req.error_for_status);
             let resp = self
