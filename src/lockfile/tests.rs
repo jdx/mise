@@ -1442,6 +1442,28 @@ fn test_preserve_selected_python_entries_keeps_only_unlocked_selections() {
 }
 
 #[test]
+fn test_preserve_selected_python_entries_ignores_entries_with_other_options() {
+    let mut project = basic_tool("3.12.9", "core:python");
+    project.specifiers = BTreeSet::from(["3.12".to_string()]);
+    project
+        .options
+        .insert("patch_sysconfig".to_string(), "false".to_string());
+    let mut private = basic_tool("3.12.9", "core:python");
+    private.specifiers = BTreeSet::from(["3.12".to_string()]);
+    let existing = vec![project.clone(), private.clone()];
+    let mut merged = vec![project];
+
+    preserve_selected_python_entries(
+        &mut merged,
+        Some(&existing),
+        &HashSet::from(["3.12".to_string()]),
+    );
+
+    assert_eq!(merged.len(), 2);
+    assert!(merged.iter().any(|tool| tool.options.is_empty()));
+}
+
+#[test]
 fn test_reinsert_deferred_baselines_restores_dropped_entry_without_duplicates() {
     let baseline = basic_tool("0.11.0", "github:owner/repo");
     let deferred = HashMap::from([("repo".to_string(), vec![baseline.clone(), baseline.clone()])]);

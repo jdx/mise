@@ -4451,19 +4451,22 @@ fn preserve_selected_python_entries(
     let Some(existing_tools) = existing_tools else {
         return;
     };
+    // The selected request has default options, so a project entry for the same
+    // selector with other options (`patch_sysconfig = false`) does not cover it.
     let unlocked: HashSet<&String> = specifiers
         .iter()
         .filter(|specifier| {
             !merged_tools
                 .iter()
-                .any(|tool| tool.specifiers.contains(*specifier))
+                .any(|tool| tool.options.is_empty() && tool.specifiers.contains(*specifier))
         })
         .collect();
     for existing_tool in existing_tools {
-        if existing_tool
-            .specifiers
-            .iter()
-            .any(|specifier| unlocked.contains(specifier))
+        if existing_tool.options.is_empty()
+            && existing_tool
+                .specifiers
+                .iter()
+                .any(|specifier| unlocked.contains(specifier))
             && !merged_tools.iter().any(|tool| {
                 tool.version == existing_tool.version && tool.options == existing_tool.options
             })

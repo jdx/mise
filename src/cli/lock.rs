@@ -2433,15 +2433,16 @@ impl Lock {
             push_unique_lock_tool(&mut all_tools, (tv.ba().clone(), tv));
         }
 
-        self.add_task_tools_to_lock(
-            config,
-            context.tasks,
-            target_lockfile_path,
-            config_paths,
-            context,
-            &mut all_tools,
-        )
-        .await?;
+        let task_python_requests = self
+            .add_task_tools_to_lock(
+                config,
+                context.tasks,
+                target_lockfile_path,
+                config_paths,
+                context,
+                &mut all_tools,
+            )
+            .await?;
 
         if self.tool.is_empty() {
             let requests = selected_python_requests(&all_tools)?;
@@ -2468,6 +2469,7 @@ impl Lock {
                     python_named || specified_versions.contains_key(&ba.full())
                 }))?;
             python_requests.extend(stub_python_requests);
+            python_requests.extend(task_python_requests);
             // Generate rebuilds every tool in the returned set from scratch, so a
             // pipx tool's Python would replace the project's own Python entries.
             let project_python: Vec<LockTool> =
@@ -2616,7 +2618,9 @@ impl Lock {
         config_paths: &[PathBuf],
         context: &LockCollectionContext<'_>,
         all_tools: &mut Vec<LockTool>,
-    ) -> Result<()> {
+    ) -> Result<Vec<ToolRequest>> {
+        let mut unnamed_python_requests = Vec::new();
+        let python_named = self.tool.iter().any(|t| t.ba.short == "python");
         for task in tasks.values() {
             let Some(config_path) =
                 self.task_config_path(task, config, config_paths, context.config_files)
@@ -2634,9 +2638,17 @@ impl Lock {
             for tool in task.tool_args().map_err(|err| {
                 err.wrap_err(format!("failed to parse tools for task `{}`", task.name))
             })? {
-                if !self.tool.is_empty()
-                    && !self.tool.iter().any(|requested| requested.ba == tool.ba)
-                {
+                let named = self.tool.is_empty()
+                    || self.tool.iter().any(|requested| requested.ba == tool.ba);
+                if !named {
+                    // `mise lock python` keeps the Pythons that task tools select.
+                    if python_named
+                        && let Some(request) = &tool.tvr
+                        && let Some(dependency) =
+                            crate::backend::pipx::selected_python_dependency(request)?
+                    {
+                        unnamed_python_requests.push(dependency);
+                    }
                     continue;
                 }
                 let Some(request) = tool.tvr else {
@@ -2678,7 +2690,7 @@ impl Lock {
                 push_unique_lock_tool(all_tools, (tool.ba.as_ref().clone(), tv));
             }
         }
-        Ok(())
+        Ok(unnamed_python_requests)
     }
 
     fn task_config_path(
