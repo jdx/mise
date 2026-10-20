@@ -138,7 +138,11 @@ fn lex(code: &str) -> Result<Vec<Token<'_>>> {
         } else if code.starts_with('"') {
             let mut found = false;
             for (end, _) in code[1..].match_indices('"') {
-                let slash_count = code[1..=end].bytes().rev().take_while(|&b| b == b'\\').count();
+                let slash_count = code[1..=end]
+                    .bytes()
+                    .rev()
+                    .take_while(|&b| b == b'\\')
+                    .count();
                 if slash_count % 2 == 0 {
                     tokens.push(Token::String(&code[1..=end]));
                     code = &code[end + 2..];
