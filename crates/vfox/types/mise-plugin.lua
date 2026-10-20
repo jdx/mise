@@ -12,6 +12,7 @@
 ---@field envType string|nil libc environment type ("gnu" on glibc Linux, "musl" on musl Linux, nil on other platforms)
 ---@field version string Runtime version
 ---@field pluginDirPath string Path to the plugin directory
+---@field cacheDirPath string|nil Persistent cache directory owned by the plugin, under mise's cache directory
 RUNTIME = {}
 
 --- @deprecated Use RUNTIME.osType instead

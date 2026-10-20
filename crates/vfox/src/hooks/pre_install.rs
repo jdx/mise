@@ -56,7 +56,8 @@ impl Plugin {
         let ctx = self.context(Some(version.to_string()), options)?;
         let target_os = os.to_string();
         let target_arch = arch.to_string();
-        let target_runtime = Runtime::with_platform(self.dir.clone(), os, arch);
+        let target_runtime =
+            Runtime::with_platform(self.dir.clone(), self.usable_cache_dir_path(), os, arch);
         let pre_install = self
             .eval_async(chunk! {
                 require "hooks/pre_install"
@@ -411,7 +412,7 @@ mod tests {
             .unwrap();
         assert_eq!(host_env_type, Some("gnu".to_string()));
 
-        let target_runtime = Runtime::with_platform(plugin.dir.clone(), "linux", "amd64");
+        let target_runtime = Runtime::with_platform(plugin.dir.clone(), None, "linux", "amd64");
         let target_os = "linux".to_string();
         let target_arch = "amd64".to_string();
         let target_env_type: Option<String> = plugin
@@ -433,6 +434,31 @@ mod tests {
         assert_eq!(target_env_type, None);
 
         Runtime::reset();
+    }
+
+    #[test]
+    async fn test_runtime_cache_dir_path() {
+        let plugin = Plugin::test("dummy");
+        let host: Option<String> = plugin
+            .eval_async(chunk! {
+                return RUNTIME.cacheDirPath
+            })
+            .await
+            .unwrap();
+        assert_eq!(host, None);
+
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("plugins").join("dummy");
+        let mut plugin = Plugin::test("dummy");
+        plugin.cache_dir_path = Some(cache.clone());
+        let seen: Option<String> = plugin
+            .eval_async(chunk! {
+                return RUNTIME.cacheDirPath
+            })
+            .await
+            .unwrap();
+        assert_eq!(seen, Some(cache.to_string_lossy().to_string()));
+        assert!(cache.is_dir());
     }
 
     #[test]
