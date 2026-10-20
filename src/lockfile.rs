@@ -3042,7 +3042,8 @@ pub(crate) fn update_lockfiles(
                     .ok()
             })
             .collect_vec();
-        let mut selected_python_specifiers: HashMap<String, HashSet<String>> = HashMap::new();
+        let mut selected_python_specifiers: HashMap<String, HashSet<SelectedPython>> =
+            HashMap::new();
         for request in tool_versions_by_short
             .values()
             .flatten()
@@ -3058,10 +3059,19 @@ pub(crate) fn update_lockfiles(
                 }
             };
             if let Some(dependency) = dependency {
+                let options = dependency
+                    .backend()
+                    .and_then(|backend| {
+                        backend.resolve_lockfile_options(
+                            &dependency,
+                            &PlatformTarget::new(Platform::current()),
+                        )
+                    })
+                    .unwrap_or_default();
                 selected_python_specifiers
                     .entry(dependency.ba().short.clone())
                     .or_default()
-                    .insert(dependency.version());
+                    .insert((dependency.version(), options));
             }
         }
 
@@ -4440,33 +4450,36 @@ fn preserve_absent_tool_entries(
     });
 }
 
+/// A selected Python request: its selector and the lockfile options an entry
+/// for it carries.
+type SelectedPython = (String, BTreeMap<String, String>);
+
 /// The Python a pipx tool selects is a private runtime: installs never return
 /// it, so an update would drop its entry. Keep entries bound to a selected
-/// request unless this update locked that request itself.
+/// request unless this update locked that request itself. An entry for the same
+/// selector with other options is another request and does not cover it.
 fn preserve_selected_python_entries(
     merged_tools: &mut Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
-    specifiers: &HashSet<String>,
+    selected: &HashSet<SelectedPython>,
 ) {
     let Some(existing_tools) = existing_tools else {
         return;
     };
-    // The selected request has default options, so a project entry for the same
-    // selector with other options (`patch_sysconfig = false`) does not cover it.
-    let unlocked: HashSet<&String> = specifiers
+    let binds = |tool: &LockfileTool, (specifier, options): &SelectedPython| {
+        tool.options == *options && tool.specifiers.contains(specifier)
+    };
+    let unlocked: Vec<&SelectedPython> = selected
         .iter()
-        .filter(|specifier| {
-            !merged_tools
-                .iter()
-                .any(|tool| tool.options.is_empty() && tool.specifiers.contains(*specifier))
-        })
+        .filter(|request| !merged_tools.iter().any(|tool| binds(tool, request)))
         .collect();
     for existing_tool in existing_tools {
-        if existing_tool.options.is_empty()
-            && existing_tool
-                .specifiers
-                .iter()
-                .any(|specifier| unlocked.contains(specifier))
+        let bound: Vec<&SelectedPython> = unlocked
+            .iter()
+            .copied()
+            .filter(|request| binds(existing_tool, request))
+            .collect();
+        if !bound.is_empty()
             && !merged_tools.iter().any(|tool| {
                 tool.version == existing_tool.version && tool.options == existing_tool.options
             })
@@ -4474,7 +4487,7 @@ fn preserve_selected_python_entries(
             // A shared entry may carry requests that moved to another version.
             let mut tool = existing_tool.clone();
             tool.specifiers
-                .retain(|specifier| unlocked.contains(specifier));
+                .retain(|specifier| bound.iter().any(|(selected, _)| selected == specifier));
             merged_tools.push(tool);
         }
     }

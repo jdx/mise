@@ -2414,8 +2414,12 @@ impl Lock {
                     .any(|tool| tool.ba.as_ref() == request.ba().as_ref())
             {
                 if python_named {
-                    stub_python_requests
-                        .extend(crate::backend::pipx::selected_python_dependency(&request)?);
+                    match crate::backend::pipx::selected_python_dependency(&request) {
+                        Ok(dependency) => stub_python_requests.extend(dependency),
+                        Err(err) => {
+                            debug!("skipping selected python of {}: {err:#}", request.ba())
+                        }
+                    }
                 }
                 continue;
             }
@@ -2642,12 +2646,21 @@ impl Lock {
                     || self.tool.iter().any(|requested| requested.ba == tool.ba);
                 if !named {
                     // `mise lock python` keeps the Pythons that task tools select.
-                    if python_named
-                        && let Some(request) = &tool.tvr
-                        && let Some(dependency) =
-                            crate::backend::pipx::selected_python_dependency(request)?
-                    {
-                        unnamed_python_requests.push(dependency);
+                    if python_named && let Some(request) = &tool.tvr {
+                        // Read the task's own lockfile, as the named branch does.
+                        let request = ToolRequest::new_with_options(
+                            tool.ba.clone(),
+                            &request.version(),
+                            request.options(),
+                            ToolSource::MiseToml(config_path.clone()),
+                        )?;
+                        match crate::backend::pipx::selected_python_dependency(&request) {
+                            Ok(dependency) => unnamed_python_requests.extend(dependency),
+                            Err(err) => debug!(
+                                "skipping selected python of task tool {}: {err:#}",
+                                tool.ba.short
+                            ),
+                        }
                     }
                     continue;
                 }
