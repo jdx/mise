@@ -21,24 +21,24 @@ INSTALL
 chmod +x "$PLUGIN_DIR/bin/install"
 
 for request in latest 20; do
-	cat <<CONFIG >mise.toml
+  cat <<CONFIG >mise.toml
 [tools]
 pintest = "$request"
 CONFIG
-	mise uninstall --all pintest 2>/dev/null || true
-	mise install pintest@20.5.3
+  mise uninstall --all pintest 2>/dev/null || true
+  mise install pintest@20.5.3
 
-	# without pin the request is left alone
-	before=$(cat mise.toml)
-	mise upgrade --bump
-	assert "cat mise.toml" "$before"
+  # without pin the request is left alone
+  before=$(cat mise.toml)
+  mise upgrade --bump
+  assert "cat mise.toml" "$before"
 
-	# a dry run reports the change without writing it
-	assert_contains "MISE_PIN=1 mise upgrade --bump --dry-run 2>&1" "Would bump pintest@20.5.3"
-	assert "cat mise.toml" "$before"
+  # a dry run reports the change without writing it
+  assert_contains "MISE_PIN=1 mise upgrade --bump --dry-run 2>&1" "Would bump pintest@20.5.3"
+  assert "cat mise.toml" "$before"
 
-	MISE_PIN=1 mise upgrade --bump
-	assert "cat mise.toml" '[tools]
+  MISE_PIN=1 mise upgrade --bump
+  assert "cat mise.toml" '[tools]
 pintest = "20.5.3"'
 done
 
