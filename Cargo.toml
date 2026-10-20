@@ -326,7 +326,7 @@ phf_codegen = "0.14"
 regex = "1"
 semver = "1"
 serde = { version = "1", features = ["derive"] }
-serde-saphyr = "1"
+serde-saphyr = "2"
 toml = "1"
 
 [dev-dependencies]

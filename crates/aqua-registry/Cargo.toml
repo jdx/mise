@@ -22,7 +22,7 @@ default = []
 # Core dependencies
 blake3 = "1"
 serde = { version = "1", features = ["derive"] }
-serde-saphyr = "1"
+serde-saphyr = "2"
 thiserror = "2"
 eyre = "0.6"
 indexmap = { version = "2", features = ["serde"] }
