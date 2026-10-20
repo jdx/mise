@@ -989,20 +989,32 @@ fn get_env_diff() -> EnvDiff {
 /// this returns the environment as if __MISE_DIFF was reversed.
 /// putting the shell back into a state before hook-env was run
 fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
+    let orig_path: HashSet<PathBuf> = orig_env
+        .get("__MISE_ORIG_PATH")
+        .map(|p| split_paths(p).collect())
+        .unwrap_or_default();
     let mut env = reverse_diff_preserving_overrides(mise_diff, orig_env);
 
     // get the current path as a vector
-    let path = match env.get(&*PATH_KEY) {
+    let path: Vec<PathBuf> = match env.get(&*PATH_KEY) {
         Some(path) => split_paths(path).collect(),
         None => vec![],
     };
     // get the paths that were removed by mise as a hashset
     let mut to_remove = mise_diff.path.iter().collect::<HashSet<_>>();
 
-    // remove those paths that were added by mise, but only once (the first time)
+    // remove those paths that were added by mise, but only once (the first time).
+    // A directory that was already on PATH before activation appears twice unless the
+    // shell deduplicates PATH (e.g. zsh `typeset -U path`); with a single occurrence it
+    // is the pre-activation entry, so keep it.
+    let counts = path.iter().counts();
     let path = path
-        .into_iter()
-        .filter(|p| !to_remove.remove(p))
+        .iter()
+        .filter(|p| {
+            let single_orig = orig_path.contains(*p) && counts.get(p) == Some(&1);
+            single_orig || !to_remove.remove(p)
+        })
+        .cloned()
         .collect_vec();
 
     // put the pristine PATH back into the environment
@@ -1949,6 +1961,26 @@ mod tests {
             reverse_diff_preserving_overrides(&diff, current),
             [("CHANGED".into(), "before".into())].into()
         );
+    }
+
+    /// A directory on PATH before activation that mise also added stays in the pristine PATH
+    /// when the shell deduplicated PATH, and loses only mise's copy when it did not.
+    #[test]
+    fn test_pristine_path_keeps_deduplicated_orig_entry() {
+        let diff = EnvDiff {
+            path: vec![PathBuf::from("/x/bin")],
+            ..Default::default()
+        };
+        let pristine_path = |path: &str| {
+            let orig = [
+                (PATH_KEY.to_string(), path.to_string()),
+                ("__MISE_ORIG_PATH".into(), "/usr/bin:/x/bin".into()),
+            ]
+            .into();
+            get_pristine_env(&diff, orig)[&*PATH_KEY].clone()
+        };
+        assert_eq!(pristine_path("/x/bin:/usr/bin"), "/x/bin:/usr/bin");
+        assert_eq!(pristine_path("/x/bin:/usr/bin:/x/bin"), "/usr/bin:/x/bin");
     }
 
     /// The pristine env derived from a version 1 diff must not keep managed values: a changed
