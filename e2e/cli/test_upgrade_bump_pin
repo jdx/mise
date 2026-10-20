@@ -58,6 +58,18 @@ mise upgrade --bump
 assert "cat mise.toml" '[tools]
 pintest = "20.5.3"'
 
+# an outdated request is upgraded and pinned to the version installed
+cat <<CONFIG >mise.toml
+[tools]
+pintest = "latest"
+CONFIG
+mise uninstall --all pintest 2>/dev/null || true
+mise install pintest@20.5.0
+mise upgrade --bump --pin
+assert "cat mise.toml" '[tools]
+pintest = "20.5.3"'
+assert_contains "mise ls --current pintest" "20.5.3"
+
 # a named tool is pinned on its own
 cat <<CONFIG >mise.toml
 [tools]
