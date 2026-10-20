@@ -126,12 +126,14 @@ impl std::error::Error for UnavailableHttpHost {}
 struct RetryState {
     headers: HeaderMap,
     use_netrc: bool,
+    netrc_replacement_only: bool,
 }
 
-fn new_retry_state(headers: &HeaderMap, use_netrc: bool) -> RetryStateHandle {
+fn new_retry_state(headers: &HeaderMap, netrc_replacement_only: bool) -> RetryStateHandle {
     Arc::new(Mutex::new(RetryState {
         headers: headers.clone(),
-        use_netrc,
+        use_netrc: true,
+        netrc_replacement_only,
     }))
 }
 
@@ -141,11 +143,16 @@ fn attempt_options(
     retry_state: &RetryStateHandle,
     error_for_status: bool,
 ) -> (HeaderMap, SendOnceOptions) {
-    let (headers, use_netrc) = {
+    let (headers, use_netrc, netrc_replacement_only) = {
         let state = retry_state.lock().unwrap();
-        (state.headers.clone(), state.use_netrc)
+        (
+            state.headers.clone(),
+            state.use_netrc,
+            state.netrc_replacement_only,
+        )
     };
-    let options = SendOnceOptions::new(Some(retry_state.clone()), use_netrc);
+    let mut options = SendOnceOptions::new(Some(retry_state.clone()), use_netrc);
+    options.netrc_replacement_only = netrc_replacement_only;
     let options = if error_for_status {
         options
     } else {
@@ -167,6 +174,8 @@ struct RetryableRequest<'a> {
 #[derive(Clone)]
 struct SendOnceOptions {
     use_netrc: bool,
+    /// Apply netrc only when a URL replacement moved the request to another host.
+    netrc_replacement_only: bool,
     retry_github_oauth_401: bool,
     error_for_status: bool,
     allow_range_not_satisfiable: bool,
@@ -194,6 +203,7 @@ impl SendOnceOptions {
     fn new(retry_state: Option<RetryStateHandle>, use_netrc: bool) -> Self {
         Self {
             use_netrc,
+            netrc_replacement_only: false,
             retry_github_oauth_401: true,
             error_for_status: true,
             allow_range_not_satisfiable: false,
@@ -214,6 +224,7 @@ impl SendOnceOptions {
     fn recursive_retry(&self) -> Self {
         Self {
             use_netrc: false,
+            netrc_replacement_only: false,
             retry_github_oauth_401: false,
             error_for_status: self.error_for_status,
             allow_range_not_satisfiable: self.allow_range_not_satisfiable,
@@ -1112,7 +1123,8 @@ impl Client {
         self.head_async_with_headers(url, &headers).await
     }
 
-    /// HEAD without `.netrc` credentials. For reachability probes where a
+    /// HEAD without `.netrc` credentials for the requested host (netrc for a
+    /// URL-replacement host still applies). For reachability probes where a
     /// credentialed request changes the answer: github.com redirects an
     /// authenticated release download to a presigned URL that rejects HEAD.
     pub async fn head_without_netrc<U: IntoUrl>(&self, url: U) -> Result<Response> {
@@ -1122,7 +1134,7 @@ impl Client {
         );
         let url = url.into_url()?;
         let headers = host_auth_headers(&url)?;
-        let retry_state = new_retry_state(&headers, false);
+        let retry_state = new_retry_state(&headers, true);
         let resp = retry_async_with_retries(
             "HEAD",
             &url,
@@ -2047,7 +2059,7 @@ impl Client {
         retries: i64,
         error_for_status: bool,
     ) -> Result<Response> {
-        let retry_state = new_retry_state(headers, true);
+        let retry_state = new_retry_state(headers, false);
         retry_async_with_retries(verb_label, &url, retries, || async {
             let (headers, options) = attempt_options(&retry_state, error_for_status);
             self.send_once_with_https_fallback_with_retry_headers(
@@ -2070,7 +2082,7 @@ impl Client {
         F: Fn(Response) -> Fut,
         Fut: std::future::Future<Output = Result<T>>,
     {
-        let retry_state = new_retry_state(req.headers, true);
+        let retry_state = new_retry_state(req.headers, false);
         retry_async_with_retries(req.verb_label, &req.url, req.retries, || async {
             let (headers, options) = attempt_options(&retry_state, req.error_for_status);
             let resp = self
@@ -2237,7 +2249,9 @@ impl Client {
         // than the direct request, or an http mirror fronting an https origin (#7164)
         // becomes unusable.
         ensure_secure_replacement_credentials(&original_url, &url, &final_headers)?;
-        if options.use_netrc {
+        if options.use_netrc
+            && !(options.netrc_replacement_only && url.host() == original_url.host())
+        {
             final_headers =
                 apply_netrc_credentials(final_headers, &original_url, &url, netrc_headers(&url));
         }
@@ -2310,6 +2324,7 @@ impl Client {
                             *retry_state.lock().unwrap() = RetryState {
                                 headers: headers.clone(),
                                 use_netrc: false,
+                                netrc_replacement_only: false,
                             };
                         }
                         debug!(
