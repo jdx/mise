@@ -146,10 +146,11 @@ fn matches(pattern: &Path, file: &Path) -> bool {
     if file.starts_with(pattern) {
         return !is_standard_config(&slashes(&file.to_string_lossy(), cfg!(windows)));
     }
-    glob_matches(
-        &slashes(&pattern.to_string_lossy(), cfg!(windows)),
-        &slashes(&file.to_string_lossy(), cfg!(windows)),
-    )
+    // A glob, like a directory, does not claim the configs mise names itself: `*.toml` would
+    // otherwise take `mise.toml`.
+    let file = slashes(&file.to_string_lossy(), cfg!(windows));
+    glob_matches(&slashes(&pattern.to_string_lossy(), cfg!(windows)), &file)
+        && !is_standard_config(&file)
 }
 
 /// A path with `/` between its parts, as a glob has: `Path::join` writes `\` on Windows.
@@ -364,5 +365,12 @@ mod tests {
             &dir.join("mise.tasks.c.toml")
         ));
         assert!(matches(&dir.join("t.[!ab].toml"), &dir.join("t.c.toml")));
+        // a glob leaves the standard configs alone too
+        assert!(!matches(&dir.join("*.toml"), &dir.join("mise.toml")));
+        assert!(!matches(
+            &dir.join("**/*.toml"),
+            &dir.join("mise/config.toml")
+        ));
+        assert!(matches(&dir.join("*.toml"), &dir.join("build.toml")));
     }
 }
