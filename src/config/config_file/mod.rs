@@ -266,8 +266,16 @@ pub trait ConfigFile: Debug + Send + Sync {
         None
     }
 
-    fn doctor_config(&self) -> Result<crate::config::doctor::DoctorConfig> {
-        Ok(Default::default())
+    fn doctor_config(&self) -> crate::config::doctor::DoctorConfig {
+        Default::default()
+    }
+
+    /// Render a check's `run`, `description` and `hint` with this file's template context.
+    fn render_doctor_check(
+        &self,
+        check: &crate::config::doctor::DoctorCheck,
+    ) -> Result<crate::config::doctor::DoctorCheck> {
+        Ok(check.clone())
     }
 
     fn bootstrap_config(&self) -> Option<mise_config::bootstrap::BootstrapTomlConfig> {

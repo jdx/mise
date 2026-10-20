@@ -18,3 +18,13 @@ TOML
 output="$(mise doctor project 2>&1 || true)"
 assert_contains "echo '$output'" "PASS has_env: project-a in clones has a .env"
 assert_contains "echo '$output'" "touch $PWD/clones/project-a/.missing"
+
+# A bad template fails only its own check.
+cat >>mise.toml <<'TOML'
+
+[doctor.checks.bad_template]
+run = 'echo {{ nope.x }}'
+TOML
+output="$(mise doctor project 2>&1 || true)"
+assert_contains "echo '$output'" "PASS has_env"
+assert_contains "echo '$output'" "ERROR bad_template"

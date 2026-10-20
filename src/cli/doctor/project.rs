@@ -132,7 +132,7 @@ impl Project {
         // Config files are ordered from highest to lowest precedence. Replace
         // whole named checks so a local command cannot inherit a stale remedy.
         for (path, cf) in config.config_files.iter().rev() {
-            let declared = cf.doctor_config()?.checks;
+            let declared = cf.doctor_config().checks;
             if declared.is_empty() {
                 continue;
             }
@@ -145,7 +145,13 @@ impl Project {
                 std::env::current_dir()?
             };
             for (name, check) in declared {
-                checks.insert(name, (path.clone(), root.clone(), check));
+                // A bad template only fails its own check, and only where it applies.
+                let rendered = if crate::config::doctor::applies(&check) {
+                    cf.render_doctor_check(&check).map_err(|e| format!("{e:#}"))
+                } else {
+                    Ok(check.clone())
+                };
+                checks.insert(name, (path.clone(), root.clone(), check, rendered));
             }
         }
         let mut report = Report::default();
@@ -157,7 +163,7 @@ impl Project {
         let environment = async {
             if !checks
                 .values()
-                .any(|(_, _, check)| crate::config::doctor::applies(check))
+                .any(|(_, _, check, _)| crate::config::doctor::applies(check))
             {
                 return Ok(EnvMap::default());
             }
@@ -173,10 +179,23 @@ impl Project {
         }
         .await;
         report.checks = stream::iter(checks)
-            .map(|(name, (source, root, check))| {
+            .map(|(name, (source, root, check, rendered))| {
                 let environment = &environment;
                 let config = &config;
                 async move {
+                    let check = match rendered {
+                        Ok(check) => check,
+                        Err(err) => {
+                            return CheckResult {
+                                name,
+                                description: check.description.clone(),
+                                source: Some(source),
+                                status: Status::Error,
+                                message: Some(config.redact(&err)),
+                                hint: check.hint.clone(),
+                            };
+                        }
+                    };
                     let mut result = CheckResult {
                         name,
                         description: check.description.clone(),

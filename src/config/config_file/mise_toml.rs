@@ -1982,22 +1982,27 @@ impl ConfigFile for MiseToml {
         self.oci.clone()
     }
 
-    fn doctor_config(&self) -> eyre::Result<crate::config::doctor::DoctorConfig> {
-        let mut doctor = self.doctor.clone();
-        for check in doctor.checks.values_mut() {
-            check.run = self.parse_template(&check.run)?;
-            check.description = check
-                .description
-                .as_deref()
-                .map(|s| self.parse_template(s))
-                .transpose()?;
-            check.hint = check
-                .hint
-                .as_deref()
-                .map(|s| self.parse_template(s))
-                .transpose()?;
-        }
-        Ok(doctor)
+    fn doctor_config(&self) -> crate::config::doctor::DoctorConfig {
+        self.doctor.clone()
+    }
+
+    fn render_doctor_check(
+        &self,
+        check: &crate::config::doctor::DoctorCheck,
+    ) -> eyre::Result<crate::config::doctor::DoctorCheck> {
+        let mut check = check.clone();
+        check.run = self.parse_template(&check.run)?;
+        check.description = check
+            .description
+            .as_deref()
+            .map(|s| self.parse_template(s))
+            .transpose()?;
+        check.hint = check
+            .hint
+            .as_deref()
+            .map(|s| self.parse_template(s))
+            .transpose()?;
+        Ok(check)
     }
 
     fn bootstrap_config(&self) -> Option<BootstrapTomlConfig> {
