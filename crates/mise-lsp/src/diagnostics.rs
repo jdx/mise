@@ -30,6 +30,8 @@ pub(crate) struct Diagnostic {
     pub code: &'static str,
     /// The key an unknown one was probably meant to be.
     pub suggestion: Option<String>,
+    /// The unknown key an `unknown-key` diagnostic is about, to tell a stale one from a current one.
+    pub key: Option<String>,
     pub deprecated: bool,
 }
 
@@ -51,6 +53,7 @@ pub(crate) fn diagnose(text: &str, schema: &Schema, validator: Option<&Validator
                     message: e.message,
                     code: "syntax",
                     suggestion: None,
+                    key: None,
                     deprecated: false,
                 }],
                 parsed: false,
@@ -214,6 +217,9 @@ impl Context<'_> {
             "unknown-key",
             suggestion.map(str::to_string),
         );
+        if let Some(d) = out.last_mut().filter(|d| d.path == child) {
+            d.key = Some(name.to_string());
+        }
     }
 }
 
@@ -285,6 +291,7 @@ fn push(
             message,
             code,
             suggestion,
+            key: None,
             deprecated: false,
         });
     }

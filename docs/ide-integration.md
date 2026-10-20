@@ -148,9 +148,10 @@ off with `initializationOptions`, keeping only what mise adds:
 { "formatting": false, "hover": false, "completion": false }
 ```
 
-A mise that predates `mise lsp` runs a task named `lsp` if the project has one.
-To check that the command exists, look for `Usage: mise lsp` in the output of
-`mise lsp --help`.
+A mise that predates `mise lsp` runs a task named `lsp` if the project has one,
+and `mise lsp --help` then prints that task's help. To check that the command
+exists, look for `Usage: mise lsp` in the output of `mise help lsp`, which older
+versions answer with mise's own help.
 
 ## VS Code {#vscode}
 

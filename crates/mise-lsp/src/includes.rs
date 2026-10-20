@@ -9,27 +9,88 @@ use std::path::{Path, PathBuf};
 use regex::Regex;
 use toml_edit::{Document, Item};
 
-/// Where a project keeps its config, relative to a directory.
-const CONFIGS: &[&str] = &[
-    "mise.toml",
-    ".mise.toml",
-    "mise.local.toml",
-    ".mise.local.toml",
-    ".config/mise.toml",
-    ".config/mise/config.toml",
-    "mise/config.toml",
-    ".mise/config.toml",
-];
-
 /// A config file is never a bigger thing than this; skip anything that is.
 const MAX_CONFIG_BYTES: u64 = 1 << 20;
+
+/// More entries than this in a directory is not a config directory worth reading.
+const MAX_DIR_ENTRIES: usize = 500;
+
+/// Whether the file at `path` (with `/` between its parts) is one mise loads as a config:
+/// `mise.toml`, `.mise.toml`, `mise.<env>.toml`, `mise.local.toml`, `mise/config.toml`,
+/// `.config/mise/config.toml`, and the files of a `conf.d` beside them.
+pub(crate) fn is_config_file(path: &str) -> bool {
+    let mut parts = path.rsplit('/');
+    let name = parts.next().unwrap_or_default();
+    let parent = parts.next().unwrap_or_default();
+    let grandparent = parts.next().unwrap_or_default();
+    let in_mise_dir = |dir: &str| dir == "mise" || dir == ".mise";
+    let Some(stem) = name.strip_suffix(".toml") else {
+        return false;
+    };
+    let stem = stem.strip_prefix('.').unwrap_or(stem);
+    let first = stem.split('.').next().unwrap_or_default();
+    (first == "mise" && stem != "miserc")
+        || (first == "config" && in_mise_dir(parent))
+        || (parent == "conf.d" && in_mise_dir(grandparent))
+}
+
+/// The names mise itself gives configs. A directory include does not claim these, so that
+/// `includes = ["."]` does not turn the configs below it into task files. `mise.<env>.toml` is
+/// one of them, except for `tasks` and `task`, which name task files; a directory include does
+/// claim those.
+fn is_standard_config(path: &str) -> bool {
+    let mut parts = path.rsplit('/');
+    let name = parts.next().unwrap_or_default();
+    let parent = parts.next().unwrap_or_default();
+    let grandparent = parts.next().unwrap_or_default();
+    let in_mise_dir = |dir: &str| dir == "mise" || dir == ".mise";
+    matches!(
+        name,
+        "mise.toml" | ".mise.toml" | "mise.local.toml" | ".mise.local.toml"
+    ) || (name == "config.toml" && in_mise_dir(parent))
+        || (parent == "conf.d" && in_mise_dir(grandparent))
+        || is_config_file(path)
+            && name.trim_start_matches('.').split('.').count() == 3
+            && is_known_env(name)
+}
+
+/// `mise.<env>.toml` for an environment name that is not a word for a task file.
+fn is_known_env(name: &str) -> bool {
+    let env = name
+        .trim_start_matches('.')
+        .strip_prefix("mise.")
+        .and_then(|rest| rest.strip_suffix(".toml"))
+        .unwrap_or_default();
+    !matches!(env, "tasks" | "task")
+}
+
+/// The config files in `dir` and the places a project keeps them below it.
+fn config_files(dir: &Path) -> Vec<PathBuf> {
+    let mut out = vec![];
+    let mut scan = |d: PathBuf| {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            return;
+        };
+        for entry in entries.flatten().take(MAX_DIR_ENTRIES) {
+            let path = entry.path();
+            if is_config_file(&slashes(&path.to_string_lossy(), cfg!(windows))) {
+                out.push(path);
+            }
+        }
+    };
+    scan(dir.to_path_buf());
+    for sub in [".config", ".config/mise", "mise", ".mise"] {
+        scan(dir.join(sub));
+        scan(dir.join(sub).join("conf.d"));
+    }
+    out
+}
 
 /// Whether a config in one of `file`'s ancestor directories lists it in `task_config.includes`.
 pub(crate) fn is_task_include(file: &Path) -> bool {
     file.ancestors().skip(1).any(|dir| {
-        CONFIGS
-            .iter()
-            .map(|config| dir.join(config))
+        config_files(dir)
+            .into_iter()
             .filter(|config| config != file)
             .any(|config| includes_file(&config, file))
     })
@@ -40,21 +101,17 @@ fn includes_file(config: &Path, file: &Path) -> bool {
         return false;
     };
     let dir = config.parent().unwrap_or(Path::new(""));
-    // `mise/config.toml` and its kin keep tasks relative to the project, not the config dir:
-    // the project is the directory above `mise`, `.mise` or `.config`, and above `.config` for
-    // `.config/mise/config.toml`.
-    let mut bases = vec![dir];
-    if let Some(parent) = dir.parent()
-        && dir
+    // `mise/config.toml` and its kin keep tasks relative to the project, not the config dir: the
+    // project is above `conf.d`, `mise`, `.mise` and `.config`, whichever of them the config is in.
+    let mut bases = vec![];
+    let mut base = Some(dir);
+    while let Some(d) = base {
+        bases.push(d);
+        base = d
             .file_name()
-            .is_some_and(|n| n == "mise" || n == ".mise" || n == ".config")
-    {
-        bases.push(parent);
-        if parent.file_name().is_some_and(|n| n == ".config")
-            && let Some(project) = parent.parent()
-        {
-            bases.push(project);
-        }
+            .is_some_and(|n| n == "conf.d" || n == "mise" || n == ".mise" || n == ".config")
+            .then(|| d.parent())
+            .flatten();
     }
     includes
         .iter()
@@ -83,8 +140,11 @@ fn read_includes(config: &Path) -> Option<Vec<String>> {
 
 /// `file` is `pattern`, is inside the directory `pattern`, or matches the glob `pattern`.
 fn matches(pattern: &Path, file: &Path) -> bool {
-    if file == pattern || file.starts_with(pattern) {
+    if file == pattern {
         return true;
+    }
+    if file.starts_with(pattern) {
+        return !is_standard_config(&slashes(&file.to_string_lossy(), cfg!(windows)));
     }
     glob_matches(
         &slashes(&pattern.to_string_lossy(), cfg!(windows)),
@@ -244,6 +304,45 @@ mod tests {
             &class,
             &slashes(r"C:\p\mise.tasks.a.toml", true)
         ));
+    }
+
+    #[test]
+    fn a_directory_include_leaves_standard_configs_alone() {
+        let dir = Path::new("/p");
+        assert!(!matches(Path::new("/p"), &dir.join("mise.toml")));
+        assert!(!matches(Path::new("/p"), &dir.join("mise.test.toml")));
+        assert!(!matches(
+            Path::new("/p"),
+            &dir.join(".config/mise/conf.d/a.toml")
+        ));
+        assert!(!matches(Path::new("/p"), &dir.join(".mise.test.toml")));
+        assert!(matches(Path::new("/p"), &dir.join("tasks/build.toml")));
+        assert!(matches(Path::new("/p"), &dir.join("mise.tasks.toml")));
+        // named outright, any file is a task file
+        assert!(matches(&dir.join("mise.toml"), &dir.join("mise.toml")));
+    }
+
+    #[test]
+    fn includes_in_env_and_conf_d_configs_count() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-envcfg-{}", std::process::id()));
+        std::fs::create_dir_all(root.join(".config/mise/conf.d")).unwrap();
+        std::fs::write(root.join("mise.toml"), "[tools]\n").unwrap();
+        std::fs::write(
+            root.join("mise.dev.toml"),
+            "[task_config]\nincludes = [\"dev.tasks.toml\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join(".config/mise/conf.d/10-tasks.toml"),
+            "[task_config]\nincludes = [\"mise.tasks.toml\"]\n",
+        )
+        .unwrap();
+        let dev = root.join("dev.tasks.toml");
+        let tasks = root.join("mise.tasks.toml");
+        std::fs::write(&dev, "[a]\n").unwrap();
+        std::fs::write(&tasks, "[a]\n").unwrap();
+        assert!(is_task_include(&dev));
+        assert!(is_task_include(&tasks));
     }
 
     #[test]

@@ -18,7 +18,7 @@ use crate::config::schema::SCHEMA;
 ///
 /// The server only parses a config. It never renders templates or runs anything, so opening an untrusted file is safe.
 ///
-/// A mise that predates this command runs a task named `lsp` instead, so a client that needs to know whether the command exists can check that `mise lsp --help` prints `Usage: mise lsp`.
+/// A mise that predates this command runs a task named `lsp` instead, so a client that needs to know whether the command exists can check that `mise help lsp` prints `Usage: mise lsp`.
 ///
 /// See https://mise.jdx.dev/ide-integration.html for editor configuration.
 #[derive(Debug, usage_rs::Args)]

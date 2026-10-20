@@ -309,6 +309,7 @@ impl Server {
     /// Quick fixes: replace an unknown key with the one the diagnostic suggests.
     fn code_actions(&self, params: &Value) -> Value {
         let uri = params["textDocument"]["uri"].as_str().unwrap_or_default();
+        let document = self.config(uri);
         let actions: Vec<Value> = params["context"]["diagnostics"]
             .as_array()
             .into_iter()
@@ -316,6 +317,20 @@ impl Server {
             .filter(|d| d["code"] == "unknown-key")
             .filter_map(|d| {
                 let suggestion = d["data"]["suggestion"].as_str()?;
+                // The diagnostic may be stale: only fix the key it was about.
+                let key = d["data"]["key"].as_str()?;
+                let text = &document?.text;
+                let index = LineIndex::new(text);
+                let at = |p: &Value| {
+                    index.offset(
+                        p["line"].as_u64().unwrap_or_default() as usize,
+                        p["character"].as_u64().unwrap_or_default() as usize,
+                    )
+                };
+                let found = text.get(at(&d["range"]["start"])..at(&d["range"]["end"]))?;
+                if found.trim_matches(['"', '\'']) != key {
+                    return None;
+                }
                 Some(json!({
                     "title": format!("Replace with `{suggestion}`"),
                     "kind": "quickfix",
@@ -419,7 +434,7 @@ fn diagnostic_json(index: &LineIndex, d: &Diagnostic) -> Value {
         diagnostic["tags"] = json!([2]);
     }
     if let Some(suggestion) = &d.suggestion {
-        diagnostic["data"] = json!({"suggestion": suggestion});
+        diagnostic["data"] = json!({"suggestion": suggestion, "key": d.key});
     }
     diagnostic
 }
@@ -444,27 +459,10 @@ fn range(index: &LineIndex, span: &std::ops::Range<usize>) -> Value {
     })
 }
 
-/// Whether the file at `uri` is one mise loads as a config: `mise.toml`, `.mise.toml`,
-/// `mise.<env>.toml`, `mise.local.toml`, `mise/config.toml`, `.config/mise/config.toml`, and
-/// the files of a `conf.d` beside them.
+/// Whether the file at `uri` is one mise loads as a config; see [`includes::is_config_file`].
 fn is_mise_config(uri: &str) -> bool {
-    let Some(path) = uri.strip_prefix("file://") else {
-        return false;
-    };
-    let path = includes::percent_decode(path);
-    let mut parts = path.rsplit('/');
-    let name = parts.next().unwrap_or_default();
-    let parent = parts.next().unwrap_or_default();
-    let grandparent = parts.next().unwrap_or_default();
-    let in_mise_dir = |dir: &str| dir == "mise" || dir == ".mise";
-    let Some(stem) = name.strip_suffix(".toml") else {
-        return false;
-    };
-    let stem = stem.strip_prefix('.').unwrap_or(stem);
-    let first = stem.split('.').next().unwrap_or_default();
-    (first == "mise" && !stem.eq("miserc"))
-        || (first == "config" && in_mise_dir(parent))
-        || (parent == "conf.d" && in_mise_dir(grandparent))
+    uri.strip_prefix("file://")
+        .is_some_and(|path| includes::is_config_file(&includes::percent_decode(path)))
 }
 
 #[cfg(test)]
@@ -599,8 +597,22 @@ mod tests {
         assert_eq!(action["edit"]["changes"][uri][0]["newText"], "color");
     }
 
+    #[test]
+    fn a_stale_diagnostic_gets_no_quick_fix() {
+        let uri = "file:///p/mise.toml";
+        let replies = session(&[
+            open(uri, "[settings]\ncolo = true\n"),
+            json!({"jsonrpc": "2.0", "id": 1, "method": "textDocument/codeAction", "params": {
+                "textDocument": {"uri": uri},
+                "range": {"start": {"line": 1, "character": 0}, "end": {"line": 1, "character": 4}},
+                "context": {"diagnostics": [replies_diagnostic()]},
+            }}),
+        ]);
+        assert_eq!(replies[1]["result"], json!([]));
+    }
+
     fn replies_diagnostic() -> Value {
-        json!({"code": "unknown-key", "data": {"suggestion": "color"},
+        json!({"code": "unknown-key", "data": {"suggestion": "color", "key": "colr"},
             "range": {"start": {"line": 1, "character": 0}, "end": {"line": 1, "character": 4}}})
     }
 
