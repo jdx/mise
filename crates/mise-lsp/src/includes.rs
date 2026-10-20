@@ -158,11 +158,14 @@ fn matches(pattern: &Path, file: &Path) -> bool {
     if file.starts_with(pattern) {
         return !is_standard_config(&slashes(&file.to_string_lossy(), cfg!(windows)));
     }
-    // A glob, like a directory, does not claim the configs mise names itself: `*.toml` would
-    // otherwise take `mise.toml`.
+    // A glob that opens its last part with a wildcard (`*.toml`) does not claim the configs mise
+    // names itself, or it would take `mise.toml`. One that spells the start of the name
+    // (`tasks/mise.*.toml`) means the files it matches, whatever they are called.
     let file = slashes(&file.to_string_lossy(), cfg!(windows));
-    glob_matches(&slashes(&pattern.to_string_lossy(), cfg!(windows)), &file)
-        && !is_standard_config(&file)
+    let pattern = slashes(&pattern.to_string_lossy(), cfg!(windows));
+    let last = pattern.rsplit('/').next().unwrap_or_default();
+    let names_the_files = !last.starts_with(['*', '?', '[']);
+    glob_matches(&pattern, &file) && (names_the_files || !is_standard_config(&file))
 }
 
 /// A path with `/` between its parts, as a glob has: `Path::join` writes `\` on Windows.
@@ -394,5 +397,10 @@ mod tests {
             &dir.join("mise/config.toml")
         ));
         assert!(matches(&dir.join("*.toml"), &dir.join("build.toml")));
+        // a glob that spells the start of the name claims what it matches
+        assert!(matches(
+            &dir.join("tasks/mise.*.toml"),
+            &dir.join("tasks/mise.build.toml")
+        ));
     }
 }
