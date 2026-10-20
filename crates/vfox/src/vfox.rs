@@ -240,10 +240,11 @@ impl Vfox {
     /// Applies the settings every plugin gets: libc type and its own cache directory
     fn configure_plugin(&self, plugin: &mut Plugin) {
         plugin.runtime_env_type = self.runtime_env_type.clone();
-        // A path-like name such as `..` must not point the cache outside plugins/
+        // A path-like name such as `..` must not point the cache outside plugins/, and an
+        // unset cache root must not turn into a path relative to the working directory
         let mut parts = Path::new(&plugin.name).components();
         plugin.cache_dir_path = match (parts.next(), parts.next()) {
-            (Some(Component::Normal(name)), None) => {
+            (Some(Component::Normal(name)), None) if !self.cache_dir.as_os_str().is_empty() => {
                 Some(self.cache_dir.join("plugins").join(name))
             }
             _ => None,

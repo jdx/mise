@@ -667,3 +667,12 @@ fn path_like_plugin_names_get_no_cache_dir() {
         assert_eq!(plugin.cache_dir_path, None, "{name}");
     }
 }
+
+#[test]
+fn empty_cache_root_gets_no_plugin_cache_dir() {
+    let mut vfox = Vfox::test();
+    vfox.cache_dir = PathBuf::new();
+    let mut plugin = Plugin::from_dir(Path::new("plugins/dummy")).unwrap();
+    vfox.configure_plugin(&mut plugin);
+    assert_eq!(plugin.cache_dir_path, None);
+}
