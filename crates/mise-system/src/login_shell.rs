@@ -35,31 +35,33 @@ const EXTRA_SEARCH_DIRS: &[&str] = &[
 ];
 
 fn search_dirs() -> Vec<PathBuf> {
-    let shims = [
-        mise_util::env::MISE_SHIMS_DIR.clone(),
-        mise_util::env::MISE_SYSTEM_DATA_DIR.join("shims"),
-    ];
     search_dirs_from(
         &mise_util::env::PATH,
-        &shims,
+        mise_util::file::is_mise_shims_dir,
         mise_util::env::var_path("HOME").as_deref(),
     )
 }
 
-/// `path` without mise shim directories (compared after resolving symlinks),
-/// followed by the package-manager locations.
-fn search_dirs_from(path: &[PathBuf], shims: &[PathBuf], home: Option<&Path>) -> Vec<PathBuf> {
-    let canonical = |dir: &Path| dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
-    let shims: Vec<PathBuf> = shims.iter().map(|dir| canonical(dir)).collect();
+/// `path` without mise shim directories, followed by the package-manager locations.
+fn search_dirs_from(
+    path: &[PathBuf],
+    is_shims_dir: impl Fn(&Path) -> bool,
+    home: Option<&Path>,
+) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = path
         .iter()
-        .filter(|dir| dir.is_absolute() && !shims.contains(&canonical(dir)))
+        .filter(|dir| dir.is_absolute() && !is_shims_dir(dir))
         .cloned()
         .collect();
     if let Some(home) = home {
         dirs.push(home.join(".linuxbrew/bin"));
     }
-    dirs.extend(EXTRA_SEARCH_DIRS.iter().map(PathBuf::from));
+    dirs.extend(
+        EXTRA_SEARCH_DIRS
+            .iter()
+            .map(PathBuf::from)
+            .filter(|dir| !is_shims_dir(dir)),
+    );
     dirs
 }
 
@@ -376,7 +378,13 @@ mod tests {
         std::fs::create_dir_all(&other).unwrap();
         std::os::unix::fs::symlink(&shims, &link).unwrap();
         let path = vec![link, other.clone(), shims.clone()];
-        let dirs = search_dirs_from(&path, &[shims], Some(Path::new("/home/u")));
+        let canon = |d: &Path| d.canonicalize().unwrap_or_else(|_| d.to_path_buf());
+        let shims_canon = canon(&shims);
+        let dirs = search_dirs_from(
+            &path,
+            |d| canon(d) == shims_canon,
+            Some(Path::new("/home/u")),
+        );
         assert_eq!(dirs[0], other);
         assert_eq!(dirs[1], PathBuf::from("/home/u/.linuxbrew/bin"));
         assert_eq!(dirs[2], PathBuf::from(EXTRA_SEARCH_DIRS[0]));
