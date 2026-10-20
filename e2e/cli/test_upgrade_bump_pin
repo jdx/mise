@@ -42,6 +42,26 @@ CONFIG
 pintest = \"20.5.3\""
 done
 
+# --pin does the same as the setting
+cat <<CONFIG >mise.toml
+[tools]
+pintest = "latest"
+CONFIG
+mise uninstall --all pintest 2>/dev/null || true
+mise install pintest@20.5.3
+mise upgrade --bump --pin
+assert "cat mise.toml" "[tools]
+pintest = \"20.5.3\""
+
+# deselected or multi-platform entries are not rewritten
+cat <<CONFIG >mise.toml
+[tools]
+pintest = [{ version = "latest", os = ["linux"] }, { version = "latest", os = ["macos"] }]
+CONFIG
+before=$(cat mise.toml)
+mise upgrade --bump --pin
+assert "cat mise.toml" "$before"
+
 # a configured exact version is untouched
 mise upgrade --bump
 assert "cat mise.toml" "[tools]

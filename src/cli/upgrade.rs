@@ -83,6 +83,14 @@ pub(crate) struct Upgrade {
     #[usage(long, short = 'b')]
     bump: bool,
 
+    /// With --bump, write the resolved version instead of keeping the request's precision
+    ///
+    /// `node = "latest"` and `node = "20"` become `node = "24.14.0"`. A named
+    /// request such as `node@3` is written as the version it resolved to. Make
+    /// this the default with the `pin` setting (`MISE_PIN=1`).
+    #[usage(long, requires = "bump")]
+    pin: bool,
+
     /// Choose which tools to upgrade from a multiselect menu
     #[usage(long, short, verbatim_doc_comment, conflicts = "tool")]
     interactive: bool,
@@ -542,8 +550,10 @@ impl Upgrade {
             )
             .await
         };
-        if Settings::get().pin {
-            if self.bump && self.tool.is_empty() {
+        let pin = self.pin || Settings::get().pin;
+        let pin_all = pin && self.bump && self.tool.is_empty();
+        if pin {
+            if pin_all {
                 // With `pin` on, a bare `--bump` also records exact versions for
                 // requests that are not exact, such as `latest` or `20`.
                 for (_, tv) in ts.list_current_versions() {
@@ -554,6 +564,15 @@ impl Upgrade {
                         .exclude
                         .iter()
                         .any(|tool| backend_args_match(tool.ba.as_ref(), tv.ba()))
+                    {
+                        continue;
+                    }
+                    // Replacing a multi-entry tool would drop the entries for
+                    // other platforms, as the ordinary bump path also avoids.
+                    if ts
+                        .versions
+                        .iter()
+                        .any(|(ba, tvl)| backend_args_match(ba, tv.ba()) && tvl.requests.len() > 1)
                     {
                         continue;
                     }
@@ -592,12 +611,20 @@ impl Upgrade {
                 }
             }
         }
-        explicit_config_bumps.retain(|bump| {
-            bump.persisted_request.version() != bump.request.version()
-                || !Settings::get().pin
-                || !self.tool.is_empty()
-                || !self.bump
-        });
+        if pin_all {
+            explicit_config_bumps
+                .retain(|bump| bump.persisted_request.version() != bump.request.version());
+            // The exact version is what gets written, so the precision-keeping
+            // bump must not also be applied or previewed.
+            for o in &mut outdated {
+                if explicit_config_bumps.iter().any(|bump| {
+                    backend_args_match(o.tool_version.ba(), bump.request.ba())
+                        && o.tool_version.request.version() == bump.request.version()
+                }) {
+                    o.bump = None;
+                }
+            }
+        }
         if self.installed_only {
             outdated.retain(|o| o.current.is_some());
         }
@@ -640,7 +667,24 @@ impl Upgrade {
             .await;
         }
         if self.interactive && !outdated.is_empty() {
+            let offered = outdated
+                .iter()
+                .map(|o| o.tool_version.ba().clone())
+                .collect::<Vec<_>>();
             outdated = self.get_interactive_tool_set(&outdated)?;
+            if pin_all {
+                // A tool that was not selected is not upgraded, so its config
+                // must not move to a version that is not installed.
+                explicit_config_bumps.retain(|bump| {
+                    let deselected = offered
+                        .iter()
+                        .any(|ba| backend_args_match(ba, bump.request.ba()))
+                        && !outdated
+                            .iter()
+                            .any(|o| backend_args_match(o.tool_version.ba(), bump.request.ba()));
+                    !deselected
+                });
+            }
             if outdated.is_empty() {
                 return Ok(());
             }
