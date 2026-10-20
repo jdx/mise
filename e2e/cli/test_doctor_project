@@ -195,3 +195,15 @@ run = "true"
 TOML
 assert_succeed "MISE_JOBS=1 mise doctor project"
 assert_succeed 'MISE_JOBS=2 mise doctor project --json | jq -e "[.checks[].status] | unique == [\"pass\"]"'
+
+# An os-excluded check is skipped, not blocked, even when its dependency fails.
+cat >mise.toml <<'TOML'
+[doctor.checks.a]
+run = "exit 1"
+
+[doctor.checks.b]
+depends = ["a"]
+os = ["windows"]
+run = "true"
+TOML
+assert 'mise doctor project --json | jq -r ".checks[] | select(.name==\"b\").status"' "skipped"

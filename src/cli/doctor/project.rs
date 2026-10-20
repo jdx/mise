@@ -208,8 +208,10 @@ impl Project {
                         message: None,
                         hint: check.hint.clone(),
                     };
+                    // A check excluded by `os` is skipped without waiting on anything.
+                    let applies = crate::config::doctor::applies(&check);
                     let mut unmet = None;
-                    for dep in &check.depends {
+                    for dep in check.depends.iter().filter(|_| applies) {
                         let mut rx = outcomes[dep].subscribe();
                         let passed = rx.wait_for(|v| v.is_some()).await.ok().and_then(|v| *v);
                         if passed != Some(true) {
@@ -220,7 +222,7 @@ impl Project {
                     if let Some(dep) = unmet {
                         result.status = Status::Blocked;
                         result.message = Some(format!("Blocked: dependency {dep} did not pass"));
-                    } else if !crate::config::doctor::applies(&check) {
+                    } else if !applies {
                         result.status = Status::Skipped;
                         result.message =
                             Some("Check does not apply to this operating system".into());
