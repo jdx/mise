@@ -3028,6 +3028,17 @@ pub(crate) fn update_lockfiles(
             }
         }
 
+        let mut selected_python_specifiers: HashMap<String, HashSet<String>> = HashMap::new();
+        for tv in tool_versions_by_short.values().flatten() {
+            if let Some(dependency) = crate::backend::pipx::selected_python_dependency(&tv.request)?
+            {
+                selected_python_specifiers
+                    .entry(dependency.ba().short.clone())
+                    .or_default()
+                    .insert(dependency.version());
+            }
+        }
+
         let tools_by_short: HashMap<String, Vec<LockfileTool>> = tool_versions_by_short
             .iter()
             .map(|(short, versions)| {
@@ -3098,6 +3109,13 @@ pub(crate) fn update_lockfiles(
                     &mut merged_tools,
                     existing_lockfile.tools_for(&short),
                     &consumed_keys,
+                );
+            }
+            if let Some(specifiers) = selected_python_specifiers.get(&short) {
+                preserve_selected_python_entries(
+                    &mut merged_tools,
+                    existing_lockfile.tools_for(&short),
+                    specifiers,
                 );
             }
             // Keep the prior provenance-bearing entry alive for unverified upgrades so
@@ -4394,6 +4412,39 @@ fn preserve_absent_tool_entries(
             .cmp(&b.version)
             .then_with(|| a.options.cmp(&b.options))
     });
+}
+
+/// The Python a pipx tool selects is a private runtime: installs never return
+/// it, so an update would drop its entry. Keep entries bound to a selected
+/// request unless this update locked that request itself.
+fn preserve_selected_python_entries(
+    merged_tools: &mut Vec<LockfileTool>,
+    existing_tools: Option<&Vec<LockfileTool>>,
+    specifiers: &HashSet<String>,
+) {
+    let Some(existing_tools) = existing_tools else {
+        return;
+    };
+    let unlocked: HashSet<&String> = specifiers
+        .iter()
+        .filter(|specifier| {
+            !merged_tools
+                .iter()
+                .any(|tool| tool.specifiers.contains(*specifier))
+        })
+        .collect();
+    for existing_tool in existing_tools {
+        if existing_tool
+            .specifiers
+            .iter()
+            .any(|specifier| unlocked.contains(specifier))
+            && !merged_tools.iter().any(|tool| {
+                tool.version == existing_tool.version && tool.options == existing_tool.options
+            })
+        {
+            merged_tools.push(existing_tool.clone());
+        }
+    }
 }
 
 fn derive_lockfile_discovery(config: &Config) -> LockfileDiscovery {

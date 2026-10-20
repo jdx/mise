@@ -1408,6 +1408,35 @@ fn test_preserve_absent_tool_entries_for_monorepo_upsert() {
 }
 
 #[test]
+fn test_preserve_selected_python_entries_keeps_only_unlocked_selections() {
+    let python = |version: &str, specifier: &str| {
+        let mut tool = basic_tool(version, "core:python");
+        tool.specifiers = BTreeSet::from([specifier.to_string()]);
+        tool
+    };
+    let existing = vec![
+        python("3.15.0", "latest"),
+        python("3.14.8", "3.14"),
+        python("3.13.5", "3.13"),
+    ];
+    let mut merged = vec![python("3.15.1", "latest"), python("3.13.6", "3.13")];
+
+    preserve_selected_python_entries(
+        &mut merged,
+        Some(&existing),
+        &HashSet::from(["3.14".to_string(), "3.13".to_string()]),
+    );
+
+    assert_eq!(
+        merged
+            .iter()
+            .map(|tool| tool.version.as_str())
+            .collect_vec(),
+        vec!["3.15.1", "3.13.6", "3.14.8"]
+    );
+}
+
+#[test]
 fn test_reinsert_deferred_baselines_restores_dropped_entry_without_duplicates() {
     let baseline = basic_tool("0.11.0", "github:owner/repo");
     let deferred = HashMap::from([("repo".to_string(), vec![baseline.clone(), baseline.clone()])]);
