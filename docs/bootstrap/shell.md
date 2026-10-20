@@ -232,8 +232,8 @@ path is what goes into `/etc/shells` and `chsh`, and what
 Shells from [package manager plugins](/bootstrap/packages/plugins.html) are
 installed after the login shell step in a full `mise bootstrap` run (see the
 [run order](/bootstrap.html#how-it-runs)), so a name is not found on a first
-run. Run `mise bootstrap user apply` once the plugin packages are installed, or
-use an absolute path.
+run, and an absolute path does not avoid that. Run `mise bootstrap --skip user`
+first, which installs the plugin packages, then `mise bootstrap user apply`.
 
 If no executable is found, `status` reports `not installed`, `apply` fails
 without touching `/etc/shells` or the account, and `apply --dry-run` says the
