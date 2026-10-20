@@ -105,6 +105,27 @@ fn matches(pattern: &Path, file: &Path) -> bool {
             }
             '*' => regex.push_str("[^/]*"),
             '?' => regex.push_str("[^/]"),
+            '[' => {
+                // a character class: `[ab]`, `[a-z]`, `[!x]`
+                let mut class = String::new();
+                let mut closed = false;
+                for c in chars.by_ref() {
+                    if c == ']' && !class.is_empty() {
+                        closed = true;
+                        break;
+                    }
+                    class.push(c);
+                }
+                if closed {
+                    let class = match class.strip_prefix('!') {
+                        Some(rest) => format!("^{rest}"),
+                        None => class,
+                    };
+                    regex.push_str(&format!("[{}]", class.replace('\\', "\\\\")));
+                } else {
+                    regex.push_str(&regex::escape(&format!("[{class}")));
+                }
+            }
             c => regex.push_str(&regex::escape(&c.to_string())),
         }
     }
@@ -209,5 +230,14 @@ mod tests {
         assert!(matches(&dir.join("tasks"), &dir.join("tasks/a/b.toml")));
         assert!(matches(&dir.join("**/*.toml"), &dir.join("a/b/c.toml")));
         assert!(!matches(&dir.join("tasks"), &dir.join("other/a.toml")));
+        assert!(matches(
+            &dir.join("mise.tasks.[ab].toml"),
+            &dir.join("mise.tasks.a.toml")
+        ));
+        assert!(!matches(
+            &dir.join("mise.tasks.[ab].toml"),
+            &dir.join("mise.tasks.c.toml")
+        ));
+        assert!(matches(&dir.join("t.[!ab].toml"), &dir.join("t.c.toml")));
     }
 }
