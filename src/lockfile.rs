@@ -3028,10 +3028,25 @@ pub(crate) fn update_lockfiles(
             }
         }
 
+        // Tool stubs are not in the toolset but lock into this file too.
+        let stub_requests = existing_lockfile
+            .tool_stubs()
+            .iter()
+            .filter_map(|reference| {
+                let path = tool_stub_path(&lockfile_path, reference);
+                crate::tool_stub::ToolStubFile::from_file(&path)
+                    .and_then(|stub| stub.to_tool_request(&path))
+                    .ok()
+            })
+            .collect_vec();
         let mut selected_python_specifiers: HashMap<String, HashSet<String>> = HashMap::new();
-        for tv in tool_versions_by_short.values().flatten() {
-            if let Some(dependency) = crate::backend::pipx::selected_python_dependency(&tv.request)?
-            {
+        for request in tool_versions_by_short
+            .values()
+            .flatten()
+            .map(|tv| &tv.request)
+            .chain(&stub_requests)
+        {
+            if let Some(dependency) = crate::backend::pipx::selected_python_dependency(request)? {
                 selected_python_specifiers
                     .entry(dependency.ba().short.clone())
                     .or_default()

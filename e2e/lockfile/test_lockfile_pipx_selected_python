@@ -36,3 +36,32 @@ cp mise.lock.full mise.lock
 mise lock python
 assert_contains "cat mise.lock" 'specifiers = ["3.13"]'
 assert_contains "cat mise.lock" 'specifiers = ["3.12"]'
+
+echo "=== a tool stub's selected python survives too ==="
+cat <<'EOF2' >mise.toml
+[tools]
+python = "3.13"
+EOF2
+mkdir -p bin
+cat <<'EOF2' >bin/yamllint
+#!/usr/bin/env -S mise tool-stub
+
+tool = "pipx:yamllint"
+version = "1.38.0"
+python = "3.12"
+EOF2
+chmod +x bin/yamllint
+rm -f mise.lock
+mise generate tool-stub bin/yamllint --lock
+mise lock
+assert_contains "cat mise.lock" 'specifiers = ["3.12"]'
+cp mise.lock mise.lock.full
+
+mise lock python
+assert_contains "cat mise.lock" 'specifiers = ["3.13"]'
+assert_contains "cat mise.lock" 'specifiers = ["3.12"]'
+
+cp mise.lock.full mise.lock
+mise use dummy@1.1.0
+assert_contains "cat mise.lock" 'specifiers = ["3.13"]'
+assert_contains "cat mise.lock" 'specifiers = ["3.12"]'

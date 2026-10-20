@@ -2396,6 +2396,8 @@ impl Lock {
 
         // Third pass: tool stubs that read their entries from this lockfile.
         // They are not part of any config, so nothing above sees them.
+        let python_named = self.tool.iter().any(|t| t.ba.short == "python");
+        let mut stub_python_requests = Vec::new();
         for (path, stub) in live_tool_stubs(target_lockfile_path) {
             let request = match stub.and_then(|stub| stub.to_tool_request(&path)) {
                 Ok(request) => request,
@@ -2411,6 +2413,10 @@ impl Lock {
                     .iter()
                     .any(|tool| tool.ba.as_ref() == request.ba().as_ref())
             {
+                if python_named {
+                    stub_python_requests
+                        .extend(crate::backend::pipx::selected_python_dependency(&request)?);
+                }
                 continue;
             }
             let resolve_options = request.resolve_options(context.resolve_options)?;
@@ -2455,13 +2461,13 @@ impl Lock {
                 .iter()
                 .map(|t| (t.ba.full(), t.tvr.clone()))
                 .collect();
-            // `mise lock python` also locks the Pythons that pipx tools select,
-            // so pruning python keeps them.
-            let python_named = self.tool.iter().any(|t| t.ba.short == "python");
-            let python_requests =
+            // `mise lock python` also locks the Pythons that pipx tools and
+            // stubs select, so pruning python keeps them.
+            let mut python_requests =
                 selected_python_requests(all_tools.iter().filter(|(ba, _)| {
                     python_named || specified_versions.contains_key(&ba.full())
                 }))?;
+            python_requests.extend(stub_python_requests);
             // For `tool@latest`, we want upgrade semantics: resolve "latest" to an
             // installed concrete version and lock that. Writing the literal "latest"
             // string to the lockfile would be a bug. Use the backend's own resolver so
