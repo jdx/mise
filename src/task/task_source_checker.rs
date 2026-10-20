@@ -2404,11 +2404,20 @@ mod tests {
         let mut cache = ContentHashCache::new();
         let first = file_contents_to_hash(&[(a.clone(), before.clone())], &mut cache).unwrap();
 
-        // Same size, mtime restored: only ctime betrays the edit.
-        std::fs::write(&a, "fail\n").unwrap();
-        filetime::set_file_mtime(&a, filetime::FileTime::from_last_modification_time(&before))
-            .unwrap();
-        let after = a.metadata().unwrap();
+        // Same size, mtime restored: only ctime betrays the edit. Retry until the filesystem's
+        // ctime clock has ticked so a coarse timestamp can't make the edit invisible.
+        let mut after = before.clone();
+        for _ in 0..100 {
+            std::fs::write(&a, "fail\n").unwrap();
+            filetime::set_file_mtime(&a, filetime::FileTime::from_last_modification_time(&before))
+                .unwrap();
+            after = a.metadata().unwrap();
+            if metadata_ctime(&after) != metadata_ctime(&before) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_ne!(metadata_ctime(&after), metadata_ctime(&before));
         assert_eq!(before.len(), after.len());
         let second = file_contents_to_hash(&[(a.clone(), after)], &mut cache).unwrap();
         assert_ne!(first, second);
