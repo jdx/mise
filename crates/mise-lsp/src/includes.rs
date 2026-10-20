@@ -34,46 +34,58 @@ pub(crate) fn is_config_file(path: &str) -> bool {
         || (parent == "conf.d" && in_mise_dir(grandparent))
 }
 
-/// The names mise itself gives configs. A directory include does not claim these, so that
-/// `includes = ["."]` does not turn the configs below it into task files. `mise.<env>.toml` is
-/// one of them, except for `tasks` and `task`, which name task files; a directory include does
-/// claim those.
+/// The names mise itself gives configs. A directory include or a glob does not claim these, so
+/// that `includes = ["."]` does not turn the configs below it into task files. `mise.<env>.toml`
+/// and `mise.<env>.local.toml` are among them, except `mise.tasks.toml`, `mise.tasks.<x>.toml` and
+/// the same with `task`, which name task files; an include does claim those.
 fn is_standard_config(path: &str) -> bool {
     let mut parts = path.rsplit('/');
     let name = parts.next().unwrap_or_default();
     let parent = parts.next().unwrap_or_default();
     let grandparent = parts.next().unwrap_or_default();
     let in_mise_dir = |dir: &str| dir == "mise" || dir == ".mise";
-    matches!(
-        name,
-        "mise.toml" | ".mise.toml" | "mise.local.toml" | ".mise.local.toml"
-    ) || (name == "config.toml" && in_mise_dir(parent))
+    if (name == "config.toml" && in_mise_dir(parent))
         || (parent == "conf.d" && in_mise_dir(grandparent))
-        || is_config_file(path)
-            && name.trim_start_matches('.').split('.').count() == 3
-            && is_known_env(name)
-}
-
-/// `mise.<env>.toml` for an environment name that is not a word for a task file.
-fn is_known_env(name: &str) -> bool {
-    let env = name
-        .trim_start_matches('.')
-        .strip_prefix("mise.")
-        .and_then(|rest| rest.strip_suffix(".toml"))
-        .unwrap_or_default();
-    !matches!(env, "tasks" | "task")
+    {
+        return true;
+    }
+    let Some(stem) = name
+        .strip_prefix('.')
+        .unwrap_or(name)
+        .strip_suffix(".toml")
+        .filter(|stem| is_config_file(name) && !stem.is_empty())
+    else {
+        return false;
+    };
+    let mut segments = stem.split('.');
+    segments.next() == Some("mise") && !matches!(segments.next(), Some("tasks" | "task"))
 }
 
 /// The config files in `dir` and the places a project keeps them below it.
 fn config_files(dir: &Path) -> Vec<PathBuf> {
-    let mut out = vec![];
+    // The names mise itself uses are read outright, so a directory too big to scan still gets
+    // its standard configs read.
+    let mut out: Vec<PathBuf> = [
+        "mise.toml",
+        ".mise.toml",
+        "mise.local.toml",
+        ".mise.local.toml",
+    ]
+    .iter()
+    .map(|name| dir.join(name))
+    .collect();
+    for sub in [".config/mise", "mise", ".mise"] {
+        out.push(dir.join(sub).join("config.toml"));
+    }
     let mut scan = |d: PathBuf| {
         let Ok(entries) = std::fs::read_dir(&d) else {
             return;
         };
         for entry in entries.flatten().take(MAX_DIR_ENTRIES) {
             let path = entry.path();
-            if is_config_file(&slashes(&path.to_string_lossy(), cfg!(windows))) {
+            if is_config_file(&slashes(&path.to_string_lossy(), cfg!(windows)))
+                && !out.contains(&path)
+            {
                 out.push(path);
             }
         }
@@ -321,6 +333,16 @@ mod tests {
         assert!(matches(Path::new("/p"), &dir.join("mise.tasks.toml")));
         // named outright, any file is a task file
         assert!(matches(&dir.join("mise.toml"), &dir.join("mise.toml")));
+    }
+
+    #[test]
+    fn env_local_configs_are_standard() {
+        assert!(is_standard_config("/p/mise.dev.local.toml"));
+        assert!(is_standard_config("/p/.mise.dev.toml"));
+        assert!(is_standard_config("/p/mise.toml"));
+        assert!(!is_standard_config("/p/mise.tasks.toml"));
+        assert!(!is_standard_config("/p/build.toml"));
+        assert!(!is_standard_config("/p/.miserc.toml"));
     }
 
     #[test]

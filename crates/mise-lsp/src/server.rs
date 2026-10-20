@@ -328,7 +328,10 @@ impl Server {
                     )
                 };
                 let found = text.get(at(&d["range"]["start"])..at(&d["range"]["end"]))?;
-                if found.trim_matches(['"', '\'']) != key {
+                // The key as TOML reads it, so an escaped spelling still matches.
+                let unchanged = toml_edit::Key::parse(found)
+                    .is_ok_and(|keys| keys.len() == 1 && keys[0].get() == key);
+                if !unchanged {
                     return None;
                 }
                 Some(json!({
@@ -595,6 +598,22 @@ mod tests {
         let action = &replies[1]["result"][0];
         assert_eq!(action["title"], "Replace with `color`");
         assert_eq!(action["edit"]["changes"][uri][0]["newText"], "color");
+    }
+
+    #[test]
+    fn an_escaped_key_still_gets_its_quick_fix() {
+        let uri = "file:///p/mise.toml";
+        let replies = session(&[
+            open(uri, "[settings]\n\"col\\u0072\" = true\n"),
+            json!({"jsonrpc": "2.0", "id": 1, "method": "textDocument/codeAction", "params": {
+                "textDocument": {"uri": uri},
+                "range": {"start": {"line": 1, "character": 0}, "end": {"line": 1, "character": 11}},
+                "context": {"diagnostics": [{"code": "unknown-key",
+                    "data": {"suggestion": "color", "key": "colr"},
+                    "range": {"start": {"line": 1, "character": 0}, "end": {"line": 1, "character": 11}}}]},
+            }}),
+        ]);
+        assert_eq!(replies[1]["result"][0]["title"], "Replace with `color`");
     }
 
     #[test]
