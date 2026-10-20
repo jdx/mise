@@ -35,13 +35,28 @@ const EXTRA_SEARCH_DIRS: &[&str] = &[
 ];
 
 fn search_dirs() -> Vec<PathBuf> {
-    let shims = &*mise_util::env::MISE_SHIMS_DIR;
-    let mut dirs: Vec<PathBuf> = mise_util::env::PATH
+    let shims = [
+        mise_util::env::MISE_SHIMS_DIR.clone(),
+        mise_util::env::MISE_SYSTEM_DATA_DIR.join("shims"),
+    ];
+    search_dirs_from(
+        &mise_util::env::PATH,
+        &shims,
+        mise_util::env::var_path("HOME").as_deref(),
+    )
+}
+
+/// `path` without mise shim directories (compared after resolving symlinks),
+/// followed by the package-manager locations.
+fn search_dirs_from(path: &[PathBuf], shims: &[PathBuf], home: Option<&Path>) -> Vec<PathBuf> {
+    let canonical = |dir: &Path| dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+    let shims: Vec<PathBuf> = shims.iter().map(|dir| canonical(dir)).collect();
+    let mut dirs: Vec<PathBuf> = path
         .iter()
-        .filter(|dir| dir.is_absolute() && *dir != shims)
+        .filter(|dir| dir.is_absolute() && !shims.contains(&canonical(dir)))
         .cloned()
         .collect();
-    if let Some(home) = mise_util::env::var_path("HOME") {
+    if let Some(home) = home {
         dirs.push(home.join(".linuxbrew/bin"));
     }
     dirs.extend(EXTRA_SEARCH_DIRS.iter().map(PathBuf::from));
@@ -347,6 +362,28 @@ mod tests {
         assert_eq!(
             resolve_shell_name("fish", &[other.path().to_path_buf(), bin.clone()]),
             Some(bin.join("fish"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_search_dirs_skip_shims_and_keep_order() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shims = tmp.path().join("shims");
+        let link = tmp.path().join("shims-link");
+        let other = tmp.path().join("bin");
+        std::fs::create_dir_all(&shims).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        std::os::unix::fs::symlink(&shims, &link).unwrap();
+        let path = vec![link, other.clone(), shims.clone()];
+        let dirs = search_dirs_from(&path, &[shims], Some(Path::new("/home/u")));
+        assert_eq!(dirs[0], other);
+        assert_eq!(dirs[1], PathBuf::from("/home/u/.linuxbrew/bin"));
+        assert_eq!(dirs[2], PathBuf::from(EXTRA_SEARCH_DIRS[0]));
+        assert!(
+            !dirs
+                .iter()
+                .any(|d| d.ends_with("shims") || d.ends_with("shims-link"))
         );
     }
 
