@@ -30,6 +30,8 @@ pub struct Plugin {
     pub name: String,
     pub dir: PathBuf,
     pub runtime_env_type: Option<String>,
+    /// Persistent directory exposed to hooks as `RUNTIME.cacheDirPath`
+    pub cache_dir_path: Option<PathBuf>,
     source: PluginSource,
     lua: Lua,
     metadata: OnceCell<Metadata>,
@@ -48,6 +50,7 @@ impl Plugin {
             name,
             dir: dir.to_path_buf(),
             runtime_env_type: None,
+            cache_dir_path: None,
             source: PluginSource::Filesystem(dir.to_path_buf()),
             lua,
             metadata: OnceCell::new(),
@@ -65,6 +68,7 @@ impl Plugin {
             name: name.to_string(),
             dir: dummy_dir,
             runtime_env_type: None,
+            cache_dir_path: None,
             source: PluginSource::Embedded(embedded),
             lua,
             metadata: OnceCell::new(),
@@ -304,9 +308,18 @@ impl Plugin {
 
             let metadata = self.load_metadata()?;
             self.set_global("PLUGIN", metadata.clone())?;
+            if let Some(dir) = &self.cache_dir_path
+                && let Err(err) = std::fs::create_dir_all(dir)
+            {
+                debug!("[vfox:{}] failed to create {dir:?}: {err}", self.name);
+            }
             self.set_global(
                 "RUNTIME",
-                Runtime::get(self.dir.clone(), self.runtime_env_type.as_deref()),
+                Runtime::get(
+                    self.dir.clone(),
+                    self.cache_dir_path.clone(),
+                    self.runtime_env_type.as_deref(),
+                ),
             )?;
             self.set_global("OS_TYPE", config::os())?;
             self.set_global("ARCH_TYPE", config::arch())?;

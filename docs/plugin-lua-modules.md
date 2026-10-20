@@ -43,6 +43,7 @@ environment, so run commands with `cmd.exec` instead.
 | `RUNTIME.envType`       | `gnu` or `musl` on Linux, from the [`libc`](/configuration/settings.html#libc) setting or detection; `nil` on other systems |
 | `RUNTIME.version`       | The vfox API version mise implements (`0.6.0`), not the mise version                                                        |
 | `RUNTIME.pluginDirPath` | The plugin's installed directory                                                                                            |
+| `RUNTIME.cacheDirPath`  | A [persistent cache directory](#plugin-cache-dir) for the plugin                                                            |
 
 ```lua
 local platform = {
@@ -56,6 +57,18 @@ When [`mise lock`](/cli/lock.html) records other platforms, it runs `PreInstall`
 for each of them, and `RUNTIME` describes that platform, with `envType` set to
 `nil`. Use `RUNTIME` to pick an artifact. Running `uname` from a hook reports
 the host and can select the wrong download for the platform being locked.
+
+#### Persistent cache directory {#plugin-cache-dir}
+
+`RUNTIME.cacheDirPath` is a directory under mise's cache directory
+(`$MISE_CACHE_DIR/plugins/<plugin-name>`) that belongs to the plugin. mise
+creates it before running a hook, and every hook of the plugin sees the same
+path, so a backend plugin that serves many tools can keep a large download
+there once instead of fetching it again for each tool.
+
+Unlike `pluginDirPath`, it survives reinstalling the plugin. [`mise cache clear`](/cli/cache/clear.html)
+deletes it, so a plugin must cope with the directory being empty or missing at
+any time.
 
 ### Loading your own code
 

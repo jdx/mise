@@ -237,9 +237,15 @@ impl Vfox {
             .collect()
     }
 
+    /// Applies the settings every plugin gets: libc type and its own cache directory
+    fn configure_plugin(&self, plugin: &mut Plugin) {
+        plugin.runtime_env_type = self.runtime_env_type.clone();
+        plugin.cache_dir_path = Some(self.cache_dir.join("plugins").join(&plugin.name));
+    }
+
     pub fn get_sdk(&self, name: &str) -> Result<Plugin> {
         let mut plugin = Plugin::from_name_or_dir(name, &self.plugin_dir.join(name))?;
-        plugin.runtime_env_type = self.runtime_env_type.clone();
+        self.configure_plugin(&mut plugin);
         self.set_cmd_shell(&plugin)?;
         plugin.set_raw_stdio(self.raw_stdio)?;
         if let Some(runner) = &self.terminal_lock {
@@ -288,14 +294,14 @@ impl Vfox {
         let plugin_dir = self.plugin_dir.join(sdk);
         if plugin_dir.exists() {
             let mut plugin = Plugin::from_dir(&plugin_dir)?;
-            plugin.runtime_env_type = self.runtime_env_type.clone();
+            self.configure_plugin(&mut plugin);
             return Ok(plugin);
         }
 
         // Fall back to embedded plugin if available
         if let Some(embedded) = crate::embedded_plugins::get_embedded_plugin(sdk) {
             let mut plugin = Plugin::from_embedded(sdk, embedded)?;
-            plugin.runtime_env_type = self.runtime_env_type.clone();
+            self.configure_plugin(&mut plugin);
             return Ok(plugin);
         }
 
@@ -321,7 +327,7 @@ impl Vfox {
             xx::git::clone(url.as_ref(), &plugin_dir, &Default::default())?;
         }
         let mut plugin = Plugin::from_dir(&plugin_dir)?;
-        plugin.runtime_env_type = self.runtime_env_type.clone();
+        self.configure_plugin(&mut plugin);
         Ok(plugin)
     }
 
