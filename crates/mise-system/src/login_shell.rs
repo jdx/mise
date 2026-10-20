@@ -38,8 +38,20 @@ fn search_dirs() -> Vec<PathBuf> {
     search_dirs_from(
         &mise_util::env::PATH,
         mise_util::file::is_mise_shims_dir,
-        mise_util::env::var_path("HOME").as_deref(),
+        target_home().as_deref(),
     )
+}
+
+/// Home of the account `chsh` changes, which is not `$HOME` under `sudo`.
+fn target_home() -> Option<PathBuf> {
+    #[cfg(unix)]
+    {
+        target_user().ok().map(|user| user.dir)
+    }
+    #[cfg(not(unix))]
+    {
+        None
+    }
 }
 
 /// `path` without mise shim directories, followed by the package-manager locations.
@@ -50,18 +62,14 @@ fn search_dirs_from(
 ) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = path
         .iter()
-        .filter(|dir| dir.is_absolute() && !is_shims_dir(dir))
+        .filter(|dir| dir.is_absolute())
         .cloned()
         .collect();
     if let Some(home) = home {
         dirs.push(home.join(".linuxbrew/bin"));
     }
-    dirs.extend(
-        EXTRA_SEARCH_DIRS
-            .iter()
-            .map(PathBuf::from)
-            .filter(|dir| !is_shims_dir(dir)),
-    );
+    dirs.extend(EXTRA_SEARCH_DIRS.iter().map(PathBuf::from));
+    dirs.retain(|dir| !is_shims_dir(dir));
     dirs
 }
 
