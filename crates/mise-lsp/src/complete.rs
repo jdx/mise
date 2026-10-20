@@ -123,7 +123,7 @@ fn key_items(
         .collect()
 }
 
-/// The keys the table at `parent` has, with the text being completed taken out so that a
+/// The keys the table at `parent` has a value for, with the text being completed taken out so that a
 /// half-typed key does not stop the document from parsing. Nothing is known while it still does
 /// not parse.
 fn existing_keys(text: &str, replace: &Range<usize>, parent: &[String]) -> Vec<String> {
@@ -136,7 +136,7 @@ fn existing_keys(text: &str, replace: &Range<usize>, parent: &[String]) -> Vec<S
     parsed
         .entries
         .iter()
-        .filter(|e| e.path.len() == parent.len() + 1 && e.path.starts_with(parent))
+        .filter(|e| !e.table && e.path.len() == parent.len() + 1 && e.path.starts_with(parent))
         .map(|e| e.path[parent.len()].clone())
         .collect()
 }
@@ -572,6 +572,19 @@ mod tests {
             ["a", "1", "b"]
         );
         assert_eq!(header_path(keys(&["c"]), false, &mut arrays), ["c"]);
+    }
+
+    #[test]
+    fn tables_do_not_occupy_their_key() {
+        assert_eq!(
+            labels("settings.color = true\n|"),
+            ["list", "min_version", "settings", "tools"]
+        );
+        assert_eq!(labels("[settings]\ncolor = true\n[list]\n|").len(), 0);
+        assert_eq!(
+            labels("[[list]]\nname = \"a\"\n|\n[tools]\n"),
+            Vec::<String>::new()
+        );
     }
 
     #[test]

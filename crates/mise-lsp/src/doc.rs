@@ -11,6 +11,9 @@ pub(crate) struct Entry {
     pub path: Vec<String>,
     pub key: Option<Range<usize>>,
     pub value: Option<Range<usize>>,
+    /// A `[table]`, a dotted prefix or an `[[array of tables]]`: a key that more keys can be
+    /// added under, unlike a key with a value.
+    pub table: bool,
 }
 
 pub(crate) struct Parsed {
@@ -45,6 +48,7 @@ fn table(t: &dyn TableLike, path: &mut Vec<String>, out: &mut Vec<Entry>) -> Val
             path: path.clone(),
             key: key.span(),
             value: item.span(),
+            table: matches!(item, Item::Table(_) | Item::ArrayOfTables(_)),
         });
         map.insert(name.to_string(), item_json(item, path, out));
         path.pop();
@@ -67,6 +71,7 @@ fn item_json(item: &Item, path: &mut Vec<String>, out: &mut Vec<Entry>) -> Value
                         path: path.clone(),
                         key: None,
                         value: t.span(),
+                        table: true,
                     });
                     let value = table(t, path, out);
                     path.pop();
@@ -94,6 +99,7 @@ fn value_json(value: &TomlValue, path: &mut Vec<String>, out: &mut Vec<Entry>) -
                         path: path.clone(),
                         key: None,
                         value: v.span(),
+                        table: false,
                     });
                     let value = value_json(v, path, out);
                     path.pop();
