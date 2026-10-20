@@ -2412,9 +2412,9 @@ mod tests {
             std::fs::write(&a, "fail\n").unwrap();
             filetime::set_file_mtime(&a, filetime::FileTime::from_last_modification_time(&before))
                 .unwrap();
-            after = a.metadata().unwrap();
+            let after = a.metadata().unwrap();
             if metadata_ctime(&after) != metadata_ctime(&before) {
-                break;
+                break after;
             }
             assert!(
                 std::time::Instant::now() < deadline,
