@@ -183,18 +183,9 @@ impl Project {
                 let environment = &environment;
                 let config = &config;
                 async move {
-                    let check = match rendered {
-                        Ok(check) => check,
-                        Err(err) => {
-                            return CheckResult {
-                                name,
-                                description: check.description.clone(),
-                                source: Some(source),
-                                status: Status::Error,
-                                message: Some(config.redact(&err)),
-                                hint: check.hint.clone(),
-                            };
-                        }
+                    let (check, render_error) = match rendered {
+                        Ok(check) => (check, None),
+                        Err(err) => (check, Some(err)),
                     };
                     let mut result = CheckResult {
                         name,
@@ -204,7 +195,10 @@ impl Project {
                         message: None,
                         hint: check.hint.clone(),
                     };
-                    if !crate::config::doctor::applies(&check) {
+                    if let Some(err) = render_error {
+                        result.status = Status::Error;
+                        result.message = Some(err);
+                    } else if !crate::config::doctor::applies(&check) {
                         result.status = Status::Skipped;
                         result.message =
                             Some("Check does not apply to this operating system".into());
