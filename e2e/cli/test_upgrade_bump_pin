@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+# With the `pin` setting on, a bare `--bump` writes exact versions for requests
+# that are not exact (`latest`, `20`), whether or not they are outdated. Without
+# it, the specificity of the request is kept.
+
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/pintest"
+mkdir -p "$PLUGIN_DIR/bin"
+
+cat <<'LISTALL' >"$PLUGIN_DIR/bin/list-all"
+#!/usr/bin/env bash
+echo "19.0.0 20.0.0 20.5.0 20.5.3"
+LISTALL
+chmod +x "$PLUGIN_DIR/bin/list-all"
+
+cat <<'INSTALL' >"$PLUGIN_DIR/bin/install"
+#!/usr/bin/env bash
+mkdir -p "$ASDF_INSTALL_PATH"
+touch "$ASDF_INSTALL_PATH/version-$ASDF_INSTALL_VERSION"
+INSTALL
+chmod +x "$PLUGIN_DIR/bin/install"
+
+for request in latest 20; do
+  cat <<CONFIG >mise.toml
+[tools]
+pintest = "$request"
+CONFIG
+  mise uninstall --all pintest 2>/dev/null || true
+  mise install pintest@20.5.3
+
+  # without pin the request is left alone
+  before=$(cat mise.toml)
+  mise upgrade --bump
+  assert "cat mise.toml" "$before"
+
+  # a dry run reports the change without writing it
+  assert_contains "MISE_PIN=1 mise upgrade --bump --dry-run 2>&1" "Would bump pintest@20.5.3"
+  assert "cat mise.toml" "$before"
+
+  MISE_PIN=1 mise upgrade --bump
+  assert "cat mise.toml" "[tools]
+pintest = \"20.5.3\""
+done
+
+# a configured exact version is untouched
+mise upgrade --bump
+assert "cat mise.toml" "[tools]
+pintest = \"20.5.3\""

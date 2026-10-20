@@ -2682,7 +2682,7 @@
           ]
         },
         "pin": {
-          "description": "Make `mise use` write the resolved version, such as `24.14.0` for `node@24`, instead of the requested one.",
+          "description": "Make `mise use` and `mise upgrade --bump` write the resolved version, such as `24.14.0` for `node@24`, instead of the requested one.",
           "type": "boolean"
         },
         "pipx": {

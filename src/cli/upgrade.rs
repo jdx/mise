@@ -76,7 +76,9 @@ pub(crate) struct Upgrade {
     /// command line (`node@latest`, `node@3`, or `node@prefix:3`), that request is
     /// written instead; `mise upgrade node@latest --bump` writes `latest`. With
     /// the `pin` setting on, a version request such as `node@3` is written as the
-    /// version it resolved to. Requests that do not come from a config file mise
+    /// version it resolved to, and a bare `mise upgrade --bump` writes the
+    /// resolved version for every request that is not exact, such as `latest`
+    /// or `20`. Requests that do not come from a config file mise
     /// can write, such as `MISE_NODE_VERSION`, are upgraded but not written.
     #[usage(long, short = 'b')]
     bump: bool,
@@ -541,6 +543,33 @@ impl Upgrade {
             .await
         };
         if Settings::get().pin {
+            if self.bump && self.tool.is_empty() {
+                // With `pin` on, a bare `--bump` also records exact versions for
+                // requests that are not exact, such as `latest` or `20`.
+                for (_, tv) in ts.list_current_versions() {
+                    let ToolRequest::Version { .. } = &tv.request else {
+                        continue;
+                    };
+                    if self
+                        .exclude
+                        .iter()
+                        .any(|tool| backend_args_match(tool.ba.as_ref(), tv.ba()))
+                    {
+                        continue;
+                    }
+                    let Some((_, configured)) = effective_persistable_request(&ts, tv.ba()) else {
+                        continue;
+                    };
+                    let Some(path) = configured.source().path() else {
+                        continue;
+                    };
+                    explicit_config_bumps.push(ExplicitConfigBump {
+                        path: path.to_path_buf(),
+                        persisted_request: configured.clone(),
+                        request: configured.clone(),
+                    });
+                }
+            }
             for bump in &mut explicit_config_bumps {
                 let resolved = outdated
                     .iter()
@@ -563,6 +592,12 @@ impl Upgrade {
                 }
             }
         }
+        explicit_config_bumps.retain(|bump| {
+            bump.persisted_request.version() != bump.request.version()
+                || !Settings::get().pin
+                || !self.tool.is_empty()
+                || !self.bump
+        });
         if self.installed_only {
             outdated.retain(|o| o.current.is_some());
         }
