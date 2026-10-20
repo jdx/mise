@@ -1,5 +1,36 @@
 # Changelog
 
+## [2026.10.16](https://github.com/jdx/mise/releases/tag/v2026.10.16) - 2026-10-20
+
+### 🚀 Features
+
+- **(config)** resolve relative and templated write_targets paths by @jdx in [#14742](https://github.com/jdx/mise/pull/14742)
+- **(plugins)** accept vfox-backend: for packslip plugin sources by @jdx in [#14727](https://github.com/jdx/mise/pull/14727)
+- **(pypi)** read private index passwords from a keyring for lock and version listing by @jdx in [#14733](https://github.com/jdx/mise/pull/14733)
+- **(vfox)** let backend plugins report version aliases by @jdx in [#14732](https://github.com/jdx/mise/pull/14732)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** add list alias for packages status by @himkt in [#14709](https://github.com/jdx/mise/pull/14709)
+- **(bootstrap)** pin compose service references before hashing by @jdx in [#14729](https://github.com/jdx/mise/pull/14729)
+- **(ci)** stop render:help failing when markdown-magic scans target/ by @jdx in [#14723](https://github.com/jdx/mise/pull/14723)
+- **(daemons)** resolve file tasks without their script extension by @jdx in [#14741](https://github.com/jdx/mise/pull/14741)
+- **(docs)** render mise.toml editor hover card code as inline pills by @jdx in [#14722](https://github.com/jdx/mise/pull/14722)
+- **(dotfiles)** don't warn on an entry with only enabled = false by @jdx in [#14726](https://github.com/jdx/mise/pull/14726)
+- **(env)** start _.file find_up at the config root by @jdx in [#14734](https://github.com/jdx/mise/pull/14734)
+- **(npm)** make allow_builds approve only the listed packages by @jdx in [#14731](https://github.com/jdx/mise/pull/14731)
+- **(self-update)** update mise-shim.exe beside the real mise.exe, not a link to it by @jdx in [#14737](https://github.com/jdx/mise/pull/14737)
+- **(vfox)** keep symlinks when extracting zip archives by @jdx in [#14730](https://github.com/jdx/mise/pull/14730)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#14712](https://github.com/jdx/mise/pull/14712)
+- update rust crate usage-cli to v7.1.0 by @renovate[bot] in [#14717](https://github.com/jdx/mise/pull/14717)
+
+### Ci
+
+- **(release)** sign Windows release binaries with SignPath by @jdx in [#14738](https://github.com/jdx/mise/pull/14738)
+
 ## [2026.10.15](https://github.com/jdx/mise/releases/tag/v2026.10.15) - 2026-10-19
 
 ### 🚀 Features
