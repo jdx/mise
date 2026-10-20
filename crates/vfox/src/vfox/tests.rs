@@ -639,3 +639,20 @@ async fn cache_dir_is_nil_when_it_cannot_be_created() {
 
     assert_eq!(seen, None);
 }
+
+#[test]
+fn usable_cache_dir_path_is_none_when_it_cannot_be_created() {
+    let dir = tempfile::tempdir().unwrap();
+    let blocker = dir.path().join("blocker");
+    std::fs::write(&blocker, "").unwrap();
+    let mut vfox = Vfox::test();
+    vfox.cache_dir = blocker;
+    assert_eq!(vfox.get_sdk("dummy").unwrap().usable_cache_dir_path(), None);
+
+    vfox.cache_dir = dir.path().join("ok");
+    let plugin = vfox.get_sdk("dummy").unwrap();
+    assert_eq!(
+        plugin.usable_cache_dir_path(),
+        Some(dir.path().join("ok/plugins/dummy"))
+    );
+}

@@ -57,7 +57,7 @@ impl Plugin {
         let target_os = os.to_string();
         let target_arch = arch.to_string();
         let target_runtime =
-            Runtime::with_platform(self.dir.clone(), self.cache_dir_path.clone(), os, arch);
+            Runtime::with_platform(self.dir.clone(), self.usable_cache_dir_path(), os, arch);
         let pre_install = self
             .eval_async(chunk! {
                 require "hooks/pre_install"
