@@ -3036,6 +3036,9 @@ pub(crate) fn update_lockfiles(
                 let path = tool_stub_path(&lockfile_path, reference);
                 crate::tool_stub::ToolStubFile::from_file(&path)
                     .and_then(|stub| stub.to_tool_request(&path))
+                    .inspect_err(|err| {
+                        debug!("skipping tool stub {}: {err:#}", display_path(&path))
+                    })
                     .ok()
             })
             .collect_vec();
