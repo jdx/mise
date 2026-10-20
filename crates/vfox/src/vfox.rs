@@ -3,7 +3,7 @@ use itertools::Itertools;
 use reqwest::Url;
 use reqwest::header::HeaderMap;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, mpsc};
 use tempfile::TempDir;
@@ -240,7 +240,14 @@ impl Vfox {
     /// Applies the settings every plugin gets: libc type and its own cache directory
     fn configure_plugin(&self, plugin: &mut Plugin) {
         plugin.runtime_env_type = self.runtime_env_type.clone();
-        plugin.cache_dir_path = Some(self.cache_dir.join("plugins").join(&plugin.name));
+        // A path-like name such as `..` must not point the cache outside plugins/
+        let mut parts = Path::new(&plugin.name).components();
+        plugin.cache_dir_path = match (parts.next(), parts.next()) {
+            (Some(Component::Normal(name)), None) => {
+                Some(self.cache_dir.join("plugins").join(name))
+            }
+            _ => None,
+        };
     }
 
     pub fn get_sdk(&self, name: &str) -> Result<Plugin> {

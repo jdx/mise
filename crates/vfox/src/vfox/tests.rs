@@ -656,3 +656,14 @@ fn usable_cache_dir_path_is_none_when_it_cannot_be_created() {
         Some(dir.path().join("ok/plugins/dummy"))
     );
 }
+
+#[test]
+fn path_like_plugin_names_get_no_cache_dir() {
+    let vfox = Vfox::test();
+    for name in ["..", ".", "a/b"] {
+        let mut plugin = Plugin::from_dir(Path::new("plugins/dummy")).unwrap();
+        plugin.name = name.to_string();
+        vfox.configure_plugin(&mut plugin);
+        assert_eq!(plugin.cache_dir_path, None, "{name}");
+    }
+}
