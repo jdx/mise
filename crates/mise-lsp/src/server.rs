@@ -2,26 +2,65 @@
 
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
+use std::ops::Range;
 use std::sync::OnceLock;
 
 use jsonschema::Validator;
 use serde_json::{Value, json};
 
 use crate::complete::{self, Kind};
-use crate::diagnostics::{self, Severity};
+use crate::diagnostics::{self, Diagnostic, Severity};
 use crate::rpc::{read_message, write_message};
 use crate::schema::Schema;
 use crate::text::LineIndex;
-use crate::{Formatter, Options, hover};
+use crate::{Formatter, Options, hover, includes, keypath};
 
 const METHOD_NOT_FOUND: i64 = -32601;
+
+/// What an editor can switch off in `initializationOptions`, for use next to another TOML
+/// server that already offers it: `{"formatting": false, "hover": false, "completion": false}`.
+struct Features {
+    formatting: bool,
+    hover: bool,
+    completion: bool,
+}
+
+impl Features {
+    fn from_params(params: &Value) -> Self {
+        let option = |name: &str| {
+            params["initializationOptions"][name]
+                .as_bool()
+                .unwrap_or(true)
+        };
+        Self {
+            formatting: option("formatting"),
+            hover: option("hover"),
+            completion: option("completion"),
+        }
+    }
+}
+
+struct Document {
+    text: String,
+    /// A file `[task_config] includes` names: tasks, not a config.
+    include: bool,
+    /// The last version that parsed, with its schema diagnostics, so that typing a half-written
+    /// line does not take the other diagnostics away.
+    last_good: Option<Good>,
+}
+
+struct Good {
+    text: String,
+    diagnostics: Vec<Diagnostic>,
+}
 
 pub(crate) struct Server {
     schema: Schema,
     validator: OnceLock<Option<Validator>>,
     format: Option<Formatter>,
     version: String,
-    documents: HashMap<String, String>,
+    features: Features,
+    documents: HashMap<String, Document>,
 }
 
 impl Server {
@@ -31,6 +70,7 @@ impl Server {
             validator: OnceLock::new(),
             format: options.format,
             version: options.version,
+            features: Features::from_params(&Value::Null),
             documents: HashMap::new(),
         }
     }
@@ -62,11 +102,17 @@ impl Server {
 
     fn request(&mut self, method: &str, params: &Value) -> Result<Value, (i64, String)> {
         match method {
-            "initialize" => Ok(self.initialize()),
+            "initialize" => {
+                self.features = Features::from_params(params);
+                Ok(self.initialize())
+            }
             "shutdown" => Ok(Value::Null),
-            "textDocument/completion" => Ok(self.completion(params)),
-            "textDocument/hover" => Ok(self.hover(params)),
-            "textDocument/formatting" => Ok(self.formatting(params)),
+            "textDocument/completion" if self.features.completion => Ok(self.completion(params)),
+            "textDocument/hover" if self.features.hover => Ok(self.hover(params)),
+            "textDocument/formatting" if self.format.is_some() && self.features.formatting => {
+                Ok(self.formatting(params))
+            }
+            "textDocument/codeAction" => Ok(self.code_actions(params)),
             _ => Err((METHOD_NOT_FOUND, format!("method not supported: {method}"))),
         }
     }
@@ -84,7 +130,16 @@ impl Server {
         match method {
             "textDocument/didOpen" => {
                 let text = document["text"].as_str().unwrap_or_default().to_string();
-                self.documents.insert(uri.to_string(), text);
+                let include = includes::uri_path(uri)
+                    .is_some_and(|path| is_mise_config(uri) && includes::is_task_include(&path));
+                self.documents.insert(
+                    uri.to_string(),
+                    Document {
+                        text,
+                        include,
+                        last_good: None,
+                    },
+                );
             }
             "textDocument/didChange" => {
                 // The server asks for full documents, so the last change is the whole text.
@@ -95,7 +150,9 @@ impl Server {
                 else {
                     return Ok(());
                 };
-                self.documents.insert(uri.to_string(), text.to_string());
+                if let Some(document) = self.documents.get_mut(uri) {
+                    document.text = text.to_string();
+                }
             }
             "textDocument/didClose" => {
                 self.documents.remove(uri);
@@ -110,10 +167,16 @@ impl Server {
     fn initialize(&self) -> Value {
         let mut capabilities = json!({
             "textDocumentSync": {"openClose": true, "change": 1},
-            "completionProvider": {"triggerCharacters": [".", "=", "[", "\""]},
-            "hoverProvider": true,
+            "codeActionProvider": {"codeActionKinds": ["quickfix"]},
         });
-        if self.format.is_some() {
+        if self.features.completion {
+            capabilities["completionProvider"] =
+                json!({"triggerCharacters": [".", "=", "[", "\"", "{", ","]});
+        }
+        if self.features.hover {
+            capabilities["hoverProvider"] = json!(true);
+        }
+        if self.format.is_some() && self.features.formatting {
             capabilities["documentFormattingProvider"] = json!(true);
         }
         json!({
@@ -122,49 +185,56 @@ impl Server {
         })
     }
 
-    /// The text of an open mise config, or `None` for any other file: editors attach a TOML
-    /// server to every TOML file, and `Cargo.toml` is not ours to judge.
-    fn config(&self, uri: &str) -> Option<&str> {
+    /// The open mise config at `uri`, or `None` for any other file: editors attach a TOML server
+    /// to every TOML file, and `Cargo.toml` is not ours to judge. A task include is not a config
+    /// either.
+    fn config(&self, uri: &str) -> Option<&Document> {
         if !is_mise_config(uri) {
             return None;
         }
-        self.documents.get(uri).map(String::as_str)
+        self.documents.get(uri).filter(|document| !document.include)
     }
 
-    fn diagnostics(&self, uri: &str) -> Value {
-        let Some(text) = self.config(uri) else {
+    fn diagnostics(&mut self, uri: &str) -> Value {
+        let Some(document) = self.config(uri) else {
             return json!([]);
         };
         let validator = self
             .validator
             .get_or_init(|| jsonschema::draft202012::new(self.schema.root()).ok())
             .as_ref();
-        let index = LineIndex::new(text);
-        let diagnostics: Vec<Value> = diagnostics::diagnose(text, &self.schema, validator)
-            .into_iter()
-            .map(|d| {
-                let mut diagnostic = json!({
-                    "range": range(&index, &d.range),
-                    "severity": match d.severity {
-                        Severity::Error => 1,
-                        Severity::Warning => 2,
-                    },
-                    "source": "mise",
-                    "message": d.message,
-                });
-                if d.deprecated {
-                    diagnostic["tags"] = json!([2]);
-                }
-                diagnostic
-            })
-            .collect();
-        json!(diagnostics)
+        let text = document.text.clone();
+        let report = diagnostics::diagnose(&text, &self.schema, validator);
+        let document = self.documents.get_mut(uri).expect("checked above");
+        let mut diagnostics = report.diagnostics;
+        if report.parsed {
+            document.last_good = Some(Good {
+                text: text.clone(),
+                diagnostics: diagnostics.clone(),
+            });
+        } else if let Some(good) = &document.last_good {
+            // Keep what the last good version said about the parts of the file the edit did not
+            // touch, next to the syntax error.
+            let edit = Edit::between(&good.text, &text);
+            diagnostics.extend(good.diagnostics.iter().filter_map(|d| {
+                let range = edit.map_range(&d.range)?;
+                Some(Diagnostic { range, ..d.clone() })
+            }));
+        }
+        let index = LineIndex::new(&text);
+        json!(
+            diagnostics
+                .iter()
+                .map(|d| diagnostic_json(&index, d))
+                .collect::<Vec<_>>()
+        )
     }
 
     fn completion(&self, params: &Value) -> Value {
-        let Some((text, offset)) = self.cursor(params) else {
+        let Some((document, offset)) = self.cursor(params) else {
             return Value::Null;
         };
+        let text = document.text.as_str();
         let index = LineIndex::new(text);
         let items: Vec<Value> = complete::complete(text, offset, &self.schema)
             .into_iter()
@@ -191,20 +261,33 @@ impl Server {
     }
 
     fn hover(&self, params: &Value) -> Value {
-        let Some((text, offset)) = self.cursor(params) else {
+        let Some((document, offset)) = self.cursor(params) else {
             return Value::Null;
         };
-        match hover::hover(text, offset, &self.schema) {
-            Some(h) => json!({
+        let text = document.text.as_str();
+        if let Some(h) = hover::hover(text, offset, &self.schema) {
+            return json!({
                 "contents": {"kind": "markdown", "value": h.markdown},
                 "range": range(&LineIndex::new(text), &h.range),
-            }),
+            });
+        }
+        // The text does not parse right now: answer from the last version that did, for a
+        // position the edit did not touch.
+        let Some(good) = &document.last_good else {
+            return Value::Null;
+        };
+        let edit = Edit::between(&good.text, text);
+        let hovered = edit
+            .map_offset_back(offset)
+            .and_then(|old| hover::hover(&good.text, old, &self.schema));
+        match hovered {
+            Some(h) => json!({"contents": {"kind": "markdown", "value": h.markdown}}),
             None => Value::Null,
         }
     }
 
     fn formatting(&self, params: &Value) -> Value {
-        let (Some(format), Some(text)) = (
+        let (Some(format), Some(document)) = (
             &self.format,
             params["textDocument"]["uri"]
                 .as_str()
@@ -212,6 +295,7 @@ impl Server {
         ) else {
             return Value::Null;
         };
+        let text = document.text.as_str();
         match format(text) {
             Ok(formatted) if formatted != text => {
                 let index = LineIndex::new(text);
@@ -222,13 +306,122 @@ impl Server {
         }
     }
 
+    /// Quick fixes: replace an unknown key with the one the diagnostic suggests.
+    fn code_actions(&self, params: &Value) -> Value {
+        let uri = params["textDocument"]["uri"].as_str().unwrap_or_default();
+        let actions: Vec<Value> = params["context"]["diagnostics"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|d| d["code"] == "unknown-key")
+            .filter_map(|d| {
+                let suggestion = d["data"]["suggestion"].as_str()?;
+                Some(json!({
+                    "title": format!("Replace with `{suggestion}`"),
+                    "kind": "quickfix",
+                    "diagnostics": [d],
+                    "isPreferred": true,
+                    "edit": {"changes": {uri: [{
+                        "range": d["range"],
+                        "newText": keypath::quote(suggestion),
+                    }]}},
+                }))
+            })
+            .collect();
+        json!(actions)
+    }
+
     /// The document and byte offset a position request is about.
-    fn cursor(&self, params: &Value) -> Option<(&str, usize)> {
-        let text = self.config(params["textDocument"]["uri"].as_str()?)?;
+    fn cursor(&self, params: &Value) -> Option<(&Document, usize)> {
+        let document = self.config(params["textDocument"]["uri"].as_str()?)?;
         let line = params["position"]["line"].as_u64()? as usize;
         let character = params["position"]["character"].as_u64()? as usize;
-        Some((text, LineIndex::new(text).offset(line, character)))
+        let offset = LineIndex::new(&document.text).offset(line, character);
+        Some((document, offset))
     }
+}
+
+/// What changed between two versions of a text: everything outside one replaced region is the
+/// same, so a position there can be carried from one version to the other.
+struct Edit {
+    old_len: usize,
+    new_len: usize,
+    prefix: usize,
+    suffix: usize,
+}
+
+impl Edit {
+    fn between(old: &str, new: &str) -> Self {
+        let mut prefix = old
+            .bytes()
+            .zip(new.bytes())
+            .take_while(|(a, b)| a == b)
+            .count();
+        while !old.is_char_boundary(prefix) || !new.is_char_boundary(prefix) {
+            prefix -= 1;
+        }
+        let limit = old.len().min(new.len()) - prefix;
+        let mut suffix = old
+            .bytes()
+            .rev()
+            .zip(new.bytes().rev())
+            .take_while(|(a, b)| a == b)
+            .count()
+            .min(limit);
+        while !old.is_char_boundary(old.len() - suffix) || !new.is_char_boundary(new.len() - suffix)
+        {
+            suffix -= 1;
+        }
+        Self {
+            old_len: old.len(),
+            new_len: new.len(),
+            prefix,
+            suffix,
+        }
+    }
+
+    /// A range of the old text in the new one, unless the edit touched it.
+    fn map_range(&self, range: &Range<usize>) -> Option<Range<usize>> {
+        if range.end <= self.prefix {
+            return Some(range.clone());
+        }
+        if range.start >= self.old_len - self.suffix {
+            let shift = |o: usize| o + self.new_len - self.old_len;
+            return Some(shift(range.start)..shift(range.end));
+        }
+        None
+    }
+
+    /// An offset of the new text in the old one, unless it is inside the edit.
+    fn map_offset_back(&self, offset: usize) -> Option<usize> {
+        if offset <= self.prefix {
+            return Some(offset);
+        }
+        if offset >= self.new_len - self.suffix {
+            return Some(offset + self.old_len - self.new_len);
+        }
+        None
+    }
+}
+
+fn diagnostic_json(index: &LineIndex, d: &Diagnostic) -> Value {
+    let mut diagnostic = json!({
+        "range": range(index, &d.range),
+        "severity": match d.severity {
+            Severity::Error => 1,
+            Severity::Warning => 2,
+        },
+        "source": "mise",
+        "code": d.code,
+        "message": d.message,
+    });
+    if d.deprecated {
+        diagnostic["tags"] = json!([2]);
+    }
+    if let Some(suggestion) = &d.suggestion {
+        diagnostic["data"] = json!({"suggestion": suggestion});
+    }
+    diagnostic
 }
 
 fn publish(output: &mut impl Write, uri: &str, diagnostics: Value) -> io::Result<()> {
@@ -258,7 +451,7 @@ fn is_mise_config(uri: &str) -> bool {
     let Some(path) = uri.strip_prefix("file://") else {
         return false;
     };
-    let path = percent_decode(path);
+    let path = includes::percent_decode(path);
     let mut parts = path.rsplit('/');
     let name = parts.next().unwrap_or_default();
     let parent = parts.next().unwrap_or_default();
@@ -272,26 +465,6 @@ fn is_mise_config(uri: &str) -> bool {
     (first == "mise" && !stem.eq("miserc"))
         || (first == "config" && in_mise_dir(parent))
         || (parent == "conf.d" && in_mise_dir(grandparent))
-}
-
-fn percent_decode(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%'
-            && let Some(byte) = s
-                .get(i + 1..i + 3)
-                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-        {
-            out.push(byte);
-            i += 3;
-        } else {
-            out.push(bytes[i]);
-            i += 1;
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[cfg(test)]
@@ -350,6 +523,99 @@ mod tests {
             "# formatted\n[settings]\ncolr = true\n"
         );
         assert_eq!(replies[4]["error"]["code"], METHOD_NOT_FOUND);
+    }
+
+    fn change(uri: &str, text: &str) -> Value {
+        json!({"jsonrpc": "2.0", "method": "textDocument/didChange",
+            "params": {"textDocument": {"uri": uri}, "contentChanges": [{"text": text}]}})
+    }
+
+    #[test]
+    fn diagnostics_survive_a_half_typed_line() {
+        let uri = "file:///p/mise.toml";
+        let replies = session(&[
+            open(uri, "[settings]\ncolr = true\n"),
+            change(uri, "[settings]\ncolr = true\nco"),
+        ]);
+        let messages = |i: usize| -> Vec<String> {
+            replies[i]["params"]["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|d| d["code"].as_str().unwrap().to_string())
+                .collect()
+        };
+        assert_eq!(messages(0), ["unknown-key"]);
+        assert_eq!(messages(1), ["syntax", "unknown-key"]);
+    }
+
+    #[test]
+    fn an_edit_over_a_diagnostic_drops_it() {
+        let uri = "file:///p/mise.toml";
+        let replies = session(&[
+            open(uri, "[settings]\ncolr = true\n"),
+            change(uri, "[settings]\ncol = \n"),
+        ]);
+        let codes: Vec<_> = replies[1]["params"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["code"].as_str().unwrap())
+            .collect();
+        assert_eq!(codes, ["syntax"]);
+    }
+
+    #[test]
+    fn features_can_be_switched_off() {
+        let uri = "file:///p/mise.toml";
+        let replies = session(&[
+            json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                "initializationOptions": {"hover": false, "completion": false, "formatting": false}
+            }}),
+            json!({"jsonrpc": "2.0", "id": 2, "method": "textDocument/hover",
+                "params": {"textDocument": {"uri": uri}, "position": {"line": 0, "character": 0}}}),
+        ]);
+        let capabilities = &replies[0]["result"]["capabilities"];
+        assert!(capabilities.get("hoverProvider").is_none());
+        assert!(capabilities.get("completionProvider").is_none());
+        assert!(capabilities.get("documentFormattingProvider").is_none());
+        assert!(capabilities.get("codeActionProvider").is_some());
+        assert_eq!(replies[1]["error"]["code"], METHOD_NOT_FOUND);
+    }
+
+    #[test]
+    fn unknown_keys_get_a_quick_fix() {
+        let uri = "file:///p/mise.toml";
+        let replies = session(&[
+            open(uri, "[settings]\ncolr = true\n"),
+            json!({"jsonrpc": "2.0", "id": 1, "method": "textDocument/codeAction", "params": {
+                "textDocument": {"uri": uri},
+                "range": {"start": {"line": 1, "character": 0}, "end": {"line": 1, "character": 4}},
+                "context": {"diagnostics": [replies_diagnostic()]},
+            }}),
+        ]);
+        let action = &replies[1]["result"][0];
+        assert_eq!(action["title"], "Replace with `color`");
+        assert_eq!(action["edit"]["changes"][uri][0]["newText"], "color");
+    }
+
+    fn replies_diagnostic() -> Value {
+        json!({"code": "unknown-key", "data": {"suggestion": "color"},
+            "range": {"start": {"line": 1, "character": 0}, "end": {"line": 1, "character": 4}}})
+    }
+
+    #[test]
+    fn task_include_files_are_not_configs() {
+        let dir = std::env::temp_dir().join(format!("mise-lsp-server-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("mise.toml"),
+            "[task_config]\nincludes = [\"mise.tasks.toml\"]\n",
+        )
+        .unwrap();
+        let uri = format!("file://{}/mise.tasks.toml", dir.display());
+        let replies = session(&[open(&uri, "[build]\nrun = \"x\"\nbogus = 1\n")]);
+        assert_eq!(replies[0]["params"]["diagnostics"], json!([]));
     }
 
     #[test]

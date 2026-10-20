@@ -2,13 +2,16 @@
 //! accepts as literals.
 //!
 //! The editor sends documents that are half-typed, so this reads the text around the cursor
-//! instead of parsing the whole document: the nearest `[header]` above it says which table it
-//! is in, and the line says whether it is typing a key or a value.
+//! instead of parsing the whole document. A small lexer walks the text above the cursor and
+//! keeps what is open there: the nearest `[header]` says which table it is in, and the arrays
+//! and inline tables still open say how deep, with the key each one belongs to. What is typed
+//! since the last separator says whether the cursor is on a key or a value.
 
 use std::ops::Range;
 
 use serde_json::Value;
 
+use crate::doc;
 use crate::keypath;
 use crate::schema::Schema;
 use crate::text::LineIndex;
@@ -35,36 +38,54 @@ pub(crate) fn complete(text: &str, offset: usize, schema: &Schema) -> Vec<Item> 
     let line_text = index.line(line);
     let column = offset.saturating_sub(line_start).min(line_text.len());
     let (before, after) = line_text.split_at(column);
-    if in_comment(before) {
+    if unquoted(before, '#').is_some() {
         return vec![];
     }
-    let trimmed = before.trim_start();
-    let (table, in_string) = scan(&index, line, before);
-    if in_string {
+    let (table, state, line_starts_closed) = scan(&index, line, before);
+    if state.open.is_some() {
         return vec![];
     }
-    if let Some(header) = trimmed.strip_prefix('[') {
+    let frame = state.frame();
+    // A header: a line that starts with `[` where nothing is open.
+    if line_starts_closed && let Some(header) = before.trim_start().strip_prefix('[') {
         let header = header.trim_start_matches('[');
-        return key_items(schema, &[], header, after, offset);
+        return key_items(schema, &[], header, text, after, offset);
     }
-    match unquoted_equals(before) {
-        Some(eq) => {
-            let mut path = table;
-            path.extend(keypath::split(&before[..eq]));
-            value_items(schema, &path, &before[eq + 1..], after, offset)
+    match &frame.pending {
+        Some(path) => {
+            let path = if frame.kind == '[' {
+                [path.as_slice(), &["0".to_string()]].concat()
+            } else {
+                path.clone()
+            };
+            value_items(schema, &path, &frame.segment, after, offset)
         }
-        None => key_items(schema, &table, trimmed, after, offset),
+        None if frame.kind == '[' => {
+            let path = [frame.path.as_slice(), &["0".to_string()]].concat();
+            value_items(schema, &path, &frame.segment, after, offset)
+        }
+        None => {
+            let parent = if state.stack.is_empty() {
+                table
+            } else {
+                frame.path.clone()
+            };
+            key_items(schema, &parent, &frame.segment, text, after, offset)
+        }
     }
 }
 
-/// Keys for the segment being typed at the end of `typed`, which is a dotted key or header.
+/// Keys for the segment being typed at the end of `typed`, which is a dotted key or header. The
+/// keys the table already has are not offered again.
 fn key_items(
     schema: &Schema,
     table: &[String],
     typed: &str,
+    text: &str,
     after: &str,
     offset: usize,
 ) -> Vec<Item> {
+    let typed = typed.trim_start();
     let mut segments = keypath::split(typed);
     let partial = segments.pop().unwrap_or_default();
     let mut parent = table.to_vec();
@@ -75,11 +96,14 @@ fn key_items(
         .unwrap_or(after.len());
     let replace = offset - raw.len()..offset + rest;
     let needle = partial.to_lowercase();
+    let existing = existing_keys(text, &replace, &parent);
     schema
         .keys(&parent)
         .into_iter()
-        .filter(|(name, schema_)| {
-            name.to_lowercase().starts_with(&needle) && !schema.schema_is_deprecated(schema_)
+        .filter(|(name, key_schema)| {
+            name.to_lowercase().starts_with(&needle)
+                && !schema.schema_is_deprecated(key_schema)
+                && !existing.iter().any(|e| e == name)
         })
         .map(|(name, key_schema)| {
             let description = schema.schema_description(key_schema);
@@ -98,7 +122,26 @@ fn key_items(
         .collect()
 }
 
-/// Literal values for the key at `path`, given what follows its `=`.
+/// The keys the table at `parent` has, with the text being completed taken out so that a
+/// half-typed key does not stop the document from parsing. Nothing is known while it still does
+/// not parse.
+fn existing_keys(text: &str, replace: &Range<usize>, parent: &[String]) -> Vec<String> {
+    let mut without = String::with_capacity(text.len());
+    without.push_str(&text[..replace.start]);
+    without.push_str(&text[replace.end..]);
+    let Ok(parsed) = doc::parse(&without) else {
+        return vec![];
+    };
+    parsed
+        .entries
+        .iter()
+        .filter(|e| e.path.len() == parent.len() + 1 && e.path.starts_with(parent))
+        .map(|e| e.path[parent.len()].clone())
+        .collect()
+}
+
+/// Literal values for the key at `path`, given what follows its `=` (or, in an array, the
+/// element so far).
 fn value_items(
     schema: &Schema,
     path: &[String],
@@ -145,19 +188,75 @@ fn value_items(
         .collect()
 }
 
-/// The table a line belongs to, and whether the cursor is inside a value that spans lines: a
-/// multiline string, or an array or inline table still open.
-///
-/// The table is the nearest header above the line that is not itself string content. A header
-/// of an array of tables (`[[watch_files]]`) names its latest element, so the path ends in an
-/// index, which is how the schema walk enters an array's items. `before` is the text of the
-/// cursor's line up to the cursor.
-fn scan(index: &LineIndex, line: usize, before: &str) -> (Vec<String>, bool) {
+/// One level of what is open: the top of a table (`t`), an array (`[`) or an inline table (`{`).
+#[derive(Clone)]
+struct Frame {
+    kind: char,
+    /// The schema path of the table, or of the array or inline table, this level is.
+    path: Vec<String>,
+    /// What has been written since the last separator at this level.
+    segment: String,
+    /// The path of the key whose `=` has been seen at this level, while its value is written.
+    pending: Option<Vec<String>>,
+}
+
+impl Frame {
+    fn new(kind: char, path: Vec<String>) -> Self {
+        Self {
+            kind,
+            path,
+            segment: String::new(),
+            pending: None,
+        }
+    }
+
+    fn separate(&mut self) {
+        self.segment.clear();
+        self.pending = None;
+    }
+}
+
+/// What is open at a position: a multiline string (by its quote), and the arrays and inline
+/// tables that have not closed, outermost first. `base` is the table the line is in.
+#[derive(Clone)]
+struct State {
+    open: Option<char>,
+    base: Frame,
+    stack: Vec<Frame>,
+}
+
+impl State {
+    fn new(table: Vec<String>) -> Self {
+        Self {
+            open: None,
+            base: Frame::new('t', table),
+            stack: vec![],
+        }
+    }
+
+    fn closed(&self) -> bool {
+        self.open.is_none() && self.stack.is_empty()
+    }
+
+    fn frame(&self) -> &Frame {
+        self.stack.last().unwrap_or(&self.base)
+    }
+
+    fn frame_mut(&mut self) -> &mut Frame {
+        self.stack.last_mut().unwrap_or(&mut self.base)
+    }
+}
+
+/// The table the cursor's line is in and what is open at the cursor. A header's brackets are not
+/// values, and neither are those inside a string or comment.
+fn scan(index: &LineIndex, line: usize, before: &str) -> (Vec<String>, State, bool) {
     let mut table = vec![];
-    let mut state = State::default();
+    let mut state = State::new(vec![]);
     for l in 0..line {
         let text = index.line(l);
-        if state.is_closed()
+        // A header of an array of tables (`[[watch_files]]`) names its latest element, so its
+        // path ends in an index, which is how the schema walk enters an array's items.
+        if state.closed()
             && let Some(rest) = text.trim().strip_prefix('[')
         {
             let array = rest.starts_with('[');
@@ -167,33 +266,20 @@ fn scan(index: &LineIndex, line: usize, before: &str) -> (Vec<String>, bool) {
             if array {
                 table.push("0".to_string());
             }
-            // A header's brackets are not values, even when it is unfinished.
+            state = State::new(table.clone());
             continue;
         }
-        state = advance(text, state);
+        advance(text, &mut state, true);
     }
-    // Brackets on the cursor's own line are the header or value being typed.
-    let inside = state.depth > 0 || advance(before, state).open.is_some();
-    (table, inside)
+    let line_starts_closed = state.closed();
+    advance(before, &mut state, false);
+    (table, state, line_starts_closed)
 }
 
-/// What is still open at a line break: a multiline string (by its quote) and the arrays and
-/// inline tables that have not closed.
-#[derive(Clone, Copy, Default)]
-struct State {
-    open: Option<char>,
-    depth: usize,
-}
-
-impl State {
-    fn is_closed(self) -> bool {
-        self.open.is_none() && self.depth == 0
-    }
-}
-
-/// The state at the end of `text`, given the state at its start. Quotes and brackets only count
-/// outside comments and single-line strings.
-fn advance(text: &str, mut state: State) -> State {
+/// Runs `text`, a line or the start of one, through `state`. Quotes and brackets only count
+/// outside comments and single-line strings. At the end of a whole line (`eol`) the line break
+/// separates entries in an inline table and at the top of a table.
+fn advance(text: &str, state: &mut State, eol: bool) {
     let chars: Vec<char> = text.chars().collect();
     let triple = |i: usize, q: char| chars.get(i..i + 3) == Some(&[q, q, q][..]);
     let mut single = None;
@@ -202,6 +288,7 @@ fn advance(text: &str, mut state: State) -> State {
     while i < chars.len() {
         let c = chars[i];
         if let Some(q) = state.open {
+            state.frame_mut().segment.push(c);
             if q == '"' && c == '\\' {
                 i += 2;
             } else if triple(i, q) {
@@ -219,38 +306,72 @@ fn advance(text: &str, mut state: State) -> State {
             continue;
         }
         if let Some(q) = single {
+            state.frame_mut().segment.push(c);
             if q == '"' && c == '\\' {
+                if let Some(next) = chars.get(i + 1) {
+                    state.frame_mut().segment.push(*next);
+                }
                 i += 2;
                 continue;
             }
             if c == q {
                 single = None;
             }
-        } else {
-            match c {
-                '#' => break,
-                '"' | '\'' if triple(i, c) => {
-                    state.open = Some(c);
-                    i += 3;
-                    continue;
-                }
-                '"' | '\'' => single = Some(c),
-                '[' | '{' => state.depth += 1,
-                ']' | '}' => state.depth = state.depth.saturating_sub(1),
-                _ => {}
+            i += 1;
+            continue;
+        }
+        match c {
+            '#' => break,
+            '"' | '\'' if triple(i, c) => {
+                state.open = Some(c);
+                state.frame_mut().segment.push_str(&format!("{c}{c}{c}"));
+                i += 3;
+                continue;
             }
+            '"' | '\'' => {
+                single = Some(c);
+                state.frame_mut().segment.push(c);
+            }
+            '=' => {
+                let frame = state.frame_mut();
+                if frame.pending.is_none() {
+                    let mut path = frame.path.clone();
+                    if frame.kind == '[' {
+                        path.push("0".to_string());
+                    }
+                    path.extend(keypath::split(&frame.segment));
+                    frame.pending = Some(path);
+                    frame.segment.clear();
+                } else {
+                    frame.segment.push(c);
+                }
+            }
+            ',' => state.frame_mut().separate(),
+            '[' | '{' => {
+                let parent = state.frame();
+                let path = match (&parent.pending, parent.kind) {
+                    (Some(pending), _) => pending.clone(),
+                    (None, '[') => [parent.path.as_slice(), &["0".to_string()]].concat(),
+                    (None, _) => parent.path.clone(),
+                };
+                state.stack.push(Frame::new(c, path));
+            }
+            ']' | '}' => {
+                if state.stack.pop().is_some() {
+                    // The value that just closed ends the entry it belonged to.
+                    let frame = state.frame_mut();
+                    if frame.kind != '[' {
+                        frame.segment.clear();
+                    }
+                }
+            }
+            _ => state.frame_mut().segment.push(c),
         }
         i += 1;
     }
-    state
-}
-
-fn unquoted_equals(text: &str) -> Option<usize> {
-    unquoted(text, '=')
-}
-
-fn in_comment(text: &str) -> bool {
-    unquoted(text, '#').is_some()
+    if eol && state.open.is_none() && state.frame().kind != '[' {
+        state.frame_mut().separate();
+    }
 }
 
 /// The byte offset of the first `target` outside a quoted string.
@@ -389,6 +510,24 @@ mod tests {
     fn an_unfinished_header_does_not_hide_later_ones() {
         assert_eq!(labels("[settings\n[settings]\nco|"), ["color"]);
         assert_eq!(labels("[settings\nco|"), ["color"]);
+    }
+
+    #[test]
+    fn inline_tables_complete_their_keys() {
+        assert_eq!(labels("settings = { | }"), ["color", "mode"]);
+        assert_eq!(labels("settings = { color = true, | }"), ["mode"]);
+        assert_eq!(labels("settings = {\n  color = true,\n  mo|\n}"), ["mode"]);
+        assert_eq!(labels("settings = {\n  color = true\n  |\n}"), ["mode"]);
+        assert_eq!(labels("settings = { mode = \"|\" }"), ["a", "b"]);
+        assert_eq!(labels("settings = { color = |"), ["true", "false"]);
+    }
+
+    #[test]
+    fn keys_already_set_are_not_offered_again() {
+        assert_eq!(labels("[settings]\ncolor = true\n|"), ["mode"]);
+        assert!(labels("[settings]\ncolor = true\nco|").is_empty());
+        // a half-written document has no known keys yet
+        assert_eq!(labels("[settings]\ncolor = \n|"), ["color", "mode"]);
     }
 
     #[test]

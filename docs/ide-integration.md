@@ -107,10 +107,21 @@ It provides:
 
 - **Diagnostics**: TOML syntax errors, unknown keys with a "did you mean"
   suggestion, values of the wrong type, and deprecated keys.
-- **Completion** of keys and of values that have a fixed set, such as booleans
-  and enums.
+- **Completion** of keys, including inside inline tables, and of values that
+  have a fixed set, such as booleans and enums. Keys a table already has are not
+  offered again.
 - **Hover** documentation for keys.
+- **Quick fixes** that replace an unknown key with the suggested one.
 - **Formatting**, the same as [`mise fmt`](/cli/fmt.html).
+
+Diagnostics carry a `code` (`syntax`, `unknown-key`, `deprecated-key` or
+`invalid-value`), and an unknown key's suggestion is in the diagnostic's `data`.
+Unknown `[settings]` keys are warnings, because mise still loads the file;
+other unknown keys are errors. While a file does not parse, the diagnostics of
+the parts you did not edit stay.
+
+Files that `[task_config] includes` lists are tasks, not configs, so the server
+leaves them alone even when they are named like `mise.tasks.toml`.
 
 The server only parses a config. It never renders templates or runs anything,
 so opening an untrusted file is safe.
@@ -128,6 +139,18 @@ vim.lsp.enable("mise")
 
 Other editors with a generic LSP client, such as Helix and Emacs, take the same
 command. See the [`mise lsp`](/cli/lsp.html) reference.
+
+If another TOML server, such as Tombi or Even Better TOML, runs on the same
+files, hover, completion and formatting show up twice. A client can turn them
+off with `initializationOptions`, keeping only what mise adds:
+
+```json
+{ "formatting": false, "hover": false, "completion": false }
+```
+
+A mise that predates `mise lsp` runs a task named `lsp` if the project has one.
+To check that the command exists, look for `Usage: mise lsp` in the output of
+`mise lsp --help`.
 
 ## VS Code {#vscode}
 

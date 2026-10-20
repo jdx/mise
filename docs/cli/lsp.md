@@ -11,21 +11,22 @@ description: "Run the language server for mise config files over stdin/stdout"
 
 Run the language server for mise config files over stdin/stdout
 
-Editors start this command and exchange Language Server Protocol messages with it. It
-serves `mise.toml` and the other config files mise loads (`.mise.toml`, `mise.<env>.toml`,
-`mise.local.toml`, `mise/config.toml`, and the files of a `conf.d`) and ignores every other
-file, so it can be attached to the TOML language without touching `Cargo.toml` or
-`pyproject.toml`.
+Editors start this command and exchange Language Server Protocol messages with it.
+
+It serves `mise.toml` and the other config files mise loads (`.mise.toml`, `mise.<env>.toml`, `mise.local.toml`, `mise/config.toml`, and the files of a `conf.d`). It ignores every other file, including files that `[task_config] includes` lists, so it can be attached to the TOML language without touching `Cargo.toml` or `pyproject.toml`.
 
 It offers:
-- diagnostics: TOML syntax errors, unknown keys with a suggestion, values of the wrong type,
-  and deprecated keys
-- completion of keys and of values that have a fixed set
+- diagnostics: TOML syntax errors, unknown keys with a suggestion, values of the wrong type, and deprecated keys
+- completion of keys, including inside inline tables, and of values that have a fixed set
 - hover documentation for keys
+- quick fixes that replace an unknown key with the suggested one
 - formatting, as `mise fmt` does
 
-The server only parses a config. It never renders templates or runs anything, so opening an
-untrusted file is safe.
+A client that runs another TOML server beside this one can switch features off with `initializationOptions`: `{"formatting": false, "hover": false, "completion": false}`.
+
+The server only parses a config. It never renders templates or runs anything, so opening an untrusted file is safe.
+
+A mise that predates this command runs a task named `lsp` instead, so a client that needs to know whether the command exists can check that `mise lsp --help` prints `Usage: mise lsp`.
 
 See <https://mise.jdx.dev/ide-integration.html> for editor configuration.
 

@@ -102,14 +102,42 @@ impl Schema {
         self.description(&self.expanded(schema))
     }
 
+    /// Whether the schemas `nodes` stand for are deprecated. A `oneOf` or `anyOf` that has a
+    /// current variant is not: `[hooks]` accepts both a deprecated and a current spelling of
+    /// each key.
     pub(crate) fn is_deprecated(&self, nodes: &[&Value]) -> bool {
-        nodes
-            .iter()
-            .any(|node| node.get("deprecated").is_some_and(|d| d != false))
+        nodes.first().is_some_and(|node| self.deprecated(node, 0))
     }
 
     pub(crate) fn schema_is_deprecated(&self, schema: &Value) -> bool {
-        self.is_deprecated(&self.expanded(schema))
+        self.deprecated(schema, 0)
+    }
+
+    fn deprecated(&self, node: &Value, depth: usize) -> bool {
+        if depth > MAX_DEPTH {
+            return false;
+        }
+        if node.get("deprecated").is_some_and(|d| d != false) {
+            return true;
+        }
+        let target = node
+            .get("$ref")
+            .and_then(Value::as_str)
+            .and_then(|r| r.strip_prefix('#'))
+            .and_then(|pointer| self.root.pointer(pointer));
+        if target.is_some_and(|target| self.deprecated(target, depth + 1)) {
+            return true;
+        }
+        let variants = |keyword: &str| {
+            node.get(keyword)
+                .and_then(Value::as_array)
+                .filter(|variants| !variants.is_empty())
+        };
+        variants("allOf").is_some_and(|all| all.iter().any(|v| self.deprecated(v, depth + 1)))
+            || ["oneOf", "anyOf"].iter().any(|keyword| {
+                variants(keyword)
+                    .is_some_and(|any| any.iter().all(|v| self.deprecated(v, depth + 1)))
+            })
     }
 
     /// The values a key can be given as a literal: its enum, or both booleans.
@@ -215,6 +243,22 @@ pub(crate) mod tests {
                 }
             }
         }))
+    }
+
+    #[test]
+    fn a_oneof_with_a_current_variant_is_not_deprecated() {
+        let schema = Schema::new(json!({
+            "properties": {
+                "a": {"oneOf": [{"deprecated": true, "type": "string"}, {"type": "array"}]},
+                "b": {"oneOf": [{"deprecated": true, "type": "string"}]},
+                "c": {"$ref": "#/$defs/old"}
+            },
+            "$defs": {"old": {"deprecated": true}}
+        }));
+        let at = |key: &str| schema.is_deprecated(&schema.at(&[key]));
+        assert!(!at("a"));
+        assert!(at("b"));
+        assert!(at("c"));
     }
 
     #[test]
