@@ -122,13 +122,13 @@ key directly under `[doctor]` produces a warning.
 
 Each check ends with one of these statuses:
 
-| Status    | Meaning                                                                                                                                                   |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pass`    | The command exited with status 0.                                                                                                                         |
-| `fail`    | The command exited with another status. A shell that reports a missing command this way also counts as `fail`.                                            |
-| `error`   | mise could not run or finish the check: a timeout, too much output, invalid options, a shell that failed to start, or an unavailable project environment. |
-| `blocked` | A check named in `depends` did not pass, so the command was not run. Does not fail the run by itself; the dependency already does.                        |
-| `skipped` | The check's `os` selection excludes this machine.                                                                                                         |
+| Status    | Meaning                                                                                                                                                                            |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pass`    | The command exited with status 0.                                                                                                                                                  |
+| `fail`    | The command exited with another status. A shell that reports a missing command this way also counts as `fail`.                                                                     |
+| `error`   | mise could not run or finish the check: a timeout, too much output, invalid options, a shell that failed to start, or an unavailable project environment.                          |
+| `blocked` | A check named in `depends` did not pass, so the command was not run. `blocked` does not fail the run by itself: a `fail` or `error` dependency does, but a `skipped` one does not. |
+| `skipped` | The check's `os` selection excludes this machine.                                                                                                                                  |
 
 `mise doctor project` exits with status 1 when any check fails or errors. With
 no checks, or only skipped ones, it exits with status 0.
