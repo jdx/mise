@@ -1141,6 +1141,25 @@ fn which_non_pristine_executable(bin: &str) -> Option<PathBuf> {
         .find_map(file::which_non_pristine)
 }
 
+/// On macOS's default case-insensitive volume `dir/python` also opens `dir/Python`, so a
+/// lookup for an interpreter can land on an unrelated file (aws-cli's embedded `Python`
+/// dylib). A spawnable lookup is a statement about a program the tool ships under that
+/// name, so require the directory entry to match the requested case exactly. Elsewhere
+/// the filesystem already does this (Linux) or case-insensitivity is the intended
+/// semantics (Windows `PATHEXT`).
+fn has_exact_case_entry(path: &Path) -> bool {
+    if !cfg!(target_os = "macos") {
+        return true;
+    }
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        return true;
+    };
+    match std::fs::read_dir(dir) {
+        Ok(mut entries) => entries.any(|e| e.is_ok_and(|e| e.file_name() == name)),
+        Err(_) => true,
+    }
+}
+
 /// Resolve `bin` inside `dirs`, in the order the OS itself resolves: directory-major,
 /// extension-minor.
 ///
@@ -1175,7 +1194,7 @@ where
             // `skills/` dir would otherwise shadow another tool's `skills` binary.
             candidate.is_file()
                 && if spawnable {
-                    file::is_spawnable(candidate)
+                    file::is_spawnable(candidate) && has_exact_case_entry(candidate)
                 } else {
                     file::is_executable(candidate)
                 }
@@ -1606,6 +1625,22 @@ mod tests {
             which_in_dirs(vec![dir.path().to_path_buf()], "tool", false),
             "both predicates agree on unix"
         );
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn which_in_dirs_spawnable_ignores_case_insensitive_match() {
+        // aws-cli's pkg payload ships an executable-bit `Python` dylib; on a
+        // case-insensitive volume a lookup for `python` must not resolve to it.
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let dylib = dir.path().join("Python");
+        fs::write(&dylib, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&dylib, fs::Permissions::from_mode(0o755)).unwrap();
+        let dirs = || vec![dir.path().to_path_buf()];
+        assert_eq!(which_in_dirs(dirs(), "Python", true), Some(dylib));
+        assert_eq!(which_in_dirs(dirs(), "python", true), None);
     }
 
     #[test]
