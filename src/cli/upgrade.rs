@@ -551,7 +551,9 @@ impl Upgrade {
             .await
         };
         let pin = self.pin || Settings::get().pin;
-        let pin_all = pin && self.bump && self.tool.is_empty();
+        // Naming a tool without a version (`mise upgrade node --bump --pin`) pins
+        // just that tool; a named version is handled as an explicit bump.
+        let pin_all = pin && self.bump && self.tool.iter().all(|tool| tool.tvr.is_none());
         if pin {
             if pin_all {
                 // With `pin` on, a bare `--bump` also records exact versions for
@@ -564,6 +566,11 @@ impl Upgrade {
                         .exclude
                         .iter()
                         .any(|tool| backend_args_match(tool.ba.as_ref(), tv.ba()))
+                        || !(self.tool.is_empty()
+                            || self
+                                .tool
+                                .iter()
+                                .any(|tool| backend_args_match(tool.ba.as_ref(), tv.ba())))
                     {
                         continue;
                     }
