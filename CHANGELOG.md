@@ -1,5 +1,38 @@
 # Changelog
 
+## [2026.10.17](https://github.com/jdx/mise/releases/tag/v2026.10.17) - 2026-10-20
+
+### 🚀 Features
+
+- **(bootstrap)** accept a shell name in bootstrap.user.login_shell by @jdx in [#14770](https://github.com/jdx/mise/pull/14770)
+- **(doctor)** render templates in check run, description and hint by @jdx in [#14771](https://github.com/jdx/mise/pull/14771)
+- **(vfox)** add RUNTIME.cacheDirPath for plugins by @jdx in [#14776](https://github.com/jdx/mise/pull/14776)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** handle unterminated string literals in template lexer by @Huge in [#14752](https://github.com/jdx/mise/pull/14752)
+- **(env)** keep pre-activation PATH entries when the shell deduplicates PATH by @jdx in [#14772](https://github.com/jdx/mise/pull/14772)
+- **(pipx)** don't pick a case-insensitive `Python` match as the interpreter on macOS by @jdx in [#14769](https://github.com/jdx/mise/pull/14769)
+- **(release)** sign Windows binaries in a separate workflow run by @jdx in [#14766](https://github.com/jdx/mise/pull/14766)
+- **(task)** rehash same-size source edits that restore mtime in content-hash mode by @jdx in [#14778](https://github.com/jdx/mise/pull/14778)
+
+### 📚 Documentation
+
+- **(dotfiles)** clarify permissions-only group entries and pruning by @jdx in [#14768](https://github.com/jdx/mise/pull/14768)
+
+### 📦️ Dependency Updates
+
+- update github actions by @renovate[bot] in [#14753](https://github.com/jdx/mise/pull/14753)
+- update mise tools by @renovate[bot] in [#14754](https://github.com/jdx/mise/pull/14754)
+- update github actions by @renovate[bot] in [#14759](https://github.com/jdx/mise/pull/14759)
+- ignore RUSTSEC-2026-0374 basic-toml unmaintained advisory by @jdx in [f2f2759](https://github.com/jdx/mise/commit/f2f2759992511bcc10bff2e54d8e74e8850bf194)
+- update dependency ubuntu to v26 by @renovate[bot] in [#14756](https://github.com/jdx/mise/pull/14756)
+- update webpki-root-certs and rustls-webpki for eMudhra CA revocation by @jdx in [#14781](https://github.com/jdx/mise/pull/14781)
+
+### New Contributors
+
+- @Huge made their first contribution in [#14752](https://github.com/jdx/mise/pull/14752)
+
 ## [2026.10.16](https://github.com/jdx/mise/releases/tag/v2026.10.16) - 2026-10-20
 
 ### 🚀 Features

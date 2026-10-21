@@ -112,53 +112,53 @@ url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9
 url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/620604883"
 
 [[tools.aube]]
-version = "2.7.2"
+version = "2.8.1"
 backend = "packslip:github.com/aubepkg/aube"
 specifiers = ["latest"]
 
 [tools.aube."platforms.linux-arm64"]
-checksum = "sha256:fccdb28fe420560eb0d18c64c69a755c2b2aa0223fcf6f953ade264685273ef5"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:12eda315743aea0a1a66eedaf4ebd2f2de80d985c71cf21d44475cf6c9f8728c"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-aarch64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.linux-arm64-musl"]
-checksum = "sha256:0a03c4da9df28cb2e14c2c45ecf2ea32fb8d33027c43e37e8455fd69b09c7fa7"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:b067a7b4633f8ecafcf9e8d2d8ffe0de7c36af5dc7f632aff079782d11c5e49f"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-aarch64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.linux-x64"]
-checksum = "sha256:64a28eb9a324a4a0a1142345555f157ff0415ab68195ec6bff6d24ba4a245486"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:83ca5541a10a21b81189fc391d3853774826a439db28d3b0136648c37fbdbe79"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.linux-x64-baseline"]
-checksum = "sha256:64a28eb9a324a4a0a1142345555f157ff0415ab68195ec6bff6d24ba4a245486"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:83ca5541a10a21b81189fc391d3853774826a439db28d3b0136648c37fbdbe79"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.linux-x64-musl"]
-checksum = "sha256:6993e1157f854f24a0afd95b9e27d27fffe560acf55cbe31b74361d1f6ae0953"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:5a8bb76fb728cc8d130014e660dd229fd908648ab8d1a8f2e005210f2c472a0d"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:6993e1157f854f24a0afd95b9e27d27fffe560acf55cbe31b74361d1f6ae0953"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:5a8bb76fb728cc8d130014e660dd229fd908648ab8d1a8f2e005210f2c472a0d"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.macos-arm64"]
-checksum = "sha256:38c144fcd38350cea58d680c351c2f2d85891dabf65821e3d0711a331250c3dd"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:f5eca610159c38c5ab6d5766348305b2d391de436349c7abd49a967b289a895f"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-aarch64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.windows-x64"]
-checksum = "sha256:bf814eeacd96ca19d6810d1d32d33c45b95fa5ca8bd5bce5b0748c2baa74b9c5"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:b01cac5f4e2ea4988bbabb36b49dced6986ef26107cbcfded40cc0469e735765"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.windows-x64-baseline"]
-checksum = "sha256:bf814eeacd96ca19d6810d1d32d33c45b95fa5ca8bd5bce5b0748c2baa74b9c5"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:b01cac5f4e2ea4988bbabb36b49dced6986ef26107cbcfded40cc0469e735765"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [[tools.cargo-binstall]]
@@ -266,53 +266,53 @@ backend = "cargo:flamegraph"
 specifiers = ["latest"]
 
 [[tools.communique]]
-version = "1.6.1"
+version = "1.6.2"
 backend = "packslip:github.com/jdx/communique"
 specifiers = ["latest"]
 
 [tools.communique."platforms.linux-arm64"]
-checksum = "sha256:d61759929c26b111118bc5d159fbb6b877cb8b78a768e76674070a1fc413dc73"
-url = "https://github.com/jdx/communique/releases/download/v1.6.1/communique-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:04a3045e4fb4e0539de9363e8d65eceacf1d2ffcde9625201a2ab2cd4a0ad1e4"
+url = "https://github.com/jdx/communique/releases/download/v1.6.2/communique-aarch64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-arm64-musl"]
-checksum = "sha256:2162d60bcb24b1dc458c6b77b3d1c85bc75868bade70e118e969db365f836867"
-url = "https://github.com/jdx/communique/releases/download/v1.6.1/communique-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:1d14e29efe1281bccddf25114f438fdc420d94cc312ff7d67b7aa69cbf288565"
+url = "https://github.com/jdx/communique/releases/download/v1.6.2/communique-aarch64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-x64"]
-checksum = "sha256:271e759840d0976d8ceff7127b1ae7c6513bc5012bbcaeb6a7f32299466d3c7f"
-url = "https://github.com/jdx/communique/releases/download/v1.6.1/communique-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:b8ff7f64b3634eddbece306c12db0ceee09b349db00be7955c09f630d8542f5b"
+url = "https://github.com/jdx/communique/releases/download/v1.6.2/communique-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-x64-baseline"]
-checksum = "sha256:271e759840d0976d8ceff7127b1ae7c6513bc5012bbcaeb6a7f32299466d3c7f"
-url = "https://github.com/jdx/communique/releases/download/v1.6.1/communique-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:b8ff7f64b3634eddbece306c12db0ceee09b349db00be7955c09f630d8542f5b"
+url = "https://github.com/jdx/communique/releases/download/v1.6.2/communique-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-x64-musl"]
-checksum = "sha256:ae6d588662a70501d44afc299ad499db09320ba5ef9c2111f674aca15c5a234c"
-url = "https://github.com/jdx/communique/releases/download/v1.6.1/communique-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:2bb37e907549fea236f10fb82522f834ca6bb776d3fba1fd4e16c0884d7d0b93"
+url = "https://github.com/jdx/communique/releases/download/v1.6.2/communique-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:ae6d588662a70501d44afc299ad499db09320ba5ef9c2111f674aca15c5a234c"
-url = "https://github.com/jdx/communique/releases/download/v1.6.1/communique-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:2bb37e907549fea236f10fb82522f834ca6bb776d3fba1fd4e16c0884d7d0b93"
+url = "https://github.com/jdx/communique/releases/download/v1.6.2/communique-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.macos-arm64"]
-checksum = "sha256:7d99c6d5ec789efb5e7bb1342989e14013831bf8f5b6964e72657a374677deec"
-url = "https://github.com/jdx/communique/releases/download/v1.6.1/communique-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:b0859affdac6d447771173d0aee1fcd0f4c23f77ee6ef45143664474ccac490c"
+url = "https://github.com/jdx/communique/releases/download/v1.6.2/communique-aarch64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.windows-x64"]
-checksum = "sha256:e4ef793e45023b623898b1eda3208efaaca2beec52e93fefc6a88bed8427226e"
-url = "https://github.com/jdx/communique/releases/download/v1.6.1/communique-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:a3024b772fbb9b80b8ef47246f0818534f22aad5683dd1b86bf43409a566b6ed"
+url = "https://github.com/jdx/communique/releases/download/v1.6.2/communique-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [tools.communique."platforms.windows-x64-baseline"]
-checksum = "sha256:e4ef793e45023b623898b1eda3208efaaca2beec52e93fefc6a88bed8427226e"
-url = "https://github.com/jdx/communique/releases/download/v1.6.1/communique-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:a3024b772fbb9b80b8ef47246f0818534f22aad5683dd1b86bf43409a566b6ed"
+url = "https://github.com/jdx/communique/releases/download/v1.6.2/communique-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/communique/.github/workflows/release.yml"
 
 [[tools.gh]]
@@ -425,53 +425,53 @@ url = "https://github.com/orhun/git-cliff/releases/download/v2.14.2/git-cliff-2.
 url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/573487227"
 
 [[tools.hk]]
-version = "2.7.1"
+version = "2.8.0"
 backend = "packslip:github.com/jdx/hk"
 specifiers = ["latest"]
 
 [tools.hk."platforms.linux-arm64"]
-checksum = "sha256:e37810d8e8bd461ef92c1f0103cb8b415f58d18e689d59d8f5239dd8893676b9"
-url = "https://github.com/jdx/hk/releases/download/v2.7.1/hk-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:d6802a66213972561f9e4aa4d3274decf3725b1fe513da762c0922274c18955b"
+url = "https://github.com/jdx/hk/releases/download/v2.8.0/hk-aarch64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-arm64-musl"]
-checksum = "sha256:1217340e610e126baa69bc5f0543f0eb2c0c3ff08e98b9c3bc173e2a3d29aef2"
-url = "https://github.com/jdx/hk/releases/download/v2.7.1/hk-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:75c88574984380f3a76ab79ab89cf7d8c35d161e3b2d858ac9f13b4e936150a3"
+url = "https://github.com/jdx/hk/releases/download/v2.8.0/hk-aarch64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-x64"]
-checksum = "sha256:f6efe9b7febc22cb0ec071ab727ead597752dedb6a36c4d1a7fef94f6d2d8fbf"
-url = "https://github.com/jdx/hk/releases/download/v2.7.1/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:5b5d7021625d12825b3d44496b466ad65697e02651c8b9fe00117f5c25c73d0a"
+url = "https://github.com/jdx/hk/releases/download/v2.8.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-x64-baseline"]
-checksum = "sha256:f6efe9b7febc22cb0ec071ab727ead597752dedb6a36c4d1a7fef94f6d2d8fbf"
-url = "https://github.com/jdx/hk/releases/download/v2.7.1/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:5b5d7021625d12825b3d44496b466ad65697e02651c8b9fe00117f5c25c73d0a"
+url = "https://github.com/jdx/hk/releases/download/v2.8.0/hk-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-x64-musl"]
-checksum = "sha256:7a92cc1b7ecc2dd59f15bb90a0ab564def47cc63923fd64e6d04c0ae35ce98d0"
-url = "https://github.com/jdx/hk/releases/download/v2.7.1/hk-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:5a9f2e4f8ff945d19da5f4c914ec7feb3f636aa3b2eac02de2b1c6cfe76fe385"
+url = "https://github.com/jdx/hk/releases/download/v2.8.0/hk-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:7a92cc1b7ecc2dd59f15bb90a0ab564def47cc63923fd64e6d04c0ae35ce98d0"
-url = "https://github.com/jdx/hk/releases/download/v2.7.1/hk-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:5a9f2e4f8ff945d19da5f4c914ec7feb3f636aa3b2eac02de2b1c6cfe76fe385"
+url = "https://github.com/jdx/hk/releases/download/v2.8.0/hk-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.macos-arm64"]
-checksum = "sha256:18914b99e1fdcc0415ba77c8d01b1f4df73b109ed90b3f418053e2f3eaf84cbd"
-url = "https://github.com/jdx/hk/releases/download/v2.7.1/hk-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:9f0290ff3cbfa9f6baff640c846bf07f78dd29e2023b0c230d3d5226c23385ca"
+url = "https://github.com/jdx/hk/releases/download/v2.8.0/hk-aarch64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.windows-x64"]
-checksum = "sha256:d0b6e0d1aa253f1ceb4170f5fe14a78526f1ecd9d09b8c0b6d51dda2c90c4981"
-url = "https://github.com/jdx/hk/releases/download/v2.7.1/hk-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:391d61bb4a3bb612464142277f4d934d3b1aee6068cf18175d1c2406aeda29e3"
+url = "https://github.com/jdx/hk/releases/download/v2.8.0/hk-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [tools.hk."platforms.windows-x64-baseline"]
-checksum = "sha256:d0b6e0d1aa253f1ceb4170f5fe14a78526f1ecd9d09b8c0b6d51dda2c90c4981"
-url = "https://github.com/jdx/hk/releases/download/v2.7.1/hk-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:391d61bb4a3bb612464142277f4d934d3b1aee6068cf18175d1c2406aeda29e3"
+url = "https://github.com/jdx/hk/releases/download/v2.8.0/hk-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml"
 
 [[tools.jactionlint]]
@@ -643,53 +643,53 @@ url = "https://github.com/LuaLS/lua-language-server/releases/download/3.19.2/lua
 url_api = "https://api.github.com/repos/LuaLS/lua-language-server/releases/assets/635856461"
 
 [[tools.mr-boxington]]
-version = "1.24.1"
+version = "1.26.0"
 backend = "packslip:github.com/jdx/mr-boxington"
 specifiers = ["latest"]
 
 [tools.mr-boxington."platforms.linux-arm64"]
-checksum = "sha256:0699be8e61116ff6c8e45b95c031bf69e3781cccfee18072952d4efe81b35611"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.24.1/mbx-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:30dad5b98974a37447249572c2d4f1dc065b3b774fa74f20f8a37bb73fb26767"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.26.0/mbx-aarch64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-arm64-musl"]
-checksum = "sha256:2181e6f073adbb16d72d0b737c770c3eb7ec91e8f475fd22cc35622f4c270fe5"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.24.1/mbx-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:a80cb900de756d083bf70e24fbe1e5933560fd806c3778118b9da22a61ebd287"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.26.0/mbx-aarch64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64"]
-checksum = "sha256:d019fd3695d39549cd3eeb48b9518f0b43850d4d0bd9c49b955a8de9d30299fb"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.24.1/mbx-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:decb2c1233d194d9d8f98fa926d86a5f726e9091e92fcff75f44a53ed9cab2b9"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.26.0/mbx-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64-baseline"]
-checksum = "sha256:d019fd3695d39549cd3eeb48b9518f0b43850d4d0bd9c49b955a8de9d30299fb"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.24.1/mbx-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:decb2c1233d194d9d8f98fa926d86a5f726e9091e92fcff75f44a53ed9cab2b9"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.26.0/mbx-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64-musl"]
-checksum = "sha256:0e4b1594871625e9da2f7bedebceac0573ec19ebae90e05b759227f59cc0fcc4"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.24.1/mbx-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:3f7cddaae61d74f263b458feecd7819b14df6b44491629d14f0bacbdad0f2d8b"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.26.0/mbx-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:0e4b1594871625e9da2f7bedebceac0573ec19ebae90e05b759227f59cc0fcc4"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.24.1/mbx-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:3f7cddaae61d74f263b458feecd7819b14df6b44491629d14f0bacbdad0f2d8b"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.26.0/mbx-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.macos-arm64"]
-checksum = "sha256:3ddb7d86b644275db140c9ae76f57bf72c5a10b7657f930466aad5ff7e025a85"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.24.1/mbx-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:5927803d54f313600f7c6792369867eb26f9dfaa909b04fb5727efcf0d17b0b7"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.26.0/mbx-aarch64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.windows-x64"]
-checksum = "sha256:635aa5ca037739b16a72e1f1e754beff86bdfa63e905ec300f32125cc5a4fe7f"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.24.1/mbx-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:4a61b7c07323f3cd223761e548c32797cd2feef28f62d91ff2c9ac66eb7e3870"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.26.0/mbx-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [tools.mr-boxington."platforms.windows-x64-baseline"]
-checksum = "sha256:635aa5ca037739b16a72e1f1e754beff86bdfa63e905ec300f32125cc5a4fe7f"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.24.1/mbx-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:4a61b7c07323f3cd223761e548c32797cd2feef28f62d91ff2c9ac66eb7e3870"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.26.0/mbx-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/jdx/mr-boxington/.github/workflows/release.yml"
 
 [[tools.node]]
@@ -735,13 +735,13 @@ url = "https://nodejs.org/dist/v24.22.0/node-v24.22.0-win-x64.zip"
 
 [[tools."npm:ajv-cli"]]
 version = "5.0.0"
-aube = { path = ".mise/locks/npm-ajv-cli/5.0.0", digest = "sha256:c6bd542579453b2939078812311b051a3ec4d71a86a6428b5b47e0386c7b6b84" }
+aube = { path = ".mise/locks/npm-ajv-cli/5.0.0", digest = "sha256:36d7da953aa2dac85d8e85af560d39cd2802e0b55dbc19ab9416b6ca0a1c3f9e" }
 backend = "npm:ajv-cli"
 specifiers = ["latest"]
 
 [[tools."npm:markdownlint-cli"]]
 version = "0.49.1"
-aube = { path = ".mise/locks/npm-markdownlint-cli/0.49.1", digest = "sha256:ac985ae295446dc117b560d0156c1274c9a0eb542dc9ebb862cd97d38681cbe8" }
+aube = { path = ".mise/locks/npm-markdownlint-cli/0.49.1", digest = "sha256:207347c2870949506a21acad74c747d92054e901a57ae0607dc289c8d8574491" }
 backend = "npm:markdownlint-cli"
 specifiers = ["latest"]
 

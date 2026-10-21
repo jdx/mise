@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# A temporary MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES must not make tracked
+# `.tool-versions` files unknown: no warning, and their versions stay protected.
+
+mkdir proj other
+cd proj || exit 1
+echo "dummy 2.0.0" >.tool-versions
+assert "mise install"
+cd ../other || exit 1
+assert "mise install dummy@3.0.0"
+
+output="$(MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=.combined-tool-versions mise prune --dry-run 2>&1)"
+assert_not_contains_text "$output" "error loading tracked config file"
+assert_not_contains_text "$output" "unknown config file type"
+assert_not_contains_text "$output" "dummy@2.0.0"
+assert_contains_text "$output" "dummy@3.0.0"

@@ -300,6 +300,7 @@ export const values: Record<string, string> = {
   "doctor.checks.<key>.dir": '"services/api"',
   "doctor.checks.<key>.shell": '"bash -c"',
   "doctor.checks.<key>.os": '["linux", "macos"]',
+  "doctor.checks.<key>.depends": '["database-running"]',
 
   // ---------------------------------------------------------------- dotfiles, history
   "dotfile_groups.<name>.root": '"nvim"',

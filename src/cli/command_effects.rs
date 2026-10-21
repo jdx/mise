@@ -269,6 +269,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("local", Write),
     ("ls", Read),
     ("ls-remote", Read),
+    ("lsp", Read),
     ("oci", Read),
     ("oci build", Write),
     ("oci push", Write),

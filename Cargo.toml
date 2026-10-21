@@ -20,11 +20,12 @@ members = [
   "crates/mise-system",
   "crates/mise-config",
   "crates/mise-dotenv",
+  "crates/mise-lsp",
 ]
 
 [package]
 name = "mise"
-version = "2026.10.16"
+version = "2026.10.17"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -144,6 +145,7 @@ futures-util = "0.3"
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
 mise-settings = { path = "crates/mise-settings", version = "2026" }
 mise-daemons = { path = "crates/mise-daemons", version = "0.1" }
+mise-lsp = { path = "crates/mise-lsp", version = "0.1" }
 mise-oci = { path = "crates/mise-oci", version = "0.1" }
 mise-system = { path = "crates/mise-system", version = "0.1" }
 mise-config = { path = "crates/mise-config", version = "0.1" }
@@ -326,7 +328,7 @@ phf_codegen = "0.14"
 regex = "1"
 semver = "1"
 serde = { version = "1", features = ["derive"] }
-serde-saphyr = "1"
+serde-saphyr = "2"
 toml = "1"
 
 [dev-dependencies]

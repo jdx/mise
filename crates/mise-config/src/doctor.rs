@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::Deserialize;
 
 use crate::schema::refs;
@@ -43,6 +43,19 @@ pub struct DoctorCheck {
     #[serde(default, deserialize_with = "deserialize_os")]
     #[schemars(schema_with = "refs::os_filter")]
     pub os: Vec<String>,
+    /// Names of checks that must pass first. If one does not pass, this check is reported as blocked and its command does not run.
+    #[serde(default, deserialize_with = "crate::de::deserialize_arr")]
+    #[schemars(schema_with = "depends_schema")]
+    pub depends: Vec<String>,
+}
+
+fn depends_schema(_: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "oneOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"type": "string"}}
+        ]
+    })
 }
 
 // Omitted selectors run everywhere; an explicit empty list is almost always a

@@ -90,7 +90,21 @@ pub(super) async fn formula_from_ruby(
         .await
         .wrap_err_with(|| format!("failed to evaluate {source_path}"))?;
 
-    let formula: Formula = serde_json::from_str(&output)
+    // The shim reports requirements it skipped alongside the metadata, since
+    // stderr from a successful run is discarded. Formula has no such field.
+    let mut metadata: serde_json::Value = serde_json::from_str(&output)
+        .wrap_err_with(|| format!("invalid metadata extracted from {source_path}"))?;
+    let unsupported = metadata
+        .as_object_mut()
+        .and_then(|object| object.remove("unsupported_requirements"))
+        .and_then(|value| serde_json::from_value::<Vec<String>>(value).ok())
+        .unwrap_or_default();
+    for requirement in unsupported {
+        warn!(
+            "ignoring unsupported Homebrew requirement {requirement} in {owner}/{tap}/{name}; it is not enforced"
+        );
+    }
+    let formula: Formula = serde_json::from_value(metadata)
         .wrap_err_with(|| format!("invalid metadata extracted from {source_path}"))?;
     if formula.name != name {
         bail!(
@@ -1268,6 +1282,43 @@ end
                 "Language block is missing {expected:?}: {metadata:?}"
             );
         }
+    }
+
+    /// A formula can subclass Homebrew's `Requirement` for a custom platform
+    /// check and name it in `depends_on`. The class is a constant reference, so
+    /// an undefined one aborts evaluation before any metadata is read, and it
+    /// must not be recorded as a formula dependency.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn tolerates_custom_requirement_classes() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        let formula = formula_metadata(
+            &ruby,
+            "widget",
+            r#"
+class WidgetMacOSRequirement < Requirement
+  fatal true
+  satisfy(build_env: false) { OS.mac? && MacOS.full_version >= "26.4" }
+
+  def message
+    "Widget requires macOS 26.4 or newer."
+  end
+end
+
+class Widget < Formula
+  version "1.2.3"
+  url "https://example.com/widget-1.2.3.tar.gz"
+  sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  depends_on WidgetMacOSRequirement
+  depends_on "libfoo"
+end
+"#,
+        )
+        .await?;
+        assert_eq!(formula.dependencies, ["libfoo"]);
+        Ok(())
     }
 
     /// A formula pulls a Language mixin in from its class body. That is a
