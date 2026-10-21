@@ -4135,3 +4135,39 @@ backend = "core:python"
     assert!(saved.contains("backend = \"pipx:black\""));
     assert!(!saved.contains("pypi:black"));
 }
+
+#[test]
+fn test_nearest_lockfile_decision_prefers_the_nearest_lockfile() {
+    let locked = |version: &str| {
+        let mut lockfile = Lockfile::default();
+        let toml = format!("[[tools.aube]]\nversion = \"{version}\"\nbackend = \"aqua:aube\"\n");
+        let table: toml::Table = toml::from_str(&toml).unwrap();
+        let tool = table["tools"]["aube"].as_array().unwrap()[0].clone();
+        lockfile
+            .tools
+            .insert("aube".into(), vec![LockfileTool::try_from(tool).unwrap()]);
+        lockfile
+    };
+    let version_of = |lockfile: &Lockfile| -> Result<Option<String>> {
+        Ok(lockfile
+            .tools_for("aube")
+            .and_then(|tools| tools.first())
+            .map(|tool| tool.version.clone()))
+    };
+    // Nearest first: the child pins 2.8.1, the parent 2.7.0.
+    let by_precedence = [locked("2.8.1"), locked("2.7.0")];
+    assert_eq!(
+        nearest_lockfile_decision(&by_precedence, version_of).unwrap(),
+        Some("2.8.1".to_string())
+    );
+    // A nearer lockfile that does not lock the tool falls through to the parent.
+    let by_precedence = [Lockfile::default(), locked("2.7.0")];
+    assert_eq!(
+        nearest_lockfile_decision(&by_precedence, version_of).unwrap(),
+        Some("2.7.0".to_string())
+    );
+    assert_eq!(
+        nearest_lockfile_decision(&[Lockfile::default()], version_of).unwrap(),
+        None
+    );
+}

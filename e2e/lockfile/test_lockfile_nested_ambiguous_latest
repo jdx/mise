@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# An explicit `tool@latest` request has no config source, so it reads every
+# lockfile. Nested configs that pin the tool to different versions must not make
+# that ambiguous: the nearest config's lockfile decides. The tool is in no
+# config, so the request has no owner to pick a single lockfile.
+
+export MISE_LOCKFILE=1
+
+mkdir -p parent/child
+cat <<EOF2 >parent/mise.toml
+[tools]
+EOF2
+cat <<EOF2 >parent/mise.lock
+lockfile_version = 2
+
+[[tools.tiny]]
+version = "1.0.0"
+specifiers = ["latest"]
+EOF2
+cat <<EOF2 >parent/child/mise.toml
+[tools]
+EOF2
+cat <<EOF2 >parent/child/mise.lock
+lockfile_version = 2
+
+[[tools.tiny]]
+version = "1.0.1"
+specifiers = ["latest"]
+EOF2
+
+cd parent/child || exit 1
+assert_not_contains "mise install tiny@latest 2>&1" "multiple resolutions"
+assert_contains "mise install tiny@latest 2>&1" "tiny@1.0.1"

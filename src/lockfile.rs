@@ -4782,6 +4782,7 @@ pub(crate) fn get_locked_version(
     let Some(source) = request.lockfile_source() else {
         return Ok(None);
     };
+    let mut merged = false;
     let lockfile = match source {
         ToolSource::MiseToml(path) => {
             trace!(
@@ -4795,6 +4796,7 @@ pub(crate) fn get_locked_version(
         }
         _ => {
             trace!("[{short}@{prefix}] reading all lockfiles");
+            merged = true;
             read_all_lockfiles(config)
         }
     };
@@ -4831,79 +4833,132 @@ pub(crate) fn get_locked_version(
         }
         Ok(Some((request_options.clone(), legacy_options_fallback)))
     };
-    if let Some(tools) = lockfile.tools_for(short) {
-        if lockfile.uses_request_bindings() {
-            let (matching, binding_error) =
-                matching_request_bindings(lockfile.as_ref(), short, specifier, |tool| {
-                    Ok(binding_options(tool)?.is_some_and(|(options, _)| tool.options == options))
-                });
-            match matching.as_slice() {
-                [] => {}
-                [found] => {
-                    trace!("[{short}@{specifier}] found {} in lockfile", found.version);
-                    return Ok(Some((*found).clone()));
+    let lookup = |lockfile: &Lockfile| -> Result<Option<LockfileTool>> {
+        if let Some(tools) = lockfile.tools_for(short) {
+            if lockfile.uses_request_bindings() {
+                let (matching, binding_error) =
+                    matching_request_bindings(lockfile, short, specifier, |tool| {
+                        Ok(binding_options(tool)?
+                            .is_some_and(|(options, _)| tool.options == options))
+                    });
+                match matching.as_slice() {
+                    [] => {}
+                    [found] => {
+                        trace!("[{short}@{specifier}] found {} in lockfile", found.version);
+                        return Ok(Some((*found).clone()));
+                    }
+                    _ => {
+                        bail!(AmbiguousRequestBinding(format!(
+                            "lockfile contains multiple resolutions for {short}@{specifier} with the same options"
+                        )))
+                    }
                 }
-                _ => {
-                    bail!(AmbiguousRequestBinding(format!(
-                        "lockfile contains multiple resolutions for {short}@{specifier} with the same options"
-                    )))
-                }
-            }
 
-            let (legacy, legacy_error) =
-                matching_request_bindings(lockfile.as_ref(), short, specifier, |tool| {
-                    Ok(
-                        binding_options(tool)?.is_some_and(|(options, allow_fallback)| {
-                            allow_fallback && !options.is_empty() && tool.options.is_empty()
-                        }),
-                    )
-                });
-            match legacy.as_slice() {
-                [] => {}
-                [found] => {
-                    trace!(
-                        "[{short}@{specifier}] found {} in lockfile without options, keeping the version pin and dropping its artifact data",
-                        found.version
-                    );
-                    return Ok(binding_options(found)?
-                        .map(|(options, _)| lockfile_tool_with_request_options(found, &options)));
+                let (legacy, legacy_error) =
+                    matching_request_bindings(lockfile, short, specifier, |tool| {
+                        Ok(
+                            binding_options(tool)?.is_some_and(|(options, allow_fallback)| {
+                                allow_fallback && !options.is_empty() && tool.options.is_empty()
+                            }),
+                        )
+                    });
+                match legacy.as_slice() {
+                    [] => {}
+                    [found] => {
+                        trace!(
+                            "[{short}@{specifier}] found {} in lockfile without options, keeping the version pin and dropping its artifact data",
+                            found.version
+                        );
+                        return Ok(binding_options(found)?.map(|(options, _)| {
+                            lockfile_tool_with_request_options(found, &options)
+                        }));
+                    }
+                    _ => bail!(AmbiguousRequestBinding(format!(
+                        "lockfile contains multiple optionless resolutions for {short}@{specifier}"
+                    ))),
                 }
-                _ => bail!(AmbiguousRequestBinding(format!(
-                    "lockfile contains multiple optionless resolutions for {short}@{specifier}"
-                ))),
-            }
 
-            // Mixed-format monorepo migration can temporarily place legacy
-            // entries without bindings in a version-1 file. Keep those pins
-            // reachable until a successful full format upgrade binds them.
-            let version_matches = |v: &LockfileTool| {
-                v.specifiers.is_empty()
-                    && lockfile_version_matches(prefix, &v.version)
-                    && (!require_prefix_boundary
-                        || lockfile_version_matches_prefix_boundary(prefix, &v.version))
-            };
-            let matching = tools
-                .iter()
-                .filter(|v| version_matches(v) && &v.options == request_options)
-                .collect_vec();
-            if let Some(found) = select_unbound_lockfile_tool(matching, backend, selection_options)?
-            {
-                trace!(
-                    "[{short}@{specifier}] found legacy unbound {} in versioned lockfile",
-                    found.version
-                );
-                return Ok(Some(found.clone()));
-            }
-            if legacy_options_fallback && !request_options.is_empty() {
+                // Mixed-format monorepo migration can temporarily place legacy
+                // entries without bindings in a version-1 file. Keep those pins
+                // reachable until a successful full format upgrade binds them.
+                let version_matches = |v: &LockfileTool| {
+                    v.specifiers.is_empty()
+                        && lockfile_version_matches(prefix, &v.version)
+                        && (!require_prefix_boundary
+                            || lockfile_version_matches_prefix_boundary(prefix, &v.version))
+                };
                 let matching = tools
                     .iter()
-                    .filter(|v| version_matches(v) && v.options.is_empty())
+                    .filter(|v| version_matches(v) && &v.options == request_options)
                     .collect_vec();
                 if let Some(found) =
                     select_unbound_lockfile_tool(matching, backend, selection_options)?
                 {
                     trace!(
-                        "[{short}@{specifier}] found legacy unbound {} without options in versioned lockfile",
+                        "[{short}@{specifier}] found legacy unbound {} in versioned lockfile",
+                        found.version
+                    );
+                    return Ok(Some(found.clone()));
+                }
+                if legacy_options_fallback && !request_options.is_empty() {
+                    let matching = tools
+                        .iter()
+                        .filter(|v| version_matches(v) && v.options.is_empty())
+                        .collect_vec();
+                    if let Some(found) =
+                        select_unbound_lockfile_tool(matching, backend, selection_options)?
+                    {
+                        trace!(
+                            "[{short}@{specifier}] found legacy unbound {} without options in versioned lockfile",
+                            found.version
+                        );
+                        return Ok(Some(lockfile_tool_with_request_options(
+                            found,
+                            request_options,
+                        )));
+                    }
+                }
+                // A stale backend's options must not hide a valid binding or legacy
+                // pin, but its error remains useful when none of those matches exist.
+                if let Some(err) = binding_error.or(legacy_error) {
+                    return Err(err);
+                }
+                return Ok(None);
+            }
+            let version_matches = |v: &LockfileTool| {
+                lockfile_version_matches(prefix, &v.version)
+                    && (!require_prefix_boundary
+                        || lockfile_version_matches_prefix_boundary(prefix, &v.version))
+            };
+            // Filter by version prefix and options
+            let mut matching: Vec<_> = tools
+                .iter()
+                .filter(|v| version_matches(v) && &v.options == request_options)
+                .collect();
+
+            // Only sort when prefix is "latest" and we have multiple matches
+            // This is expensive, so avoid it for specific version prefixes
+            if prefix == "latest" && matching.len() > 1 {
+                matching.sort_by(|a, b| cmp_lockfile_versions_newest_first(&a.version, &b.version));
+            }
+
+            if let Some(found) = matching.first() {
+                trace!("[{short}@{prefix}] found {} in lockfile", found.version);
+                return Ok(Some((*found).clone()));
+            }
+
+            if legacy_options_fallback && !request_options.is_empty() {
+                let mut legacy: Vec<_> = tools
+                    .iter()
+                    .filter(|v| version_matches(v) && v.options.is_empty())
+                    .collect();
+                if prefix == "latest" && legacy.len() > 1 {
+                    legacy
+                        .sort_by(|a, b| cmp_lockfile_versions_newest_first(&a.version, &b.version));
+                }
+                if let Some(found) = legacy.first() {
+                    trace!(
+                        "[{short}@{prefix}] found {} in lockfile without options, keeping the version pin and dropping its artifact data",
                         found.version
                     );
                     return Ok(Some(lockfile_tool_with_request_options(
@@ -4912,56 +4967,36 @@ pub(crate) fn get_locked_version(
                     )));
                 }
             }
-            // A stale backend's options must not hide a valid binding or legacy
-            // pin, but its error remains useful when none of those matches exist.
-            if let Some(err) = binding_error.or(legacy_error) {
-                return Err(err);
-            }
-            return Ok(None);
         }
-        let version_matches = |v: &LockfileTool| {
-            lockfile_version_matches(prefix, &v.version)
-                && (!require_prefix_boundary
-                    || lockfile_version_matches_prefix_boundary(prefix, &v.version))
-        };
-        // Filter by version prefix and options
-        let mut matching: Vec<_> = tools
-            .iter()
-            .filter(|v| version_matches(v) && &v.options == request_options)
-            .collect();
+        Ok(None)
+    };
 
-        // Only sort when prefix is "latest" and we have multiple matches
-        // This is expensive, so avoid it for specific version prefixes
-        if prefix == "latest" && matching.len() > 1 {
-            matching.sort_by(|a, b| cmp_lockfile_versions_newest_first(&a.version, &b.version));
-        }
-
-        if let Some(found) = matching.first() {
-            trace!("[{short}@{prefix}] found {} in lockfile", found.version);
-            return Ok(Some((*found).clone()));
-        }
-
-        if legacy_options_fallback && !request_options.is_empty() {
-            let mut legacy: Vec<_> = tools
-                .iter()
-                .filter(|v| version_matches(v) && v.options.is_empty())
-                .collect();
-            if prefix == "latest" && legacy.len() > 1 {
-                legacy.sort_by(|a, b| cmp_lockfile_versions_newest_first(&a.version, &b.version));
+    match lookup(lockfile.as_ref()) {
+        Err(err) if merged && err.downcast_ref::<AmbiguousRequestBinding>().is_some() => {
+            // Nested configs pinning different versions make the merged view
+            // ambiguous. The nearest lockfile that decides the request wins.
+            match nearest_lockfile_decision(&read_lockfiles_by_precedence(config), lookup)? {
+                Some(found) => {
+                    trace!("[{short}@{specifier}] ambiguous across lockfiles, using the nearest");
+                    Ok(Some(found))
+                }
+                None => Err(err),
             }
-            if let Some(found) = legacy.first() {
-                trace!(
-                    "[{short}@{prefix}] found {} in lockfile without options, keeping the version pin and dropping its artifact data",
-                    found.version
-                );
-                return Ok(Some(lockfile_tool_with_request_options(
-                    found,
-                    request_options,
-                )));
-            }
+        }
+        result => result,
+    }
+}
+
+/// The first lockfile, nearest config first, whose lookup decides the request.
+fn nearest_lockfile_decision<T>(
+    lockfiles: &[Lockfile],
+    mut lookup: impl FnMut(&Lockfile) -> Result<Option<T>>,
+) -> Result<Option<T>> {
+    for lockfile in lockfiles {
+        if let Some(found) = lookup(lockfile)? {
+            return Ok(Some(found));
         }
     }
-
     Ok(None)
 }
 
