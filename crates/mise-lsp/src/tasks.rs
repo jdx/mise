@@ -249,16 +249,20 @@ impl Index {
             self.add_file_tasks(dir, true);
         }
         for path in included.files {
-            if seen.contains(&path) {
-                continue;
-            }
-            if seen.len() >= MAX_FILES {
-                self.complete = false;
-                return;
-            }
-            seen.insert(path.clone());
-            if !self.read_files.insert(path.clone()) {
-                continue;
+            // Reading a file only for its references does not use it up: a config that is in use
+            // may include it later and define its tasks.
+            if define {
+                if seen.contains(&path) {
+                    continue;
+                }
+                if seen.len() >= MAX_FILES {
+                    self.complete = false;
+                    return;
+                }
+                seen.insert(path.clone());
+                if !self.read_files.insert(path.clone()) {
+                    continue;
+                }
             }
             let Some(text) = includes::read_capped(&path) else {
                 continue;
@@ -1752,6 +1756,29 @@ wait_for = [["build", "arg"]]
         assert!(index.referenced_elsewhere(Namespace::Task, "build"));
         // but it defines nothing
         assert!(!index.knows(Namespace::Task, "ci"));
+    }
+
+    #[test]
+    fn a_file_included_by_a_skipped_and_an_active_config_still_defines_tasks() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-shared-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("cfg")).unwrap();
+        std::fs::write(
+            root.join("cfg/config.dev.toml"),
+            "[task_config]\nincludes = [\"shared.toml\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("cfg/config.local.toml"),
+            "[task_config]\nincludes = [\"shared.toml\"]\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("cfg/shared.toml"), "[common]\nrun = \"x\"\n").unwrap();
+        let roots = Roots {
+            config_dirs: vec![root.join("cfg")],
+            ..Roots::default()
+        };
+        let index = Index::build("", Some(&root.join("proj/mise.toml")), &roots);
+        assert!(index.knows(Namespace::Task, "common"));
     }
 
     #[test]
