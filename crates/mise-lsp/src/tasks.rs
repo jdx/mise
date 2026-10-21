@@ -119,7 +119,7 @@ impl Index {
                     continue;
                 };
                 index.add(&parsed, Layout::Config, &origin_in(&config, &text));
-                index.note_references(&text, &parsed);
+                index.note_references(&text, &parsed, Layout::Config);
                 index.add_includes(&config, &parsed, &mut seen);
             }
         }
@@ -143,14 +143,14 @@ impl Index {
             };
             if let Ok(parsed) = doc::parse(&text) {
                 self.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
-                self.note_references(&text, &parsed);
+                self.note_references(&text, &parsed, Layout::TaskFile);
             }
         }
     }
 
     /// Remembers what a file other than the open one refers to.
-    fn note_references(&mut self, text: &str, parsed: &Parsed) {
-        for reference in references(text, parsed) {
+    fn note_references(&mut self, text: &str, parsed: &Parsed, layout: Layout) {
+        for reference in references_in(text, parsed, layout) {
             self.disk_references
                 .insert((reference.namespace, reference.name));
         }
@@ -364,16 +364,6 @@ pub(crate) fn reference_kind(path: &[String]) -> Option<Namespace> {
     }
 }
 
-/// Whether the path is an argument in `depends = [["name", "arg"]]`, as the completion lexer
-/// sees it: it writes `0` for every element, so the argument looks like the name. Nothing is
-/// offered there.
-pub(crate) fn is_dependency_argument_slot(path: &[String]) -> bool {
-    matches!(path, [_, _, field, i, last]
-        if matches!(field.as_str(), "depends" | "depends_post" | "wait_for")
-            && is_index(i)
-            && last == "0")
-}
-
 /// A place in the document that names a task or a template.
 #[derive(Debug, Clone)]
 pub(crate) struct Reference {
@@ -408,10 +398,19 @@ fn name_of(value: &str) -> Option<(&str, usize)> {
 }
 
 pub(crate) fn references(text: &str, parsed: &Parsed) -> Vec<Reference> {
+    references_in(text, parsed, Layout::Config)
+}
+
+/// The references in a document laid out as `layout`: in a task file each top-level table is a
+/// task, so its paths read as if they were below `tasks`.
+fn references_in(text: &str, parsed: &Parsed, layout: Layout) -> Vec<Reference> {
     let mut out = vec![];
     for entry in &parsed.entries {
-        let (Some(namespace), Some(span)) = (reference_kind(&entry.path), entry.value.clone())
-        else {
+        let path = match layout {
+            Layout::Config => entry.path.clone(),
+            Layout::TaskFile => [&["tasks".to_string()][..], &entry.path].concat(),
+        };
+        let (Some(namespace), Some(span)) = (reference_kind(&path), entry.value.clone()) else {
             continue;
         };
         let Some(Value::String(value)) = value_at(&parsed.json, &entry.path) else {
@@ -815,6 +814,16 @@ wait_for = [["build", "arg"]]
             1,
             "{names:?}"
         );
+    }
+
+    #[test]
+    fn references_in_included_task_files_are_remembered() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-incl-refs-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("ci.toml"), "[ci]\ndepends = [\"build\"]\n").unwrap();
+        let text = "[task_config]\nincludes = [\"ci.toml\"]\n[tasks.build]\n";
+        let index = Index::build(text, Some(&root.join("mise.toml")));
+        assert!(index.referenced_elsewhere(Namespace::Task, "build"));
     }
 
     #[test]
