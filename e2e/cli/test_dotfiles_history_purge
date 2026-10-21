@@ -55,6 +55,15 @@ assert 'cat ~/.keep' 'keep3'
 # a second purge has nothing left to remove
 assert_contains 'mise bootstrap dotfiles history purge ~/.notes --yes 2>&1' 'no saved version holds'
 
+# the newest checkpoint may hold only the purged path
+echo tail >~/.tail
+assert_succeed 'mise bootstrap dotfiles track ~/.tail'
+echo tail2 >~/.tail
+assert_succeed 'mise bootstrap dotfiles save --description "tail only"'
+assert_succeed 'mise bootstrap dotfiles history purge ~/.tail --yes'
+assert_fail "git --git-dir=$repository cat-file -e HEAD:home/.tail"
+assert_succeed 'mise bootstrap dotfiles untrack ~/.tail'
+
 # history the origin already has is never rewritten
 origin="$PWD/origin.git"
 git init -q --bare -b main "$origin"

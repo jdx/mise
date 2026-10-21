@@ -251,11 +251,11 @@ pub fn purge(
         return Ok(outcome);
     }
 
-    let Some(Rewritten::Kept(new_head)) = walk.map.get(&head).or(None) else {
-        // every commit held only the path
+    // the newest checkpoint may itself be dropped; the branch then ends at
+    // its nearest surviving ancestor
+    let Some(new_head) = walk.remap(&head) else {
         bail!("the path is all this history holds; nothing would remain");
     };
-    let new_head = new_head.clone();
 
     if options.backup {
         let name = format!("{BACKUP_PREFIX}{}", store::now_rfc3339().replace(':', "-"));
