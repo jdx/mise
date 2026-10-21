@@ -16,6 +16,8 @@ import sys
 
 packages = json.loads(sys.argv[1])
 scripts = Path(sys.argv[2]).resolve()
+# Tests preset IS_WINDOWS to exercise the Windows branch anywhere.
+windows = globals().get("IS_WINDOWS", os.name == "nt")
 names = set()
 for package in packages:
     try:
@@ -24,11 +26,18 @@ for package in packages:
         # Requirements with inactive environment markers are part of the
         # portable lock but are intentionally absent from this environment.
         continue
-    names.update(
-        f"{entry.name}.exe" if os.name == "nt" else entry.name
-        for entry in distribution.entry_points
-        if entry.group in ("console_scripts", "gui_scripts")
-    )
+    for entry in distribution.entry_points:
+        if entry.group not in ("console_scripts", "gui_scripts"):
+            continue
+        if not windows:
+            names.add(entry.name)
+            continue
+        # uv drops a trailing ".py" from the entry point name before adding
+        # the executable suffix; pip keeps it. Take whichever launcher exists.
+        candidates = [f"{entry.name}.exe"]
+        if entry.name.endswith(".py"):
+            candidates.append(f"{entry.name[:-3]}.exe")
+        names.add(next((c for c in candidates if (scripts / c).is_file()), candidates[0]))
     names.update(
         path.name
         for file in distribution.files or []
@@ -858,6 +867,69 @@ fn validate_portable_urls(value: &toml::Value) -> Result<()> {
 mod tests {
     use super::*;
     use crate::toolset::ToolSource;
+
+    /// Runs `DISCOVER_SCRIPTS` as if on Windows against a fake distribution
+    /// whose entry points are `entry_points` and whose `Scripts` directory holds
+    /// `launchers`. Returns `None` when no system Python is available.
+    fn windows_discovery(entry_points: &[&str], launchers: &[&str]) -> Option<Vec<String>> {
+        let python = which::which(if cfg!(windows) {
+            "python.exe"
+        } else {
+            "python3"
+        })
+        .ok()?;
+        let temp = tempfile::tempdir().unwrap();
+        let site = temp.path().join("site");
+        let scripts = temp.path().join("Scripts");
+        let dist_info = site.join("demo-1.0.dist-info");
+        crate::file::create_dir_all(&dist_info).unwrap();
+        crate::file::create_dir_all(&scripts).unwrap();
+        crate::file::write(
+            dist_info.join("METADATA"),
+            "Metadata-Version: 2.1\nName: demo\nVersion: 1.0\n",
+        )
+        .unwrap();
+        let entries: String = entry_points
+            .iter()
+            .map(|name| format!("{name} = demo:main\n"))
+            .collect();
+        crate::file::write(
+            dist_info.join("entry_points.txt"),
+            format!("[console_scripts]\n{entries}"),
+        )
+        .unwrap();
+        for launcher in launchers {
+            crate::file::write(scripts.join(launcher), "").unwrap();
+        }
+        let wrapper = format!(
+            "import sys\nsys.path.insert(0, sys.argv[3])\nsys.argv = sys.argv[:3]\nexec({DISCOVER_SCRIPTS:?}, {{'IS_WINDOWS': True}})\n"
+        );
+        let output = std::process::Command::new(python)
+            .args(["-c", &wrapper, "[\"demo\"]"])
+            .arg(&scripts)
+            .arg(&site)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        Some(serde_json::from_slice(&output.stdout).unwrap())
+    }
+
+    #[test]
+    fn windows_discovery_finds_the_launcher_that_exists() {
+        for (launchers, expected) in [
+            (&["demo-diff.exe"][..], "demo-diff.exe"),
+            (&["demo-diff.py.exe"][..], "demo-diff.py.exe"),
+        ] {
+            let Some(names) = windows_discovery(&["demo-diff.py"], launchers) else {
+                return;
+            };
+            assert_eq!(names, [expected]);
+        }
+        let Some(names) = windows_discovery(&["demo"], &["demo.exe"]) else {
+            return;
+        };
+        assert_eq!(names, ["demo.exe"]);
+    }
 
     #[test]
     fn system_environment_discovery_needs_no_interpreter_and_matches_graph() {
