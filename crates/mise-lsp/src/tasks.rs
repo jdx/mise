@@ -1018,9 +1018,8 @@ wait_for = [["build", "arg"]]
 
     #[test]
     fn what_the_index_cannot_see_is_not_called_unknown() {
-        for text in ["[task_config]\ndir = \"scripts\"\n[tasks.a]\ndepends = [\"x\"]\n"] {
-            assert!(problems(text).is_empty(), "{text}");
-        }
+        let text = "[task_config]\ndir = \"scripts\"\n[tasks.a]\ndepends = [\"x\"]\n";
+        assert!(problems(text).is_empty());
         let root = std::env::temp_dir().join(format!("mise-lsp-unseen-{}", std::process::id()));
         std::fs::create_dir_all(root.join("sub")).unwrap();
         std::fs::write(
