@@ -2307,7 +2307,7 @@ fn portable_path(target: &Path) -> Option<String> {
 /// The tracked paths declared by environment config files in the global
 /// config directory whose environment is not selected here. Best effort: a
 /// file that cannot be read or parsed declares nothing.
-fn unselected_declarations() -> BTreeSet<String> {
+pub(crate) fn unselected_declarations() -> BTreeSet<String> {
     let selected = select::active_environments();
     let mut paths = BTreeSet::new();
     let Ok(entries) = std::fs::read_dir(global_config_dir()) else {

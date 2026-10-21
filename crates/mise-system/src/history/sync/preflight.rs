@@ -108,6 +108,7 @@ pub(super) fn prospective(
         ..Default::default()
     };
     declarations.add_requests(requests);
+    declarations.unselected = super::super::tracked::unselected_declarations();
     if let Some(invalid) = declarations.invalid.first() {
         bail!("{}: {}", invalid.path, invalid.reason);
     }
