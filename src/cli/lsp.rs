@@ -61,7 +61,15 @@ impl Lsp {
 fn registry_entries() -> Vec<mise_lsp::RegistryEntry> {
     REGISTRY
         .iter()
-        .filter(|(short, tool)| *short == tool.short && super::registry::filter_enabled(short))
+        .filter(|(short, tool)| {
+            // `enable_tools = ["rg"]` keeps `ripgrep` for its alias `rg`.
+            *short == tool.short
+                && (super::registry::filter_enabled(short)
+                    || tool
+                        .aliases
+                        .iter()
+                        .any(|a| super::registry::filter_enabled(a)))
+        })
         .filter_map(|(short, tool)| {
             let backends: Vec<String> = tool.backends().iter().map(|b| b.to_string()).collect();
             (!backends.is_empty()).then(|| mise_lsp::RegistryEntry {

@@ -138,7 +138,10 @@ fn key_items(
             tools
                 .offered()
                 .filter(|tool| {
-                    tool.name.to_lowercase().starts_with(&needle) && !existing.contains(&tool.name)
+                    tool.name.to_lowercase().starts_with(&needle)
+                        && !existing
+                            .iter()
+                            .any(|e| tools.get(e).is_some_and(|t| t.name == tool.name))
                 })
                 .map(|tool| Item {
                     label: tool.name.clone(),
@@ -684,6 +687,11 @@ mod tests {
     }
 
     #[test]
+    fn a_tool_listed_by_an_alias_is_not_offered_again() {
+        assert!(tool_labels("[tools]\nnodejs = \"24\"\n|").is_empty());
+    }
+
+    #[test]
     fn tools_complete_from_the_registry() {
         assert_eq!(tool_labels("[tools]\n|"), ["node"]);
         assert_eq!(tool_labels("[tools]\nno|"), ["node"]);
@@ -692,7 +700,7 @@ mod tests {
         assert_eq!(tool_labels("[tools.no|"), ["node"]);
         assert_eq!(tool_labels("[tasks.build.tools]\n|"), ["node"]);
         assert_eq!(tool_labels("tools = { | }"), ["node"]);
-        // deprecated tools and tools already listed are not offered
+        // deprecated tools and tools already listed (under any of their names) are not offered
         assert!(tool_labels("[tools]\nnode = \"24\"\n|").is_empty());
         // only tool tables take tool names
         assert_eq!(tool_labels("[settings]\n|"), ["color", "mode"]);

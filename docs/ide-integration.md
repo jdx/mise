@@ -171,6 +171,8 @@ shows its description and the backends that install it. Aliases such as
 `nodejs` are recognized, deprecated tools are not offered, and the tools that
 `enable_tools` and `disable_tools` filter out are left out, as in `mise registry`.
 
+<!-- schema: skip -->
+
 ```toml
 [tools]
 no # completes to node; hover on `node` shows "Node.js runtime" and `core:node`
