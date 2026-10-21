@@ -100,7 +100,7 @@ fi
     // lints representative configs against the generated schema with Tombi's strict mode, which
     // flags objects the schema leaves open (--error-on-warnings: warnings exit 0 otherwise)
     ["tombi"] {
-        glob = List("schema/mise.json", "schema/tombi-fixtures/**/*.toml")
+        glob = List("schema/mise.json", "schema/tombi-fixtures/*.toml")
         check = new CommandSpec {
           command = "mise x tombi -- tombi lint --error-on-warnings schema/tombi-fixtures/*.toml"
           effect = "read"
