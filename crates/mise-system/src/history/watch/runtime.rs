@@ -2091,6 +2091,7 @@ mod tests {
             invalid: vec![],
             invalid_local: vec![],
             local: vec![],
+            unselected: Default::default(),
         };
         capture.health.watcher.last_reconcile = Some("previous success".into());
         capture.retry_at = Some(Instant::now() + Duration::from_secs(60));
@@ -2143,6 +2144,7 @@ mod tests {
             invalid: vec![],
             invalid_local: vec![],
             local: vec![],
+            unselected: Default::default(),
         };
         let state = State::from_tracked(tracked.clone()).unwrap();
         assert!(state.tracked_links.contains(&link));
@@ -2194,6 +2196,7 @@ mod tests {
             invalid: vec![],
             invalid_local: vec![],
             local: vec![],
+            unselected: Default::default(),
         };
         let state = state_of(tracked.clone(), root.join("mise"));
         assert!(state.may_cover_missing(&hypr.join("bindings.lua")));
