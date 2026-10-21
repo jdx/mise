@@ -406,21 +406,12 @@ To stop saving part of a tracked directory, such as its logs or caches,
 
 ### Undo an accidental track {#undo-an-accidental-track}
 
-`mise dot track` saves the first version right away, so a file with a secret
-is already in history by the time you notice. To check beforehand what a
-directory would add, preview it:
-
-```sh
-mise dot track --dry-run ~/.config/app
-```
-
-`untrack`, `rollback`, and `undo` do not remove a saved version: each one adds
-a checkpoint, so history only moves forward and the secret stays in older
-commits. To erase it, rotate the credential first, then follow
-[Remove plaintext from history](/dotfiles/encryption.html#remove-plaintext-from-history).
-The procedure is written for credentials you now want encrypted. For a file
-you want gone, untrack it and skip its `mise dot save` step. It resets the history branch to the last safe commit, so if you never connected an
-[origin](/dotfiles/sync.html), nothing else has seen the file.
+`track` saves immediately, and `untrack`, `rollback`, and `undo` only add
+checkpoints, so a tracked secret stays in older commits. Preview a directory
+first with `mise dot track --dry-run <path>`. To erase a saved version, rotate
+the credential, then follow
+[Remove plaintext from history](/dotfiles/encryption.html#remove-plaintext-from-history),
+skipping its `mise dot save` step if you no longer want the file tracked.
 
 ## Choose what history saves {#explicit-tracking-and-exclusions}
 
