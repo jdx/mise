@@ -7364,6 +7364,7 @@ dependencies = [
  "urlencoding",
  "versions",
  "walkdir",
+ "webpki-root-certs",
  "which",
  "windows-sys 0.61.2",
  "xx",

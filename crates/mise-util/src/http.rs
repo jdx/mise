@@ -900,25 +900,28 @@ impl Client {
         downgrade: Downgrade,
         read_timeout: Option<Duration>,
     ) -> Result<reqwest::Client> {
-        let builder = Self::_new().connect_timeout(timeout);
-        let builder = match read_timeout {
-            Some(read_timeout) => builder.read_timeout(read_timeout),
-            None => builder,
-        };
-        // Applied to every kind rather than per match arm, so no client can be
-        // added — or edited back — into existence without it. Downloads are
-        // checksum-verified where a checksum is known, but not every caller has
-        // one, and a silent downgrade is worth refusing on its own. Redirects
-        // are otherwise unchanged: the policy defers to the default for
-        // anything that is not a downgrade. The one exception is
-        // `HTTP_CHECKSUM_PINNED`, whose only caller verifies every byte.
-        let policy = match downgrade {
-            Downgrade::Refuse => https_downgrade_policy(kind.redirect_subject()),
-            #[cfg(unix)]
-            Downgrade::FollowChecksumPinned => reqwest::redirect::Policy::default(),
-        };
-        let builder = builder.redirect(policy);
-        Ok(builder.build()?)
+        // Built through `build_client` so an empty system trust store falls back
+        // to bundled roots; it may call this closure twice.
+        Ok(crate::tls::build_client(|| {
+            let builder = Self::_new().connect_timeout(timeout);
+            let builder = match read_timeout {
+                Some(read_timeout) => builder.read_timeout(read_timeout),
+                None => builder,
+            };
+            // Applied to every kind rather than per match arm, so no client can be
+            // added — or edited back — into existence without it. Downloads are
+            // checksum-verified where a checksum is known, but not every caller has
+            // one, and a silent downgrade is worth refusing on its own. Redirects
+            // are otherwise unchanged: the policy defers to the default for
+            // anything that is not a downgrade. The one exception is
+            // `HTTP_CHECKSUM_PINNED`, whose only caller verifies every byte.
+            let policy = match downgrade {
+                Downgrade::Refuse => https_downgrade_policy(kind.redirect_subject()),
+                #[cfg(unix)]
+                Downgrade::FollowChecksumPinned => reqwest::redirect::Policy::default(),
+            };
+            builder.redirect(policy)
+        })?)
     }
 
     #[doc(hidden)]

@@ -260,13 +260,15 @@ export SSL_CERT_FILE=/etc/ssl/corporate-bundle.pem
 mise install
 ```
 
-If the system store is empty, for example in a minimal container without the
-`ca-certificates` package, or `SSL_CERT_FILE` points at a missing file, mise
-fails with `No CA certificates were loaded from the system`. Install
-`ca-certificates` or fix the path.
-
-The npm backend also trusts a bundled copy of Mozilla's root certificates as a
-fallback. Package managers and plugins that mise runs read their own
+If no certificates can be loaded at all, for example in a minimal container
+without the `ca-certificates` package, or `SSL_CERT_FILE` points at a missing
+file, mise warns and trusts a bundled copy of Mozilla's root certificates for
+its downloads and `mise self-update`. Install `ca-certificates` or fix the path
+to use your system store again. Certificates that do load are never
+supplemented, so a bundle that loads still replaces the system store as
+described above. This fallback applies to Linux and other Unix systems except
+macOS, and only to the rustls release binaries. The npm backend always trusts
+the same bundled roots in addition to the system store. Package managers and plugins that mise runs read their own
 certificate settings, for example `NODE_EXTRA_CA_CERTS` for node or
 `REQUESTS_CA_BUNDLE` for Python's requests.
 

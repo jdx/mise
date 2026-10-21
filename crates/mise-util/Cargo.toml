@@ -119,6 +119,7 @@ url = "2"
 urlencoding = "2"
 versions = { version = "8", features = ["serde"] }
 walkdir = "2"
+webpki-root-certs = { version = "1", optional = true }
 which = "8"
 xx = { version = "2", default-features = false, features = ["glob"] }
 xz2 = "0.1"
@@ -165,9 +166,11 @@ rustls = [
   "gix/blocking-http-transport-reqwest-rust-tls",
   "mise-sigstore/rustls",
   "reqwest/rustls",
+  "dep:webpki-root-certs",
 ]
 rustls-native-roots = [
   "gix/blocking-http-transport-reqwest-rust-tls",
   "mise-sigstore/rustls",
   "reqwest/rustls",
+  "dep:webpki-root-certs",
 ]
