@@ -122,8 +122,9 @@ it:
 Only declared paths and their contents are managed. A `README.md` outside them
 stays in the repository, and a directory entry like the one above keeps it out
 with `exclude = ["*.md", ...]`. An entry's key is its _target_, so `"/README.md"` names a
-file at the filesystem root, not your repository's README. Your repository's Git history is never touched either;
-[dotfiles history](/dotfiles/history.html) is a separate store.
+file at the filesystem root, not your repository's README. `mise dot apply` does not touch your repository's Git history;
+[dotfiles history](/dotfiles/history.html) is a separate store, shared only if
+you connect an origin.
 
 For a GNU Stow layout, with one directory per application, use
 [groups](/dotfiles/groups.html). To start from files you already have,

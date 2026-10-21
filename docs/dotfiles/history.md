@@ -406,8 +406,8 @@ To stop saving part of a tracked directory, such as its logs or caches,
 
 ### Undo an accidental track {#undo-an-accidental-track}
 
-`track` saves immediately, and `untrack`, `rollback`, and `undo` only add
-checkpoints, so a tracked secret stays in older commits. Preview a directory
+`track` saves immediately. `untrack`, `rollback`, and `undo` change tracking or
+live files but never delete older commits, so a tracked secret stays in them. Preview a directory
 first with `mise dot track --dry-run <path>`. To erase a saved version, rotate
 the credential, then follow
 [Remove plaintext from history](/dotfiles/encryption.html#remove-plaintext-from-history).
