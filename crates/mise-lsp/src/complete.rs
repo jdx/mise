@@ -233,6 +233,11 @@ fn reference_items(
             .unwrap_or(after.len()),
         None => 0,
     };
+    // An environment assignment being edited is not a name, whether the cursor is before or
+    // after its `=`.
+    if tasks::is_env_assignment(&format!("{word}{}", &after[..end])) {
+        return vec![];
+    }
     let replace = offset - word.len()..offset + end;
     let candidates = names();
     let (list, noun) = match namespace {
@@ -760,6 +765,10 @@ mod tests {
         let tasks = |s: &str| task_labels(&format!("[tasks.lint]\n{s}"));
         assert!(tasks("depends = [\"build --b|\"]").is_empty());
         assert!(tasks("depends = [\"X=1 build b|\"]").is_empty());
+        // an assignment is not replaced by a name, with the cursor on either side of its `=`
+        assert!(tasks("depends = [\"X|=1 build\"]").is_empty());
+        assert!(tasks("depends = [\"X=1|\"]").is_empty());
+        assert!(tasks("depends = [\"A=b C|=d build\"]").is_empty());
     }
 
     #[test]
