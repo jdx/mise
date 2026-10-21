@@ -104,15 +104,15 @@ fn key_items(
     let mut parent = table.to_vec();
     parent.extend(segments);
     let raw = keypath::last_segment(typed);
-    let mut rest = after
-        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
-        .unwrap_or(after.len());
-    // A key typed inside quotes takes its closing quote with it: `"no|"` becomes `node`.
-    if let Some(quote) = raw.chars().next().filter(|c| matches!(c, '"' | '\''))
-        && after[rest..].starts_with(quote)
-    {
-        rest += 1;
-    }
+    let quote = raw.chars().next().filter(|c| matches!(c, '"' | '\''));
+    // A key typed in quotes goes through its closing quote, whatever is inside (`"llama.cpp"`).
+    // Otherwise the rest of the word goes.
+    let rest = match quote.and_then(|q| after.find(q).map(|i| i + 1)) {
+        Some(through_quote) => through_quote,
+        None => after
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+            .unwrap_or(after.len()),
+    };
     let replace = offset - raw.len()..offset + rest;
     let needle = partial.to_lowercase();
     let existing = existing_keys(text, &replace, &parent, false);
@@ -751,6 +751,27 @@ mod tests {
     #[test]
     fn an_unclosed_tool_header_does_not_offer_the_tools_already_there() {
         assert!(tool_labels("[tools.node]\nversion = \"24\"\n[tools.no|").is_empty());
+    }
+
+    #[test]
+    fn a_quoted_key_is_replaced_through_its_closing_quote_from_inside() {
+        let registry = Registry::new(vec![crate::RegistryEntry {
+            name: "llama.cpp".to_string(),
+            description: None,
+            aliases: vec![],
+            backends: vec![],
+            deprecated: None,
+        }]);
+        let text = "[tools]\n\"llam.a\" = \"latest\"\n";
+        let offset = text.find("llam").unwrap() + 4;
+        let item = complete(text, offset, &sample(), &registry, &Candidates::default).remove(0);
+        let applied = format!(
+            "{}{}{}",
+            &text[..item.replace.start],
+            item.insert,
+            &text[item.replace.end..]
+        );
+        assert_eq!(applied, "[tools]\n\"llama.cpp\" = \"latest\"\n");
     }
 
     #[test]
