@@ -326,7 +326,21 @@ fn pending_path(state_dir: &std::path::Path) -> std::path::PathBuf {
     store::store_dir_in(state_dir).join("purge-pending.json")
 }
 
-/// Finishes (or discards) a purge that was interrupted.
+/// Finishes a purge that was interrupted, for whoever opens the store next.
+pub(crate) fn recover_interrupted(store: &Store) {
+    let Some(repo) = store.repo() else {
+        return;
+    };
+    if !pending_path(store.state_dir()).exists() {
+        return;
+    }
+    let result = store.lock().and_then(|_lock| recover(store, repo));
+    if let Err(err) = result {
+        warn!("history: could not finish an interrupted purge: {err:#}");
+    }
+}
+
+/// Finishes (or discards) a purge that was interrupted. Holds the store lock.
 fn recover(store: &Store, repo: &HistoryRepo) -> Result<()> {
     let path = pending_path(store.state_dir());
     if !path.exists() {
@@ -416,6 +430,9 @@ impl Walk<'_> {
         let annotates_dropped = annotation_target(&message)
             .is_some_and(|target| matches!(self.map.get(&target), Some(Rewritten::Dropped { .. })));
         if parents.len() <= 1 && ((changed && only_the_path) || annotates_dropped) {
+            if changed && only_the_path {
+                self.removed.insert(commit.to_string());
+            }
             self.map
                 .insert(commit.to_string(), Rewritten::Dropped { nearest });
             return Ok(());
