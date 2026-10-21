@@ -168,10 +168,16 @@ pub(crate) fn task_include_files(config: &Path, includes: &[String]) -> IncludeF
                 if !out.dirs.contains(&path) {
                     out.dirs.push(path);
                 }
-            } else if path.extension().is_some_and(|ext| ext == "toml")
-                && !out.files.contains(&path)
+            } else if path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"))
             {
-                out.files.push(path);
+                if !out.files.contains(&path) {
+                    out.files.push(path);
+                }
+            } else if path.is_file() {
+                // a script named outright is a task this does not read
+                out.skipped = true;
             }
         }
     }
@@ -202,7 +208,9 @@ fn toml_files_below(dir: &Path, depth: usize, budget: &mut usize, out: &mut Incl
                 out.skipped = true;
             }
         } else if kind.is_file()
-            && path.extension().is_some_and(|ext| ext == "toml")
+            && path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"))
             && !is_standard_config(&slashes(&path.to_string_lossy(), cfg!(windows)))
             && !out.files.contains(&path)
         {
@@ -417,6 +425,8 @@ mod tests {
         assert!(skipped("tasks/*.toml"));
         assert!(skipped("a"), "a directory deeper than the walk goes");
         assert!(!skipped("a/b/c/d/e"));
+        std::fs::write(root.join("script.sh"), "").unwrap();
+        assert!(skipped("script.sh"), "a script named outright is not read");
     }
 
     #[test]
