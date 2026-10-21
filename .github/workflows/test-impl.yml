@@ -437,7 +437,7 @@ jobs:
           shared-key: windows-unit
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
       - name: cargo test
-        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        uses: jdx/workflows/retry@7e4ea6cf326e2b3bb4335f733381af531aaa699d # v1.2.1
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30
@@ -474,7 +474,7 @@ jobs:
       # about once in 120 runs with a transient "directory name is invalid" (os error 267).
       # Two 17-minute attempts plus the wait fit inside the job's 40-minute limit.
       - name: Run Clippy on Windows
-        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        uses: jdx/workflows/retry@7e4ea6cf326e2b3bb4335f733381af531aaa699d # v1.2.1
         with:
           timeout_minutes: 17
           retry_wait_seconds: 30
@@ -521,11 +521,12 @@ jobs:
       - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - uses: ./.github/actions/mise-tools
       - name: e2e
-        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        uses: jdx/workflows/retry@7e4ea6cf326e2b3bb4335f733381af531aaa699d # v1.2.1
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
+          shell: pwsh
           command: pwsh e2e-win\run.ps1
 
   test-ci:

@@ -163,7 +163,7 @@ jobs:
           git config --global user.email "${{ env.MAINTAINER_EMAIL }}"
 
       - name: Import GPG key
-        uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
+        uses: jdx/workflows/gpg-import@7e4ea6cf326e2b3bb4335f733381af531aaa699d # v1.2.1
         with:
           gpg_private_key: ${{ secrets.MISE_GPG_KEY }}
           git_user_signingkey: true
