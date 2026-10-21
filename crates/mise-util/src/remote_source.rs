@@ -105,10 +105,16 @@ fn parse_git_with(regex: &Regex, file: &str) -> Option<RemoteGitSource> {
     {
         return None;
     }
+    let git_ref = captures.name("ref").map(|m| m.as_str());
+    if let Some(git_ref) = git_ref {
+        if git_ref.is_empty() || git_ref.starts_with('-') || git_ref == "HEAD" {
+            return None;
+        }
+    }
     Some(RemoteGitSource {
         url: captures.name("url").unwrap().as_str().to_string(),
         path: path.to_string(),
-        git_ref: captures.name("ref").map(|m| m.as_str().to_string()),
+        git_ref: git_ref.map(str::to_string),
     })
 }
 
@@ -239,6 +245,26 @@ mod tests {
         );
         assert!(
             RemoteSource::parse_git("git::https://myserver.com/example.git//C:dir/file").is_none()
+        );
+    }
+
+    #[test]
+    fn rejects_git_sources_with_unsafe_refs() {
+        assert!(
+            RemoteSource::parse_git("git::https://myserver.com/example.git//plugin?ref=--upload-pack=x")
+                .is_none()
+        );
+        assert!(
+            RemoteSource::parse_git("git::https://myserver.com/example.git//plugin?ref=-o")
+                .is_none()
+        );
+        assert!(
+            RemoteSource::parse_git("git::https://myserver.com/example.git//plugin?ref=HEAD")
+                .is_none()
+        );
+        assert!(
+            RemoteSource::parse_git("git::ssh://git@myserver.com/example.git//plugin?ref=--output=/tmp/x")
+                .is_none()
         );
     }
 
