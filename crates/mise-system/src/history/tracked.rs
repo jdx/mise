@@ -2337,6 +2337,10 @@ pub(crate) fn unselected_declarations() -> BTreeSet<String> {
         for (target, value) in dotfiles {
             let tracked = value.as_table().is_some_and(|table| {
                 table.get("mode").and_then(|mode| mode.as_str()) == Some("track")
+                    && table
+                        .get("enabled")
+                        .and_then(|enabled| enabled.as_bool())
+                        .unwrap_or(true)
             });
             if tracked && let Some(path) = portable_path(&normalize_target(Path::new(target))) {
                 paths.insert(path);

@@ -151,6 +151,7 @@ pub(crate) fn resolve(
     resolved.declarations = Some(current.clone());
     resolved.disabled = tracked.disabled.clone();
     resolved.local = tracked.local.clone();
+    resolved.unselected = tracked.unselected.clone();
     resolved.keep_local_out();
     Ok(resolved)
 }
@@ -297,13 +298,23 @@ pub(crate) fn confirm(state_dir: &Path, repo: &HistoryRepo, tracked: &TrackedSet
     if let Some(declarations) = &tracked.declarations
         && let Some(head) = repo.ref_oid(HistoryRepo::HISTORY_REF)?
     {
-        super::store::write_json(
-            &cache_path(state_dir),
-            &Observation {
-                head,
-                declarations: declarations.clone(),
-            },
-        )?;
+        let mut declarations = declarations.clone();
+        // an entry kept because an unselected environment still declares it
+        // stays observed, so deleting that declaration later is a removal
+        if !tracked.unselected.is_empty()
+            && let Ok(bytes) = std::fs::read(cache_path(state_dir))
+            && let Ok(old) = serde_json::from_slice::<Observation>(&bytes)
+        {
+            for entry in old.declarations.enrollment {
+                if tracked.unselected.contains(&entry.path)
+                    && !declarations.enrollment.iter().any(|e| e.path == entry.path)
+                {
+                    declarations.enrollment.push(entry);
+                }
+            }
+            declarations.enrollment.sort_by(|a, b| a.path.cmp(&b.path));
+        }
+        super::store::write_json(&cache_path(state_dir), &Observation { head, declarations })?;
     }
     Ok(())
 }
