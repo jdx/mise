@@ -187,7 +187,8 @@ fn value_items(
 ) -> Vec<Item> {
     let raw = typed.trim_start();
     let quoted = raw.strip_prefix('"');
-    let reference = tasks::reference_kind(path);
+    let reference =
+        tasks::reference_kind(path).filter(|_| !tasks::is_dependency_argument_slot(path));
     // The rest of the value under the cursor goes too: up to the closing quote in a string
     // (up to the arguments, in a task reference), else the rest of the word.
     let rest = match quoted {
@@ -737,6 +738,14 @@ mod tests {
         // not a place that names a task
         assert!(tasks("run = \"|").is_empty());
         assert!(tasks("description = \"|").is_empty());
+    }
+
+    #[test]
+    fn arguments_are_not_task_names() {
+        assert_eq!(
+            task_labels("[tasks.lint]\ndepends = [[\"build\", \"te|\"]]"),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
