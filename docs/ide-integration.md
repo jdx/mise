@@ -155,7 +155,8 @@ depends = ["bu"] # completes to "build"; hover on "build" shows the description 
   arguments after a name (`"build --release"`), including ones that start with
   environment assignments (`"PROFILE=release build"`). The server does not edit
   other files, so a rename is refused when another config or include file also
-  refers to the task. A task defined in another file is not renamed from here,
+  refers to the task, or when some config or include file could not be read (a
+  glob or remote include, or more files than the server reads). A task defined in another file is not renamed from here,
   and neither is an alias. A rename that would leave the file meaning something
   else, such as one that meets a spelling the server does not follow, is
   refused instead of half done.

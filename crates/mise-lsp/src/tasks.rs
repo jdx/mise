@@ -92,6 +92,9 @@ pub(crate) struct Index {
     read_files: HashSet<PathBuf>,
     /// The files read only for what they refer to, each once.
     reference_reads: HashSet<PathBuf>,
+    /// Whether some config or include file that may name a task was not read, so what refers to a
+    /// task is not known for sure.
+    pub references_cut_short: bool,
 }
 
 /// Where else configs and tasks live: the user's and the system's.
@@ -145,6 +148,7 @@ impl Index {
             envs: roots.envs.clone(),
             read_files: HashSet::new(),
             reference_reads: HashSet::new(),
+            references_cut_short: false,
         };
         let mut seen: HashSet<PathBuf> = HashSet::new();
         if let Ok(parsed) = doc::parse(open) {
@@ -194,6 +198,7 @@ impl Index {
             if seen.len() >= MAX_FILES {
                 // a config past the limit is not read
                 self.complete = false;
+                self.references_cut_short = true;
                 return;
             }
             seen.insert(config.clone());
@@ -247,6 +252,8 @@ impl Index {
             .collect();
         let included = includes::task_include_files(config, &listed);
         self.complete &= !included.skipped;
+        // a glob, a remote include or a walk that ran out leaves files this did not read
+        self.references_cut_short |= included.skipped;
         for dir in included.dirs.iter().filter(|_| define) {
             // an included directory may be a whole project: only its executables are tasks
             self.add_file_tasks(dir, true);
@@ -260,6 +267,7 @@ impl Index {
                 }
                 if seen.len() >= MAX_FILES {
                     self.complete = false;
+                    self.references_cut_short = true;
                     return;
                 }
                 seen.insert(path.clone());
@@ -273,6 +281,7 @@ impl Index {
                 }
                 if seen.len() + self.reference_reads.len() >= MAX_FILES {
                     self.complete = false;
+                    self.references_cut_short = true;
                     return;
                 }
                 self.reference_reads.insert(path.clone());
@@ -1769,6 +1778,28 @@ wait_for = [["build", "arg"]]
         assert!(index.referenced_elsewhere(Namespace::Task, "build"));
         // but it defines nothing
         assert!(!index.knows(Namespace::Task, "ci"));
+    }
+
+    #[test]
+    fn hitting_the_file_limit_leaves_the_references_unknown() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-cut-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("cfg/tasks")).unwrap();
+        std::fs::write(
+            root.join("cfg/config.dev.toml"),
+            "[task_config]\nincludes = [\"tasks\"]\n",
+        )
+        .unwrap();
+        for i in 0..MAX_FILES + 5 {
+            std::fs::write(root.join(format!("cfg/tasks/t{i}.toml")), "[a]\n").unwrap();
+        }
+        let roots = Roots {
+            config_dirs: vec![root.join("cfg")],
+            ..Roots::default()
+        };
+        let index = Index::build("", Some(&root.join("proj/mise.toml")), &roots);
+        assert!(index.references_cut_short);
+        let calm = Index::build("", None, &Roots::default());
+        assert!(!calm.references_cut_short);
     }
 
     #[test]
