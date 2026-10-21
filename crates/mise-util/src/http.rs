@@ -974,12 +974,13 @@ impl Client {
         let client = self
             .manual_redirects
             .get_or_init(|| {
-                Self::_new()
-                    .read_timeout(self.timeout)
-                    .connect_timeout(self.timeout)
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .map_err(|err| format!("{err:#}"))
+                crate::tls::build_client(|| {
+                    Self::_new()
+                        .read_timeout(self.timeout)
+                        .connect_timeout(self.timeout)
+                        .redirect(reqwest::redirect::Policy::none())
+                })
+                .map_err(|err| format!("{err:#}"))
             })
             .as_ref()
             .map_err(|err| {
