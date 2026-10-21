@@ -195,13 +195,21 @@ impl Index {
             }
             seen.insert(config.clone());
             // `mise.production.toml` only loads for the environment `production`; which are in
-            // use is not known for sure here, so a config of another one leaves names unknown.
-            if config
-                .file_name()
-                .and_then(|n| env_of(&n.to_string_lossy()))
-                .is_some_and(|env| !self.envs.contains(&env))
-            {
+            // use is not known for sure here, so a config of another one defines nothing and
+            // leaves names unknown. What it refers to still counts for a rename. The files of
+            // `conf.d` are fragments, not environments.
+            let other_env = !config.components().any(|c| c.as_os_str() == "conf.d")
+                && config
+                    .file_name()
+                    .and_then(|n| env_of(&n.to_string_lossy()))
+                    .is_some_and(|env| !self.envs.contains(&env));
+            if other_env {
                 self.complete = false;
+                if let Some(text) = includes::read_capped(&config)
+                    && let Ok(parsed) = doc::parse(&text)
+                {
+                    self.note_references(&text, &parsed, Layout::Config);
+                }
                 continue;
             }
             let Some(text) = includes::read_capped(&config) else {
@@ -835,7 +843,10 @@ fn env_of(file_name: &str) -> Option<String> {
     let stem = stem.strip_suffix(".toml")?;
     let segments: Vec<&str> = stem.split('.').collect();
     match segments.as_slice() {
-        ["mise" | "config", env] if *env != "local" => Some(env.to_string()),
+        // `mise.tasks.toml` is a file of tasks, not an environment
+        ["mise" | "config", env] if !matches!(*env, "local" | "task" | "tasks") => {
+            Some(env.to_string())
+        }
         ["mise" | "config", env, "local"] => Some(env.to_string()),
         _ => None,
     }
@@ -1673,6 +1684,7 @@ wait_for = [["build", "arg"]]
         assert_eq!(env_of(".mise.dev.local.toml").as_deref(), Some("dev"));
         assert_eq!(env_of("mise.toml"), None);
         assert_eq!(env_of("mise.local.toml"), None);
+        assert_eq!(env_of("mise.tasks.toml"), None);
         assert_eq!(env_of("config.toml"), None);
         let root = std::env::temp_dir().join(format!("mise-lsp-envsel-{}", std::process::id()));
         std::fs::create_dir_all(root.join("proj")).unwrap();
@@ -1691,6 +1703,41 @@ wait_for = [["build", "arg"]]
         };
         let index = Index::build("", Some(&file), &roots);
         assert!(index.knows(Namespace::Task, "deploy"));
+        assert!(index.complete);
+    }
+
+    #[test]
+    fn what_a_skipped_environment_config_refers_to_still_blocks_a_rename() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-envref-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("proj")).unwrap();
+        std::fs::write(
+            root.join("mise.dev.toml"),
+            "[tasks.test]\ndepends = [\"build\"]\n",
+        )
+        .unwrap();
+        let index = Index::build(
+            "[tasks.build]\n",
+            Some(&root.join("proj/mise.toml")),
+            &Roots::default(),
+        );
+        assert!(index.referenced_elsewhere(Namespace::Task, "build"));
+    }
+
+    #[test]
+    fn conf_d_fragments_are_not_environments() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-fragment-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("cfg/conf.d")).unwrap();
+        std::fs::write(
+            root.join("cfg/conf.d/mise.tools.toml"),
+            "[tasks.frag]\nrun = \"x\"\n",
+        )
+        .unwrap();
+        let roots = Roots {
+            config_dirs: vec![root.join("cfg")],
+            ..Roots::default()
+        };
+        let index = Index::build("", Some(&root.join("proj/mise.toml")), &roots);
+        assert!(index.knows(Namespace::Task, "frag"));
         assert!(index.complete);
     }
 
