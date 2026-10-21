@@ -21,7 +21,7 @@ use crate::text::LineIndex;
 /// More files than this are not read for tasks.
 const MAX_FILES: usize = 200;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Namespace {
     Task,
     Template,
@@ -71,6 +71,8 @@ pub(crate) struct Definition {
 pub(crate) struct Index {
     pub tasks: Vec<Definition>,
     pub templates: Vec<Definition>,
+    /// The names that configs and include files other than the open document refer to.
+    disk_references: HashSet<(Namespace, String)>,
 }
 
 /// A name offered where a task or template is expected.
@@ -92,13 +94,18 @@ impl Index {
     /// come first, so they win over a file that defines the same name.
     pub(crate) fn build(open: &str, file: Option<&Path>) -> Self {
         let mut index = Index::default();
+        let mut seen: HashSet<PathBuf> = HashSet::new();
         if let Ok(parsed) = doc::parse(open) {
             index.add(&parsed, Layout::Config, &|range| Origin::Open(range));
+            // The open document's own includes are read from its text, not from disk.
+            if let Some(file) = file {
+                seen.insert(file.to_path_buf());
+                index.add_includes(file, &parsed, &mut seen);
+            }
         }
         let Some(file) = file else {
             return index;
         };
-        let mut seen: HashSet<PathBuf> = HashSet::new();
         seen.insert(file.to_path_buf());
         for dir in file.ancestors().skip(1) {
             for config in includes::config_files(dir) {
@@ -112,26 +119,47 @@ impl Index {
                     continue;
                 };
                 index.add(&parsed, Layout::Config, &origin_in(&config, &text));
-                let listed: Vec<String> = parsed.json["task_config"]["includes"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|v| v.as_str().map(str::to_string))
-                    .collect();
-                for path in includes::task_include_files(&config, &listed) {
-                    if seen.len() >= MAX_FILES || !seen.insert(path.clone()) {
-                        continue;
-                    }
-                    let Some(text) = includes::read_capped(&path) else {
-                        continue;
-                    };
-                    if let Ok(parsed) = doc::parse(&text) {
-                        index.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
-                    }
-                }
+                index.note_references(&text, &parsed);
+                index.add_includes(&config, &parsed, &mut seen);
             }
         }
         index
+    }
+
+    /// The tasks of the TOML files `config` lists in `[task_config] includes`.
+    fn add_includes(&mut self, config: &Path, parsed: &Parsed, seen: &mut HashSet<PathBuf>) {
+        let listed: Vec<String> = parsed.json["task_config"]["includes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect();
+        for path in includes::task_include_files(config, &listed) {
+            if seen.len() >= MAX_FILES || !seen.insert(path.clone()) {
+                continue;
+            }
+            let Some(text) = includes::read_capped(&path) else {
+                continue;
+            };
+            if let Ok(parsed) = doc::parse(&text) {
+                self.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
+                self.note_references(&text, &parsed);
+            }
+        }
+    }
+
+    /// Remembers what a file other than the open one refers to.
+    fn note_references(&mut self, text: &str, parsed: &Parsed) {
+        for reference in references(text, parsed) {
+            self.disk_references
+                .insert((reference.namespace, reference.name));
+        }
+    }
+
+    /// Whether a config or include file besides the open document names the task.
+    pub(crate) fn referenced_elsewhere(&self, namespace: Namespace, name: &str) -> bool {
+        self.disk_references
+            .contains(&(namespace, name.to_string()))
     }
 
     fn add(&mut self, parsed: &Parsed, layout: Layout, origin: &dyn Fn(Range<usize>) -> Origin) {
@@ -336,6 +364,16 @@ pub(crate) fn reference_kind(path: &[String]) -> Option<Namespace> {
     }
 }
 
+/// Whether the path is an argument in `depends = [["name", "arg"]]`, as the completion lexer
+/// sees it: it writes `0` for every element, so the argument looks like the name. Nothing is
+/// offered there.
+pub(crate) fn is_dependency_argument_slot(path: &[String]) -> bool {
+    matches!(path, [_, _, field, i, last]
+        if matches!(field.as_str(), "depends" | "depends_post" | "wait_for")
+            && is_index(i)
+            && last == "0")
+}
+
 /// A place in the document that names a task or a template.
 #[derive(Debug, Clone)]
 pub(crate) struct Reference {
@@ -345,9 +383,28 @@ pub(crate) struct Reference {
     pub range: Range<usize>,
 }
 
-/// The first word of a reference string: a task is named with its arguments after it.
-fn name_of(value: &str) -> &str {
-    value.split_whitespace().next().unwrap_or_default()
+/// The task a reference string names and where the name starts in the string. A dependency may
+/// start with `KEY=value` words that set its environment, as in `"PROFILE=release build"`; the
+/// name is the first word after them, or the only word. `None` when an environment value is
+/// quoted, which this does not follow.
+fn name_of(value: &str) -> Option<(&str, usize)> {
+    let mut words = value
+        .split_whitespace()
+        .map(|word| (word, word.as_ptr() as usize - value.as_ptr() as usize))
+        .peekable();
+    while let Some((word, at)) = words.next() {
+        let is_env = word.split_once('=').is_some_and(|(key, _)| {
+            !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        });
+        if is_env && words.peek().is_some() {
+            if word.contains(['"', '\'', '\\']) {
+                return None;
+            }
+            continue;
+        }
+        return Some((word, at));
+    }
+    None
 }
 
 pub(crate) fn references(text: &str, parsed: &Parsed) -> Vec<Reference> {
@@ -360,7 +417,9 @@ pub(crate) fn references(text: &str, parsed: &Parsed) -> Vec<Reference> {
         let Some(Value::String(value)) = value_at(&parsed.json, &entry.path) else {
             continue;
         };
-        let name = name_of(value);
+        let Some((name, at)) = name_of(value) else {
+            continue;
+        };
         // Only a plain one-line string has a range that is the name itself; an escape or a
         // template makes the name something other than what the text spells.
         let Some(raw) = text.get(span.clone()) else {
@@ -374,10 +433,10 @@ pub(crate) fn references(text: &str, parsed: &Parsed) -> Vec<Reference> {
         let Some(content) = content else {
             continue;
         };
-        if name.is_empty() || name.contains("{{") || !content.trim_start().starts_with(name) {
+        if name.contains("{{") || !content.starts_with(&value[..at + name.len()]) {
             continue;
         }
-        let start = span.start + 1 + (content.len() - content.trim_start().len());
+        let start = span.start + 1 + at;
         out.push(Reference {
             namespace,
             name: name.to_string(),
@@ -598,15 +657,12 @@ fn renamed_json(
                 })
                 .collect(),
         ),
-        Value::String(s) if reference_kind(path) == Some(namespace) => {
-            let name = name_of(s);
-            if name == old {
-                let at = s.find(name).unwrap_or_default();
+        Value::String(s) if reference_kind(path) == Some(namespace) => match name_of(s) {
+            Some((name, at)) if name == old => {
                 Value::String(format!("{}{new}{}", &s[..at], &s[at + name.len()..]))
-            } else {
-                json.clone()
             }
-        }
+            _ => json.clone(),
+        },
         other => other.clone(),
     }
 }
@@ -708,6 +764,67 @@ wait_for = [["build", "arg"]]
         assert_eq!(tasks, ["mine", "root", "lint"]);
         assert!(matches!(index.tasks[2].origin, Origin::File { .. }));
         assert!(describe(&index.tasks[2]).contains("Defined in `more.toml`"));
+    }
+
+    #[test]
+    fn leading_environment_assignments_are_not_the_name() {
+        let text =
+            "[tasks.build]\n[tasks.a]\ndepends = [\"PROFILE=release build --x\", \"only=one\"]\n";
+        let found: Vec<_> = references(text, &parse(text))
+            .into_iter()
+            .map(|r| text[r.range].to_string())
+            .collect();
+        assert_eq!(found, ["build", "only=one"]);
+        let edits = rename(text, &parse(text), Namespace::Task, "build", "compile").unwrap();
+        assert_eq!(edits.len(), 2);
+        // a quoted environment value is not followed
+        let quoted = "[tasks.a]\ndepends = [\"X='a b' build\"]\n";
+        assert!(references(quoted, &parse(quoted)).is_empty());
+    }
+
+    #[test]
+    fn the_includes_of_the_open_document_are_read() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-open-incl-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("tasks.toml"), "[lint]\nrun = \"x\"\n").unwrap();
+        std::fs::write(root.join("mise.toml"), "").unwrap();
+        let text = "[task_config]\nincludes = [\"tasks.toml\"]\n[tasks.ci]\ndepends = [\"lint\"]\n";
+        let index = Index::build(text, Some(&root.join("mise.toml")));
+        assert!(index.find(Namespace::Task, "lint").is_some());
+    }
+
+    #[test]
+    fn a_directory_include_does_not_take_configs_for_task_files() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-dir-incl-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(
+            root.join("mise.toml"),
+            "[task_config]\nincludes = [\".\"]\n[tasks.root]\nrun = \"x\"\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("mise.local.toml"), "[tasks.local]\nrun = \"x\"\n").unwrap();
+        std::fs::write(root.join("sub/build.toml"), "[build]\nrun = \"x\"\n").unwrap();
+        let index = Index::build("", Some(&root.join("sub/mise.toml")));
+        let names: Vec<_> = index.tasks.iter().map(|d| d.name.as_str()).collect();
+        assert!(
+            names.contains(&"build") && names.contains(&"root"),
+            "{names:?}"
+        );
+        assert_eq!(
+            names.iter().filter(|n| **n == "local").count(),
+            1,
+            "{names:?}"
+        );
+    }
+
+    #[test]
+    fn other_files_references_are_remembered() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-elsewhere-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("mise.toml"), "[tasks.x]\ndepends = [\"build\"]\n").unwrap();
+        let index = Index::build("[tasks.build]\n", Some(&root.join("sub/mise.toml")));
+        assert!(index.referenced_elsewhere(Namespace::Task, "build"));
+        assert!(!index.referenced_elsewhere(Namespace::Task, "other"));
     }
 
     #[test]

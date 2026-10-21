@@ -141,6 +141,8 @@ pub(crate) fn include_bases(config: &Path) -> Vec<&Path> {
 /// path on disk is not read.
 pub(crate) fn task_include_files(config: &Path, includes: &[String]) -> Vec<PathBuf> {
     let mut out = vec![];
+    // One budget for everything an include walks, so a broad include (`.`) costs a bounded scan.
+    let mut budget = MAX_SCAN;
     for include in includes {
         if include.contains("::") || include.contains(['*', '?', '[']) {
             continue;
@@ -148,7 +150,7 @@ pub(crate) fn task_include_files(config: &Path, includes: &[String]) -> Vec<Path
         for base in include_bases(config) {
             let path = base.join(include);
             if path.is_dir() {
-                toml_files_below(&path, 0, &mut out);
+                toml_files_below(&path, 0, &mut budget, &mut out);
             } else if path.extension().is_some_and(|ext| ext == "toml") && !out.contains(&path) {
                 out.push(path);
             }
@@ -157,17 +159,33 @@ pub(crate) fn task_include_files(config: &Path, includes: &[String]) -> Vec<Path
     out
 }
 
-fn toml_files_below(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+/// Entries one `task_include_files` call looks at, in all the directories it walks.
+const MAX_SCAN: usize = 2000;
+
+/// The TOML files below `dir` that are task files: not the configs mise names itself, and not
+/// behind a symlink. Stops when `budget` entries have been looked at.
+fn toml_files_below(dir: &Path, depth: usize, budget: &mut usize, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
-    for entry in entries.flatten().take(MAX_DIR_ENTRIES) {
+    for entry in entries.flatten() {
+        if *budget == 0 {
+            return;
+        }
+        *budget -= 1;
         let path = entry.path();
-        if path.is_dir() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_dir() {
             if depth < 3 {
-                toml_files_below(&path, depth + 1, out);
+                toml_files_below(&path, depth + 1, budget, out);
             }
-        } else if path.extension().is_some_and(|ext| ext == "toml") && !out.contains(&path) {
+        } else if kind.is_file()
+            && path.extension().is_some_and(|ext| ext == "toml")
+            && !is_standard_config(&slashes(&path.to_string_lossy(), cfg!(windows)))
+            && !out.contains(&path)
+        {
             out.push(path);
         }
     }

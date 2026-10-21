@@ -536,6 +536,11 @@ impl Server {
         if new == old {
             return Ok(json!({"changes": {}}));
         }
+        if found.index.referenced_elsewhere(namespace, old) {
+            return Err(fail(format!(
+                "other files also refer to `{old}`; a rename here would leave them broken"
+            )));
+        }
         if found.index.find(namespace, new).is_some() {
             return Err(fail(format!(
                 "a {} named `{new}` already exists",
@@ -948,7 +953,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("mise-lsp-defs-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::write(dir.join("mise.toml"), "[tasks.lint]\nrun = \"x\"\n").unwrap();
-        let uri = format!("file://{}/sub/mise.toml", dir.display());
+        let uri = includes::path_uri(&dir.join("sub/mise.toml"));
         let text = "[tasks.a]\ndepends = [\"lint\"]\n";
         let replies = session(&[
             open(&uri, text),
@@ -956,10 +961,7 @@ mod tests {
                 "params": {"textDocument": {"uri": uri}, "position": {"line": 1, "character": 13}}}),
         ]);
         let location = &replies[1]["result"];
-        assert_eq!(
-            location["uri"],
-            format!("file://{}/mise.toml", dir.display())
-        );
+        assert_eq!(location["uri"], includes::path_uri(&dir.join("mise.toml")));
         assert_eq!(
             location["range"]["start"],
             json!({"line": 0, "character": 7})
@@ -1057,7 +1059,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("mise-lsp-rename-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::write(dir.join("mise.toml"), "[tasks.lint]\nrun = \"x\"\n").unwrap();
-        let uri = format!("file://{}/sub/mise.toml", dir.display());
+        let uri = includes::path_uri(&dir.join("sub/mise.toml"));
         let params = json!({"textDocument": {"uri": uri},
             "position": {"line": 1, "character": 13}, "newName": "style"});
         let replies = session(&[
