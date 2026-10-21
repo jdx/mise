@@ -346,17 +346,16 @@ fn pending_path(state_dir: &std::path::Path) -> std::path::PathBuf {
 }
 
 /// Finishes a purge that was interrupted, for whoever opens the store next.
-pub(crate) fn recover_interrupted(store: &Store) {
+pub(crate) fn recover_interrupted(store: &Store) -> Result<()> {
     let Some(repo) = store.repo() else {
-        return;
+        return Ok(());
     };
     if !pending_path(store.state_dir()).exists() {
-        return;
+        return Ok(());
     }
-    let result = store.lock().and_then(|_lock| recover(store, repo));
-    if let Err(err) = result {
-        warn!("history: could not finish an interrupted purge: {err:#}");
-    }
+    // a stale index would misname every checkpoint, so a failure is an error
+    let _lock = store.lock()?;
+    recover(store, repo).wrap_err("finishing an interrupted `mise dot history purge`")
 }
 
 /// Finishes (or discards) a purge that was interrupted. Holds the store lock.

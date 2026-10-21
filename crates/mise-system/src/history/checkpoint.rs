@@ -123,7 +123,7 @@ impl Store {
             unavailable,
             machine,
         };
-        super::purge::recover_interrupted(&store);
+        super::purge::recover_interrupted(&store)?;
         // the index is a cache of the repository: rebuild it when it is
         // missing but checkpoints exist
         if !store::index_exists_in(state_dir)
