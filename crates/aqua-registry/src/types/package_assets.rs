@@ -240,7 +240,7 @@ impl AquaPackage {
 
     pub(super) fn template_context(
         &self,
-        replacements: &HashMap<String, String>,
+        replacements: &BTreeMap<String, String>,
         v: &str,
         os: &str,
         arch: &str,

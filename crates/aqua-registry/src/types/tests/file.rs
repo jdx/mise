@@ -26,7 +26,7 @@ fn test_aqua_file_src_asset_without_ext_strips_zst() {
         repo_name: "codex".to_string(),
         asset: "codex-{{.Arch}}-{{.OS}}.exe.{{.Format}}".to_string(),
         format: "zst".to_string(),
-        replacements: HashMap::from([
+        replacements: BTreeMap::from([
             ("amd64".to_string(), "x86_64".to_string()),
             ("windows".to_string(), "pc-windows-msvc".to_string()),
         ]),

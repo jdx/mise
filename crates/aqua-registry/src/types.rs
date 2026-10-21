@@ -7,7 +7,7 @@ use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::de::{self, IgnoredAny, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::cmp::PartialEq;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use versions::Versioning;
 
@@ -74,7 +74,7 @@ pub struct AquaPackage {
     pub files: Vec<AquaFile>,
     pub vars: Vec<AquaVar>,
     #[serde(default, deserialize_with = "deserialize_string_map")]
-    pub replacements: HashMap<String, String>,
+    pub replacements: BTreeMap<String, String>,
     pub version_prefix: Option<String>,
     version_filter: Option<String>,
     #[serde(skip)]
@@ -98,7 +98,7 @@ pub struct AquaPackage {
     pub path: Option<String>,
     #[serde(skip)]
     #[rkyv(with = rkyv::with::Skip)]
-    var_values: HashMap<String, String>,
+    var_values: BTreeMap<String, String>,
 }
 
 /// Override configuration for specific OS/architecture combinations
@@ -270,7 +270,7 @@ pub struct AquaChecksum {
     pub minisign: Option<AquaMinisign>,
     pub github_artifact_attestations: Option<AquaGithubArtifactAttestations>,
     #[serde(default, deserialize_with = "deserialize_optional_string_map")]
-    replacements: Option<HashMap<String, String>>,
+    replacements: Option<BTreeMap<String, String>>,
     file_format: Option<String>,
     enabled: Option<bool>,
     asset: Option<String>,
@@ -343,7 +343,7 @@ where
 
 fn deserialize_string_map<'de, D>(
     deserializer: D,
-) -> std::result::Result<HashMap<String, String>, D::Error>
+) -> std::result::Result<BTreeMap<String, String>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -352,17 +352,17 @@ where
 
 fn deserialize_optional_string_map<'de, D>(
     deserializer: D,
-) -> std::result::Result<Option<HashMap<String, String>>, D::Error>
+) -> std::result::Result<Option<BTreeMap<String, String>>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let map = Option::<HashMap<ScalarString, ScalarString>>::deserialize(deserializer)?;
+    let map = Option::<BTreeMap<ScalarString, ScalarString>>::deserialize(deserializer)?;
     Ok(map.map(|map| map.into_iter().map(|(k, v)| (k.0, v.0)).collect()))
 }
 
 /// A YAML scalar as text: a string as written, a boolean or number printed.
 /// Registry keys and values such as `386: i686` are numbers to the parser.
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct ScalarString(String);
 
 impl<'de> Deserialize<'de> for ScalarString {

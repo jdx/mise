@@ -108,6 +108,24 @@ pub(super) fn prospective(
         ..Default::default()
     };
     declarations.add_requests(requests);
+    let mut overlay = std::collections::BTreeMap::new();
+    let selected = super::super::select::active_environments();
+    for (path, object) in &incoming {
+        if !super::super::tracked::is_unselected_env_config(path, &selected) {
+            continue;
+        }
+        let body = match object {
+            Some((mode, oid)) if mode == "100644" || mode == "100755" => {
+                // a body that is not UTF-8 declares nothing, like an
+                // unreadable file on disk, and still replaces the old one
+                String::from_utf8(repo.cat_object(oid)?).ok()
+            }
+            Some(_) => continue,
+            None => None,
+        };
+        overlay.insert(path.clone(), body);
+    }
+    declarations.unselected = super::super::tracked::unselected_declarations_with(&overlay);
     if let Some(invalid) = declarations.invalid.first() {
         bail!("{}: {}", invalid.path, invalid.reason);
     }
