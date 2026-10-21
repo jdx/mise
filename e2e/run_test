@@ -69,10 +69,20 @@ create_isolated_env() {
 
 remove_isolated_env() {
   if [[ ${MISE_E2E_INSIDE_DOCKER:-0} == 1 ]]; then
-    rm -rf "$TEST_ISOLATED_DIR"
+    rm_rf_retry "$TEST_ISOLATED_DIR"
   else
-    rm -rf "$TEST_ISOLATED_DIR" &
+    rm_rf_retry "$TEST_ISOLATED_DIR" &
   fi
+}
+
+# A straggling process from the test can still be writing into the tree while it
+# is removed, making rm fail with "Directory not empty". Retry a few times.
+rm_rf_retry() {
+  for _ in 1 2 3 4 5; do
+    rm -rf "$1" 2>/dev/null && return 0
+    sleep 1
+  done
+  rm -rf "$1"
 }
 
 within_isolated_env() {
