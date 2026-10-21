@@ -155,7 +155,14 @@ impl Index {
         let homes = file
             .ancestors()
             .skip(1)
-            .chain(roots.homes.iter().map(PathBuf::as_path));
+            // a root that is also an ancestor is walked once
+            .chain(
+                roots
+                    .homes
+                    .iter()
+                    .map(PathBuf::as_path)
+                    .filter(|root| !file.ancestors().skip(1).any(|a| a == *root)),
+            );
         for dir in homes {
             for sub in FILE_TASK_DIRS {
                 index.add_file_tasks(&dir.join(sub), false);
