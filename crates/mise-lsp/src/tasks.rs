@@ -279,7 +279,10 @@ impl Index {
                 let is_file = kind.is_file() || (kind.is_symlink() && path.is_file());
                 if kind.is_dir() || (kind.is_symlink() && path.is_dir()) {
                     if only && matches!(name.as_str(), ".git" | "node_modules" | "target") {
-                        // never holds tasks, and can be huge
+                        // Skipped, because they can be huge; only `.git` surely holds no tasks.
+                        if name != ".git" {
+                            index.complete = false;
+                        }
                     } else if kind.is_dir() && depth < 4 {
                         walk(&path, &format!("{task}:"), depth + 1, only, index);
                     } else {
@@ -292,6 +295,7 @@ impl Index {
                         && let Ok(parsed) = doc::parse(&text)
                     {
                         index.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
+                        index.note_references(&text, &parsed, Layout::TaskFile);
                     }
                 } else if is_file && (!only || is_executable(&path)) {
                     if let Some(stem) = Path::new(&name).file_stem() {
@@ -786,7 +790,7 @@ pub(crate) fn diagnose(text: &str, parsed: &Parsed, index: &Index) -> Vec<Diagno
 }
 
 /// Whether the file is one mise runs as a task: executable, or on a platform without an executable
-/// bit, starting with a `#!` line.
+/// bit, a script by extension or starting with a `#!` line.
 fn is_executable(path: &Path) -> bool {
     #[cfg(unix)]
     {
@@ -797,9 +801,16 @@ fn is_executable(path: &Path) -> bool {
     {
         use std::io::Read;
         let mut head = [0u8; 2];
-        std::fs::File::open(path)
-            .and_then(|mut f| f.read_exact(&mut head))
-            .is_ok_and(|()| &head == b"#!")
+        // the extensions the runner runs by default, or a `#!` line
+        let by_extension = path.extension().is_some_and(|ext| {
+            ["cmd", "bat", "ps1", "exe", "com"]
+                .iter()
+                .any(|known| ext.eq_ignore_ascii_case(known))
+        });
+        by_extension
+            || std::fs::File::open(path)
+                .and_then(|mut f| f.read_exact(&mut head))
+                .is_ok_and(|()| &head == b"#!")
     }
 }
 
@@ -1386,6 +1397,18 @@ wait_for = [["build", "arg"]]
         assert!(index.knows(Namespace::Task, "deploy"));
         assert!(!index.knows(Namespace::Task, "build"));
         assert!(!index.knows(Namespace::Task, "tool"));
+        // what was skipped could hold tasks, so nothing is reported as unknown
+        assert!(!index.complete);
+    }
+
+    #[test]
+    fn references_in_toml_files_of_included_directories_are_remembered() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-dirrefs-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("tasks")).unwrap();
+        std::fs::write(root.join("tasks/ci.toml"), "[ci]\ndepends = [\"build\"]\n").unwrap();
+        let text = "[task_config]\nincludes = [\"tasks\"]\n[tasks.build]\n";
+        let index = Index::build(text, Some(&root.join("mise.toml")), &Roots::default());
+        assert!(index.referenced_elsewhere(Namespace::Task, "build"));
     }
 
     #[test]

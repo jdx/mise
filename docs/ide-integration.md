@@ -194,7 +194,8 @@ Two diagnostics check task references, the way
   fix. Patterns (`lint:*`), monorepo references (`//app:build`, `:build`) and
   `{ task = "x", optional = true }` are skipped. File tasks (scripts in
   `mise-tasks/` and the other task directories, and the executable files in
-  directories that `includes` names) count as defined, by their path with or without the
+  directories that `includes` names; `node_modules` and `target` below them are
+  not scanned, which turns `unknown-task` off) count as defined, by their path with or without the
   extension, and by the `#MISE alias=` lines in their header. Patterns with
   `*`, `?`, `[` or `{` are skipped. The configs in the directories above the
   file and the user's and system's config (including `MISE_CONFIG_DIR` and
