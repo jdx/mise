@@ -119,6 +119,25 @@ it:
 "~" = { source = ".", mode = "symlink-each", exclude = ["mise.toml", "*.md", ".git"] }
 ```
 
+Only the paths you declare are managed. A `README.md`, scripts, or notes in the
+repository that no entry names stay in the repository: mise neither links nor
+copies them. An entry's key is its _target_, so `"/README.md" = {}` would try
+to write to the filesystem root; leave the file out, or use `exclude` as above
+when a directory entry would otherwise include it.
+
+### Use a repository you already have {#existing-repository}
+
+An existing dotfiles repository, with years of commits, needs no new branch or
+rewritten history. mise never writes to its Git history. Point `source` at the
+checkout and run `mise dot apply`. The repository stays the source of truth,
+and you commit to it with your usual Git workflow.
+
+[Dotfiles history](/dotfiles/history.html) is a separate store: a bare Git
+repository under mise's state directory that holds only the files you track
+with `mode = "track"`. You can leave it unused, track a few files that the
+repository does not deploy, or track a file that mise also deploys. Starting
+history does not touch your repository.
+
 For a GNU Stow layout, with one directory per application, use
 [groups](/dotfiles/groups.html). To start from files you already have,
 [`mise dot add`](/dotfiles/managed.html#capturing-changes) moves each one into
