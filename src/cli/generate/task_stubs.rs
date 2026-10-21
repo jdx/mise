@@ -704,7 +704,8 @@ fn validate_generated_stub_tree(path: &Path, launchers: &Launchers) -> Result<us
 /// stubs written before they ended in one are still ours, as are stubs a formatter has since given
 /// one, so neither blocks regenerating them.
 fn is_stub_output(existing: &str, generated: &str) -> bool {
-    existing.trim_end_matches('\n') == generated.trim_end_matches('\n')
+    existing.strip_suffix('\n').unwrap_or(existing)
+        == generated.strip_suffix('\n').unwrap_or(generated)
 }
 
 fn is_generated_task_stub(contents: &str) -> bool {
@@ -729,6 +730,8 @@ mod tests {
         assert!(is_stub_output(generated, generated));
         // Written by a mise that trimmed it off.
         assert!(is_stub_output(generated.trim_end(), generated));
+        // Only the one newline is ignored; a trailing blank line is a change like any other.
+        assert!(!is_stub_output(&format!("{generated}\n"), generated));
         // Anything else in the body is still someone else's file.
         assert!(!is_stub_output(
             "#!/bin/sh\nexec mise run yyy \"$@\"\n",
