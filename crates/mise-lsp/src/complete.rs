@@ -138,8 +138,7 @@ fn key_items(
             tools
                 .offered()
                 .filter(|tool| {
-                    tool.name.to_lowercase().starts_with(&needle)
-                        && !existing.iter().any(|e| *e == tool.name)
+                    tool.name.to_lowercase().starts_with(&needle) && !existing.contains(&tool.name)
                 })
                 .map(|tool| Item {
                     label: tool.name.clone(),
