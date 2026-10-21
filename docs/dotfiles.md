@@ -121,8 +121,8 @@ it:
 
 Only declared paths and their contents are managed. A `README.md` outside them
 stays in the repository, and a directory entry like the one above keeps it out
-with `exclude = ["*.md", ...]`. An entry's key is its _target_: `"/README.md" = {}` points at
-the filesystem root. Your repository's Git history is never touched either;
+with `exclude = ["*.md", ...]`. An entry's key is its _target_, so `"/README.md"` names a
+file at the filesystem root, not your repository's README. Your repository's Git history is never touched either;
 [dotfiles history](/dotfiles/history.html) is a separate store.
 
 For a GNU Stow layout, with one directory per application, use
