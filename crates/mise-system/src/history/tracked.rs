@@ -2308,13 +2308,38 @@ fn portable_path(target: &Path) -> Option<String> {
 /// config directory whose environment is not selected here. Best effort: a
 /// file that cannot be read or parsed declares nothing.
 pub(crate) fn unselected_declarations() -> BTreeSet<String> {
+    unselected_declarations_with(&BTreeMap::new())
+}
+
+/// As [`unselected_declarations`], with incoming file bodies laid over the
+/// directory: `Some` replaces or adds a file, `None` deletes it.
+pub(crate) fn unselected_declarations_with(
+    incoming: &BTreeMap<PathBuf, Option<String>>,
+) -> BTreeSet<String> {
     let selected = select::active_environments();
+    let mut files: BTreeMap<PathBuf, String> = BTreeMap::new();
+    if let Ok(entries) = std::fs::read_dir(global_config_dir()) {
+        for entry in entries.flatten() {
+            if let Ok(text) = std::fs::read_to_string(entry.path()) {
+                files.insert(entry.path(), text);
+            }
+        }
+    }
+    for (path, body) in incoming {
+        match body {
+            Some(body) => files.insert(path.clone(), body.clone()),
+            None => files.remove(path),
+        };
+    }
     let mut paths = BTreeSet::new();
-    let Ok(entries) = std::fs::read_dir(global_config_dir()) else {
-        return paths;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
+    for (path, text) in files {
+        if path.parent() != Some(global_config_dir().as_path()) {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
         let Some(env) = name
             .strip_prefix("config.")
             .or_else(|| name.strip_prefix("mise."))
@@ -2325,9 +2350,6 @@ pub(crate) fn unselected_declarations() -> BTreeSet<String> {
         if env == "local" || selected.iter().any(|active| active == env) {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(entry.path()) else {
-            continue;
-        };
         let Ok(doc) = text.parse::<toml::Table>() else {
             continue;
         };

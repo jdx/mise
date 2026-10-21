@@ -108,7 +108,18 @@ pub(super) fn prospective(
         ..Default::default()
     };
     declarations.add_requests(requests);
-    declarations.unselected = super::super::tracked::unselected_declarations();
+    let mut overlay = std::collections::BTreeMap::new();
+    for (path, object) in &incoming {
+        let body = match object {
+            Some((mode, oid)) if mode == "100644" || mode == "100755" => {
+                Some(String::from_utf8(repo.cat_object(oid)?)?)
+            }
+            Some(_) => continue,
+            None => None,
+        };
+        overlay.insert(path.clone(), body);
+    }
+    declarations.unselected = super::super::tracked::unselected_declarations_with(&overlay);
     if let Some(invalid) = declarations.invalid.first() {
         bail!("{}: {}", invalid.path, invalid.reason);
     }
