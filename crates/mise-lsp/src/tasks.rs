@@ -825,7 +825,7 @@ fn config_dir_files(dir: &Path) -> Vec<PathBuf> {
             is_toml(p)
                 && p.file_name().is_some_and(|n| {
                     let n = n.to_string_lossy();
-                    n.starts_with("config.") || n.starts_with("mise.") || n.starts_with(".mise.")
+                    n.starts_with("config.") || n.starts_with("mise.")
                 })
         }));
     }
@@ -1592,6 +1592,7 @@ wait_for = [["build", "arg"]]
         let root = std::env::temp_dir().join(format!("mise-lsp-confvar-{}", std::process::id()));
         std::fs::create_dir_all(root.join("cfg/conf.d/group")).unwrap();
         std::fs::write(root.join("cfg/mise.toml"), "[tasks.plain]\nrun = \"x\"\n").unwrap();
+        std::fs::write(root.join("cfg/.mise.toml"), "[tasks.dotted]\nrun = \"x\"\n").unwrap();
         std::fs::write(
             root.join("cfg/config.local.toml"),
             "[tasks.local]\nrun = \"x\"\n",
@@ -1614,6 +1615,8 @@ wait_for = [["build", "arg"]]
         let index = Index::build("", Some(&root.join("proj/mise.toml")), &roots);
         assert!(index.knows(Namespace::Task, "local"));
         assert!(index.knows(Namespace::Task, "plain"));
+        // a config directory does not load a dot-prefixed file
+        assert!(!index.knows(Namespace::Task, "dotted"));
         assert!(index.knows(Namespace::Task, "nested"));
         assert!(!index.knows(Namespace::Task, "helper"));
     }
