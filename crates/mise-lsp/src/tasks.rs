@@ -86,6 +86,8 @@ pub(crate) struct Index {
     pub complete: bool,
     /// Directory entries left to look at, for the scans of all the task directories.
     scan_budget: usize,
+    /// The task files already read, so one a directory and an `includes` entry both reach is read once.
+    read_files: HashSet<PathBuf>,
 }
 
 /// Where else configs and tasks live: the user's and the system's.
@@ -134,6 +136,7 @@ impl Index {
             file_tasks: HashSet::new(),
             complete: true,
             scan_budget: MAX_SCAN,
+            read_files: HashSet::new(),
         };
         let mut seen: HashSet<PathBuf> = HashSet::new();
         if let Ok(parsed) = doc::parse(open) {
@@ -223,6 +226,9 @@ impl Index {
                 return;
             }
             seen.insert(path.clone());
+            if !self.read_files.insert(path.clone()) {
+                continue;
+            }
             let Some(text) = includes::read_capped(&path) else {
                 continue;
             };
@@ -267,13 +273,24 @@ impl Index {
                 let Ok(kind) = entry.file_type() else {
                     continue;
                 };
-                if kind.is_dir() {
-                    if depth < 4 {
+                // A link to a file is a file task, as it is to the runner; one to a directory is
+                // not followed, so what it holds is unknown.
+                let is_file = kind.is_file() || (kind.is_symlink() && path.is_file());
+                if kind.is_dir() || (kind.is_symlink() && path.is_dir()) {
+                    if kind.is_dir() && depth < 4 {
                         walk(&path, &format!("{task}:"), depth + 1, index);
                     } else {
                         index.complete = false;
                     }
-                } else if kind.is_file() {
+                } else if is_file && path.extension().is_some_and(|ext| ext == "toml") {
+                    // a TOML file here holds task definitions, `[lint]` defining `lint`
+                    if index.read_files.insert(path.clone())
+                        && let Some(text) = includes::read_capped(&path)
+                        && let Ok(parsed) = doc::parse(&text)
+                    {
+                        index.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
+                    }
+                } else if is_file {
                     if let Some(stem) = Path::new(&name).file_stem() {
                         index
                             .file_tasks
@@ -836,7 +853,11 @@ fn cycles(found: &[Reference], index: &Index, out: &mut Vec<Diagnostic>) {
         let Some(target) = index.find(Namespace::Task, &reference.name) else {
             continue;
         };
-        if defined.contains(target.name.as_str()) && defined.contains(owner.as_str()) {
+        // The runner drops a task's dependency on itself, so it is not a cycle.
+        if target.name != *owner
+            && defined.contains(target.name.as_str())
+            && defined.contains(owner.as_str())
+        {
             edges
                 .entry(owner)
                 .or_default()
@@ -1293,6 +1314,37 @@ wait_for = [["build", "arg"]]
     }
 
     #[test]
+    fn toml_files_in_a_task_directory_define_tasks() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-tomldir-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("mise-tasks")).unwrap();
+        std::fs::write(root.join("mise-tasks/checks.toml"), "[lint]\nrun = \"x\"\n").unwrap();
+        let index = Index::build("", Some(&root.join("mise.toml")), &Roots::default());
+        assert!(index.find(Namespace::Task, "lint").is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_to_scripts_count_and_links_to_directories_hide_names() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-links-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("mise-tasks")).unwrap();
+        std::fs::create_dir_all(root.join("shared")).unwrap();
+        std::fs::write(root.join("shared/deploy.sh"), "").unwrap();
+        let _ = std::fs::remove_file(root.join("mise-tasks/deploy"));
+        std::os::unix::fs::symlink(
+            root.join("shared/deploy.sh"),
+            root.join("mise-tasks/deploy"),
+        )
+        .unwrap();
+        let index = Index::build("", Some(&root.join("mise.toml")), &Roots::default());
+        assert!(index.knows(Namespace::Task, "deploy"));
+        assert!(index.complete);
+        let _ = std::fs::remove_file(root.join("mise-tasks/more"));
+        std::os::unix::fs::symlink(root.join("shared"), root.join("mise-tasks/more")).unwrap();
+        let index = Index::build("", Some(&root.join("mise.toml")), &Roots::default());
+        assert!(!index.complete);
+    }
+
+    #[test]
     fn a_script_alias_is_a_name() {
         let root = std::env::temp_dir().join(format!("mise-lsp-alias-{}", std::process::id()));
         std::fs::create_dir_all(root.join(".mise/tasks")).unwrap();
@@ -1366,12 +1418,9 @@ wait_for = [["build", "arg"]]
     }
 
     #[test]
-    fn a_task_that_depends_on_itself_is_a_cycle() {
-        let text = "[tasks.a]\ndepends = [\"a\"]\n";
-        assert_eq!(
-            problems(text),
-            [("task-cycle", "dependency cycle: a -> a".to_string())]
-        );
+    fn a_task_that_depends_on_itself_is_not_a_cycle() {
+        let text = "[tasks.a]\ndepends = [\"a\"]\n[tasks.b]\nalias = \"bb\"\ndepends = [\"bb\"]\n";
+        assert!(problems(text).is_empty());
     }
 
     #[test]

@@ -179,7 +179,8 @@ Two diagnostics check task references, the way
   server scans (it looks at about 5000 entries in all), nothing is reported
   rather than guessing.
 - `task-cycle` (an error) marks each `depends` that is part of a dependency
-  cycle among the tasks the file defines, with the cycle in the message.
+  cycle among the tasks the file defines, with the cycle in the message. A task
+  that depends on itself is not reported, because mise ignores that.
 
 Files that `[task_config] includes` lists are tasks, not configs, so the server
 leaves them alone even when they are named like `mise.tasks.toml`.
