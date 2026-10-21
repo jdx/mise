@@ -150,7 +150,7 @@ impl Index {
             // The open document's own includes are read from its text, not from disk.
             if let Some(file) = file {
                 seen.insert(file.to_path_buf());
-                index.add_includes(file, &parsed, &mut seen);
+                index.add_includes(file, &parsed, &mut seen, true);
             }
         }
         let Some(file) = file else {
@@ -209,6 +209,7 @@ impl Index {
                     && let Ok(parsed) = doc::parse(&text)
                 {
                     self.note_references(&text, &parsed, Layout::Config);
+                    self.add_includes(&config, &parsed, seen, false);
                 }
                 continue;
             }
@@ -221,13 +222,21 @@ impl Index {
             self.add(&parsed, Layout::Config, &origin_in(&config, &text));
             self.complete &= parsed.json["task_config"].get("dir").is_none();
             self.note_references(&text, &parsed, Layout::Config);
-            self.add_includes(&config, &parsed, seen);
+            self.add_includes(&config, &parsed, seen, true);
         }
     }
 
     /// The tasks of the TOML files `config` lists in `[task_config] includes`, and the file
     /// tasks of the directories it lists.
-    fn add_includes(&mut self, config: &Path, parsed: &Parsed, seen: &mut HashSet<PathBuf>) {
+    /// With `define` false, the files are only read for what they refer to: the config they
+    /// belong to is for an environment that is not in use.
+    fn add_includes(
+        &mut self,
+        config: &Path,
+        parsed: &Parsed,
+        seen: &mut HashSet<PathBuf>,
+        define: bool,
+    ) {
         let listed: Vec<String> = parsed.json["task_config"]["includes"]
             .as_array()
             .into_iter()
@@ -236,7 +245,7 @@ impl Index {
             .collect();
         let included = includes::task_include_files(config, &listed);
         self.complete &= !included.skipped;
-        for dir in &included.dirs {
+        for dir in included.dirs.iter().filter(|_| define) {
             // an included directory may be a whole project: only its executables are tasks
             self.add_file_tasks(dir, true);
         }
@@ -256,7 +265,9 @@ impl Index {
                 continue;
             };
             if let Ok(parsed) = doc::parse(&text) {
-                self.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
+                if define {
+                    self.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
+                }
                 self.note_references(&text, &parsed, Layout::TaskFile);
             }
         }
@@ -1721,6 +1732,26 @@ wait_for = [["build", "arg"]]
             &Roots::default(),
         );
         assert!(index.referenced_elsewhere(Namespace::Task, "build"));
+    }
+
+    #[test]
+    fn what_a_skipped_environment_configs_includes_refer_to_blocks_a_rename_too() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-envinc-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("proj")).unwrap();
+        std::fs::write(
+            root.join("mise.dev.toml"),
+            "[task_config]\nincludes = [\"dev.tasks.toml\"]\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("dev.tasks.toml"), "[ci]\ndepends = [\"build\"]\n").unwrap();
+        let index = Index::build(
+            "[tasks.build]\n",
+            Some(&root.join("proj/mise.toml")),
+            &Roots::default(),
+        );
+        assert!(index.referenced_elsewhere(Namespace::Task, "build"));
+        // but it defines nothing
+        assert!(!index.knows(Namespace::Task, "ci"));
     }
 
     #[test]
