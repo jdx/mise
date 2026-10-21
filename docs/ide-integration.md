@@ -168,8 +168,8 @@ Two diagnostics check task references, the way
   in `extends` that no `[task_templates]` entry defines, with a "did you mean"
   fix. Patterns (`lint:*`), monorepo references (`//app:build`, `:build`) and
   `{ task = "x", optional = true }` are skipped. File tasks (scripts in
-  `mise-tasks/` and the other task directories, and in directories that
-  `includes` names) count as defined, by their path with or without the
+  `mise-tasks/` and the other task directories, and the executable files in
+  directories that `includes` names) count as defined, by their path with or without the
   extension, and by the `#MISE alias=` lines in their header. Patterns with
   `*`, `?`, `[` or `{` are skipped. The configs in the directories above the
   file and the user's and system's config (including `MISE_CONFIG_DIR` and

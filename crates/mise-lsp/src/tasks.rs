@@ -158,13 +158,13 @@ impl Index {
             .chain(roots.homes.iter().map(PathBuf::as_path));
         for dir in homes {
             for sub in FILE_TASK_DIRS {
-                index.add_file_tasks(&dir.join(sub));
+                index.add_file_tasks(&dir.join(sub), false);
             }
             let configs = includes::config_files(dir);
             index.add_configs(configs, &mut seen);
         }
         for dir in &roots.config_dirs {
-            index.add_file_tasks(&dir.join("tasks"));
+            index.add_file_tasks(&dir.join("tasks"), false);
             let mut configs = vec![dir.join("config.toml")];
             if let Ok(entries) = std::fs::read_dir(dir.join("conf.d")) {
                 configs.extend(
@@ -215,7 +215,8 @@ impl Index {
         let included = includes::task_include_files(config, &listed);
         self.complete &= !included.skipped;
         for dir in &included.dirs {
-            self.add_file_tasks(dir);
+            // an included directory may be a whole project: only its executables are tasks
+            self.add_file_tasks(dir, true);
         }
         for path in included.files {
             if seen.contains(&path) {
@@ -256,8 +257,8 @@ impl Index {
     /// The scripts below `dir` are tasks named by their path: `test/unit.sh` is `test:unit`, and
     /// `mise run test:unit.sh` and `test:unit` both find it. A `#MISE alias="x"` line in a script
     /// adds a name. Symlinks are not followed, and the scan of all directories shares one budget.
-    fn add_file_tasks(&mut self, dir: &Path) {
-        fn walk(dir: &Path, prefix: &str, depth: usize, index: &mut Index) {
+    fn add_file_tasks(&mut self, dir: &Path, executables_only: bool) {
+        fn walk(dir: &Path, prefix: &str, depth: usize, only: bool, index: &mut Index) {
             let Ok(entries) = std::fs::read_dir(dir) else {
                 return;
             };
@@ -277,8 +278,10 @@ impl Index {
                 // not followed, so what it holds is unknown.
                 let is_file = kind.is_file() || (kind.is_symlink() && path.is_file());
                 if kind.is_dir() || (kind.is_symlink() && path.is_dir()) {
-                    if kind.is_dir() && depth < 4 {
-                        walk(&path, &format!("{task}:"), depth + 1, index);
+                    if only && matches!(name.as_str(), ".git" | "node_modules" | "target") {
+                        // never holds tasks, and can be huge
+                    } else if kind.is_dir() && depth < 4 {
+                        walk(&path, &format!("{task}:"), depth + 1, only, index);
                     } else {
                         index.complete = false;
                     }
@@ -290,7 +293,7 @@ impl Index {
                     {
                         index.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
                     }
-                } else if is_file {
+                } else if is_file && (!only || is_executable(&path)) {
                     if let Some(stem) = Path::new(&name).file_stem() {
                         index
                             .file_tasks
@@ -301,7 +304,7 @@ impl Index {
                 }
             }
         }
-        walk(dir, "", 0, self);
+        walk(dir, "", 0, executables_only, self);
     }
 
     /// Whether a task or template of this name is defined somewhere the index looked.
@@ -780,6 +783,24 @@ pub(crate) fn diagnose(text: &str, parsed: &Parsed, index: &Index) -> Vec<Diagno
     }
     cycles(&found, index, &mut out);
     out
+}
+
+/// Whether the file is one mise runs as a task: executable, or on a platform without an executable
+/// bit, starting with a `#!` line.
+fn is_executable(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).is_ok_and(|meta| meta.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    {
+        use std::io::Read;
+        let mut head = [0u8; 2];
+        std::fs::File::open(path)
+            .and_then(|mut f| f.read_exact(&mut head))
+            .is_ok_and(|()| &head == b"#!")
+    }
 }
 
 /// The names a script's `#MISE alias="x"` (or `alias = ["x", "y"]`) header lines give it. Only
@@ -1344,6 +1365,29 @@ wait_for = [["build", "arg"]]
         assert!(!index.complete);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn an_included_directory_only_contributes_its_executables() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("mise-lsp-exec-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join("node_modules/x")).unwrap();
+        std::fs::write(root.join("src/build.rs"), "").unwrap();
+        std::fs::write(root.join("node_modules/x/tool"), "").unwrap();
+        std::fs::write(root.join("deploy"), "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(root.join("deploy"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+        std::fs::write(
+            root.join("mise.toml"),
+            "[task_config]\nincludes = [\".\"]\n",
+        )
+        .unwrap();
+        let index = Index::build("", Some(&root.join("sub/mise.toml")), &Roots::default());
+        assert!(index.knows(Namespace::Task, "deploy"));
+        assert!(!index.knows(Namespace::Task, "build"));
+        assert!(!index.knows(Namespace::Task, "tool"));
+    }
+
     #[test]
     fn a_script_alias_is_a_name() {
         let root = std::env::temp_dir().join(format!("mise-lsp-alias-{}", std::process::id()));
@@ -1371,7 +1415,7 @@ wait_for = [["build", "arg"]]
         std::fs::write(root.join("mise-tasks/a"), "").unwrap();
         let mut index = Index::build("", None, &Roots::default());
         index.scan_budget = 0;
-        index.add_file_tasks(&root.join("mise-tasks"));
+        index.add_file_tasks(&root.join("mise-tasks"), false);
         assert!(!index.complete);
     }
 
