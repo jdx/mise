@@ -7552,7 +7552,448 @@
                 },
                 {
                   "type": "object",
-                  "description": "whole-file entry, as in [dotfiles]"
+                  "description": "whole-file entry, as in [dotfiles]",
+                  "additionalProperties": false,
+                  "properties": {
+                    "encrypt": {
+                      "type": "boolean",
+                      "description": "encrypt tracked file contents before storing them in Git; the live file remains plaintext",
+                      "default": false
+                    },
+                    "allow_plaintext": {
+                      "type": "boolean",
+                      "description": "allow this directly tracked credential-named file to be saved in plaintext history and any connected origin",
+                      "default": false
+                    },
+                    "source": {
+                      "type": "string",
+                      "description": "source file or directory"
+                    },
+                    "content": {
+                      "type": "string",
+                      "description": "literal inline file content; alternative to source"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. \"absent\" removes a file or symlink at the target and takes no source. \"track\" saves the file's history where it is, and \"track-local\" saves it in this machine's local-only history, which is never shared",
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "symlink",
+                            "symlink-each",
+                            "copy",
+                            "template",
+                            "absent",
+                            "track",
+                            "track-local"
+                          ]
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "exclude": {
+                      "type": "array",
+                      "description": "glob patterns to skip when the mode walks a directory (symlink-each, copy with a directory source, or a tracked directory, where they are relative to the tracked path); a pattern without \"/\" matches any path component, one with \"/\" is anchored to the root",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "include": {
+                      "type": "array",
+                      "description": "history only (mode = \"track\"): the only paths of the tracked directory that are captured, relative to it and matched like \"exclude\"; without it the whole tree is captured with the builtin credential filtering, and an explicit \"exclude\" still wins. A selected file is captured even when it looks like a credential store, in plaintext unless the entry sets encrypt",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "manifest": {
+                      "type": "string",
+                      "description": "source manifest used to select managed files from a directory",
+                      "enum": ["git"]
+                    },
+                    "remove_empty": {
+                      "type": "boolean",
+                      "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force",
+                      "default": false
+                    },
+                    "dot_prefix": {
+                      "type": "boolean",
+                      "description": "symlink-each and directory copy only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names",
+                      "default": false
+                    },
+                    "relative": {
+                      "type": "boolean",
+                      "description": "symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)"
+                    },
+                    "permissions": {
+                      "type": "string",
+                      "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
+                      "pattern": "^(0o)?[0-7]{1,4}$"
+                    },
+                    "autosave": {
+                      "type": "boolean",
+                      "description": "track only: false saves the path only on `mise dotfiles save <path>`"
+                    },
+                    "enabled": {
+                      "type": "boolean",
+                      "description": "false turns off an entry inherited from another config file"
+                    },
+                    "variants": {
+                      "type": "array",
+                      "description": "OS/profile variants: history streams for track mode, or optional destinations for deployment modes",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "os": {
+                            "description": "operating system (linux, macos, windows, or unix), optionally with an architecture such as linux/arm64; a list matches any of its values",
+                            "oneOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            ]
+                          },
+                          "profile": {
+                            "type": "string",
+                            "description": "mise environment selected with -E or MISE_ENV"
+                          },
+                          "default": {
+                            "type": "boolean",
+                            "description": "true marks the fallback for machines that match no other variant; takes no os or profile"
+                          },
+                          "machine": {
+                            "type": "boolean",
+                            "description": "track mode only: a separate stream on every machine, never applied on another machine; must be the only variant and cannot be combined with encrypt"
+                          },
+                          "target": {
+                            "type": "string",
+                            "description": "deployment destination override; requires either an explicit source or a safe relative entry key when every variant has a target, and is not supported in track mode"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "merge": {
+                            "enum": [true, "missing"]
+                          }
+                        },
+                        "required": ["merge"]
+                      },
+                      "then": {
+                        "properties": {
+                          "mode": false,
+                          "content": false,
+                          "permissions": false,
+                          "exclude": false,
+                          "include": false,
+                          "manifest": false,
+                          "autosave": false,
+                          "encrypt": false,
+                          "allow_plaintext": false,
+                          "variants": false,
+                          "enabled": false,
+                          "remove_empty": false,
+                          "relative": false,
+                          "dot_prefix": false,
+                          "group": false,
+                          "block": false,
+                          "line": false,
+                          "position": false,
+                          "comment": false
+                        }
+                      }
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "relative": {
+                              "const": false
+                            }
+                          }
+                        },
+                        {
+                          "properties": {
+                            "mode": {
+                              "enum": ["symlink", "symlink-each"]
+                            }
+                          },
+                          "required": ["mode"]
+                        },
+                        {
+                          "properties": {
+                            "mode": false,
+                            "content": false,
+                            "permissions": false,
+                            "block": false,
+                            "line": false
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "remove_empty": {
+                              "const": false
+                            }
+                          }
+                        },
+                        {
+                          "properties": {
+                            "mode": {
+                              "const": "template"
+                            },
+                            "content": false,
+                            "block": false,
+                            "line": false
+                          },
+                          "anyOf": [
+                            {
+                              "required": ["source"]
+                            },
+                            {
+                              "required": ["mode"]
+                            },
+                            {
+                              "properties": {
+                                "permissions": false
+                              }
+                            }
+                          ]
+                        }
+                      ],
+                      "if": {
+                        "properties": {
+                          "mode": {
+                            "const": "absent"
+                          }
+                        },
+                        "required": ["mode"]
+                      },
+                      "then": {
+                        "properties": {
+                          "source": false,
+                          "content": false,
+                          "exclude": false,
+                          "manifest": false,
+                          "permissions": false,
+                          "remove_empty": false,
+                          "dot_prefix": {
+                            "const": false
+                          },
+                          "encrypt": {
+                            "const": false
+                          },
+                          "block": false,
+                          "line": false,
+                          "position": false,
+                          "template": false,
+                          "comment": false
+                        }
+                      }
+                    },
+                    {
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "source": {},
+                            "content": false,
+                            "permissions": false,
+                            "mode": {
+                              "enum": ["copy", "symlink-each"]
+                            },
+                            "exclude": {},
+                            "manifest": {},
+                            "block": false,
+                            "line": false,
+                            "template": false,
+                            "comment": false
+                          },
+                          "required": ["manifest"]
+                        },
+                        {
+                          "properties": {
+                            "manifest": false
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "dot_prefix": {
+                            "const": true
+                          }
+                        },
+                        "required": ["dot_prefix"]
+                      },
+                      "then": {
+                        "properties": {
+                          "content": false,
+                          "mode": {
+                            "enum": ["copy", "symlink-each"]
+                          },
+                          "block": false,
+                          "line": false,
+                          "template": false,
+                          "comment": false
+                        },
+                        "anyOf": [
+                          {
+                            "required": ["source"]
+                          },
+                          {
+                            "required": ["mode"]
+                          },
+                          {
+                            "properties": {
+                              "permissions": false
+                            }
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "mode": {
+                              "enum": ["copy", "template"]
+                            },
+                            "block": false,
+                            "template": false,
+                            "comment": false
+                          },
+                          "required": ["permissions"],
+                          "anyOf": [
+                            {
+                              "required": ["source"]
+                            },
+                            {
+                              "required": ["content"]
+                            },
+                            {
+                              "required": ["mode"]
+                            },
+                            {
+                              "properties": {
+                                "exclude": false,
+                                "manifest": false,
+                                "encrypt": false
+                              }
+                            }
+                          ]
+                        },
+                        {
+                          "properties": {
+                            "permissions": false
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "source": false,
+                            "manifest": false,
+                            "mode": false,
+                            "exclude": false,
+                            "block": false,
+                            "line": false,
+                            "position": false,
+                            "template": false,
+                            "comment": false
+                          },
+                          "required": ["content"]
+                        },
+                        {
+                          "properties": {
+                            "content": false,
+                            "permissions": false,
+                            "mode": false,
+                            "exclude": false,
+                            "source": false,
+                            "block": false,
+                            "template": false,
+                            "comment": false
+                          },
+                          "required": ["line"]
+                        },
+                        {
+                          "properties": {
+                            "content": false,
+                            "line": false,
+                            "position": false
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "mode": {
+                              "enum": ["track", "track-local"]
+                            }
+                          },
+                          "required": ["include", "mode"]
+                        },
+                        {
+                          "properties": {
+                            "include": false
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "mode": {
+                              "enum": ["track", "track-local"]
+                            }
+                          },
+                          "required": ["allow_plaintext", "mode"]
+                        },
+                        {
+                          "properties": {
+                            "allow_plaintext": false
+                          }
+                        }
+                      ]
+                    }
+                  ],
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "encrypt": {
+                          "const": false
+                        }
+                      }
+                    },
+                    {
+                      "properties": {
+                        "content": false,
+                        "block": false,
+                        "line": false,
+                        "template": false
+                      }
+                    }
+                  ]
                 }
               ]
             }
