@@ -177,10 +177,12 @@ fn existing_keys(
     parent: &[String],
     tables: bool,
 ) -> Vec<String> {
-    let mut without = String::with_capacity(text.len());
-    without.push_str(&text[..replace.start]);
-    without.push_str(&text[replace.end..]);
-    let Ok(parsed) = doc::parse(&without) else {
+    // The text being completed goes, or turns into a placeholder key where its absence would not
+    // parse, as in the header `[tools.no]` that would become `[tools.]`.
+    let without =
+        |filler: &str| format!("{}{filler}{}", &text[..replace.start], &text[replace.end..]);
+    let Ok(parsed) = doc::parse(&without("")).or_else(|_| doc::parse(&without("_placeholder_")))
+    else {
         return vec![];
     };
     parsed
@@ -705,6 +707,11 @@ mod tests {
         .into_iter()
         .map(|i| i.label)
         .collect()
+    }
+
+    #[test]
+    fn a_tool_header_being_typed_does_not_offer_the_tools_already_there() {
+        assert!(tool_labels("[tools.node]\nversion = \"24\"\n[tools.no|]\n").is_empty());
     }
 
     #[test]
