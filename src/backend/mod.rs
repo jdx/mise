@@ -1135,10 +1135,11 @@ fn parse_matching_registry_idiomatic_file(
     }
 }
 
+/// Internal commands must not re-enter mise through its dispatch directories.
 fn which_non_pristine_executable(bin: &str) -> Option<PathBuf> {
     file::executable_names(bin)
         .into_iter()
-        .find_map(file::which_non_pristine)
+        .find_map(file::which_no_shims)
 }
 
 /// On macOS's default case-insensitive volume `dir/python` also opens `dir/Python`, so a
@@ -1218,8 +1219,8 @@ where
 /// mise's shim directories are skipped on Windows. A shim re-enters mise, and once a
 /// resolved absolute path is handed to `Command::new` the child PATH no longer gets a
 /// vote, so a shim that the child PATH would have shadowed must not win —
-/// [`file::which_no_shims`] exists for the same reason. Windows-gated so the unix answer
-/// stays identical to `which_non_pristine_executable`'s.
+/// [`file::which_no_shims`] exists for the same reason. Unlike internal command lookups,
+/// unix dependency lookups still allow shim directories here.
 ///
 /// The skip is not free for callers that treat `None` as fatal. Through
 /// [`Backend::spawn_program`] a miss falls back to the bare name, i.e. today's code path.
