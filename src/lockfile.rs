@@ -4988,13 +4988,19 @@ pub(crate) fn get_locked_version(
 }
 
 /// The first lockfile, nearest config first, whose lookup decides the request.
+/// Lockfiles that are ambiguous on their own are skipped.
 fn nearest_lockfile_decision<T>(
     lockfiles: &[Lockfile],
     mut lookup: impl FnMut(&Lockfile) -> Result<Option<T>>,
 ) -> Result<Option<T>> {
     for lockfile in lockfiles {
-        if let Some(found) = lookup(lockfile)? {
-            return Ok(Some(found));
+        match lookup(lockfile) {
+            Ok(Some(found)) => return Ok(Some(found)),
+            Ok(None) => {}
+            // A lockfile that is itself ambiguous decides nothing; a farther
+            // one may still pin the request clearly.
+            Err(err) if err.downcast_ref::<AmbiguousRequestBinding>().is_some() => {}
+            Err(err) => return Err(err),
         }
     }
     Ok(None)

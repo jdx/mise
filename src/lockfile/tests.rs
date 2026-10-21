@@ -4170,4 +4170,20 @@ fn test_nearest_lockfile_decision_prefers_the_nearest_lockfile() {
         nearest_lockfile_decision(&[Lockfile::default()], version_of).unwrap(),
         None
     );
+
+    // A nearer lockfile that is ambiguous on its own does not block a clear pin.
+    let ambiguous = |_: &Lockfile| -> Result<Option<String>> {
+        Err(eyre!(AmbiguousRequestBinding("ambiguous".into())))
+    };
+    let mut calls = 0;
+    let found = nearest_lockfile_decision(&[locked("2.8.1"), locked("2.7.0")], |lockfile| {
+        calls += 1;
+        if calls == 1 {
+            ambiguous(lockfile)
+        } else {
+            version_of(lockfile)
+        }
+    })
+    .unwrap();
+    assert_eq!(found, Some("2.7.0".to_string()));
 }
