@@ -104,9 +104,15 @@ fn key_items(
     let mut parent = table.to_vec();
     parent.extend(segments);
     let raw = typed.rsplit('.').next().unwrap_or(typed).trim_start();
-    let rest = after
+    let mut rest = after
         .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
         .unwrap_or(after.len());
+    // A key typed inside quotes takes its closing quote with it: `"no|"` becomes `node`.
+    if let Some(quote) = raw.chars().next().filter(|c| matches!(c, '"' | '\''))
+        && after[rest..].starts_with(quote)
+    {
+        rest += 1;
+    }
     let replace = offset - raw.len()..offset + rest;
     let needle = partial.to_lowercase();
     let existing = existing_keys(text, &replace, &parent, false);
@@ -699,6 +705,27 @@ mod tests {
         .into_iter()
         .map(|i| i.label)
         .collect()
+    }
+
+    #[test]
+    fn a_quoted_key_is_replaced_whole() {
+        let text = "[tools]\n\"no\" = \"24\"\n";
+        let offset = text.find("no").unwrap() + 2;
+        let item = complete(
+            text,
+            offset,
+            &sample(),
+            &registry::tests::sample(),
+            &Candidates::default,
+        )
+        .remove(0);
+        let applied = format!(
+            "{}{}{}",
+            &text[..item.replace.start],
+            item.insert,
+            &text[item.replace.end..]
+        );
+        assert_eq!(applied, "[tools]\nnode = \"24\"\n");
     }
 
     #[test]
