@@ -2311,6 +2311,22 @@ pub(crate) fn unselected_declarations() -> BTreeSet<String> {
     unselected_declarations_with(&BTreeMap::new())
 }
 
+/// Whether `path` is the config file of an environment this machine does
+/// not select, in the global config directory.
+pub(crate) fn is_unselected_env_config(path: &Path, selected: &[String]) -> bool {
+    if path.parent() != Some(global_config_dir().as_path()) {
+        return false;
+    }
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    name.strip_prefix("config.")
+        .or_else(|| name.strip_prefix("mise."))
+        .and_then(|rest| rest.strip_suffix(".toml"))
+        .is_some_and(|env| env != "local" && !selected.iter().any(|active| active == env))
+}
+
 /// As [`unselected_declarations`], with incoming file bodies laid over the
 /// directory: `Some` replaces or adds a file, `None` deletes it.
 pub(crate) fn unselected_declarations_with(
@@ -2320,36 +2336,22 @@ pub(crate) fn unselected_declarations_with(
     let mut files: BTreeMap<PathBuf, String> = BTreeMap::new();
     if let Ok(entries) = std::fs::read_dir(global_config_dir()) {
         for entry in entries.flatten() {
-            if let Ok(text) = std::fs::read_to_string(entry.path()) {
-                files.insert(entry.path(), text);
+            let path = entry.path();
+            if is_unselected_env_config(&path, &selected)
+                && !incoming.contains_key(&path)
+                && let Ok(text) = std::fs::read_to_string(&path)
+            {
+                files.insert(path, text);
             }
         }
     }
     for (path, body) in incoming {
-        match body {
-            Some(body) => files.insert(path.clone(), body.clone()),
-            None => files.remove(path),
-        };
+        if let Some(body) = body {
+            files.insert(path.clone(), body.clone());
+        }
     }
     let mut paths = BTreeSet::new();
-    for (path, text) in files {
-        if path.parent() != Some(global_config_dir().as_path()) {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let Some(env) = name
-            .strip_prefix("config.")
-            .or_else(|| name.strip_prefix("mise."))
-            .and_then(|rest| rest.strip_suffix(".toml"))
-        else {
-            continue;
-        };
-        if env == "local" || selected.iter().any(|active| active == env) {
-            continue;
-        }
+    for (_, text) in files {
         let Ok(doc) = text.parse::<toml::Table>() else {
             continue;
         };
