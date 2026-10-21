@@ -355,7 +355,9 @@ impl Index {
         let mut names: Vec<&str> = self
             .definitions(namespace)
             .iter()
-            .map(|d| d.name.as_str())
+            .flat_map(|d| {
+                std::iter::once(d.name.as_str()).chain(d.aliases.iter().map(String::as_str))
+            })
             .collect();
         if namespace == Namespace::Task {
             names.extend(self.file_tasks.iter().map(String::as_str));
@@ -1401,6 +1403,18 @@ wait_for = [["build", "arg"]]
             .into_iter()
             .map(|d| (d.code, d.message))
             .collect()
+    }
+
+    #[test]
+    fn a_mistyped_alias_gets_a_suggestion() {
+        let text = "[tasks.build]\nalias = \"compile\"\n[tasks.a]\ndepends = [\"compil\"]\n";
+        assert_eq!(
+            problems(text),
+            [(
+                "unknown-task",
+                "unknown task `compil`; did you mean `compile`?".to_string()
+            )]
+        );
     }
 
     #[test]
