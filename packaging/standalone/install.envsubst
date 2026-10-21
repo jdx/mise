@@ -276,7 +276,7 @@ download_file() {
 
   if command -v curl >/dev/null 2>&1; then
     debug ">" curl -#fLo "$file" "$url"
-    curl -#fLo "$file" "$url" || return 1
+    curl -#fLo "$file" "$url" >&2 || return 1
   else
     if command -v wget >/dev/null 2>&1; then
       debug ">" wget -qO "$file" "$url"
