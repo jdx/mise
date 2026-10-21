@@ -211,12 +211,9 @@ fn value_items(
     let raw = typed.trim_start();
     let quoted = raw.strip_prefix('"');
     let reference = tasks::reference_kind(path);
-    // The rest of the value under the cursor goes too: up to the closing quote in a string
-    // (up to the arguments, in a task reference), else the rest of the word.
+    // The rest of the value under the cursor goes too: up to the closing quote in a string,
+    // else the rest of the word.
     let rest = match quoted {
-        Some(_) if reference.is_some() => after
-            .find(|c: char| c == '"' || c.is_whitespace())
-            .unwrap_or(after.len()),
         Some(_) => after.find('"').unwrap_or(after.len()),
         None => after
             .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.'))
@@ -225,32 +222,7 @@ fn value_items(
     let replace = offset - raw.len()..offset + rest;
     let needle = quoted.unwrap_or(raw);
     if let Some(namespace) = reference {
-        let candidates = names();
-        let (list, noun) = match namespace {
-            Namespace::Task => (candidates.tasks, "task"),
-            Namespace::Template => (candidates.templates, "task template"),
-        };
-        // A task does not wait for itself.
-        let own = (path[0] == "tasks" && namespace == Namespace::Task).then(|| path[1].as_str());
-        return list
-            .into_iter()
-            .filter(|c| c.name.starts_with(needle) && Some(c.name.as_str()) != own)
-            .map(|c| {
-                let close = if quoted.is_some() && after.contains('"') {
-                    ""
-                } else {
-                    "\""
-                };
-                Item {
-                    insert: format!("\"{}{close}", c.name),
-                    label: c.name,
-                    kind: Kind::Task,
-                    detail: c.detail.or_else(|| Some(noun.to_string())),
-                    documentation: c.documentation.filter(|d| !d.is_empty()),
-                    replace: replace.clone(),
-                }
-            })
-            .collect();
+        return reference_items(path, namespace, raw, after, offset, names);
     }
     schema
         .values(&schema.at(path))
@@ -275,6 +247,65 @@ fn value_items(
                 documentation: None,
                 replace: replace.clone(),
             })
+        })
+        .collect()
+}
+
+/// The tasks or templates to offer where one is named: in a string that may carry environment
+/// assignments before the name and arguments after it (`"PROFILE=release bu|ild --fast"`).
+/// Only the name is replaced; nothing is offered where an argument is being typed.
+fn reference_items(
+    path: &[String],
+    namespace: Namespace,
+    raw: &str,
+    after: &str,
+    offset: usize,
+    names: &dyn Fn() -> Candidates,
+) -> Vec<Item> {
+    let quote = raw.chars().next().filter(|c| matches!(c, '"' | '\''));
+    let (word, before) = match quote {
+        Some(_) => {
+            let inner = &raw[1..];
+            let at = inner.rfind(char::is_whitespace).map_or(0, |i| i + 1);
+            (&inner[at..], &inner[..at])
+        }
+        None if raw.is_empty() => ("", ""),
+        None => return vec![],
+    };
+    if !before.split_whitespace().all(tasks::is_env_assignment) {
+        return vec![];
+    }
+    let end = match quote {
+        Some(q) => after
+            .find(|c: char| c == q || c.is_whitespace())
+            .unwrap_or(after.len()),
+        None => 0,
+    };
+    let replace = offset - word.len()..offset + end;
+    let candidates = names();
+    let (list, noun) = match namespace {
+        Namespace::Task => (candidates.tasks, "task"),
+        Namespace::Template => (candidates.templates, "task template"),
+    };
+    // A task does not wait for itself.
+    let own = (path[0] == "tasks" && namespace == Namespace::Task).then(|| path[1].as_str());
+    list.into_iter()
+        .filter(|c| c.name.starts_with(word) && Some(c.name.as_str()) != own)
+        .map(|c| {
+            let insert = match quote {
+                // inside a string, the name goes between what is already there
+                Some(q) if after.contains(q) => c.name.clone(),
+                Some(q) => format!("{}{q}", c.name),
+                None => format!("\"{}\"", c.name),
+            };
+            Item {
+                insert,
+                label: c.name,
+                kind: Kind::Task,
+                detail: c.detail.or_else(|| Some(noun.to_string())),
+                documentation: c.documentation.filter(|d| !d.is_empty()),
+                replace: replace.clone(),
+            }
         })
         .collect()
 }
@@ -848,16 +879,40 @@ mod tests {
 
     #[test]
     fn a_task_name_replaces_only_the_name() {
-        let marked = "[tasks.lint]\ndepends = [\"bu|ild --release\"]";
-        let offset = marked.find('|').unwrap();
-        let text = marked.replacen('|', "", 1);
-        let names = || Candidates {
-            tasks: vec![candidate("build", ""), candidate("burn", "")],
-            templates: vec![],
+        let apply = |marked: &str| {
+            let offset = marked.find('|').unwrap();
+            let text = marked.replacen('|', "", 1);
+            let names = || Candidates {
+                tasks: vec![candidate("build", ""), candidate("burn", "")],
+                templates: vec![],
+            };
+            let item = complete(&text, offset, &sample(), &Registry::default(), &names).remove(0);
+            format!(
+                "{}{}{}",
+                &text[..item.replace.start],
+                item.insert,
+                &text[item.replace.end..]
+            )
         };
-        let item = complete(&text, offset, &sample(), &Registry::default(), &names).remove(0);
-        assert_eq!(item.insert, "\"build");
-        assert_eq!(&text[item.replace], "\"build");
+        let head = "[tasks.lint]\ndepends = [";
+        assert_eq!(
+            apply(&format!("{head}\"bu|ild --release\"]")),
+            format!("{head}\"build --release\"]")
+        );
+        assert_eq!(apply(&format!("{head}'b|u' ]")), format!("{head}'build' ]"));
+        assert_eq!(
+            apply(&format!("{head}\"PROFILE=release b|\"]")),
+            format!("{head}\"PROFILE=release build\"]")
+        );
+        assert_eq!(apply(&format!("{head}\"b|")), format!("{head}\"build\""));
+        assert_eq!(apply(&format!("{head}|")), format!("{head}\"build\""));
+    }
+
+    #[test]
+    fn arguments_are_not_completed_as_task_names() {
+        let tasks = |s: &str| task_labels(&format!("[tasks.lint]\n{s}"));
+        assert!(tasks("depends = [\"build --b|\"]").is_empty());
+        assert!(tasks("depends = [\"X=1 build b|\"]").is_empty());
     }
 
     #[test]
