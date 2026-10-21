@@ -861,16 +861,17 @@ impl SelfUpdate {
 
     fn http_client() -> Result<reqwest::Client> {
         let settings = Settings::get();
-        Ok(reqwest::Client::builder()
-            .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
-            .https_only(true)
-            .redirect(Self::redirect_policy())
-            .connect_timeout(settings.http_timeout())
-            .read_timeout(settings.http_timeout())
-            .timeout(settings.http_download_timeout())
-            .no_gzip()
-            .no_zstd()
-            .build()?)
+        Ok(mise_tls::build_client(|| {
+            reqwest::Client::builder()
+                .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
+                .https_only(true)
+                .redirect(Self::redirect_policy())
+                .connect_timeout(settings.http_timeout())
+                .read_timeout(settings.http_timeout())
+                .timeout(settings.http_download_timeout())
+                .no_gzip()
+                .no_zstd()
+        })?)
     }
 
     async fn download_archive(
@@ -965,21 +966,22 @@ impl SelfUpdate {
         let headers = crate::github::get_headers(&url)?;
         let settings = Settings::get();
         let request_timeout = settings.http_timeout();
-        let archive = reqwest::Client::builder()
-            .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
-            .https_only(true)
-            .redirect(Self::redirect_policy())
-            .connect_timeout(request_timeout)
-            .read_timeout(request_timeout)
-            .timeout(settings.http_download_timeout())
-            .build()?
-            .get(&url)
-            .headers(headers)
-            .send()
-            .await?
-            .error_for_status()?
-            .bytes()
-            .await?;
+        let archive = mise_tls::build_client(|| {
+            reqwest::Client::builder()
+                .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
+                .https_only(true)
+                .redirect(Self::redirect_policy())
+                .connect_timeout(request_timeout)
+                .read_timeout(request_timeout)
+                .timeout(settings.http_download_timeout())
+        })?
+        .get(&url)
+        .headers(headers)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
         fs::write(&zip_path, archive)?;
 
         let manifest =

@@ -9,18 +9,19 @@ use tokio::sync::watch;
 // kept as an error and reported by the request that needs it, as mise's own
 // HTTP client does, instead of aborting the process.
 static CLIENT: LazyLock<Result<Client, String>> = LazyLock::new(|| {
-    ClientBuilder::new()
-        .user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|err| error_chain(&err))
+    mise_tls::build_client(|| {
+        ClientBuilder::new().user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
+    })
+    .map_err(|err| error_chain(&err))
 });
 
 static NO_REDIRECT_CLIENT: LazyLock<Result<Client, String>> = LazyLock::new(|| {
-    ClientBuilder::new()
-        .user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|err| error_chain(&err))
+    mise_tls::build_client(|| {
+        ClientBuilder::new()
+            .user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
+            .redirect(reqwest::redirect::Policy::none())
+    })
+    .map_err(|err| error_chain(&err))
 });
 
 pub(crate) fn client() -> Result<&'static Client, String> {

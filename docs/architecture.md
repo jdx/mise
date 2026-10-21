@@ -52,6 +52,7 @@ anything else runs.
 | `mise-cache-core`         | The remote task cache protocol, content-addressed storage, authentication, and transport                   |
 | `mise-shim`               | `mise-shim.exe`, the native executable that Windows shims use in the default `exe` mode                    |
 | `mise-sigstore`           | Sigstore verification helpers                                                                              |
+| `mise-tls`                | Root certificate fallback for HTTPS clients when the system trust store is empty                           |
 | `mise-agent-env`          | Detection of AI coding agents from the process environment                                                 |
 | `mise-interactive-config` | The interactive TOML editor behind `mise edit`                                                             |
 | `mise-brew-metadata`      | Homebrew formula metadata models                                                                           |

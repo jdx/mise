@@ -59,6 +59,7 @@ mise-cache-core = { path = "../mise-cache-core", version = "0.1", default-featur
 mise-config = { path = "../mise-config", version = "0.1" }
 mise-settings = { path = "../mise-settings", version = "2026" }
 mise-sigstore = { path = "../mise-sigstore", version = "0.1", default-features = false }
+mise-tls = { path = "../mise-tls", version = "0.1", default-features = false }
 netrc-rs = "0.1"
 nodejs-semver = "7"
 nucleo-matcher = "0.3"
@@ -165,9 +166,11 @@ rustls = [
   "gix/blocking-http-transport-reqwest-rust-tls",
   "mise-sigstore/rustls",
   "reqwest/rustls",
+  "mise-tls/rustls",
 ]
 rustls-native-roots = [
   "gix/blocking-http-transport-reqwest-rust-tls",
   "mise-sigstore/rustls",
   "reqwest/rustls",
+  "mise-tls/rustls",
 ]
