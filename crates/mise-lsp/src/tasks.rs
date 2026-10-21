@@ -373,6 +373,13 @@ pub(crate) struct Reference {
     pub range: Range<usize>,
 }
 
+/// Whether a word is `KEY=value`, which sets the environment of the task that follows it.
+pub(crate) fn is_env_assignment(word: &str) -> bool {
+    word.split_once('=').is_some_and(|(key, _)| {
+        !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    })
+}
+
 /// The task a reference string names and where the name starts in the string. A dependency may
 /// start with `KEY=value` words that set its environment, as in `"PROFILE=release build"`; the
 /// name is the first word after them, or the only word. `None` when an environment value is
@@ -383,10 +390,7 @@ fn name_of(value: &str) -> Option<(&str, usize)> {
         .map(|word| (word, word.as_ptr() as usize - value.as_ptr() as usize))
         .peekable();
     while let Some((word, at)) = words.next() {
-        let is_env = word.split_once('=').is_some_and(|(key, _)| {
-            !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-        });
-        if is_env && words.peek().is_some() {
+        if is_env_assignment(word) && words.peek().is_some() {
             if word.contains(['"', '\'', '\\']) {
                 return None;
             }
