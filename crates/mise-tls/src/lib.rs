@@ -83,10 +83,12 @@ mod tests {
             std::env::remove_var("SSL_CERT_FILE");
             std::env::set_var("SSL_CERT_DIR", "/nonexistent/mise-tls-test");
         }
+        // Pinned to rustls: with `native-tls` also enabled (`--all-features`), the
+        // default backend would not read this environment at all.
         assert!(
-            Client::builder().build().is_err(),
+            Client::builder().tls_backend_rustls().build().is_err(),
             "reqwest should refuse to build with no system roots"
         );
-        assert!(build_client(Client::builder).is_ok());
+        assert!(build_client(|| Client::builder().tls_backend_rustls()).is_ok());
     }
 }
