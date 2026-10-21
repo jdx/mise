@@ -119,7 +119,7 @@ impl InstallScript {
                 }
             }
         } else {
-            miseprintln!("{output}");
+            miseprint!("{output}")?;
         }
         Ok(())
     }
@@ -177,8 +177,7 @@ export MISE_IGNORED_CONFIG_PATHS="$HOME/.config/mise${{MISE_IGNORED_CONFIG_PATHS
         };
         let vars = info::indent_by(vars.trim(), "    ");
         let script = format!(
-            r#"
-#!/usr/bin/env bash
+            r#"#!/usr/bin/env bash
 set -eu
 
 __mise_bootstrap() {{
@@ -197,7 +196,7 @@ __mise_bootstrap
 exec -a "$0" "$MISE_INSTALL_PATH" "$@"
 "#
         );
-        Ok((script.trim().to_string(), version.to_string()))
+        Ok((script, version.to_string()))
     }
 
     /// The Windows form: a `.cmd` that downloads the standalone `mise.exe`, checks it, and runs it.
