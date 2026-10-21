@@ -13,6 +13,7 @@ mod doc;
 mod hover;
 mod includes;
 mod keypath;
+mod registry;
 mod rpc;
 mod schema;
 mod server;
@@ -24,11 +25,28 @@ use std::io::{self, BufRead, Write};
 /// Rewrites a document the way `mise fmt` does, or says why it cannot.
 pub type Formatter = Box<dyn Fn(&str) -> Result<String, String> + Send>;
 
+/// A tool of mise's registry, as `mise registry` lists it.
+#[derive(Debug, Clone)]
+pub struct RegistryEntry {
+    /// The short name used under `[tools]`.
+    pub name: String,
+    pub description: Option<String>,
+    /// Other short names that mean the same tool.
+    pub aliases: Vec<String>,
+    /// The backends that install it, such as `aqua:BurntSushi/ripgrep`.
+    pub backends: Vec<String>,
+    /// Set when the tool is deprecated, to the registry's message, which may be empty.
+    pub deprecated: Option<String>,
+}
+
 pub struct Options {
     /// `schema/mise.json`, parsed.
     pub schema: serde_json::Value,
     /// Offers document formatting when set.
     pub format: Option<Formatter>,
+    /// The tools of the registry, for completing and describing tool names; empty when the host
+    /// has none to offer. The server never looks tools up itself.
+    pub registry: Vec<RegistryEntry>,
     /// The server's version, reported to the client.
     pub version: String,
 }

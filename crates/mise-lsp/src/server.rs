@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 
 use crate::complete::{self, Kind};
 use crate::diagnostics::{self, Diagnostic, Severity};
+use crate::registry::Registry;
 use crate::rpc::{read_message, write_message};
 use crate::schema::Schema;
 use crate::tasks::{self, Index, Origin, Roots};
@@ -66,6 +67,7 @@ struct Good {
 
 pub(crate) struct Server {
     schema: Schema,
+    registry: Registry,
     validator: OnceLock<Option<Validator>>,
     format: Option<Formatter>,
     version: String,
@@ -123,6 +125,7 @@ impl Server {
     pub(crate) fn new(options: Options) -> Self {
         Self {
             schema: Schema::new(options.schema),
+            registry: Registry::new(options.registry),
             validator: OnceLock::new(),
             format: options.format,
             version: options.version,
@@ -316,28 +319,30 @@ impl Server {
         let index = LineIndex::new(text);
         let uri = params["textDocument"]["uri"].as_str().unwrap_or_default();
         let names = || self.tasks(uri, document).candidates();
-        let items: Vec<Value> = complete::complete(text, offset, &self.schema, &names)
-            .into_iter()
-            .map(|item| {
-                let mut value = json!({
-                    "label": item.label,
-                    "kind": match item.kind {
-                        Kind::Key => 10,
-                        Kind::Value => 12,
-                        Kind::Task => 3,
-                    },
-                    "filterText": item.insert,
-                    "textEdit": {"range": range(&index, &item.replace), "newText": item.insert},
-                });
-                if let Some(detail) = item.detail {
-                    value["detail"] = json!(detail);
-                }
-                if let Some(documentation) = item.documentation {
-                    value["documentation"] = json!({"kind": "markdown", "value": documentation});
-                }
-                value
-            })
-            .collect();
+        let items: Vec<Value> =
+            complete::complete(text, offset, &self.schema, &self.registry, &names)
+                .into_iter()
+                .map(|item| {
+                    let mut value = json!({
+                        "label": item.label,
+                        "kind": match item.kind {
+                            Kind::Key => 10,
+                            Kind::Value => 12,
+                            Kind::Task => 3,
+                        },
+                        "filterText": item.insert,
+                        "textEdit": {"range": range(&index, &item.replace), "newText": item.insert},
+                    });
+                    if let Some(detail) = item.detail {
+                        value["detail"] = json!(detail);
+                    }
+                    if let Some(documentation) = item.documentation {
+                        value["documentation"] =
+                            json!({"kind": "markdown", "value": documentation});
+                    }
+                    value
+                })
+                .collect();
         json!({"isIncomplete": false, "items": items})
     }
 
@@ -349,7 +354,7 @@ impl Server {
         if let Some(hover) = self.task_hover(params, document, offset) {
             return hover;
         }
-        if let Some(h) = hover::hover(text, offset, &self.schema) {
+        if let Some(h) = hover::hover(text, offset, &self.schema, &self.registry) {
             return json!({
                 "contents": {"kind": "markdown", "value": h.markdown},
                 "range": range(&LineIndex::new(text), &h.range),
@@ -363,7 +368,7 @@ impl Server {
         let edit = Edit::between(&good.text, text);
         let hovered = edit
             .map_offset_back(offset)
-            .and_then(|old| hover::hover(&good.text, old, &self.schema));
+            .and_then(|old| hover::hover(&good.text, old, &self.schema, &self.registry));
         match hovered {
             Some(h) => json!({"contents": {"kind": "markdown", "value": h.markdown}}),
             None => Value::Null,
@@ -803,6 +808,7 @@ mod tests {
         let options = Options {
             schema,
             format: Some(Box::new(|text| Ok(format!("# formatted\n{text}")))),
+            registry: crate::registry::tests::sample_entries(),
             version: "1".to_string(),
         };
         let mut server = Server::new(options);
@@ -1318,6 +1324,26 @@ mod tests {
             .map(|i| i["label"].as_str().unwrap())
             .collect();
         assert_eq!(labels, ["build"]);
+    }
+
+    #[test]
+    fn tool_names_complete_and_describe_themselves() {
+        let uri = "file:///p/mise.toml";
+        let typing = "file:///q/mise.toml";
+        let replies = session(&[
+            open(uri, "[tools]\nnodejs = \"24\"\n"),
+            open(typing, "[tasks.build.tools]\nno\n"),
+            json!({"jsonrpc": "2.0", "id": 1, "method": "textDocument/completion",
+                "params": {"textDocument": {"uri": typing}, "position": {"line": 1, "character": 2}}}),
+            json!({"jsonrpc": "2.0", "id": 2, "method": "textDocument/hover",
+                "params": {"textDocument": {"uri": uri}, "position": {"line": 1, "character": 3}}}),
+        ]);
+        let replies = &replies[1..];
+        let items = replies[1]["result"]["items"].as_array().unwrap();
+        assert_eq!(items[0]["label"], "node");
+        assert_eq!(items[0]["detail"], "Node.js runtime");
+        let hover = replies[2]["result"]["contents"]["value"].as_str().unwrap();
+        assert!(hover.contains("Node.js runtime") && hover.contains("`core:node`"));
     }
 
     #[test]
