@@ -90,6 +90,8 @@ pub(crate) struct Index {
     envs: Vec<String>,
     /// The task files already read, so one a directory and an `includes` entry both reach is read once.
     read_files: HashSet<PathBuf>,
+    /// The files read only for what they refer to, each once.
+    reference_reads: HashSet<PathBuf>,
 }
 
 /// Where else configs and tasks live: the user's and the system's.
@@ -142,6 +144,7 @@ impl Index {
             scan_budget: MAX_SCAN,
             envs: roots.envs.clone(),
             read_files: HashSet::new(),
+            reference_reads: HashSet::new(),
         };
         let mut seen: HashSet<PathBuf> = HashSet::new();
         if let Ok(parsed) = doc::parse(open) {
@@ -263,6 +266,16 @@ impl Index {
                 if !self.read_files.insert(path.clone()) {
                     continue;
                 }
+            } else {
+                // each file once, within the same limit on how many are read
+                if self.reference_reads.contains(&path) {
+                    continue;
+                }
+                if seen.len() + self.reference_reads.len() >= MAX_FILES {
+                    self.complete = false;
+                    return;
+                }
+                self.reference_reads.insert(path.clone());
             }
             let Some(text) = includes::read_capped(&path) else {
                 continue;
@@ -1756,6 +1769,26 @@ wait_for = [["build", "arg"]]
         assert!(index.referenced_elsewhere(Namespace::Task, "build"));
         // but it defines nothing
         assert!(!index.knows(Namespace::Task, "ci"));
+    }
+
+    #[test]
+    fn a_file_several_skipped_configs_include_is_read_once() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-once-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("cfg")).unwrap();
+        for env in ["a", "b", "c"] {
+            std::fs::write(
+                root.join(format!("cfg/config.{env}.toml")),
+                "[task_config]\nincludes = [\"shared.toml\"]\n",
+            )
+            .unwrap();
+        }
+        std::fs::write(root.join("cfg/shared.toml"), "[x]\ndepends = [\"y\"]\n").unwrap();
+        let roots = Roots {
+            config_dirs: vec![root.join("cfg")],
+            ..Roots::default()
+        };
+        let index = Index::build("", Some(&root.join("proj/mise.toml")), &roots);
+        assert_eq!(index.reference_reads.len(), 1);
     }
 
     #[test]
