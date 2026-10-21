@@ -64,14 +64,14 @@ pub(crate) fn complete(
     match &frame.pending {
         Some(path) => {
             let path = if frame.kind == '[' {
-                [path.as_slice(), &["0".to_string()]].concat()
+                [path.as_slice(), &[frame.index.to_string()]].concat()
             } else {
                 path.clone()
             };
             value_items(schema, &path, &frame.segment, after, offset, names)
         }
         None if frame.kind == '[' => {
-            let path = [frame.path.as_slice(), &["0".to_string()]].concat();
+            let path = [frame.path.as_slice(), &[frame.index.to_string()]].concat();
             value_items(schema, &path, &frame.segment, after, offset, names)
         }
         None => {
@@ -162,8 +162,7 @@ fn value_items(
 ) -> Vec<Item> {
     let raw = typed.trim_start();
     let quoted = raw.strip_prefix('"');
-    let reference =
-        tasks::reference_kind(path).filter(|_| !tasks::is_dependency_argument_slot(path));
+    let reference = tasks::reference_kind(path);
     // The rest of the value under the cursor goes too: up to the closing quote in a string
     // (up to the arguments, in a task reference), else the rest of the word.
     let rest = match quoted {
@@ -242,6 +241,8 @@ struct Frame {
     segment: String,
     /// The path of the key whose `=` has been seen at this level, while its value is written.
     pending: Option<Vec<String>>,
+    /// In an array, the index of the element being written.
+    index: usize,
 }
 
 impl Frame {
@@ -251,12 +252,17 @@ impl Frame {
             path,
             segment: String::new(),
             pending: None,
+            index: 0,
         }
     }
 
     fn separate(&mut self) {
         self.segment.clear();
         self.pending = None;
+        // the next element of an array
+        if self.kind == '[' {
+            self.index += 1;
+        }
     }
 }
 
@@ -405,7 +411,7 @@ fn advance(text: &str, state: &mut State, eol: bool) {
                 if frame.pending.is_none() {
                     let mut path = frame.path.clone();
                     if frame.kind == '[' {
-                        path.push("0".to_string());
+                        path.push(frame.index.to_string());
                     }
                     path.extend(keypath::split(&frame.segment));
                     frame.pending = Some(path);
@@ -419,7 +425,7 @@ fn advance(text: &str, state: &mut State, eol: bool) {
                 let parent = state.frame();
                 let path = match (&parent.pending, parent.kind) {
                     (Some(pending), _) => pending.clone(),
-                    (None, '[') => [parent.path.as_slice(), &["0".to_string()]].concat(),
+                    (None, '[') => [parent.path.as_slice(), &[parent.index.to_string()]].concat(),
                     (None, _) => parent.path.clone(),
                 };
                 state.stack.push(Frame::new(c, path));
@@ -673,11 +679,12 @@ mod tests {
     }
 
     #[test]
-    fn arguments_are_not_task_names() {
-        assert_eq!(
-            task_labels("[tasks.lint]\ndepends = [[\"build\", \"te|\"]]"),
-            Vec::<String>::new()
-        );
+    fn only_the_first_element_of_a_dependency_array_is_a_name() {
+        let tasks = |s: &str| task_labels(&format!("[tasks.lint]\n{s}"));
+        assert!(tasks("depends = [[\"build\", \"te|\"]]").is_empty());
+        assert_eq!(tasks("depends = [[\"te|\", \"x\"]]"), ["test"]);
+        assert_eq!(tasks("depends = [[\"build\"], [\"te|\"]]"), ["test"]);
+        assert_eq!(tasks("run = [\"echo\", { task = \"te|\" }]"), ["test"]);
     }
 
     #[test]
