@@ -38,7 +38,7 @@ pub(crate) fn is_config_file(path: &str) -> bool {
 /// that `includes = ["."]` does not turn the configs below it into task files. `mise.<env>.toml`
 /// and `mise.<env>.local.toml` are among them, except `mise.tasks.toml`, `mise.tasks.<x>.toml` and
 /// the same with `task`, which name task files; an include does claim those.
-fn is_standard_config(path: &str) -> bool {
+pub(crate) fn is_standard_config(path: &str) -> bool {
     let mut parts = path.rsplit('/');
     let name = parts.next().unwrap_or_default();
     let parent = parts.next().unwrap_or_default();

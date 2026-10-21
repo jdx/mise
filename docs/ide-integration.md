@@ -134,9 +134,11 @@ the parts you did not edit stay.
 ### Tasks {#language-server-tasks}
 
 The server knows the tasks of the file you edit, of the configs in the
-directories above it, and of the TOML files their `[task_config] includes` name
-(a file, or a directory of TOML files). Globs, `git::` and `oci::` includes and
-file tasks (scripts) are not read.
+directories above it, of the user's and system's configs (including
+`MISE_CONFIG_DIR` and `MISE_SYSTEM_CONFIG_DIR`), and of the TOML files their
+`[task_config] includes` name (a file, or a directory of TOML files). Globs,
+`git::` and `oci::` includes are not read. File tasks (scripts) are only known
+by name, for the `unknown-task` check below; their descriptions are not shown.
 
 ```toml
 [tasks.build]
