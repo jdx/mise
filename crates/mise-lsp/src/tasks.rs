@@ -668,10 +668,15 @@ fn renamed_json(
 
 /// Whether `name` can be written as a task name in a reference string.
 pub(crate) fn valid_name(name: &str) -> bool {
+    // `KEY=value` would read as an environment assignment before the task name.
+    let assignment = name.split_once('=').is_some_and(|(key, _)| {
+        !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    });
     !name.is_empty()
+        && !assignment
         && !name
             .chars()
-            .any(|c| c.is_whitespace() || c.is_control() || c == '"' || c == '\\' || c == '\'')
+            .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '"' | '\\' | '\''))
 }
 
 #[cfg(test)]
@@ -763,6 +768,17 @@ wait_for = [["build", "arg"]]
         assert_eq!(tasks, ["mine", "root", "lint"]);
         assert!(matches!(index.tasks[2].origin, Origin::File { .. }));
         assert!(describe(&index.tasks[2]).contains("Defined in `more.toml`"));
+    }
+
+    #[test]
+    fn names_that_read_as_environment_assignments_are_not_valid() {
+        assert!(!valid_name("X=y"));
+        assert!(!valid_name("a=b:c"));
+        assert!(valid_name("build:release"));
+        assert!(
+            valid_name("--x=y"),
+            "a key with a dash is not an assignment"
+        );
     }
 
     #[test]
