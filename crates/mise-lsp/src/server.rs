@@ -88,12 +88,28 @@ fn global_roots() -> Roots {
         .flatten()
         .collect();
     homes.push(PathBuf::from("/etc"));
+    // The places mise looks for its own config directory, which it does not export: the ones the
+    // environment names, then the defaults.
+    let default_user = var("XDG_CONFIG_HOME")
+        .or_else(|| {
+            var("HOME")
+                .or_else(|| var("USERPROFILE"))
+                .map(|h| h.join(".config"))
+        })
+        .map(|dir| dir.join("mise"));
+    let mut config_dirs: Vec<PathBuf> = [
+        var("MISE_CONFIG_DIR"),
+        var("MISE_SYSTEM_CONFIG_DIR"),
+        default_user,
+        Some(PathBuf::from("/etc/mise")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    config_dirs.dedup();
     Roots {
         homes,
-        config_dirs: [var("MISE_CONFIG_DIR"), var("MISE_SYSTEM_CONFIG_DIR")]
-            .into_iter()
-            .flatten()
-            .collect(),
+        config_dirs,
         envs: std::env::var("MISE_ENV")
             .unwrap_or_default()
             .split(',')
