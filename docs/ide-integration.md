@@ -170,8 +170,9 @@ depends = ["bu"] # completes to "build"; hover on "build" shows the description 
 
 Under `[tools]`, a key completes to the short names in the registry, the same
 list `mise registry` prints, with each tool's description. Hovering a tool name
-shows its description and the backends that install it. Aliases such as
-`nodejs` are recognized, deprecated tools are not offered, and the tools that
+shows its description and the backends that install it. Aliases the registry
+declares, such as `rg` for `ripgrep`, are recognized; other names that mise
+resolves some other way (`nodejs`, `golang`) are not. Deprecated tools are not offered, and the tools that
 `enable_tools` and `disable_tools` filter out are left out, as in `mise registry`.
 
 <!-- schema: skip -->
