@@ -2721,10 +2721,11 @@ rust_type = "Paranoid"
 type = "BoolOrList"
 
 [pin]
-description = "Make `mise use` write the resolved version, such as `24.14.0` for `node@24`, instead of the requested one."
+description = "Make `mise use` and `mise upgrade --bump` write the resolved version, such as `24.14.0` for `node@24`, instead of the requested one."
 docs = """
 Same as passing `--pin` every time; `--fuzzy` writes the requested version for
-one command. To record exact versions without changing `mise.toml`, use a
+one command. `mise upgrade --bump` also writes resolved versions, replacing
+requests such as `latest` or `20` in `mise.toml`. To record exact versions without changing `mise.toml`, use a
 [lockfile](/dev-tools/mise-lock.html).
 """
 env = "MISE_PIN"
