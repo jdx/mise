@@ -116,7 +116,11 @@ pub(super) fn prospective(
         }
         let body = match object {
             Some((mode, oid)) if mode == "100644" || mode == "100755" => {
-                Some(String::from_utf8(repo.cat_object(oid)?)?)
+                match String::from_utf8(repo.cat_object(oid)?) {
+                    Ok(body) => Some(body),
+                    // declares nothing, like an unreadable file on disk
+                    Err(_) => continue,
+                }
             }
             Some(_) => continue,
             None => None,

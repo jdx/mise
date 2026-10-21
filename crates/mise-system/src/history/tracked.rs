@@ -2314,7 +2314,8 @@ pub(crate) fn unselected_declarations() -> BTreeSet<String> {
 /// Whether `path` is the config file of an environment this machine does
 /// not select, in the global config directory.
 pub(crate) fn is_unselected_env_config(path: &Path, selected: &[String]) -> bool {
-    if path.parent() != Some(global_config_dir().as_path()) {
+    // incoming paths are rooted at the normalized config directory
+    if path.parent().map(normalize) != Some(normalize(&global_config_dir())) {
         return false;
     }
     let name = path
@@ -2336,7 +2337,7 @@ pub(crate) fn unselected_declarations_with(
     let mut files: BTreeMap<PathBuf, String> = BTreeMap::new();
     if let Ok(entries) = std::fs::read_dir(global_config_dir()) {
         for entry in entries.flatten() {
-            let path = entry.path();
+            let path = normalize(&global_config_dir()).join(entry.file_name());
             if is_unselected_env_config(&path, &selected)
                 && !incoming.contains_key(&path)
                 && let Ok(text) = std::fs::read_to_string(&path)
