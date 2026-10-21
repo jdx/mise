@@ -741,6 +741,9 @@ export const commands: { [key: string]: Command } = {
   "ls-remote": {
     hide: false,
   },
+  lsp: {
+    hide: false,
+  },
   mcp: {
     hide: false,
   },

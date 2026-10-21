@@ -48,6 +48,7 @@ anything else runs.
 | `vfox`                    | The embedded Lua runtime and the hook and module interfaces for vfox plugins                               |
 | `aqua-registry`           | Parsing, package lookup, and cache formats for aqua registries                                             |
 | `mise-bootstrap`          | Bootstrap resource planning and dependency ordering                                                        |
+| `mise-lsp`                | The language server behind `mise lsp`; mise passes it `schema/mise.json` and the `mise fmt` formatter      |
 | `mise-cache-core`         | The remote task cache protocol, content-addressed storage, authentication, and transport                   |
 | `mise-shim`               | `mise-shim.exe`, the native executable that Windows shims use in the default `exe` mode                    |
 | `mise-sigstore`           | Sigstore verification helpers                                                                              |
