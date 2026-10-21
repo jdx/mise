@@ -73,11 +73,10 @@ pub async fn verify_cosign_signature_with_key(
         // Bundle path: needs the trust root for tlog (Rekor) verification.
         let trusted_root = production_trusted_root().await?;
         let artifact = tokio::fs::read(artifact_path).await?;
-        sigstore_verify::verify_with_key(
+        sigstore_verify::verify(
             artifact.as_slice(),
             &bundle,
-            &public_key,
-            &sigstore_verify::PublicKeyVerificationPolicy::default(),
+            &sigstore_verify::PublicKeyVerificationPolicy::new(public_key),
             &trusted_root,
         )?;
         return Ok(true);
