@@ -111,6 +111,9 @@ It provides:
 - **Completion** of keys, including inside inline tables, and of values that
   have a fixed set, such as booleans and enums. Keys a table already has are not
   offered again.
+- **Tools**: completion of tool names under `[tools]` (and a task's `tools`)
+  from the [registry](/registry.html), and hover on a tool name showing its
+  description and backends. See [Tools](#language-server-tools).
 - **Hover** documentation for keys.
 - **Quick fixes** that replace an unknown key or task name with the suggested
   one, and rewrite a deprecated key to its replacement.
@@ -157,6 +160,26 @@ depends = ["bu"] # completes to "build"; hover on "build" shows the description 
   refused instead of half done.
 - `extends` names a template, `[task_templates.<name>]`, so it completes, jumps
   and renames within templates.
+
+### Tools {#language-server-tools}
+
+Under `[tools]`, a key completes to the short names in the registry, the same
+list `mise registry` prints, with each tool's description. Hovering a tool name
+shows its description and the backends that install it. Aliases such as
+`nodejs` are recognized, deprecated tools are not offered, and the tools that
+`enable_tools` and `disable_tools` filter out are left out, as in `mise registry`.
+
+```toml
+[tools]
+no # completes to node; hover on `node` shows "Node.js runtime" and `core:node`
+```
+
+The list is whatever `mise lsp` read when it started, from the registry built
+into mise (or the cached floating registry when `registry_floating` is on). The
+server looks up nothing: it does not list or resolve versions, and does not
+touch the network. Completion and hover for tools follow the `completion` and
+`hover` switches. A tool written with a backend (`"npm:prettier"`) is not in
+the registry, so it only gets the schema's hover.
 
 Two diagnostics check task references, the way
 [`mise tasks validate`](/cli/tasks/validate.html) does:

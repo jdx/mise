@@ -14,6 +14,7 @@ use serde_json::Value;
 
 use crate::doc;
 use crate::keypath;
+use crate::registry::{self, Registry};
 use crate::schema::Schema;
 use crate::tasks::{self, Candidates, Namespace};
 use crate::text::LineIndex;
@@ -34,12 +35,13 @@ pub(crate) struct Item {
     pub replace: Range<usize>,
 }
 
-/// The items at `offset`. `names` is asked for the tasks and templates the document can see
+/// The items at `offset`. `tools` names the tools to offer under `[tools]`. `names` is asked for the tasks and templates the document can see
 /// only when the cursor is where one is named.
 pub(crate) fn complete(
     text: &str,
     offset: usize,
     schema: &Schema,
+    tools: &Registry,
     names: &dyn Fn() -> Candidates,
 ) -> Vec<Item> {
     let index = LineIndex::new(text);
@@ -59,7 +61,7 @@ pub(crate) fn complete(
     // A header: a line that starts with `[` where nothing is open.
     if line_starts_closed && let Some(header) = before.trim_start().strip_prefix('[') {
         let header = header.trim_start_matches('[');
-        return key_items(schema, &[], header, text, after, offset);
+        return key_items(schema, tools, &[], header, text, after, offset);
     }
     match &frame.pending {
         Some(path) => {
@@ -80,7 +82,7 @@ pub(crate) fn complete(
             } else {
                 frame.path.clone()
             };
-            key_items(schema, &parent, &frame.segment, text, after, offset)
+            key_items(schema, tools, &parent, &frame.segment, text, after, offset)
         }
     }
 }
@@ -89,6 +91,7 @@ pub(crate) fn complete(
 /// keys the table already has are not offered again.
 fn key_items(
     schema: &Schema,
+    tools: &Registry,
     table: &[String],
     typed: &str,
     text: &str,
@@ -107,7 +110,7 @@ fn key_items(
     let replace = offset - raw.len()..offset + rest;
     let needle = partial.to_lowercase();
     let existing = existing_keys(text, &replace, &parent);
-    schema
+    let mut items: Vec<Item> = schema
         .keys(&parent)
         .into_iter()
         .filter(|(name, key_schema)| {
@@ -129,7 +132,30 @@ fn key_items(
                 replace: replace.clone(),
             }
         })
-        .collect()
+        .collect();
+    if Registry::is_tools_table(&parent) {
+        items.extend(
+            tools
+                .offered()
+                .filter(|tool| {
+                    tool.name.to_lowercase().starts_with(&needle)
+                        && !existing.iter().any(|e| *e == tool.name)
+                })
+                .map(|tool| Item {
+                    label: tool.name.clone(),
+                    insert: keypath::quote(&tool.name),
+                    kind: Kind::Key,
+                    detail: tool
+                        .description
+                        .as_deref()
+                        .and_then(|d| d.lines().next())
+                        .map(str::to_string),
+                    documentation: Some(registry::describe(tool)),
+                    replace: replace.clone(),
+                }),
+        );
+    }
+    items
 }
 
 /// The keys the table at `parent` has a value for, with the text being completed taken out so that a
@@ -465,10 +491,16 @@ mod tests {
     fn labels(marked: &str) -> Vec<String> {
         let offset = marked.find('|').unwrap();
         let text = marked.replacen('|', "", 1);
-        complete(&text, offset, &sample(), &Candidates::default)
-            .into_iter()
-            .map(|i| i.label)
-            .collect()
+        complete(
+            &text,
+            offset,
+            &sample(),
+            &Registry::default(),
+            &Candidates::default,
+        )
+        .into_iter()
+        .map(|i| i.label)
+        .collect()
     }
 
     #[test]
@@ -510,7 +542,14 @@ mod tests {
     fn applied(marked: &str) -> String {
         let offset = marked.find('|').unwrap();
         let text = marked.replacen('|', "", 1);
-        let item = complete(&text, offset, &sample(), &Candidates::default).remove(0);
+        let item = complete(
+            &text,
+            offset,
+            &sample(),
+            &Registry::default(),
+            &Candidates::default,
+        )
+        .remove(0);
         format!(
             "{}{}{}",
             &text[..item.replace.start],
@@ -629,6 +668,36 @@ mod tests {
         );
     }
 
+    fn tool_labels(marked: &str) -> Vec<String> {
+        let offset = marked.find('|').unwrap();
+        let text = marked.replacen('|', "", 1);
+        complete(
+            &text,
+            offset,
+            &sample(),
+            &registry::tests::sample(),
+            &Candidates::default,
+        )
+        .into_iter()
+        .map(|i| i.label)
+        .collect()
+    }
+
+    #[test]
+    fn tools_complete_from_the_registry() {
+        assert_eq!(tool_labels("[tools]\n|"), ["node"]);
+        assert_eq!(tool_labels("[tools]\nno|"), ["node"]);
+        assert!(tool_labels("[tools]\nzz|").is_empty());
+        assert_eq!(tool_labels("tools.|"), ["node"]);
+        assert_eq!(tool_labels("[tools.no|"), ["node"]);
+        assert_eq!(tool_labels("[tasks.build.tools]\n|"), ["node"]);
+        assert_eq!(tool_labels("tools = { | }"), ["node"]);
+        // deprecated tools and tools already listed are not offered
+        assert!(tool_labels("[tools]\nnode = \"24\"\n|").is_empty());
+        // only tool tables take tool names
+        assert_eq!(tool_labels("[settings]\n|"), ["color", "mode"]);
+    }
+
     fn candidate(name: &str, detail: &str) -> tasks::Candidate {
         tasks::Candidate {
             name: name.to_string(),
@@ -647,7 +716,7 @@ mod tests {
             ],
             templates: vec![candidate("rust", "rust task")],
         };
-        complete(&text, offset, &sample(), &names)
+        complete(&text, offset, &sample(), &Registry::default(), &names)
             .into_iter()
             .map(|i| i.label)
             .collect()
@@ -686,7 +755,7 @@ mod tests {
             tasks: vec![candidate("build", ""), candidate("burn", "")],
             templates: vec![],
         };
-        let item = complete(&text, offset, &sample(), &names).remove(0);
+        let item = complete(&text, offset, &sample(), &Registry::default(), &names).remove(0);
         assert_eq!(item.insert, "\"build");
         assert_eq!(&text[item.replace], "\"build");
     }
@@ -695,7 +764,13 @@ mod tests {
     fn a_closing_quote_is_not_doubled() {
         let text = "[settings]\nmode = \"\"";
         let offset = text.len() - 1;
-        let items = complete(text, offset, &sample(), &Candidates::default);
+        let items = complete(
+            text,
+            offset,
+            &sample(),
+            &Registry::default(),
+            &Candidates::default,
+        );
         assert_eq!(items[0].insert, "\"a");
     }
 }

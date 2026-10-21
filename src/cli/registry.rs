@@ -248,7 +248,7 @@ async fn to_output(tool: RegistryToolOutputArgs, security: bool) -> RegistryTool
     }
 }
 
-fn filter_enabled(short: &str) -> bool {
+pub(super) fn filter_enabled(short: &str) -> bool {
     let settings = Settings::get();
     let enable_tools = settings.enable_tools();
     let disable_tools = settings.disable_tools();

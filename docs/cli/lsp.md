@@ -19,6 +19,7 @@ It offers:
 - diagnostics: TOML syntax errors, unknown keys with a suggestion, values of the wrong type, deprecated keys, task names no task defines (`unknown-task`), and dependency cycles (`task-cycle`)
 - completion of keys, including inside inline tables, and of values that have a fixed set
 - hover documentation for keys
+- for tools: completion of tool names under `[tools]` from the registry, and hover with the tool's description and backends
 - quick fixes that replace an unknown key or task name with the suggested one, and rewrite a deprecated key to its replacement when the schema names one
 - formatting, as `mise fmt` does
 - for tasks: completion of task names in `depends`, `depends_post`, `wait_for` and `run = [{ task = "..." }]` (and of templates in `extends`), hover with the task's description and command, go to definition, find references, and rename together with every reference in the file
