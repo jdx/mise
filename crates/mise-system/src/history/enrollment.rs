@@ -83,7 +83,13 @@ pub(crate) fn resolve(
             }
         })?;
     }
-    let mut manifest = reconcile(&saved, current, previous.as_ref(), &historical);
+    let mut manifest = reconcile(
+        &saved,
+        current,
+        previous.as_ref(),
+        &historical,
+        &tracked.unselected,
+    );
     let roots = super::sync::layout::Roots::current();
     for path in enroll {
         if let Some(portable) = roots.branch_path(path, None)
@@ -154,6 +160,7 @@ fn reconcile(
     current: &Manifest,
     previous: Option<&Manifest>,
     historical: &[Manifest],
+    unselected: &std::collections::BTreeSet<String>,
 ) -> Manifest {
     let mut result = saved.clone();
     for entry in &current.enrollment {
@@ -246,10 +253,13 @@ fn reconcile(
     }
     if let Some(previous) = previous {
         for old in &previous.enrollment {
+            // an entry that moved into a config of an environment not
+            // selected here is still tracked, by the machines that select it
             if !current
                 .enrollment
                 .iter()
                 .any(|entry| entry.path == old.path)
+                && !unselected.contains(&old.path)
             {
                 result.enrollment.retain(|entry| entry.path != old.path);
             }
@@ -302,6 +312,33 @@ pub(crate) fn confirm(state_dir: &Path, repo: &HistoryRepo, tracked: &TrackedSet
 mod tests {
     use super::*;
     use crate::history::manifest::Enrollment;
+    use std::collections::BTreeSet;
+
+    fn reconcile(
+        saved: &Manifest,
+        current: &Manifest,
+        previous: Option<&Manifest>,
+        historical: &[Manifest],
+    ) -> Manifest {
+        super::reconcile(saved, current, previous, historical, &BTreeSet::new())
+    }
+
+    #[test]
+    fn an_entry_moved_to_an_unselected_environment_stays_enrolled() {
+        let saved = manifest("home/.yabairc");
+        let old = saved.clone();
+        let current = Manifest::default();
+        assert!(
+            super::reconcile(&saved, &current, Some(&old), &[], &BTreeSet::new())
+                .enrollment
+                .is_empty()
+        );
+        let unselected = BTreeSet::from(["home/.yabairc".to_string()]);
+        assert_eq!(
+            super::reconcile(&saved, &current, Some(&old), &[], &unselected),
+            saved
+        );
+    }
 
     fn manifest(path: &str) -> Manifest {
         Manifest {
