@@ -24,11 +24,18 @@ for package in packages:
         # Requirements with inactive environment markers are part of the
         # portable lock but are intentionally absent from this environment.
         continue
-    names.update(
-        f"{entry.name}.exe" if os.name == "nt" else entry.name
-        for entry in distribution.entry_points
-        if entry.group in ("console_scripts", "gui_scripts")
-    )
+    for entry in distribution.entry_points:
+        if entry.group not in ("console_scripts", "gui_scripts"):
+            continue
+        if os.name != "nt":
+            names.add(entry.name)
+            continue
+        # uv drops a trailing ".py" from the entry point name before adding
+        # the executable suffix; pip keeps it. Take whichever launcher exists.
+        candidates = [f"{entry.name}.exe"]
+        if entry.name.endswith(".py"):
+            candidates.append(f"{entry.name[:-3]}.exe")
+        names.add(next((c for c in candidates if (scripts / c).is_file()), candidates[0]))
     names.update(
         path.name
         for file in distribution.files or []
