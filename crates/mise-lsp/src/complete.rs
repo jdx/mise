@@ -104,7 +104,11 @@ fn key_items(
     let mut parent = table.to_vec();
     parent.extend(segments);
     let raw = keypath::last_segment(typed);
-    let quote = raw.chars().next().filter(|c| matches!(c, '"' | '\''));
+    // A quote that is still open: `"llama.c|` and not `"llama.cpp"|`.
+    let quote = raw
+        .chars()
+        .next()
+        .filter(|c| matches!(c, '"' | '\'') && !raw[1..].contains(*c));
     // A key typed in quotes goes through its closing quote, whatever is inside (`"llama.cpp"`).
     // Otherwise the rest of the word goes.
     let rest = match quote.and_then(|q| after.find(q).map(|i| i + 1)) {
@@ -182,10 +186,16 @@ fn existing_keys(
     let without =
         |filler: &str| format!("{}{filler}{}", &text[..replace.start], &text[replace.end..]);
     // A header still being typed may not be closed yet, so the placeholder closes it too.
-    let Some(parsed) = ["", "_placeholder_", "_placeholder_]", "_placeholder_]]"]
-        .into_iter()
-        .find_map(|filler| doc::parse(&without(filler)).ok())
-    else {
+    let Some(parsed) = [
+        "",
+        "_placeholder_",
+        "_placeholder_]",
+        "_placeholder_]]",
+        // a dotted key on a line of its own needs a value
+        "_placeholder_ = 0",
+    ]
+    .into_iter()
+    .find_map(|filler| doc::parse(&without(filler)).ok()) else {
         return vec![];
     };
     parsed
@@ -798,6 +808,33 @@ mod tests {
             &text[item.replace.end..]
         );
         assert_eq!(applied, "[tools]\n\"llama.cpp\" = \"latest\"\n");
+    }
+
+    #[test]
+    fn a_key_whose_quote_is_closed_leaves_the_value_alone() {
+        let text = "[tools]\n\"no\" = \"24\"\n";
+        let offset = text.find("\"no\"").unwrap() + 4;
+        let item = complete(
+            text,
+            offset,
+            &sample(),
+            &registry::tests::sample(),
+            &Candidates::default,
+        )
+        .remove(0);
+        let applied = format!(
+            "{}{}{}",
+            &text[..item.replace.start],
+            item.insert,
+            &text[item.replace.end..]
+        );
+        assert_eq!(applied, "[tools]\nnode = \"24\"\n");
+    }
+
+    #[test]
+    fn dotted_tools_already_set_are_not_offered_again() {
+        assert!(tool_labels("tools.node = \"24\"\ntools.no|").is_empty());
+        assert!(tool_labels("tools.node = \"24\"\ntools.no| = \"x\"").is_empty());
     }
 
     #[test]
