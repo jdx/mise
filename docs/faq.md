@@ -263,7 +263,10 @@ mise install
 If no certificates can be loaded at all, for example in a minimal container
 without the `ca-certificates` package, or `SSL_CERT_FILE` points at a missing
 file, mise warns and trusts a bundled copy of Mozilla's root certificates for
-its downloads and `mise self-update`. Install `ca-certificates` or fix the path
+its own HTTP clients, such as downloads, `mise self-update`, vfox plugins, the
+remote task cache and attestation lookups. Git operations and sigstore's
+trust-root updates use separate clients that this does not cover. Install
+`ca-certificates` or fix the path
 to use your system store again. Certificates that do load are never
 supplemented, so a bundle that loads still replaces the system store as
 described above. This fallback applies to Linux and other Unix systems except

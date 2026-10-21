@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/mise-cache-core",
+  "crates/mise-tls",
   "crates/mise-brew-relocation",
   "crates/mise-agent-env",
   "crates/mise-brew-metadata",
@@ -142,6 +143,7 @@ filetime = "0.2"
 flate2 = "1"
 futures-util = "0.3"
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
+mise-tls = { path = "crates/mise-tls", version = "0.1", default-features = false }
 mise-settings = { path = "crates/mise-settings", version = "2026" }
 mise-daemons = { path = "crates/mise-daemons", version = "0.1" }
 mise-oci = { path = "crates/mise-oci", version = "0.1" }
@@ -363,6 +365,7 @@ rustls = [
   "ubi/rustls-tls",
   "vfox/rustls",
   "xx/rustls",
+  "mise-tls/rustls",
 ]
 rustls-native-roots = [
   "gix/blocking-http-transport-reqwest-rust-tls",
@@ -374,6 +377,7 @@ rustls-native-roots = [
   "ubi/rustls-tls",
   "vfox/rustls-native-roots",
   "xx/rustls-native-roots",
+  "mise-tls/rustls",
 ]
 
 [package.metadata.binstall]

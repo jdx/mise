@@ -63,3 +63,30 @@ fn with_bundled_roots(
 ) -> reqwest::Result<Client> {
     Err(err)
 }
+
+#[cfg(all(
+    test,
+    any(feature = "rustls", feature = "rustls-native-roots"),
+    unix,
+    not(target_os = "android"),
+    not(target_vendor = "apple")
+))]
+mod tests {
+    use super::*;
+
+    /// The only test in this crate, so changing the process environment cannot
+    /// race another test.
+    #[test]
+    fn falls_back_to_bundled_roots_when_the_system_store_is_empty() {
+        // SAFETY: no other thread reads or writes the environment here.
+        unsafe {
+            std::env::remove_var("SSL_CERT_FILE");
+            std::env::set_var("SSL_CERT_DIR", "/nonexistent/mise-tls-test");
+        }
+        assert!(
+            Client::builder().build().is_err(),
+            "reqwest should refuse to build with no system roots"
+        );
+        assert!(build_client(Client::builder).is_ok());
+    }
+}

@@ -122,10 +122,11 @@ impl AttestationClientBuilder {
     pub fn build(self) -> Result<AttestationClient> {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_VALUE));
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .timeout(self.timeout.unwrap_or(DEFAULT_TIMEOUT))
-            .build()?;
+        let client = mise_tls::build_client(|| {
+            reqwest::Client::builder()
+                .default_headers(headers.clone())
+                .timeout(self.timeout.unwrap_or(DEFAULT_TIMEOUT))
+        })?;
 
         Ok(AttestationClient {
             client,

@@ -902,7 +902,7 @@ impl Client {
     ) -> Result<reqwest::Client> {
         // Built through `build_client` so an empty system trust store falls back
         // to bundled roots; it may call this closure twice.
-        Ok(crate::tls::build_client(|| {
+        Ok(mise_tls::build_client(|| {
             let builder = Self::_new().connect_timeout(timeout);
             let builder = match read_timeout {
                 Some(read_timeout) => builder.read_timeout(read_timeout),
@@ -974,7 +974,7 @@ impl Client {
         let client = self
             .manual_redirects
             .get_or_init(|| {
-                crate::tls::build_client(|| {
+                mise_tls::build_client(|| {
                     Self::_new()
                         .read_timeout(self.timeout)
                         .connect_timeout(self.timeout)

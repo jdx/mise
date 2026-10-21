@@ -91,7 +91,6 @@ pub mod tera;
 pub mod testing;
 pub mod time;
 pub mod timeout;
-pub mod tls;
 pub mod tokens;
 pub mod user_agent;
 pub mod versions_host;

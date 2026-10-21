@@ -861,7 +861,7 @@ impl SelfUpdate {
 
     fn http_client() -> Result<reqwest::Client> {
         let settings = Settings::get();
-        Ok(mise_util::tls::build_client(|| {
+        Ok(mise_tls::build_client(|| {
             reqwest::Client::builder()
                 .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
                 .https_only(true)
@@ -966,7 +966,7 @@ impl SelfUpdate {
         let headers = crate::github::get_headers(&url)?;
         let settings = Settings::get();
         let request_timeout = settings.http_timeout();
-        let archive = mise_util::tls::build_client(|| {
+        let archive = mise_tls::build_client(|| {
             reqwest::Client::builder()
                 .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
                 .https_only(true)

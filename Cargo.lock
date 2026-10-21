@@ -6858,6 +6858,7 @@ dependencies = [
  "mise-oci",
  "mise-settings",
  "mise-system",
+ "mise-tls",
  "mise-ui",
  "mise-util",
  "mockito",
@@ -6978,6 +6979,7 @@ dependencies = [
  "futures-util",
  "hex",
  "log",
+ "mise-tls",
  "mockito",
  "rand 0.10.3",
  "reqwest",
@@ -7122,6 +7124,7 @@ dependencies = [
  "base64 0.23.1",
  "hex",
  "log",
+ "mise-tls",
  "regex",
  "reqwest",
  "rustls-pki-types",
@@ -7251,6 +7254,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mise-tls"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "reqwest",
+ "webpki-root-certs",
+]
+
+[[package]]
 name = "mise-ui"
 version = "2026.9.0"
 dependencies = [
@@ -7319,6 +7331,7 @@ dependencies = [
  "mise-config",
  "mise-settings",
  "mise-sigstore",
+ "mise-tls",
  "mockito",
  "netrc-rs",
  "nix 0.31.3",
@@ -7364,7 +7377,6 @@ dependencies = [
  "urlencoding",
  "versions",
  "walkdir",
- "webpki-root-certs",
  "which",
  "windows-sys 0.61.2",
  "xx",
@@ -12339,6 +12351,7 @@ dependencies = [
  "itertools 0.15.0",
  "log",
  "mise-sigstore",
+ "mise-tls",
  "mlua",
  "once_cell",
  "reqwest",
