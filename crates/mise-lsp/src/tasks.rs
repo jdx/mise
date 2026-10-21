@@ -269,7 +269,8 @@ impl Index {
                 }
                 index.scan_budget -= 1;
                 let path = entry.path();
-                let name = entry.file_name().to_string_lossy().into_owned();
+                // the runner reads a colon in a file or directory name as an underscore
+                let name = entry.file_name().to_string_lossy().replace(':', "_");
                 let task = format!("{prefix}{name}");
                 let Ok(kind) = entry.file_type() else {
                     continue;
@@ -1461,6 +1462,17 @@ wait_for = [["build", "arg"]]
         let text = "[task_config]\nincludes = [\"tasks\"]\n[tasks.build]\n";
         let index = Index::build(text, Some(&root.join("mise.toml")), &Roots::default());
         assert!(index.referenced_elsewhere(Namespace::Task, "build"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_colon_in_a_file_name_is_an_underscore() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-colon-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("mise-tasks")).unwrap();
+        std::fs::write(root.join("mise-tasks/a:b"), "").unwrap();
+        let index = Index::build("", Some(&root.join("mise.toml")), &Roots::default());
+        assert!(index.knows(Namespace::Task, "a_b"));
+        assert!(!index.knows(Namespace::Task, "a:b"));
     }
 
     #[test]
