@@ -212,18 +212,21 @@ impl Index {
                 .is_some_and(|env| !self.envs.contains(&env));
             if other_env {
                 self.complete = false;
-                if let Some(text) = includes::read_capped(&config)
-                    && let Ok(parsed) = doc::parse(&text)
+                match includes::read_capped(&config)
+                    .and_then(|t| doc::parse(&t).ok().map(|p| (t, p)))
                 {
-                    self.note_references(&text, &parsed, Layout::Config);
-                    self.add_includes(&config, &parsed, seen, false);
+                    Some((text, parsed)) => {
+                        self.note_references(&text, &parsed, Layout::Config);
+                        self.add_includes(&config, &parsed, seen, false);
+                    }
+                    None => self.note_unreadable(&config),
                 }
                 continue;
             }
-            let Some(text) = includes::read_capped(&config) else {
-                continue;
-            };
-            let Ok(parsed) = doc::parse(&text) else {
+            let Some((text, parsed)) =
+                includes::read_capped(&config).and_then(|t| doc::parse(&t).ok().map(|p| (t, p)))
+            else {
+                self.note_unreadable(&config);
                 continue;
             };
             self.add(&parsed, Layout::Config, &origin_in(&config, &text));
@@ -253,7 +256,7 @@ impl Index {
         let included = includes::task_include_files(config, &listed);
         self.complete &= !included.skipped;
         // a glob, a remote include or a walk that ran out leaves files this did not read
-        self.references_cut_short |= included.skipped;
+        self.references_cut_short |= included.unread;
         for dir in included.dirs.iter().filter(|_| define) {
             // an included directory may be a whole project: only its executables are tasks
             self.add_file_tasks(dir, true);
@@ -286,15 +289,23 @@ impl Index {
                 }
                 self.reference_reads.insert(path.clone());
             }
-            let Some(text) = includes::read_capped(&path) else {
-                continue;
-            };
-            if let Ok(parsed) = doc::parse(&text) {
-                if define {
-                    self.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
+            match includes::read_capped(&path).and_then(|t| doc::parse(&t).ok().map(|p| (t, p))) {
+                Some((text, parsed)) => {
+                    if define {
+                        self.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
+                    }
+                    self.note_references(&text, &parsed, Layout::TaskFile);
                 }
-                self.note_references(&text, &parsed, Layout::TaskFile);
+                None => self.note_unreadable(&path),
             }
+        }
+    }
+
+    /// A file that exists but could not be read (too big, not text, not TOML) may have named any
+    /// task.
+    fn note_unreadable(&mut self, path: &Path) {
+        if path.exists() {
+            self.references_cut_short = true;
         }
     }
 
@@ -357,12 +368,16 @@ impl Index {
                         .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"))
                 {
                     // a TOML file here holds task definitions, `[lint]` defining `lint`
-                    if index.read_files.insert(path.clone())
-                        && let Some(text) = includes::read_capped(&path)
-                        && let Ok(parsed) = doc::parse(&text)
-                    {
-                        index.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
-                        index.note_references(&text, &parsed, Layout::TaskFile);
+                    if index.read_files.insert(path.clone()) {
+                        match includes::read_capped(&path)
+                            .and_then(|t| doc::parse(&t).ok().map(|p| (t, p)))
+                        {
+                            Some((text, parsed)) => {
+                                index.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
+                                index.note_references(&text, &parsed, Layout::TaskFile);
+                            }
+                            None => index.note_unreadable(&path),
+                        }
                     }
                 } else if is_file && (!only || is_executable(&path)) {
                     // only a known script extension is dropped: `gen.proto` stays `gen.proto`
@@ -1778,6 +1793,25 @@ wait_for = [["build", "arg"]]
         assert!(index.referenced_elsewhere(Namespace::Task, "build"));
         // but it defines nothing
         assert!(!index.knows(Namespace::Task, "ci"));
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_read_leaves_the_references_unknown() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-bad-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("proj")).unwrap();
+        std::fs::write(root.join("mise.dev.toml"), "this is = not [toml\n").unwrap();
+        let index = Index::build("", Some(&root.join("proj/mise.toml")), &Roots::default());
+        assert!(index.references_cut_short);
+    }
+
+    #[test]
+    fn a_script_named_in_includes_does_not_block_a_rename() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-scriptinc-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("deploy.sh"), "#!/bin/sh\n").unwrap();
+        let text = "[task_config]\nincludes = [\"deploy.sh\"]\n";
+        let index = Index::build(text, Some(&root.join("mise.toml")), &Roots::default());
+        assert!(!index.references_cut_short);
     }
 
     #[test]

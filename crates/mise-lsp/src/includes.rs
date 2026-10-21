@@ -146,6 +146,9 @@ pub(crate) struct IncludeFiles {
     /// Whether an include was left unread: a glob, a `git::` or `oci::` source, anything else
     /// that is not a path on disk, or a walk that ran out of its budget.
     pub skipped: bool,
+    /// Whether files that may be task files were left unread, as opposed to a script named
+    /// outright, which holds no references.
+    pub unread: bool,
 }
 
 /// Entries one `task_include_files` call looks at, in all the directories it walks.
@@ -159,6 +162,7 @@ pub(crate) fn task_include_files(config: &Path, includes: &[String]) -> IncludeF
         // a template is never rendered here, so what it names is unknown
         if include.contains("::") || include.contains(['*', '?', '[', '{']) {
             out.skipped = true;
+            out.unread = true;
             continue;
         }
         for base in include_bases(config) {
@@ -182,6 +186,7 @@ pub(crate) fn task_include_files(config: &Path, includes: &[String]) -> IncludeF
         }
     }
     out.skipped |= budget == 0;
+    out.unread |= budget == 0;
     out
 }
 
@@ -206,6 +211,7 @@ fn toml_files_below(dir: &Path, depth: usize, budget: &mut usize, out: &mut Incl
                 toml_files_below(&path, depth + 1, budget, out);
             } else {
                 out.skipped = true;
+                out.unread = true;
             }
         } else if kind.is_file()
             && path
@@ -427,6 +433,9 @@ mod tests {
         assert!(!skipped("a/b/c/d/e"));
         std::fs::write(root.join("script.sh"), "").unwrap();
         assert!(skipped("script.sh"), "a script named outright is not read");
+        let unread = |include: &str| task_include_files(&config, &[include.to_string()]).unread;
+        assert!(unread("tasks/*.toml"));
+        assert!(!unread("script.sh"), "a script holds no references");
     }
 
     #[test]
