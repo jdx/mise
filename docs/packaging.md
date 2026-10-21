@@ -29,7 +29,11 @@ disabled for this install, update mise the same way you installed it".
 | `self_update`       | The `mise self-update` implementation                                                  |
 
 The `rustls` and `rustls-native-roots` features use rustls in place of
-`native-tls`.
+`native-tls`. The official release binaries are built with
+`--no-default-features --features rustls-native-roots,self_update,vfox/vendored-lua`
+(see `scripts/build-tarball.sh`), so they use rustls for TLS. Both TLS
+choices verify certificates against the operating system's trust store; see
+[How does mise handle TLS certificates?](/faq.html#tls-certificates).
 
 The build needs Rust at or above the `rust-version` in `Cargo.toml`, a C
 compiler, and, with `native-tls` on Linux, `pkg-config` and the OpenSSL
