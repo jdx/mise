@@ -831,7 +831,14 @@ fn config_dir_files(dir: &Path) -> Vec<PathBuf> {
         for path in entries.flatten().map(|e| e.path()) {
             if path.is_dir() {
                 if let Ok(inner) = std::fs::read_dir(&path) {
-                    out.extend(inner.flatten().map(|e| e.path()).filter(|p| is_toml(p)));
+                    // only the names mise loads: a helper file in a folder is not a config
+                    out.extend(inner.flatten().map(|e| e.path()).filter(|p| {
+                        is_toml(p)
+                            && p.file_name().is_some_and(|n| {
+                                let n = n.to_string_lossy();
+                                n.starts_with("mise") || n.starts_with(".mise")
+                            })
+                    }));
                 }
             } else if is_toml(&path) {
                 out.push(path);
@@ -1588,8 +1595,13 @@ wait_for = [["build", "arg"]]
         )
         .unwrap();
         std::fs::write(
-            root.join("cfg/conf.d/group/a.toml"),
+            root.join("cfg/conf.d/group/mise.a.toml"),
             "[tasks.nested]\nrun = \"x\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("cfg/conf.d/group/helper.toml"),
+            "[tasks.helper]\nrun = \"x\"\n",
         )
         .unwrap();
         let roots = Roots {
@@ -1599,6 +1611,7 @@ wait_for = [["build", "arg"]]
         let index = Index::build("", Some(&root.join("proj/mise.toml")), &roots);
         assert!(index.knows(Namespace::Task, "local"));
         assert!(index.knows(Namespace::Task, "nested"));
+        assert!(!index.knows(Namespace::Task, "helper"));
     }
 
     #[test]
