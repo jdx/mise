@@ -294,7 +294,7 @@ fn test_windows_arm64_fallback_applies_amd64_replacement() {
     let pkg = AquaPackage {
         asset: "tool-{{.OS}}-{{.Arch}}-{{.GOARCH}}.zip".to_string(),
         format: "zip".to_string(),
-        replacements: HashMap::from([
+        replacements: BTreeMap::from([
             ("windows".to_string(), "win32".to_string()),
             ("amd64".to_string(), "x64".to_string()),
         ]),
