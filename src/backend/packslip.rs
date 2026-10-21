@@ -1786,11 +1786,14 @@ impl PackslipBackend {
             .await?;
         let statement: Statement = serde_json::from_str(&verified.statement)?;
         // Parse errors are verification errors, not age-policy exclusions.
-        if !verified_age_allowed(
+        let past_cutoff = !verified_age_allowed(
             verified.logged_at.as_deref(),
             &verified.published_at,
             before,
-        )? {
+        )?;
+        // An installed version is checked against the host too, so that
+        // AFTER_CUTOFF returned for it means the cutoff is its only exclusion.
+        if past_cutoff && !self.is_installed_version(version) {
             return Ok(Some(AFTER_CUTOFF.into()));
         }
         let artifact = match select_compatible_artifact(
@@ -1810,7 +1813,14 @@ impl PackslipBackend {
         {
             return Ok(Some(requirements.failures.join("; ")));
         }
+        if past_cutoff {
+            return Ok(Some(AFTER_CUTOFF.into()));
+        }
         Ok(None)
+    }
+
+    fn is_installed_version(&self, version: &str) -> bool {
+        self.list_installed_versions().iter().any(|v| v == version)
     }
 
     /// [`Self::verified_release`] for choosing among candidates, reusing a
@@ -1883,8 +1893,7 @@ impl PackslipBackend {
             .await?
         {
             // An installed version needs no upgrade, so skipping it is not news.
-            let installed =
-                reason == AFTER_CUTOFF && self.list_installed_versions().contains(&version);
+            let installed = reason == AFTER_CUTOFF && self.is_installed_version(&version);
             if !installed {
                 warn!("packslip:{project}: skipping {version}: {reason}");
             }
