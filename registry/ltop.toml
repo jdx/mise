@@ -1,0 +1,6 @@
+backends = ["github:uMaj35ty/ltop"]
+bins = ["ltop", "ltop-bpf", "loli"]
+description = "btop-styled TUI monitoring for local network, LAN neighbours and disk I/O"
+os = ["linux"]
+test = { cmd = "ltop -V | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+'", expected = "{{version}}" }
+version_order = "semver"
