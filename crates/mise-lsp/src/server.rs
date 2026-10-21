@@ -96,6 +96,12 @@ fn global_roots() -> Roots {
             .into_iter()
             .flatten()
             .collect(),
+        envs: std::env::var("MISE_ENV")
+            .unwrap_or_default()
+            .split(',')
+            .map(|env| env.trim().to_string())
+            .filter(|env| !env.is_empty())
+            .collect(),
     }
 }
 

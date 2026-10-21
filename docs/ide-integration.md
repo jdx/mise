@@ -201,7 +201,9 @@ Two diagnostics check task references, the way
   extension, and by the `#MISE alias=` lines in their header. Patterns with
   `*`, `?`, `[` or `{` are skipped. The configs in the directories above the
   file and the user's and system's config (including `MISE_CONFIG_DIR` and
-  `MISE_SYSTEM_CONFIG_DIR`) count too. When tasks can come from somewhere the
+  `MISE_SYSTEM_CONFIG_DIR`) count too. A `mise.<env>.toml` is read only for an
+  environment in `MISE_ENV` when the server started; one for any other leaves
+  names unknown, which turns `unknown-task` off. When tasks can come from somewhere the
   server does not read, which is a glob or a `git::`/`oci::` entry in
   `includes`, a `task_config.dir`, or a directory with more entries than the
   server scans (it looks at about 5000 entries in all), nothing is reported

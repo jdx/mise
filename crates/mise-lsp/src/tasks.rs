@@ -86,6 +86,8 @@ pub(crate) struct Index {
     pub complete: bool,
     /// Directory entries left to look at, for the scans of all the task directories.
     scan_budget: usize,
+    /// The environments in use; the configs of any other are not read.
+    envs: Vec<String>,
     /// The task files already read, so one a directory and an `includes` entry both reach is read once.
     read_files: HashSet<PathBuf>,
 }
@@ -99,6 +101,8 @@ pub(crate) struct Roots {
     /// Directories that are a mise config directory themselves (`<dir>/config.toml`,
     /// `<dir>/conf.d`, `<dir>/tasks`), such as the one `MISE_CONFIG_DIR` names.
     pub config_dirs: Vec<PathBuf>,
+    /// The environments in use (`MISE_ENV`): `mise.<env>.toml` only loads for these.
+    pub envs: Vec<String>,
 }
 
 /// A name offered where a task or template is expected.
@@ -136,6 +140,7 @@ impl Index {
             file_tasks: HashSet::new(),
             complete: true,
             scan_budget: MAX_SCAN,
+            envs: roots.envs.clone(),
             read_files: HashSet::new(),
         };
         let mut seen: HashSet<PathBuf> = HashSet::new();
@@ -189,6 +194,16 @@ impl Index {
                 return;
             }
             seen.insert(config.clone());
+            // `mise.production.toml` only loads for the environment `production`; which are in
+            // use is not known for sure here, so a config of another one leaves names unknown.
+            if config
+                .file_name()
+                .and_then(|n| env_of(&n.to_string_lossy()))
+                .is_some_and(|env| !self.envs.contains(&env))
+            {
+                self.complete = false;
+                continue;
+            }
             let Some(text) = includes::read_capped(&config) else {
                 continue;
             };
@@ -809,6 +824,19 @@ pub(crate) fn diagnose(text: &str, parsed: &Parsed, index: &Index) -> Vec<Diagno
     }
     cycles(&found, index, &mut out);
     out
+}
+
+/// The environment a config file name is for: `mise.production.toml` and
+/// `mise.production.local.toml` are for `production`; `mise.toml` and `mise.local.toml` for none.
+fn env_of(file_name: &str) -> Option<String> {
+    let stem = file_name.strip_prefix('.').unwrap_or(file_name);
+    let stem = stem.strip_suffix(".toml")?;
+    let segments: Vec<&str> = stem.split('.').collect();
+    match segments.as_slice() {
+        ["mise" | "config", env] if *env != "local" => Some(env.to_string()),
+        ["mise" | "config", env, "local"] => Some(env.to_string()),
+        _ => None,
+    }
 }
 
 /// The configs in a directory that is a mise config directory itself: `config.toml`, its local
@@ -1599,7 +1627,7 @@ wait_for = [["build", "arg"]]
         )
         .unwrap();
         std::fs::write(
-            root.join("cfg/conf.d/group/mise.a.toml"),
+            root.join("cfg/conf.d/group/mise.toml"),
             "[tasks.nested]\nrun = \"x\"\n",
         )
         .unwrap();
@@ -1611,6 +1639,7 @@ wait_for = [["build", "arg"]]
         let roots = Roots {
             homes: vec![],
             config_dirs: vec![root.join("cfg")],
+            envs: vec![],
         };
         let index = Index::build("", Some(&root.join("proj/mise.toml")), &roots);
         assert!(index.knows(Namespace::Task, "local"));
@@ -1619,6 +1648,36 @@ wait_for = [["build", "arg"]]
         assert!(!index.knows(Namespace::Task, "dotted"));
         assert!(index.knows(Namespace::Task, "nested"));
         assert!(!index.knows(Namespace::Task, "helper"));
+    }
+
+    #[test]
+    fn a_config_of_an_unselected_environment_is_not_read() {
+        assert_eq!(
+            env_of("mise.production.toml").as_deref(),
+            Some("production")
+        );
+        assert_eq!(env_of(".mise.dev.local.toml").as_deref(), Some("dev"));
+        assert_eq!(env_of("mise.toml"), None);
+        assert_eq!(env_of("mise.local.toml"), None);
+        assert_eq!(env_of("config.toml"), None);
+        let root = std::env::temp_dir().join(format!("mise-lsp-envsel-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("proj")).unwrap();
+        std::fs::write(
+            root.join("mise.production.toml"),
+            "[tasks.deploy]\nrun = \"x\"\n",
+        )
+        .unwrap();
+        let file = root.join("proj/mise.toml");
+        let index = Index::build("", Some(&file), &Roots::default());
+        assert!(!index.knows(Namespace::Task, "deploy"));
+        assert!(!index.complete, "the unread config could define anything");
+        let roots = Roots {
+            envs: vec!["production".to_string()],
+            ..Roots::default()
+        };
+        let index = Index::build("", Some(&file), &roots);
+        assert!(index.knows(Namespace::Task, "deploy"));
+        assert!(index.complete);
     }
 
     #[test]
@@ -1634,6 +1693,7 @@ wait_for = [["build", "arg"]]
         let roots = Roots {
             homes: vec![],
             config_dirs: vec![root.join("cfg")],
+            envs: vec![],
         };
         let index = Index::build("", Some(&root.join("proj/mise.toml")), &roots);
         assert!(index.knows(Namespace::Task, "global"));
