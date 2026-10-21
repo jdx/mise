@@ -803,7 +803,7 @@ fn is_executable(path: &Path) -> bool {
         let mut head = [0u8; 2];
         // the extensions the runner runs by default, or a `#!` line
         let by_extension = path.extension().is_some_and(|ext| {
-            ["cmd", "bat", "ps1", "exe", "com"]
+            ["cmd", "bat", "ps1", "exe", "com", "vbs"]
                 .iter()
                 .any(|known| ext.eq_ignore_ascii_case(known))
         });
