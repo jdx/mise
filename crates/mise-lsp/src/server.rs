@@ -636,6 +636,11 @@ impl Server {
         if new == old {
             return Ok(json!({"changes": {}}));
         }
+        if found.index.references_cut_short {
+            return Err(fail(format!(
+                "not every config and include file could be read, so other references to `{old}` cannot be ruled out"
+            )));
+        }
         if found.index.referenced_elsewhere(namespace, old) {
             return Err(fail(format!(
                 "other files also refer to `{old}`; a rename here would leave them broken"
