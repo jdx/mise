@@ -165,15 +165,7 @@ impl Index {
         }
         for dir in &roots.config_dirs {
             index.add_file_tasks(&dir.join("tasks"), false);
-            let mut configs = vec![dir.join("config.toml")];
-            if let Ok(entries) = std::fs::read_dir(dir.join("conf.d")) {
-                configs.extend(
-                    entries
-                        .flatten()
-                        .map(|e| e.path())
-                        .filter(|p| p.extension().is_some_and(|e| e == "toml")),
-                );
-            }
+            let configs = config_dir_files(dir);
             index.add_configs(configs, &mut seen);
         }
         index
@@ -809,6 +801,37 @@ pub(crate) fn diagnose(text: &str, parsed: &Parsed, index: &Index) -> Vec<Diagno
         }
     }
     cycles(&found, index, &mut out);
+    out
+}
+
+/// The configs in a directory that is a mise config directory itself: `config.toml`, its local
+/// and per-environment variants (`config.local.toml`, `config.dev.toml`), and the TOML files of
+/// `conf.d`, which may sit in folders there.
+fn config_dir_files(dir: &Path) -> Vec<PathBuf> {
+    let is_toml = |p: &Path| {
+        p.extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("toml"))
+    };
+    let mut out = vec![];
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        out.extend(entries.flatten().map(|e| e.path()).filter(|p| {
+            is_toml(p)
+                && p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("config."))
+        }));
+    }
+    if let Ok(entries) = std::fs::read_dir(dir.join("conf.d")) {
+        for path in entries.flatten().map(|e| e.path()) {
+            if path.is_dir() {
+                if let Ok(inner) = std::fs::read_dir(&path) {
+                    out.extend(inner.flatten().map(|e| e.path()).filter(|p| is_toml(p)));
+                }
+            } else if is_toml(&path) {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
     out
 }
 
@@ -1546,6 +1569,29 @@ wait_for = [["build", "arg"]]
         index.scan_budget = 0;
         index.add_file_tasks(&root.join("mise-tasks"), false);
         assert!(!index.complete);
+    }
+
+    #[test]
+    fn a_config_dir_reads_local_variants_and_conf_d_folders() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-confvar-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("cfg/conf.d/group")).unwrap();
+        std::fs::write(
+            root.join("cfg/config.local.toml"),
+            "[tasks.local]\nrun = \"x\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("cfg/conf.d/group/a.toml"),
+            "[tasks.nested]\nrun = \"x\"\n",
+        )
+        .unwrap();
+        let roots = Roots {
+            homes: vec![],
+            config_dirs: vec![root.join("cfg")],
+        };
+        let index = Index::build("", Some(&root.join("proj/mise.toml")), &roots);
+        assert!(index.knows(Namespace::Task, "local"));
+        assert!(index.knows(Namespace::Task, "nested"));
     }
 
     #[test]
