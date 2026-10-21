@@ -136,21 +136,36 @@ pub(crate) fn include_bases(config: &Path) -> Vec<&Path> {
     bases
 }
 
-/// The TOML files a config's `[task_config] includes` names outright: a file, or the files
-/// below a directory. A glob, a `git::` or `oci::` source and anything else that is not a
-/// path on disk is not read.
-pub(crate) fn task_include_files(config: &Path, includes: &[String]) -> Vec<PathBuf> {
-    let mut out = vec![];
+/// What a config's `[task_config] includes` names outright.
+#[derive(Default)]
+pub(crate) struct IncludeFiles {
+    /// The TOML files: the ones named, and those below a directory named.
+    pub files: Vec<PathBuf>,
+    /// The directories named, which may hold file tasks (scripts) as well.
+    pub dirs: Vec<PathBuf>,
+    /// Whether an include was left unread: a glob, a `git::` or `oci::` source, or anything else
+    /// that is not a path on disk.
+    pub skipped: bool,
+}
+
+pub(crate) fn task_include_files(config: &Path, includes: &[String]) -> IncludeFiles {
+    let mut out = IncludeFiles::default();
     for include in includes {
         if include.contains("::") || include.contains(['*', '?', '[']) {
+            out.skipped = true;
             continue;
         }
         for base in include_bases(config) {
             let path = base.join(include);
             if path.is_dir() {
-                toml_files_below(&path, 0, &mut out);
-            } else if path.extension().is_some_and(|ext| ext == "toml") && !out.contains(&path) {
-                out.push(path);
+                toml_files_below(&path, 0, &mut out.files);
+                if !out.dirs.contains(&path) {
+                    out.dirs.push(path);
+                }
+            } else if path.extension().is_some_and(|ext| ext == "toml")
+                && !out.files.contains(&path)
+            {
+                out.files.push(path);
             }
         }
     }

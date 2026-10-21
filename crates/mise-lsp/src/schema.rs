@@ -3,6 +3,9 @@
 //! The host hands the server `schema/mise.json`, which is generated from the types mise parses
 //! config with, so it names every key mise reads.
 
+use std::sync::OnceLock;
+
+use regex::Regex;
 use serde_json::Value;
 
 /// Deep enough for every chain in the schema; a bound so a cyclic `$ref` cannot recurse forever.
@@ -138,6 +141,46 @@ impl Schema {
                 variants(keyword)
                     .is_some_and(|any| any.iter().all(|v| self.deprecated(v, depth + 1)))
             })
+    }
+
+    /// The key a deprecated key's description says replaces it, as written there: a dotted path
+    /// from the table the deprecated key is in (`task.output`), or from the top of the file
+    /// (`env._.path`). Nothing is guessed: a description that names no key has no replacement.
+    pub(crate) fn replacement(&self, nodes: &[&Value]) -> Option<String> {
+        static NAMED: OnceLock<[Regex; 2]> = OnceLock::new();
+        let [alias, instead] = NAMED.get_or_init(|| {
+            [
+                Regex::new(r"(?i)\b(?:alias|name) (?:for|of) `?([A-Za-z0-9_.]+)`?").unwrap(),
+                Regex::new(r"(?i)\buse `?([A-Za-z0-9_.]+)`? instead").unwrap(),
+            ]
+        });
+        let description = self.description(nodes)?;
+        [alias, instead].into_iter().find_map(|re| {
+            let name = re.captures(&description)?.get(1)?.as_str();
+            Some(name.trim_end_matches('.').to_string())
+        })
+    }
+
+    /// Whether every key of `path` is one the schema names, rather than one a table takes for
+    /// any name.
+    pub(crate) fn declares<S: AsRef<str>>(&self, path: &[S]) -> bool {
+        let mut nodes = self.expanded(&self.root);
+        for segment in path {
+            let mut next = vec![];
+            for node in &nodes {
+                if let Some(schema) = node
+                    .get("properties")
+                    .and_then(|properties| properties.get(segment.as_ref()))
+                {
+                    self.expand(schema, &mut next, 0);
+                }
+            }
+            if next.is_empty() {
+                return false;
+            }
+            nodes = next;
+        }
+        true
     }
 
     /// The values a key can be given as a literal: its enum, or both booleans.

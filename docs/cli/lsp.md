@@ -16,10 +16,10 @@ Editors start this command and exchange Language Server Protocol messages with i
 It serves `mise.toml` and the other config files mise loads (`.mise.toml`, `mise.<env>.toml`, `mise.local.toml`, `mise/config.toml`, and the files of a `conf.d`). It ignores every other file, including files that `[task_config] includes` lists, so it can be attached to the TOML language without touching `Cargo.toml` or `pyproject.toml`.
 
 It offers:
-- diagnostics: TOML syntax errors, unknown keys with a suggestion, values of the wrong type, and deprecated keys
+- diagnostics: TOML syntax errors, unknown keys with a suggestion, values of the wrong type, deprecated keys, task names no task defines (`unknown-task`), and dependency cycles (`task-cycle`)
 - completion of keys, including inside inline tables, and of values that have a fixed set
 - hover documentation for keys
-- quick fixes that replace an unknown key with the suggested one
+- quick fixes that replace an unknown key or task name with the suggested one, and rewrite a deprecated key to its replacement when the schema names one
 - formatting, as `mise fmt` does
 - for tasks: completion of task names in `depends`, `depends_post`, `wait_for` and `run = [{ task = "..." }]` (and of templates in `extends`), hover with the task's description and command, go to definition, find references, and rename together with every reference in the file
 

@@ -6,13 +6,14 @@
 //! the open document it reads the configs in the directories above it and the TOML files their
 //! `[task_config] includes` name, the way [`crate::includes`] does.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
 use crate::complete::unquoted;
+use crate::diagnostics::{Diagnostic, Severity};
 use crate::doc::{self, Parsed};
 use crate::includes;
 use crate::keypath;
@@ -67,10 +68,14 @@ pub(crate) struct Definition {
 }
 
 /// What the open document and the files around it define.
-#[derive(Default)]
 pub(crate) struct Index {
     pub tasks: Vec<Definition>,
     pub templates: Vec<Definition>,
+    /// The names file tasks (scripts) answer to, with and without their extension.
+    file_tasks: HashSet<String>,
+    /// Whether every place tasks can come from was read. A glob in `includes`, a remote include
+    /// or a custom `task_config.dir` leaves names this index cannot know.
+    pub complete: bool,
 }
 
 /// A name offered where a task or template is expected.
@@ -87,20 +92,44 @@ pub(crate) struct Candidates {
     pub templates: Vec<Candidate>,
 }
 
+/// The directories below a project that hold file tasks unless `task_config.dir` says otherwise.
+const FILE_TASK_DIRS: [&str; 5] = [
+    "mise-tasks",
+    ".mise-tasks",
+    ".mise/tasks",
+    "mise/tasks",
+    ".config/mise/tasks",
+];
+
 impl Index {
     /// `open` is the text of the open document, `file` its path. The definitions of the document
-    /// come first, so they win over a file that defines the same name.
-    pub(crate) fn build(open: &str, file: Option<&Path>) -> Self {
-        let mut index = Index::default();
+    /// come first, so they win over a file that defines the same name. `roots` are directories
+    /// outside the file's own ancestors whose configs also apply, such as the user's.
+    pub(crate) fn build(open: &str, file: Option<&Path>, roots: &[PathBuf]) -> Self {
+        let mut index = Index {
+            tasks: vec![],
+            templates: vec![],
+            file_tasks: HashSet::new(),
+            complete: true,
+        };
         if let Ok(parsed) = doc::parse(open) {
             index.add(&parsed, Layout::Config, &|range| Origin::Open(range));
+            index.complete &= parsed.json["task_config"].get("dir").is_none();
         }
         let Some(file) = file else {
             return index;
         };
         let mut seen: HashSet<PathBuf> = HashSet::new();
         seen.insert(file.to_path_buf());
-        for dir in file.ancestors().skip(1) {
+        let dirs = file
+            .ancestors()
+            .skip(1)
+            .chain(roots.iter().map(PathBuf::as_path))
+            .collect::<Vec<_>>();
+        for dir in dirs {
+            for sub in FILE_TASK_DIRS {
+                index.add_file_tasks(&dir.join(sub));
+            }
             for config in includes::config_files(dir) {
                 if seen.len() >= MAX_FILES || !seen.insert(config.clone()) {
                     continue;
@@ -112,13 +141,19 @@ impl Index {
                     continue;
                 };
                 index.add(&parsed, Layout::Config, &origin_in(&config, &text));
+                index.complete &= parsed.json["task_config"].get("dir").is_none();
                 let listed: Vec<String> = parsed.json["task_config"]["includes"]
                     .as_array()
                     .into_iter()
                     .flatten()
                     .filter_map(|v| v.as_str().map(str::to_string))
                     .collect();
-                for path in includes::task_include_files(&config, &listed) {
+                let included = includes::task_include_files(&config, &listed);
+                index.complete &= !included.skipped;
+                for dir in &included.dirs {
+                    index.add_file_tasks(dir);
+                }
+                for path in included.files {
                     if seen.len() >= MAX_FILES || !seen.insert(path.clone()) {
                         continue;
                     }
@@ -132,6 +167,53 @@ impl Index {
             }
         }
         index
+    }
+
+    /// The scripts below `dir` are tasks named by their path: `test/unit.sh` is `test:unit`, and
+    /// `mise run test:unit.sh` and `test:unit` both find it.
+    fn add_file_tasks(&mut self, dir: &Path) {
+        fn walk(dir: &Path, prefix: &str, depth: usize, out: &mut HashSet<String>) {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten().take(MAX_FILES) {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let task = format!("{prefix}{name}");
+                if path.is_dir() {
+                    if depth < 4 {
+                        walk(&path, &format!("{task}:"), depth + 1, out);
+                    }
+                } else if out.len() < MAX_FILES * 25 {
+                    if let Some(stem) = Path::new(&name).file_stem() {
+                        out.insert(format!("{prefix}{}", stem.to_string_lossy()));
+                    }
+                    out.insert(task);
+                }
+            }
+        }
+        walk(dir, "", 0, &mut self.file_tasks);
+    }
+
+    /// Whether a task or template of this name is defined somewhere the index looked.
+    pub(crate) fn knows(&self, namespace: Namespace, name: &str) -> bool {
+        self.find(namespace, name).is_some()
+            || (namespace == Namespace::Task && self.file_tasks.contains(name))
+    }
+
+    /// Every name that something is known by, to suggest the near miss of a mistyped one.
+    pub(crate) fn names(&self, namespace: Namespace) -> Vec<&str> {
+        let mut names: Vec<&str> = self
+            .definitions(namespace)
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect();
+        if namespace == Namespace::Task {
+            names.extend(self.file_tasks.iter().map(String::as_str));
+        }
+        names.sort_unstable();
+        names.dedup();
+        names
     }
 
     fn add(&mut self, parsed: &Parsed, layout: Layout, origin: &dyn Fn(Range<usize>) -> Origin) {
@@ -343,6 +425,8 @@ pub(crate) struct Reference {
     pub name: String,
     /// The name, without the arguments that may follow it in the string.
     pub range: Range<usize>,
+    /// The path of the string in the document.
+    pub path: Vec<String>,
 }
 
 /// The first word of a reference string: a task is named with its arguments after it.
@@ -382,6 +466,7 @@ pub(crate) fn references(text: &str, parsed: &Parsed) -> Vec<Reference> {
             namespace,
             name: name.to_string(),
             range: start..start + name.len(),
+            path: entry.path.clone(),
         });
     }
     out
@@ -521,6 +606,126 @@ fn key_segments(key: &str, base: usize) -> Vec<(String, Range<usize>)> {
     segments
 }
 
+/// Problems with the tasks a document names: a name nothing defines, and tasks that wait for
+/// each other.
+pub(crate) fn diagnose(text: &str, parsed: &Parsed, index: &Index) -> Vec<Diagnostic> {
+    let mut out = vec![];
+    let found = references(text, parsed);
+    if index.complete {
+        for reference in &found {
+            if is_pattern(&reference.name) || is_optional(&parsed.json, &reference.path) {
+                continue;
+            }
+            let namespace = reference.namespace;
+            if index.knows(namespace, &reference.name) {
+                continue;
+            }
+            let mut message = format!("unknown {} `{}`", namespace.noun(), reference.name);
+            let suggestion = keypath::closest(&reference.name, index.names(namespace).into_iter());
+            if let Some(suggestion) = suggestion {
+                message.push_str(&format!("; did you mean `{suggestion}`?"));
+            }
+            let mut d = Diagnostic::new(
+                reference.range.clone(),
+                &reference.path,
+                Severity::Warning,
+                "unknown-task",
+                message,
+            );
+            d.suggestion = suggestion.map(str::to_string);
+            d.key = Some(reference.name.clone());
+            out.push(d);
+        }
+    }
+    cycles(&found, index, &mut out);
+    out
+}
+
+/// A name that stands for several tasks, or for one in another project, which only mise can
+/// resolve.
+fn is_pattern(name: &str) -> bool {
+    name.contains(['*', '?']) || name.starts_with(['/', ':'])
+}
+
+/// A dependency written as `{ task = "x", optional = true }` may name a task that is missing.
+fn is_optional(json: &Value, path: &[String]) -> bool {
+    path.split_last()
+        .filter(|(last, _)| *last == "task")
+        .and_then(|(_, parent)| value_at(json, parent))
+        .and_then(|table| table.get("optional"))
+        .is_some_and(|optional| optional == true)
+}
+
+/// Reports every `depends` that is part of a cycle among the tasks the document defines.
+fn cycles(found: &[Reference], index: &Index, out: &mut Vec<Diagnostic>) {
+    let defined: HashSet<&str> = index
+        .tasks
+        .iter()
+        .filter(|d| matches!(d.origin, Origin::Open(_)))
+        .map(|d| d.name.as_str())
+        .collect();
+    // owner -> (target, the reference that says so)
+    let mut edges: HashMap<&str, Vec<(String, &Reference)>> = HashMap::new();
+    for reference in found {
+        let [root, owner, field, ..] = reference.path.as_slice() else {
+            continue;
+        };
+        if root != "tasks" || field != "depends" || reference.namespace != Namespace::Task {
+            continue;
+        }
+        let Some(target) = index.find(Namespace::Task, &reference.name) else {
+            continue;
+        };
+        if defined.contains(target.name.as_str()) && defined.contains(owner.as_str()) {
+            edges
+                .entry(owner)
+                .or_default()
+                .push((target.name.clone(), reference));
+        }
+    }
+    // the shortest way from `from` back to `to`, by the tasks on it
+    let route = |from: &str, to: &str| -> Option<Vec<String>> {
+        let mut previous: HashMap<String, String> = HashMap::new();
+        let mut queue = VecDeque::from([from.to_string()]);
+        while let Some(task) = queue.pop_front() {
+            if task == to {
+                let mut path = vec![task.clone()];
+                let mut at = task;
+                while let Some(before) = previous.get(&at) {
+                    path.push(before.clone());
+                    at = before.clone();
+                }
+                path.reverse();
+                return Some(path);
+            }
+            for (next, _) in edges.get(task.as_str()).into_iter().flatten() {
+                if next != from && !previous.contains_key(next) {
+                    previous.insert(next.clone(), task.clone());
+                    queue.push_back(next.clone());
+                }
+            }
+        }
+        None
+    };
+    for (owner, targets) in &edges {
+        for (target, reference) in targets {
+            let Some(back) = route(target, owner) else {
+                continue;
+            };
+            let mut cycle = vec![owner.to_string()];
+            cycle.extend(back);
+            out.push(Diagnostic::new(
+                reference.range.clone(),
+                &reference.path,
+                Severity::Error,
+                "task-cycle",
+                format!("dependency cycle: {}", cycle.join(" -> ")),
+            ));
+        }
+    }
+    out.sort_by_key(|d| d.range.start);
+}
+
 /// The edits that rename a task or template and every reference to it in `text`, or why they
 /// cannot be made. The result is parsed again and compared with the document it should be, so a
 /// spelling this does not know about is an error and never a half-done rename.
@@ -658,7 +863,7 @@ wait_for = [["build", "arg"]]
 
     #[test]
     fn the_open_document_defines_tasks_and_templates() {
-        let index = Index::build(CONFIG, None);
+        let index = Index::build(CONFIG, None, &[]);
         let tasks: Vec<_> = index.tasks.iter().map(|d| d.name.as_str()).collect();
         assert_eq!(tasks, ["build", "test", "ship"]);
         let build = index.find(Namespace::Task, "b").unwrap();
@@ -703,7 +908,7 @@ wait_for = [["build", "arg"]]
         )
         .unwrap();
         let file = root.join("sub/mise.toml");
-        let index = Index::build("[tasks.mine]\nrun = \"z\"\n", Some(&file));
+        let index = Index::build("[tasks.mine]\nrun = \"z\"\n", Some(&file), &[]);
         let tasks: Vec<_> = index.tasks.iter().map(|d| d.name.as_str()).collect();
         assert_eq!(tasks, ["mine", "root", "lint"]);
         assert!(matches!(index.tasks[2].origin, Origin::File { .. }));
@@ -779,6 +984,109 @@ wait_for = [["build", "arg"]]
         let parsed = parse(CONFIG);
         let edits = rename(CONFIG, &parsed, Namespace::Template, "rust", "cargo").unwrap();
         assert_eq!(edits.len(), 2);
+    }
+
+    fn problems(text: &str) -> Vec<(&'static str, String)> {
+        let parsed = parse(text);
+        diagnose(text, &parsed, &Index::build(text, None, &[]))
+            .into_iter()
+            .map(|d| (d.code, d.message))
+            .collect()
+    }
+
+    #[test]
+    fn a_name_nothing_defines_is_unknown() {
+        let text = "[tasks.build]\n[tasks.test]\ndepends = [\"bild\", \"build\"]\nwait_for = \"nope\"\nextends = \"tmpl\"\n";
+        assert_eq!(
+            problems(text),
+            [
+                (
+                    "unknown-task",
+                    "unknown task `bild`; did you mean `build`?".to_string()
+                ),
+                ("unknown-task", "unknown task `nope`".to_string()),
+                ("unknown-task", "unknown task template `tmpl`".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn patterns_aliases_and_optional_dependencies_are_not_unknown() {
+        let text = "[tasks.build]\nalias = \"b\"\n[tasks.test]\ndepends = [\"b\", \"lint:*\", \"//other:x\", \":y\", { task = \"z\", optional = true }]\n";
+        assert!(problems(text).is_empty());
+    }
+
+    #[test]
+    fn what_the_index_cannot_see_is_not_called_unknown() {
+        for text in ["[task_config]\ndir = \"scripts\"\n[tasks.a]\ndepends = [\"x\"]\n"] {
+            assert!(problems(text).is_empty(), "{text}");
+        }
+        let root = std::env::temp_dir().join(format!("mise-lsp-unseen-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(
+            root.join("mise.toml"),
+            "[task_config]\nincludes = [\"tasks/*.toml\"]\n",
+        )
+        .unwrap();
+        let text = "[tasks.a]\ndepends = [\"x\"]\n";
+        let file = root.join("sub/mise.toml");
+        let parsed = parse(text);
+        let index = Index::build(text, Some(&file), &[]);
+        assert!(!index.complete);
+        assert!(diagnose(text, &parsed, &index).is_empty());
+    }
+
+    #[test]
+    fn file_tasks_are_known_with_or_without_their_extension() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-scripts-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("mise-tasks/test")).unwrap();
+        std::fs::write(root.join("mise-tasks/deploy.sh"), "#!/bin/sh\n").unwrap();
+        std::fs::write(root.join("mise-tasks/test/unit"), "#!/bin/sh\n").unwrap();
+        std::fs::write(root.join("mise.toml"), "").unwrap();
+        let file = root.join("sub/mise.toml");
+        let index = Index::build("", Some(&file), &[]);
+        for name in ["deploy", "deploy.sh", "test:unit"] {
+            assert!(index.knows(Namespace::Task, name), "{name}");
+        }
+        assert!(!index.knows(Namespace::Task, "test"));
+    }
+
+    #[test]
+    fn dependency_cycles_are_reported_on_each_edge() {
+        let text = "[tasks.a]\ndepends = [\"b\"]\n[tasks.b]\ndepends = [\"c\"]\n[tasks.c]\ndepends = [\"a\", \"d\"]\n[tasks.d]\n";
+        let cycles: Vec<_> = problems(text);
+        assert_eq!(
+            cycles,
+            [
+                (
+                    "task-cycle",
+                    "dependency cycle: a -> b -> c -> a".to_string()
+                ),
+                (
+                    "task-cycle",
+                    "dependency cycle: b -> c -> a -> b".to_string()
+                ),
+                (
+                    "task-cycle",
+                    "dependency cycle: c -> a -> b -> c".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_task_that_depends_on_itself_is_a_cycle() {
+        let text = "[tasks.a]\ndepends = [\"a\"]\n";
+        assert_eq!(
+            problems(text),
+            [("task-cycle", "dependency cycle: a -> a".to_string())]
+        );
+    }
+
+    #[test]
+    fn a_chain_without_a_loop_is_fine() {
+        let text = "[tasks.a]\ndepends = [\"b\"]\n[tasks.b]\ndepends = [\"c\"]\n[tasks.c]\n";
+        assert!(problems(text).is_empty());
     }
 
     #[test]

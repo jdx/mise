@@ -26,13 +26,34 @@ pub(crate) struct Diagnostic {
     pub severity: Severity,
     pub message: String,
     /// A stable name for the kind of problem, for clients: `syntax`, `unknown-key`,
-    /// `deprecated-key` or `invalid-value`.
+    /// `deprecated-key`, `invalid-value`, `unknown-task` or `task-cycle`.
     pub code: &'static str,
     /// The key an unknown one was probably meant to be.
     pub suggestion: Option<String>,
     /// The unknown key an `unknown-key` diagnostic is about, to tell a stale one from a current one.
     pub key: Option<String>,
     pub deprecated: bool,
+}
+
+impl Diagnostic {
+    pub(crate) fn new(
+        range: Range<usize>,
+        path: &[String],
+        severity: Severity,
+        code: &'static str,
+        message: String,
+    ) -> Self {
+        Self {
+            range,
+            path: path.to_vec(),
+            severity,
+            message,
+            code,
+            suggestion: None,
+            key: None,
+            deprecated: false,
+        }
+    }
 }
 
 /// The diagnostics of a document, and its parse when it has one.
@@ -75,7 +96,7 @@ pub(crate) fn diagnose(text: &str, schema: &Schema, validator: Option<&Validator
             cx.report(&error, &mut out);
         }
     }
-    deprecated_keys(&parsed, schema, &mut out);
+    deprecated_keys(text, &parsed, schema, validator, &mut out);
     // A value that fails its schema is not "evaluated", so the table also calls its key
     // unknown. The value's own error says what is wrong; the key is known.
     let failing: Vec<Vec<String>> = out
@@ -235,7 +256,13 @@ fn json_type(value: &Value) -> &'static str {
     }
 }
 
-fn deprecated_keys(parsed: &Parsed, schema: &Schema, out: &mut Vec<Diagnostic>) {
+fn deprecated_keys(
+    text: &str,
+    parsed: &Parsed,
+    schema: &Schema,
+    validator: Option<&Validator>,
+    out: &mut Vec<Diagnostic>,
+) {
     for entry in &parsed.entries {
         let Some(range) = entry.key.clone() else {
             continue;
@@ -251,6 +278,9 @@ fn deprecated_keys(parsed: &Parsed, schema: &Schema, out: &mut Vec<Diagnostic>) 
             {
                 message.push_str(&format!(": {first}"));
             }
+            let replacement = schema
+                .replacement(&nodes)
+                .and_then(|r| verified_replacement(text, parsed, schema, validator, entry, &r));
             push(
                 out,
                 range,
@@ -258,11 +288,90 @@ fn deprecated_keys(parsed: &Parsed, schema: &Schema, out: &mut Vec<Diagnostic>) 
                 Severity::Warning,
                 message,
                 "deprecated-key",
-                None,
+                replacement,
             );
-            out.last_mut().expect("just pushed").deprecated = true;
+            let d = out.last_mut().expect("just pushed");
+            d.deprecated = true;
+            if d.suggestion.is_some() {
+                d.key = entry.path.last().cloned();
+            }
         }
     }
+}
+
+/// The replacement a deprecated key's description names, if rewriting the key to it keeps the
+/// document meaning what it did: the new key is one the schema names and does not deprecate, the
+/// value goes there without colliding with anything, the text still parses to exactly that, and
+/// the schema accepts the value in its new place.
+fn verified_replacement(
+    text: &str,
+    parsed: &Parsed,
+    schema: &Schema,
+    validator: Option<&Validator>,
+    entry: &Entry,
+    candidate: &str,
+) -> Option<String> {
+    let to: Vec<String> = candidate.split('.').map(str::to_string).collect();
+    if to.iter().any(String::is_empty) {
+        return None;
+    }
+    let (key, parent) = entry.path.split_last()?;
+    let full = [parent, to.as_slice()].concat();
+    if full == entry.path || !schema.declares(&full) || schema.is_deprecated(&schema.at(&full)) {
+        return None;
+    }
+    let expected = moved(&parsed.json, parent, key, &to)?;
+    let mut edited = text.to_string();
+    edited.replace_range(entry.key.clone()?, &replacement_key(candidate));
+    if doc::parse(&edited).ok()?.json != expected {
+        return None;
+    }
+    if let Some(validator) = validator {
+        let misplaced = validator
+            .iter_errors(&expected)
+            .any(|e| pointer_segments(e.instance_path().as_str()).starts_with(&full));
+        if misplaced {
+            return None;
+        }
+    }
+    Some(candidate.to_string())
+}
+
+/// A dotted replacement as it is written as a key: each part bare or quoted.
+pub(crate) fn replacement_key(path: &str) -> String {
+    path.split('.')
+        .map(keypath::quote)
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+/// `json` with the value of `key` in the table at `parent` moved to the path `to` below that
+/// table, or `None` when something is already there.
+fn moved(json: &Value, parent: &[String], key: &str, to: &[String]) -> Option<Value> {
+    let mut json = json.clone();
+    let mut table = &mut json;
+    for segment in parent {
+        table = match table {
+            Value::Object(map) => map.get_mut(segment)?,
+            Value::Array(items) => items.get_mut(segment.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    let value = table.as_object_mut()?.remove(key)?;
+    let (last, middle) = to.split_last()?;
+    let mut at = table;
+    for segment in middle {
+        at = at
+            .as_object_mut()?
+            .entry(segment.clone())
+            .or_insert_with(|| Value::Object(Default::default()));
+    }
+    let map = at.as_object_mut()?;
+    if map.contains_key(last) {
+        return None;
+    }
+    map.insert(last.clone(), value);
+    Some(json)
 }
 
 /// The value at `path`, or at its nearest ancestor that has a span.
@@ -367,6 +476,100 @@ mod tests {
             found,
             [("old".to_string(), "`old` is deprecated".to_string())]
         );
+    }
+
+    fn replacements(schema: &Schema, text: &str) -> Vec<(String, Option<String>)> {
+        let validator = jsonschema::draft202012::new(schema.root()).unwrap();
+        diagnose(text, schema, Some(&validator))
+            .diagnostics
+            .into_iter()
+            .filter(|d| d.code == "deprecated-key")
+            .map(|d| (text[d.range].to_string(), d.suggestion))
+            .collect()
+    }
+
+    fn renamed() -> Schema {
+        Schema::new(json!({
+            "type": "object",
+            "properties": {
+                "old_path": {"deprecated": true, "description": "Deprecated; use env._.path instead.",
+                    "type": "array", "items": {"type": "string"}},
+                "env": {"type": "object", "properties": {"_": {"type": "object", "properties": {
+                    "path": {"type": "array", "items": {"type": "string"}}}}}},
+                "settings": {"type": "object", "properties": {
+                    "task_output": {"deprecated": true, "description": "Deprecated alias for `task.output`.",
+                        "type": "string"},
+                    "task": {"type": "object", "properties": {"output": {"type": "string"}}},
+                    "gone": {"deprecated": true, "description": "[deprecated] Has no effect.", "type": "string"},
+                    "old_mode": {"deprecated": true, "description": "Old name for `mode`.", "type": "string"},
+                    "mode": {"type": "integer"},
+                    "tool": {"deprecated": true, "description": "use env._.nowhere instead", "type": "string"}
+                }}
+            },
+            "unevaluatedProperties": false
+        }))
+    }
+
+    #[test]
+    fn a_deprecated_key_with_a_named_replacement_gets_one() {
+        let schema = renamed();
+        assert_eq!(
+            replacements(&schema, "old_path = [\"a\"]\n"),
+            [("old_path".to_string(), Some("env._.path".to_string()))]
+        );
+        assert_eq!(
+            replacements(&schema, "[settings]\ntask_output = \"x\"\n"),
+            [("task_output".to_string(), Some("task.output".to_string()))]
+        );
+    }
+
+    #[test]
+    fn no_replacement_is_offered_without_certainty() {
+        let schema = renamed();
+        let none = |text: &str| {
+            let found = replacements(&schema, text);
+            assert_eq!(found.len(), 1, "{text}");
+            assert_eq!(found[0].1, None, "{text}");
+        };
+        // the description names no key
+        none("[settings]\ngone = \"x\"\n");
+        // the named key is not one the schema declares
+        none("[settings]\ntool = \"x\"\n");
+        // the value does not fit where it would go
+        none("[settings]\nold_mode = \"fast\"\n");
+        // something is already there
+        none("[settings]\ntask_output = \"x\"\ntask.output = \"y\"\n");
+        // the rewritten key would clash with a table written elsewhere
+        none("old_path = [\"a\"]\n[env]\nX = \"1\"\n");
+    }
+
+    #[test]
+    fn a_value_that_fits_is_moved() {
+        assert_eq!(
+            replacements(&renamed(), "[settings]\nold_mode = 3\n"),
+            [("old_mode".to_string(), Some("mode".to_string()))]
+        );
+    }
+
+    #[test]
+    fn mises_own_deprecated_keys_name_their_replacements() {
+        let schema =
+            Schema::new(serde_json::from_str(include_str!("../../../schema/mise.json")).unwrap());
+        for (text, key, replacement) in [
+            ("env_path = [\"bin\"]\n", "env_path", "env._.path"),
+            ("env_file = \".env\"\n", "env_file", "env._.file"),
+            (
+                "[settings]\ntask_output = \"prefix\"\n",
+                "task_output",
+                "task.output",
+            ),
+        ] {
+            assert_eq!(
+                replacements(&schema, text),
+                [(key.to_string(), Some(replacement.to_string()))],
+                "{text}"
+            );
+        }
     }
 
     #[test]

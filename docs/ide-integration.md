@@ -106,12 +106,14 @@ language leaves `Cargo.toml` and `pyproject.toml` alone.
 It provides:
 
 - **Diagnostics**: TOML syntax errors, unknown keys with a "did you mean"
-  suggestion, values of the wrong type, and deprecated keys.
+  suggestion, values of the wrong type, deprecated keys, task names that no task
+  defines, and dependency cycles.
 - **Completion** of keys, including inside inline tables, and of values that
   have a fixed set, such as booleans and enums. Keys a table already has are not
   offered again.
 - **Hover** documentation for keys.
-- **Quick fixes** that replace an unknown key with the suggested one.
+- **Quick fixes** that replace an unknown key or task name with the suggested
+  one, and rewrite a deprecated key to its replacement.
 - **Formatting**, the same as [`mise fmt`](/cli/fmt.html).
 - **Tasks**: completion of task names in `depends`, `depends_post`, `wait_for`
   and `run = [{ task = "..." }]`, and of template names in `extends`; hover on
@@ -119,8 +121,9 @@ It provides:
   find references; and rename of a task together with every reference to it in
   the file. See [Tasks](#language-server-tasks).
 
-Diagnostics carry a `code` (`syntax`, `unknown-key`, `deprecated-key` or
-`invalid-value`), and an unknown key's suggestion is in the diagnostic's `data`.
+Diagnostics carry a `code` (`syntax`, `unknown-key`, `deprecated-key`,
+`invalid-value`, `unknown-task` or `task-cycle`), and a suggestion is in the
+diagnostic's `data`.
 Unknown `[settings]` keys are warnings, because mise still loads the file;
 other unknown keys are errors. While a file does not parse, the diagnostics of
 the parts you did not edit stay.
@@ -155,8 +158,32 @@ depends = ["bu"] # completes to "build"; hover on "build" shows the description 
 - `extends` names a template, `[task_templates.<name>]`, so it completes, jumps
   and renames within templates.
 
+Two diagnostics check task references, the way
+[`mise tasks validate`](/cli/tasks/validate.html) does:
+
+- `unknown-task` (a warning) marks a name in `depends`, `depends_post`,
+  `wait_for` or `run = [{ task = "..." }]` that no task defines, and a template
+  in `extends` that no `[task_templates]` entry defines, with a "did you mean"
+  fix. Patterns (`lint:*`), monorepo references (`//app:build`, `:build`) and
+  `{ task = "x", optional = true }` are skipped. File tasks (scripts in
+  `mise-tasks/` and the other task directories, and in directories that
+  `includes` names) count as defined, by their path with or without the
+  extension. The configs in the directories above the file and the user's and
+  system's config count too. When tasks can come from somewhere the server
+  does not read, which is a glob or a `git::`/`oci::` entry in `includes` or a
+  `task_config.dir`, nothing is reported rather than guessing.
+- `task-cycle` (an error) marks each `depends` that is part of a dependency
+  cycle among the tasks the file defines, with the cycle in the message.
+
 Files that `[task_config] includes` lists are tasks, not configs, so the server
 leaves them alone even when they are named like `mise.tasks.toml`.
+
+A deprecated key gets a quick fix only when its schema description names the
+replacement and rewriting is safe: the replacement is a key the schema declares,
+the value fits the schema there, nothing is already at that key, and the file
+still parses to the same document. For example `env_path = ["bin"]` becomes
+`env._.path = ["bin"]` and `[settings] task_output = "prefix"` becomes
+`task.output = "prefix"`. Anything else is left for you to rewrite.
 
 The server only parses a config. It never renders templates or runs anything,
 so opening an untrusted file is safe.
