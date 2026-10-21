@@ -6430,6 +6430,25 @@ fn relative_link_path(source: &Path, target: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    /// A group's entries are whole-file entries, so they read the `FileTomlTable` keys; `group`
+    /// is set by the group itself.
+    #[test]
+    fn group_entry_keys_match_the_declaration() {
+        use mise_config::de::struct_fields;
+        use mise_config::dotfiles::DotfileGroupEntryTableDecl;
+        use std::collections::BTreeSet;
+        let parsed: BTreeSet<&str> = struct_fields::<FileTomlTable>()
+            .iter()
+            .copied()
+            .filter(|key| *key != "group")
+            .collect();
+        let declared: BTreeSet<&str> = struct_fields::<DotfileGroupEntryTableDecl>()
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(parsed, declared);
+    }
+
     /// `schema/mise.json` describes a `[dotfiles]` entry from
     /// `mise_config::dotfiles::DotfileTableDecl`. A table is read as a whole-file entry or an
     /// edit, so together those two parsers must read exactly the keys it declares.
