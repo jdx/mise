@@ -872,7 +872,12 @@ mod tests {
     /// whose entry points are `entry_points` and whose `Scripts` directory holds
     /// `launchers`. Returns `None` when no system Python is available.
     fn windows_discovery(entry_points: &[&str], launchers: &[&str]) -> Option<Vec<String>> {
-        let python = which::which("python3").ok()?;
+        let python = which::which(if cfg!(windows) {
+            "python.exe"
+        } else {
+            "python3"
+        })
+        .ok()?;
         let temp = tempfile::tempdir().unwrap();
         let site = temp.path().join("site");
         let scripts = temp.path().join("Scripts");
