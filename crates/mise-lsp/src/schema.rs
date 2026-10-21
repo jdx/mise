@@ -150,13 +150,14 @@ impl Schema {
         static NAMED: OnceLock<[Regex; 2]> = OnceLock::new();
         let [alias, instead] = NAMED.get_or_init(|| {
             [
-                Regex::new(r"(?i)\b(?:alias|name) (?:for|of) `?([A-Za-z0-9_.]+)`?").unwrap(),
+                Regex::new(r"(?i)\b(?:alias|name) (?:for|of) (?:`([A-Za-z0-9_.]+)`|([A-Za-z0-9_.]+)\s*(?:[.;,]|$))").unwrap(),
                 Regex::new(r"(?i)\buse `?([A-Za-z0-9_.]+)`? instead").unwrap(),
             ]
         });
         let description = self.description(nodes)?;
         [alias, instead].into_iter().find_map(|re| {
-            let name = re.captures(&description)?.get(1)?.as_str();
+            let captures = re.captures(&description)?;
+            let name = captures.get(1).or_else(|| captures.get(2))?.as_str();
             Some(name.trim_end_matches('.').to_string())
         })
     }

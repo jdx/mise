@@ -9,7 +9,9 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
+use regex::Regex;
 use serde_json::Value;
 
 use crate::complete::unquoted;
@@ -22,7 +24,10 @@ use crate::text::LineIndex;
 /// More files than this are not read for tasks.
 const MAX_FILES: usize = 200;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Directory entries the scans for file tasks look at, in all the directories together.
+const MAX_SCAN: usize = 5000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Namespace {
     Task,
     Template,
@@ -71,11 +76,27 @@ pub(crate) struct Definition {
 pub(crate) struct Index {
     pub tasks: Vec<Definition>,
     pub templates: Vec<Definition>,
-    /// The names file tasks (scripts) answer to, with and without their extension.
+    /// The names that configs and include files other than the open document refer to.
+    disk_references: HashSet<(Namespace, String)>,
+    /// The names file tasks (scripts) answer to: their path with and without the extension, and
+    /// the aliases their `#MISE alias=` lines give.
     file_tasks: HashSet<String>,
-    /// Whether every place tasks can come from was read. A glob in `includes`, a remote include
-    /// or a custom `task_config.dir` leaves names this index cannot know.
+    /// Whether every place tasks can come from was read. A glob in `includes`, a remote include,
+    /// a custom `task_config.dir` or a scan that hit its limit leaves names this index cannot know.
     pub complete: bool,
+    /// Directory entries left to look at, for the scans of all the task directories.
+    scan_budget: usize,
+}
+
+/// Where else configs and tasks live: the user's and the system's.
+#[derive(Default, Clone)]
+pub(crate) struct Roots {
+    /// Directories that hold configs the way a project does (`<dir>/.config/mise/config.toml`,
+    /// `<dir>/mise/config.toml`).
+    pub homes: Vec<PathBuf>,
+    /// Directories that are a mise config directory themselves (`<dir>/config.toml`,
+    /// `<dir>/conf.d`, `<dir>/tasks`), such as the one `MISE_CONFIG_DIR` names.
+    pub config_dirs: Vec<PathBuf>,
 }
 
 /// A name offered where a task or template is expected.
@@ -103,96 +124,167 @@ const FILE_TASK_DIRS: [&str; 5] = [
 
 impl Index {
     /// `open` is the text of the open document, `file` its path. The definitions of the document
-    /// come first, so they win over a file that defines the same name. `roots` are directories
-    /// outside the file's own ancestors whose configs also apply, such as the user's.
-    pub(crate) fn build(open: &str, file: Option<&Path>, roots: &[PathBuf]) -> Self {
+    /// come first, so they win over a file that defines the same name. `roots` are places outside
+    /// the file's own ancestors whose configs also apply.
+    pub(crate) fn build(open: &str, file: Option<&Path>, roots: &Roots) -> Self {
         let mut index = Index {
             tasks: vec![],
             templates: vec![],
+            disk_references: HashSet::new(),
             file_tasks: HashSet::new(),
             complete: true,
+            scan_budget: MAX_SCAN,
         };
+        let mut seen: HashSet<PathBuf> = HashSet::new();
         if let Ok(parsed) = doc::parse(open) {
             index.add(&parsed, Layout::Config, &|range| Origin::Open(range));
             index.complete &= parsed.json["task_config"].get("dir").is_none();
+            // The open document's own includes are read from its text, not from disk.
+            if let Some(file) = file {
+                seen.insert(file.to_path_buf());
+                index.add_includes(file, &parsed, &mut seen);
+            }
         }
         let Some(file) = file else {
             return index;
         };
-        let mut seen: HashSet<PathBuf> = HashSet::new();
         seen.insert(file.to_path_buf());
-        let dirs = file
+        let homes = file
             .ancestors()
             .skip(1)
-            .chain(roots.iter().map(PathBuf::as_path))
-            .collect::<Vec<_>>();
-        for dir in dirs {
+            .chain(roots.homes.iter().map(PathBuf::as_path));
+        for dir in homes {
             for sub in FILE_TASK_DIRS {
                 index.add_file_tasks(&dir.join(sub));
             }
-            for config in includes::config_files(dir) {
-                if seen.len() >= MAX_FILES || !seen.insert(config.clone()) {
-                    continue;
-                }
-                let Some(text) = includes::read_capped(&config) else {
-                    continue;
-                };
-                let Ok(parsed) = doc::parse(&text) else {
-                    continue;
-                };
-                index.add(&parsed, Layout::Config, &origin_in(&config, &text));
-                index.complete &= parsed.json["task_config"].get("dir").is_none();
-                let listed: Vec<String> = parsed.json["task_config"]["includes"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|v| v.as_str().map(str::to_string))
-                    .collect();
-                let included = includes::task_include_files(&config, &listed);
-                index.complete &= !included.skipped;
-                for dir in &included.dirs {
-                    index.add_file_tasks(dir);
-                }
-                for path in included.files {
-                    if seen.len() >= MAX_FILES || !seen.insert(path.clone()) {
-                        continue;
-                    }
-                    let Some(text) = includes::read_capped(&path) else {
-                        continue;
-                    };
-                    if let Ok(parsed) = doc::parse(&text) {
-                        index.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
-                    }
-                }
+            let configs = includes::config_files(dir);
+            index.add_configs(configs, &mut seen);
+        }
+        for dir in &roots.config_dirs {
+            index.add_file_tasks(&dir.join("tasks"));
+            let mut configs = vec![dir.join("config.toml")];
+            if let Ok(entries) = std::fs::read_dir(dir.join("conf.d")) {
+                configs.extend(
+                    entries
+                        .flatten()
+                        .map(|e| e.path())
+                        .filter(|p| p.extension().is_some_and(|e| e == "toml")),
+                );
             }
+            index.add_configs(configs, &mut seen);
         }
         index
     }
 
+    fn add_configs(&mut self, configs: Vec<PathBuf>, seen: &mut HashSet<PathBuf>) {
+        for config in configs {
+            if seen.contains(&config) {
+                continue;
+            }
+            if seen.len() >= MAX_FILES {
+                // a config past the limit is not read
+                self.complete = false;
+                return;
+            }
+            seen.insert(config.clone());
+            let Some(text) = includes::read_capped(&config) else {
+                continue;
+            };
+            let Ok(parsed) = doc::parse(&text) else {
+                continue;
+            };
+            self.add(&parsed, Layout::Config, &origin_in(&config, &text));
+            self.complete &= parsed.json["task_config"].get("dir").is_none();
+            self.note_references(&text, &parsed);
+            self.add_includes(&config, &parsed, seen);
+        }
+    }
+
+    /// The tasks of the TOML files `config` lists in `[task_config] includes`, and the file
+    /// tasks of the directories it lists.
+    fn add_includes(&mut self, config: &Path, parsed: &Parsed, seen: &mut HashSet<PathBuf>) {
+        let listed: Vec<String> = parsed.json["task_config"]["includes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect();
+        let included = includes::task_include_files(config, &listed);
+        self.complete &= !included.skipped;
+        for dir in &included.dirs {
+            self.add_file_tasks(dir);
+        }
+        for path in included.files {
+            if seen.contains(&path) {
+                continue;
+            }
+            if seen.len() >= MAX_FILES {
+                self.complete = false;
+                return;
+            }
+            seen.insert(path.clone());
+            let Some(text) = includes::read_capped(&path) else {
+                continue;
+            };
+            if let Ok(parsed) = doc::parse(&text) {
+                self.add(&parsed, Layout::TaskFile, &origin_in(&path, &text));
+                self.note_references(&text, &parsed);
+            }
+        }
+    }
+
+    /// Remembers what a file other than the open one refers to.
+    fn note_references(&mut self, text: &str, parsed: &Parsed) {
+        for reference in references(text, parsed) {
+            self.disk_references
+                .insert((reference.namespace, reference.name));
+        }
+    }
+
+    /// Whether a config or include file besides the open document names the task.
+    pub(crate) fn referenced_elsewhere(&self, namespace: Namespace, name: &str) -> bool {
+        self.disk_references
+            .contains(&(namespace, name.to_string()))
+    }
+
     /// The scripts below `dir` are tasks named by their path: `test/unit.sh` is `test:unit`, and
-    /// `mise run test:unit.sh` and `test:unit` both find it.
+    /// `mise run test:unit.sh` and `test:unit` both find it. A `#MISE alias="x"` line in a script
+    /// adds a name. Symlinks are not followed, and the scan of all directories shares one budget.
     fn add_file_tasks(&mut self, dir: &Path) {
-        fn walk(dir: &Path, prefix: &str, depth: usize, out: &mut HashSet<String>) {
+        fn walk(dir: &Path, prefix: &str, depth: usize, index: &mut Index) {
             let Ok(entries) = std::fs::read_dir(dir) else {
                 return;
             };
-            for entry in entries.flatten().take(MAX_FILES) {
+            for entry in entries.flatten() {
+                if index.scan_budget == 0 {
+                    index.complete = false;
+                    return;
+                }
+                index.scan_budget -= 1;
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().into_owned();
                 let task = format!("{prefix}{name}");
-                if path.is_dir() {
+                let Ok(kind) = entry.file_type() else {
+                    continue;
+                };
+                if kind.is_dir() {
                     if depth < 4 {
-                        walk(&path, &format!("{task}:"), depth + 1, out);
+                        walk(&path, &format!("{task}:"), depth + 1, index);
+                    } else {
+                        index.complete = false;
                     }
-                } else if out.len() < MAX_FILES * 25 {
+                } else if kind.is_file() {
                     if let Some(stem) = Path::new(&name).file_stem() {
-                        out.insert(format!("{prefix}{}", stem.to_string_lossy()));
+                        index
+                            .file_tasks
+                            .insert(format!("{prefix}{}", stem.to_string_lossy()));
                     }
-                    out.insert(task);
+                    index.file_tasks.insert(task);
+                    index.file_tasks.extend(script_aliases(&path));
                 }
             }
         }
-        walk(dir, "", 0, &mut self.file_tasks);
+        walk(dir, "", 0, self);
     }
 
     /// Whether a task or template of this name is defined somewhere the index looked.
@@ -418,6 +510,16 @@ pub(crate) fn reference_kind(path: &[String]) -> Option<Namespace> {
     }
 }
 
+/// Whether the path is an argument in `depends = [["name", "arg"]]`, as the completion lexer
+/// sees it: it writes `0` for every element, so the argument looks like the name. Nothing is
+/// offered there.
+pub(crate) fn is_dependency_argument_slot(path: &[String]) -> bool {
+    matches!(path, [_, _, field, i, last]
+        if matches!(field.as_str(), "depends" | "depends_post" | "wait_for")
+            && is_index(i)
+            && last == "0")
+}
+
 /// A place in the document that names a task or a template.
 #[derive(Debug, Clone)]
 pub(crate) struct Reference {
@@ -429,9 +531,28 @@ pub(crate) struct Reference {
     pub path: Vec<String>,
 }
 
-/// The first word of a reference string: a task is named with its arguments after it.
-fn name_of(value: &str) -> &str {
-    value.split_whitespace().next().unwrap_or_default()
+/// The task a reference string names and where the name starts in the string. A dependency may
+/// start with `KEY=value` words that set its environment, as in `"PROFILE=release build"`; the
+/// name is the first word after them, or the only word. `None` when an environment value is
+/// quoted, which this does not follow.
+fn name_of(value: &str) -> Option<(&str, usize)> {
+    let mut words = value
+        .split_whitespace()
+        .map(|word| (word, word.as_ptr() as usize - value.as_ptr() as usize))
+        .peekable();
+    while let Some((word, at)) = words.next() {
+        let is_env = word.split_once('=').is_some_and(|(key, _)| {
+            !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        });
+        if is_env && words.peek().is_some() {
+            if word.contains(['"', '\'', '\\']) {
+                return None;
+            }
+            continue;
+        }
+        return Some((word, at));
+    }
+    None
 }
 
 pub(crate) fn references(text: &str, parsed: &Parsed) -> Vec<Reference> {
@@ -444,7 +565,9 @@ pub(crate) fn references(text: &str, parsed: &Parsed) -> Vec<Reference> {
         let Some(Value::String(value)) = value_at(&parsed.json, &entry.path) else {
             continue;
         };
-        let name = name_of(value);
+        let Some((name, at)) = name_of(value) else {
+            continue;
+        };
         // Only a plain one-line string has a range that is the name itself; an escape or a
         // template makes the name something other than what the text spells.
         let Some(raw) = text.get(span.clone()) else {
@@ -458,10 +581,10 @@ pub(crate) fn references(text: &str, parsed: &Parsed) -> Vec<Reference> {
         let Some(content) = content else {
             continue;
         };
-        if name.is_empty() || name.contains("{{") || !content.trim_start().starts_with(name) {
+        if name.contains("{{") || !content.starts_with(&value[..at + name.len()]) {
             continue;
         }
-        let start = span.start + 1 + (content.len() - content.trim_start().len());
+        let start = span.start + 1 + at;
         out.push(Reference {
             namespace,
             name: name.to_string(),
@@ -621,7 +744,9 @@ pub(crate) fn diagnose(text: &str, parsed: &Parsed, index: &Index) -> Vec<Diagno
                 continue;
             }
             let mut message = format!("unknown {} `{}`", namespace.noun(), reference.name);
-            let suggestion = keypath::closest(&reference.name, index.names(namespace).into_iter());
+            // A name that needs escaping in a TOML string gets no fix.
+            let suggestion = keypath::closest(&reference.name, index.names(namespace).into_iter())
+                .filter(|name| valid_name(name));
             if let Some(suggestion) = suggestion {
                 message.push_str(&format!("; did you mean `{suggestion}`?"));
             }
@@ -641,10 +766,46 @@ pub(crate) fn diagnose(text: &str, parsed: &Parsed, index: &Index) -> Vec<Diagno
     out
 }
 
+/// The names a script's `#MISE alias="x"` (or `alias = ["x", "y"]`) header lines give it. Only
+/// the top of the file is read, and nothing is run.
+fn script_aliases(path: &Path) -> Vec<String> {
+    use std::io::Read;
+    static ALIAS: OnceLock<Regex> = OnceLock::new();
+    let re = ALIAS.get_or_init(|| {
+        Regex::new(r#"^\s*(?:#|//)\s*\[?MISE\]?\s+alias\s*=\s*(.+?)\s*$"#).unwrap()
+    });
+    let mut head = vec![0; 4096];
+    let Ok(read) = std::fs::File::open(path).and_then(|mut f| f.read(&mut head)) else {
+        return vec![];
+    };
+    head.truncate(read);
+    let mut aliases = vec![];
+    for line in String::from_utf8_lossy(&head).lines() {
+        let Some(value) = re.captures(line).map(|c| c[1].to_string()) else {
+            continue;
+        };
+        if let Ok(doc) = toml_edit::Document::parse(format!("a = {value}"))
+            && let Some(item) = doc.get("a")
+        {
+            match item.as_value() {
+                Some(v) if v.is_str() => aliases.extend(v.as_str().map(str::to_string)),
+                Some(v) => aliases.extend(
+                    v.as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|e| e.as_str().map(str::to_string)),
+                ),
+                None => {}
+            }
+        }
+    }
+    aliases
+}
+
 /// A name that stands for several tasks, or for one in another project, which only mise can
 /// resolve.
 fn is_pattern(name: &str) -> bool {
-    name.contains(['*', '?']) || name.starts_with(['/', ':'])
+    name.contains(['*', '?', '[', '{']) || name.starts_with(['/', ':'])
 }
 
 /// A dependency written as `{ task = "x", optional = true }` may name a task that is missing.
@@ -803,15 +964,12 @@ fn renamed_json(
                 })
                 .collect(),
         ),
-        Value::String(s) if reference_kind(path) == Some(namespace) => {
-            let name = name_of(s);
-            if name == old {
-                let at = s.find(name).unwrap_or_default();
+        Value::String(s) if reference_kind(path) == Some(namespace) => match name_of(s) {
+            Some((name, at)) if name == old => {
                 Value::String(format!("{}{new}{}", &s[..at], &s[at + name.len()..]))
-            } else {
-                json.clone()
             }
-        }
+            _ => json.clone(),
+        },
         other => other.clone(),
     }
 }
@@ -863,7 +1021,7 @@ wait_for = [["build", "arg"]]
 
     #[test]
     fn the_open_document_defines_tasks_and_templates() {
-        let index = Index::build(CONFIG, None, &[]);
+        let index = Index::build(CONFIG, None, &Roots::default());
         let tasks: Vec<_> = index.tasks.iter().map(|d| d.name.as_str()).collect();
         assert_eq!(tasks, ["build", "test", "ship"]);
         let build = index.find(Namespace::Task, "b").unwrap();
@@ -908,11 +1066,80 @@ wait_for = [["build", "arg"]]
         )
         .unwrap();
         let file = root.join("sub/mise.toml");
-        let index = Index::build("[tasks.mine]\nrun = \"z\"\n", Some(&file), &[]);
+        let index = Index::build(
+            "[tasks.mine]\nrun = \"z\"\n",
+            Some(&file),
+            &Roots::default(),
+        );
         let tasks: Vec<_> = index.tasks.iter().map(|d| d.name.as_str()).collect();
         assert_eq!(tasks, ["mine", "root", "lint"]);
         assert!(matches!(index.tasks[2].origin, Origin::File { .. }));
         assert!(describe(&index.tasks[2]).contains("Defined in `more.toml`"));
+    }
+
+    #[test]
+    fn leading_environment_assignments_are_not_the_name() {
+        let text =
+            "[tasks.build]\n[tasks.a]\ndepends = [\"PROFILE=release build --x\", \"only=one\"]\n";
+        let found: Vec<_> = references(text, &parse(text))
+            .into_iter()
+            .map(|r| text[r.range].to_string())
+            .collect();
+        assert_eq!(found, ["build", "only=one"]);
+        let edits = rename(text, &parse(text), Namespace::Task, "build", "compile").unwrap();
+        assert_eq!(edits.len(), 2);
+        // a quoted environment value is not followed
+        let quoted = "[tasks.a]\ndepends = [\"X='a b' build\"]\n";
+        assert!(references(quoted, &parse(quoted)).is_empty());
+    }
+
+    #[test]
+    fn the_includes_of_the_open_document_are_read() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-open-incl-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("tasks.toml"), "[lint]\nrun = \"x\"\n").unwrap();
+        std::fs::write(root.join("mise.toml"), "").unwrap();
+        let text = "[task_config]\nincludes = [\"tasks.toml\"]\n[tasks.ci]\ndepends = [\"lint\"]\n";
+        let index = Index::build(text, Some(&root.join("mise.toml")), &Roots::default());
+        assert!(index.find(Namespace::Task, "lint").is_some());
+    }
+
+    #[test]
+    fn a_directory_include_does_not_take_configs_for_task_files() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-dir-incl-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(
+            root.join("mise.toml"),
+            "[task_config]\nincludes = [\".\"]\n[tasks.root]\nrun = \"x\"\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("mise.local.toml"), "[tasks.local]\nrun = \"x\"\n").unwrap();
+        std::fs::write(root.join("sub/build.toml"), "[build]\nrun = \"x\"\n").unwrap();
+        let index = Index::build("", Some(&root.join("sub/mise.toml")), &Roots::default());
+        let names: Vec<_> = index.tasks.iter().map(|d| d.name.as_str()).collect();
+        assert!(
+            names.contains(&"build") && names.contains(&"root"),
+            "{names:?}"
+        );
+        assert_eq!(
+            names.iter().filter(|n| **n == "local").count(),
+            1,
+            "{names:?}"
+        );
+    }
+
+    #[test]
+    fn other_files_references_are_remembered() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-elsewhere-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("mise.toml"), "[tasks.x]\ndepends = [\"build\"]\n").unwrap();
+        let index = Index::build(
+            "[tasks.build]\n",
+            Some(&root.join("sub/mise.toml")),
+            &Roots::default(),
+        );
+        assert!(index.referenced_elsewhere(Namespace::Task, "build"));
+        assert!(!index.referenced_elsewhere(Namespace::Task, "other"));
     }
 
     #[test]
@@ -988,7 +1215,7 @@ wait_for = [["build", "arg"]]
 
     fn problems(text: &str) -> Vec<(&'static str, String)> {
         let parsed = parse(text);
-        diagnose(text, &parsed, &Index::build(text, None, &[]))
+        diagnose(text, &parsed, &Index::build(text, None, &Roots::default()))
             .into_iter()
             .map(|d| (d.code, d.message))
             .collect()
@@ -1030,7 +1257,7 @@ wait_for = [["build", "arg"]]
         let text = "[tasks.a]\ndepends = [\"x\"]\n";
         let file = root.join("sub/mise.toml");
         let parsed = parse(text);
-        let index = Index::build(text, Some(&file), &[]);
+        let index = Index::build(text, Some(&file), &Roots::default());
         assert!(!index.complete);
         assert!(diagnose(text, &parsed, &index).is_empty());
     }
@@ -1043,11 +1270,67 @@ wait_for = [["build", "arg"]]
         std::fs::write(root.join("mise-tasks/test/unit"), "#!/bin/sh\n").unwrap();
         std::fs::write(root.join("mise.toml"), "").unwrap();
         let file = root.join("sub/mise.toml");
-        let index = Index::build("", Some(&file), &[]);
+        let index = Index::build("", Some(&file), &Roots::default());
         for name in ["deploy", "deploy.sh", "test:unit"] {
             assert!(index.knows(Namespace::Task, name), "{name}");
         }
         assert!(!index.knows(Namespace::Task, "test"));
+    }
+
+    #[test]
+    fn bracket_and_brace_patterns_are_not_unknown() {
+        let text = "[tasks.a]\ndepends = [\"test:[12]\", \"{build,test}\"]\n";
+        assert!(problems(text).is_empty());
+    }
+
+    #[test]
+    fn a_script_alias_is_a_name() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-alias-{}", std::process::id()));
+        std::fs::create_dir_all(root.join(".mise/tasks")).unwrap();
+        std::fs::write(
+            root.join(".mise/tasks/filetask"),
+            "#!/bin/sh\n#MISE alias=\"ft\"\n#MISE description=\"x\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join(".mise/tasks/two"),
+            "#!/bin/sh\n#MISE alias=[\"a\", \"b\"]\n",
+        )
+        .unwrap();
+        let index = Index::build("", Some(&root.join("mise.toml")), &Roots::default());
+        for name in ["filetask", "ft", "a", "b"] {
+            assert!(index.knows(Namespace::Task, name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_scan_that_hits_its_limit_is_not_complete() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-limit-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("mise-tasks")).unwrap();
+        std::fs::write(root.join("mise-tasks/a"), "").unwrap();
+        let mut index = Index::build("", None, &Roots::default());
+        index.scan_budget = 0;
+        index.add_file_tasks(&root.join("mise-tasks"));
+        assert!(!index.complete);
+    }
+
+    #[test]
+    fn a_config_dir_outside_the_project_counts() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-confdir-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("cfg/tasks")).unwrap();
+        std::fs::write(
+            root.join("cfg/config.toml"),
+            "[tasks.global]\nrun = \"x\"\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("cfg/tasks/script"), "").unwrap();
+        let roots = Roots {
+            homes: vec![],
+            config_dirs: vec![root.join("cfg")],
+        };
+        let index = Index::build("", Some(&root.join("proj/mise.toml")), &roots);
+        assert!(index.knows(Namespace::Task, "global"));
+        assert!(index.knows(Namespace::Task, "script"));
     }
 
     #[test]

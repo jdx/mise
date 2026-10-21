@@ -13,7 +13,7 @@ use crate::complete::{self, Kind};
 use crate::diagnostics::{self, Diagnostic, Severity};
 use crate::rpc::{read_message, write_message};
 use crate::schema::Schema;
-use crate::tasks::{self, Index, Origin};
+use crate::tasks::{self, Index, Origin, Roots};
 use crate::text::LineIndex;
 use crate::{Formatter, Options, doc, hover, includes, keypath};
 
@@ -72,23 +72,29 @@ pub(crate) struct Server {
     features: Features,
     documents: HashMap<String, Document>,
     /// Directories beside a file's ancestors whose configs apply to it: the user's and the system's.
-    roots: Vec<PathBuf>,
+    roots: Roots,
 }
 
 /// Where mise reads configs from besides the directories above a project: the user's config
-/// directory and `/etc`.
-fn global_roots() -> Vec<PathBuf> {
+/// directory, `/etc`, and the directories `MISE_CONFIG_DIR` and `MISE_SYSTEM_CONFIG_DIR` name.
+fn global_roots() -> Roots {
     let var = |name: &str| {
         std::env::var_os(name)
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
     };
-    let mut roots: Vec<PathBuf> = [var("HOME"), var("USERPROFILE"), var("XDG_CONFIG_HOME")]
+    let mut homes: Vec<PathBuf> = [var("HOME"), var("USERPROFILE"), var("XDG_CONFIG_HOME")]
         .into_iter()
         .flatten()
         .collect();
-    roots.push(PathBuf::from("/etc"));
-    roots
+    homes.push(PathBuf::from("/etc"));
+    Roots {
+        homes,
+        config_dirs: [var("MISE_CONFIG_DIR"), var("MISE_SYSTEM_CONFIG_DIR")]
+            .into_iter()
+            .flatten()
+            .collect(),
+    }
 }
 
 impl Server {
@@ -406,6 +412,27 @@ impl Server {
                 if !unchanged {
                     return None;
                 }
+                if d["code"] == "deprecated-key" {
+                    // The document may have changed in a way that makes the move unsafe now.
+                    let path: Vec<String> = d["data"]["path"]
+                        .as_array()?
+                        .iter()
+                        .filter_map(|s| s.as_str().map(str::to_string))
+                        .collect();
+                    let validator = self
+                        .validator
+                        .get_or_init(|| jsonschema::draft202012::new(self.schema.root()).ok())
+                        .as_ref();
+                    if !diagnostics::replacement_holds(
+                        text,
+                        &self.schema,
+                        validator,
+                        &path,
+                        suggestion,
+                    ) {
+                        return None;
+                    }
+                }
                 Some(json!({
                     "title": format!("Replace with `{suggestion}`"),
                     "kind": "quickfix",
@@ -580,6 +607,11 @@ impl Server {
         if new == old {
             return Ok(json!({"changes": {}}));
         }
+        if found.index.referenced_elsewhere(namespace, old) {
+            return Err(fail(format!(
+                "other files also refer to `{old}`; a rename here would leave them broken"
+            )));
+        }
         if found.index.find(namespace, new).is_some() {
             return Err(fail(format!(
                 "a {} named `{new}` already exists",
@@ -692,7 +724,7 @@ fn diagnostic_json(index: &LineIndex, d: &Diagnostic) -> Value {
         diagnostic["tags"] = json!([2]);
     }
     if let Some(suggestion) = &d.suggestion {
-        diagnostic["data"] = json!({"suggestion": suggestion, "key": d.key});
+        diagnostic["data"] = json!({"suggestion": suggestion, "key": d.key, "path": d.path});
     }
     diagnostic
 }
@@ -730,18 +762,22 @@ mod tests {
 
     /// Runs a whole session and returns every message the server wrote.
     fn session(messages: &[Value]) -> Vec<Value> {
+        session_with(sample().root().clone(), messages)
+    }
+
+    fn session_with(schema: Value, messages: &[Value]) -> Vec<Value> {
         let mut input = vec![];
         for message in messages {
             write_message(&mut input, message).unwrap();
         }
         let mut output = vec![];
         let options = Options {
-            schema: sample().root().clone(),
+            schema,
             format: Some(Box::new(|text| Ok(format!("# formatted\n{text}")))),
             version: "1".to_string(),
         };
         let mut server = Server::new(options);
-        server.roots.clear();
+        server.roots = Roots::default();
         server.run(input.as_slice(), &mut output).unwrap();
         let mut reader = output.as_slice();
         std::iter::from_fn(|| read_message(&mut reader).unwrap()).collect()
@@ -855,23 +891,56 @@ mod tests {
         assert_eq!(action["edit"]["changes"][uri][0]["newText"], "color");
     }
 
-    #[test]
-    fn a_deprecated_key_is_rewritten_to_its_replacement() {
+    fn deprecated_schema() -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "old": {"deprecated": true, "description": "Deprecated; use env._.path instead.",
+                    "type": "array", "items": {"type": "string"}},
+                "env": {"type": "object", "properties": {"_": {"type": "object", "properties": {
+                    "path": {"type": "array", "items": {"type": "string"}}}}}}
+            },
+            "unevaluatedProperties": false
+        })
+    }
+
+    fn deprecated_fix(text: &str, changed: Option<&str>) -> Value {
         let uri = "file:///p/mise.toml";
         let range =
             json!({"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 3}});
         let diagnostic = json!({"code": "deprecated-key", "range": range,
-            "data": {"suggestion": "env._.path", "key": "old"}});
-        let replies = session(&[
-            open(uri, "old = 1\n"),
+            "data": {"suggestion": "env._.path", "key": "old", "path": ["old"]}});
+        let mut messages = vec![open(uri, text)];
+        if let Some(changed) = changed {
+            messages.push(change(uri, changed));
+        }
+        messages.push(
             json!({"jsonrpc": "2.0", "id": 1, "method": "textDocument/codeAction", "params": {
                 "textDocument": {"uri": uri}, "range": range,
                 "context": {"diagnostics": [diagnostic]},
             }}),
-        ]);
-        let action = &replies[1]["result"][0];
+        );
+        session_with(deprecated_schema(), &messages).pop().unwrap()
+    }
+
+    #[test]
+    fn a_deprecated_key_is_rewritten_to_its_replacement() {
+        let reply = deprecated_fix("old = [\"a\"]\n", None);
+        let action = &reply["result"][0];
         assert_eq!(action["title"], "Replace with `env._.path`");
-        assert_eq!(action["edit"]["changes"][uri][0]["newText"], "env._.path");
+        assert_eq!(
+            action["edit"]["changes"]["file:///p/mise.toml"][0]["newText"],
+            "env._.path"
+        );
+    }
+
+    #[test]
+    fn a_rewrite_is_dropped_once_the_document_makes_it_unsafe() {
+        let reply = deprecated_fix(
+            "old = [\"a\"]\n",
+            Some("old = [\"a\"]\nenv._.path = [\"b\"]\n"),
+        );
+        assert_eq!(reply["result"], json!([]));
     }
 
     #[test]
@@ -1054,7 +1123,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("mise-lsp-defs-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::write(dir.join("mise.toml"), "[tasks.lint]\nrun = \"x\"\n").unwrap();
-        let uri = format!("file://{}/sub/mise.toml", dir.display());
+        let uri = includes::path_uri(&dir.join("sub/mise.toml"));
         let text = "[tasks.a]\ndepends = [\"lint\"]\n";
         let replies = session(&[
             open(&uri, text),
@@ -1062,10 +1131,7 @@ mod tests {
                 "params": {"textDocument": {"uri": uri}, "position": {"line": 1, "character": 13}}}),
         ]);
         let location = &replies[1]["result"];
-        assert_eq!(
-            location["uri"],
-            format!("file://{}/mise.toml", dir.display())
-        );
+        assert_eq!(location["uri"], includes::path_uri(&dir.join("mise.toml")));
         assert_eq!(
             location["range"]["start"],
             json!({"line": 0, "character": 7})
@@ -1163,7 +1229,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("mise-lsp-rename-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::write(dir.join("mise.toml"), "[tasks.lint]\nrun = \"x\"\n").unwrap();
-        let uri = format!("file://{}/sub/mise.toml", dir.display());
+        let uri = includes::path_uri(&dir.join("sub/mise.toml"));
         let params = json!({"textDocument": {"uri": uri},
             "position": {"line": 1, "character": 13}, "newName": "style"});
         let replies = session(&[

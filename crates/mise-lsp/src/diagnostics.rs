@@ -327,14 +327,38 @@ fn verified_replacement(
         return None;
     }
     if let Some(validator) = validator {
+        // An error at the destination or above it, up to the first key the move adds: `env`
+        // failing its `oneOf` is as much a refusal as `env._.path` failing its type.
+        let first = [parent, &to[..1]].concat();
         let misplaced = validator
             .iter_errors(&expected)
-            .any(|e| pointer_segments(e.instance_path().as_str()).starts_with(&full));
+            .any(|e| pointer_segments(e.instance_path().as_str()).starts_with(&first));
         if misplaced {
             return None;
         }
     }
     Some(candidate.to_string())
+}
+
+/// Whether the deprecated key at `path` can still be rewritten to `candidate` in `text`, which
+/// may have changed since the diagnostic was made.
+pub(crate) fn replacement_holds(
+    text: &str,
+    schema: &Schema,
+    validator: Option<&Validator>,
+    path: &[String],
+    candidate: &str,
+) -> bool {
+    let Ok(parsed) = doc::parse(text) else {
+        return false;
+    };
+    parsed
+        .entries
+        .iter()
+        .find(|e| e.path == path)
+        .is_some_and(|entry| {
+            verified_replacement(text, &parsed, schema, validator, entry, candidate).is_some()
+        })
 }
 
 /// A dotted replacement as it is written as a key: each part bare or quoted.
@@ -541,6 +565,31 @@ mod tests {
         none("[settings]\ntask_output = \"x\"\ntask.output = \"y\"\n");
         // the rewritten key would clash with a table written elsewhere
         none("old_path = [\"a\"]\n[env]\nX = \"1\"\n");
+    }
+
+    #[test]
+    fn prose_after_alias_is_not_a_key() {
+        let schema = Schema::new(json!({
+            "type": "object",
+            "properties": {
+                "script": {"deprecated": true, "type": "string",
+                    "description": "deprecated alias for run in preinstall hooks"},
+                "run": {"type": "string"},
+            },
+            "unevaluatedProperties": false
+        }));
+        let found = replacements(&schema, "script = \"x\"\n");
+        assert_eq!(found, [("script".to_string(), None)]);
+    }
+
+    #[test]
+    fn a_value_that_fails_above_the_destination_is_not_moved() {
+        let schema =
+            Schema::new(serde_json::from_str(include_str!("../../../schema/mise.json")).unwrap());
+        assert_eq!(
+            replacements(&schema, "env_path = 42\n"),
+            [("env_path".to_string(), None)]
+        );
     }
 
     #[test]
