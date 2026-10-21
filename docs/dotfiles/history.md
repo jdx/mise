@@ -405,6 +405,17 @@ instead. You can turn off any inherited entry the same way, with
 To stop saving part of a tracked directory, such as its logs or caches,
 [exclude it](#exclude-files-from-one-directory) instead.
 
+### Undo an accidental track {#undo-an-accidental-track}
+
+`track` saves immediately. `untrack`, `rollback`, and `undo` change tracking or
+live files but never delete older commits, so a tracked secret stays in them.
+Preview a directory first with `mise dot track --dry-run <path>`. To erase the
+saved versions, rotate the credential, run `mise dot untrack <path>` so the next
+save does not record it again, then
+[erase the file from history](#purge). History that is already on the origin
+needs the manual recipe in
+[Remove plaintext from history](/dotfiles/encryption.html#remove-plaintext-from-history).
+
 ## Erase a file from history {#purge}
 
 `untrack`, `rollback`, and `undo` only add checkpoints, so a secret you tracked
