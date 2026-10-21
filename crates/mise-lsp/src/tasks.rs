@@ -292,7 +292,11 @@ impl Index {
                     && includes::is_standard_config(&path.to_string_lossy().replace('\\', "/"))
                 {
                     // a config mise reads as one, not a task file or a script
-                } else if is_file && path.extension().is_some_and(|ext| ext == "toml") {
+                } else if is_file
+                    && path
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("toml"))
+                {
                     // a TOML file here holds task definitions, `[lint]` defining `lint`
                     if index.read_files.insert(path.clone())
                         && let Some(text) = includes::read_capped(&path)
@@ -302,16 +306,21 @@ impl Index {
                         index.note_references(&text, &parsed, Layout::TaskFile);
                     }
                 } else if is_file && (!only || is_executable(&path)) {
-                    if let Some(stem) = Path::new(&name).file_stem() {
-                        let stem = stem.to_string_lossy();
-                        // `test/_default` is the task `test`
-                        if stem == "_default" && !prefix.is_empty() {
-                            index
-                                .file_tasks
-                                .insert(prefix.trim_end_matches(':').to_string());
-                        }
-                        index.file_tasks.insert(format!("{prefix}{stem}"));
+                    // only a known script extension is dropped: `gen.proto` stays `gen.proto`
+                    let stem = if is_script_extension(&name) {
+                        Path::new(&name)
+                            .file_stem()
+                            .map_or(name.clone(), |s| s.to_string_lossy().into_owned())
+                    } else {
+                        name.clone()
+                    };
+                    // `test/_default` is the task `test`
+                    if stem == "_default" && !prefix.is_empty() {
+                        index
+                            .file_tasks
+                            .insert(prefix.trim_end_matches(':').to_string());
                     }
+                    index.file_tasks.insert(format!("{prefix}{stem}"));
                     index.file_tasks.insert(task);
                     index.file_tasks.extend(script_aliases(&path));
                 }
@@ -802,6 +811,20 @@ pub(crate) fn diagnose(text: &str, parsed: &Parsed, index: &Index) -> Vec<Diagno
     out
 }
 
+/// The extensions mise drops from a file task's name (`SCRIPT_EXTENSIONS` in mise itself).
+const SCRIPT_EXTENSIONS: [&str; 22] = [
+    "bash", "bat", "cjs", "cmd", "com", "exe", "fish", "js", "ksh", "lua", "mjs", "mts", "nu",
+    "php", "pl", "ps1", "py", "rb", "sh", "ts", "vbs", "zsh",
+];
+
+fn is_script_extension(file_name: &str) -> bool {
+    Path::new(file_name).extension().is_some_and(|ext| {
+        SCRIPT_EXTENSIONS
+            .iter()
+            .any(|k| ext.eq_ignore_ascii_case(k))
+    })
+}
+
 /// Whether the file is one mise runs as a task: executable, or on a platform without an executable
 /// bit, a script by extension or starting with a `#!` line.
 fn is_executable(path: &Path) -> bool {
@@ -866,7 +889,7 @@ fn script_aliases(path: &Path) -> Vec<String> {
 /// A name that stands for several tasks, or for one in another project, which only mise can
 /// resolve.
 fn is_pattern(name: &str) -> bool {
-    name.contains(['*', '?', '[', '{']) || name.starts_with(['/', ':'])
+    name.contains(['*', '?', '[', '{']) || name.starts_with(['/', ':', '^'])
 }
 
 /// A dependency written as `{ task = "x", optional = true }` may name a task that is missing.
@@ -1461,6 +1484,25 @@ wait_for = [["build", "arg"]]
         let index = Index::build("", Some(&root.join("mise.toml")), &Roots::default());
         assert!(index.find(Namespace::Task, "tools").is_none());
         assert!(!index.knows(Namespace::Task, "mise"));
+    }
+
+    #[test]
+    fn only_known_script_extensions_are_dropped_from_a_name() {
+        let root = std::env::temp_dir().join(format!("mise-lsp-ext-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("mise-tasks")).unwrap();
+        std::fs::write(root.join("mise-tasks/gen.proto"), "").unwrap();
+        std::fs::write(root.join("mise-tasks/run.sh"), "").unwrap();
+        let index = Index::build("", Some(&root.join("mise.toml")), &Roots::default());
+        assert!(index.knows(Namespace::Task, "gen.proto"));
+        assert!(!index.knows(Namespace::Task, "gen"));
+        assert!(index.knows(Namespace::Task, "run"));
+        assert!(index.knows(Namespace::Task, "run.sh"));
+    }
+
+    #[test]
+    fn upstream_references_are_skipped() {
+        let text = "[tasks.a]\ndepends = [\"^build\"]\n";
+        assert!(problems(text).is_empty());
     }
 
     #[test]
