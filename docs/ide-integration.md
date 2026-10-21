@@ -147,9 +147,11 @@ depends = ["bu"] # completes to "build"; hover on "build" shows the description 
 - Find references lists the places in the open file that name a task.
 - Rename changes the `[tasks.<name>]` key (including `[tasks.<name>.env]` and
   dotted spellings) and every reference to it in the same file, and keeps the
-  arguments after a name (`"build --release"`). References in other files are
-  not changed. A task defined in another file is not renamed from here, and
-  neither is an alias. A rename that would leave the file meaning something
+  arguments after a name (`"build --release"`), including ones that start with
+  environment assignments (`"PROFILE=release build"`). The server does not edit
+  other files, so a rename is refused when another config or include file also
+  refers to the task. A task defined in another file is not renamed from here,
+  and neither is an alias. A rename that would leave the file meaning something
   else, such as one that meets a spelling the server does not follow, is
   refused instead of half done.
 - `extends` names a template, `[task_templates.<name>]`, so it completes, jumps
