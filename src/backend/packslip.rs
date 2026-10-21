@@ -1204,6 +1204,9 @@ fn check_list_still_missing(project: &str, located: &Located, check: Option<&Che
     }
 }
 
+/// Why a candidate is dropped when its verified release time is too new.
+const AFTER_CUTOFF: &str = "verified release time is after the allowed cutoff";
+
 /// How long resolution reuses a release it verified.
 ///
 /// Only resolution reads this: it decides which candidate a fuzzy request
@@ -1788,9 +1791,7 @@ impl PackslipBackend {
             &verified.published_at,
             before,
         )? {
-            return Ok(Some(
-                "verified release time is after the allowed cutoff".into(),
-            ));
+            return Ok(Some(AFTER_CUTOFF.into()));
         }
         let artifact = match select_compatible_artifact(
             &statement.predicate.artifacts,
@@ -1881,7 +1882,12 @@ impl PackslipBackend {
             .candidate_exclusion(project, &version, opts, pin, before, stamps)
             .await?
         {
-            warn!("packslip:{project}: skipping {version}: {reason}");
+            // An installed version needs no upgrade, so skipping it is not news.
+            let installed =
+                reason == AFTER_CUTOFF && self.list_installed_versions().contains(&version);
+            if !installed {
+                warn!("packslip:{project}: skipping {version}: {reason}");
+            }
             return Ok(false);
         }
         Ok(true)
