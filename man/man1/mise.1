@@ -701,6 +701,9 @@ List tool versions available to install
 \fIAliases: \fRlist\-all, list\-remote
 .RE
 .TP
+\fBlsp\fR
+Run the language server for mise config files over stdin/stdout
+.TP
 \fBmcp\fR
 Run the Model Context Protocol server over stdin/stdout
 .TP
@@ -7392,6 +7395,42 @@ Include release dates, as JSON
 .RS 4
 mise ls\-remote github:cli/cli \-\-json
 .RE
+.SH "MISE LSP"
+Run the language server for mise config files over stdin/stdout
+
+Editors start this command and exchange Language Server Protocol messages with it.
+
+It serves `mise.toml` and the other config files mise loads (`.mise.toml`, `mise.<env>.toml`, `mise.local.toml`, `mise/config.toml`, and the files of a `conf.d`). It ignores every other file, including files that `[task_config] includes` lists, so it can be attached to the TOML language without touching `Cargo.toml` or `pyproject.toml`.
+
+It offers:
+\- diagnostics: TOML syntax errors, unknown keys with a suggestion, values of the wrong type, and deprecated keys
+\- completion of keys, including inside inline tables, and of values that have a fixed set
+\- hover documentation for keys
+\- quick fixes that replace an unknown key with the suggested one
+\- formatting, as `mise fmt` does
+
+A client that runs another TOML server beside this one can switch features off with `initializationOptions`: `{"formatting": false, "hover": false, "completion": false}`.
+
+The server only parses a config. It never renders templates or runs anything, so opening an untrusted file is safe.
+
+A mise that predates this command runs a task named `lsp` instead, so a client that needs to know whether the command exists can check that `mise help lsp` prints `Usage: mise lsp`.
+
+See https://mise.jdx.dev/ide\-integration.html for editor configuration.
+.PP
+\fBUsage:\fR mise lsp [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBExamples:\fR
+.PP
+Start the server; an editor's LSP configuration runs this command
+.PP
+.RS 4
+mise lsp
+.RE
 .SH "MISE MCP"
 Run the Model Context Protocol server over stdin/stdout
 
@@ -11078,7 +11117,12 @@ Pass `\-\-prune` to remove it now or `\-\-no\-prune` to keep it.
 \fB\-b, \-\-bump\fR
 Upgrade past the configured range to the newest release, and update the config to match
 
-The config keeps its precision: `node = "20"` becomes `node = "22"`, and `node = "20.0.0"` becomes `node = "22.1.0"`. If you name a version on the command line (`node@latest`, `node@3`, or `node@prefix:3`), that request is written instead; `mise upgrade node@latest \-\-bump` writes `latest`. With the `pin` setting on, a version request such as `node@3` is written as the version it resolved to. Requests that do not come from a config file mise can write, such as `MISE_NODE_VERSION`, are upgraded but not written.
+The config keeps its precision: `node = "20"` becomes `node = "22"`, and `node = "20.0.0"` becomes `node = "22.1.0"`. If you name a version on the command line (`node@latest`, `node@3`, or `node@prefix:3`), that request is written instead; `mise upgrade node@latest \-\-bump` writes `latest`. With the `pin` setting on, a version request such as `node@3` is written as the version it resolved to, and a bare `mise upgrade \-\-bump` writes the resolved version for every request that is not exact, such as `latest` or `20`. Requests that do not come from a config file mise can write, such as `MISE_NODE_VERSION`, are upgraded but not written.
+.TP
+\fB\-\-pin\fR
+With \-\-bump, write the resolved version instead of keeping the request's precision
+
+`node = "latest"` and `node = "20"` become `node = "24.14.0"`. A named request such as `node@3` is written as the version it resolved to. Make this the default with the `pin` setting (`MISE_PIN=1`).
 .TP
 \fB\-i, \-\-interactive\fR
 Choose which tools to upgrade from a multiselect menu

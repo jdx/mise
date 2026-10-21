@@ -123,11 +123,25 @@ module Language
   end
 end
 
+# Homebrew's Requirement base class (Library/Homebrew/requirement.rb). A tap
+# formula can subclass it to declare a custom platform check, then name the
+# subclass in `depends_on`. The subclass body only uses the class-level DSL
+# (`fatal`, `satisfy`, `default_formula`, ...), and `satisfy` blocks reference
+# Homebrew internals such as `MacOS`, so they are never evaluated here.
+class Requirement
+  class << self
+    def method_missing(*) = nil
+    def respond_to_missing?(*) = true
+  end
+end
+
 class Formula
   class << self
     attr_reader :source_url, :source_sha256, :explicit_version, :revision_value,
                 :runtime_dependencies, :build_dependencies, :keg_only_value,
                 :keg_only_reason_value
+
+    def unsupported_requirements = (@unsupported_requirements ||= [])
 
     def inherited(subclass)
       Formula.instance_variable_set(:@subclass, subclass)
@@ -155,6 +169,13 @@ class Formula
       spec = options if spec.nil? && options.keys.any? { |key| key.is_a?(String) }
       name, kind = spec.is_a?(Hash) ? spec.first : [spec, nil]
       return if name.nil?
+      # A Requirement subclass (`depends_on MyRequirement`) is a platform check,
+      # not a formula. Its `satisfy` block needs Homebrew internals, so it is not
+      # enforced here; say so rather than silently treating the host as compatible.
+      if name.is_a?(Class)
+        Formula.unsupported_requirements << name.to_s
+        return
+      end
       # A Symbol names a Homebrew REQUIREMENT, not an installable formula:
       # `depends_on :macos`, `depends_on :linux`, `depends_on :xcode`, `depends_on :arm`.
       # Recording one as a dependency makes the resolver look up a formula called
@@ -301,6 +322,7 @@ metadata = {
   "urls" => { "stable" => { "url" => klass.source_url, "checksum" => klass.source_sha256 } },
   "ruby_source_path" => ENV.fetch("MISE_BREW_SOURCE_PATH"),
   "ruby_source_checksum" => { "sha256" => ENV.fetch("MISE_BREW_SOURCE_CHECKSUM") },
-  "tap_git_head" => ENV.fetch("MISE_BREW_TAP_COMMIT")
+  "tap_git_head" => ENV.fetch("MISE_BREW_TAP_COMMIT"),
+  "unsupported_requirements" => Formula.unsupported_requirements
 }
 puts JSON.generate(metadata)

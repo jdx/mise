@@ -79,6 +79,7 @@ mod local;
 pub(crate) mod lock;
 mod ls;
 mod ls_remote;
+mod lsp;
 mod mcp;
 mod oci;
 mod outdated;
@@ -362,6 +363,7 @@ pub(crate) enum Commands {
     Lock(lock::Lock),
     Ls(ls::Ls),
     LsRemote(ls_remote::LsRemote),
+    Lsp(lsp::Lsp),
     Mcp(mcp::Mcp),
     Oci(oci::Oci),
     Packslip(packslip::Packslip),
@@ -454,6 +456,7 @@ impl Commands {
                 | Self::HookEnv(_)
                 | Self::HookNotFound(_)
                 | Self::Implode(_)
+                | Self::Lsp(_)
                 | Self::PublishSystemInstall(_)
                 | Self::SelfUpdate(_)
                 | Self::ToolUpdate(_)
@@ -475,6 +478,7 @@ impl Commands {
                 | Self::Deactivate(_)
                 | Self::HookEnv(_)
                 | Self::HookNotFound(_)
+                | Self::Lsp(_)
                 | Self::PublishSystemInstall(_)
                 | Self::Ssh(_)
                 | Self::ToolUpdate(_)
@@ -534,6 +538,7 @@ impl Commands {
             Self::Lock(cmd) => Box::pin(cmd.run()),
             Self::Ls(cmd) => Box::pin(cmd.run()),
             Self::LsRemote(cmd) => Box::pin(cmd.run()),
+            Self::Lsp(cmd) => Box::pin(cmd.run()),
             Self::Mcp(cmd) => Box::pin(cmd.run()),
             Self::Oci(cmd) => Box::pin(cmd.run()),
             Self::Packslip(cmd) => Box::pin(cmd.run()),

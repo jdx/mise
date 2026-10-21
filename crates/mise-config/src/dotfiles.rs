@@ -169,5 +169,54 @@ pub enum DotfileGroupEntryDecl {
     /// source path, relative to the group root
     Source(String),
     /// whole-file entry, as in [dotfiles]
-    Table(#[schemars(schema_with = "schema::any_table")] toml::Table),
+    Table(Box<DotfileGroupEntryTableDecl>),
+}
+
+/// whole-file entry of a dotfile group
+// The whole-file keys of `DotfileTableDecl`: a group holds no block, line, or merge edits.
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(transform = schema::entry_rules)]
+pub struct DotfileGroupEntryTableDecl {
+    /// encrypt tracked file contents before storing them in Git; the live file remains plaintext
+    #[serde(default)]
+    pub encrypt: bool,
+    /// allow this directly tracked credential-named file to be saved in plaintext history and any connected origin
+    #[serde(default)]
+    pub allow_plaintext: bool,
+    /// source file or directory
+    pub source: Option<String>,
+    /// literal inline file content; alternative to source
+    pub content: Option<String>,
+    /// how to apply a whole-file source to the target; omitted uses the group's mode. "absent" removes a file or symlink at the target and takes no source. "track" saves the file's history where it is, and "track-local" saves it in this machine's local-only history, which is never shared
+    // A string, so a mode from a newer mise warns and is skipped.
+    #[schemars(extend("anyOf" = [
+        {"enum": ["symlink", "symlink-each", "copy", "template", "absent", "track", "track-local"]},
+        {"type": "string"}
+    ]))]
+    pub mode: Option<String>,
+    /// glob patterns to skip when the mode walks a directory (symlink-each, copy with a directory source, or a tracked directory, where they are relative to the tracked path); a pattern without "/" matches any path component, one with "/" is anchored to the root
+    pub exclude: Option<Vec<String>>,
+    /// history only (mode = "track"): the only paths of the tracked directory that are captured, relative to it and matched like "exclude"; without it the whole tree is captured with the builtin credential filtering, and an explicit "exclude" still wins. A selected file is captured even when it looks like a credential store, in plaintext unless the entry sets encrypt
+    pub include: Option<Vec<String>>,
+    /// source manifest used to select managed files from a directory
+    #[schemars(extend("enum" = ["git"]))]
+    pub manifest: Option<String>,
+    /// template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force
+    #[serde(default)]
+    pub remove_empty: bool,
+    /// symlink-each and directory copy only: deploy each source path component named "dot-<name>" as ".<name>", like GNU Stow's --dotfiles; exclude still matches source names
+    #[serde(default)]
+    pub dot_prefix: bool,
+    /// symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)
+    pub relative: Option<bool>,
+    /// octal permissions for the target, such as "0600"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)
+    #[schemars(regex(pattern = r"^(0o)?[0-7]{1,4}$"))]
+    pub permissions: Option<String>,
+    /// track only: false saves the path only on `mise dotfiles save <path>`
+    pub autosave: Option<bool>,
+    /// false turns off an entry inherited from another config file
+    pub enabled: Option<bool>,
+    /// OS/profile variants: history streams for track mode, or optional destinations for deployment modes
+    pub variants: Option<Vec<DotfileVariantDecl>>,
 }

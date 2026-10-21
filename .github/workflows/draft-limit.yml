@@ -21,6 +21,6 @@ jobs:
   draft-limit:
     permissions:
       pull-requests: write # comment on and close the extra draft
-    uses: jdx/workflows/.github/workflows/draft-limit.yml@4c952564543dd54d60f15ef4062af7fb60c5561d # v1.1.0
+    uses: jdx/workflows/.github/workflows/draft-limit.yml@f06c20d10cd74d518af4338abf9877ceef81213a # v1.1.2
     with:
       max_drafts: 1

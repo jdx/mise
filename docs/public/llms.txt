@@ -383,6 +383,7 @@
 - [mise lock](https://mise.jdx.dev/cli/lock.html): Create or refresh lockfile versions, checksums, and download URLs
 - [mise ls](https://mise.jdx.dev/cli/ls.html): List installed and active tool versions
 - [mise ls-remote](https://mise.jdx.dev/cli/ls-remote.html): List tool versions available to install
+- [mise lsp](https://mise.jdx.dev/cli/lsp.html): Run the language server for mise config files over stdin/stdout
 - [mise mcp](https://mise.jdx.dev/cli/mcp.html): Run the Model Context Protocol server over stdin/stdout
 - [mise oci](https://mise.jdx.dev/cli/oci.html): [experimental] Build, push, and run OCI images of a project's tools
 - [mise oci build](https://mise.jdx.dev/cli/oci/build.html): [experimental] Build an OCI image from the current mise.toml

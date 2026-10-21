@@ -1408,6 +1408,82 @@ fn test_preserve_absent_tool_entries_for_monorepo_upsert() {
 }
 
 #[test]
+fn test_preserve_selected_python_entries_keeps_only_unlocked_selections() {
+    let python = |version: &str, specifier: &str| {
+        let mut tool = basic_tool(version, "core:python");
+        tool.specifiers = BTreeSet::from([specifier.to_string()]);
+        tool
+    };
+    let existing = vec![
+        python("3.15.0", "latest"),
+        {
+            let mut tool = python("3.14.8", "3.14");
+            tool.specifiers.insert("3.14.8".to_string());
+            tool
+        },
+        python("3.13.5", "3.13"),
+    ];
+    let mut merged = vec![python("3.15.1", "latest"), python("3.13.6", "3.13")];
+
+    preserve_selected_python_entries(
+        &mut merged,
+        Some(&existing),
+        &HashSet::from([
+            ("3.14".to_string(), BTreeMap::new()),
+            ("3.13".to_string(), BTreeMap::new()),
+        ]),
+    );
+
+    assert_eq!(
+        merged
+            .iter()
+            .map(|tool| tool.version.as_str())
+            .collect_vec(),
+        vec!["3.15.1", "3.13.6", "3.14.8"]
+    );
+    assert_eq!(merged[2].specifiers, BTreeSet::from(["3.14".to_string()]));
+}
+
+#[test]
+fn test_preserve_selected_python_entries_ignores_entries_with_other_options() {
+    let mut project = basic_tool("3.12.9", "core:python");
+    project.specifiers = BTreeSet::from(["3.12".to_string()]);
+    project
+        .options
+        .insert("patch_sysconfig".to_string(), "false".to_string());
+    let mut private = basic_tool("3.12.9", "core:python");
+    private.specifiers = BTreeSet::from(["3.12".to_string()]);
+    let existing = vec![project.clone(), private.clone()];
+    let mut merged = vec![project];
+
+    preserve_selected_python_entries(
+        &mut merged,
+        Some(&existing),
+        &HashSet::from([("3.12".to_string(), BTreeMap::new())]),
+    );
+
+    assert_eq!(merged.len(), 2);
+    assert!(merged.iter().any(|tool| tool.options.is_empty()));
+}
+
+#[test]
+fn test_preserve_selected_python_entries_matches_settings_derived_options() {
+    let options = BTreeMap::from([("precompiled_arch".to_string(), "x86_64".to_string())]);
+    let mut private = basic_tool("3.12.9", "core:python");
+    private.specifiers = BTreeSet::from(["3.12".to_string()]);
+    private.options = options.clone();
+    let mut merged = Vec::new();
+
+    preserve_selected_python_entries(
+        &mut merged,
+        Some(&vec![private]),
+        &HashSet::from([("3.12".to_string(), options)]),
+    );
+
+    assert_eq!(merged.len(), 1);
+}
+
+#[test]
 fn test_reinsert_deferred_baselines_restores_dropped_entry_without_duplicates() {
     let baseline = basic_tool("0.11.0", "github:owner/repo");
     let deferred = HashMap::from([("repo".to_string(), vec![baseline.clone(), baseline.clone()])]);

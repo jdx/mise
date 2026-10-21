@@ -270,6 +270,10 @@ pub struct TrackedSet {
     /// this machine's own history: never this history's to capture, apply,
     /// or publish (see [`Self::keep_local_out`]).
     pub local: Vec<PathBuf>,
+    /// Portable paths that a `config.<env>.toml` of an environment not
+    /// selected here declares as tracked. This machine does not see the
+    /// declaration, but it is not an instruction to stop tracking.
+    pub unselected: BTreeSet<String>,
 }
 
 /// What a walk of the tracked set found.
@@ -334,6 +338,7 @@ impl TrackedSet {
             .into_iter()
             .filter(|request| crate::files::declaration_is_global(config, request));
         set.add_requests(requests);
+        set.unselected = unselected_declarations();
         for invalid in crate::files::invalid_declarations() {
             if !crate::files::tracking_config_is_global(config, &invalid.config) {
                 continue;
@@ -407,21 +412,7 @@ impl TrackedSet {
                 continue;
             }
             let target = normalize_target(&request.target);
-            let portable =
-                if let Ok(relative) = target.strip_prefix(normalize(&global_config_dir())) {
-                    Some(
-                        format!("config/{}", relative.to_string_lossy().replace('\\', "/"))
-                            .trim_end_matches('/')
-                            .to_owned(),
-                    )
-                } else if let Ok(relative) = target.strip_prefix(normalize(&dirs::HOME)) {
-                    Some(format!(
-                        "home/{}",
-                        relative.to_string_lossy().replace('\\', "/")
-                    ))
-                } else {
-                    None
-                };
+            let portable = portable_path(&target);
             let Some(path) = portable.filter(|path| super::sync::layout::is_safe_branch_path(path))
             else {
                 set.invalid.push(PathReason { path: display_path(&target), reason: "tracking requires a portable path under home or the mise configuration directory".into() });
@@ -2293,6 +2284,95 @@ pub(crate) fn hard_exclusions() -> Vec<PathBuf> {
     dirs.sort();
     dirs.dedup();
     dirs
+}
+
+/// The portable branch path of a tracked target, when it has one.
+fn portable_path(target: &Path) -> Option<String> {
+    if let Ok(relative) = target.strip_prefix(normalize(&global_config_dir())) {
+        Some(
+            format!("config/{}", relative.to_string_lossy().replace('\\', "/"))
+                .trim_end_matches('/')
+                .to_owned(),
+        )
+    } else if let Ok(relative) = target.strip_prefix(normalize(&dirs::HOME)) {
+        Some(format!(
+            "home/{}",
+            relative.to_string_lossy().replace('\\', "/")
+        ))
+    } else {
+        None
+    }
+}
+
+/// The tracked paths declared by environment config files in the global
+/// config directory whose environment is not selected here. Best effort: a
+/// file that cannot be read or parsed declares nothing.
+pub(crate) fn unselected_declarations() -> BTreeSet<String> {
+    unselected_declarations_with(&BTreeMap::new())
+}
+
+/// Whether `path` is the config file of an environment this machine does
+/// not select, in the global config directory.
+pub(crate) fn is_unselected_env_config(path: &Path, selected: &[String]) -> bool {
+    // incoming paths are rooted at the normalized config directory
+    if path.parent().map(normalize) != Some(normalize(&global_config_dir())) {
+        return false;
+    }
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    name.strip_prefix("config.")
+        .or_else(|| name.strip_prefix("mise."))
+        .and_then(|rest| rest.strip_suffix(".toml"))
+        .is_some_and(|env| env != "local" && !selected.iter().any(|active| active == env))
+}
+
+/// As [`unselected_declarations`], with incoming file bodies laid over the
+/// directory: `Some` replaces or adds a file, `None` deletes it.
+pub(crate) fn unselected_declarations_with(
+    incoming: &BTreeMap<PathBuf, Option<String>>,
+) -> BTreeSet<String> {
+    let selected = select::active_environments();
+    let mut files: BTreeMap<PathBuf, String> = BTreeMap::new();
+    if let Ok(entries) = std::fs::read_dir(global_config_dir()) {
+        for entry in entries.flatten() {
+            let path = normalize(&global_config_dir()).join(entry.file_name());
+            if is_unselected_env_config(&path, &selected)
+                && !incoming.contains_key(&path)
+                && let Ok(text) = std::fs::read_to_string(&path)
+            {
+                files.insert(path, text);
+            }
+        }
+    }
+    for (path, body) in incoming {
+        if let Some(body) = body {
+            files.insert(path.clone(), body.clone());
+        }
+    }
+    let mut paths = BTreeSet::new();
+    for (_, text) in files {
+        let Ok(doc) = text.parse::<toml::Table>() else {
+            continue;
+        };
+        let Some(dotfiles) = doc.get("dotfiles").and_then(|value| value.as_table()) else {
+            continue;
+        };
+        for (target, value) in dotfiles {
+            let tracked = value.as_table().is_some_and(|table| {
+                table.get("mode").and_then(|mode| mode.as_str()) == Some("track")
+                    && table
+                        .get("enabled")
+                        .and_then(|enabled| enabled.as_bool())
+                        .unwrap_or(true)
+            });
+            if tracked && let Some(path) = portable_path(&normalize_target(Path::new(target))) {
+                paths.insert(path);
+            }
+        }
+    }
+    paths
 }
 
 /// The global config directory (where `--adopt` checks out).

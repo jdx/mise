@@ -150,3 +150,7 @@ Choose a command family below. Its page lists the available subcommands.
 - [`mise skills`](/cli/skills.html) — List and link the agent skills that active tools ship
 - [`mise patrons`](/cli/patrons.html) — Show the individuals supporting mise as Patron-tier members
 - [`mise sponsors`](/cli/sponsors.html) — Show the companies sponsoring mise and the jdx.dev open source tools
+
+### Other commands
+
+- [`mise lsp`](/cli/lsp.html) — Run the language server for mise config files over stdin/stdout

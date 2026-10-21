@@ -3028,6 +3028,71 @@ pub(crate) fn update_lockfiles(
             }
         }
 
+        // Tool stubs are not in the toolset but lock into this file too.
+        let stub_requests = existing_lockfile
+            .tool_stubs()
+            .iter()
+            .filter_map(|reference| {
+                let path = tool_stub_path(&lockfile_path, reference);
+                // A stub that moved to another lockfile selects nothing here.
+                if !path.is_file()
+                    || !lockfile_path_for_tool_stub(&path).is_some_and(|(stub_lockfile, _)| {
+                        same_file_path(&stub_lockfile, &lockfile_path)
+                    })
+                {
+                    return None;
+                }
+                crate::tool_stub::ToolStubFile::from_file(&path)
+                    .and_then(|stub| stub.to_tool_request(&path))
+                    .inspect_err(|err| {
+                        debug!("skipping tool stub {}: {err:#}", display_path(&path))
+                    })
+                    .ok()
+            })
+            .collect_vec();
+        let mut selected_python_specifiers: HashMap<String, HashSet<SelectedPython>> =
+            HashMap::new();
+        for request in tool_versions_by_short
+            .values()
+            .flatten()
+            .map(|tv| &tv.request)
+            .chain(&stub_requests)
+        {
+            // A bad `python` option must not fail an unrelated lockfile rewrite.
+            let dependency = match crate::backend::pipx::selected_python_dependency(request) {
+                Ok(dependency) => dependency,
+                Err(err) => {
+                    debug!("skipping selected python of {}: {err:#}", request.ba());
+                    continue;
+                }
+            };
+            if let Some(dependency) = dependency {
+                // Options can differ per platform (`compile` applies to the host
+                // only), so keep every variant the lockfile can hold.
+                let mut platforms = existing_lockfile
+                    .all_platform_keys()
+                    .iter()
+                    .filter_map(|key| Platform::parse(key).ok())
+                    .collect_vec();
+                platforms.push(Platform::current());
+                for platform in platforms {
+                    let options = dependency
+                        .backend()
+                        .and_then(|backend| {
+                            backend.resolve_lockfile_options(
+                                &dependency,
+                                &PlatformTarget::new(platform),
+                            )
+                        })
+                        .unwrap_or_default();
+                    selected_python_specifiers
+                        .entry(dependency.ba().short.clone())
+                        .or_default()
+                        .insert((dependency.version(), options));
+                }
+            }
+        }
+
         let tools_by_short: HashMap<String, Vec<LockfileTool>> = tool_versions_by_short
             .iter()
             .map(|(short, versions)| {
@@ -3098,6 +3163,13 @@ pub(crate) fn update_lockfiles(
                     &mut merged_tools,
                     existing_lockfile.tools_for(&short),
                     &consumed_keys,
+                );
+            }
+            if let Some(specifiers) = selected_python_specifiers.get(&short) {
+                preserve_selected_python_entries(
+                    &mut merged_tools,
+                    existing_lockfile.tools_for(&short),
+                    specifiers,
                 );
             }
             // Keep the prior provenance-bearing entry alive for unverified upgrades so
@@ -4394,6 +4466,49 @@ fn preserve_absent_tool_entries(
             .cmp(&b.version)
             .then_with(|| a.options.cmp(&b.options))
     });
+}
+
+/// A selected Python request: its selector and the lockfile options an entry
+/// for it carries.
+type SelectedPython = (String, BTreeMap<String, String>);
+
+/// The Python a pipx tool selects is a private runtime: installs never return
+/// it, so an update would drop its entry. Keep entries bound to a selected
+/// request unless this update locked that request itself. An entry for the same
+/// selector with other options is another request and does not cover it.
+fn preserve_selected_python_entries(
+    merged_tools: &mut Vec<LockfileTool>,
+    existing_tools: Option<&Vec<LockfileTool>>,
+    selected: &HashSet<SelectedPython>,
+) {
+    let Some(existing_tools) = existing_tools else {
+        return;
+    };
+    let binds = |tool: &LockfileTool, (specifier, options): &SelectedPython| {
+        tool.options == *options && tool.specifiers.contains(specifier)
+    };
+    let unlocked: Vec<&SelectedPython> = selected
+        .iter()
+        .filter(|request| !merged_tools.iter().any(|tool| binds(tool, request)))
+        .collect();
+    for existing_tool in existing_tools {
+        let bound: Vec<&SelectedPython> = unlocked
+            .iter()
+            .copied()
+            .filter(|request| binds(existing_tool, request))
+            .collect();
+        if !bound.is_empty()
+            && !merged_tools.iter().any(|tool| {
+                tool.version == existing_tool.version && tool.options == existing_tool.options
+            })
+        {
+            // A shared entry may carry requests that moved to another version.
+            let mut tool = existing_tool.clone();
+            tool.specifiers
+                .retain(|specifier| bound.iter().any(|(selected, _)| selected == specifier));
+            merged_tools.push(tool);
+        }
+    }
 }
 
 fn derive_lockfile_discovery(config: &Config) -> LockfileDiscovery {

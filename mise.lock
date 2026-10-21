@@ -112,53 +112,53 @@ url = "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9
 url_api = "https://api.github.com/repos/nextest-rs/nextest/releases/assets/620604883"
 
 [[tools.aube]]
-version = "2.7.2"
+version = "2.8.1"
 backend = "packslip:github.com/aubepkg/aube"
 specifiers = ["latest"]
 
 [tools.aube."platforms.linux-arm64"]
-checksum = "sha256:fccdb28fe420560eb0d18c64c69a755c2b2aa0223fcf6f953ade264685273ef5"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:12eda315743aea0a1a66eedaf4ebd2f2de80d985c71cf21d44475cf6c9f8728c"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-aarch64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.linux-arm64-musl"]
-checksum = "sha256:0a03c4da9df28cb2e14c2c45ecf2ea32fb8d33027c43e37e8455fd69b09c7fa7"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:b067a7b4633f8ecafcf9e8d2d8ffe0de7c36af5dc7f632aff079782d11c5e49f"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-aarch64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.linux-x64"]
-checksum = "sha256:64a28eb9a324a4a0a1142345555f157ff0415ab68195ec6bff6d24ba4a245486"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:83ca5541a10a21b81189fc391d3853774826a439db28d3b0136648c37fbdbe79"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.linux-x64-baseline"]
-checksum = "sha256:64a28eb9a324a4a0a1142345555f157ff0415ab68195ec6bff6d24ba4a245486"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:83ca5541a10a21b81189fc391d3853774826a439db28d3b0136648c37fbdbe79"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-x86_64-unknown-linux-gnu.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.linux-x64-musl"]
-checksum = "sha256:6993e1157f854f24a0afd95b9e27d27fffe560acf55cbe31b74361d1f6ae0953"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:5a8bb76fb728cc8d130014e660dd229fd908648ab8d1a8f2e005210f2c472a0d"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:6993e1157f854f24a0afd95b9e27d27fffe560acf55cbe31b74361d1f6ae0953"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:5a8bb76fb728cc8d130014e660dd229fd908648ab8d1a8f2e005210f2c472a0d"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-x86_64-unknown-linux-musl.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.macos-arm64"]
-checksum = "sha256:38c144fcd38350cea58d680c351c2f2d85891dabf65821e3d0711a331250c3dd"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:f5eca610159c38c5ab6d5766348305b2d391de436349c7abd49a967b289a895f"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-aarch64-apple-darwin.tar.gz"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.windows-x64"]
-checksum = "sha256:bf814eeacd96ca19d6810d1d32d33c45b95fa5ca8bd5bce5b0748c2baa74b9c5"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:b01cac5f4e2ea4988bbabb36b49dced6986ef26107cbcfded40cc0469e735765"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [tools.aube."platforms.windows-x64-baseline"]
-checksum = "sha256:bf814eeacd96ca19d6810d1d32d33c45b95fa5ca8bd5bce5b0748c2baa74b9c5"
-url = "https://github.com/aubepkg/aube/releases/download/v2.7.2/aube-v2.7.2-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:b01cac5f4e2ea4988bbabb36b49dced6986ef26107cbcfded40cc0469e735765"
+url = "https://github.com/aubepkg/aube/releases/download/v2.8.1/aube-v2.8.1-x86_64-pc-windows-msvc.zip"
 signer = "sigstore-oidc:https://github.com/aubepkg/aube/.github/workflows/release.yml"
 
 [[tools.cargo-binstall]]
@@ -735,13 +735,13 @@ url = "https://nodejs.org/dist/v24.22.0/node-v24.22.0-win-x64.zip"
 
 [[tools."npm:ajv-cli"]]
 version = "5.0.0"
-aube = { path = ".mise/locks/npm-ajv-cli/5.0.0", digest = "sha256:c6bd542579453b2939078812311b051a3ec4d71a86a6428b5b47e0386c7b6b84" }
+aube = { path = ".mise/locks/npm-ajv-cli/5.0.0", digest = "sha256:36d7da953aa2dac85d8e85af560d39cd2802e0b55dbc19ab9416b6ca0a1c3f9e" }
 backend = "npm:ajv-cli"
 specifiers = ["latest"]
 
 [[tools."npm:markdownlint-cli"]]
 version = "0.49.1"
-aube = { path = ".mise/locks/npm-markdownlint-cli/0.49.1", digest = "sha256:ac985ae295446dc117b560d0156c1274c9a0eb542dc9ebb862cd97d38681cbe8" }
+aube = { path = ".mise/locks/npm-markdownlint-cli/0.49.1", digest = "sha256:207347c2870949506a21acad74c747d92054e901a57ae0607dc289c8d8574491" }
 backend = "npm:markdownlint-cli"
 specifiers = ["latest"]
 
@@ -1061,6 +1061,65 @@ url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257323062"
 [tools.taplo."platforms.windows-x64-baseline"]
 url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x86_64.zip"
 url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257323062"
+
+[[tools.tombi]]
+version = "1.8.9"
+backend = "aqua:tombi-toml/tombi"
+specifiers = ["latest"]
+
+[tools.tombi."platforms.linux-arm64"]
+checksum = "sha256:4862f4fea963536bfb07678bed3d005735408e700701e979e6b68b9571084de6"
+url = "https://github.com/tombi-toml/tombi/releases/download/v1.8.9/tombi-cli-1.8.9-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/656427372"
+provenance = "github-attestations"
+
+[tools.tombi."platforms.linux-arm64-musl"]
+checksum = "sha256:4862f4fea963536bfb07678bed3d005735408e700701e979e6b68b9571084de6"
+url = "https://github.com/tombi-toml/tombi/releases/download/v1.8.9/tombi-cli-1.8.9-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/656427372"
+provenance = "github-attestations"
+
+[tools.tombi."platforms.linux-x64"]
+checksum = "sha256:26d7207a4de89e5d846d5a9e5d3bc9c407f8b035f06adfdb774564bd7e440c15"
+url = "https://github.com/tombi-toml/tombi/releases/download/v1.8.9/tombi-cli-1.8.9-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/656427416"
+provenance = "github-attestations"
+
+[tools.tombi."platforms.linux-x64-baseline"]
+checksum = "sha256:26d7207a4de89e5d846d5a9e5d3bc9c407f8b035f06adfdb774564bd7e440c15"
+url = "https://github.com/tombi-toml/tombi/releases/download/v1.8.9/tombi-cli-1.8.9-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/656427416"
+provenance = "github-attestations"
+
+[tools.tombi."platforms.linux-x64-musl"]
+checksum = "sha256:26d7207a4de89e5d846d5a9e5d3bc9c407f8b035f06adfdb774564bd7e440c15"
+url = "https://github.com/tombi-toml/tombi/releases/download/v1.8.9/tombi-cli-1.8.9-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/656427416"
+provenance = "github-attestations"
+
+[tools.tombi."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:26d7207a4de89e5d846d5a9e5d3bc9c407f8b035f06adfdb774564bd7e440c15"
+url = "https://github.com/tombi-toml/tombi/releases/download/v1.8.9/tombi-cli-1.8.9-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/656427416"
+provenance = "github-attestations"
+
+[tools.tombi."platforms.macos-arm64"]
+checksum = "sha256:287d02319d42d997237cab16a9876c0c116ea654be82f31e19c10c0a24159a60"
+url = "https://github.com/tombi-toml/tombi/releases/download/v1.8.9/tombi-cli-1.8.9-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/656427377"
+provenance = "github-attestations"
+
+[tools.tombi."platforms.windows-x64"]
+checksum = "sha256:c6b6efff4e1d480087a0c672969d21e66ea60e6844efe94492be10b8fd99a326"
+url = "https://github.com/tombi-toml/tombi/releases/download/v1.8.9/tombi-cli-1.8.9-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/656427411"
+provenance = "github-attestations"
+
+[tools.tombi."platforms.windows-x64-baseline"]
+checksum = "sha256:c6b6efff4e1d480087a0c672969d21e66ea60e6844efe94492be10b8fd99a326"
+url = "https://github.com/tombi-toml/tombi/releases/download/v1.8.9/tombi-cli-1.8.9-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/tombi-toml/tombi/releases/assets/656427411"
+provenance = "github-attestations"
 
 [[tools.usage]]
 version = "7.1.0"

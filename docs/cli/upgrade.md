@@ -29,7 +29,10 @@ Pass `--prune` to remove it now or `--no-prune` to keep it.
 ## Flags
 - **`-b --bump`** — Upgrade past the configured range to the newest release, and update the config to match
 
-  The config keeps its precision: `node = "20"` becomes `node = "22"`, and `node = "20.0.0"` becomes `node = "22.1.0"`. If you name a version on the command line (`node@latest`, `node@3`, or `node@prefix:3`), that request is written instead; `mise upgrade node@latest --bump` writes `latest`. With the `pin` setting on, a version request such as `node@3` is written as the version it resolved to. Requests that do not come from a config file mise can write, such as `MISE_NODE_VERSION`, are upgraded but not written.
+  The config keeps its precision: `node = "20"` becomes `node = "22"`, and `node = "20.0.0"` becomes `node = "22.1.0"`. If you name a version on the command line (`node@latest`, `node@3`, or `node@prefix:3`), that request is written instead; `mise upgrade node@latest --bump` writes `latest`. With the `pin` setting on, a version request such as `node@3` is written as the version it resolved to, and a bare `mise upgrade --bump` writes the resolved version for every request that is not exact, such as `latest` or `20`. Requests that do not come from a config file mise can write, such as `MISE_NODE_VERSION`, are upgraded but not written.
+- **`--pin`** — With --bump, write the resolved version instead of keeping the request's precision
+
+  `node = "latest"` and `node = "20"` become `node = "24.14.0"`. A named request such as `node@3` is written as the version it resolved to. Make this the default with the `pin` setting (`MISE_PIN=1`).
 - **`-i --interactive`** — Choose which tools to upgrade from a multiselect menu
 - **`-j --jobs <JOBS>`** — Number of jobs to run in parallel (default: the `jobs` setting)
 

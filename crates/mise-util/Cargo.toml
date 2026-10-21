@@ -86,7 +86,7 @@ rmp-serde = "1"
 same-file = "1"
 semver = "1"
 serde = { version = "1", features = ["derive"] }
-serde-saphyr = "1"
+serde-saphyr = "2"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
 sevenz-rust2 = "0.23"
 sha1 = "0.11"
