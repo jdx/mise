@@ -138,7 +138,7 @@ impl AquaPackage {
 
     /// Apply user-provided variable values used by aqua `vars` templates.
     pub fn with_var_values(mut self, var_values: HashMap<String, String>) -> Result<AquaPackage> {
-        self.var_values = var_values;
+        self.var_values = var_values.into_iter().collect();
         self.validate_vars()?;
         Ok(self)
     }

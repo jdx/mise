@@ -47,4 +47,27 @@ mod tests {
         assert!(decoded.private);
         assert_eq!(decoded.vars[0].default.as_deref(), Some("beta"));
     }
+
+    // The baked registry is a build script output that mbx and Cargo key caches
+    // on, so the same package must always encode to the same bytes.
+    #[test]
+    fn test_rkyv_encoding_does_not_depend_on_map_insertion_order() {
+        let encode = |keys: Vec<usize>| {
+            let mut package = AquaPackage::default();
+            package.repo_owner = "owner".into();
+            package.repo_name = "repo".into();
+            for key in keys {
+                package
+                    .replacements
+                    .insert(format!("os-{key}"), format!("value-{key}"));
+            }
+            encode_package_rkyv(&package).unwrap()
+        };
+
+        let forward = encode((0..64).collect());
+        for _ in 0..8 {
+            assert_eq!(forward, encode((0..64).rev().collect()));
+            assert_eq!(forward, encode((0..64).collect()));
+        }
+    }
 }
