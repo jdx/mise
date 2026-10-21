@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# `mise dot history purge`: erasing one path's saved versions while the other
+# files' checkpoints, IDs, and annotations survive, and refusing to rewrite
+# history the origin already has.
+# shellcheck disable=SC2016
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+repository="$MISE_STATE_DIR/history/repo.git"
+ids='mise bootstrap dotfiles history --json -n 0 | jq -r "[.[].id] | sort | join(\",\")"'
+
+echo keep1 >~/.keep
+echo hunter2 >~/.notes
+assert_succeed 'mise bootstrap dotfiles track ~/.keep'
+assert_succeed 'mise bootstrap dotfiles track ~/.notes'
+echo keep2 >~/.keep
+assert_succeed 'mise bootstrap dotfiles save --description "keep two"'
+echo hunter3 >~/.notes
+assert_succeed 'mise bootstrap dotfiles save --description "secret changed"'
+echo keep3 >~/.keep
+assert_succeed 'mise bootstrap dotfiles save --description "keep three"'
+keep_commit="$(mise bootstrap dotfiles history show latest --json | jq -r .uuid)"
+assert_succeed "mise bootstrap dotfiles history describe $keep_commit 'the latest keep'"
+assert_succeed 'mise bootstrap dotfiles rollback ~/.keep --to 1 --yes'
+assert_succeed 'mise bootstrap dotfiles save'
+head_before="$(git --git-dir="$repository" rev-parse HEAD)"
+# checkpoint 4 changed only the purged file; every other ID must survive
+survivors="$(eval "$ids" | tr ',' '\n' | grep -vx 4 | paste -sd, -)"
+count_before="$(mise bootstrap dotfiles history --json -n 0 | jq length)"
+assert "git --git-dir=$repository grep -c hunter HEAD -- home/.notes" "HEAD:home/.notes:1"
+
+# a preview changes nothing
+assert_contains 'mise bootstrap dotfiles history purge ~/.notes --dry-run' 'checkpoints hold this path'
+assert "git --git-dir=$repository rev-parse HEAD" "$head_before"
+assert_fail 'MISE_YES=0 mise bootstrap dotfiles history purge ~/.notes </dev/null' 'nobody to ask'
+assert "git --git-dir=$repository rev-parse HEAD" "$head_before"
+assert_fail 'mise bootstrap dotfiles history purge ~ --yes' 'whole root'
+
+assert_succeed 'mise bootstrap dotfiles history purge ~/.notes --yes'
+
+# nothing of the secret remains, even unreachable
+assert "git --git-dir=$repository log --all --format=%H -- home/.notes | wc -l | tr -d ' '" '0'
+assert "git --git-dir=$repository cat-file --batch-all-objects --batch | grep -c hunter || true" '0'
+assert_succeed "git --git-dir=$repository fsck --no-progress"
+# the other file's checkpoints keep their IDs, descriptions, and contents
+assert "$ids" "$survivors"
+assert "mise bootstrap dotfiles history --json -n 0 | jq -r 'map(.description) | map(select(. == \"the latest keep\")) | length'" '1'
+assert "git --git-dir=$repository show HEAD:home/.keep" 'keep1'
+assert "git --git-dir=$repository cat-file -p HEAD:home/.notes 2>&1 | grep -c fatal || true" '1'
+assert_succeed "git --git-dir=$repository rev-parse HEAD"
+test "$(mise bootstrap dotfiles history --json -n 0 | jq length)" -lt "$count_before" || fail "no checkpoint was removed"
+# the rewritten history still works: the rollback can be undone
+assert_succeed 'mise bootstrap dotfiles untrack ~/.notes'
+assert_succeed 'mise bootstrap dotfiles undo --yes'
+assert 'cat ~/.keep' 'keep3'
+# a second purge has nothing left to remove
+assert_contains 'mise bootstrap dotfiles history purge ~/.notes --yes 2>&1' 'no saved version holds'
+
+# history the origin already has is never rewritten
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+echo token >~/.pushed
+assert_succeed 'mise bootstrap dotfiles track ~/.pushed'
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync manual --yes"
+assert_succeed 'mise bootstrap dotfiles sync'
+pushed_head="$(git --git-dir="$repository" rev-parse HEAD)"
+assert_fail 'mise bootstrap dotfiles history purge ~/.pushed --yes' 'already on the origin'
+assert "git --git-dir=$repository rev-parse HEAD" "$pushed_head"
+# a path the origin never saw can still be purged, and published history stays put
+echo local >~/.local-notes
+assert_succeed 'mise bootstrap dotfiles track ~/.local-notes'
+assert_succeed 'mise bootstrap dotfiles history purge ~/.local-notes --yes'
+assert_succeed "git --git-dir=$repository merge-base --is-ancestor $pushed_head HEAD"

@@ -965,7 +965,7 @@ impl Store {
         self.rebuild_index_locked()
     }
 
-    fn rebuild_index_locked(&self) -> Result<Index> {
+    pub(crate) fn rebuild_index_locked(&self) -> Result<Index> {
         let Some(repo) = &self.repo else {
             return store::load_index_in(&self.state_dir);
         };

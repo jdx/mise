@@ -1056,6 +1056,33 @@ Only checkpoints with this trigger, such as edit, save, agent, bootstrap, apply,
                 example "mise dot history ls -n 0" help="List every checkpoint"
                 example "mise dot history ls --pending" help="List operations that did not finish"
             }
+            cmd purge help="Erase a path's saved versions from history" {
+                long_help #"""
+Erase a path's saved versions from history
+
+Rewrites the history without the path, for a file you tracked by mistake that holds a secret. `untrack`, `rollback`, and `undo` only add checkpoints; they leave the old versions readable.
+
+Checkpoints that changed only this path are removed. The others stay, with their descriptions, dates, and IDs, minus the path. Without `--yes`, the command lists what would change and asks first.
+
+mise never rewrites history that is on the origin: if a saved version of the path was ever published, the command refuses. Rotate the secret, then see https://mise.jdx.dev/dotfiles/encryption.html#remove-plaintext-from-history.
+
+This does not stop tracking the path. If the file is still tracked, the next save records its current contents again, so run `mise dot untrack` first (or encrypt it). Stop the watcher service while this runs.
+"""#
+                flag "-n --dry-run" help="Show what would change without changing anything"
+                flag "-y --yes" help="Rewrite without prompting"
+                flag --backup help="Keep the replaced history in the repository under `refs/mise/purge-backup/`" {
+                    long_help #"""
+Keep the replaced history in the repository under `refs/mise/purge-backup/`
+
+The backup still holds the content you are erasing; delete it with `git update-ref -d` once you are sure.
+"""#
+                }
+                flag --keep-objects help="Leave the replaced objects on disk instead of deleting them"
+                flag "-h --help" help="Print help" action=help builtin=#true
+                arg <PATH>… help="Files or directories to erase from history" var=#true
+                example "mise dot history purge ~/.aws/credentials --dry-run" help="List the checkpoints that hold the file"
+                example "mise dot history purge ~/.aws/credentials --yes" help="Erase every saved version of the file"
+            }
             cmd show help="Show a checkpoint: its trigger, changes, and operation journal" effect=read {
                 long_help #"""
 Show a checkpoint: its trigger, changes, and operation journal
@@ -3170,6 +3197,33 @@ Only checkpoints with this trigger, such as edit, save, agent, bootstrap, apply,
             flag "-h --help" help="Print help" action=help builtin=#true
             example "mise dot history ls -n 0" help="List every checkpoint"
             example "mise dot history ls --pending" help="List operations that did not finish"
+        }
+        cmd purge help="Erase a path's saved versions from history" {
+            long_help #"""
+Erase a path's saved versions from history
+
+Rewrites the history without the path, for a file you tracked by mistake that holds a secret. `untrack`, `rollback`, and `undo` only add checkpoints; they leave the old versions readable.
+
+Checkpoints that changed only this path are removed. The others stay, with their descriptions, dates, and IDs, minus the path. Without `--yes`, the command lists what would change and asks first.
+
+mise never rewrites history that is on the origin: if a saved version of the path was ever published, the command refuses. Rotate the secret, then see https://mise.jdx.dev/dotfiles/encryption.html#remove-plaintext-from-history.
+
+This does not stop tracking the path. If the file is still tracked, the next save records its current contents again, so run `mise dot untrack` first (or encrypt it). Stop the watcher service while this runs.
+"""#
+            flag "-n --dry-run" help="Show what would change without changing anything"
+            flag "-y --yes" help="Rewrite without prompting"
+            flag --backup help="Keep the replaced history in the repository under `refs/mise/purge-backup/`" {
+                long_help #"""
+Keep the replaced history in the repository under `refs/mise/purge-backup/`
+
+The backup still holds the content you are erasing; delete it with `git update-ref -d` once you are sure.
+"""#
+            }
+            flag --keep-objects help="Leave the replaced objects on disk instead of deleting them"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <PATH>… help="Files or directories to erase from history" var=#true
+            example "mise dot history purge ~/.aws/credentials --dry-run" help="List the checkpoints that hold the file"
+            example "mise dot history purge ~/.aws/credentials --yes" help="Erase every saved version of the file"
         }
         cmd show help="Show a checkpoint: its trigger, changes, and operation journal" effect=read {
             long_help #"""
