@@ -1270,6 +1270,43 @@ end
         }
     }
 
+    /// A formula can subclass Homebrew's `Requirement` for a custom platform
+    /// check and name it in `depends_on`. The class is a constant reference, so
+    /// an undefined one aborts evaluation before any metadata is read, and it
+    /// must not be recorded as a formula dependency.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn tolerates_custom_requirement_classes() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        let formula = formula_metadata(
+            &ruby,
+            "widget",
+            r#"
+class WidgetMacOSRequirement < Requirement
+  fatal true
+  satisfy(build_env: false) { OS.mac? && MacOS.full_version >= "26.4" }
+
+  def message
+    "Widget requires macOS 26.4 or newer."
+  end
+end
+
+class Widget < Formula
+  version "1.2.3"
+  url "https://example.com/widget-1.2.3.tar.gz"
+  sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  depends_on WidgetMacOSRequirement
+  depends_on "libfoo"
+end
+"#,
+        )
+        .await?;
+        assert_eq!(formula.dependencies, ["libfoo"]);
+        Ok(())
+    }
+
     /// A formula pulls a Language mixin in from its class body. That is a
     /// constant reference, so it is resolved before any DSL `method_missing`
     /// can intervene: an undefined one aborts evaluation on the `include` line
