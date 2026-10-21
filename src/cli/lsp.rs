@@ -13,8 +13,11 @@ use crate::config::schema::SCHEMA;
 /// - hover documentation for keys
 /// - quick fixes that replace an unknown key with the suggested one
 /// - formatting, as `mise fmt` does
+/// - for tasks: completion of task names in `depends`, `depends_post`, `wait_for` and `run = [{ task = "..." }]` (and of templates in `extends`), hover with the task's description and command, go to definition, find references, and rename together with every reference in the file
 ///
-/// A client that runs another TOML server beside this one can switch features off with `initializationOptions`: `{"formatting": false, "hover": false, "completion": false}`.
+/// Tasks come from the open file, the configs in the directories above it and the TOML files their `[task_config] includes` name.
+///
+/// A client that runs another TOML server beside this one can switch features off with `initializationOptions`: `{"formatting": false, "hover": false, "completion": false, "definition": false, "references": false, "rename": false}`.
 ///
 /// The server only parses a config. It never renders templates or runs anything, so opening an untrusted file is safe.
 ///

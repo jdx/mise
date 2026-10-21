@@ -15,11 +15,13 @@ use serde_json::Value;
 use crate::doc;
 use crate::keypath;
 use crate::schema::Schema;
+use crate::tasks::{self, Candidates, Namespace};
 use crate::text::LineIndex;
 
 pub(crate) enum Kind {
     Key,
     Value,
+    Task,
 }
 
 pub(crate) struct Item {
@@ -32,7 +34,14 @@ pub(crate) struct Item {
     pub replace: Range<usize>,
 }
 
-pub(crate) fn complete(text: &str, offset: usize, schema: &Schema) -> Vec<Item> {
+/// The items at `offset`. `names` is asked for the tasks and templates the document can see
+/// only when the cursor is where one is named.
+pub(crate) fn complete(
+    text: &str,
+    offset: usize,
+    schema: &Schema,
+    names: &dyn Fn() -> Candidates,
+) -> Vec<Item> {
     let index = LineIndex::new(text);
     let (line, _) = index.position(offset);
     let line_start = index.offset(line, 0);
@@ -59,11 +68,11 @@ pub(crate) fn complete(text: &str, offset: usize, schema: &Schema) -> Vec<Item> 
             } else {
                 path.clone()
             };
-            value_items(schema, &path, &frame.segment, after, offset)
+            value_items(schema, &path, &frame.segment, after, offset, names)
         }
         None if frame.kind == '[' => {
             let path = [frame.path.as_slice(), &["0".to_string()]].concat();
-            value_items(schema, &path, &frame.segment, after, offset)
+            value_items(schema, &path, &frame.segment, after, offset, names)
         }
         None => {
             let parent = if state.stack.is_empty() {
@@ -149,12 +158,17 @@ fn value_items(
     typed: &str,
     after: &str,
     offset: usize,
+    names: &dyn Fn() -> Candidates,
 ) -> Vec<Item> {
     let raw = typed.trim_start();
     let quoted = raw.strip_prefix('"');
-    // The rest of the value under the cursor goes too: up to the closing quote in a string,
-    // else the rest of the word.
+    let reference = tasks::reference_kind(path);
+    // The rest of the value under the cursor goes too: up to the closing quote in a string
+    // (up to the arguments, in a task reference), else the rest of the word.
     let rest = match quoted {
+        Some(_) if reference.is_some() => after
+            .find(|c: char| c == '"' || c.is_whitespace())
+            .unwrap_or(after.len()),
         Some(_) => after.find('"').unwrap_or(after.len()),
         None => after
             .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.'))
@@ -162,6 +176,34 @@ fn value_items(
     };
     let replace = offset - raw.len()..offset + rest;
     let needle = quoted.unwrap_or(raw);
+    if let Some(namespace) = reference {
+        let candidates = names();
+        let (list, noun) = match namespace {
+            Namespace::Task => (candidates.tasks, "task"),
+            Namespace::Template => (candidates.templates, "task template"),
+        };
+        // A task does not wait for itself.
+        let own = (path[0] == "tasks" && namespace == Namespace::Task).then(|| path[1].as_str());
+        return list
+            .into_iter()
+            .filter(|c| c.name.starts_with(needle) && Some(c.name.as_str()) != own)
+            .map(|c| {
+                let close = if quoted.is_some() && after.contains('"') {
+                    ""
+                } else {
+                    "\""
+                };
+                Item {
+                    insert: format!("\"{}{close}", c.name),
+                    label: c.name,
+                    kind: Kind::Task,
+                    detail: c.detail.or_else(|| Some(noun.to_string())),
+                    documentation: c.documentation.filter(|d| !d.is_empty()),
+                    replace: replace.clone(),
+                }
+            })
+            .collect();
+    }
     schema
         .values(&schema.at(path))
         .into_iter()
@@ -400,7 +442,7 @@ fn advance(text: &str, state: &mut State, eol: bool) {
 }
 
 /// The byte offset of the first `target` outside a quoted string.
-fn unquoted(text: &str, target: char) -> Option<usize> {
+pub(crate) fn unquoted(text: &str, target: char) -> Option<usize> {
     let mut quote = None;
     for (i, c) in text.char_indices() {
         match (quote, c) {
@@ -423,7 +465,7 @@ mod tests {
     fn labels(marked: &str) -> Vec<String> {
         let offset = marked.find('|').unwrap();
         let text = marked.replacen('|', "", 1);
-        complete(&text, offset, &sample())
+        complete(&text, offset, &sample(), &Candidates::default)
             .into_iter()
             .map(|i| i.label)
             .collect()
@@ -468,7 +510,7 @@ mod tests {
     fn applied(marked: &str) -> String {
         let offset = marked.find('|').unwrap();
         let text = marked.replacen('|', "", 1);
-        let item = complete(&text, offset, &sample()).remove(0);
+        let item = complete(&text, offset, &sample(), &Candidates::default).remove(0);
         format!(
             "{}{}{}",
             &text[..item.replace.start],
@@ -587,11 +629,73 @@ mod tests {
         );
     }
 
+    fn candidate(name: &str, detail: &str) -> tasks::Candidate {
+        tasks::Candidate {
+            name: name.to_string(),
+            detail: Some(detail.to_string()),
+            documentation: None,
+        }
+    }
+
+    fn task_labels(marked: &str) -> Vec<String> {
+        let offset = marked.find('|').unwrap();
+        let text = marked.replacen('|', "", 1);
+        let names = || Candidates {
+            tasks: vec![
+                candidate("build", "compile"),
+                candidate("test", "run tests"),
+            ],
+            templates: vec![candidate("rust", "rust task")],
+        };
+        complete(&text, offset, &sample(), &names)
+            .into_iter()
+            .map(|i| i.label)
+            .collect()
+    }
+
+    #[test]
+    fn dependencies_complete_task_names() {
+        let tasks = |s: &str| task_labels(&format!("[tasks.lint]\n{s}"));
+        assert_eq!(tasks("depends = \"|"), ["build", "test"]);
+        assert_eq!(tasks("depends = [\"build\", \"t|"), ["test"]);
+        assert_eq!(tasks("wait_for = [|"), ["build", "test"]);
+        assert_eq!(tasks("depends_post = { task = \"|\" }"), ["build", "test"]);
+        assert_eq!(tasks("run = [{ task = \"b|\" }]"), ["build"]);
+        assert_eq!(
+            tasks("run = [\"echo\", { tasks = [\"|\"] }]"),
+            ["build", "test"]
+        );
+        assert_eq!(tasks("extends = \"|"), ["rust"]);
+        // not a place that names a task
+        assert!(tasks("run = \"|").is_empty());
+        assert!(tasks("description = \"|").is_empty());
+    }
+
+    #[test]
+    fn a_task_is_not_offered_to_itself() {
+        let labels = task_labels("[tasks.build]\ndepends = [\"|");
+        assert_eq!(labels, ["test"]);
+    }
+
+    #[test]
+    fn a_task_name_replaces_only_the_name() {
+        let marked = "[tasks.lint]\ndepends = [\"bu|ild --release\"]";
+        let offset = marked.find('|').unwrap();
+        let text = marked.replacen('|', "", 1);
+        let names = || Candidates {
+            tasks: vec![candidate("build", ""), candidate("burn", "")],
+            templates: vec![],
+        };
+        let item = complete(&text, offset, &sample(), &names).remove(0);
+        assert_eq!(item.insert, "\"build");
+        assert_eq!(&text[item.replace], "\"build");
+    }
+
     #[test]
     fn a_closing_quote_is_not_doubled() {
         let text = "[settings]\nmode = \"\"";
         let offset = text.len() - 1;
-        let items = complete(text, offset, &sample());
+        let items = complete(text, offset, &sample(), &Candidates::default);
         assert_eq!(items[0].insert, "\"a");
     }
 }
