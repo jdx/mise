@@ -410,8 +410,9 @@ To stop saving part of a tracked directory, such as its logs or caches,
 checkpoints, so a tracked secret stays in older commits. Preview a directory
 first with `mise dot track --dry-run <path>`. To erase a saved version, rotate
 the credential, then follow
-[Remove plaintext from history](/dotfiles/encryption.html#remove-plaintext-from-history),
-skipping its `mise dot save` step if you no longer want the file tracked.
+[Remove plaintext from history](/dotfiles/encryption.html#remove-plaintext-from-history).
+If you no longer want the file tracked, run `mise dot untrack <path>` first and
+skip the recipe's `mise dot save` step, or `mise dot sync` will save it again.
 
 ## Choose what history saves {#explicit-tracking-and-exclusions}
 

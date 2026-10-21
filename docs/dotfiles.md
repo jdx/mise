@@ -119,8 +119,9 @@ it:
 "~" = { source = ".", mode = "symlink-each", exclude = ["mise.toml", "*.md", ".git"] }
 ```
 
-Only declared paths are managed, so a `README.md` that no entry names stays in
-the repository. An entry's key is its _target_: `"/README.md" = {}` points at
+Only declared paths and their contents are managed. A `README.md` outside them
+stays in the repository, and a directory entry like the one above keeps it out
+with `exclude = ["*.md", ...]`. An entry's key is its _target_: `"/README.md" = {}` points at
 the filesystem root. Your repository's Git history is never touched either;
 [dotfiles history](/dotfiles/history.html) is a separate store.
 
