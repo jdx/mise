@@ -108,10 +108,10 @@ fn key_items(
     let quote = raw
         .chars()
         .next()
-        .filter(|c| matches!(c, '"' | '\'') && !raw[1..].contains(*c));
+        .filter(|c| matches!(c, '"' | '\'') && closing_quote(&raw[1..], *c).is_none());
     // A key typed in quotes goes through its closing quote, whatever is inside (`"llama.cpp"`).
     // Otherwise the rest of the word goes.
-    let rest = match quote.and_then(|q| after.find(q).map(|i| i + 1)) {
+    let rest = match quote.and_then(|q| closing_quote(after, q).map(|i| i + 1)) {
         Some(through_quote) => through_quote,
         None => after
             .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
@@ -259,6 +259,21 @@ fn value_items(
             })
         })
         .collect()
+}
+
+/// Where a string opened with `quote` ends in `text`, which starts just after the opening quote:
+/// the first quote that a backslash does not escape (a literal `'` string has no escapes).
+fn closing_quote(text: &str, quote: char) -> Option<usize> {
+    let mut chars = text.char_indices();
+    while let Some((i, c)) = chars.next() {
+        if c == quote {
+            return Some(i);
+        }
+        if c == '\\' && quote == '"' {
+            chars.next();
+        }
+    }
+    None
 }
 
 /// The tasks or templates to offer where one is named: in a string that may carry environment
@@ -808,6 +823,27 @@ mod tests {
             &text[item.replace.end..]
         );
         assert_eq!(applied, "[tools]\n\"llama.cpp\" = \"latest\"\n");
+    }
+
+    #[test]
+    fn an_escaped_quote_does_not_end_a_quoted_key() {
+        let registry = Registry::new(vec![crate::RegistryEntry {
+            name: "node".to_string(),
+            description: None,
+            aliases: vec![],
+            backends: vec![],
+            deprecated: None,
+        }]);
+        let text = "[tools]\n\"node\\\"x\" = \"24\"\n";
+        let offset = text.find("node").unwrap() + 2;
+        let item = complete(text, offset, &sample(), &registry, &Candidates::default).remove(0);
+        let applied = format!(
+            "{}{}{}",
+            &text[..item.replace.start],
+            item.insert,
+            &text[item.replace.end..]
+        );
+        assert_eq!(applied, "[tools]\nnode = \"24\"\n");
     }
 
     #[test]
