@@ -62,7 +62,7 @@ fn is_standard_config(path: &str) -> bool {
 }
 
 /// The config files in `dir` and the places a project keeps them below it.
-fn config_files(dir: &Path) -> Vec<PathBuf> {
+pub(crate) fn config_files(dir: &Path) -> Vec<PathBuf> {
     // The names mise itself uses are read outright, so a directory too big to scan still gets
     // its standard configs read.
     let mut out: Vec<PathBuf> = [
@@ -112,9 +112,17 @@ fn includes_file(config: &Path, file: &Path) -> bool {
     let Some(includes) = read_includes(config) else {
         return false;
     };
+    let bases = include_bases(config);
+    includes
+        .iter()
+        .any(|include| bases.iter().any(|base| matches(&base.join(include), file)))
+}
+
+/// The directories a config's `includes` are relative to. `mise/config.toml` and its kin keep
+/// tasks relative to the project, not the config dir: the project is above `conf.d`, `mise`,
+/// `.mise` and `.config`, whichever of them the config is in.
+pub(crate) fn include_bases(config: &Path) -> Vec<&Path> {
     let dir = config.parent().unwrap_or(Path::new(""));
-    // `mise/config.toml` and its kin keep tasks relative to the project, not the config dir: the
-    // project is above `conf.d`, `mise`, `.mise` and `.config`, whichever of them the config is in.
     let mut bases = vec![];
     let mut base = Some(dir);
     while let Some(d) = base {
@@ -125,18 +133,75 @@ fn includes_file(config: &Path, file: &Path) -> bool {
             .then(|| d.parent())
             .flatten();
     }
-    includes
-        .iter()
-        .any(|include| bases.iter().any(|base| matches(&base.join(include), file)))
+    bases
 }
 
-fn read_includes(config: &Path) -> Option<Vec<String>> {
-    let meta = std::fs::metadata(config).ok()?;
+/// The TOML files a config's `[task_config] includes` names outright: a file, or the files
+/// below a directory. A glob, a `git::` or `oci::` source and anything else that is not a
+/// path on disk is not read.
+pub(crate) fn task_include_files(config: &Path, includes: &[String]) -> Vec<PathBuf> {
+    let mut out = vec![];
+    // One budget for everything an include walks, so a broad include (`.`) costs a bounded scan.
+    let mut budget = MAX_SCAN;
+    for include in includes {
+        if include.contains("::") || include.contains(['*', '?', '[']) {
+            continue;
+        }
+        for base in include_bases(config) {
+            let path = base.join(include);
+            if path.is_dir() {
+                toml_files_below(&path, 0, &mut budget, &mut out);
+            } else if path.extension().is_some_and(|ext| ext == "toml") && !out.contains(&path) {
+                out.push(path);
+            }
+        }
+    }
+    out
+}
+
+/// Entries one `task_include_files` call looks at, in all the directories it walks.
+const MAX_SCAN: usize = 2000;
+
+/// The TOML files below `dir` that are task files: not the configs mise names itself, and not
+/// behind a symlink. Stops when `budget` entries have been looked at.
+fn toml_files_below(dir: &Path, depth: usize, budget: &mut usize, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if *budget == 0 {
+            return;
+        }
+        *budget -= 1;
+        let path = entry.path();
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_dir() {
+            if depth < 3 {
+                toml_files_below(&path, depth + 1, budget, out);
+            }
+        } else if kind.is_file()
+            && path.extension().is_some_and(|ext| ext == "toml")
+            && !is_standard_config(&slashes(&path.to_string_lossy(), cfg!(windows)))
+            && !out.contains(&path)
+        {
+            out.push(path);
+        }
+    }
+}
+
+/// The text of a config file, unless it is too big to be one.
+pub(crate) fn read_capped(path: &Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
     if !meta.is_file() || meta.len() > MAX_CONFIG_BYTES {
         return None;
     }
-    let text = std::fs::read_to_string(config).ok()?;
-    let doc = Document::parse(text).ok()?;
+    std::fs::read_to_string(path).ok()
+}
+
+fn read_includes(config: &Path) -> Option<Vec<String>> {
+    let doc = Document::parse(read_capped(config)?).ok()?;
     let includes = doc.get("task_config")?.get("includes")?;
     let Item::Value(value) = includes else {
         return None;
@@ -235,6 +300,23 @@ pub(crate) fn uri_path(uri: &str) -> Option<PathBuf> {
     Some(PathBuf::from(path))
 }
 
+/// The `file://` URI of a path, with the characters a URI does not allow escaped.
+pub(crate) fn path_uri(path: &Path) -> String {
+    let path = slashes(&path.to_string_lossy(), cfg!(windows));
+    let mut uri = String::from("file://");
+    if !path.starts_with('/') {
+        uri.push('/');
+    }
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || b"/-_.~:".contains(&byte) {
+            uri.push(byte as char);
+        } else {
+            uri.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    uri
+}
+
 pub(crate) fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -294,6 +376,14 @@ mod tests {
             uri_path("file:///home/me/mise.toml").unwrap(),
             PathBuf::from("/home/me/mise.toml")
         );
+    }
+
+    #[test]
+    fn paths_become_uris_and_back() {
+        let path = Path::new("/home/me/My Dir/mise.toml");
+        let uri = path_uri(path);
+        assert_eq!(uri, "file:///home/me/My%20Dir/mise.toml");
+        assert_eq!(uri_path(&uri).unwrap(), path);
     }
 
     #[test]

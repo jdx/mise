@@ -16,6 +16,7 @@ mod keypath;
 mod rpc;
 mod schema;
 mod server;
+mod tasks;
 mod text;
 
 use std::io::{self, BufRead, Write};

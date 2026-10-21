@@ -113,12 +113,49 @@ It provides:
 - **Hover** documentation for keys.
 - **Quick fixes** that replace an unknown key with the suggested one.
 - **Formatting**, the same as [`mise fmt`](/cli/fmt.html).
+- **Tasks**: completion of task names in `depends`, `depends_post`, `wait_for`
+  and `run = [{ task = "..." }]`, and of template names in `extends`; hover on
+  such a name showing the task's description and command; go to definition and
+  find references; and rename of a task together with every reference to it in
+  the file. See [Tasks](#language-server-tasks).
 
 Diagnostics carry a `code` (`syntax`, `unknown-key`, `deprecated-key` or
 `invalid-value`), and an unknown key's suggestion is in the diagnostic's `data`.
 Unknown `[settings]` keys are warnings, because mise still loads the file;
 other unknown keys are errors. While a file does not parse, the diagnostics of
 the parts you did not edit stay.
+
+### Tasks {#language-server-tasks}
+
+The server knows the tasks of the file you edit, of the configs in the
+directories above it, and of the TOML files their `[task_config] includes` name
+(a file, or a directory of TOML files). Globs, `git::` and `oci::` includes and
+file tasks (scripts) are not read.
+
+```toml
+[tasks.build]
+description = "compile"
+run = "cargo build"
+
+[tasks.test]
+depends = ["bu"] # completes to "build"; hover on "build" shows the description and command
+```
+
+- Go to definition on a name in `depends` jumps to its `[tasks.<name>]`, in
+  another file when that is where it is defined. A task is found by its name or
+  by one of its `alias` names.
+- Find references lists the places in the open file that name a task.
+- Rename changes the `[tasks.<name>]` key (including `[tasks.<name>.env]` and
+  dotted spellings) and every reference to it in the same file, and keeps the
+  arguments after a name (`"build --release"`), including ones that start with
+  environment assignments (`"PROFILE=release build"`). The server does not edit
+  other files, so a rename is refused when another config or include file also
+  refers to the task. A task defined in another file is not renamed from here,
+  and neither is an alias. A rename that would leave the file meaning something
+  else, such as one that meets a spelling the server does not follow, is
+  refused instead of half done.
+- `extends` names a template, `[task_templates.<name>]`, so it completes, jumps
+  and renames within templates.
 
 Files that `[task_config] includes` lists are tasks, not configs, so the server
 leaves them alone even when they are named like `mise.tasks.toml`.
@@ -147,6 +184,10 @@ off with `initializationOptions`, keeping only what mise adds:
 ```json
 { "formatting": false, "hover": false, "completion": false }
 ```
+
+`definition`, `references` and `rename` switch the task navigation off the same
+way. Task names and descriptions in `completion` and `hover` follow those two
+switches. Each capability is only advertised to the client while it is on.
 
 A mise that predates `mise lsp` runs a task named `lsp` if the project has one,
 and `mise lsp --help` then prints that task's help. To check that the command

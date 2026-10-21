@@ -12,17 +12,23 @@ use crate::complete::{self, Kind};
 use crate::diagnostics::{self, Diagnostic, Severity};
 use crate::rpc::{read_message, write_message};
 use crate::schema::Schema;
+use crate::tasks::{self, Index, Origin};
 use crate::text::LineIndex;
-use crate::{Formatter, Options, hover, includes, keypath};
+use crate::{Formatter, Options, doc, hover, includes, keypath};
 
 const METHOD_NOT_FOUND: i64 = -32601;
+const REQUEST_FAILED: i64 = -32803;
 
 /// What an editor can switch off in `initializationOptions`, for use next to another TOML
-/// server that already offers it: `{"formatting": false, "hover": false, "completion": false}`.
+/// server that already offers it: `{"formatting": false, "hover": false, "completion": false,
+/// "definition": false, "references": false, "rename": false}`.
 struct Features {
     formatting: bool,
     hover: bool,
     completion: bool,
+    definition: bool,
+    references: bool,
+    rename: bool,
 }
 
 impl Features {
@@ -36,6 +42,9 @@ impl Features {
             formatting: option("formatting"),
             hover: option("hover"),
             completion: option("completion"),
+            definition: option("definition"),
+            references: option("references"),
+            rename: option("rename"),
         }
     }
 }
@@ -113,6 +122,10 @@ impl Server {
                 Ok(self.formatting(params))
             }
             "textDocument/codeAction" => Ok(self.code_actions(params)),
+            "textDocument/definition" if self.features.definition => Ok(self.definition(params)),
+            "textDocument/references" if self.features.references => Ok(self.references(params)),
+            "textDocument/prepareRename" if self.features.rename => Ok(self.prepare_rename(params)),
+            "textDocument/rename" if self.features.rename => self.rename(params),
             _ => Err((METHOD_NOT_FOUND, format!("method not supported: {method}"))),
         }
     }
@@ -179,6 +192,15 @@ impl Server {
         if self.format.is_some() && self.features.formatting {
             capabilities["documentFormattingProvider"] = json!(true);
         }
+        if self.features.definition {
+            capabilities["definitionProvider"] = json!(true);
+        }
+        if self.features.references {
+            capabilities["referencesProvider"] = json!(true);
+        }
+        if self.features.rename {
+            capabilities["renameProvider"] = json!({"prepareProvider": true});
+        }
         json!({
             "capabilities": capabilities,
             "serverInfo": {"name": "mise", "version": self.version},
@@ -236,7 +258,9 @@ impl Server {
         };
         let text = document.text.as_str();
         let index = LineIndex::new(text);
-        let items: Vec<Value> = complete::complete(text, offset, &self.schema)
+        let uri = params["textDocument"]["uri"].as_str().unwrap_or_default();
+        let names = || self.tasks(uri, document).candidates();
+        let items: Vec<Value> = complete::complete(text, offset, &self.schema, &names)
             .into_iter()
             .map(|item| {
                 let mut value = json!({
@@ -244,6 +268,7 @@ impl Server {
                     "kind": match item.kind {
                         Kind::Key => 10,
                         Kind::Value => 12,
+                        Kind::Task => 3,
                     },
                     "filterText": item.insert,
                     "textEdit": {"range": range(&index, &item.replace), "newText": item.insert},
@@ -265,6 +290,9 @@ impl Server {
             return Value::Null;
         };
         let text = document.text.as_str();
+        if let Some(hover) = self.task_hover(params, document, offset) {
+            return hover;
+        }
         if let Some(h) = hover::hover(text, offset, &self.schema) {
             return json!({
                 "contents": {"kind": "markdown", "value": h.markdown},
@@ -349,6 +377,185 @@ impl Server {
         json!(actions)
     }
 
+    /// The tasks and templates the document at `uri` can see.
+    fn tasks(&self, uri: &str, document: &Document) -> Index {
+        // While the text does not parse, the last version that did still names the tasks.
+        let open = match (&document.last_good, doc::parse(&document.text)) {
+            (Some(good), Err(_)) => good.text.as_str(),
+            _ => document.text.as_str(),
+        };
+        Index::build(open, includes::uri_path(uri).as_deref())
+    }
+
+    /// Hover on a name in `depends`, `run = [{ task = ".." }]` and the like: what the task is
+    /// and does. Everything else is the schema's to describe.
+    fn task_hover(&self, params: &Value, document: &Document, offset: usize) -> Option<Value> {
+        let text = document.text.as_str();
+        let parsed = doc::parse(text).ok()?;
+        let symbol = tasks::symbol_at(text, &parsed, offset).filter(|s| !s.is_definition)?;
+        let uri = params["textDocument"]["uri"].as_str()?;
+        let index = self.tasks(uri, document);
+        let definition = index.find(symbol.namespace, &symbol.name)?;
+        let mut markdown = format!("**{}** _{}_", definition.name, symbol.namespace.noun());
+        let body = tasks::describe(definition);
+        if !body.is_empty() {
+            markdown.push_str("\n\n");
+            markdown.push_str(&body);
+        }
+        Some(json!({
+            "contents": {"kind": "markdown", "value": markdown},
+            "range": range(&LineIndex::new(text), &symbol.range),
+        }))
+    }
+
+    /// The task, or template, the cursor is on, and where it is defined.
+    fn symbol(&self, params: &Value) -> Option<Symbol<'_>> {
+        let uri = params["textDocument"]["uri"].as_str()?;
+        let (document, offset) = self.cursor(params)?;
+        let text = document.text.as_str();
+        let parsed = doc::parse(text).ok()?;
+        let symbol = tasks::symbol_at(text, &parsed, offset)?;
+        let index = self.tasks(uri, document);
+        Some(Symbol {
+            uri: uri.to_string(),
+            text,
+            parsed,
+            symbol,
+            index,
+        })
+    }
+
+    fn location(&self, uri: &str, text: &str, origin: &Origin) -> Value {
+        match origin {
+            Origin::Open(span) => json!({"uri": uri, "range": range(&LineIndex::new(text), span)}),
+            Origin::File { path, start, end } => json!({
+                "uri": includes::path_uri(path),
+                "range": {
+                    "start": {"line": start.0, "character": start.1},
+                    "end": {"line": end.0, "character": end.1},
+                },
+            }),
+        }
+    }
+
+    fn definition(&self, params: &Value) -> Value {
+        let Some(found) = self.symbol(params) else {
+            return Value::Null;
+        };
+        match found.index.find(found.symbol.namespace, &found.symbol.name) {
+            Some(definition) => self.location(&found.uri, found.text, &definition.origin),
+            None => Value::Null,
+        }
+    }
+
+    /// The places in the document that name the same task: by its name or by an alias.
+    fn references(&self, params: &Value) -> Value {
+        let Some(found) = self.symbol(params) else {
+            return Value::Null;
+        };
+        let namespace = found.symbol.namespace;
+        let resolve = |name: &str| {
+            found
+                .index
+                .find(namespace, name)
+                .map_or_else(|| name.to_string(), |d| d.name.clone())
+        };
+        let target = resolve(&found.symbol.name);
+        let index = LineIndex::new(found.text);
+        let mut spans: Vec<Range<usize>> = tasks::references(found.text, &found.parsed)
+            .into_iter()
+            .filter(|r| r.namespace == namespace && resolve(&r.name) == target)
+            .map(|r| r.range)
+            .collect();
+        if params["context"]["includeDeclaration"].as_bool() == Some(true) {
+            let defined = match namespace {
+                tasks::Namespace::Task => &found.index.tasks,
+                tasks::Namespace::Template => &found.index.templates,
+            };
+            spans.extend(defined.iter().filter(|d| d.name == target).find_map(
+                |d| match &d.origin {
+                    Origin::Open(span) => Some(span.clone()),
+                    Origin::File { .. } => None,
+                },
+            ));
+        }
+        spans.sort_by_key(|span| span.start);
+        json!(
+            spans
+                .iter()
+                .map(|span| json!({"uri": found.uri, "range": range(&index, span)}))
+                .collect::<Vec<_>>()
+        )
+    }
+
+    /// Whether the symbol can be renamed here, and why not: the definition has to be in this
+    /// document, and an alias is not the name.
+    fn renamable(found: &Symbol<'_>) -> Result<(), String> {
+        let (namespace, name) = (found.symbol.namespace, &found.symbol.name);
+        let noun = namespace.noun();
+        match found.index.find(namespace, name) {
+            None => Err(format!("no {noun} named `{name}` is defined")),
+            Some(d) if d.name != *name => {
+                Err(format!("`{name}` is an alias of `{}`; rename that", d.name))
+            }
+            Some(d) if matches!(d.origin, Origin::File { .. }) => Err(format!(
+                "the {noun} `{name}` is defined in another file; rename it there"
+            )),
+            Some(_) => Ok(()),
+        }
+    }
+
+    fn prepare_rename(&self, params: &Value) -> Value {
+        let Some(found) = self.symbol(params) else {
+            return Value::Null;
+        };
+        if Self::renamable(&found).is_err() {
+            return Value::Null;
+        }
+        json!({
+            "range": range(&LineIndex::new(found.text), &found.symbol.range),
+            "placeholder": found.symbol.name,
+        })
+    }
+
+    /// Renames a task and every reference to it in the document.
+    fn rename(&self, params: &Value) -> Result<Value, (i64, String)> {
+        let fail = |message: String| (REQUEST_FAILED, message);
+        let Some(found) = self.symbol(params) else {
+            return Err(fail("nothing to rename here".to_string()));
+        };
+        Self::renamable(&found).map_err(fail)?;
+        let new = params["newName"].as_str().unwrap_or_default();
+        let (namespace, old) = (found.symbol.namespace, found.symbol.name.as_str());
+        if !tasks::valid_name(new) {
+            return Err(fail(format!(
+                "`{new}` cannot be used as a {} name",
+                namespace.noun()
+            )));
+        }
+        if new == old {
+            return Ok(json!({"changes": {}}));
+        }
+        if found.index.referenced_elsewhere(namespace, old) {
+            return Err(fail(format!(
+                "other files also refer to `{old}`; a rename here would leave them broken"
+            )));
+        }
+        if found.index.find(namespace, new).is_some() {
+            return Err(fail(format!(
+                "a {} named `{new}` already exists",
+                namespace.noun()
+            )));
+        }
+        let edits = tasks::rename(found.text, &found.parsed, namespace, old, new).map_err(fail)?;
+        let index = LineIndex::new(found.text);
+        let edits: Vec<Value> = edits
+            .iter()
+            .map(|(span, text)| json!({"range": range(&index, span), "newText": text}))
+            .collect();
+        Ok(json!({"changes": {found.uri: edits}}))
+    }
+
     /// The document and byte offset a position request is about.
     fn cursor(&self, params: &Value) -> Option<(&Document, usize)> {
         let document = self.config(params["textDocument"]["uri"].as_str()?)?;
@@ -357,6 +564,15 @@ impl Server {
         let offset = LineIndex::new(&document.text).offset(line, character);
         Some((document, offset))
     }
+}
+
+/// The task or template a position request is on, with what finds where it is defined.
+struct Symbol<'a> {
+    uri: String,
+    text: &'a str,
+    parsed: doc::Parsed,
+    symbol: tasks::Symbol,
+    index: Index,
 }
 
 /// What changed between two versions of a text: everything outside one replaced region is the
@@ -677,6 +893,232 @@ mod tests {
             1
         );
         assert_eq!(replies[1]["params"]["diagnostics"], json!([]));
+    }
+
+    const TASKS: &str = "[tasks.build]\ndescription = \"compile it\"\nrun = \"cargo build\"\n\n[tasks.test]\ndepends = [\"build\"]\n\n[tasks.ship]\ndepends = [\"build --release\", \"test\"]\nrun = [{ task = \"build\" }]\n";
+
+    /// A position request one character into the `nth` match of `needle` in [`TASKS`].
+    fn at(method: &str, id: u64, uri: &str, needle: &str, nth: usize, extra: Value) -> Value {
+        let offset = TASKS.match_indices(needle).nth(nth).unwrap().0 + 1;
+        let (line, character) = LineIndex::new(TASKS).position(offset);
+        let mut params = json!({"textDocument": {"uri": uri},
+            "position": {"line": line, "character": character}});
+        for (key, value) in extra.as_object().into_iter().flatten() {
+            params[key] = value.clone();
+        }
+        json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+    }
+
+    #[test]
+    fn hovering_a_dependency_shows_the_task() {
+        let uri = "file:///p/mise.toml";
+        let replies = session(&[
+            open(uri, TASKS),
+            at("textDocument/hover", 1, uri, "\"build\"", 0, json!({})),
+        ]);
+        let hover = replies[1]["result"]["contents"]["value"].as_str().unwrap();
+        assert!(hover.starts_with("**build** _task_"), "{hover}");
+        assert!(hover.contains("compile it"));
+        assert!(hover.contains("cargo build"));
+    }
+
+    #[test]
+    fn a_dependency_goes_to_its_definition() {
+        let uri = "file:///p/mise.toml";
+        let replies = session(&[
+            open(uri, TASKS),
+            at(
+                "textDocument/definition",
+                1,
+                uri,
+                "\"build --release",
+                0,
+                json!({}),
+            ),
+        ]);
+        let location = &replies[1]["result"];
+        assert_eq!(location["uri"], uri);
+        assert_eq!(
+            location["range"]["start"],
+            json!({"line": 0, "character": 7})
+        );
+        assert_eq!(
+            location["range"]["end"],
+            json!({"line": 0, "character": 12})
+        );
+    }
+
+    #[test]
+    fn a_dependency_in_another_file_goes_there() {
+        let dir = std::env::temp_dir().join(format!("mise-lsp-defs-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("mise.toml"), "[tasks.lint]\nrun = \"x\"\n").unwrap();
+        let uri = includes::path_uri(&dir.join("sub/mise.toml"));
+        let text = "[tasks.a]\ndepends = [\"lint\"]\n";
+        let replies = session(&[
+            open(&uri, text),
+            json!({"jsonrpc": "2.0", "id": 1, "method": "textDocument/definition",
+                "params": {"textDocument": {"uri": uri}, "position": {"line": 1, "character": 13}}}),
+        ]);
+        let location = &replies[1]["result"];
+        assert_eq!(location["uri"], includes::path_uri(&dir.join("mise.toml")));
+        assert_eq!(
+            location["range"]["start"],
+            json!({"line": 0, "character": 7})
+        );
+    }
+
+    #[test]
+    fn references_list_every_use_and_optionally_the_definition() {
+        let uri = "file:///p/mise.toml";
+        let lines = |reply: &Value| -> Vec<u64> {
+            reply["result"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|l| l["range"]["start"]["line"].as_u64().unwrap())
+                .collect()
+        };
+        let replies = session(&[
+            open(uri, TASKS),
+            at(
+                "textDocument/references",
+                1,
+                uri,
+                "build]",
+                0,
+                json!({"context": {"includeDeclaration": false}}),
+            ),
+            at(
+                "textDocument/references",
+                2,
+                uri,
+                "build]",
+                0,
+                json!({"context": {"includeDeclaration": true}}),
+            ),
+        ]);
+        assert_eq!(lines(&replies[1]), [5, 8, 9]);
+        assert_eq!(lines(&replies[2]), [0, 5, 8, 9]);
+    }
+
+    #[test]
+    fn renaming_a_task_edits_the_definition_and_every_reference() {
+        let uri = "file:///p/mise.toml";
+        let replies = session(&[
+            open(uri, TASKS),
+            at(
+                "textDocument/prepareRename",
+                1,
+                uri,
+                "\"build\"",
+                0,
+                json!({}),
+            ),
+            at(
+                "textDocument/rename",
+                2,
+                uri,
+                "\"build\"",
+                0,
+                json!({"newName": "compile"}),
+            ),
+            at(
+                "textDocument/rename",
+                3,
+                uri,
+                "\"test\"",
+                0,
+                json!({"newName": "build"}),
+            ),
+            at(
+                "textDocument/rename",
+                4,
+                uri,
+                "\"test\"",
+                0,
+                json!({"newName": "a b"}),
+            ),
+        ]);
+        assert_eq!(replies[1]["result"]["placeholder"], "build");
+        let edits = replies[2]["result"]["changes"][uri].as_array().unwrap();
+        assert_eq!(edits.len(), 4);
+        assert!(edits.iter().all(|e| e["newText"] == "compile"));
+        assert_eq!(replies[3]["error"]["code"], REQUEST_FAILED);
+        assert!(
+            replies[3]["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("already exists")
+        );
+        assert_eq!(replies[4]["error"]["code"], REQUEST_FAILED);
+    }
+
+    #[test]
+    fn a_task_defined_elsewhere_is_not_renamed_here() {
+        let dir = std::env::temp_dir().join(format!("mise-lsp-rename-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("mise.toml"), "[tasks.lint]\nrun = \"x\"\n").unwrap();
+        let uri = includes::path_uri(&dir.join("sub/mise.toml"));
+        let params = json!({"textDocument": {"uri": uri},
+            "position": {"line": 1, "character": 13}, "newName": "style"});
+        let replies = session(&[
+            open(&uri, "[tasks.a]\ndepends = [\"lint\"]\n"),
+            json!({"jsonrpc": "2.0", "id": 1, "method": "textDocument/rename", "params": params}),
+            json!({"jsonrpc": "2.0", "id": 2, "method": "textDocument/prepareRename", "params": params}),
+        ]);
+        assert!(
+            replies[1]["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("another file")
+        );
+        assert_eq!(replies[2]["result"], Value::Null);
+    }
+
+    #[test]
+    fn task_features_advertise_what_is_on() {
+        let replies = session(&[
+            json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+            json!({"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {
+                "initializationOptions": {"definition": false, "references": false, "rename": false}
+            }}),
+            at(
+                "textDocument/rename",
+                3,
+                "file:///p/mise.toml",
+                "\"test\"",
+                0,
+                json!({"newName": "x"}),
+            ),
+        ]);
+        let on = &replies[0]["result"]["capabilities"];
+        assert_eq!(on["definitionProvider"], true);
+        assert_eq!(on["referencesProvider"], true);
+        assert_eq!(on["renameProvider"]["prepareProvider"], true);
+        let off = &replies[1]["result"]["capabilities"];
+        for key in ["definitionProvider", "referencesProvider", "renameProvider"] {
+            assert!(off.get(key).is_none(), "{key}");
+        }
+        assert_eq!(replies[2]["error"]["code"], METHOD_NOT_FOUND);
+    }
+
+    #[test]
+    fn dependencies_complete_from_the_tasks_in_view() {
+        let uri = "file:///p/mise.toml";
+        let text = "[tasks.build]\n[tasks.test]\ndepends = [\"\"]\n";
+        let replies = session(&[
+            open(uri, text),
+            json!({"jsonrpc": "2.0", "id": 1, "method": "textDocument/completion",
+                "params": {"textDocument": {"uri": uri}, "position": {"line": 2, "character": 12}}}),
+        ]);
+        let labels: Vec<_> = replies[1]["result"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["label"].as_str().unwrap())
+            .collect();
+        assert_eq!(labels, ["build"]);
     }
 
     #[test]
