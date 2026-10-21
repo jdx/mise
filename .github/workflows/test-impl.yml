@@ -470,8 +470,32 @@ jobs:
           shared-key: windows-lint
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
       - run: rustup component add clippy
+      # Retried once like windows-unit: the self-hosted runner has failed this step
+      # about once in 120 runs with a transient "directory name is invalid" (os error 267).
+      # Two 17-minute attempts plus the wait fit inside the job's 40-minute limit.
       - name: Run Clippy on Windows
-        run: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} clippy --workspace --all-targets --ignore-rust-version -- -D warnings
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        with:
+          timeout_minutes: 17
+          retry_wait_seconds: 30
+          max_attempts: 2
+          command: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} clippy --workspace --all-targets --ignore-rust-version -- -D warnings
+      # Read-only: records the state of the runner when both attempts failed.
+      - name: Print runner diagnostics
+        if: failure()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Write-Output "runner: $env:RUNNER_NAME"
+          Write-Output "cwd: $((Get-Location).Path)"
+          Write-Output "GITHUB_WORKSPACE: $env:GITHUB_WORKSPACE (exists: $(Test-Path -LiteralPath $env:GITHUB_WORKSPACE))"
+          Write-Output "--- workspace root"
+          Get-ChildItem -LiteralPath $env:GITHUB_WORKSPACE -Force | Format-Table Mode, LastWriteTime, Length, Name | Out-String | Write-Output
+          Write-Output "--- processes"
+          Get-Process -Name cargo, rustc, 'mbx*', cl, link -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime, Path | Out-String -Width 250 | Write-Output
+          Write-Output "--- disk"
+          $drive = (Split-Path -Qualifier $env:GITHUB_WORKSPACE).TrimEnd(':')
+          Get-PSDrive -Name $drive | Format-Table Name, @{n='FreeGB';e={[math]::Round($_.Free / 1GB, 1)}}, @{n='UsedGB';e={[math]::Round($_.Used / 1GB, 1)}} | Out-String | Write-Output
   windows-e2e:
     permissions:
       contents: read

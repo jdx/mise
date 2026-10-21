@@ -19,6 +19,23 @@ pub(crate) fn split(path: &str) -> Vec<String> {
     segments
 }
 
+/// The last segment of a dotted key as written, quotes included: the part after the last dot
+/// that is not inside quotes.
+pub(crate) fn last_segment(path: &str) -> &str {
+    let mut quote = None;
+    let mut start = 0;
+    for (i, c) in path.char_indices() {
+        match (quote, c) {
+            (Some(q), c) if c == q => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'') => quote = Some(c),
+            (None, '.') => start = i + 1,
+            _ => {}
+        }
+    }
+    path[start..].trim_start()
+}
+
 /// A key as it must be written: bare when TOML allows it, else quoted.
 pub(crate) fn quote(name: &str) -> String {
     let bare = !name.is_empty()
@@ -71,6 +88,13 @@ mod tests {
         );
         assert_eq!(split("settings."), ["settings", ""]);
         assert_eq!(split(""), [""]);
+    }
+
+    #[test]
+    fn the_last_segment_keeps_its_quotes_and_inner_dots() {
+        assert_eq!(last_segment("tools.\"llama.c"), "\"llama.c");
+        assert_eq!(last_segment("a. b"), "b");
+        assert_eq!(last_segment("plain"), "plain");
     }
 
     #[test]

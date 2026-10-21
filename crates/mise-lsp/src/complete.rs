@@ -14,12 +14,15 @@ use serde_json::Value;
 
 use crate::doc;
 use crate::keypath;
+use crate::registry::{self, Registry};
 use crate::schema::Schema;
+use crate::tasks::{self, Candidates, Namespace};
 use crate::text::LineIndex;
 
 pub(crate) enum Kind {
     Key,
     Value,
+    Task,
 }
 
 pub(crate) struct Item {
@@ -32,7 +35,15 @@ pub(crate) struct Item {
     pub replace: Range<usize>,
 }
 
-pub(crate) fn complete(text: &str, offset: usize, schema: &Schema) -> Vec<Item> {
+/// The items at `offset`. `tools` names the tools to offer under `[tools]`. `names` is asked for the tasks and templates the document can see
+/// only when the cursor is where one is named.
+pub(crate) fn complete(
+    text: &str,
+    offset: usize,
+    schema: &Schema,
+    tools: &Registry,
+    names: &dyn Fn() -> Candidates,
+) -> Vec<Item> {
     let index = LineIndex::new(text);
     let (line, _) = index.position(offset);
     let line_start = index.offset(line, 0);
@@ -50,20 +61,20 @@ pub(crate) fn complete(text: &str, offset: usize, schema: &Schema) -> Vec<Item> 
     // A header: a line that starts with `[` where nothing is open.
     if line_starts_closed && let Some(header) = before.trim_start().strip_prefix('[') {
         let header = header.trim_start_matches('[');
-        return key_items(schema, &[], header, text, after, offset);
+        return key_items(schema, tools, &[], header, text, after, offset);
     }
     match &frame.pending {
         Some(path) => {
             let path = if frame.kind == '[' {
-                [path.as_slice(), &["0".to_string()]].concat()
+                [path.as_slice(), &[frame.index.to_string()]].concat()
             } else {
                 path.clone()
             };
-            value_items(schema, &path, &frame.segment, after, offset)
+            value_items(schema, &path, &frame.segment, after, offset, names)
         }
         None if frame.kind == '[' => {
-            let path = [frame.path.as_slice(), &["0".to_string()]].concat();
-            value_items(schema, &path, &frame.segment, after, offset)
+            let path = [frame.path.as_slice(), &[frame.index.to_string()]].concat();
+            value_items(schema, &path, &frame.segment, after, offset, names)
         }
         None => {
             let parent = if state.stack.is_empty() {
@@ -71,7 +82,7 @@ pub(crate) fn complete(text: &str, offset: usize, schema: &Schema) -> Vec<Item> 
             } else {
                 frame.path.clone()
             };
-            key_items(schema, &parent, &frame.segment, text, after, offset)
+            key_items(schema, tools, &parent, &frame.segment, text, after, offset)
         }
     }
 }
@@ -80,6 +91,7 @@ pub(crate) fn complete(text: &str, offset: usize, schema: &Schema) -> Vec<Item> 
 /// keys the table already has are not offered again.
 fn key_items(
     schema: &Schema,
+    tools: &Registry,
     table: &[String],
     typed: &str,
     text: &str,
@@ -91,14 +103,24 @@ fn key_items(
     let partial = segments.pop().unwrap_or_default();
     let mut parent = table.to_vec();
     parent.extend(segments);
-    let raw = typed.rsplit('.').next().unwrap_or(typed).trim_start();
-    let rest = after
-        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
-        .unwrap_or(after.len());
+    let raw = keypath::last_segment(typed);
+    // A quote that is still open: `"llama.c|` and not `"llama.cpp"|`.
+    let quote = raw
+        .chars()
+        .next()
+        .filter(|c| matches!(c, '"' | '\'') && closing_quote(&raw[1..], *c).is_none());
+    // A key typed in quotes goes through its closing quote, whatever is inside (`"llama.cpp"`).
+    // Otherwise the rest of the word goes.
+    let rest = match quote.and_then(|q| closing_quote(after, q).map(|i| i + 1)) {
+        Some(through_quote) => through_quote,
+        None => after
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
+            .unwrap_or(after.len()),
+    };
     let replace = offset - raw.len()..offset + rest;
     let needle = partial.to_lowercase();
-    let existing = existing_keys(text, &replace, &parent);
-    schema
+    let existing = existing_keys(text, &replace, &parent, false);
+    let mut items: Vec<Item> = schema
         .keys(&parent)
         .into_iter()
         .filter(|(name, key_schema)| {
@@ -120,23 +142,68 @@ fn key_items(
                 replace: replace.clone(),
             }
         })
-        .collect()
+        .collect();
+    if Registry::is_tools_table(&parent) {
+        // a tool written as `[tools.node]` is listed too, unlike the tables of other keys
+        let existing = existing_keys(text, &replace, &parent, true);
+        items.extend(
+            tools
+                .offered()
+                .filter(|tool| {
+                    tool.name.to_lowercase().starts_with(&needle)
+                        && !existing
+                            .iter()
+                            .any(|e| tools.get(e).is_some_and(|t| t.name == tool.name))
+                })
+                .map(|tool| Item {
+                    label: tool.name.clone(),
+                    insert: keypath::quote(&tool.name),
+                    kind: Kind::Key,
+                    detail: tool
+                        .description
+                        .as_deref()
+                        .and_then(|d| d.lines().next())
+                        .map(str::to_string),
+                    documentation: Some(registry::describe(tool)),
+                    replace: replace.clone(),
+                }),
+        );
+    }
+    items
 }
 
 /// The keys the table at `parent` has a value for, with the text being completed taken out so that a
 /// half-typed key does not stop the document from parsing. Nothing is known while it still does
 /// not parse.
-fn existing_keys(text: &str, replace: &Range<usize>, parent: &[String]) -> Vec<String> {
-    let mut without = String::with_capacity(text.len());
-    without.push_str(&text[..replace.start]);
-    without.push_str(&text[replace.end..]);
-    let Ok(parsed) = doc::parse(&without) else {
+fn existing_keys(
+    text: &str,
+    replace: &Range<usize>,
+    parent: &[String],
+    tables: bool,
+) -> Vec<String> {
+    // The text being completed goes, or turns into a placeholder key where its absence would not
+    // parse, as in the header `[tools.no]` that would become `[tools.]`.
+    let without =
+        |filler: &str| format!("{}{filler}{}", &text[..replace.start], &text[replace.end..]);
+    // A header still being typed may not be closed yet, so the placeholder closes it too.
+    let Some(parsed) = [
+        "",
+        "_placeholder_",
+        "_placeholder_]",
+        "_placeholder_]]",
+        // a dotted key on a line of its own needs a value
+        "_placeholder_ = 0",
+    ]
+    .into_iter()
+    .find_map(|filler| doc::parse(&without(filler)).ok()) else {
         return vec![];
     };
     parsed
         .entries
         .iter()
-        .filter(|e| !e.table && e.path.len() == parent.len() + 1 && e.path.starts_with(parent))
+        .filter(|e| {
+            (tables || !e.table) && e.path.len() == parent.len() + 1 && e.path.starts_with(parent)
+        })
         .map(|e| e.path[parent.len()].clone())
         .collect()
 }
@@ -149,9 +216,11 @@ fn value_items(
     typed: &str,
     after: &str,
     offset: usize,
+    names: &dyn Fn() -> Candidates,
 ) -> Vec<Item> {
     let raw = typed.trim_start();
     let quoted = raw.strip_prefix('"');
+    let reference = tasks::reference_kind(path);
     // The rest of the value under the cursor goes too: up to the closing quote in a string,
     // else the rest of the word.
     let rest = match quoted {
@@ -162,6 +231,9 @@ fn value_items(
     };
     let replace = offset - raw.len()..offset + rest;
     let needle = quoted.unwrap_or(raw);
+    if let Some(namespace) = reference {
+        return reference_items(path, namespace, raw, after, offset, names);
+    }
     schema
         .values(&schema.at(path))
         .into_iter()
@@ -189,6 +261,85 @@ fn value_items(
         .collect()
 }
 
+/// Where a string opened with `quote` ends in `text`, which starts just after the opening quote:
+/// the first quote that a backslash does not escape (a literal `'` string has no escapes).
+fn closing_quote(text: &str, quote: char) -> Option<usize> {
+    let mut chars = text.char_indices();
+    while let Some((i, c)) = chars.next() {
+        if c == quote {
+            return Some(i);
+        }
+        if c == '\\' && quote == '"' {
+            chars.next();
+        }
+    }
+    None
+}
+
+/// The tasks or templates to offer where one is named: in a string that may carry environment
+/// assignments before the name and arguments after it (`"PROFILE=release bu|ild --fast"`).
+/// Only the name is replaced; nothing is offered where an argument is being typed.
+fn reference_items(
+    path: &[String],
+    namespace: Namespace,
+    raw: &str,
+    after: &str,
+    offset: usize,
+    names: &dyn Fn() -> Candidates,
+) -> Vec<Item> {
+    let quote = raw.chars().next().filter(|c| matches!(c, '"' | '\''));
+    let (word, before) = match quote {
+        Some(_) => {
+            let inner = &raw[1..];
+            let at = inner.rfind(char::is_whitespace).map_or(0, |i| i + 1);
+            (&inner[at..], &inner[..at])
+        }
+        None if raw.is_empty() => ("", ""),
+        None => return vec![],
+    };
+    if !before.split_whitespace().all(tasks::is_env_assignment) {
+        return vec![];
+    }
+    let end = match quote {
+        Some(q) => after
+            .find(|c: char| c == q || c.is_whitespace())
+            .unwrap_or(after.len()),
+        None => 0,
+    };
+    // An environment assignment being edited is not a name, whether the cursor is before or
+    // after its `=`.
+    if tasks::is_env_assignment(&format!("{word}{}", &after[..end])) {
+        return vec![];
+    }
+    let replace = offset - word.len()..offset + end;
+    let candidates = names();
+    let (list, noun) = match namespace {
+        Namespace::Task => (candidates.tasks, "task"),
+        Namespace::Template => (candidates.templates, "task template"),
+    };
+    // A task does not wait for itself.
+    let own = (path[0] == "tasks" && namespace == Namespace::Task).then(|| path[1].as_str());
+    list.into_iter()
+        .filter(|c| c.name.starts_with(word) && Some(c.name.as_str()) != own)
+        .map(|c| {
+            let insert = match quote {
+                // inside a string, the name goes between what is already there
+                Some(q) if after.contains(q) => c.name.clone(),
+                Some(q) => format!("{}{q}", c.name),
+                None => format!("\"{}\"", c.name),
+            };
+            Item {
+                insert,
+                label: c.name,
+                kind: Kind::Task,
+                detail: c.detail.or_else(|| Some(noun.to_string())),
+                documentation: c.documentation.filter(|d| !d.is_empty()),
+                replace: replace.clone(),
+            }
+        })
+        .collect()
+}
+
 /// One level of what is open: the top of a table (`t`), an array (`[`) or an inline table (`{`).
 #[derive(Clone)]
 struct Frame {
@@ -199,6 +350,8 @@ struct Frame {
     segment: String,
     /// The path of the key whose `=` has been seen at this level, while its value is written.
     pending: Option<Vec<String>>,
+    /// In an array, the index of the element being written.
+    index: usize,
 }
 
 impl Frame {
@@ -208,12 +361,17 @@ impl Frame {
             path,
             segment: String::new(),
             pending: None,
+            index: 0,
         }
     }
 
     fn separate(&mut self) {
         self.segment.clear();
         self.pending = None;
+        // the next element of an array
+        if self.kind == '[' {
+            self.index += 1;
+        }
     }
 }
 
@@ -362,7 +520,7 @@ fn advance(text: &str, state: &mut State, eol: bool) {
                 if frame.pending.is_none() {
                     let mut path = frame.path.clone();
                     if frame.kind == '[' {
-                        path.push("0".to_string());
+                        path.push(frame.index.to_string());
                     }
                     path.extend(keypath::split(&frame.segment));
                     frame.pending = Some(path);
@@ -376,7 +534,7 @@ fn advance(text: &str, state: &mut State, eol: bool) {
                 let parent = state.frame();
                 let path = match (&parent.pending, parent.kind) {
                     (Some(pending), _) => pending.clone(),
-                    (None, '[') => [parent.path.as_slice(), &["0".to_string()]].concat(),
+                    (None, '[') => [parent.path.as_slice(), &[parent.index.to_string()]].concat(),
                     (None, _) => parent.path.clone(),
                 };
                 state.stack.push(Frame::new(c, path));
@@ -400,7 +558,7 @@ fn advance(text: &str, state: &mut State, eol: bool) {
 }
 
 /// The byte offset of the first `target` outside a quoted string.
-fn unquoted(text: &str, target: char) -> Option<usize> {
+pub(crate) fn unquoted(text: &str, target: char) -> Option<usize> {
     let mut quote = None;
     for (i, c) in text.char_indices() {
         match (quote, c) {
@@ -423,10 +581,16 @@ mod tests {
     fn labels(marked: &str) -> Vec<String> {
         let offset = marked.find('|').unwrap();
         let text = marked.replacen('|', "", 1);
-        complete(&text, offset, &sample())
-            .into_iter()
-            .map(|i| i.label)
-            .collect()
+        complete(
+            &text,
+            offset,
+            &sample(),
+            &Registry::default(),
+            &Candidates::default,
+        )
+        .into_iter()
+        .map(|i| i.label)
+        .collect()
     }
 
     #[test]
@@ -468,7 +632,14 @@ mod tests {
     fn applied(marked: &str) -> String {
         let offset = marked.find('|').unwrap();
         let text = marked.replacen('|', "", 1);
-        let item = complete(&text, offset, &sample()).remove(0);
+        let item = complete(
+            &text,
+            offset,
+            &sample(),
+            &Registry::default(),
+            &Candidates::default,
+        )
+        .remove(0);
         format!(
             "{}{}{}",
             &text[..item.replace.start],
@@ -587,11 +758,277 @@ mod tests {
         );
     }
 
+    fn tool_labels(marked: &str) -> Vec<String> {
+        let offset = marked.find('|').unwrap();
+        let text = marked.replacen('|', "", 1);
+        complete(
+            &text,
+            offset,
+            &sample(),
+            &registry::tests::sample(),
+            &Candidates::default,
+        )
+        .into_iter()
+        .map(|i| i.label)
+        .collect()
+    }
+
+    #[test]
+    fn a_tool_header_being_typed_does_not_offer_the_tools_already_there() {
+        assert!(tool_labels("[tools.node]\nversion = \"24\"\n[tools.no|]\n").is_empty());
+    }
+
+    #[test]
+    fn an_unclosed_tool_header_does_not_offer_the_tools_already_there() {
+        assert!(tool_labels("[tools.node]\nversion = \"24\"\n[tools.no|").is_empty());
+    }
+
+    #[test]
+    fn a_quoted_key_is_replaced_through_its_closing_quote_from_inside() {
+        let registry = Registry::new(vec![crate::RegistryEntry {
+            name: "llama.cpp".to_string(),
+            description: None,
+            aliases: vec![],
+            backends: vec![],
+            deprecated: None,
+        }]);
+        let text = "[tools]\n\"llam.a\" = \"latest\"\n";
+        let offset = text.find("llam").unwrap() + 4;
+        let item = complete(text, offset, &sample(), &registry, &Candidates::default).remove(0);
+        let applied = format!(
+            "{}{}{}",
+            &text[..item.replace.start],
+            item.insert,
+            &text[item.replace.end..]
+        );
+        assert_eq!(applied, "[tools]\n\"llama.cpp\" = \"latest\"\n");
+    }
+
+    #[test]
+    fn a_quoted_key_with_a_dot_is_replaced_whole() {
+        let registry = Registry::new(vec![crate::RegistryEntry {
+            name: "llama.cpp".to_string(),
+            description: None,
+            aliases: vec![],
+            backends: vec![],
+            deprecated: None,
+        }]);
+        let text = "[tools]\n\"llama.c\" = \"latest\"\n";
+        let offset = text.find("llama.c").unwrap() + "llama.c".len();
+        let item = complete(text, offset, &sample(), &registry, &Candidates::default).remove(0);
+        let applied = format!(
+            "{}{}{}",
+            &text[..item.replace.start],
+            item.insert,
+            &text[item.replace.end..]
+        );
+        assert_eq!(applied, "[tools]\n\"llama.cpp\" = \"latest\"\n");
+    }
+
+    #[test]
+    fn an_escaped_quote_does_not_end_a_quoted_key() {
+        let registry = Registry::new(vec![crate::RegistryEntry {
+            name: "node".to_string(),
+            description: None,
+            aliases: vec![],
+            backends: vec![],
+            deprecated: None,
+        }]);
+        let text = "[tools]\n\"node\\\"x\" = \"24\"\n";
+        let offset = text.find("node").unwrap() + 2;
+        let item = complete(text, offset, &sample(), &registry, &Candidates::default).remove(0);
+        let applied = format!(
+            "{}{}{}",
+            &text[..item.replace.start],
+            item.insert,
+            &text[item.replace.end..]
+        );
+        assert_eq!(applied, "[tools]\nnode = \"24\"\n");
+    }
+
+    #[test]
+    fn a_key_whose_quote_is_closed_leaves_the_value_alone() {
+        let text = "[tools]\n\"no\" = \"24\"\n";
+        let offset = text.find("\"no\"").unwrap() + 4;
+        let item = complete(
+            text,
+            offset,
+            &sample(),
+            &registry::tests::sample(),
+            &Candidates::default,
+        )
+        .remove(0);
+        let applied = format!(
+            "{}{}{}",
+            &text[..item.replace.start],
+            item.insert,
+            &text[item.replace.end..]
+        );
+        assert_eq!(applied, "[tools]\nnode = \"24\"\n");
+    }
+
+    #[test]
+    fn dotted_tools_already_set_are_not_offered_again() {
+        assert!(tool_labels("tools.node = \"24\"\ntools.no|").is_empty());
+        assert!(tool_labels("tools.node = \"24\"\ntools.no| = \"x\"").is_empty());
+    }
+
+    #[test]
+    fn a_quoted_key_is_replaced_whole() {
+        let text = "[tools]\n\"no\" = \"24\"\n";
+        let offset = text.find("no").unwrap() + 2;
+        let item = complete(
+            text,
+            offset,
+            &sample(),
+            &registry::tests::sample(),
+            &Candidates::default,
+        )
+        .remove(0);
+        let applied = format!(
+            "{}{}{}",
+            &text[..item.replace.start],
+            item.insert,
+            &text[item.replace.end..]
+        );
+        assert_eq!(applied, "[tools]\nnode = \"24\"\n");
+    }
+
+    #[test]
+    fn a_tool_written_as_a_table_is_not_offered_again() {
+        assert!(tool_labels("[tools.node]\nversion = \"24\"\n[tools]\n|").is_empty());
+    }
+
+    #[test]
+    fn a_tool_listed_by_an_alias_is_not_offered_again() {
+        assert!(tool_labels("[tools]\nnodejs = \"24\"\n|").is_empty());
+    }
+
+    #[test]
+    fn tools_complete_from_the_registry() {
+        assert_eq!(tool_labels("[tools]\n|"), ["node"]);
+        assert_eq!(tool_labels("[tools]\nno|"), ["node"]);
+        assert!(tool_labels("[tools]\nzz|").is_empty());
+        assert_eq!(tool_labels("tools.|"), ["node"]);
+        assert_eq!(tool_labels("[tools.no|"), ["node"]);
+        assert_eq!(tool_labels("[tasks.build.tools]\n|"), ["node"]);
+        assert_eq!(tool_labels("tools = { | }"), ["node"]);
+        // deprecated tools and tools already listed (under any of their names) are not offered
+        assert!(tool_labels("[tools]\nnode = \"24\"\n|").is_empty());
+        // only tool tables take tool names
+        assert_eq!(tool_labels("[settings]\n|"), ["color", "mode"]);
+    }
+
+    fn candidate(name: &str, detail: &str) -> tasks::Candidate {
+        tasks::Candidate {
+            name: name.to_string(),
+            detail: Some(detail.to_string()),
+            documentation: None,
+        }
+    }
+
+    fn task_labels(marked: &str) -> Vec<String> {
+        let offset = marked.find('|').unwrap();
+        let text = marked.replacen('|', "", 1);
+        let names = || Candidates {
+            tasks: vec![
+                candidate("build", "compile"),
+                candidate("test", "run tests"),
+            ],
+            templates: vec![candidate("rust", "rust task")],
+        };
+        complete(&text, offset, &sample(), &Registry::default(), &names)
+            .into_iter()
+            .map(|i| i.label)
+            .collect()
+    }
+
+    #[test]
+    fn dependencies_complete_task_names() {
+        let tasks = |s: &str| task_labels(&format!("[tasks.lint]\n{s}"));
+        assert_eq!(tasks("depends = \"|"), ["build", "test"]);
+        assert_eq!(tasks("depends = [\"build\", \"t|"), ["test"]);
+        assert_eq!(tasks("wait_for = [|"), ["build", "test"]);
+        assert_eq!(tasks("depends_post = { task = \"|\" }"), ["build", "test"]);
+        assert_eq!(tasks("run = [{ task = \"b|\" }]"), ["build"]);
+        assert_eq!(
+            tasks("run = [\"echo\", { tasks = [\"|\"] }]"),
+            ["build", "test"]
+        );
+        assert_eq!(tasks("extends = \"|"), ["rust"]);
+        // not a place that names a task
+        assert!(tasks("run = \"|").is_empty());
+        assert!(tasks("description = \"|").is_empty());
+    }
+
+    #[test]
+    fn only_the_first_element_of_a_dependency_array_is_a_name() {
+        let tasks = |s: &str| task_labels(&format!("[tasks.lint]\n{s}"));
+        assert!(tasks("depends = [[\"build\", \"te|\"]]").is_empty());
+        assert_eq!(tasks("depends = [[\"te|\", \"x\"]]"), ["test"]);
+        assert_eq!(tasks("depends = [[\"build\"], [\"te|\"]]"), ["test"]);
+        assert_eq!(tasks("run = [\"echo\", { task = \"te|\" }]"), ["test"]);
+    }
+
+    #[test]
+    fn a_task_is_not_offered_to_itself() {
+        let labels = task_labels("[tasks.build]\ndepends = [\"|");
+        assert_eq!(labels, ["test"]);
+    }
+
+    #[test]
+    fn a_task_name_replaces_only_the_name() {
+        let apply = |marked: &str| {
+            let offset = marked.find('|').unwrap();
+            let text = marked.replacen('|', "", 1);
+            let names = || Candidates {
+                tasks: vec![candidate("build", ""), candidate("burn", "")],
+                templates: vec![],
+            };
+            let item = complete(&text, offset, &sample(), &Registry::default(), &names).remove(0);
+            format!(
+                "{}{}{}",
+                &text[..item.replace.start],
+                item.insert,
+                &text[item.replace.end..]
+            )
+        };
+        let head = "[tasks.lint]\ndepends = [";
+        assert_eq!(
+            apply(&format!("{head}\"bu|ild --release\"]")),
+            format!("{head}\"build --release\"]")
+        );
+        assert_eq!(apply(&format!("{head}'b|u' ]")), format!("{head}'build' ]"));
+        assert_eq!(
+            apply(&format!("{head}\"PROFILE=release b|\"]")),
+            format!("{head}\"PROFILE=release build\"]")
+        );
+        assert_eq!(apply(&format!("{head}\"b|")), format!("{head}\"build\""));
+        assert_eq!(apply(&format!("{head}|")), format!("{head}\"build\""));
+    }
+
+    #[test]
+    fn arguments_are_not_completed_as_task_names() {
+        let tasks = |s: &str| task_labels(&format!("[tasks.lint]\n{s}"));
+        assert!(tasks("depends = [\"build --b|\"]").is_empty());
+        assert!(tasks("depends = [\"X=1 build b|\"]").is_empty());
+        // an assignment is not replaced by a name, with the cursor on either side of its `=`
+        assert!(tasks("depends = [\"X|=1 build\"]").is_empty());
+        assert!(tasks("depends = [\"X=1|\"]").is_empty());
+        assert!(tasks("depends = [\"A=b C|=d build\"]").is_empty());
+    }
+
     #[test]
     fn a_closing_quote_is_not_doubled() {
         let text = "[settings]\nmode = \"\"";
         let offset = text.len() - 1;
-        let items = complete(text, offset, &sample());
+        let items = complete(
+            text,
+            offset,
+            &sample(),
+            &Registry::default(),
+            &Candidates::default,
+        );
         assert_eq!(items[0].insert, "\"a");
     }
 }
