@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 use std::ops::Range;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use jsonschema::Validator;
@@ -12,7 +13,7 @@ use crate::complete::{self, Kind};
 use crate::diagnostics::{self, Diagnostic, Severity};
 use crate::rpc::{read_message, write_message};
 use crate::schema::Schema;
-use crate::tasks::{self, Index, Origin};
+use crate::tasks::{self, Index, Origin, Roots};
 use crate::text::LineIndex;
 use crate::{Formatter, Options, doc, hover, includes, keypath};
 
@@ -70,6 +71,52 @@ pub(crate) struct Server {
     version: String,
     features: Features,
     documents: HashMap<String, Document>,
+    /// Directories beside a file's ancestors whose configs apply to it: the user's and the system's.
+    roots: Roots,
+}
+
+/// Where mise reads configs from besides the directories above a project: the user's config
+/// directory, `/etc`, and the directories `MISE_CONFIG_DIR` and `MISE_SYSTEM_CONFIG_DIR` name.
+fn global_roots() -> Roots {
+    let var = |name: &str| {
+        std::env::var_os(name)
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+    };
+    let mut homes: Vec<PathBuf> = [var("HOME"), var("USERPROFILE"), var("XDG_CONFIG_HOME")]
+        .into_iter()
+        .flatten()
+        .collect();
+    homes.push(PathBuf::from("/etc"));
+    // The places mise looks for its own config directory, which it does not export: the ones the
+    // environment names, then the defaults.
+    let default_user = var("XDG_CONFIG_HOME")
+        .or_else(|| {
+            var("HOME")
+                .or_else(|| var("USERPROFILE"))
+                .map(|h| h.join(".config"))
+        })
+        .map(|dir| dir.join("mise"));
+    let mut config_dirs: Vec<PathBuf> = [
+        var("MISE_CONFIG_DIR"),
+        var("MISE_SYSTEM_CONFIG_DIR"),
+        default_user,
+        Some(PathBuf::from("/etc/mise")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    config_dirs.dedup();
+    Roots {
+        homes,
+        config_dirs,
+        envs: std::env::var("MISE_ENV")
+            .unwrap_or_default()
+            .split(',')
+            .map(|env| env.trim().to_string())
+            .filter(|env| !env.is_empty())
+            .collect(),
+    }
 }
 
 impl Server {
@@ -81,6 +128,7 @@ impl Server {
             version: options.version,
             features: Features::from_params(&Value::Null),
             documents: HashMap::new(),
+            roots: global_roots(),
         }
     }
 
@@ -226,7 +274,15 @@ impl Server {
             .get_or_init(|| jsonschema::draft202012::new(self.schema.root()).ok())
             .as_ref();
         let text = document.text.clone();
-        let report = diagnostics::diagnose(&text, &self.schema, validator);
+        let mut report = diagnostics::diagnose(&text, &self.schema, validator);
+        if report.parsed
+            && let Ok(parsed) = doc::parse(&text)
+        {
+            let index = self.tasks(uri, self.documents.get(uri).expect("checked above"));
+            report
+                .diagnostics
+                .extend(tasks::diagnose(&text, &parsed, &index));
+        }
         let document = self.documents.get_mut(uri).expect("checked above");
         let mut diagnostics = report.diagnostics;
         if report.parsed {
@@ -334,7 +390,8 @@ impl Server {
         }
     }
 
-    /// Quick fixes: replace an unknown key with the one the diagnostic suggests.
+    /// Quick fixes: replace an unknown key, a deprecated key or an unknown task name with the one
+    /// the diagnostic suggests.
     fn code_actions(&self, params: &Value) -> Value {
         let uri = params["textDocument"]["uri"].as_str().unwrap_or_default();
         let document = self.config(uri);
@@ -342,7 +399,12 @@ impl Server {
             .as_array()
             .into_iter()
             .flatten()
-            .filter(|d| d["code"] == "unknown-key")
+            .filter(|d| {
+                matches!(
+                    d["code"].as_str(),
+                    Some("unknown-key" | "deprecated-key" | "unknown-task")
+                )
+            })
             .filter_map(|d| {
                 let suggestion = d["data"]["suggestion"].as_str()?;
                 // The diagnostic may be stale: only fix the key it was about.
@@ -355,12 +417,45 @@ impl Server {
                         p["character"].as_u64().unwrap_or_default() as usize,
                     )
                 };
-                let found = text.get(at(&d["range"]["start"])..at(&d["range"]["end"]))?;
-                // The key as TOML reads it, so an escaped spelling still matches.
-                let unchanged = toml_edit::Key::parse(found)
-                    .is_ok_and(|keys| keys.len() == 1 && keys[0].get() == key);
+                let span = at(&d["range"]["start"])..at(&d["range"]["end"]);
+                let found = text.get(span.clone())?;
+                let (unchanged, new_text) = if d["code"] == "unknown-task" {
+                    (found == key, suggestion.to_string())
+                } else {
+                    // The key as TOML reads it, so an escaped spelling still matches.
+                    let unchanged = toml_edit::Key::parse(found)
+                        .is_ok_and(|keys| keys.len() == 1 && keys[0].get() == key);
+                    let new_text = if d["code"] == "deprecated-key" {
+                        diagnostics::replacement_key(suggestion)
+                    } else {
+                        keypath::quote(suggestion)
+                    };
+                    (unchanged, new_text)
+                };
                 if !unchanged {
                     return None;
+                }
+                if d["code"] == "deprecated-key" {
+                    // The document may have changed in a way that makes the move unsafe now.
+                    let path: Vec<String> = d["data"]["path"]
+                        .as_array()?
+                        .iter()
+                        .filter_map(|s| s.as_str().map(str::to_string))
+                        .collect();
+                    let validator = self
+                        .validator
+                        .get_or_init(|| jsonschema::draft202012::new(self.schema.root()).ok())
+                        .as_ref();
+                    if !diagnostics::replacement_holds(
+                        text,
+                        &self.schema,
+                        validator,
+                        &path,
+                        &span,
+                        suggestion,
+                    ) {
+                        return None;
+                    }
                 }
                 Some(json!({
                     "title": format!("Replace with `{suggestion}`"),
@@ -369,7 +464,7 @@ impl Server {
                     "isPreferred": true,
                     "edit": {"changes": {uri: [{
                         "range": d["range"],
-                        "newText": keypath::quote(suggestion),
+                        "newText": new_text,
                     }]}},
                 }))
             })
@@ -384,7 +479,7 @@ impl Server {
             (Some(good), Err(_)) => good.text.as_str(),
             _ => document.text.as_str(),
         };
-        Index::build(open, includes::uri_path(uri).as_deref())
+        Index::build(open, includes::uri_path(uri).as_deref(), &self.roots)
     }
 
     /// Hover on a name in `depends`, `run = [{ task = ".." }]` and the like: what the task is
@@ -536,6 +631,11 @@ impl Server {
         if new == old {
             return Ok(json!({"changes": {}}));
         }
+        if found.index.references_cut_short {
+            return Err(fail(format!(
+                "not every config and include file could be read, so other references to `{old}` cannot be ruled out"
+            )));
+        }
         if found.index.referenced_elsewhere(namespace, old) {
             return Err(fail(format!(
                 "other files also refer to `{old}`; a rename here would leave them broken"
@@ -653,7 +753,7 @@ fn diagnostic_json(index: &LineIndex, d: &Diagnostic) -> Value {
         diagnostic["tags"] = json!([2]);
     }
     if let Some(suggestion) = &d.suggestion {
-        diagnostic["data"] = json!({"suggestion": suggestion, "key": d.key});
+        diagnostic["data"] = json!({"suggestion": suggestion, "key": d.key, "path": d.path});
     }
     diagnostic
 }
@@ -691,19 +791,23 @@ mod tests {
 
     /// Runs a whole session and returns every message the server wrote.
     fn session(messages: &[Value]) -> Vec<Value> {
+        session_with(sample().root().clone(), messages)
+    }
+
+    fn session_with(schema: Value, messages: &[Value]) -> Vec<Value> {
         let mut input = vec![];
         for message in messages {
             write_message(&mut input, message).unwrap();
         }
         let mut output = vec![];
         let options = Options {
-            schema: sample().root().clone(),
+            schema,
             format: Some(Box::new(|text| Ok(format!("# formatted\n{text}")))),
             version: "1".to_string(),
         };
-        Server::new(options)
-            .run(input.as_slice(), &mut output)
-            .unwrap();
+        let mut server = Server::new(options);
+        server.roots = Roots::default();
+        server.run(input.as_slice(), &mut output).unwrap();
         let mut reader = output.as_slice();
         std::iter::from_fn(|| read_message(&mut reader).unwrap()).collect()
     }
@@ -814,6 +918,101 @@ mod tests {
         let action = &replies[1]["result"][0];
         assert_eq!(action["title"], "Replace with `color`");
         assert_eq!(action["edit"]["changes"][uri][0]["newText"], "color");
+    }
+
+    fn deprecated_schema() -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "old": {"deprecated": true, "description": "Deprecated; use env._.path instead.",
+                    "type": "array", "items": {"type": "string"}},
+                "env": {"type": "object", "properties": {"_": {"type": "object", "properties": {
+                    "path": {"type": "array", "items": {"type": "string"}}}}}}
+            },
+            "unevaluatedProperties": false
+        })
+    }
+
+    fn deprecated_fix(text: &str, changed: Option<&str>) -> Value {
+        let uri = "file:///p/mise.toml";
+        let range =
+            json!({"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 3}});
+        let diagnostic = json!({"code": "deprecated-key", "range": range,
+            "data": {"suggestion": "env._.path", "key": "old", "path": ["old"]}});
+        let mut messages = vec![open(uri, text)];
+        if let Some(changed) = changed {
+            messages.push(change(uri, changed));
+        }
+        messages.push(
+            json!({"jsonrpc": "2.0", "id": 1, "method": "textDocument/codeAction", "params": {
+                "textDocument": {"uri": uri}, "range": range,
+                "context": {"diagnostics": [diagnostic]},
+            }}),
+        );
+        session_with(deprecated_schema(), &messages).pop().unwrap()
+    }
+
+    #[test]
+    fn a_deprecated_key_is_rewritten_to_its_replacement() {
+        let reply = deprecated_fix("old = [\"a\"]\n", None);
+        let action = &reply["result"][0];
+        assert_eq!(action["title"], "Replace with `env._.path`");
+        assert_eq!(
+            action["edit"]["changes"]["file:///p/mise.toml"][0]["newText"],
+            "env._.path"
+        );
+    }
+
+    #[test]
+    fn a_rewrite_is_dropped_once_the_document_makes_it_unsafe() {
+        let reply = deprecated_fix(
+            "old = [\"a\"]\n",
+            Some("old = [\"a\"]\nenv._.path = [\"b\"]\n"),
+        );
+        assert_eq!(reply["result"], json!([]));
+    }
+
+    #[test]
+    fn unknown_tasks_are_flagged_and_fixable() {
+        let uri = "file:///p/mise.toml";
+        let text = "[tasks.build]\n[tasks.test]\ndepends = [\"bild --release\"]\n";
+        let replies = session(&[
+            open(uri, text),
+            json!({"jsonrpc": "2.0", "id": 1, "method": "textDocument/codeAction", "params": {
+                "textDocument": {"uri": uri},
+                "range": {"start": {"line": 2, "character": 12}, "end": {"line": 2, "character": 16}},
+                "context": {"diagnostics": [{"code": "unknown-task",
+                    "data": {"suggestion": "build", "key": "bild"},
+                    "range": {"start": {"line": 2, "character": 12}, "end": {"line": 2, "character": 16}}}]},
+            }}),
+        ]);
+        let diagnostic = replies[0]["params"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["code"] == "unknown-task")
+            .unwrap();
+        assert_eq!(diagnostic["data"]["key"], "bild");
+        assert_eq!(diagnostic["data"]["suggestion"], "build");
+        assert_eq!(
+            replies[1]["result"][0]["edit"]["changes"][uri][0]["newText"],
+            "build"
+        );
+    }
+
+    #[test]
+    fn cycles_are_errors() {
+        let uri = "file:///p/mise.toml";
+        let text = "[tasks.a]\ndepends = [\"b\"]\n[tasks.b]\ndepends = [\"a\"]\n";
+        let replies = session(&[open(uri, text)]);
+        let codes: Vec<_> = replies[0]["params"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| (d["code"].as_str().unwrap(), d["severity"].as_u64().unwrap()))
+            .filter(|(code, _)| *code != "unknown-key")
+            .collect();
+        assert_eq!(codes, [("task-cycle", 1), ("task-cycle", 1)]);
     }
 
     #[test]
