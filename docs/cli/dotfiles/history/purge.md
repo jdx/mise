@@ -6,6 +6,7 @@ description: "Erase a path's saved versions from history"
 # `mise dotfiles history purge`
 
 - **Usage:** `mise dotfiles history purge [FLAGS] <PATH>…`
+- **Effect:** destructive — may delete or irreversibly overwrite
 - **Source code:** [`src/cli/dotfiles/history/purge.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/history/purge.rs)
 
 Erase a path's saved versions from history

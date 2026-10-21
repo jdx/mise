@@ -210,6 +210,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("dotfiles history describe", Write),
     ("dotfiles history diff", Read),
     ("dotfiles history ls", Read),
+    ("dotfiles history purge", Destructive),
     ("dotfiles history show", Read),
     ("dotfiles include", Write),
     ("dotfiles notify", Write),

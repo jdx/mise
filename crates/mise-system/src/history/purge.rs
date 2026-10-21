@@ -205,13 +205,18 @@ pub fn purge(
         // same path in commits this history does not have
         let mut on_origin: Vec<String> = vec![];
         for commit in &published {
-            let on_it = if walk.map.contains_key(commit) {
-                walk.held.contains(commit)
-            } else {
-                let object = walk
-                    .gix
-                    .find_commit(gix::ObjectId::from_hex(commit.as_bytes())?)?;
-                walk.holds(&object.tree_id()?.to_string())?
+            // a published commit must keep its hash: the rewrite may also
+            // change one that holds no file under the path (a permission
+            // entry, a trailer naming a dropped checkpoint)
+            let on_it = match walk.map.get(commit) {
+                Some(Rewritten::Kept(new)) if new == commit => walk.held.contains(commit),
+                Some(_) => true,
+                None => {
+                    let object = walk
+                        .gix
+                        .find_commit(gix::ObjectId::from_hex(commit.as_bytes())?)?;
+                    walk.holds(&object.tree_id()?.to_string())?
+                }
             };
             if on_it {
                 on_origin.push(commit.clone());
@@ -262,7 +267,21 @@ pub fn purge(
             continue;
         }
         let reachable = repo.rev_list(&oid, usize::MAX)?;
-        if reachable.iter().any(|commit| walk.held.contains(commit)) {
+        let mut holds = false;
+        for commit in &reachable {
+            holds = if walk.map.contains_key(commit) {
+                walk.held.contains(commit)
+            } else {
+                let object = walk
+                    .gix
+                    .find_commit(gix::ObjectId::from_hex(commit.as_bytes())?)?;
+                walk.holds(&object.tree_id()?.to_string())?
+            };
+            if holds {
+                break;
+            }
+        }
+        if holds {
             outcome.other_refs.push(name);
         }
     }
