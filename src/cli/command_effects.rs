@@ -100,6 +100,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap dotfiles history describe", Write),
     ("bootstrap dotfiles history diff", Read),
     ("bootstrap dotfiles history ls", Read),
+    ("bootstrap dotfiles history purge", Destructive),
     ("bootstrap dotfiles history show", Read),
     ("bootstrap dotfiles include", Write),
     ("bootstrap dotfiles notify", Write),

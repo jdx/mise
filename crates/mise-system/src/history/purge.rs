@@ -132,6 +132,9 @@ struct Walk<'a> {
     map: HashMap<String, Rewritten>,
     /// Commits whose tree held a target.
     held: HashSet<String>,
+    /// Commits removed because all they changed was a target (a deletion
+    /// included), as opposed to annotations of those.
+    removed: HashSet<String>,
 }
 
 /// Previews or performs the purge. Holds the operation and store locks, so
@@ -160,6 +163,7 @@ pub fn purge(
             store.unavailable().unwrap_or("git is unavailable")
         )
     })?;
+    recover(store, repo)?;
     let Some(head) = repo.ref_oid(HistoryRepo::HISTORY_REF)? else {
         return Ok(Outcome::default());
     };
@@ -172,6 +176,7 @@ pub fn purge(
         stripped: HashMap::new(),
         map: HashMap::new(),
         held: HashSet::new(),
+        removed: HashSet::new(),
     };
     let commits: Vec<String> = repo
         .rev_list(&head, usize::MAX)?
@@ -196,10 +201,22 @@ pub fn purge(
     if let Some(upstream) = repo.ref_oid(UPSTREAM_REF)? {
         let published: HashSet<String> =
             repo.rev_list(&upstream, usize::MAX)?.into_iter().collect();
-        let mut on_origin: Vec<&String> = published
-            .iter()
-            .filter(|commit| walk.held.contains(*commit))
-            .collect();
+        // compare trees, not commit ids: another machine may have saved the
+        // same path in commits this history does not have
+        let mut on_origin: Vec<String> = vec![];
+        for commit in &published {
+            let on_it = if walk.map.contains_key(commit) {
+                walk.held.contains(commit)
+            } else {
+                let object = walk
+                    .gix
+                    .find_commit(gix::ObjectId::from_hex(commit.as_bytes())?)?;
+                walk.holds(&object.tree_id()?.to_string())?
+            };
+            if on_it {
+                on_origin.push(commit.clone());
+            }
+        }
         if !on_origin.is_empty() {
             on_origin.sort();
             bail!(
@@ -222,7 +239,7 @@ pub fn purge(
             })
         };
         match new {
-            Rewritten::Dropped { .. } if walk.held.contains(commit) => {
+            Rewritten::Dropped { .. } if walk.removed.contains(commit) => {
                 outcome.dropped.push(describe(commit)?)
             }
             // an annotation of a dropped checkpoint goes with it
@@ -239,6 +256,9 @@ pub fn purge(
     // reachable (an earlier purge's backup, a hand-made ref)
     for (name, oid) in repo.list_refs("refs/")? {
         if name == HistoryRepo::HISTORY_REF || name == UPSTREAM_REF {
+            continue;
+        }
+        if repo.object_type(&oid)?.as_deref() != Some("commit") {
             continue;
         }
         let reachable = repo.rev_list(&oid, usize::MAX)?;
@@ -262,10 +282,6 @@ pub fn purge(
         repo.update_ref(&name, &head, None)?;
         outcome.backup_ref = Some(name);
     }
-    repo.update_history_head(&new_head, Some(&head))?;
-
-    // The index is rebuilt from ancestry; numeric IDs travel through the
-    // new hashes, which are also the checkpoints' uuids.
     let mut entries = vec![];
     for entry in &index.entries {
         if let Some(Rewritten::Kept(new)) = walk.map.get(&entry.commit) {
@@ -278,21 +294,68 @@ pub fn purge(
             });
         }
     }
-    store::write_index_in(
-        state_dir,
-        &store::Index {
+    let pending = Pending {
+        old_head: head.clone(),
+        new_head: new_head.clone(),
+        index: store::Index {
             next_id: index.next_id,
             entries,
         },
-    )?;
-    store::clear_meta_caches_in(state_dir)?;
-    store.rebuild_index_locked()?;
-
+    };
+    // Recorded before the branch moves, so a purge interrupted after it can
+    // finish the index the next time one runs.
+    store::write_json(&pending_path(state_dir), &pending)?;
+    repo.update_history_head(&new_head, Some(&head))?;
+    finish(store, &pending)?;
     if options.gc {
         collect_garbage(repo, &outcome)?;
     }
     outcome.applied = true;
     Ok(outcome)
+}
+
+/// What a purge needs to finish after the branch has moved.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Pending {
+    old_head: String,
+    new_head: String,
+    index: store::Index,
+}
+
+fn pending_path(state_dir: &std::path::Path) -> std::path::PathBuf {
+    store::store_dir_in(state_dir).join("purge-pending.json")
+}
+
+/// Finishes (or discards) a purge that was interrupted.
+fn recover(store: &Store, repo: &HistoryRepo) -> Result<()> {
+    let path = pending_path(store.state_dir());
+    if !path.exists() {
+        return Ok(());
+    }
+    let text = mise_util::file::read_to_string(&path)?;
+    let pending: Pending = serde_json::from_str(&text)
+        .wrap_err("reading the record of an interrupted `mise dot history purge`")?;
+    match repo.ref_oid(HistoryRepo::HISTORY_REF)?.as_deref() {
+        Some(head) if head == pending.new_head => {
+            debug!("history: finishing an interrupted purge");
+            finish(store, &pending)?;
+        }
+        _ => {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    Ok(())
+}
+
+fn finish(store: &Store, pending: &Pending) -> Result<()> {
+    let state_dir = store.state_dir();
+    // The index is rebuilt from ancestry; numeric IDs travel through the
+    // new hashes, which are also the checkpoints' uuids.
+    store::write_index_in(state_dir, &pending.index)?;
+    store::clear_meta_caches_in(state_dir)?;
+    store.rebuild_index_locked()?;
+    let _ = std::fs::remove_file(pending_path(state_dir));
+    Ok(())
 }
 
 fn collect_garbage(repo: &HistoryRepo, outcome: &Outcome) -> Result<()> {

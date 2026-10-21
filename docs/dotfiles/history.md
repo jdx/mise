@@ -437,6 +437,8 @@ and re-adopt the history on your other machines. Purging removes mise's own
 copies only: a backup, a clone of the repository, or a synced origin keeps its
 own.
 
+A file tracked with [`mode = "track-local"`](#local-only) has a separate history: after untracking it, purge it with `mise dot --local history purge`.
+
 ## Choose what history saves {#explicit-tracking-and-exclusions}
 
 Declare each file or directory you want to save in your global config:

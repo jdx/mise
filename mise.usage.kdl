@@ -1056,7 +1056,7 @@ Only checkpoints with this trigger, such as edit, save, agent, bootstrap, apply,
                 example "mise dot history ls -n 0" help="List every checkpoint"
                 example "mise dot history ls --pending" help="List operations that did not finish"
             }
-            cmd purge help="Erase a path's saved versions from history" {
+            cmd purge help="Erase a path's saved versions from history" effect=destructive {
                 long_help #"""
 Erase a path's saved versions from history
 

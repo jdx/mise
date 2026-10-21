@@ -78,6 +78,12 @@ impl HistoryPurge {
         })?;
         if preview.is_noop() {
             info!("history: no saved version holds this path");
+            if !crate::system::history::local::active() {
+                // an untracked `track-local` path no longer routes itself
+                info!(
+                    "history: a path tracked with mode = \"track-local\" keeps its history apart; run `mise dot --local history purge` for it"
+                );
+            }
             return Ok(());
         }
         print_plan(&preview)?;
