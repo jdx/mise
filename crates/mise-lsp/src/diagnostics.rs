@@ -347,6 +347,7 @@ pub(crate) fn replacement_holds(
     schema: &Schema,
     validator: Option<&Validator>,
     path: &[String],
+    key: &Range<usize>,
     candidate: &str,
 ) -> bool {
     let Ok(parsed) = doc::parse(text) else {
@@ -355,7 +356,8 @@ pub(crate) fn replacement_holds(
     parsed
         .entries
         .iter()
-        .find(|e| e.path == path)
+        // the key at that path has to be the one the edit would change
+        .find(|e| e.path == path && e.key.as_ref() == Some(key))
         .is_some_and(|entry| {
             verified_replacement(text, &parsed, schema, validator, entry, candidate).is_some()
         })
@@ -590,6 +592,22 @@ mod tests {
             replacements(&schema, "env_path = 42\n"),
             [("env_path".to_string(), None)]
         );
+    }
+
+    #[test]
+    fn a_rewrite_holds_only_for_the_key_at_the_range() {
+        let schema = renamed();
+        let text = "old_path = [\"a\"]\n[settings]\ngone = \"x\"\n";
+        let path = vec!["old_path".to_string()];
+        let holds = |range: std::ops::Range<usize>| {
+            replacement_holds(text, &schema, None, &path, &range, "env._.path")
+        };
+        assert!(holds(0..8));
+        // a range that now holds another key does not
+        assert!(!holds(
+            text.find("gone").unwrap()..text.find("gone").unwrap() + 4
+        ));
+        assert!(!holds(1..9));
     }
 
     #[test]

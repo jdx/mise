@@ -400,7 +400,8 @@ impl Server {
                         p["character"].as_u64().unwrap_or_default() as usize,
                     )
                 };
-                let found = text.get(at(&d["range"]["start"])..at(&d["range"]["end"]))?;
+                let span = at(&d["range"]["start"])..at(&d["range"]["end"]);
+                let found = text.get(span.clone())?;
                 let (unchanged, new_text) = if d["code"] == "unknown-task" {
                     (found == key, suggestion.to_string())
                 } else {
@@ -433,6 +434,7 @@ impl Server {
                         &self.schema,
                         validator,
                         &path,
+                        &span,
                         suggestion,
                     ) {
                         return None;
