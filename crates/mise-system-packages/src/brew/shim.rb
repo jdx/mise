@@ -560,6 +560,18 @@ module Language
   end
 end
 
+# Homebrew's Requirement base class (Library/Homebrew/requirement.rb). A tap
+# formula can subclass it to declare a custom platform check, then name the
+# subclass in `depends_on`. The subclass body only uses the class-level DSL
+# (`fatal`, `satisfy`, `default_formula`, ...), and `satisfy` blocks reference
+# Homebrew internals such as `MacOS`, so they are never evaluated here.
+class Requirement
+  class << self
+    def method_missing(*) = nil
+    def respond_to_missing?(*) = true
+  end
+end
+
 class Formula
   include FileUtils
 
