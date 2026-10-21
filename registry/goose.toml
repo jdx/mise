@@ -1,0 +1,4 @@
+backends = ["aqua:aaif-goose/goose"]
+description = "An open source, extensible AI agent that goes beyond code suggestions"
+test = { cmd = "goose --version", expected = "{{version}}" }
+version_order = "semver"
