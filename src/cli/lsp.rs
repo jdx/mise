@@ -1,4 +1,5 @@
 use crate::Result;
+use crate::config::Settings;
 use crate::config::schema::SCHEMA;
 use crate::registry::REGISTRY;
 
@@ -59,16 +60,21 @@ impl Lsp {
 /// the baked-in registry, or the cached floating one, as `mise registry` reads it: nothing is
 /// fetched.
 fn registry_entries() -> Vec<mise_lsp::RegistryEntry> {
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
     REGISTRY
         .iter()
         .filter(|(short, tool)| {
-            // `enable_tools = ["rg"]` keeps `ripgrep` for its alias `rg`.
+            // `enable_tools = ["rg"]` keeps `ripgrep` for its alias `rg`; `disable_tools` hides a
+            // tool by its short name.
             *short == tool.short
-                && (super::registry::filter_enabled(short)
-                    || tool
-                        .aliases
-                        .iter()
-                        .any(|a| super::registry::filter_enabled(a)))
+                && match &enable_tools {
+                    Some(enabled) => std::iter::once(*short)
+                        .chain(tool.aliases.iter().copied())
+                        .any(|name| enabled.contains(name)),
+                    None => !disable_tools.contains(*short),
+                }
         })
         .filter_map(|(short, tool)| {
             let backends: Vec<String> = tool.backends().iter().map(|b| b.to_string()).collect();

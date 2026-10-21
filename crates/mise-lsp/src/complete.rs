@@ -109,7 +109,7 @@ fn key_items(
         .unwrap_or(after.len());
     let replace = offset - raw.len()..offset + rest;
     let needle = partial.to_lowercase();
-    let existing = existing_keys(text, &replace, &parent);
+    let existing = existing_keys(text, &replace, &parent, false);
     let mut items: Vec<Item> = schema
         .keys(&parent)
         .into_iter()
@@ -134,6 +134,8 @@ fn key_items(
         })
         .collect();
     if Registry::is_tools_table(&parent) {
+        // a tool written as `[tools.node]` is listed too, unlike the tables of other keys
+        let existing = existing_keys(text, &replace, &parent, true);
         items.extend(
             tools
                 .offered()
@@ -163,7 +165,12 @@ fn key_items(
 /// The keys the table at `parent` has a value for, with the text being completed taken out so that a
 /// half-typed key does not stop the document from parsing. Nothing is known while it still does
 /// not parse.
-fn existing_keys(text: &str, replace: &Range<usize>, parent: &[String]) -> Vec<String> {
+fn existing_keys(
+    text: &str,
+    replace: &Range<usize>,
+    parent: &[String],
+    tables: bool,
+) -> Vec<String> {
     let mut without = String::with_capacity(text.len());
     without.push_str(&text[..replace.start]);
     without.push_str(&text[replace.end..]);
@@ -173,7 +180,9 @@ fn existing_keys(text: &str, replace: &Range<usize>, parent: &[String]) -> Vec<S
     parsed
         .entries
         .iter()
-        .filter(|e| !e.table && e.path.len() == parent.len() + 1 && e.path.starts_with(parent))
+        .filter(|e| {
+            (tables || !e.table) && e.path.len() == parent.len() + 1 && e.path.starts_with(parent)
+        })
         .map(|e| e.path[parent.len()].clone())
         .collect()
 }
@@ -690,6 +699,11 @@ mod tests {
         .into_iter()
         .map(|i| i.label)
         .collect()
+    }
+
+    #[test]
+    fn a_tool_written_as_a_table_is_not_offered_again() {
+        assert!(tool_labels("[tools.node]\nversion = \"24\"\n[tools]\n|").is_empty());
     }
 
     #[test]
