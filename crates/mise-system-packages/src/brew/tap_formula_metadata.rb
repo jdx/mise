@@ -141,6 +141,8 @@ class Formula
                 :runtime_dependencies, :build_dependencies, :keg_only_value,
                 :keg_only_reason_value
 
+    def unsupported_requirements = (@unsupported_requirements ||= [])
+
     def inherited(subclass)
       Formula.instance_variable_set(:@subclass, subclass)
       subclass.instance_variable_set(:@runtime_dependencies, [])
@@ -171,7 +173,7 @@ class Formula
       # not a formula. Its `satisfy` block needs Homebrew internals, so it is not
       # enforced here; say so rather than silently treating the host as compatible.
       if name.is_a?(Class)
-        warn "mise: ignoring unsupported Homebrew requirement #{name} in #{FORMULA_NAME}; it is not enforced"
+        Formula.unsupported_requirements << name.to_s
         return
       end
       # A Symbol names a Homebrew REQUIREMENT, not an installable formula:
@@ -320,6 +322,7 @@ metadata = {
   "urls" => { "stable" => { "url" => klass.source_url, "checksum" => klass.source_sha256 } },
   "ruby_source_path" => ENV.fetch("MISE_BREW_SOURCE_PATH"),
   "ruby_source_checksum" => { "sha256" => ENV.fetch("MISE_BREW_SOURCE_CHECKSUM") },
-  "tap_git_head" => ENV.fetch("MISE_BREW_TAP_COMMIT")
+  "tap_git_head" => ENV.fetch("MISE_BREW_TAP_COMMIT"),
+  "unsupported_requirements" => Formula.unsupported_requirements
 }
 puts JSON.generate(metadata)

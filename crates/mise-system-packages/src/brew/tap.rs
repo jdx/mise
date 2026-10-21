@@ -90,7 +90,21 @@ pub(super) async fn formula_from_ruby(
         .await
         .wrap_err_with(|| format!("failed to evaluate {source_path}"))?;
 
-    let formula: Formula = serde_json::from_str(&output)
+    // The shim reports requirements it skipped alongside the metadata, since
+    // stderr from a successful run is discarded. Formula has no such field.
+    let mut metadata: serde_json::Value = serde_json::from_str(&output)
+        .wrap_err_with(|| format!("invalid metadata extracted from {source_path}"))?;
+    let unsupported = metadata
+        .as_object_mut()
+        .and_then(|object| object.remove("unsupported_requirements"))
+        .and_then(|value| serde_json::from_value::<Vec<String>>(value).ok())
+        .unwrap_or_default();
+    for requirement in unsupported {
+        warn!(
+            "ignoring unsupported Homebrew requirement {requirement} in {owner}/{tap}/{name}; it is not enforced"
+        );
+    }
+    let formula: Formula = serde_json::from_value(metadata)
         .wrap_err_with(|| format!("invalid metadata extracted from {source_path}"))?;
     if formula.name != name {
         bail!(
