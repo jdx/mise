@@ -700,7 +700,7 @@ impl Upgrade {
             }
             // Pins for requests that were not offered still apply when nothing
             // was selected, as they do when something was.
-            if outdated.is_empty() && !(pin_all && !explicit_config_bumps.is_empty()) {
+            if outdated.is_empty() && (!pin_all || explicit_config_bumps.is_empty()) {
                 return Ok(());
             }
         }
