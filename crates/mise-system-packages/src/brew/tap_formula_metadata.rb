@@ -168,8 +168,12 @@ class Formula
       name, kind = spec.is_a?(Hash) ? spec.first : [spec, nil]
       return if name.nil?
       # A Requirement subclass (`depends_on MyRequirement`) is a platform check,
-      # not a formula; it is not enforced here.
-      return if name.is_a?(Class)
+      # not a formula. Its `satisfy` block needs Homebrew internals, so it is not
+      # enforced here; say so rather than silently treating the host as compatible.
+      if name.is_a?(Class)
+        warn "mise: ignoring unsupported Homebrew requirement #{name} in #{FORMULA_NAME}; it is not enforced"
+        return
+      end
       # A Symbol names a Homebrew REQUIREMENT, not an installable formula:
       # `depends_on :macos`, `depends_on :linux`, `depends_on :xcode`, `depends_on :arm`.
       # Recording one as a dependency makes the resolver look up a formula called
