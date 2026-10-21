@@ -87,3 +87,26 @@ CONFIG
 before=$(cat mise.toml)
 mise upgrade --bump --pin
 assert "cat mise.toml" "$before"
+
+# a request that names no version is left alone, it is not "latest"
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/pinchannel"
+mkdir -p "$PLUGIN_DIR/bin"
+cat <<'LISTALL' >"$PLUGIN_DIR/bin/list-all"
+#!/usr/bin/env bash
+echo "1.0.0 2.0.0 nightly"
+LISTALL
+chmod +x "$PLUGIN_DIR/bin/list-all"
+cat <<'INSTALL' >"$PLUGIN_DIR/bin/install"
+#!/usr/bin/env bash
+mkdir -p "$ASDF_INSTALL_PATH"
+touch "$ASDF_INSTALL_PATH/version-$ASDF_INSTALL_VERSION"
+INSTALL
+chmod +x "$PLUGIN_DIR/bin/install"
+cat <<CONFIG >mise.toml
+[tools]
+pinchannel = "nightly"
+CONFIG
+mise install pinchannel@nightly
+before=$(cat mise.toml)
+mise upgrade --bump --pin
+assert "cat mise.toml" "$before"

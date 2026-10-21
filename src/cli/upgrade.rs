@@ -559,9 +559,15 @@ impl Upgrade {
                 // With `pin` on, a bare `--bump` also records exact versions for
                 // requests that are not exact, such as `latest` or `20`.
                 for (_, tv) in ts.list_current_versions() {
-                    let ToolRequest::Version { .. } = &tv.request else {
+                    let ToolRequest::Version { version, .. } = &tv.request else {
                         continue;
                     };
+                    // A request with no version in it (`java = "zulu"`, `nightly`)
+                    // names a moving target, and the backend-wide latest need not
+                    // belong to it. Only `latest` is resolved without a version.
+                    if version != "latest" && !version.chars().any(|c| c.is_ascii_digit()) {
+                        continue;
+                    }
                     if self
                         .exclude
                         .iter()
