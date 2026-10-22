@@ -39,7 +39,11 @@ To check your work, preview with `mise dot apply --dry-run` (add `--verbose`
 to see content diffs) or [`mise dot diff`](/cli/dotfiles/diff.html), apply with
 `mise dot apply`, and confirm with
 [`mise dot status`](/cli/dotfiles/status.html). Apply skips targets that
-already match. The [reference](/dotfiles/reference.html#entry-keys) lists
+already match. `mise dot diff` reads the entries declared in your config, not
+only those you created with `mise dot add`. It prints the difference for each
+target that would change and `files: all files are applied` when none would;
+`track` entries are skipped, because
+[`mise dot history diff`](/cli/dotfiles/history/diff.html) covers them. The [reference](/dotfiles/reference.html#entry-keys) lists
 every entry key.
 
 ## Modes {#modes}
@@ -337,6 +341,11 @@ additive: exclusions prevent future copies but leave existing target files in
 place. To leave files out of a [tracked directory](/dotfiles/history.html#exclude-files-from-one-directory),
 use the tracked entry's own `exclude` list.
 
+`exclude` is a field of the entry, so set it by editing the entry in your
+config. [`mise dot exclude`](/cli/dotfiles/exclude.html) is a different,
+global rule: it adds a glob to `[history] exclude` and applies to every
+tracked path.
+
 ### Deploy only files committed to Git {#git-tracked-directories}
 
 Set `manifest = "git"` on a `symlink-each` or directory `copy` entry to manage
@@ -495,7 +504,10 @@ symlinks and permissions, instead of moving it.
 - `--mode copy` keeps a regular file at the target; `--mode` takes any mode.
 - `--source <path>` uses that source instead of one under `dotfiles.root`.
 - `--no-apply` copies the file to its source and writes the entry without
-  changing the original file, so you can review both first.
+  changing the original file, so you can review both first. It still writes
+  the source: when the source already exists with different contents, `add`
+  overwrites it with the live file, and asks first only in a terminal. Run
+  `--dry-run` first to see which source files would change.
 - `--dry-run` prints the source and config changes without making them.
 
 The entry goes to your global config, or to the file named by
