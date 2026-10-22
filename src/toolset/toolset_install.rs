@@ -553,7 +553,7 @@ impl Toolset {
                     if let Some(done) = installed.iter().find(|d| {
                         d.install_satisfied != Some(true)
                             && d.ba().installs_path() == tv.ba().installs_path()
-                            && d.request.version() == tv.request.version()
+                            && d.request == tv.request
                     }) {
                         *tv = done.clone().with_locked();
                     }

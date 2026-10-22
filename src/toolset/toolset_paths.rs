@@ -57,7 +57,17 @@ impl Toolset {
 
         let installed_strs: Vec<String> = installed
             .iter()
-            .map(|(p, tv)| format!("{}@{}={}", p.id(), tv.request.version(), tv.version))
+            .map(|(p, tv)| {
+                // runtime_path differs between a locked and a fuzzy tool version
+                // (the latter follows a runtime symlink that may be stale)
+                format!(
+                    "{}@{}={}:{}",
+                    p.id(),
+                    tv.request.version(),
+                    tv.version,
+                    tv.runtime_path().display()
+                )
+            })
             .sorted()
             .collect();
         key_parts.extend(installed_strs);
