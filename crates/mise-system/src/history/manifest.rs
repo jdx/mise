@@ -59,6 +59,17 @@ impl Default for Manifest {
     }
 }
 
+/// What a manifest read does about an enrollment under a symlinked parent.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Ancestors {
+    /// Do not look: saved enrollment is read without today's filesystem.
+    Skip,
+    /// Fail the read.
+    Reject,
+    /// Leave the entry out and record why.
+    Report,
+}
+
 impl Manifest {
     pub(crate) fn file_permissions(
         &self,
@@ -339,16 +350,26 @@ impl Manifest {
     /// Restore enrollment from Git without needing a captured mise config.
     /// Deployment inputs are validated separately; none are inferred here.
     pub fn tracking(&self) -> Result<super::tracked::TrackedSet> {
-        self.tracking_view(true)
+        self.tracking_view(Ancestors::Reject)
+    }
+
+    /// Like [`Self::tracking`], but an entry whose path now runs through a
+    /// symlinked parent is left out of the set and reported in `invalid`
+    /// instead of failing the whole read. A saved enrollment outlives the
+    /// directory layout it was made under (`~/.claude/skills/x/SKILL.md`
+    /// from before `x` became a link), and one such entry must not stop
+    /// every other entry from being captured.
+    pub(crate) fn tracking_lenient(&self) -> Result<super::tracked::TrackedSet> {
+        self.tracking_view(Ancestors::Report)
     }
 
     /// Read saved enrollment without validating it against today's filesystem.
     /// Live capture and replay still validate their destination paths separately.
     pub(crate) fn saved_tracking(&self) -> Result<super::tracked::TrackedSet> {
-        self.tracking_view(false)
+        self.tracking_view(Ancestors::Skip)
     }
 
-    fn tracking_view(&self, check_ancestors: bool) -> Result<super::tracked::TrackedSet> {
+    fn tracking_view(&self, ancestors: Ancestors) -> Result<super::tracked::TrackedSet> {
         self.validate()?;
         let roots = super::sync::layout::Roots::current();
         let environments = super::select::active_environments();
@@ -371,8 +392,17 @@ impl Manifest {
                 .path()
                 .ok_or_else(|| eyre::eyre!("invalid enrollment path {}", enrollment.path))?
                 .to_path_buf();
-            if check_ancestors {
-                super::tracked::ensure_portable_ancestors(&local)?;
+            if ancestors != Ancestors::Skip
+                && let Err(error) = super::tracked::ensure_portable_ancestors(&local)
+            {
+                if ancestors == Ancestors::Reject {
+                    return Err(error);
+                }
+                tracked.invalid.push(super::store::PathReason {
+                    path: mise_util::file::display_path(&local),
+                    reason: error.to_string(),
+                });
+                continue;
             }
             let mut policy = crate::files::FilePolicy::for_mode(crate::files::FileMode::Track);
             policy.autosave = enrollment.autosave;

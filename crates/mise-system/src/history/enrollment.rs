@@ -137,7 +137,7 @@ pub(crate) fn resolve(
     }
     manifest.enrollment.sort_by(|a, b| a.path.cmp(&b.path));
     manifest.remove_unenrolled_permissions();
-    let mut resolved = manifest.tracking()?;
+    let mut resolved = manifest.tracking_lenient()?;
     for entry in &mut resolved.entries {
         entry.declared_in = tracked
             .entries
@@ -146,7 +146,7 @@ pub(crate) fn resolve(
             .and_then(|declared| declared.declared_in.clone());
     }
     resolved.required_sources = tracked.required_sources.clone();
-    resolved.invalid = tracked.invalid.clone();
+    resolved.invalid.extend(tracked.invalid.iter().cloned());
     resolved.invalid_local = tracked.invalid_local.clone();
     resolved.declarations = Some(current.clone());
     resolved.disabled = tracked.disabled.clone();
