@@ -144,9 +144,22 @@
                   }
                 }
               ]
+            },
+            "run_windows": {
+              "description": "shell command or commands to run instead of `run` on Windows; set alone, the hook does nothing on other platforms",
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
             }
           },
-          "required": ["run"],
           "additionalProperties": true
         }
       ]

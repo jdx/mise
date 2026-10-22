@@ -37,7 +37,9 @@ pub enum BootstrapHook {
 #[schemars(extend("additionalProperties" = true))]
 pub struct BootstrapHookTable {
     /// shell command or commands to run in order, with the default inline shell; Tera templates are rendered first
-    pub run: BootstrapHookRun,
+    pub run: Option<BootstrapHookRun>,
+    /// shell command or commands to run instead of `run` on Windows; set alone, the hook does nothing on other platforms
+    pub run_windows: Option<BootstrapHookRun>,
 }
 
 #[derive(JsonSchema)]
