@@ -19,6 +19,7 @@ pub mod local;
 pub mod manifest;
 pub mod notices;
 pub mod notify;
+pub mod purge;
 pub(crate) mod recovery;
 pub mod replay;
 pub mod scope;

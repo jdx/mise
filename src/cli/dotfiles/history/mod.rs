@@ -8,6 +8,7 @@ pub(crate) use crate::system::history::{open, resolve, short};
 mod describe;
 mod diff;
 mod ls;
+mod purge;
 pub(crate) mod show;
 
 /// Browse saved versions of your tracked files
@@ -47,6 +48,7 @@ enum HistoryCommands {
     Describe(describe::HistoryDescribe),
     Diff(diff::HistoryDiff),
     Ls(ls::HistoryLs),
+    Purge(purge::HistoryPurge),
     Show(show::HistoryShow),
 }
 
@@ -56,6 +58,7 @@ impl DotfilesHistory {
             Some(HistoryCommands::Describe(cmd)) => cmd.run().await,
             Some(HistoryCommands::Diff(cmd)) => cmd.run().await,
             Some(HistoryCommands::Ls(cmd)) => cmd.run().await,
+            Some(HistoryCommands::Purge(cmd)) => cmd.run().await,
             Some(HistoryCommands::Show(cmd)) => cmd.run().await,
             None => self.ls.run().await,
         }
