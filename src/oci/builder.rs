@@ -339,7 +339,10 @@ impl Builder {
         // from the cache image and aren't rebuilt, so they don't carry
         // host-native binaries. Warning on reused-only pushes (the CI re-push
         // the reuse feature speeds up) would be a false alarm.
-        let built_tool_count = tool_reuse.iter().filter(|r| r.is_none()).count();
+        // The rust homes layer is packed from the host on every build, even when
+        // the rust tool layer itself is reused.
+        let built_tool_count = tool_reuse.iter().filter(|r| r.is_none()).count()
+            + usize::from(versions.iter().any(|(_, tv)| is_rust_tool(tv)));
         if built_tool_count > 0 && std::env::consts::OS != "linux" {
             warn!(
                 "building on {host} host — {n} tool layer(s) contain {host} binaries that \
