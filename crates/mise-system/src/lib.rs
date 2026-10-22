@@ -1936,7 +1936,8 @@ fn shell_activation_setting_display(setting: Option<ShellActivationMode>) -> &'s
 /// Aggregate `[bootstrap.hooks]` across all loaded config files.
 ///
 /// Hooks are additive and ordered global -> local. A hook value can be a string
-/// command, an array of string commands, or a table with a `run` string/array.
+/// command, an array of string commands, or a table with a `run` and/or `run_windows`
+/// string/array.
 pub fn hooks_from_config(config: &Config) -> Vec<hooks::BootstrapHook> {
     hooks_from_config_files(&config.config_files())
 }

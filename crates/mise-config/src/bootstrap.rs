@@ -128,14 +128,13 @@ fn command_list(value: toml::Value) -> Option<Vec<toml::Value>> {
 /// The commands of a `[bootstrap.hooks]` value, in the shapes the hook parser accepts: the
 /// commands for every platform, and those of a table's `run_windows`, which replace them on Windows.
 pub fn hook_commands(value: toml::Value) -> Option<(Vec<toml::Value>, Option<Vec<toml::Value>>)> {
+    // a malformed value stays in the list, so the hook parser reports it, and only where it applies
+    let list = |value: toml::Value| command_list(value.clone()).unwrap_or_else(|| vec![value]);
     match value {
         toml::Value::Table(mut table) => {
-            // a malformed value stays in the list, so the hook parser reports it
-            let windows = table
-                .remove("run_windows")
-                .map(|value| command_list(value.clone()).unwrap_or_else(|| vec![value]));
+            let windows = table.remove("run_windows").map(list);
             let run = match table.remove("run") {
-                Some(run) => command_list(run)?,
+                Some(run) => list(run),
                 None if windows.is_some() => vec![],
                 None => return None,
             };
@@ -356,5 +355,18 @@ mod tests {
             value["run_windows"].as_array().unwrap(),
             &[toml::Value::Integer(1), "echo own".into()]
         );
+    }
+
+    #[test]
+    fn merged_hooks_keep_windows_commands_beside_a_malformed_run() {
+        let value = merged(
+            r#"hook = { run = 1, run_windows = "echo win" }"#,
+            r#"hook = "echo own""#,
+        );
+        assert_eq!(
+            value["run_windows"].as_array().unwrap(),
+            &["echo win".into(), "echo own".into()]
+        );
+        assert_eq!(value["run"].as_array().unwrap()[0], toml::Value::Integer(1));
     }
 }
