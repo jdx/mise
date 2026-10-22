@@ -951,6 +951,20 @@ pub(crate) fn load_index_in(state_dir: &Path) -> Result<Index> {
     serde_json::from_str(&text).wrap_err_with(|| format!("reading {}", display_path(&path)))
 }
 
+/// Forgets the derived per-checkpoint records; a rebuild writes them again.
+pub(crate) fn clear_meta_caches_in(state_dir: &Path) -> Result<()> {
+    for dir in [
+        meta_cache_dir_in(state_dir),
+        commit_meta_cache_dir_in(state_dir),
+    ] {
+        if dir.is_dir() {
+            std::fs::remove_dir_all(&dir)
+                .wrap_err_with(|| format!("clearing {}", display_path(&dir)))?;
+        }
+    }
+    ensure_store_dir_in(state_dir)
+}
+
 pub(crate) fn write_index_in(state_dir: &Path, index: &Index) -> Result<()> {
     write_json(&index_file_in(state_dir), index)
 }
