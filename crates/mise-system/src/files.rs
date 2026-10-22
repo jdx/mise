@@ -1144,7 +1144,8 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     );
                 }
                 // composition checks whichever destination a variant selects,
-                // so every one of them must be a single path
+                // so every one of them must be a single path; a template is
+                // checked once rendered, when its variant is selected
                 if mode == FileMode::Absent
                     && std::iter::once(target.as_str())
                         .chain(
@@ -1153,6 +1154,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                                 .flatten()
                                 .filter_map(|variant| variant.target.as_deref()),
                         )
+                        .filter(|path| !mise_util::tera::contains_template_syntax(path))
                         .any(|path| is_glob_pattern(&resolve_target_arg(path)))
                 {
                     bail!("dotfile {target}: an absent target cannot use wildcards");
