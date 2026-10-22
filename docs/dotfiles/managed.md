@@ -41,10 +41,11 @@ to see content diffs) or [`mise dot diff`](/cli/dotfiles/diff.html), apply with
 [`mise dot status`](/cli/dotfiles/status.html). Apply skips targets that
 already match. `mise dot diff` reads the entries declared in your config, not
 only those you created with `mise dot add`. It prints the difference for each
-target that would change and `files: all files are applied` when none would;
-`track` entries are skipped, because
-[`mise dot history diff`](/cli/dotfiles/history/diff.html) covers them. The [reference](/dotfiles/reference.html#entry-keys) lists
-every entry key.
+target that would change. When none would, it reports `files: all files are
+applied` for whole-file entries and `edits: all edits are applied` for
+[edits](/dotfiles/edits.html); `track` entries are skipped, because
+[`mise dot history diff`](/cli/dotfiles/history/diff.html) covers them. The
+[reference](/dotfiles/reference.html#entry-keys) lists every entry key.
 
 ## Modes {#modes}
 
@@ -506,8 +507,10 @@ symlinks and permissions, instead of moving it.
 - `--no-apply` copies the file to its source and writes the entry without
   changing the original file, so you can review both first. It still writes
   the source: when the source already exists with different contents, `add`
-  overwrites it with the live file, and asks first only in a terminal. Run
-  `--dry-run` first to see which source files would change.
+  overwrites it with the live file, and asks first only in a terminal (`--force`
+  or `--yes` skip the prompt). `--dry-run` prints a `cp` line for every target
+  that exists, whether or not its contents already match the source, so compare
+  an existing source with the live file yourself before you add.
 - `--dry-run` prints the source and config changes without making them.
 
 The entry goes to your global config, or to the file named by
