@@ -363,6 +363,31 @@ async fn test_get_html_rejects_non_html_content_type() {
     mock.assert();
 }
 
+#[tokio::test]
+async fn test_get_html_accepts_pep_691_html_content_type() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/simple/pkg/")
+        .with_status(200)
+        .with_header(
+            "content-type",
+            "application/vnd.pypi.simple.v1+html; api-version=7.2-preview.1",
+        )
+        .with_body("<!DOCTYPE html><html></html>")
+        .expect(1)
+        .create_async()
+        .await;
+
+    let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+    let html = client
+        .get_html(format!("{}/simple/pkg/", server.url()))
+        .await
+        .unwrap();
+
+    assert_eq!(html, "<!DOCTYPE html><html></html>");
+    mock.assert();
+}
+
 #[test]
 fn log_url_hides_userinfo() {
     let url = Url::parse("https://user:TOKEN@git.example.com/api/v1?page=2").unwrap();
