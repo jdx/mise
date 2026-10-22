@@ -1,10 +1,11 @@
 use std::{path::PathBuf, sync::Arc};
 
-use crate::args::ToolArg;
-use crate::cli::prune::prune;
+use crate::args::{BackendArg, ToolArg};
+use crate::cli::prune::prune_scoped;
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, config_file};
 use crate::file::display_path;
+use crate::toolset::{ToolRequest, ToolSource, ToolVersion};
 use crate::{config, env, shims};
 use eyre::Result;
 use itertools::Itertools;
@@ -19,9 +20,11 @@ use path_absolutize::Absolutize;
 /// resolved to. Omit the version to remove every request for that tool from the
 /// selected file.
 ///
-/// Versions are pruned only when no remaining tracked config or tool stub needs
-/// them. Pass `--no-prune` to edit the config and keep the installations. To
-/// remove an installation without editing config, use `mise uninstall`.
+/// The installed versions the arguments name are pruned only when no remaining
+/// tracked config or tool stub needs them; mise says which file keeps one. A tool
+/// named without a version has all of its unused versions pruned. Pass
+/// `--no-prune` to edit the config and keep the installations. To remove an
+/// installation without editing config, use `mise uninstall`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, visible_aliases = ["rm", "remove"],
     example(r###"mise unuse node@22.0.0"###, help = r###"Remove node@22.0.0 from mise.toml and uninstall it if nothing else uses it"###),
@@ -141,19 +144,19 @@ impl Unuse {
             info!("removed: {removals} from {}", display_path(cf.get_path()));
         }
 
-        let prune_tools: Vec<_> = self
-            .installed_tool
-            .iter()
-            .filter(|ta| {
-                !requests
-                    .sources
-                    .get(&ta.ba)
-                    .is_some_and(|s| s.is_mise_toml_daemon())
-            })
-            .map(|ta| ta.ba.as_ref())
-            .collect();
-        if !self.no_prune && !prune_tools.is_empty() {
-            prune(&config, prune_tools, false).await?;
+        let (prune_tools, prune_versions) = if self.no_prune {
+            (vec![], vec![])
+        } else {
+            self.prune_scope(&config, requests).await?
+        };
+        if !self.no_prune && !(prune_tools.is_empty() && prune_versions.is_empty()) {
+            prune_scoped(
+                &config,
+                prune_tools.iter().map(|ba| ba.as_ref()).collect(),
+                prune_versions,
+                false,
+            )
+            .await?;
         }
         if !removed.is_empty() || !self.no_prune {
             let shim_scope = match (system_config, self.no_prune) {
@@ -180,6 +183,51 @@ impl Unuse {
         }
 
         Ok(())
+    }
+
+    /// What to prune afterwards: every unused version of a tool named without a
+    /// version, and only the installed versions that a named version stands for.
+    /// `mise unuse node@24.20.0` has no business deleting other unused node versions.
+    async fn prune_scope(
+        &self,
+        config: &Arc<Config>,
+        requests: &crate::toolset::ToolRequestSet,
+    ) -> Result<(Vec<Arc<BackendArg>>, Vec<ToolVersion>)> {
+        let mut tools = vec![];
+        let mut versions = vec![];
+        for ta in &self.installed_tool {
+            if requests
+                .sources
+                .get(&ta.ba)
+                .is_some_and(|s| s.is_mise_toml_daemon())
+            {
+                continue;
+            }
+            let (Some(version), Some(tvr)) = (&ta.version, &ta.tvr) else {
+                tools.push(ta.ba.clone());
+                continue;
+            };
+            let backend = ta.ba.backend()?;
+            let installed = backend.list_installed_versions();
+            // Same lookup as `mise uninstall`: an installed version of that exact
+            // name, else whatever the request resolves to.
+            let name = if installed.contains(version) {
+                version.clone()
+            } else {
+                match tvr.resolve(config, &Default::default()).await {
+                    Ok(tv) if installed.contains(&tv.version) => tv.version,
+                    _ => {
+                        debug!("{backend} has no installed version matching {version}");
+                        continue;
+                    }
+                }
+            };
+            let tvr = ToolRequest::new(ta.ba.clone(), &name, ToolSource::Unknown)?;
+            let mut tv = ToolVersion::new(tvr, name.clone());
+            tv.install_path = crate::install_layout::resolver::physical_dir(&ta.ba, &name);
+            versions.push(tv);
+        }
+        Ok((tools, versions))
     }
 
     async fn get_config_file(&self, config: &Config) -> Result<Arc<dyn ConfigFile>> {
