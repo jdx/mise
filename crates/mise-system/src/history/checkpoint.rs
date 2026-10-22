@@ -123,6 +123,7 @@ impl Store {
             unavailable,
             machine,
         };
+        super::purge::recover_interrupted(&store)?;
         // the index is a cache of the repository: rebuild it when it is
         // missing but checkpoints exist
         if !store::index_exists_in(state_dir)
@@ -965,7 +966,7 @@ impl Store {
         self.rebuild_index_locked()
     }
 
-    fn rebuild_index_locked(&self) -> Result<Index> {
+    pub(crate) fn rebuild_index_locked(&self) -> Result<Index> {
         let Some(repo) = &self.repo else {
             return store::load_index_in(&self.state_dir);
         };
