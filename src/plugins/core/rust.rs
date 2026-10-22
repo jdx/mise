@@ -1629,6 +1629,12 @@ pub(crate) struct RustOciHomes {
 }
 
 impl RustOciHomes {
+    /// Holds off installs, updates, and uninstalls that rewrite the homes while
+    /// they are being copied into an image.
+    pub(crate) async fn lock_state(config: &Arc<Config>) -> Result<Vec<fslock::LockFile>> {
+        lock_rust_state(&RustHomes::resolve(config).await?).await
+    }
+
     /// Locates the homes and sysroot of the toolchain mise installed for `tv`.
     pub(crate) async fn resolve(config: &Arc<Config>, tv: &ToolVersion) -> Result<Self> {
         let runtime = RustRuntime::resolve_recorded_for_tool_version(config, tv).await?;

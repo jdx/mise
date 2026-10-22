@@ -476,6 +476,16 @@ impl Builder {
             if rust_versions.is_empty() {
                 None
             } else {
+                // Same order as an install: the tool's lock, then rustup's state
+                // locks. They stay held until the layer is built, so a reinstall,
+                // update, or uninstall cannot change the files mid-copy.
+                let mut _tool_locks = Vec::new();
+                for tv in &rust_versions {
+                    _tool_locks.push(lock_tool_install(tv)?);
+                }
+                let _state_locks = crate::plugins::core::rust::RustOciHomes::lock_state(&self.cfg)
+                    .await
+                    .wrap_err("locking the rust homes")?;
                 Some(
                     build_rust_homes_layer(&self.cfg, &rust_versions, &mount_point, owner)
                         .await
