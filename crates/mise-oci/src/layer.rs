@@ -333,6 +333,96 @@ pub fn build_layer_from_path(
     build_layer_from_entries(&[entry], &prefix, owner, None)
 }
 
+/// One piece of a layer assembled from several host locations.
+#[derive(Debug, Clone)]
+pub enum LayerSource {
+    /// A host file or directory placed at `image`. A directory brings its
+    /// contents along.
+    Path { host: PathBuf, image: String },
+    /// A symlink created at `image` that points at `target` as written.
+    Symlink { image: String, target: PathBuf },
+}
+
+/// Build a reproducible layer from several host files, directories, and
+/// synthesized symlinks. Parent directories of every image path are emitted.
+pub fn build_layer_from_sources(sources: &[LayerSource], owner: LayerOwner) -> Result<LayerBlob> {
+    let mut entries: Vec<Entry> = Vec::new();
+    for source in sources {
+        match source {
+            LayerSource::Path { host, image } => {
+                let metadata = std::fs::symlink_metadata(host)
+                    .wrap_err_with(|| format!("reading metadata for {}", host.display()))?;
+                let base = PathBuf::from(image.trim_matches('/'));
+                if base.as_os_str().is_empty() {
+                    eyre::bail!("cannot place {} at the image root", host.display());
+                }
+                if metadata.is_dir() {
+                    entries.push(Entry {
+                        rel: base.clone(),
+                        abs: host.clone(),
+                        kind: EntryKind::Dir,
+                        mode: 0o755,
+                        owner,
+                        size: 0,
+                    });
+                    for mut entry in collect_sorted_entries(host, false, owner, None)? {
+                        entry.rel = base.join(&entry.rel);
+                        entries.push(entry);
+                    }
+                } else if metadata.is_file() {
+                    let mode = if file_is_executable(host, &metadata) {
+                        0o755
+                    } else {
+                        0o644
+                    };
+                    entries.push(Entry {
+                        rel: base,
+                        abs: host.clone(),
+                        kind: EntryKind::File,
+                        mode,
+                        owner,
+                        size: metadata.len(),
+                    });
+                } else {
+                    eyre::bail!("unsupported host path type: {}", host.display());
+                }
+            }
+            LayerSource::Symlink { image, target } => entries.push(Entry {
+                rel: PathBuf::from(image.trim_matches('/')),
+                abs: PathBuf::new(),
+                kind: EntryKind::Symlink(target.clone()),
+                mode: 0o777,
+                owner,
+                size: 0,
+            }),
+        }
+    }
+
+    let explicit: std::collections::BTreeSet<PathBuf> =
+        entries.iter().map(|e| e.rel.clone()).collect();
+    if explicit.len() != entries.len() {
+        eyre::bail!("layer sources place more than one entry at the same image path");
+    }
+    let mut parents: std::collections::BTreeSet<PathBuf> = Default::default();
+    for entry in &entries {
+        for parent in entry.rel.ancestors().skip(1) {
+            if !parent.as_os_str().is_empty() && !explicit.contains(parent) {
+                parents.insert(parent.to_path_buf());
+            }
+        }
+    }
+    entries.extend(parents.into_iter().map(|rel| Entry {
+        rel,
+        abs: PathBuf::new(),
+        kind: EntryKind::Dir,
+        mode: 0o755,
+        owner,
+        size: 0,
+    }));
+    entries.sort_by(|a, b| a.rel.cmp(&b.rel));
+    build_layer_from_entries(&entries, "", owner, None)
+}
+
 /// Build a layer from a source directory, preserving uid/gid/mode from disk.
 pub(crate) fn build_layer_from_dir_preserve_metadata(
     src_dir: &Path,
@@ -1062,6 +1152,73 @@ mod tests {
 
         assert!(paths.contains(&PathBuf::from("opt/app/greeting.txt")));
         assert!(!paths.contains(&PathBuf::from("opt/app/hello.txt")));
+    }
+
+    #[test]
+    fn sources_layer_places_paths_and_symlinks_with_parents() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("tc/bin")).unwrap();
+        fs::write(dir.path().join("tc/bin/rustc"), b"rustc").unwrap();
+        fs::write(dir.path().join("settings.toml"), b"profile = \"minimal\"\n").unwrap();
+
+        let blob = build_layer_from_sources(
+            &[
+                LayerSource::Path {
+                    host: dir.path().join("tc"),
+                    image: "/opt/rust/rustup/toolchains/stable".into(),
+                },
+                LayerSource::Path {
+                    host: dir.path().join("settings.toml"),
+                    image: "/opt/rust/rustup/settings.toml".into(),
+                },
+                LayerSource::Symlink {
+                    image: "/opt/rust/cargo/bin/cargo".into(),
+                    target: PathBuf::from("rustup"),
+                },
+            ],
+            LayerOwner::default(),
+        )
+        .unwrap();
+        let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
+        let mut archive = Archive::new(decoder);
+        let entries = archive
+            .entries()
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                let link = (entry.entry_type() == EntryType::Symlink)
+                    .then(|| entry.header().link_name().unwrap().into_owned());
+                (entry.path().unwrap().into_owned(), link)
+            })
+            .collect::<Vec<_>>();
+        let has = |path: &str| entries.iter().any(|(p, _)| p == Path::new(path));
+
+        for path in [
+            "opt",
+            "opt/rust/cargo/bin",
+            "opt/rust/rustup/toolchains",
+            "opt/rust/rustup/toolchains/stable/bin/rustc",
+            "opt/rust/rustup/settings.toml",
+        ] {
+            assert!(has(path), "{path} missing from {entries:?}");
+        }
+        assert!(entries.contains(&(
+            PathBuf::from("opt/rust/cargo/bin/cargo"),
+            Some(PathBuf::from("rustup"))
+        )));
+    }
+
+    #[test]
+    fn sources_layer_rejects_duplicate_image_paths() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a"), b"a").unwrap();
+        let source = LayerSource::Path {
+            host: dir.path().join("a"),
+            image: "/x/a".into(),
+        };
+        assert!(
+            build_layer_from_sources(&[source.clone(), source], LayerOwner::default()).is_err()
+        );
     }
 
     #[test]

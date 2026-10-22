@@ -1616,6 +1616,73 @@ fn resolve_rust_home(path: PathBuf) -> PathBuf {
     }
 }
 
+/// The host locations `mise oci build` copies into an image for a rust toolchain.
+///
+/// rustup keeps the toolchain in its own homes rather than in mise's install
+/// directory, which only holds a symlink to the cargo bin directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RustOciHomes {
+    pub cargo_bin: PathBuf,
+    pub rustup_home: PathBuf,
+    /// The toolchain's directory, canonicalized.
+    pub sysroot: PathBuf,
+}
+
+impl RustOciHomes {
+    /// Locates the homes and sysroot of the toolchain mise installed for `tv`.
+    pub(crate) async fn resolve(config: &Arc<Config>, tv: &ToolVersion) -> Result<Self> {
+        let runtime = RustRuntime::resolve_recorded_for_tool_version(config, tv).await?;
+        if runtime.is_external() {
+            bail!(
+                "{} uses the rustup proxies in {}, which are not managed by mise, so \
+                 `mise oci build` cannot package them. Remove that rustup from PATH or set \
+                 CARGO_HOME and RUSTUP_HOME, then run `mise install` again.",
+                tv.style(),
+                file::display_path(&runtime.bin_dir)
+            );
+        }
+        let rustc = runtime.bin_dir.join(RUSTC_BIN);
+        let mut rustc_cmd = cmd(&rustc, ["--print", "sysroot"])
+            .env("PATH", rustup_path_env(&runtime)?)
+            .stdout_capture()
+            .stderr_capture()
+            .unchecked();
+        for (key, value) in rustup_env(&runtime.homes, &tv.version) {
+            rustc_cmd = rustc_cmd.env(key, value);
+        }
+        let output = rustc_cmd
+            .run()
+            .wrap_err_with(|| format!("running {}", file::display_path(&rustc)))?;
+        if !output.status.success() {
+            bail!(
+                "{} --print sysroot failed for {}: {}",
+                file::display_path(&rustc),
+                tv.style(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        let sysroot = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if sysroot.is_empty() {
+            bail!("rustc reported an empty sysroot for {}", tv.style());
+        }
+        let sysroot = std::fs::canonicalize(&sysroot)
+            .wrap_err_with(|| format!("resolving the sysroot of {}", tv.style()))?;
+        Ok(Self {
+            cargo_bin: runtime.homes.cargo_bindir(),
+            rustup_home: runtime.homes.rustup.clone(),
+            sysroot,
+        })
+    }
+}
+
+/// The rustup proxies `mise oci build` keeps from a cargo bin directory. The
+/// rest of that directory is whatever the build host happened to install.
+pub(crate) fn oci_proxy_names() -> impl Iterator<Item = String> {
+    RUSTUP_PROXY_NAMES
+        .iter()
+        .map(|name| format!("{name}{}", std::env::consts::EXE_SUFFIX))
+}
+
 fn rustup_env(homes: &RustHomes, toolchain: &str) -> BTreeMap<String, String> {
     [
         (

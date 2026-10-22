@@ -449,6 +449,21 @@ needs alongside it, and test the image with the commands your project runs.
 scripts can write outside the version's directory, which a per-tool layer cannot
 capture, and their `exec-env` scripts expect bash at runtime.
 
+### rust
+
+[rust](/lang/rust.html) installs through rustup into `~/.cargo` and `~/.rustup`, not
+into mise's install directory. `mise oci build` copies what rustup needs into one
+extra layer at `/mise/rust/` (`cargo/` and `rustup/` under the mount point): the
+rustup proxies, rustup's `settings.toml`, and the directory of each toolchain the
+toolset uses. It leaves out the rest of the build host's homes, such as registry
+caches, other toolchains, and binaries from `cargo install`. The image sets
+`CARGO_HOME` and `RUSTUP_HOME` to those directories, and `cargo` and `rustc` work
+without rustup downloading anything.
+
+The build fails when rust comes from a rustup that mise does not manage, such as a
+system package's rustup on `PATH`. Install rust with mise, or set `CARGO_HOME` and
+`RUSTUP_HOME`, and run `mise install` again.
+
 ### vfox plugins
 
 Tools installed by [vfox plugins](/dev-tools/backends/vfox.html), including

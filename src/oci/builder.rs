@@ -420,7 +420,18 @@ impl Builder {
                     Vec::new()
                 };
                 let relocation = layer::ToolRelocation::new(paths).with_pythons(pythons);
-                let blob = if self.opts.no_cache {
+                let blob = if is_rust_tool(tv) {
+                    // rustup keeps the toolchain outside the install dir, which
+                    // holds only a symlink to the cargo bin dir. Point that link
+                    // at the copy in the rust homes layer instead.
+                    layer::build_layer_from_sources(
+                        &[layer::LayerSource::Symlink {
+                            image: tv_prefix.clone(),
+                            target: PathBuf::from(rust_cargo_bin_in_image(&mount_point)),
+                        }],
+                        owner,
+                    )
+                } else if self.opts.no_cache {
                     layer::build_relocated_tool_layer_from_dir(
                         &tv.install_path(),
                         &tv_prefix,
@@ -454,6 +465,24 @@ impl Builder {
                 layer,
             });
         }
+
+        // --- 4b. Rust homes layer ---
+        let rust_homes_layer = {
+            let rust_versions: Vec<&ToolVersion> = versions
+                .iter()
+                .map(|(_, tv)| tv)
+                .filter(|tv| is_rust_tool(tv))
+                .collect();
+            if rust_versions.is_empty() {
+                None
+            } else {
+                Some(
+                    build_rust_homes_layer(&self.cfg, &rust_versions, &mount_point, owner)
+                        .await
+                        .wrap_err("building the rust toolchain layer")?,
+                )
+            }
+        };
 
         // --- 5. Arbitrary host-path layers ---
         let mut copy_layers: Vec<(&OciCopy, LayerBlob)> = Vec::new();
@@ -613,6 +642,20 @@ impl Builder {
                 size,
                 reused,
             });
+        }
+
+        if let Some(blob) = &rust_homes_layer {
+            layout.write_blob_with_digest(&blob.digest, &blob.bytes)?;
+            let mut annotations = IndexMap::new();
+            annotations.insert("dev.mise.rust.homes".to_string(), "true".to_string());
+            manifest_layers.push(Descriptor {
+                media_type: manifest::MEDIA_TYPE_OCI_LAYER_GZIP.to_string(),
+                size: blob.size,
+                digest: blob.digest.clone(),
+                annotations,
+                platform: None,
+            });
+            all_diff_ids.push(blob.diff_id.clone());
         }
 
         for (copy, blob) in &copy_layers {
@@ -833,6 +876,19 @@ impl Builder {
                     );
                 }
             }
+        }
+
+        // rustup's homes live in the rust homes layer, not under the build
+        // host's home directory that exec_env reported.
+        if versions.iter().any(|(_, tv)| is_rust_tool(tv)) {
+            env_pairs.insert(
+                "CARGO_HOME".to_string(),
+                rust_cargo_home_in_image(mount_point),
+            );
+            env_pairs.insert(
+                "RUSTUP_HOME".to_string(),
+                rust_rustup_home_in_image(mount_point),
+            );
         }
 
         // Extra env from [oci].env section (explicit image-only vars).
@@ -1493,7 +1549,9 @@ fn tool_tar_prefix(mount_point: &str, tv: &ToolVersion) -> String {
 }
 
 fn tool_layer_relocation_key(tv: &ToolVersion, pythons: &[PythonRelocation]) -> String {
-    if tv.ba().backend_type() == BackendType::Pipx {
+    if is_rust_tool(tv) {
+        format!("{TOOL_LAYER_RELOCATION_VERSION}:rust-homes")
+    } else if tv.ba().backend_type() == BackendType::Pipx {
         format!(
             "{TOOL_LAYER_RELOCATION_VERSION}:python={}",
             python_relocation_fingerprint(pythons)
@@ -1501,6 +1559,117 @@ fn tool_layer_relocation_key(tv: &ToolVersion, pythons: &[PythonRelocation]) -> 
     } else {
         TOOL_LAYER_RELOCATION_VERSION.to_string()
     }
+}
+
+fn is_rust_tool(tv: &ToolVersion) -> bool {
+    tv.ba().backend_type() == BackendType::Core && tv.ba().tool_name == "rust"
+}
+
+fn rust_cargo_home_in_image(mount_point: &str) -> String {
+    format!("{mount_point}/rust/cargo")
+}
+
+fn rust_rustup_home_in_image(mount_point: &str) -> String {
+    format!("{mount_point}/rust/rustup")
+}
+
+fn rust_cargo_bin_in_image(mount_point: &str) -> String {
+    format!("{}/bin", rust_cargo_home_in_image(mount_point))
+}
+
+/// One layer holding what rustup needs at run time: the proxies, its settings,
+/// and the directory of every toolchain the toolset uses. The rest of the build
+/// host's cargo and rustup homes (registry caches, other toolchains, binaries
+/// installed with `cargo install`) stays out of the image.
+async fn build_rust_homes_layer(
+    cfg: &Arc<Config>,
+    versions: &[&ToolVersion],
+    mount_point: &str,
+    owner: LayerOwner,
+) -> Result<LayerBlob> {
+    use crate::plugins::core::rust::{RustOciHomes, oci_proxy_names};
+
+    let mut homes: Vec<RustOciHomes> = Vec::new();
+    for tv in versions {
+        homes.push(RustOciHomes::resolve(cfg, tv).await?);
+    }
+    let first = &homes[0];
+    if homes
+        .iter()
+        .any(|h| h.cargo_bin != first.cargo_bin || h.rustup_home != first.rustup_home)
+    {
+        bail!("the rust versions in the toolset use different cargo or rustup homes");
+    }
+    let cargo_image = rust_cargo_home_in_image(mount_point);
+    let rustup_image = rust_rustup_home_in_image(mount_point);
+    let mut sources = Vec::new();
+
+    // The proxies are copies of one binary that picks its role from its name.
+    let mut proxies = oci_proxy_names();
+    let rustup_name = proxies.next().expect("rustup is the first proxy name");
+    let rustup_bin = first.cargo_bin.join(&rustup_name);
+    if !rustup_bin.is_file() {
+        bail!("rustup not found at {}", rustup_bin.display());
+    }
+    sources.push(layer::LayerSource::Path {
+        host: rustup_bin,
+        image: format!("{cargo_image}/bin/{rustup_name}"),
+    });
+    for name in proxies {
+        if first.cargo_bin.join(&name).is_file() {
+            sources.push(layer::LayerSource::Symlink {
+                image: format!("{cargo_image}/bin/{name}"),
+                target: PathBuf::from(&rustup_name),
+            });
+        }
+    }
+
+    let settings = first.rustup_home.join("settings.toml");
+    if settings.is_file() {
+        sources.push(layer::LayerSource::Path {
+            host: settings,
+            image: format!("{rustup_image}/settings.toml"),
+        });
+    }
+
+    // A toolchain can also be reached through a symlink, such as the `nightly`
+    // alias for a dated nightly, so keep every entry that resolves to one.
+    let sysroots: IndexSet<PathBuf> = homes.iter().map(|h| h.sysroot.clone()).collect();
+    let toolchains = first.rustup_home.join("toolchains");
+    let mut packaged: IndexSet<PathBuf> = IndexSet::new();
+    for entry in std::fs::read_dir(&toolchains)
+        .wrap_err_with(|| format!("reading {}", toolchains.display()))?
+    {
+        let path = entry?.path();
+        let Ok(resolved) = std::fs::canonicalize(&path) else {
+            continue;
+        };
+        if !sysroots.contains(&resolved) {
+            continue;
+        }
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let image = format!("{rustup_image}/toolchains/{name}");
+        if path.symlink_metadata()?.file_type().is_symlink() {
+            let target = resolved.file_name().unwrap().to_string_lossy().into_owned();
+            sources.push(layer::LayerSource::Symlink {
+                image,
+                target: PathBuf::from(format!("{rustup_image}/toolchains/{target}")),
+            });
+        } else {
+            packaged.insert(resolved);
+            sources.push(layer::LayerSource::Path { host: path, image });
+        }
+    }
+    if let Some(missing) = sysroots.iter().find(|s| !packaged.contains(*s)) {
+        bail!(
+            "the toolchain at {} is not a direct entry of {}; rustup may have been \
+             reconfigured since mise installed it",
+            missing.display(),
+            toolchains.display()
+        );
+    }
+
+    layer::build_layer_from_sources(&sources, owner)
 }
 
 fn is_python_backend(backend: &dyn crate::backend::Backend) -> bool {
