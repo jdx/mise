@@ -926,6 +926,15 @@ impl BrewCaskManager {
             install_generic_artifact(&stage, &tmp_caskroom, artifact, &mut flight_targets)?;
             record_cask_action(cask.manager, &mut journal, &format!("artifact[{index}]"))?;
         }
+        // Postflight hooks receive the caskroom as staged_path and may modify
+        // the binary payload there before its artifacts are linked.
+        if artifacts
+            .binaries
+            .iter()
+            .any(|binary| payload_backed_binary(&stage, binary))
+        {
+            durabilize_stage_payload(&stage, &tmp_caskroom, &artifacts.apps)?;
+        }
         execute_flight_steps_recording(
             &cask,
             &artifacts.postflight_steps,
@@ -938,13 +947,6 @@ impl BrewCaskManager {
         execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
         if has_lifecycle_hook(&cask, "postflight") {
             record_cask_action(cask.manager, &mut journal, "postflight_hook")?;
-        }
-        if artifacts
-            .binaries
-            .iter()
-            .any(|binary| payload_backed_binary(&stage, binary))
-        {
-            durabilize_stage_payload(&stage, &tmp_caskroom, &artifacts.apps)?;
         }
         for (index, binary) in artifacts.binaries.iter().enumerate() {
             stage_binary(&stage, &tmp_caskroom, &cask, &artifacts.apps, binary)?;
