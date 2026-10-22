@@ -549,7 +549,7 @@ impl Toolset {
                 for tv in tvl.versions.iter_mut() {
                     if installed_tools
                         .iter()
-                        .any(|i| PathBuf::from(&i.install_path) == tv.install_path())
+                        .any(|i| i.install_path == tv.install_path().to_string_lossy())
                     {
                         *tv = tv.clone().with_locked();
                     }
