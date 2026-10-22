@@ -306,7 +306,7 @@ fn encryption_cache_key(dir: &Path) -> Result<[u8; 32]> {
 impl HistoryRepo {
     pub(crate) const HISTORY_REF: &'static str = "refs/heads/main";
     const MATCHER_TRAILER: &'static str = "Mise-History-Matcher: ";
-    const RECORD_TRAILER: &'static str = "Mise-History: ";
+    pub(crate) const RECORD_TRAILER: &'static str = "Mise-History: ";
     pub fn path_in(state_dir: &Path) -> PathBuf {
         repo_dir_in(state_dir)
     }
@@ -1932,6 +1932,56 @@ impl HistoryRepo {
         )
     }
 
+    /// A commit carrying another commit's identity: its author and committer
+    /// as `[name, email, "seconds offset"]`, and its message verbatim.
+    pub(crate) fn commit_tree_as(
+        &self,
+        tree: &str,
+        parents: Vec<&str>,
+        message: &[u8],
+        author: &[String; 3],
+        committer: &[String; 3],
+    ) -> Result<String> {
+        let mut args = vec!["commit-tree".to_string(), tree.to_string()];
+        for parent in parents {
+            args.push("-p".to_string());
+            args.push(parent.to_string());
+        }
+        self.output_str(
+            PlumbingCall::new(args)
+                .stdin(message)
+                .env("GIT_AUTHOR_NAME", author[0].as_str())
+                .env("GIT_AUTHOR_EMAIL", author[1].as_str())
+                .env("GIT_AUTHOR_DATE", author[2].as_str())
+                .env("GIT_COMMITTER_NAME", committer[0].as_str())
+                .env("GIT_COMMITTER_EMAIL", committer[1].as_str())
+                .env("GIT_COMMITTER_DATE", committer[2].as_str()),
+        )
+    }
+
+    /// A tree from `mktree -z` records (`<mode> <type> <oid>\t<name>\0`).
+    pub(crate) fn mktree_z(&self, listing: &[u8]) -> Result<String> {
+        self.output_str(PlumbingCall::new(["mktree", "-z"]).stdin(listing))
+    }
+
+    /// Forgets the reflog, which keeps replaced commits reachable.
+    pub(crate) fn expire_reflog(&self) -> Result<()> {
+        self.git.run(PlumbingCall::new([
+            "reflog",
+            "expire",
+            "--expire=now",
+            "--expire-unreachable=now",
+            "--all",
+        ]))
+    }
+
+    /// Deletes every object no ref reaches.
+    pub(crate) fn prune_now(&self) -> Result<()> {
+        self.git
+            .run(PlumbingCall::new(["repack", "-a", "-d", "-q"]))?;
+        self.git.run(PlumbingCall::new(["prune", "--expire=now"]))
+    }
+
     /// Moves `name` to `commit` only if it still points at `expected`
     /// (`None`: must not exist).
     pub(crate) fn update_ref(
@@ -2102,7 +2152,7 @@ impl HistoryRepo {
         self.git.network_output(PlumbingCall::new(args))
     }
 
-    const ANNOTATION_TRAILER: &'static str = "Mise-Annotation: ";
+    pub(crate) const ANNOTATION_TRAILER: &'static str = "Mise-Annotation: ";
 
     /// An annotation is an empty ordinary child commit, so labels and
     /// descriptions travel with the same ancestry without rewriting it.

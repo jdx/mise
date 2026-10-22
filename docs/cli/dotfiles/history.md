@@ -65,6 +65,7 @@ mise dot history diff
 - [`mise dotfiles history describe <REF> <TEXT>`](/cli/dotfiles/history/describe.html)
 - [`mise dotfiles history diff [FLAGS] [A] [B]`](/cli/dotfiles/history/diff.html)
 - [`mise dotfiles history ls [FLAGS]`](/cli/dotfiles/history/ls.html)
+- [`mise dotfiles history purge [FLAGS] <PATH>…`](/cli/dotfiles/history/purge.html)
 - [`mise dotfiles history show [FLAGS] [REF]`](/cli/dotfiles/history/show.html)
 
 <!-- generated reference navigation -->
