@@ -4210,35 +4210,44 @@ fn durabilize_stage_payload(stage: &Path, caskroom: &Path, apps: &[AppArtifact])
         .filter_map(|app| find_app(stage, &app.source))
         .map(|source| file::desymlink_path(&source))
         .collect();
-    for entry in std::fs::read_dir(stage)? {
-        let source = entry?.path();
-        if !path_starts_with_resolved_root(&source, stage) {
-            continue;
-        }
-        let resolved = file::desymlink_path(&source);
-        if app_sources.contains(&resolved) {
-            continue;
-        }
-        let Some(relative) = staged_relative_path(stage, &source) else {
-            continue;
-        };
-        let target = caskroom.join(&relative);
-        if !path_starts_with_resolved_root(&target, caskroom) {
-            bail!(
-                "brew-cask: refusing to stage cask payload through a path outside the caskroom: {}",
-                target.display()
-            );
-        }
-        if target.symlink_metadata().is_ok() {
-            continue;
-        }
-        if let Some(parent) = target.parent() {
-            file::create_dir_all(parent)?;
-        }
-        if source.is_dir() {
-            file::copy_dir_all_preserve_symlinks(&source, &target)?;
-        } else {
-            file::copy(&source, &target)?;
+    let mut directories = vec![stage.to_path_buf()];
+    while let Some(directory) = directories.pop() {
+        for entry in std::fs::read_dir(directory)? {
+            let entry = entry?;
+            let source = entry.path();
+            if !path_starts_with_resolved_root(&source, stage) {
+                continue;
+            }
+            let resolved = file::desymlink_path(&source);
+            if app_sources.contains(&resolved) {
+                continue;
+            }
+            let Some(relative) = staged_relative_path(stage, &source) else {
+                continue;
+            };
+            let target = caskroom.join(&relative);
+            if let Ok(metadata) = target.symlink_metadata() {
+                // Generic artifacts can create a shared parent directory. Fill
+                // its missing entries without replacing installed files or links.
+                if metadata.is_dir() && entry.file_type()?.is_dir() {
+                    directories.push(source);
+                }
+                continue;
+            }
+            if !path_starts_with_resolved_root(&target, caskroom) {
+                bail!(
+                    "brew-cask: refusing to stage cask payload through a path outside the caskroom: {}",
+                    target.display()
+                );
+            }
+            if let Some(parent) = target.parent() {
+                file::create_dir_all(parent)?;
+            }
+            if source.is_dir() {
+                file::copy_dir_all_preserve_symlinks(&source, &target)?;
+            } else {
+                file::copy(&source, &target)?;
+            }
         }
     }
     Ok(())
