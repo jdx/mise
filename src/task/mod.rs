@@ -2530,6 +2530,10 @@ impl Task {
             }
         }
 
+        if other.run_windows_declared {
+            self.run_windows = other.run_windows;
+            self.run_windows_declared = true;
+        }
         if !other.description.is_empty() {
             self.description = other.description;
         }
@@ -4454,6 +4458,23 @@ mod tests {
             file_task.config_sources(),
             vec![Path::new(".mise/tasks/build"), Path::new("mise.toml")]
         );
+    }
+
+    #[test]
+    fn test_merge_toml_overlay_keeps_empty_run_windows() {
+        let mut base = Task {
+            run: vec![RunEntry::Script("echo unix".to_string())],
+            ..Default::default()
+        };
+        let overlay = Task {
+            run_windows_declared: true,
+            ..Default::default()
+        };
+
+        base.merge_toml_overlay(overlay);
+
+        assert!(base.run_windows_declared);
+        assert!(base.run_windows.is_empty());
     }
 
     #[test]
