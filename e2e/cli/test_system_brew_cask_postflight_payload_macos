@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Darwin" ]]; then
+  exit 0
+fi
+
+python3 - "$PWD" <<'PYTHON'
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tarfile
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+root = Path(sys.argv[1]).resolve()
+prefix = root / "brew-prefix"
+script = b'''#!/bin/sh
+if [ "${1:-}" = postflight ]; then
+  printf '\\n# postflight ran\\n' >> "$0"
+  exit 0
+fi
+printf 'ready\\n'
+'''
+archive = io.BytesIO()
+with tarfile.open(fileobj=archive, mode="w:gz") as tar:
+    info = tarfile.TarInfo("payload/bin/tool")
+    info.size = len(script)
+    info.mode = 0o755
+    tar.addfile(info, io.BytesIO(script))
+payload = archive.getvalue()
+ruby = b'''cask "legacy" do
+  postflight do
+    File.open("#{staged_path}/payload/bin/tool", "a") do |file|
+      raise "missing payload" if file.size == 0
+      file.puts "# postflight ran"
+    end
+  end
+end
+'''
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        if self.path == "/api/cask.json":
+            self.send_error(404)
+            return
+        if self.path in ("/api/cask/legacy.json", "/api/cask/structured.json"):
+            token = Path(self.path).stem
+            artifacts = [{"binary": ["payload/bin/tool"],
+                          "target": f"{prefix}/bin/{token}"}]
+            if token == "legacy":
+                artifacts.append({"postflight": None})
+            else:
+                artifacts.append({"postflight_steps": [{"steps": [{
+                    "type": "run",
+                    "command": {"base": "staged_path", "path": "payload/bin/tool"},
+                    "args": ["postflight"],
+                }]}]})
+            body = json.dumps({
+                "token": token, "version": "1", "sha256": hashlib.sha256(payload).hexdigest(),
+                "url": f"{base}/payload.tar.gz", "artifacts": artifacts,
+                "ruby_source_path": "Casks/legacy.rb",
+                "ruby_source_checksum": {"sha256": hashlib.sha256(ruby).hexdigest()},
+                "tap_git_head": "fixture",
+            }).encode()
+        elif self.path == "/payload.tar.gz":
+            body = payload
+        elif self.path == "/Homebrew/homebrew-cask/fixture/Casks/legacy.rb":
+            body = ruby
+        else:
+            self.send_error(500, "unexpected request")
+            return
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+base = f"http://127.0.0.1:{server.server_port}"
+env = dict(os.environ, MISE_SYSTEM_BREW_PREFIX=str(prefix),
+           MISE_URL_REPLACEMENTS=json.dumps({
+               "https://formulae.brew.sh": base,
+               "https://raw.githubusercontent.com": base,
+           }))
+thread = threading.Thread(target=server.serve_forever, daemon=True)
+thread.start()
+try:
+    for token in ("legacy", "structured"):
+        (root / "mise.toml").write_text(
+            f'[bootstrap.packages]\n"brew-cask:{token}" = "latest"\n'
+        )
+        result = subprocess.run(["mise", "bootstrap", "packages", "apply", "--yes"],
+                                env=env, text=True, capture_output=True, timeout=60)
+        output = result.stdout + result.stderr
+        print(output, end="", flush=True)
+        assert result.returncode == 0, output
+        binary = prefix / "bin" / token
+        assert "# postflight ran" in binary.read_text(), "postflight changes were lost"
+        assert binary.resolve() == prefix / "Caskroom" / token / "1" / "payload/bin/tool"
+        assert subprocess.check_output([str(binary)], text=True) == "ready\n"
+finally:
+    server.shutdown()
+    thread.join()
+    server.server_close()
+PYTHON
