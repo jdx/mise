@@ -612,11 +612,15 @@ fn test_reset_dir_mtime_to_now_handles_read_only_files() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("commit-graph");
     fs::write(&file, "x").unwrap();
+    let old_mtime = FileTime::from_unix_time(0, 0);
+    set_file_times(&file, old_mtime, old_mtime).unwrap();
     let mut permissions = file.metadata().unwrap().permissions();
     permissions.set_readonly(true);
     fs::set_permissions(&file, permissions).unwrap();
 
     reset_dir_mtime_to_now(dir.path()).unwrap();
 
-    assert!(file.metadata().unwrap().permissions().readonly());
+    let metadata = file.metadata().unwrap();
+    assert!(metadata.permissions().readonly());
+    assert_ne!(FileTime::from_last_modification_time(&metadata), old_mtime);
 }
