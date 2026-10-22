@@ -25,3 +25,17 @@ mise -C monorepo lock
 assert_succeed "test -f monorepo/.config/mise.lock"
 assert_fail "test -e monorepo/mise.lock"
 assert_contains "cat monorepo/.config/mise.lock" "npm:is-odd"
+
+# A lockfile shared at the root before the fix moves next to the root config.
+rm monorepo/.config/mise.lock
+mkdir -p monorepo2/.config monorepo2/apps/foo
+cp monorepo/.config/mise.toml monorepo2/.config/mise.toml
+cp monorepo/apps/foo/mise.toml monorepo2/apps/foo/mise.toml
+cat >monorepo2/mise.lock <<'EOT2'
+[[tools."npm:cowsay"]]
+version = "1.6.0"
+backend = "npm:cowsay"
+EOT2
+mise -C monorepo2 lock
+assert_succeed "test -f monorepo2/.config/mise.lock"
+assert_fail "test -e monorepo2/mise.lock"

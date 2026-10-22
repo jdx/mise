@@ -2396,17 +2396,24 @@ fn tool_stub_reference(lockfile_path: &Path, stub: &Path) -> Result<String> {
     let dir = lockfile_path.parent().unwrap_or(Path::new("."));
     let dir = fs::canonicalize(dir)?;
     let stub = fs::canonicalize(stub)?;
-    let relative = stub.strip_prefix(&dir).map_err(|_| {
-        eyre!(
-            "tool stub {} is outside the directory of {}",
-            display_path(&stub),
-            display_path(lockfile_path)
-        )
-    })?;
-    Ok(relative
+    // A shared monorepo lockfile may sit beside the root config (`.config/`)
+    // while a stub lives in a sibling project, so climb out with `..`.
+    let common = dir
+        .ancestors()
+        .find(|ancestor| stub.starts_with(ancestor))
+        .ok_or_else(|| {
+            eyre!(
+                "tool stub {} is outside the directory of {}",
+                display_path(&stub),
+                display_path(lockfile_path)
+            )
+        })?;
+    let ups = dir.strip_prefix(common)?.components().map(|_| "..");
+    let down = stub
+        .strip_prefix(common)?
         .components()
-        .map(|c| c.as_os_str().to_string_lossy())
-        .join("/"))
+        .map(|c| c.as_os_str().to_string_lossy());
+    Ok(ups.map(std::borrow::Cow::Borrowed).chain(down).join("/"))
 }
 
 pub fn tool_stub_path(lockfile_path: &Path, reference: &str) -> PathBuf {
@@ -2673,6 +2680,14 @@ fn discover_monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf>
     };
     let mut source_lockfiles = IndexSet::new();
     let lockfile_dir = crate::config::monorepo_lockfile_dir(&monorepo_root);
+
+    // A root config in a subdirectory (`.config/mise.toml`) moves the shared
+    // lockfile off the root; lockfiles previously shared at the root follow it.
+    if lockfile_dir != monorepo_root {
+        for source in lockfile_variant_paths_in_dir(&monorepo_root) {
+            source_lockfiles.insert(source);
+        }
+    }
 
     for config_root in config_roots {
         if config_root == monorepo_root {

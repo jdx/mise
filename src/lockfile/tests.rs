@@ -4187,3 +4187,22 @@ fn test_nearest_lockfile_decision_prefers_the_nearest_lockfile() {
     .unwrap();
     assert_eq!(found, Some("2.7.0".to_string()));
 }
+
+#[test]
+fn tool_stub_reference_climbs_out_of_the_lockfile_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let lock_dir = dir.path().join(".config");
+    let stub_dir = dir.path().join("apps/foo/bin");
+    fs::create_dir_all(&lock_dir).unwrap();
+    fs::create_dir_all(&stub_dir).unwrap();
+    let stub = stub_dir.join("tool");
+    fs::write(&stub, "").unwrap();
+    let path = lock_dir.join("mise.lock");
+
+    let reference = tool_stub_reference(&path, &stub).unwrap();
+    assert_eq!(reference, "../apps/foo/bin/tool");
+    assert_eq!(
+        fs::canonicalize(tool_stub_path(&path, &reference)).unwrap(),
+        fs::canonicalize(&stub).unwrap()
+    );
+}
