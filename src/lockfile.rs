@@ -2582,7 +2582,17 @@ fn migrate_monorepo_lockfiles_inner(
                 display_path(target)
             );
         }
+        // Stub references are relative to their lockfile, so rebase them.
+        let stubs = subproject_lockfile
+            .tool_stubs()
+            .iter()
+            .map(|reference| tool_stub_path(source, reference))
+            .filter(|stub| stub.is_file())
+            .collect_vec();
         merge_lockfile_preserving_root(&mut root_lockfile, subproject_lockfile);
+        for stub in stubs {
+            root_lockfile.add_tool_stub(target, &stub)?;
+        }
         root_lockfile.save(target)?;
         if let Err(err) = fs::remove_file(source)
             && err.kind() != ErrorKind::NotFound
@@ -2669,18 +2679,8 @@ fn discover_monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf>
     let Some(monorepo_root) = config.monorepo_lockfile_root() else {
         return IndexSet::new();
     };
-    let config_roots = match config.monorepo_config_root_dirs_for_lockfiles() {
-        Ok(config_roots) => config_roots,
-        Err(err) => {
-            warn_once!(
-                "[monorepo] lockfile = true is set, but [monorepo].config_roots could not be resolved: {err:#}; using root lockfiles without migration"
-            );
-            return IndexSet::new();
-        }
-    };
-    let mut source_lockfiles = IndexSet::new();
     let lockfile_dir = crate::config::monorepo_lockfile_dir(&monorepo_root);
-
+    let mut source_lockfiles = IndexSet::new();
     // A root config in a subdirectory (`.config/mise.toml`) moves the shared
     // lockfile off the root; lockfiles previously shared at the root follow it.
     if lockfile_dir != monorepo_root {
@@ -2688,6 +2688,16 @@ fn discover_monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf>
             source_lockfiles.insert(source);
         }
     }
+
+    let config_roots = match config.monorepo_config_root_dirs_for_lockfiles() {
+        Ok(config_roots) => config_roots,
+        Err(err) => {
+            warn_once!(
+                "[monorepo] lockfile = true is set, but [monorepo].config_roots could not be resolved: {err:#}; using root lockfiles without migration"
+            );
+            return source_lockfiles;
+        }
+    };
 
     for config_root in config_roots {
         if config_root == monorepo_root {
