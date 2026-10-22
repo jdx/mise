@@ -107,12 +107,17 @@ impl BootstrapHook {
                 }
                 // `run_windows` replaces `run` on Windows; a hook with only
                 // `run_windows` does nothing elsewhere.
-                match if windows { run_windows.or(run) } else { run } {
+                let (field, selected) = match (windows, run_windows) {
+                    (true, Some(run_windows)) => ("run_windows", Some(run_windows)),
+                    _ => ("run", run),
+                };
+                match selected {
                     Some(toml::Value::String(run)) => vec![run],
-                    Some(toml::Value::Array(values)) => {
-                        string_array(values, "expected `run` to contain string commands")?
-                    }
-                    Some(_) => bail!("expected `run` to be a string or array of strings"),
+                    Some(toml::Value::Array(values)) => string_array(
+                        values,
+                        &format!("expected `{field}` to contain string commands"),
+                    )?,
+                    Some(_) => bail!("expected `{field}` to be a string or array of strings"),
                     None => vec![],
                 }
             }
@@ -322,5 +327,19 @@ mod tests {
         let windows =
             BootstrapHook::from_toml_for("final", only_windows(), "mise.toml".into(), true);
         assert_eq!(windows.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn type_errors_name_the_selected_field() {
+        let table = || {
+            let mut table = toml::map::Map::new();
+            table.insert("run".into(), toml::Value::String("echo unix".into()));
+            table.insert("run_windows".into(), toml::Value::Integer(1));
+            toml::Value::Table(table)
+        };
+        let err =
+            BootstrapHook::from_toml_for("final", table(), "mise.toml".into(), true).unwrap_err();
+        assert!(err.to_string().contains("`run_windows`"), "{err}");
+        assert!(BootstrapHook::from_toml_for("final", table(), "mise.toml".into(), false).is_ok());
     }
 }
