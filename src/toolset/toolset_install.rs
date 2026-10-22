@@ -547,11 +547,15 @@ impl Toolset {
             hook_ts.tera_ctx = Default::default();
             for tvl in hook_ts.versions.values_mut() {
                 for tv in tvl.versions.iter_mut() {
-                    if installed_tools
-                        .iter()
-                        .any(|i| i.install_path == tv.install_path().to_string_lossy())
-                    {
-                        *tv = tv.clone().with_locked();
+                    // Take the completed install itself rather than the re-resolved
+                    // entry: a lockfile pinning the old version re-resolves `self`
+                    // back to it even though the upgrade installed a newer one.
+                    if let Some(done) = installed.iter().find(|d| {
+                        d.install_satisfied != Some(true)
+                            && d.ba().installs_path() == tv.ba().installs_path()
+                            && d.request.version() == tv.request.version()
+                    }) {
+                        *tv = done.clone().with_locked();
                     }
                 }
             }
