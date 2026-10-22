@@ -479,8 +479,13 @@ impl Builder {
                 // Same order as an install: the tool's lock, then rustup's state
                 // locks. They stay held until the layer is built, so a reinstall,
                 // update, or uninstall cannot change the files mid-copy.
+                // Sorted and deduplicated so concurrent builds that list the same
+                // versions in another order take the locks in the same order.
+                let mut lock_order = rust_versions.clone();
+                lock_order.sort_by_key(|tv| tv.tv_pathname());
+                lock_order.dedup_by_key(|tv| tv.tv_pathname());
                 let mut _tool_locks = Vec::new();
-                for tv in &rust_versions {
+                for tv in &lock_order {
                     _tool_locks.push(lock_tool_install(tv)?);
                     // The homes come from the build host even when the tool layer
                     // itself is reused from the cache image.
