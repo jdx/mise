@@ -399,7 +399,8 @@ without ever sharing it, track it with
 [`mode = "track-local"`](/dotfiles/history.html#local-only) instead. For an entry inherited from another config file, such as
 system config, `untrack` sets `enabled = false` in your `config.local.toml`
 instead. You can turn off any inherited entry the same way, with
-`enabled = false` in a later config file.
+`enabled = false` in a later config file. To erase the earlier versions, see
+[Erase a file from history](#purge).
 
 To stop saving part of a tracked directory, such as its logs or caches,
 [exclude it](#exclude-files-from-one-directory) instead.
@@ -407,12 +408,47 @@ To stop saving part of a tracked directory, such as its logs or caches,
 ### Undo an accidental track {#undo-an-accidental-track}
 
 `track` saves immediately. `untrack`, `rollback`, and `undo` change tracking or
-live files but never delete older commits, so a tracked secret stays in them. Preview a directory
-first with `mise dot track --dry-run <path>`. To erase a saved version, rotate
-the credential, then follow
+live files but never delete older commits, so a tracked secret stays in them.
+Preview a directory first with `mise dot track --dry-run <path>`. To erase the
+saved versions, rotate the credential, run `mise dot untrack <path>` so the next
+save does not record it again, then
+[erase the file from history](#purge). History that is already on the origin
+needs the manual recipe in
 [Remove plaintext from history](/dotfiles/encryption.html#remove-plaintext-from-history).
-If you no longer want the file tracked, run `mise dot untrack <path>` first and
-skip the recipe's `mise dot save` step, or `mise dot sync` will save it again.
+
+## Erase a file from history {#purge}
+
+`untrack`, `rollback`, and `undo` only add checkpoints, so a secret you tracked
+by mistake stays readable in the earlier ones. To erase it, rotate the secret
+and stop tracking the file, then run [`mise dot history purge`](/cli/dotfiles/history/purge.html):
+
+```sh
+mise dot untrack ~/.aws/credentials
+mise dot history purge ~/.aws/credentials
+```
+
+It lists the checkpoints that hold the file and asks before it rewrites
+anything (`--dry-run` stops after the list, `--yes` skips the question). A
+checkpoint that changed only that file is removed. Every other checkpoint
+stays, without the file, and keeps its description, date, label, and number, so
+`mise dot history`, `rollback`, and `undo` keep working. Afterwards mise deletes
+the replaced objects from its repository. Pass `--keep-objects` to leave them,
+or `--backup` to keep the old history under `refs/mise/purge-backup/`, which
+still holds the secret.
+
+Stop the [watcher](#automatic-saves) first, so it does not save the file again
+while the command runs. If the file is still tracked, the next save records its
+current contents.
+
+mise never rewrites history that is on the [origin](/dotfiles/sync.html), so the
+command refuses if any saved version of the path was synced. Remove it from the
+origin with Git, as in
+[Remove plaintext from history](/dotfiles/encryption.html#remove-plaintext-from-history),
+and re-adopt the history on your other machines. Purging removes mise's own
+copies only: a backup, a clone of the repository, or a synced origin keeps its
+own.
+
+A file tracked with [`mode = "track-local"`](#local-only) has a separate history: after untracking it, purge it with `mise dot --local history purge`.
 
 ## Choose what history saves {#explicit-tracking-and-exclusions}
 

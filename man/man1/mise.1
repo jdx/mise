@@ -527,6 +527,9 @@ List checkpoints, newest first
 \fIAliases: \fRlist
 .RE
 .TP
+\fBdotfiles history purge\fR
+Erase a path's saved versions from history
+.TP
 \fBdotfiles history show\fR
 Show a checkpoint: its trigger, changes, and operation journal
 .TP
@@ -4748,6 +4751,56 @@ List operations that did not finish
 .PP
 .RS 4
 mise dot history ls \-\-pending
+.RE
+.SH "MISE DOTFILES HISTORY PURGE"
+Erase a path's saved versions from history
+
+Rewrites the history without the path, for a file you tracked by mistake that holds a secret. `untrack`, `rollback`, and `undo` only add checkpoints; they leave the old versions readable.
+
+Checkpoints that changed only this path are removed. The others stay, with their descriptions, dates, and IDs, minus the path. Without `\-\-yes`, the command lists what would change and asks first.
+
+mise never rewrites history that is on the origin: if a saved version of the path was ever published, the command refuses. Rotate the secret, then see https://mise.jdx.dev/dotfiles/encryption.html#remove\-plaintext\-from\-history.
+
+This does not stop tracking the path. If the file is still tracked, the next save records its current contents again, so run `mise dot untrack` first (or encrypt it). Stop the watcher service while this runs.
+.PP
+\fBUsage:\fR mise dotfiles history purge [OPTIONS] <PATH> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show what would change without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Rewrite without prompting
+.TP
+\fB\-\-backup\fR
+Keep the replaced history in the repository under `refs/mise/purge\-backup/`
+
+The backup still holds the content you are erasing; delete it with `git update\-ref \-d` once you are sure.
+.TP
+\fB\-\-keep\-objects\fR
+Leave the replaced objects on disk instead of deleting them
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Files or directories to erase from history
+\fBExamples:\fR
+.PP
+List the checkpoints that hold the file
+.PP
+.RS 4
+mise dot history purge ~/.aws/credentials \-\-dry\-run
+.RE
+.PP
+Erase every saved version of the file
+.PP
+.RS 4
+mise dot history purge ~/.aws/credentials \-\-yes
 .RE
 .SH "MISE DOTFILES HISTORY SHOW"
 Show a checkpoint: its trigger, changes, and operation journal

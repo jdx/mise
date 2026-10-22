@@ -340,6 +340,7 @@
 - [mise dotfiles history describe](https://mise.jdx.dev/cli/dotfiles/history/describe.html): Set the description of a checkpoint
 - [mise dotfiles history diff](https://mise.jdx.dev/cli/dotfiles/history/diff.html): Compare checkpoints, or your files against one
 - [mise dotfiles history ls](https://mise.jdx.dev/cli/dotfiles/history/ls.html): List checkpoints, newest first
+- [mise dotfiles history purge](https://mise.jdx.dev/cli/dotfiles/history/purge.html): Erase a path's saved versions from history
 - [mise dotfiles history show](https://mise.jdx.dev/cli/dotfiles/history/show.html): Show a checkpoint: its trigger, changes, and operation journal
 - [mise dotfiles include](https://mise.jdx.dev/cli/dotfiles/include.html): Stop excluding paths matching a glob
 - [mise dotfiles notify](https://mise.jdx.dev/cli/dotfiles/notify.html): Send a test desktop notification

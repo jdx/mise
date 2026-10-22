@@ -119,6 +119,9 @@ export const commands: { [key: string]: Command } = {
               ls: {
                 hide: false,
               },
+              purge: {
+                hide: false,
+              },
               show: {
                 hide: false,
               },
@@ -577,6 +580,9 @@ export const commands: { [key: string]: Command } = {
             hide: false,
           },
           ls: {
+            hide: false,
+          },
+          purge: {
             hide: false,
           },
           show: {
