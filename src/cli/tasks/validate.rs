@@ -883,6 +883,7 @@ impl TasksValidate {
         // Check if task has no run entries and no file
         // Allow tasks with dependencies but no run entries (meta/group tasks)
         if task.run().is_empty()
+            && !task.run_windows_declared
             && task.file.is_none()
             && task.depends.is_empty()
             && task.depends_post.is_empty()

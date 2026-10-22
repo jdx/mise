@@ -5388,6 +5388,10 @@ echo "hello world"
         let task = Task::from_decl(decl);
         assert!(task.run_windows.is_empty());
         assert!(task.run_windows_declared);
+        #[cfg(windows)]
+        assert!(task.run().is_empty());
+        #[cfg(not(windows))]
+        assert_eq!(task.run().len(), 1);
 
         let decl: mise_config::task::TaskDecl = toml::from_str("run = 'echo hi'").unwrap();
         assert!(!Task::from_decl(decl).run_windows_declared);

@@ -317,6 +317,37 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_template_local_empty_run_windows_wins() {
+        let mut task = Task {
+            run_windows_declared: true,
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            run_windows: Some(vec![RunEntry::Script("template command".to_string())]),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert!(task.run_windows.is_empty());
+        assert!(task.run_windows_declared);
+    }
+
+    #[test]
+    fn test_merge_template_inherits_empty_run_windows() {
+        let mut task = Task::default();
+        let template = TaskTemplate {
+            run_windows: Some(vec![]),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert!(task.run_windows.is_empty());
+        assert!(task.run_windows_declared);
+    }
+
+    #[test]
     fn test_merge_template_usage_is_composed() {
         let mut task = Task {
             usage: "flag \"--own <v>\"".to_string(),
