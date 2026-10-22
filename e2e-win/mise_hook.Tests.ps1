@@ -19,9 +19,12 @@ Describe 'mise_hook' {
         try {
             # stands in for a prompt like starship's, which reads $? to show the last command failed
             $Global:__mise_pwsh_previous_prompt_function = { $Global:__mise_test_prompt_status = $? }
+            $errorsBefore = $Error.Count
             cmd /C 'exit 12'
             prompt
             $Global:__mise_test_prompt_status | Should -BeFalse
+            # the error that makes $? false is ignored, never recorded
+            $Error.Count | Should -BeExactly $errorsBefore
         } finally {
             $Global:__mise_pwsh_previous_prompt_function = $originalPrompt
         }
