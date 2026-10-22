@@ -210,22 +210,43 @@ impl Unuse {
             let backend = ta.ba.backend()?;
             let installed = backend.list_installed_versions();
             // Same lookup as `mise uninstall`: an installed version of that exact
-            // name, else whatever the request resolves to.
+            // name, else whatever the request resolves to. A ref installs into
+            // `ref-main` though it resolves as `ref:main`, so compare the
+            // directory name.
             let name = if installed.contains(version) {
                 version.clone()
             } else {
                 match tvr.resolve(config, &Default::default()).await {
-                    Ok(tv) if installed.contains(&tv.version) => tv.version,
+                    Ok(tv) if installed.contains(&tv.tv_pathname()) => tv.tv_pathname(),
                     _ => {
                         debug!("{backend} has no installed version matching {version}");
                         continue;
                     }
                 }
             };
+            // Installations of one version that differ in install options share
+            // its name and each is needed or not on its own, so every one is a
+            // candidate; the version link only names one of them.
+            let mut dirs = crate::install_layout::resolver::installs_of(&ta.ba)
+                .into_iter()
+                .filter(|(n, _)| *n == name)
+                .map(|(_, dir)| dir)
+                .collect::<Vec<_>>();
+            dirs.extend(crate::install_layout::resolver::physical_dir(&ta.ba, &name));
+            dirs.sort();
+            dirs.dedup();
             let tvr = ToolRequest::new(ta.ba.clone(), &name, ToolSource::Unknown)?;
-            let mut tv = ToolVersion::new(tvr, name.clone());
-            tv.install_path = crate::install_layout::resolver::physical_dir(&ta.ba, &name);
-            versions.push(tv);
+            let version = tvr.version();
+            let dirs = if dirs.is_empty() {
+                vec![None]
+            } else {
+                dirs.into_iter().map(Some).collect()
+            };
+            for dir in dirs {
+                let mut tv = ToolVersion::new(tvr.clone(), version.clone());
+                tv.install_path = dir;
+                versions.push(tv);
+            }
         }
         Ok((tools, versions))
     }

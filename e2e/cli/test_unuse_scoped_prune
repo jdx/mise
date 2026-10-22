@@ -25,3 +25,12 @@ assert "ls $MISE_DATA_DIR/installs/dummy/3.0.0"
 printf '[tools]\ndummy = "1.0.0"\n' >mise.toml
 assert "mise unuse dummy"
 assert_fail "ls $MISE_DATA_DIR/installs/dummy/3.0.0"
+
+# A ref installs into `ref-main` but resolves as `ref:main`; it is still the
+# installation the argument names.
+printf '[tools]\ndummy = "ref:main"\n' >mise.toml
+mkdir -p "$MISE_DATA_DIR/installs/dummy/ref-main" "$MISE_DATA_DIR/installs/dummy/other"
+assert "mise unuse dummy@ref:main"
+assert_fail "ls $MISE_DATA_DIR/installs/dummy/ref-main"
+# the unused sibling was not named, so it stays
+assert "ls $MISE_DATA_DIR/installs/dummy/other"

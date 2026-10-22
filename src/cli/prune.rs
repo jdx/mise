@@ -169,6 +169,11 @@ pub(super) async fn prune_scoped(
     } = scan_prunable(config, scanned).await?;
     let selected = versions.iter().map(needed_key).collect::<BTreeSet<_>>();
     to_delete.retain(|(_, tv)| tools.contains(&tv.ba()) || selected.contains(&needed_key(tv)));
+    // A running process only matters for what this call could have removed.
+    let running = running
+        .into_iter()
+        .filter(|(tv, _)| tools.contains(&tv.ba()) || selected.contains(&needed_key(tv)))
+        .collect::<Vec<_>>();
     explain_kept(&versions, &needed);
     explain_running(&running);
     delete(
