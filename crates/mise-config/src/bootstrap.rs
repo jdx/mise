@@ -130,7 +130,10 @@ fn command_list(value: toml::Value) -> Option<Vec<toml::Value>> {
 pub fn hook_commands(value: toml::Value) -> Option<(Vec<toml::Value>, Option<Vec<toml::Value>>)> {
     match value {
         toml::Value::Table(mut table) => {
-            let windows = table.remove("run_windows").and_then(command_list);
+            // a malformed value stays in the list, so the hook parser reports it
+            let windows = table
+                .remove("run_windows")
+                .map(|value| command_list(value.clone()).unwrap_or_else(|| vec![value]));
             let run = match table.remove("run") {
                 Some(run) => command_list(run)?,
                 None if windows.is_some() => vec![],
@@ -340,6 +343,18 @@ mod tests {
         assert_eq!(
             value.as_array().unwrap(),
             &["echo a".into(), "echo b".into()]
+        );
+    }
+
+    #[test]
+    fn merged_hooks_keep_malformed_windows_commands_for_the_parser() {
+        let value = merged(
+            r#"hook = { run = "echo unix", run_windows = 1 }"#,
+            r#"hook = "echo own""#,
+        );
+        assert_eq!(
+            value["run_windows"].as_array().unwrap(),
+            &[toml::Value::Integer(1), "echo own".into()]
         );
     }
 }
