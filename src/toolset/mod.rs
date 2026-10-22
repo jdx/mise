@@ -1417,10 +1417,15 @@ fn keep_uv_python_variants(
                 }
             };
             let (python, version) = selected_python_receipt(&contents, &receipt)?;
+            // The receipt may reach the interpreter through a minor-version symlink
+            // (`python/3.14 -> ./3.14.9`); resolve the directory so it matches the install dir.
+            let resolved = resolve_receipt_python(&python);
 
             let identity_install = crate::install_layout::resolver::installs_of(&python_ba)
                 .into_iter()
-                .find(|(_, python_dir)| python.starts_with(python_dir));
+                .find(|(_, python_dir)| {
+                    python.starts_with(python_dir) || resolved.starts_with(python_dir)
+                });
             if let Some((_, python_dir)) = identity_install {
                 let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&python_dir)
                 else {
@@ -1438,7 +1443,7 @@ fn keep_uv_python_variants(
             }
 
             let legacy_dir = python_ba.installs_path().join(&version);
-            if python.starts_with(&legacy_dir) {
+            if python.starts_with(&legacy_dir) || resolved.starts_with(&legacy_dir) {
                 needed
                     .entry((python_ba.short.to_string(), version.to_string()))
                     .or_default()
@@ -1464,6 +1469,16 @@ fn keep_uv_python_variants(
         }
     }
     Ok(())
+}
+
+fn resolve_receipt_python(python: &Path) -> PathBuf {
+    match (
+        python.parent().and_then(|p| p.canonicalize().ok()),
+        python.file_name(),
+    ) {
+        (Some(dir), Some(name)) => dir.join(name),
+        _ => python.to_path_buf(),
+    }
 }
 
 fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<(PathBuf, String)> {
@@ -1620,6 +1635,23 @@ mod tests {
                 .to_string()
                 .contains("does not name a mise core Python runtime")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_receipt_python_follows_the_minor_version_symlink() {
+        let tmp = tempfile::tempdir().unwrap();
+        let concrete = tmp.path().join("python/3.14.9");
+        std::fs::create_dir_all(concrete.join("bin")).unwrap();
+        std::os::unix::fs::symlink("./3.14.9", tmp.path().join("python/3.14")).unwrap();
+        let resolved = resolve_receipt_python(&tmp.path().join("python/3.14/bin/python"));
+        assert_eq!(
+            resolved,
+            concrete.canonicalize().unwrap().join("bin/python")
+        );
+        // A path that does not exist is left alone rather than failing.
+        let missing = tmp.path().join("nope/bin/python");
+        assert_eq!(resolve_receipt_python(&missing), missing);
     }
 
     #[tokio::test]
