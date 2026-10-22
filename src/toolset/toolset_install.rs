@@ -538,9 +538,26 @@ impl Toolset {
             // `self` was re-resolved after the config reload above and still
             // contains explicitly requested and task-only tools that are not
             // present in the reloaded project config.
+            //
+            // Runtime symlinks for fuzzy requests (`latest`, `1`) are only rebuilt
+            // after the hook, so lock the just-installed versions in a copy of the
+            // toolset: the hook's PATH then resolves to them rather than to the
+            // version being replaced (#14842).
+            let mut hook_ts = self.clone();
+            hook_ts.tera_ctx = Default::default();
+            for tvl in hook_ts.versions.values_mut() {
+                for tv in tvl.versions.iter_mut() {
+                    if installed_tools
+                        .iter()
+                        .any(|i| PathBuf::from(&i.install_path) == tv.install_path())
+                    {
+                        *tv = tv.clone().with_locked();
+                    }
+                }
+            }
             hooks::run_one_hook_with_context(
                 config,
-                self,
+                &hook_ts,
                 Hooks::Postinstall,
                 None,
                 Some(&installed_tools),

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+# A [hooks].postinstall hook must see the version `mise upgrade` just installed
+# on PATH, not the one the fuzzy runtime symlink still points at (#14842)
+
+mise install dummy@1.0.0
+
+cat <<EOT >mise.toml
+[tools]
+dummy = "1"
+
+[hooks]
+postinstall = "echo HOOK_PATH=\$PATH"
+EOT
+
+output=$(mise upgrade dummy 2>&1)
+assert_contains "echo '$output'" "HOOK_PATH="
+assert_contains "echo '$output'" "installs/dummy/1.1.0/bin"
+assert_not_contains "echo '$output'" "installs/dummy/1/bin"
