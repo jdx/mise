@@ -2018,6 +2018,13 @@ pub fn which_spawnable(name: &str) -> Option<PathBuf> {
     _which_spawnable(name, &env::PATH)
 }
 
+/// Like [`which_spawnable`], but searching `paths` rather than PATH.
+/// For directories that PATH may not list yet, such as one a package manager
+/// has just installed into.
+pub fn which_spawnable_in(name: &str, paths: &[PathBuf]) -> Option<PathBuf> {
+    _which_spawnable(name, paths)
+}
+
 fn _which_spawnable(name: &str, paths: &[PathBuf]) -> Option<PathBuf> {
     let names = executable_names(name);
     paths.iter().find_map(|dir| {
