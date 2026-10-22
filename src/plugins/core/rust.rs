@@ -1626,6 +1626,9 @@ pub(crate) struct RustOciHomes {
     pub rustup_home: PathBuf,
     /// The toolchain's directory, canonicalized.
     pub sysroot: PathBuf,
+    /// The `nightly-<host>` toolchain mise keeps beside a dated nightly that a
+    /// rolling `nightly` request resolved to, so `cargo +nightly` works.
+    pub nightly_alias: Option<String>,
 }
 
 impl RustOciHomes {
@@ -1673,10 +1676,18 @@ impl RustOciHomes {
         }
         let sysroot = std::fs::canonicalize(&sysroot)
             .wrap_err_with(|| format!("resolving the sysroot of {}", tv.style()))?;
+        let nightly_alias = (is_dated_nightly(&tv.version) && tv.request.version() != tv.version)
+            .then(|| {
+                let name = sysroot.file_name()?.to_str()?;
+                let host_suffix = name.strip_prefix(tv.version.as_str())?;
+                Some(format!("nightly{host_suffix}"))
+            })
+            .flatten();
         Ok(Self {
             cargo_bin: runtime.homes.cargo_bindir(),
             rustup_home: runtime.homes.rustup.clone(),
             sysroot,
+            nightly_alias,
         })
     }
 }

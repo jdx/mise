@@ -482,6 +482,9 @@ impl Builder {
                 let mut _tool_locks = Vec::new();
                 for tv in &rust_versions {
                     _tool_locks.push(lock_tool_install(tv)?);
+                    // The homes come from the build host even when the tool layer
+                    // itself is reused from the cache image.
+                    require_tool_install(tv)?;
                 }
                 let _state_locks = crate::plugins::core::rust::RustOciHomes::lock_state(&self.cfg)
                     .await
@@ -1642,24 +1645,34 @@ async fn build_rust_homes_layer(
         });
     }
 
-    // A toolchain can also be reached through a symlink, such as the `nightly`
-    // alias for a dated nightly, so keep every entry that resolves to one.
+    // A toolchain can also be reached through a symlink, so keep every entry that
+    // resolves to one. mise's `nightly-<host>` beside a dated nightly is a
+    // separate copy of it, so it is kept by name.
     let sysroots: IndexSet<PathBuf> = homes.iter().map(|h| h.sysroot.clone()).collect();
+    let aliases: IndexSet<&str> = homes
+        .iter()
+        .filter_map(|h| h.nightly_alias.as_deref())
+        .collect();
     let toolchains = first.rustup_home.join("toolchains");
     let mut packaged: IndexSet<PathBuf> = IndexSet::new();
     for entry in std::fs::read_dir(&toolchains)
         .wrap_err_with(|| format!("reading {}", toolchains.display()))?
     {
         let path = entry?.path();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let is_symlink = path.symlink_metadata()?.file_type().is_symlink();
+        let image = format!("{rustup_image}/toolchains/{name}");
+        if !is_symlink && aliases.contains(name.as_str()) {
+            sources.push(layer::LayerSource::Path { host: path, image });
+            continue;
+        }
         let Ok(resolved) = std::fs::canonicalize(&path) else {
             continue;
         };
         if !sysroots.contains(&resolved) {
             continue;
         }
-        let name = path.file_name().unwrap().to_string_lossy().into_owned();
-        let image = format!("{rustup_image}/toolchains/{name}");
-        if path.symlink_metadata()?.file_type().is_symlink() {
+        if is_symlink {
             let target = resolved.file_name().unwrap().to_string_lossy().into_owned();
             sources.push(layer::LayerSource::Symlink {
                 image,
