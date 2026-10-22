@@ -31,6 +31,11 @@ with tarfile.open(fileobj=archive, mode="w:gz") as tar:
     info.size = len(script)
     info.mode = 0o755
     tar.addfile(info, io.BytesIO(script))
+    readme = b"payload documentation\n"
+    info = tarfile.TarInfo("payload/docs/readme")
+    info.size = len(readme)
+    info.mode = 0o644
+    tar.addfile(info, io.BytesIO(readme))
 payload = archive.getvalue()
 ruby = b'''cask "legacy" do
   postflight do
@@ -54,7 +59,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ("/api/cask/legacy.json", "/api/cask/structured.json"):
             token = Path(self.path).stem
             artifacts = [{"binary": ["payload/bin/tool"],
-                          "target": f"{prefix}/bin/{token}"}]
+                          "target": f"{prefix}/bin/{token}"},
+                         {"artifact": ["payload/docs/readme", {
+                             "target": f"{prefix}/share/{token}/readme",
+                         }]}]
             if token == "legacy":
                 artifacts.append({"postflight": None})
             else:
@@ -103,8 +111,12 @@ try:
         print(output, end="", flush=True)
         assert result.returncode == 0, output
         binary = prefix / "bin" / token
-        assert "# postflight ran" in binary.read_text(), "postflight changes were lost"
+        assert binary.read_text().endswith("\n# postflight ran\n"), "postflight changes were lost"
         assert binary.resolve() == prefix / "Caskroom" / token / "1" / "payload/bin/tool"
+        readme_link = prefix / "Caskroom" / token / "1" / "payload/docs/readme"
+        assert readme_link.is_symlink(), "generic artifact symlink was replaced"
+        assert readme_link.resolve() == prefix / "share" / token / "readme"
+        assert readme_link.read_bytes() == readme
         assert subprocess.check_output([str(binary)], text=True) == "ready\n"
 finally:
     server.shutdown()
