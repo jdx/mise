@@ -40,3 +40,17 @@ output=$(mise upgrade dummy 2>&1)
 assert_contains "echo '$output'" "installs/dummy/1.1.0/bin"
 assert_not_contains "echo '$output'" "installs/dummy/1/bin"
 assert_not_contains "echo '$output'" "installs/dummy/1.0.0/bin"
+
+# upgrade --bump installs a new selector while the config still holds the old one
+rm -rf "$MISE_DATA_DIR/installs/dummy" mise.lock
+mise install dummy@1.0.0
+cat <<EOT >mise.toml
+[tools]
+dummy = "1"
+
+[hooks]
+postinstall = "echo HOOK_PATH=\$PATH"
+EOT
+output=$(mise upgrade --bump dummy 2>&1)
+assert_contains "echo '$output'" "installs/dummy/2.0.0/bin"
+assert_not_contains "echo '$output'" "installs/dummy/1/bin"

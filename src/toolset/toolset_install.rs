@@ -546,17 +546,29 @@ impl Toolset {
             let mut hook_ts = self.clone();
             hook_ts.tera_ctx = Default::default();
             for tvl in hook_ts.versions.values_mut() {
+                let sole_entry = tvl.versions.len() == 1;
                 for tv in tvl.versions.iter_mut() {
                     // Take the completed install itself rather than the re-resolved
                     // entry: a lockfile pinning the old version re-resolves `self`
                     // back to it even though the upgrade installed a newer one.
-                    if let Some(done) = installed.iter().find(|d| {
+                    let same_slot = |d: &&ToolVersion| {
                         d.install_satisfied != Some(true)
                             && d.ba().installs_path() == tv.ba().installs_path()
                             && d.request.source() == tv.request.source()
                             && d.request.lockfile_scope() == tv.request.lockfile_scope()
-                            && d.request.version() == tv.request.version()
-                    }) {
+                    };
+                    // `upgrade --bump` installs a new selector while the config still
+                    // holds the old one, so fall back to the only install of a tool
+                    // that is configured once.
+                    let done = installed
+                        .iter()
+                        .filter(same_slot)
+                        .find(|d| d.request.version() == tv.request.version())
+                        .or_else(|| {
+                            let mut slot = installed.iter().filter(same_slot);
+                            slot.next().filter(|_| sole_entry && slot.next().is_none())
+                        });
+                    if let Some(done) = done {
                         *tv = done.clone().with_locked();
                     }
                 }
