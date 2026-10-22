@@ -416,6 +416,20 @@ A variant's `target` overrides the table key. When every variant supplies a
 an absolute or home-relative target path. Every target must be absolute or
 start with `~/`.
 
+A variant's `target` is a template, so a destination can follow a machine's
+configuration, such as an `XDG_CONFIG_HOME` that is not `~/.config`:
+
+```toml
+[dotfiles.examplectl]
+source = "dotfiles/examplectl"
+mode = "symlink"
+variants = [{ default = true, target = "{{ xdg_config_home }}/examplectl" }]
+```
+
+The template has the context every config file gets (`env`, `xdg_config_home`,
+`config_root`, ...), but not `exec()` or `vars`. It must render to an absolute
+or `~/` path. The entry key is not rendered.
+
 When every variant supplies a `target`, you can omit `source`, and mise reads
 the source from the entry key as a path under `dotfiles.root`:
 

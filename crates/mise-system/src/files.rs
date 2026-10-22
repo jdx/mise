@@ -359,6 +359,10 @@ fn validate_file_variants(
     }
     for variant in variants {
         let destination = variant.target.as_deref().unwrap_or(target);
+        // a template is checked once it is rendered, when a variant is selected
+        if variant.target.is_some() && mise_util::tera::contains_template_syntax(destination) {
+            continue;
+        }
         if !variant_target_is_absolute(destination) {
             bail!("variant target must be absolute or start with ~/");
         }
@@ -390,6 +394,25 @@ fn logical_source_path(key: &str) -> Result<PathBuf> {
         bail!("an implied source entry key must not be empty");
     }
     Ok(relative)
+}
+
+/// Render a selected variant `target` with the template context every config
+/// file gets (`env`, `xdg_config_home`, `config_root`, ...), without `exec()`
+/// so a preview cannot run commands, then check the result is a destination.
+fn render_variant_target(target: &str, origin: &ResourceOrigin) -> Result<String> {
+    let rendered = if mise_util::tera::contains_template_syntax(target) {
+        let mut ctx = mise_util::tera::BASE_CONTEXT.clone();
+        ctx.insert("config_root", &origin.config_root);
+        let mut tera = mise_util::tera::get_tera_without_exec(origin.config.parent());
+        mise_util::tera::render_str(&mut tera, target, &ctx)
+            .wrap_err_with(|| format!("variant target {target:?}"))?
+    } else {
+        target.to_string()
+    };
+    if !variant_target_is_absolute(&rendered) {
+        bail!("variant target must be absolute or start with ~/ (rendered {rendered:?})");
+    }
+    Ok(rendered)
 }
 
 /// Inactive variants can contain another platform's absolute path syntax.
@@ -1780,11 +1803,22 @@ fn merge_file_entry(
     use crate::history::select::{self, Selection};
     let target_raw = match select::select(&selectors, &select::active_environments()) {
         Selection::Single => target_raw,
-        Selection::Variant(selected) => variants
-            .iter()
-            .find(|v| v.selector == selected)
-            .and_then(|v| v.target.clone())
-            .unwrap_or(target_raw),
+        Selection::Variant(selected) => {
+            match variants
+                .iter()
+                .find(|v| v.selector == selected)
+                .and_then(|v| v.target.as_deref())
+                .map(|target| render_variant_target(target, origin))
+                .transpose()
+            {
+                Ok(Some(rendered)) => rendered,
+                Ok(None) => target_raw,
+                Err(err) => {
+                    record_invalid(&target_raw, &origin.config, err.to_string(), local);
+                    return;
+                }
+            }
+        }
         Selection::NoMatch => return,
         Selection::Ambiguous(_) => {
             record_invalid(
