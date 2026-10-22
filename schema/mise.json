@@ -160,7 +160,15 @@
               ]
             }
           },
-          "additionalProperties": true
+          "additionalProperties": true,
+          "anyOf": [
+            {
+              "required": ["run"]
+            },
+            {
+              "required": ["run_windows"]
+            }
+          ]
         }
       ]
     },

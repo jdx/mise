@@ -22,7 +22,7 @@ pub use mise_config::bootstrap::{
     BootstrapLinuxSystemdTomlConfig, BootstrapLinuxTomlConfig, BootstrapMacosDefaultsEntry,
     BootstrapMacosLaunchdTomlConfig, BootstrapMacosTomlConfig, BootstrapTomlConfig,
     BootstrapUserTomlConfig, SystemAptTomlConfig, SystemBrewTomlConfig, SystemDnfTomlConfig,
-    hook_commands,
+    hook_commands, merge_hook_commands,
 };
 pub use mise_config::packages::{
     PackageDesiredStateTomlConfig, PackageOptionsTomlConfig, PackageTomlConfig,
@@ -166,11 +166,10 @@ impl BootstrapMerge for BootstrapTomlConfig {
         for (phase, shared) in lower.hooks {
             match self.hooks.entry(phase) {
                 indexmap::map::Entry::Occupied(mut own) => {
-                    if let (Some(mut commands), Some(own_commands)) =
+                    if let (Some(shared), Some(own_commands)) =
                         (hook_commands(shared), hook_commands(own.get().clone()))
                     {
-                        commands.extend(own_commands);
-                        own.insert(toml::Value::Array(commands));
+                        own.insert(merge_hook_commands(shared, own_commands));
                     }
                 }
                 indexmap::map::Entry::Vacant(slot) => {
