@@ -1418,14 +1418,14 @@ fn keep_uv_python_variants(
             };
             let (python, version) = selected_python_receipt(&contents, &receipt)?;
             // The receipt may reach the interpreter through a minor-version symlink
-            // (`python/3.14 -> ./3.14.9`); resolve the directory so it matches the install dir.
+            // (`python/3.14 -> ./3.14.9`), and the data dir may itself be a symlink; compare both
+            // spellings.
             let resolved = resolve_receipt_python(&python);
+            let in_dir = |dir: &Path| receipt_python_in_dir(&python, &resolved, dir);
 
             let identity_install = crate::install_layout::resolver::installs_of(&python_ba)
                 .into_iter()
-                .find(|(_, python_dir)| {
-                    python.starts_with(python_dir) || resolved.starts_with(python_dir)
-                });
+                .find(|(_, python_dir)| in_dir(python_dir));
             if let Some((_, python_dir)) = identity_install {
                 let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&python_dir)
                 else {
@@ -1443,7 +1443,7 @@ fn keep_uv_python_variants(
             }
 
             let legacy_dir = python_ba.installs_path().join(&version);
-            if python.starts_with(&legacy_dir) || resolved.starts_with(&legacy_dir) {
+            if in_dir(&legacy_dir) {
                 needed
                     .entry((python_ba.short.to_string(), version.to_string()))
                     .or_default()
@@ -1469,6 +1469,14 @@ fn keep_uv_python_variants(
         }
     }
     Ok(())
+}
+
+fn receipt_python_in_dir(python: &Path, resolved: &Path, dir: &Path) -> bool {
+    python.starts_with(dir)
+        || resolved.starts_with(dir)
+        || dir
+            .canonicalize()
+            .is_ok_and(|dir| resolved.starts_with(dir))
 }
 
 fn resolve_receipt_python(python: &Path) -> PathBuf {
@@ -1649,6 +1657,21 @@ mod tests {
             resolved,
             concrete.canonicalize().unwrap().join("bin/python")
         );
+        // A symlinked data dir still matches the install dir spelled through it.
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(tmp.path(), &link).unwrap();
+        let python = link.join("python/3.14/bin/python");
+        let resolved = resolve_receipt_python(&python);
+        assert!(receipt_python_in_dir(
+            &python,
+            &resolved,
+            &link.join("python/3.14.9")
+        ));
+        assert!(!receipt_python_in_dir(
+            &python,
+            &resolved,
+            &link.join("python/3.13.1")
+        ));
         // A path that does not exist is left alone rather than failing.
         let missing = tmp.path().join("nope/bin/python");
         assert_eq!(resolve_receipt_python(&missing), missing);
