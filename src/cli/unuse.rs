@@ -149,7 +149,7 @@ impl Unuse {
         } else {
             self.prune_scope(&config, requests).await?
         };
-        if !self.no_prune && !(prune_tools.is_empty() && prune_versions.is_empty()) {
+        if !prune_tools.is_empty() || !prune_versions.is_empty() {
             prune_scoped(
                 &config,
                 prune_tools.iter().map(|ba| ba.as_ref()).collect(),
