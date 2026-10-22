@@ -34,3 +34,11 @@ assert "mise unuse dummy@ref:main"
 assert_fail "ls $MISE_DATA_DIR/installs/dummy/ref-main"
 # the unused sibling was not named, so it stays
 assert "ls $MISE_DATA_DIR/installs/dummy/other"
+
+# A versioned argument whose backend cannot be resolved has nothing to prune and
+# must not fail a command that has already edited the config.
+printf '[tools]\nno-such-tool-xyz = "1.0.0"\n' >mise.toml
+assert "mise unuse --no-prune no-such-tool-xyz@1.0.0"
+printf '[tools]\nno-such-tool-xyz = "1.0.0"\n' >mise.toml
+assert "mise unuse no-such-tool-xyz@1.0.0"
+assert_not_contains "cat mise.toml" "no-such-tool-xyz"

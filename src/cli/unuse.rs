@@ -207,7 +207,12 @@ impl Unuse {
                 tools.push(ta.ba.clone());
                 continue;
             };
-            let backend = ta.ba.backend()?;
+            // The config is already edited, so a backend that cannot be resolved
+            // (a removed plugin, say) leaves nothing to prune rather than failing.
+            let Ok(backend) = ta.ba.backend() else {
+                debug!("no backend for {}, nothing to prune", ta.ba);
+                continue;
+            };
             let installed = backend.list_installed_versions();
             // Same lookup as `mise uninstall`: an installed version of that exact
             // name, else whatever the request resolves to. A ref installs into
