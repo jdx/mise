@@ -530,3 +530,12 @@ EOF
 rm -f mise_dir_hook_ran
 assert_contains "mise bootstrap --dry-run" "echo mise-dir > mise_dir_hook_ran"
 assert_fail "cat mise_dir_hook_ran"
+
+# a namespaced `system:bootstrap` task is not the special `bootstrap` task
+cat <<EOF2 >mise.toml
+[tasks."system:bootstrap"]
+run = "touch namespaced_ran"
+EOF2
+assert_succeed "mise bootstrap --dry-run"
+assert_not_contains "mise bootstrap --dry-run 2>&1" 'running `bootstrap` task'
+assert_fail "test -f namespaced_ran"
