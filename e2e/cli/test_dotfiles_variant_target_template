@@ -21,3 +21,12 @@ mode = "symlink"
 variants = [{ default = true, target = "{{ 'relative' }}/examplectl" }]
 TOML
 assert_contains "mise bootstrap dotfiles status 2>&1" "variant target must be absolute or start with ~/"
+
+# a failed render says why
+cat >mise.toml <<'TOML'
+[dotfiles.undefined]
+source = "dotfiles/examplectl"
+mode = "symlink"
+variants = [{ default = true, target = "{{ no_such_variable }}/examplectl" }]
+TOML
+assert_contains "mise bootstrap dotfiles status 2>&1" "no_such_variable"

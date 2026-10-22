@@ -404,8 +404,12 @@ fn render_variant_target(target: &str, origin: &ResourceOrigin) -> Result<String
         let mut ctx = mise_util::tera::BASE_CONTEXT.clone();
         ctx.insert("config_root", &origin.config_root);
         let mut tera = mise_util::tera::get_tera_without_exec(origin.config.parent());
-        mise_util::tera::render_str(&mut tera, target, &ctx)
-            .wrap_err_with(|| format!("variant target {target:?}"))?
+        mise_util::tera::render_str(&mut tera, target, &ctx).map_err(|err| {
+            eyre::eyre!(
+                "variant target {target:?}: {}",
+                mise_util::tera::error_chain(&err)
+            )
+        })?
     } else {
         target.to_string()
     };
