@@ -350,7 +350,9 @@ pub fn build_layer_from_sources(sources: &[LayerSource], owner: LayerOwner) -> R
     for source in sources {
         match source {
             LayerSource::Path { host, image } => {
-                let metadata = std::fs::symlink_metadata(host)
+                // A host path that is itself a symlink, from a dotfiles manager or
+                // a Nix profile, is packaged as what it points to.
+                let metadata = std::fs::metadata(host)
                     .wrap_err_with(|| format!("reading metadata for {}", host.display()))?;
                 let base = PathBuf::from(image.trim_matches('/'));
                 if base.as_os_str().is_empty() {
