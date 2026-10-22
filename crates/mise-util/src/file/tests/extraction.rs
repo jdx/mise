@@ -605,3 +605,18 @@ fn test_unsupported_extraction_formats_error_clearly() {
     .unwrap_err();
     assert!(format!("{err:#}").contains("lz4 format not supported"));
 }
+
+#[cfg(windows)]
+#[test]
+fn test_reset_dir_mtime_to_now_handles_read_only_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("commit-graph");
+    fs::write(&file, "x").unwrap();
+    let mut permissions = file.metadata().unwrap().permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&file, permissions).unwrap();
+
+    reset_dir_mtime_to_now(dir.path()).unwrap();
+
+    assert!(file.metadata().unwrap().permissions().readonly());
+}

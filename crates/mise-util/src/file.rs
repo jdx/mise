@@ -2413,10 +2413,37 @@ fn reset_dir_mtime_to_now(dir: &Path) -> Result<()> {
     for entry in WalkDir::new(dir) {
         let entry = entry?;
         if entry.file_type().is_file() {
-            set_file_times(entry.path(), now, now)?;
+            set_times_through_readonly(entry.path(), now)?;
         }
     }
     Ok(())
+}
+
+/// Sets a file's times, even when it is read-only. On Windows the times can only be set through
+/// a write handle, which a read-only file (git's `.git/objects` files in a zipped checkout, for
+/// one) refuses with "Access is denied". The attribute is cleared for the call and then restored.
+#[cfg(windows)]
+fn set_times_through_readonly(path: &Path, time: FileTime) -> Result<()> {
+    match set_file_times(path, time, time) {
+        Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+            let permissions = path.metadata()?.permissions();
+            if !permissions.readonly() {
+                return Err(err.into());
+            }
+            let mut writable = permissions.clone();
+            writable.set_readonly(false);
+            fs::set_permissions(path, writable)?;
+            let result = set_file_times(path, time, time);
+            fs::set_permissions(path, permissions)?;
+            Ok(result?)
+        }
+        result => Ok(result?),
+    }
+}
+
+#[cfg(not(windows))]
+fn set_times_through_readonly(path: &Path, time: FileTime) -> Result<()> {
+    Ok(set_file_times(path, time, time)?)
 }
 
 fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
