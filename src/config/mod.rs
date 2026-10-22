@@ -2083,6 +2083,16 @@ fn monorepo_lockfile_root_for(config_files: &ConfigMap) -> Option<PathBuf> {
         return None;
     }
     let monorepo_root = config.root;
+    // The root config's own lockfile stays where it lives without monorepo mode
+    // (`.config/mise.toml` -> `.config/mise.lock`); descendants share it.
+    let (root_lockfile, _) =
+        lockfile::lockfile_path_for_config(config.root_config.get_path(), None);
+    if let Some(dir) = root_lockfile.parent() {
+        MONOREPO_LOCKFILE_DIRS
+            .lock()
+            .unwrap()
+            .insert(monorepo_root.clone(), dir.to_path_buf());
+    }
 
     // An explicit opt-in always routes descendant configs to the root
     // lockfile, even when config_roots cannot be resolved. Avoid expanding
@@ -2097,6 +2107,19 @@ fn monorepo_lockfile_root_for(config_files: &ConfigMap) -> Option<PathBuf> {
         Ok(config_roots) if !config_roots.is_empty() => Some(monorepo_root),
         Ok(_) | Err(_) => None,
     }
+}
+
+static MONOREPO_LOCKFILE_DIRS: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> = Lazy::new(Default::default);
+
+/// The directory holding the shared lockfile of the monorepo rooted at `root`:
+/// the lockfile directory of the config that declares `monorepo_root = true`.
+pub fn monorepo_lockfile_dir(root: &Path) -> PathBuf {
+    MONOREPO_LOCKFILE_DIRS
+        .lock()
+        .unwrap()
+        .get(root)
+        .cloned()
+        .unwrap_or_else(|| root.to_path_buf())
 }
 
 fn monorepo_config_root_dirs_for(
