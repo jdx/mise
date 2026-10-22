@@ -2466,7 +2466,10 @@ impl Bootstrap {
             debug!("bootstrap: `bootstrap` task skipped");
         } else {
             let tasks = config.tasks().await?;
-            if tasks.iter().any(|(_, t)| t.is_match("bootstrap")) {
+            if tasks.iter().any(|(_, t)| {
+                t.aliases.iter().any(|a| a == "bootstrap")
+                    || (!t.name.contains(':') && t.is_match("bootstrap"))
+            }) {
                 info!("bootstrap: running `bootstrap` task");
                 self.run_task("bootstrap", skip.contains(&BootstrapPart::Tools))
                     .await?;
