@@ -449,6 +449,15 @@ impl Manifest {
             .max_by_key(|entry| portable_components(&entry.path))
     }
 
+    /// Whether this machine's path for the enrollment now runs through a
+    /// symlinked parent, which capture cannot read through.
+    fn under_symlinked_parent(&self, entry: &Enrollment) -> bool {
+        super::sync::layout::Roots::current()
+            .locate(&entry.path)
+            .path()
+            .is_some_and(|local| super::tracked::ensure_portable_ancestors(local).is_err())
+    }
+
     /// Carry inactive streams and repository-owned files from the same parent
     /// tree. Paths explicitly untracked since that parent are deliberately not
     /// carried; no live file is removed by this tree construction.
@@ -474,6 +483,10 @@ impl Manifest {
             };
             let carry = match self.owner(&portable) {
                 None => previous.owner(&portable).is_none(),
+                // an enrollment under a symlinked parent is left out of capture
+                // (see `tracking_lenient`): not seeing its files is no evidence
+                // they were deleted, so the last saved contents stay
+                Some(entry) if self.under_symlinked_parent(entry) => true,
                 Some(entry) => {
                     let selected = match super::select::select(&entry.variants, &environments) {
                         super::select::Selection::Single => None,
@@ -1297,6 +1310,56 @@ mod tests {
         assert_eq!(record.tree.roots.len(), 1);
         assert_eq!(record.tree.roots[0].files, 1);
         assert!(record.operation.is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn capture_carries_saved_files_of_an_enrollment_under_a_symlinked_parent() {
+        let roots = crate::history::sync::layout::Roots::current();
+        let temp = tempfile::tempdir_in(&roots.home).unwrap();
+        let real = temp.path().join("real");
+        let alias = temp.path().join("alias");
+        std::fs::create_dir(&real).unwrap();
+        std::os::unix::fs::symlink("real", &alias).unwrap();
+        let Some(repo) =
+            HistoryRepo::open_or_init_in(temp.path().join("history").as_path()).unwrap()
+        else {
+            return;
+        };
+        let path = roots.branch_path(&alias.join("config"), None).unwrap();
+        let manifest = Manifest {
+            enrollment: vec![Enrollment {
+                path: path.clone(),
+                autosave: true,
+                encrypt: false,
+                allow_plaintext: None,
+                variants: vec![],
+                exclude: None,
+                include: None,
+            }],
+            ..Default::default()
+        };
+        let empty = repo.empty_object("tree").unwrap();
+        let saved = repo.hash_blob(b"saved").unwrap();
+        let prior = repo
+            .compose(
+                &empty,
+                &[Overlay {
+                    path: path.clone(),
+                    object: Some(("100644".into(), saved.clone())),
+                }],
+            )
+            .unwrap();
+        let prior = manifest.write(&repo, &prior).unwrap();
+        let parent = repo.commit_tree(&prior, vec![], "initial").unwrap();
+        repo.update_ref(HistoryRepo::HISTORY_REF, &parent, None)
+            .unwrap();
+        // the capture skipped the entry, so its file is absent from the new tree
+        let next = manifest.preserve_other_files(&repo, &empty).unwrap();
+        assert_eq!(
+            repo.object_at(&next, &path).unwrap(),
+            Some(("100644".into(), saved))
+        );
     }
 
     #[test]

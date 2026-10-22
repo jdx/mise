@@ -146,7 +146,16 @@ pub(crate) fn resolve(
             .and_then(|declared| declared.declared_in.clone());
     }
     resolved.required_sources = tracked.required_sources.clone();
-    resolved.invalid.extend(tracked.invalid.iter().cloned());
+    for invalid in &tracked.invalid {
+        // the lenient read may already have reported the same path
+        if !resolved
+            .invalid
+            .iter()
+            .any(|seen| seen.path == invalid.path && seen.reason == invalid.reason)
+        {
+            resolved.invalid.push(invalid.clone());
+        }
+    }
     resolved.invalid_local = tracked.invalid_local.clone();
     resolved.declarations = Some(current.clone());
     resolved.disabled = tracked.disabled.clone();
