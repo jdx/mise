@@ -36,6 +36,7 @@ echo "again" >dots/dot-bashrc
 assert_fail_contains "mise bootstrap dotfiles apply --yes" "both deploy to"
 
 # The option is only meaningful for modes that walk a directory.
+# schema: invalid
 cat <<EOF >mise.toml
 [dotfiles]
 "~/.one" = { source = "dots/dot-bashrc", mode = "symlink", dot_prefix = true }

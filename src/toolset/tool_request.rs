@@ -268,7 +268,7 @@ impl ToolRequest {
             | Self::System { source, .. } => source,
         }
     }
-    pub(crate) fn lockfile_scope(&self) -> &LockfileScope {
+    pub fn lockfile_scope(&self) -> &LockfileScope {
         match self {
             Self::Version { lockfile_scope, .. }
             | Self::Prefix { lockfile_scope, .. }
@@ -279,7 +279,7 @@ impl ToolRequest {
         }
     }
 
-    pub(crate) fn set_lockfile_scope(&mut self, scope: LockfileScope) {
+    pub fn set_lockfile_scope(&mut self, scope: LockfileScope) {
         match self {
             Self::Version { lockfile_scope, .. }
             | Self::Prefix { lockfile_scope, .. }

@@ -1,0 +1,38 @@
+[package]
+name = "mise-ui"
+version = "2026.9.0"
+edition = "2024"
+license = "MIT"
+description = "Terminal UI helpers for mise: progress reports, prompts, tables, and themes"
+repository = "https://github.com/jdx/mise"
+
+[dependencies]
+calm_io = "0.1"
+clx = "3"
+comfy-table = "8"
+console = "0.16"
+demand = "2"
+eyre = "0.6"
+itertools = "0.15"
+log = "0.4"
+mise-settings = { path = "../mise-settings", version = "2026" }
+mise-util = { path = "../mise-util", version = "2026", default-features = false }
+regex = "1"
+shell-words = "1"
+strum = { version = "0.28", features = ["derive"] }
+tabled = { version = "0.22", features = ["ansi"] }
+tokio = { version = "1", features = ["full"] }
+xx = { version = "2", default-features = false }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", features = ["signal", "user"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Console",
+] }
+
+[package.metadata.cargo-machete]
+# `xx::regex!` expands to `regex::Regex`, which cargo-machete cannot see.
+ignored = ["regex"]

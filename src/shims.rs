@@ -22,6 +22,10 @@ use tokio::task::JoinSet;
 
 #[cfg(any(windows, test))]
 const NATIVE_SHIM_MARKER: &[u8] = include_bytes!("assets/native-shim-marker");
+/// Opens the `mise-shim-version:<release>\n` tag `crates/mise-shim/build.rs` embeds, shared with it
+/// so the scan in `native_shim_version` cannot drift from what the shim carries.
+#[cfg(any(windows, test))]
+const NATIVE_SHIM_VERSION_PREFIX: &str = include_str!("assets/native-shim-version-prefix");
 const GENERATED_SHELL_SHIM_HEADER: &str = "#!/bin/sh\n# mise generated shim\n";
 #[cfg(any(windows, test))]
 const GENERATED_WINDOWS_CMD_SHIM_HEADER: &str = "@echo off\r\nrem mise generated shim\r\n";
@@ -195,7 +199,7 @@ pub fn shim_farm_dirs() -> Vec<PathBuf> {
 /// version list. Once every lazy declaration is installed there is nothing left to
 /// write, and the function returns before locating the mise binary, so that steady
 /// state costs only the option checks.
-pub fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
+pub async fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
     let mut bins_by_dir = BTreeMap::<PathBuf, Vec<String>>::new();
     let mut lazy_bins_error = None;
     for tv in missing {
@@ -224,6 +228,10 @@ pub fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
         // actually needs a shim.
         let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
         let excluded = &Settings::get().shims.exclude;
+        // Same in-process serialization as `reshim_for`: a bootstrap write that
+        // blocks on the shims file lock would starve a reshim in this process
+        // that holds it.
+        let _in_process_lock = RESHIM_LOCK.lock().await;
         for (shims_dir, bins) in bins_by_dir {
             // Bootstrap shims are written outside the reshim path, so they need the
             // same exclusion filter get_desired_shims applies, or a `mise env`/`x`/`run`
@@ -350,6 +358,8 @@ fn is_permission_denied(err: &eyre::Report) -> bool {
     })
 }
 
+static RESHIM_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 pub async fn reshim_for(
     config: &Arc<Config>,
     ts: &Toolset,
@@ -368,6 +378,12 @@ pub async fn reshim_for(
         ShimScope::User | ShimScope::Both => user_shims,
         ShimScope::System => system_shims,
     };
+    // The file lock below blocks its thread and is held across awaits. Concurrent
+    // reshims in this process (parallel tasks installing tools) can share a
+    // thread, so a second one blocking in `lock()` would starve the first, which
+    // holds the lock, of the thread it needs to finish. Serialize them here
+    // first, awaiting instead of blocking.
+    let _in_process_lock = RESHIM_LOCK.lock().await;
     let _lock = LockFile::new(&shims_dir)
         .with_callback(|l| {
             trace!("reshim callback {}", l.display());
@@ -381,6 +397,15 @@ pub async fn reshim_for(
     let shim_mode = effective_shim_mode(&mise_bin);
     #[cfg(not(windows))]
     let shim_mode = String::new();
+    // "exe" shims are copies of the template, so say why rebuilding them changes nothing when the
+    // template is the problem (`mise doctor` reports the same). A stale template still works for
+    // most tools, so this is a warning, not a failed reshim.
+    #[cfg(windows)]
+    if shim_mode == "exe"
+        && let Some(stale) = stale_native_shim_template(&mise_bin)
+    {
+        warn_once!("{}", stale.message());
+    }
     let shim_mode_changed = cfg!(windows) && {
         let mode_file = shims_dir.join(".mode");
         mode_file
@@ -1056,6 +1081,28 @@ pub fn validate_wrapper_names<'a>(names: impl IntoIterator<Item = &'a String>) -
     Ok(())
 }
 
+/// The mise executable to re-invoke from a subprocess.
+///
+/// `current_exe()` is the path mise was launched through on some platforms (macOS), so when a tool
+/// shim triggered the run it names the shim (`jq`), not mise. Fall back to the real mise then.
+pub fn running_mise_bin() -> PathBuf {
+    let is_mise = |p: &Path| {
+        p.file_name()
+            .is_some_and(|n| env::is_mise_binary(&n.to_string_lossy()))
+    };
+    if let Ok(exe) = std::env::current_exe() {
+        if is_mise(&exe) {
+            return exe;
+        }
+        // Unix tool shims are symlinks to mise, so resolving one finds it even when no mise is on PATH.
+        let resolved = file::canonicalize_or_self(&exe);
+        if is_mise(&resolved) {
+            return resolved;
+        }
+    }
+    mise_bin_for_shims()
+}
+
 /// Resolve the mise executable that Unix symlink shims should target.
 ///
 /// Snap exposes applications through `/snap/bin`, where each command is a symlink to the
@@ -1174,6 +1221,91 @@ pub fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
     // Note: file::which on Windows checks extension only, not file existence,
     // so we must verify the file actually exists.
     file::which("mise-shim.exe").filter(|p| p.is_file())
+}
+
+/// A `mise-shim.exe` template older than the mise that copies "exe" shims from it.
+///
+/// Package managers replace `mise.exe` without always refreshing the `mise-shim.exe` beside it, and
+/// `mise reshim --force` copies whatever template it finds, so every rebuilt shim keeps the old
+/// launcher and its bugs (one older than 2026.7.8 has no recursion guard and loops forever through
+/// a command wrapper, discussion #14494). Nothing else reports this: the `.version` marker in the
+/// shims dir tracks the mise that ran reshim, not the template.
+#[cfg(any(windows, test))]
+pub struct StaleNativeShimTemplate {
+    pub path: PathBuf,
+    /// The mise release the template shipped with; `None` for a build older than the tag itself.
+    pub version: Option<String>,
+}
+
+#[cfg(any(windows, test))]
+impl StaleNativeShimTemplate {
+    pub fn message(&self) -> String {
+        let mise_version = env!("CARGO_PKG_VERSION");
+        let age = match &self.version {
+            Some(version) => format!("it is from mise {version}"),
+            None => "it has no version tag, so it predates this check".to_string(),
+        };
+        format!(
+            "mise-shim.exe at {} is older than mise {mise_version}: {age}\n\
+             shims copied from it keep the old launcher, however often `mise reshim --force` runs\n\
+             update mise with the package manager that installed it (or `mise self-update`) so mise-shim.exe is replaced too, then run `mise reshim --force`",
+            display_path(&self.path)
+        )
+    }
+}
+
+/// The mise release embedded in a `mise-shim.exe`, or `None` for a shim built before mise tagged it.
+#[cfg(any(windows, test))]
+fn native_shim_version(contents: &[u8]) -> Option<String> {
+    let prefix = NATIVE_SHIM_VERSION_PREFIX.trim().as_bytes();
+    let is_release = |version: &str| {
+        !version.is_empty()
+            && version
+                .split('.')
+                .all(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
+    };
+    contents
+        .windows(prefix.len())
+        .enumerate()
+        .filter(|(_, window)| *window == prefix)
+        .find_map(|(start, _)| {
+            let rest = &contents[start + prefix.len()..];
+            let end = rest.iter().take(64).position(|b| *b == b'\n')?;
+            std::str::from_utf8(&rest[..end])
+                .ok()
+                .filter(|version| is_release(version))
+                .map(str::to_string)
+        })
+}
+
+/// Whether the template at `path`, with these `contents`, is older than `mise_version`.
+#[cfg(any(windows, test))]
+fn stale_native_shim_template_from(
+    path: &Path,
+    contents: &[u8],
+    mise_version: &str,
+) -> Option<StaleNativeShimTemplate> {
+    let version = native_shim_version(contents);
+    let stale = version
+        .as_deref()
+        .is_none_or(|version| crate::version::version_lt(version, mise_version));
+    stale.then(|| StaleNativeShimTemplate {
+        path: path.to_path_buf(),
+        version,
+    })
+}
+
+/// The `mise-shim.exe` that "exe" shims for `mise_bin` are copied from, when it is older than this
+/// mise. `None` outside "exe" mode, without a template (`effective_shim_mode` reports that), or when
+/// the template is current.
+#[cfg(windows)]
+pub fn stale_native_shim_template(mise_bin: &Path) -> Option<StaleNativeShimTemplate> {
+    if Settings::get().windows_shim_mode != "exe" {
+        return None;
+    }
+    let path = find_mise_shim_bin(mise_bin)?;
+    let contents = fs::read(&path).ok()?;
+    stale_native_shim_template_from(&path, &contents, env!("CARGO_PKG_VERSION"))
 }
 
 /// Resolve the effective Windows shim mode, falling back to "file" if "exe" is
@@ -1633,6 +1765,23 @@ async fn get_desired_shims(
         if !shim_scope_contains_request(scope, request) {
             continue;
         }
+        match request.lazy_bins() {
+            Ok(Some(bins)) => shims.extend(
+                bins.into_iter()
+                    .flat_map(|bin| platform_shim_names(_mise_bin, &bin)),
+            ),
+            Ok(None) => {}
+            Err(err) if strict_lazy_bins => return Err(err),
+            Err(err) => warn!("Skipping invalid lazy shim declaration: {err:#}"),
+        }
+    }
+    // A task's own lazy tools are not in the config a nested `mise install` reloads,
+    // so keep their bootstrap shims instead of pruning them as extra.
+    for request in task_tool_args_from_env()?
+        .iter()
+        .filter_map(|arg| arg.tvr.as_ref())
+        .filter(|request| shim_scope_contains_request(scope, request))
+    {
         match request.lazy_bins() {
             Ok(Some(bins)) => shims.extend(
                 bins.into_iter()
@@ -2786,6 +2935,52 @@ mod tests {
 
         fs::write(&shim, "#!/bin/sh\necho user-script\n").unwrap();
         assert!(!is_mise_shim(&shim, &mise_bin).unwrap());
+    }
+
+    #[test]
+    fn native_shim_version_reads_the_embedded_tag() {
+        let tagged = |version: &str| {
+            format!(
+                "\0junk{}{version}\n\0more",
+                NATIVE_SHIM_VERSION_PREFIX.trim()
+            )
+            .into_bytes()
+        };
+        assert_eq!(
+            native_shim_version(&tagged("2026.10.13")).as_deref(),
+            Some("2026.10.13")
+        );
+        // The prefix alone, as mise's own binary carries it, is not a version.
+        assert_eq!(native_shim_version(&tagged("")), None);
+        assert_eq!(native_shim_version(&tagged("latest")), None);
+        assert_eq!(native_shim_version(NATIVE_SHIM_MARKER), None);
+        assert_eq!(
+            native_shim_version(b"mise-shim: failed to execute mise"),
+            None
+        );
+        // An unterminated tag is not trusted: the bytes after it could be anything.
+        let unterminated = format!("{}2026.10.13", NATIVE_SHIM_VERSION_PREFIX.trim());
+        assert_eq!(native_shim_version(unterminated.as_bytes()), None);
+    }
+
+    #[test]
+    fn stale_native_shim_template_compares_the_tag_with_mise() {
+        let path = Path::new("C:\\mise\\bin\\mise-shim.exe");
+        let tagged = |version: &str| {
+            format!("{}{version}\n", NATIVE_SHIM_VERSION_PREFIX.trim()).into_bytes()
+        };
+        let stale = |contents: &[u8]| stale_native_shim_template_from(path, contents, "2026.10.13");
+
+        assert!(stale(&tagged("2026.10.13")).is_none());
+        assert!(stale(&tagged("2026.11.0")).is_none());
+        let older = stale(&tagged("2026.7.0")).expect("an older tag is stale");
+        assert_eq!(older.version.as_deref(), Some("2026.7.0"));
+        assert_eq!(older.path, path);
+        assert!(older.message().contains("it is from mise 2026.7.0"));
+        let untagged = stale(NATIVE_SHIM_MARKER).expect("a build without the tag is stale");
+        assert_eq!(untagged.version, None);
+        assert!(untagged.message().contains("no version tag"));
+        assert!(untagged.message().contains("mise reshim --force"));
     }
 
     #[test]

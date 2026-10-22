@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/mise-cache-core",
+  "crates/mise-tls",
   "crates/mise-brew-relocation",
   "crates/mise-agent-env",
   "crates/mise-brew-metadata",
@@ -13,16 +14,22 @@ members = [
   "crates/mise-sigstore",
   "crates/mise-settings",
   "crates/mise-util",
+  "crates/mise-ui",
+  "crates/mise-system-packages",
+  "crates/mise-daemons",
+  "crates/mise-oci",
+  "crates/mise-system",
+  "crates/mise-config",
   "crates/mise-dotenv",
+  "crates/mise-lsp",
 ]
 
 [package]
 name = "mise"
-version = "2026.10.10"
+version = "2026.10.17"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
-homepage = "https://mise.jdx.dev"
 documentation = "https://mise.jdx.dev"
 repository = "https://github.com/jdx/mise"
 readme = "README.md"
@@ -40,17 +47,13 @@ include = [
   "/docs/public/android-chrome-512x512.png",
   "/minisign.pub",
   "/registry/*.toml",
-  "/registry/daemon-presets/*.toml",
   "/schema/mise.json",
   "/zipsign.pub",
   "/src/**/*.rs",
-  "/src/system/history/notify/macos.m",
-  "/src/system/history/notify/macos.plist",
   "/src/enclave/macos.swift",
   "/src/enclave/macos.plist",
   "/src/assets/**",
   "/src/plugins/core/assets/**",
-  "/src/system/packages/brew/*.rb",
   "/vendor/aqua-registry/LICENSE",
   "/vendor/aqua-registry/metadata.json",
   "/vendor/aqua-registry/registry.yml",
@@ -131,22 +134,25 @@ console = "0.16"
 contracts = "0.6"
 dashmap = "6"
 demand = "2"
-diffy = "0.5"
 mise-dotenv = { path = "crates/mise-dotenv", version = "0.1" }
 duct = "1"
 dunce = "1"
 expr-lang = "2"
 stacker = "0.1"
 eyre = "0.6"
-file-id = "0.2"
 filetime = "0.2"
 flate2 = "1"
 futures-util = "0.3"
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
+mise-tls = { path = "crates/mise-tls", version = "0.1", default-features = false }
 mise-settings = { path = "crates/mise-settings", version = "2026" }
+mise-daemons = { path = "crates/mise-daemons", version = "0.1" }
+mise-lsp = { path = "crates/mise-lsp", version = "0.1" }
+mise-oci = { path = "crates/mise-oci", version = "0.1" }
+mise-system = { path = "crates/mise-system", version = "0.1" }
+mise-config = { path = "crates/mise-config", version = "0.1" }
+mise-ui = { path = "crates/mise-ui", version = "2026" }
 mise-util = { path = "crates/mise-util", version = "2026", default-features = false }
-mise-brew-metadata = { path = "crates/mise-brew-metadata", version = "0.1" }
-mise-bootstrap = { path = "crates/mise-bootstrap", version = "0.1" }
 fslock = "0.2"
 gix = { version = "<1", default-features = false, features = [
   "max-performance-safe",
@@ -166,7 +172,6 @@ hex = "0.4"
 http = "1"
 indenter = "0.3"
 indexmap = { version = "2", features = ["serde"] }
-ipnet = { version = "2", features = ["serde"] }
 clx = "3"
 indoc = "2"
 itertools = "0.15"
@@ -180,18 +185,16 @@ nodejs-semver = "7"
 notify = { version = "8", default-features = false, features = [
   "macos_fsevent",
 ] }
-notify-debouncer-full = { version = "0.7", default-features = false }
 num_cpus = "1"
 once_cell = "1"
 packslip = { version = "1.5", default-features = false }
 openssl = { version = "0.10", optional = true }
 path-absolutize = "4"
-pathdiff = "0.2"
 petgraph = "0.8"
 phf = "0.14"
 rand = "0.10"
-rattler = { version = "0.53", default-features = false }
-rattler_conda_types = { version = "0.56", default-features = false }
+rattler = { version = "0.54", default-features = false }
+rattler_conda_types = { version = "0.57", default-features = false }
 rattler_repodata_gateway = { version = "0.36", default-features = false, features = [
   "gateway",
 ] }
@@ -201,7 +204,6 @@ rattler_solve = { version = "11", default-features = false, features = [
 rattler_package_streaming = { version = "0.27", default-features = false }
 rattler_virtual_packages = { version = "8", default-features = false }
 regex = "1"
-plist = "1"
 reflink-copy = "0.1"
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
@@ -251,15 +253,11 @@ tera = "2"
 tera1 = { package = "tera", version = "1" }
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-tokio-util = { version = "0.7", features = ["io", "rt"] }
 toml = { version = "1", features = ["parse", "preserve_order"] }
 toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.12", default-features = false }
-unicase = "2"
-unicode-normalization = "0.1"
 url = "2"
 urlencoding = "2"
-uuid = { version = "1", features = ["v7"] }
 usage-lib = { version = "7.0", features = ["docs"] }
 versions = { version = "8", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
@@ -268,7 +266,7 @@ mise-interactive-config = { path = "crates/mise-interactive-config", version = "
 walkdir = "2"
 which = "8"
 xx = { version = "2", default-features = false, features = ["glob"] }
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 zstd = "0.14"
 opentelemetry = { version = "0.33", default-features = false, features = [
   "trace",
@@ -295,7 +293,6 @@ zipsign-api = { version = "0.2", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
-mise-brew-relocation = { path = "crates/mise-brew-relocation", version = "0.1" }
 nix = { version = "0.31", features = [
   "dir",
   "feature",
@@ -306,10 +303,6 @@ nix = { version = "0.31", features = [
   "term",
   "user",
 ] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-core-foundation = "0.10"
-core-foundation-sys = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["consoleapi", "minwindef"] }
@@ -331,19 +324,18 @@ windows-sys = { version = "0.61", features = [
 [build-dependencies]
 aqua-registry = { path = "crates/aqua-registry" }
 built = { version = "0.8", features = ["chrono"] }
-cc = "1"
 cfg_aliases = "0.2"
 eyre = "0.6"
 phf_codegen = "0.14"
 regex = "1"
 semver = "1"
 serde = { version = "1", features = ["derive"] }
-serde-saphyr = "1"
+serde-saphyr = "2"
 toml = "1"
 
 [dev-dependencies]
-ctor = "1"
 insta = { version = "1", features = ["filters", "json"] }
+jsonschema = { version = "0.59", default-features = false }
 mockito = "1"
 opentelemetry_sdk = { version = "0.33", default-features = false, features = [
   "testing",
@@ -375,6 +367,7 @@ rustls = [
   "ubi/rustls-tls",
   "vfox/rustls",
   "xx/rustls",
+  "mise-tls/rustls",
 ]
 rustls-native-roots = [
   "gix/blocking-http-transport-reqwest-rust-tls",
@@ -386,6 +379,7 @@ rustls-native-roots = [
   "ubi/rustls-tls",
   "vfox/rustls-native-roots",
   "xx/rustls-native-roots",
+  "mise-tls/rustls",
 ]
 
 [package.metadata.binstall]
@@ -404,8 +398,8 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ 
 [package.metadata.cargo-machete]
 ignored = [
   "aws-lc-rs",
+  "gix",
   "built",
-  "cc", # Used by build.rs for the macOS notification helper.
   "cfg_aliases",
   "openssl",
   "phf_codegen",

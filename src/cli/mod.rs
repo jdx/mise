@@ -79,6 +79,7 @@ mod local;
 pub(crate) mod lock;
 mod ls;
 mod ls_remote;
+mod lsp;
 mod mcp;
 mod oci;
 mod outdated;
@@ -362,6 +363,7 @@ pub(crate) enum Commands {
     Lock(lock::Lock),
     Ls(ls::Ls),
     LsRemote(ls_remote::LsRemote),
+    Lsp(lsp::Lsp),
     Mcp(mcp::Mcp),
     Oci(oci::Oci),
     Packslip(packslip::Packslip),
@@ -454,6 +456,7 @@ impl Commands {
                 | Self::HookEnv(_)
                 | Self::HookNotFound(_)
                 | Self::Implode(_)
+                | Self::Lsp(_)
                 | Self::PublishSystemInstall(_)
                 | Self::SelfUpdate(_)
                 | Self::ToolUpdate(_)
@@ -475,6 +478,7 @@ impl Commands {
                 | Self::Deactivate(_)
                 | Self::HookEnv(_)
                 | Self::HookNotFound(_)
+                | Self::Lsp(_)
                 | Self::PublishSystemInstall(_)
                 | Self::Ssh(_)
                 | Self::ToolUpdate(_)
@@ -534,6 +538,7 @@ impl Commands {
             Self::Lock(cmd) => Box::pin(cmd.run()),
             Self::Ls(cmd) => Box::pin(cmd.run()),
             Self::LsRemote(cmd) => Box::pin(cmd.run()),
+            Self::Lsp(cmd) => Box::pin(cmd.run()),
             Self::Mcp(cmd) => Box::pin(cmd.run()),
             Self::Oci(cmd) => Box::pin(cmd.run()),
             Self::Packslip(cmd) => Box::pin(cmd.run()),
@@ -1112,20 +1117,23 @@ impl Cli {
         measure!("add_cli_matches", {
             Settings::add_cli_matches(cli.settings_layer(command_local))
         });
-        if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_repair()) {
-            // These file-only edits must remain available when the values they fix would fail
-            // settings loading. Honor directory selection without loading those settings.
-            if let Some(cd) = cli
-                .cd
-                .clone()
-                .or_else(|| std::env::var_os("MISE_CD").map(PathBuf::from))
-            {
+        let cd = cli
+            .cd
+            .clone()
+            .or_else(|| std::env::var_os("MISE_CD").map(PathBuf::from));
+        if matches!(&cli.command, Some(Commands::Settings(cmd)) if cmd.is_repair())
+            || matches!(&cli.command, Some(Commands::Config(cmd)) if cmd.is_file_only(cd.as_deref()))
+        {
+            // These file-only commands must remain available when the settings they read or fix
+            // would fail to load. Honor directory selection without loading those settings.
+            if let Some(cd) = cd {
                 crate::env::set_current_dir(cd)?;
             }
-            let Some(Commands::Settings(cmd)) = cli.command.take() else {
-                unreachable!("settings repair command was checked");
+            return match cli.command.take() {
+                Some(Commands::Settings(cmd)) => cmd.run().await,
+                Some(Commands::Config(cmd)) => cmd.run().await,
+                _ => unreachable!("a file-only command was checked"),
             };
-            return cmd.run().await;
         }
         // Propagated, not discarded: this is where `--cd` is actually applied, and a directory
         // that passed the checks above can still refuse the `chdir` — no execute permission, or a

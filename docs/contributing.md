@@ -99,7 +99,7 @@ with the default features only.
 git clone https://github.com/jdx/mise.git
 cd mise
 mise trust
-mise install                     # the project's tools: mbx, hk, usage, prettier, shellcheck, ...
+mise install                     # the project's tools: mbx, hk, usage, oxfmt, shellcheck, ...
 mise exec -- hk install --mise   # optional: run the linters as a Git pre-commit hook
 mise run build
 target/debug/mise --version
@@ -193,7 +193,7 @@ runs. `mise run release-plz` refuses to run outside GitHub Actions.
 
 ## Linting and formatting {#linting-and-formatting}
 
-[`hk.pkl`](https://github.com/jdx/mise/blob/main/hk.pkl) configures Prettier,
+[`hk.pkl`](https://github.com/jdx/mise/blob/main/hk.pkl) configures oxfmt,
 markdownlint, taplo, ShellCheck, shfmt, stylua, lua-language-server,
 `cargo fmt`, `cargo check`, and JSON schema validation.
 
@@ -205,7 +205,7 @@ mise exec -- hk check --pr  # check only the files your branch changed
 
 `hk install --mise` runs the same fixes as a Git pre-commit hook and stashes
 unstaged changes while it runs. On Windows, `lint-fix` runs only Clippy,
-Prettier, and `cargo fmt`.
+oxfmt, and `cargo fmt`.
 
 ### Clippy {#clippy}
 
@@ -249,6 +249,19 @@ so the change cannot leak into a later test.
 `mise run test:shuffle` runs the unit tests in random order to catch tests
 that depend on order. It needs a nightly toolchain (`cargo +nightly`); you do
 not have to change your default toolchain.
+
+### Schema conformance {#schema-conformance}
+
+`schema/mise.json` is generated from the declaration types in
+`crates/mise-config`, not from the parser, so a unit test checks it against the
+parser: `cargo test schema_matches_parser` parses every `toml` block in `docs/`
+and every mise config an E2E test writes with a heredoc, validates each against
+the schema, and fails when the two disagree. Fix the schema, then run
+`mise run render:schema`. An E2E config that mise refuses on purpose gets a
+`# schema: invalid` comment on the line above its heredoc, and the test then
+checks that the schema rejects it too; `# schema: skip` leaves a heredoc out.
+A deliberate difference goes in the `GAPS` list in
+`src/config/config_file/mise_toml/schema_conformance.rs`, with its reason.
 
 ### E2E tests {#e2e-tests}
 
@@ -454,6 +467,7 @@ entry becomes three things: a field of the Rust `Settings` type, which
 [settings reference](/configuration/settings.html), which renders
 `settings.toml` when the site builds.
 
+<!-- schema: skip -->
 ```toml
 [http_timeout]
 default = "30s"
@@ -471,7 +485,7 @@ A dotted name, such as `[task.output]`, nests the setting, and the Rust field
 follows it: `Settings::get().task.output`. The keys of an entry:
 
 - `type`: `Bool`, `String`, `Integer`, `Duration`, `Path`, `Url`,
-  `ListString`, `ListPath`, `SetString`, or `BoolOrString`.
+  `ListString`, `ListPath`, `SetString`, `BoolOrString`, or `BoolOrList`.
 - `description`: one plain sentence, shown by
   `mise settings ls --json-extended`, editor completions, and the schema. For a
   boolean, say what `true` does.

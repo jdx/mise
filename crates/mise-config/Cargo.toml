@@ -1,0 +1,21 @@
+[package]
+name = "mise-config"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "The mise.toml declaration types"
+repository = "https://github.com/jdx/mise"
+
+[dependencies]
+eyre = "0.6"
+indexmap = { version = "2", features = ["serde"] }
+mise-bootstrap = { path = "../mise-bootstrap", version = "0.1" }
+schemars = { version = "1", features = ["indexmap2", "preserve_order"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_ignored = "0.1"
+shell-words = "1"
+strum = { version = "0.28", features = ["derive"] }
+toml = { version = "1", features = ["parse", "preserve_order"] }
+toml_edit = { version = "0.25", default-features = false }
+versions = "8"

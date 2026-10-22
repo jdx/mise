@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use rops::file::format::{JsonFileFormat, TomlFileFormat, YamlFileFormat};
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::Arc,
 };
 
@@ -126,19 +126,102 @@ impl<'de> serde::Deserialize<'de> for YamlEnvValue {
     }
 }
 
+/// Resolves `.` and `..` components lexically, so the parents of `/repo/pkg/..` are those of
+/// `/repo`, not `/repo/pkg`.
+fn normalize_dots(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 impl EnvResults {
     pub(super) async fn file(
         ctx: &mut EnvDirectiveContext<'_>,
-        input: String,
+        inputs: Vec<String>,
         expand: bool,
+        find_up: bool,
     ) -> Result<IndexMap<PathBuf, EnvMap>> {
         let mut out = IndexMap::new();
-        let s = ctx.parse_template("_.file", &input)?;
+        let mut patterns = Vec::with_capacity(inputs.len());
+        for input in &inputs {
+            patterns.push(PathBuf::from(ctx.parse_template("_.file", input)?));
+        }
+        let has_glob = patterns
+            .iter()
+            .any(|pattern| crate::config::is_glob_pattern(&pattern.to_string_lossy()));
         let expand = expand && crate::config::Settings::get().env_shell_expand;
         // Accumulate loaded vars so opted-in expansion can reference values from
         // an earlier file in the same directive or an earlier env block.
         let mut acc: TeraEnvMap = ctx.exec_env.clone();
-        for p in xx::file::glob(ctx.normalize_path(s.into())).unwrap_or_default() {
+        let paths: Vec<PathBuf> = if find_up {
+            // A file turning up in a parent directory is not in the env cache key.
+            ctx.results.has_uncacheable = true;
+            // A relative name starts at the config root, like every other relative path in a
+            // config. An absolute path, such as `{{cwd}}/.env`, starts at its own directory and
+            // searches for its file name. Consecutive names with the same start are searched
+            // together, directory by directory, and groups apply in the order written.
+            let mut groups: Vec<(PathBuf, Vec<PathBuf>)> = Vec::new();
+            for pattern in &patterns {
+                let pattern = file::replace_path(pattern);
+                let (start, name) = if pattern.is_absolute() {
+                    match (pattern.parent(), pattern.file_name()) {
+                        (Some(dir), Some(name)) => (normalize_dots(dir), PathBuf::from(name)),
+                        _ => continue,
+                    }
+                } else {
+                    (ctx.config_root.to_path_buf(), pattern)
+                };
+                match groups.last_mut() {
+                    Some((dir, names)) if *dir == start => names.push(name),
+                    _ => groups.push((start, vec![name])),
+                }
+            }
+            let mut paths = Vec::new();
+            for (start, names) in groups {
+                // Walk the nearest directory first and the later name first, then reverse, so the
+                // loader sees the farthest directory first, and within one directory the names in
+                // the order written. The file nearest the start then wins, and within one
+                // directory a later name wins. A single name is the same walk with one name.
+                let mut nearest_first = Vec::new();
+                for dir in start.ancestors() {
+                    for name in names.iter().rev() {
+                        let mut matches = xx::file::glob(dir.join(name)).unwrap_or_default();
+                        matches.reverse();
+                        nearest_first.extend(matches);
+                    }
+                }
+                paths.extend(nearest_first.into_iter().rev());
+            }
+            paths
+        } else {
+            patterns
+                .into_iter()
+                .flat_map(|pattern| xx::file::glob(ctx.normalize_path(pattern)).unwrap_or_default())
+                .collect()
+        };
+        // A global entry that names its file outright is the operator's own choice. One that
+        // searches upward, or a glob, can find files in repositories, so those need approval like
+        // project config.
+        let operator_owned = !find_up && !has_glob && crate::config::is_global_config(ctx.source);
+        for p in paths {
+            if !operator_owned
+                && !crate::config::config_file::env_file_trust_check_from(&p, Some(ctx.source))?
+            {
+                // Trusting the file later changes nothing the cache key sees. A file that is not
+                // there has nothing to trust.
+                if p.exists() {
+                    ctx.results.has_uncacheable = true;
+                }
+                continue;
+            }
             let config = ctx.config;
             let exec_env = ctx.exec_env;
             // The loaders expand templates in values read from the file and do
@@ -176,6 +259,10 @@ impl EnvResults {
                     acc.insert(k.clone(), v.clone());
                 }
             }
+            // A file named twice, or matched by overlapping globs, loads each time so that a file
+            // between the two can still expand values from it, but it ends up at its last position.
+            // The result is keyed by path, so a plain insert would keep its first place.
+            out.shift_remove(&p);
             out.insert(p, loaded);
         }
         Ok(out)

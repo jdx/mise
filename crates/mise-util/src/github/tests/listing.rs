@@ -475,3 +475,54 @@ fn test_list_tags_with_dates_sends_auth_on_every_page() {
         assert!(tags.iter().all(|t| t.date.is_none()));
     });
 }
+
+// A repository with thousands of tags must not cost a commit request per tag:
+// the known-dates listing pages the tags and leaves the dates to `tag_commit_date`.
+#[test]
+fn test_list_tags_with_known_dates_makes_no_commit_requests() {
+    with_token_lock(async {
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let api = ghes_api_url(&base);
+        let repo = "owner/known-dates-no-commits";
+        let commit_url = format!("{api}/repos/{repo}/git/commits/abc");
+        let body = serde_json::json!([
+            {"name": "v2.0.0", "commit": {"sha": "abc", "url": commit_url}},
+            {"name": "v1.0.0", "commit": {"sha": "abc", "url": commit_url}},
+        ]);
+        let tags_mock = server
+            .mock("GET", format!("{API_PATH}/repos/{repo}/tags").as_str())
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body.to_string())
+            .expect(1)
+            .create_async()
+            .await;
+        let commit_mock = server
+            .mock("GET", mockito::Matcher::Regex("git/commits".into()))
+            .expect(0)
+            .create_async()
+            .await;
+
+        let tags = list_tags_with_known_dates_(&api, repo, true).await.unwrap();
+        tags_mock.assert_async().await;
+        commit_mock.assert_async().await;
+        assert_eq!(
+            tags.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+            ["v2.0.0", "v1.0.0"]
+        );
+        assert!(tags.iter().all(|t| t.date.is_none()));
+    });
+}
+
+#[test]
+fn test_tag_commit_url_encodes_reserved_characters() {
+    assert_eq!(
+        tag_commit_url("https://api.github.com", "o/r", "release/v1#x?%"),
+        "https://api.github.com/repos/o/r/commits/release/v1%23x%3F%25"
+    );
+}

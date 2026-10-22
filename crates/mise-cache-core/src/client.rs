@@ -23,11 +23,12 @@ impl RemoteCacheClient {
                 .as_deref()
                 .is_some_and(|audience| !audience.trim().is_empty());
         validate_remote_url(&config.base_url, authenticated)?;
-        let client = reqwest::Client::builder()
-            .connect_timeout(config.connect_timeout)
-            .read_timeout(config.read_timeout)
-            .redirect(reqwest::redirect::Policy::none())
-            .build()?;
+        let client = mise_tls::build_client(|| {
+            reqwest::Client::builder()
+                .connect_timeout(config.connect_timeout)
+                .read_timeout(config.read_timeout)
+                .redirect(reqwest::redirect::Policy::none())
+        })?;
         let credential = remote_credential(&config, client.clone())?;
         Ok(Self {
             base_url: normalized_base_url(config.base_url),

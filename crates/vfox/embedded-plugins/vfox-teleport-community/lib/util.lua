@@ -51,7 +51,8 @@ function util.get_versions()
   for _, release in ipairs(json.decode(resp.body)) do
     local version = release.tag_name:match("^v(%d+%.%d+%.%d+)$")
     if version then
-      table.insert(versions, { version = version })
+      local created_at = type(release.published_at) == "string" and release.published_at or nil
+      table.insert(versions, { version = version, created_at = created_at })
     end
   end
   table.sort(versions, version_gt)

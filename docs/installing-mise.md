@@ -10,13 +10,13 @@ Pick an installation method for your platform, check the executable, then
 
 ## Choose a method {#installation-methods}
 
-| Platform | Recommended                                                        | Alternatives                                                                                      |
-| -------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| macOS    | [mise.run](#mise-run)                                              | [Homebrew](#homebrew), [MacPorts](#macports), [packslip](#packslip) (Apple silicon)               |
-| Linux    | [mise.run](#mise-run)                                              | [packslip](#packslip), [apt](#apt), [dnf](#dnf), [pacman](#pacman), [apk](#apk), [others](#linux) |
-| Windows  | [winget](#windows-winget)                                          | [Scoop](#windows-scoop), [Chocolatey](#windows-chocolatey), [packslip](#packslip)                 |
-| CI       | [mise-action or a committed wrapper](/continuous-integration.html) |                                                                                                   |
-| Docker   | [Official images](/mise-cookbook/docker.html)                      |                                                                                                   |
+| Platform | Recommended                                                        | Alternatives                                                                                                            |
+| -------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| macOS    | [mise.run](#mise-run)                                              | [Homebrew](#homebrew), [MacPorts](#macports), [packslip](#packslip) (Apple silicon)                                     |
+| Linux    | [mise.run](#mise-run)                                              | [packslip](#packslip), [apt](#apt), [dnf](#dnf), [pacman](#pacman), [apk](#apk), [others](#linux)                       |
+| Windows  | [winget](#windows-winget)                                          | [PowerShell script](#windows-script), [Scoop](#windows-scoop), [Chocolatey](#windows-chocolatey), [packslip](#packslip) |
+| CI       | [mise-action or a committed wrapper](/continuous-integration.html) |                                                                                                                         |
+| Docker   | [Official images](/mise-cookbook/docker.html)                      |                                                                                                                         |
 
 mise.run, packslip and [GitHub Releases](#github-releases) install the official
 release binaries, which are built with mise's optimized release profile and
@@ -380,6 +380,27 @@ winget install jdx.mise
 ```
 
 [winget manifest](https://github.com/microsoft/winget-pkgs/tree/master/manifests/j/jdx/mise)
+
+### PowerShell script {#windows-script}
+
+```powershell
+irm https://mise.run/powershell | iex
+```
+
+The script needs only PowerShell 5.1 or newer, no POSIX shell. It installs the
+official release to `~\.local\bin`, with `mise-shim.exe` beside `mise.exe`,
+after checking the zip against the `SHASUMS256.txt` published on GitHub
+Releases. It adds that directory to your user `Path` (no admin rights needed).
+Re-running it upgrades mise. In MSYS2 or Git Bash, run it through
+`powershell.exe -NoProfile -Command "irm https://mise.run/powershell | iex"`.
+
+| Variable                   | Effect                                                       |
+| -------------------------- | ------------------------------------------------------------ |
+| `MISE_VERSION`             | Install this release instead of the latest                   |
+| `MISE_INSTALL_PATH`        | Path of `mise.exe` (default `~\.local\bin\mise.exe`)         |
+| `MISE_INSTALL_MODIFY_PATH` | `0` leaves the user `Path` alone                             |
+| `MISE_INSTALL_SHIMS_PATH`  | `1` also adds the shims directory to the user `Path`         |
+| `MISE_INSTALL_FROM_GITHUB` | `1` downloads from GitHub Releases instead of `mise.jdx.dev` |
 
 ### Scoop {#windows-scoop}
 

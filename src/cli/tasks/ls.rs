@@ -51,7 +51,7 @@ pub(crate) struct TasksLs {
 
     /// Include tasks from every project in the monorepo, not only the current
     /// directory's hierarchy
-    #[usage(long)]
+    #[usage(short, long)]
     pub all: bool,
 
     /// Display tasks for usage completion
@@ -302,10 +302,13 @@ impl TasksLs {
         for task in tasks {
             // Report the resolved dir (including any inherited task_config.dir)
             // so consumers see the directory the task will actually run in.
-            let resolved_dir = task
-                .dir(config)
-                .await?
-                .map(|p| p.to_string_lossy().to_string());
+            let resolved_dir = match task.dir(config).await {
+                Ok(dir) => dir.map(|p| p.to_string_lossy().to_string()),
+                Err(err) => {
+                    warn!("{err:#}");
+                    None
+                }
+            };
             let env_strs: Vec<String> = task
                 .env
                 .0

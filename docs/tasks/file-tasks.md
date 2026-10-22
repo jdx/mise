@@ -98,10 +98,11 @@ bracketed. `#MISE`, `# MISE`, `// MISE`, and `# [MISE]` all work, so a
 formatter that adds a space after `#` does not break the header. To disable a
 header line, change the keyword, for example to `# NOMISE`.
 
-Each `#MISE` line holds TOML. Headers accept most task properties, but not
-`timeout`, `vars`, or the sandbox keys (`deny_*` and `allow_*`); mise warns
-about those and ignores them. To set one of them, or to configure a script you
-cannot edit, add a `[tasks.<name>]` block for the script to `mise.toml`; see
+Each `#MISE` line holds TOML. Headers accept the same
+[task properties](/tasks/task-configuration.html) as a `[tasks.<name>]` table,
+except `run`, `run_windows`, `file` and `usage`, which the script and its
+`#USAGE` lines provide. To configure a script you cannot edit, add a
+`[tasks.<name>]` block for it to `mise.toml`; see
 [Configuring file tasks from TOML](/tasks/task-discovery.html#configuring-file-tasks-from-toml).
 
 ### Multi-line values

@@ -51,3 +51,29 @@ _.path = [
 EOF
 
 assert_contains "mise env -s bash | grep PATH" "export PATH='/1234:"
+
+# `_.source` runs in a clean bash. When stdin is a socket and SHLVL is unset
+# (e.g. an editor extension spawning mise over a Node.js pipe), bash's rshd
+# heuristic would otherwise source ~/.bashrc, leaking its exports and letting it
+# rewrite PATH so the script's prepend is dropped.
+cat >"$HOME/.bashrc" <<'EOF'
+export MISE_TEST_BASHRC_LEAK=1
+export PATH="$PATH:/bashrc-append-test-dir"
+EOF
+
+cat >"$MISE_CONFIG_DIR/source.sh" <<EOF
+export PATH="/source-prepend-test-dir:\$PATH"
+EOF
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[env]
+_.source = "{{ env.MISE_CONFIG_DIR }}/source.sh"
+EOF
+
+socket_stdin_env="$(env -u SHLVL python3 -c '
+import socket, subprocess, sys
+stdin, _peer = socket.socketpair()
+sys.exit(subprocess.run(["mise", "env", "-s", "bash"], stdin=stdin).returncode)
+')"
+assert_not_contains_text "$socket_stdin_env" "MISE_TEST_BASHRC_LEAK"
+assert_contains_text "$socket_stdin_env" "export PATH='/source-prepend-test-dir:"

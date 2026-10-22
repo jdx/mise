@@ -303,3 +303,25 @@ cat <<EOF2 >mise.toml
 EOF2
 assert_contains "mise bootstrap repos status" "rooted"
 assert_not_contains "mise bootstrap repos status" "ran/bad"
+
+# ref and url render like the key, and clone options shape the first clone
+git -C "$SRC" config uploadpack.allowFilter true
+cat <<EOF2 >mise.toml
+[vars]
+branch = "main"
+src_url = "$SRC_URL"
+
+[bootstrap.repos]
+"$PWD/templated" = { url = "{{ vars.src_url }}", ref = "{{ vars.branch }}", filter = "blob:none", depth = 1 }
+EOF2
+assert_contains "mise bootstrap repos apply --dry-run" "--branch main '--filter=blob:none' --depth 1 --no-single-branch $SRC_URL"
+assert_succeed "mise bootstrap repos apply --yes"
+assert "cat templated/version.txt" "v5"
+assert "git -C templated rev-parse --is-shallow-repository" "true"
+assert "git -C templated config remote.origin.partialclonefilter" "blob:none"
+
+# a shallow clone can still switch to another branch
+git -C "$SRC" branch dev
+sed -i.bak 's/branch = "main"/branch = "dev"/' mise.toml
+assert_succeed "mise bootstrap repos apply --yes"
+assert "git -C templated rev-parse --abbrev-ref HEAD" "dev"

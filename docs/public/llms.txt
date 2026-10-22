@@ -94,7 +94,7 @@
 - [Remote task cache](https://mise.jdx.dev/tasks/remote-cache.html): A remote cache lets CI jobs and developer machines reuse each other's task results. mise looks up entries on the server when the local artifact cache misses, and uploads new results from trusted CI…
 - [Remote cache protocol](https://mise.jdx.dev/tasks/remote-cache-protocol.html): This page specifies version 1 of the protocol between mise and a remote task cache. It is for people who implement a cache server or client. To use a remote cache, see Remote task cache.
 - [Monorepo tasks](https://mise.jdx.dev/tasks/monorepo.html): Use monorepo mode when one repository holds several projects that each need their own tools, environment variables, or tasks. Mark the root config as a monorepo root and list the project directories.
-- [Workspace project graph (experimental)](https://mise.jdx.dev/tasks/workspace-graph.html): mise can read Cargo, uv, Go, and Node.js workspace manifests to learn which projects a monorepo contains and how they depend on each other.
+- [Workspace project graph (experimental)](https://mise.jdx.dev/tasks/workspace-graph.html): mise can read Cargo, uv, Go, Gradle, and Node.js workspace manifests to learn which projects a monorepo contains and how they depend on each other.
 - [Project dependencies (experimental)](https://mise.jdx.dev/dev-tools/deps.html): mise deps installs a project's packages, such as node_modules or a Python virtual environment, by running the package manager's install command when the files it tracks change or its outputs go…
 - [OpenTelemetry (experimental)](https://mise.jdx.dev/tasks/opentelemetry.html): mise can export a trace of each mise run to any backend that accepts OTLP over HTTP, such as Jaeger, Grafana Tempo, or SigNoz.
 - [Task configuration reference](https://mise.jdx.dev/tasks/task-configuration.html): Find every property a task accepts, the [task_config] options that set defaults for a config root, the environment variables mise gives each task, and the settings that change how tasks run.
@@ -159,6 +159,9 @@
 ## Configuration
 
 - [mise.toml](https://mise.jdx.dev/configuration.html): A project's mise.toml declares the tools, environment variables, and tasks the project needs. mise combines it with your global config and with config files in parent directories.
+- [mise.toml reference](https://mise.jdx.dev/configuration/reference.html): Every key mise reads from a mise.toml: its type, what it does and where it goes, generated from schema/mise.json so it matches this version of mise.
+- [mise.toml reference (Markdown)](https://mise.jdx.dev/configuration/reference.md): Every key mise reads from a mise.toml: its type, what it does and where it goes, generated from schema/mise.json so it matches this version of mise.
+- [mise.toml playground](https://mise.jdx.dev/configuration/playground.html): Hover any key or value to see what it does, its type and the values it takes. Press Ctrl+Space for completions; mistakes are marked as you type. The mise.toml reference has every key.
 - [Config environments](https://mise.jdx.dev/configuration/environments.html): A config environment loads extra config files, such as mise.development.toml or mise.production.toml, on top of mise.toml.
 - [Settings](https://mise.jdx.dev/configuration/settings.html): Settings change how mise itself behaves, such as how many jobs run at once, how downloads are verified and how tasks print output. Set them with mise settings or under [settings] in a config file.
 - [Config variables](https://mise.jdx.dev/configuration/vars.html): Define shared values in [vars] and reference them with {{ vars.NAME }} in a Tera template. Use vars for values that mise needs to render config; use [env] for values that commands need as environment…
@@ -172,7 +175,7 @@
 ## Security
 
 - [Security overview](https://mise.jdx.dev/security.html): Each mise security control covers one stage, from loading a project's config to running the commands it starts.
-- [Paranoid mode](https://mise.jdx.dev/paranoid.html): Paranoid mode requires your approval before mise loads any project config file, and again whenever that file changes.
+- [Paranoid mode](https://mise.jdx.dev/paranoid.html): Paranoid mode makes mise ask before it trusts things it would normally load on its own. It has four categories, and you can turn on all of them or only the ones you need.
 - [Sandboxing](https://mise.jdx.dev/sandboxing.html): mise exec and mise run can limit what the command they start may read, write, reach on the network and see in its environment. Add a --deny-* or --allow-* flag, or set the matching property on a task.
 
 ## Plugins
@@ -297,6 +300,7 @@
 - [mise cache task](https://mise.jdx.dev/cli/cache/task.html): [experimental] Inspect artifact cache entries for a task
 - [mise completion](https://mise.jdx.dev/cli/completion.html): Generate shell completions
 - [mise config](https://mise.jdx.dev/cli/config.html): Manage config files
+- [mise config explain](https://mise.jdx.dev/cli/config/explain.html): Describe each key in a mise TOML file
 - [mise config get](https://mise.jdx.dev/cli/config/get.html): Print a value from one mise TOML file
 - [mise config ls](https://mise.jdx.dev/cli/config/ls.html): List config files currently in use, from lowest to highest precedence
 - [mise config set](https://mise.jdx.dev/cli/config/set.html): Set a value in one mise TOML file
@@ -336,6 +340,7 @@
 - [mise dotfiles history describe](https://mise.jdx.dev/cli/dotfiles/history/describe.html): Set the description of a checkpoint
 - [mise dotfiles history diff](https://mise.jdx.dev/cli/dotfiles/history/diff.html): Compare checkpoints, or your files against one
 - [mise dotfiles history ls](https://mise.jdx.dev/cli/dotfiles/history/ls.html): List checkpoints, newest first
+- [mise dotfiles history purge](https://mise.jdx.dev/cli/dotfiles/history/purge.html): Erase a path's saved versions from history
 - [mise dotfiles history show](https://mise.jdx.dev/cli/dotfiles/history/show.html): Show a checkpoint: its trigger, changes, and operation journal
 - [mise dotfiles include](https://mise.jdx.dev/cli/dotfiles/include.html): Stop excluding paths matching a glob
 - [mise dotfiles notify](https://mise.jdx.dev/cli/dotfiles/notify.html): Send a test desktop notification
@@ -379,6 +384,7 @@
 - [mise lock](https://mise.jdx.dev/cli/lock.html): Create or refresh lockfile versions, checksums, and download URLs
 - [mise ls](https://mise.jdx.dev/cli/ls.html): List installed and active tool versions
 - [mise ls-remote](https://mise.jdx.dev/cli/ls-remote.html): List tool versions available to install
+- [mise lsp](https://mise.jdx.dev/cli/lsp.html): Run the language server for mise config files over stdin/stdout
 - [mise mcp](https://mise.jdx.dev/cli/mcp.html): Run the Model Context Protocol server over stdin/stdout
 - [mise oci](https://mise.jdx.dev/cli/oci.html): [experimental] Build, push, and run OCI images of a project's tools
 - [mise oci build](https://mise.jdx.dev/cli/oci/build.html): [experimental] Build an OCI image from the current mise.toml

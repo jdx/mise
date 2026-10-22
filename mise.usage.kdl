@@ -612,6 +612,13 @@ Hooks and the `bootstrap` task are printed instead of run.
     flag "-y --yes" help="Skip confirmation prompts"
     flag --skip-dirty help="Skip configured repositories with local changes instead of failing"
     flag --force-dotfiles help="Overwrite existing files that conflict with whole-file dotfile entries"
+    flag --prune-dotfiles help="Remove files that dotfile groups deployed but no active entry deploys now" {
+        long_help #"""
+Remove files that dotfile groups deployed but no active entry deploys now
+
+The same pruning as `mise dot apply --prune`, run at the end of the dotfiles phase before its post hook: files of a group that is no longer selected or declared, and files a group stopped deploying because of a new `exclude` or a deleted source. Changed copies stay in place, and mise asks before removing anything unless `--yes` is given or there is no terminal. With `--dry-run`, nothing is removed.
+"""#
+    }
     flag --only help="Run only these parts" var=#true conflicts=--skip {
         long_help #"""
 Run only these parts
@@ -1048,6 +1055,33 @@ Only checkpoints with this trigger, such as edit, save, agent, bootstrap, apply,
                 flag "-h --help" help="Print help" action=help builtin=#true
                 example "mise dot history ls -n 0" help="List every checkpoint"
                 example "mise dot history ls --pending" help="List operations that did not finish"
+            }
+            cmd purge help="Erase a path's saved versions from history" effect=destructive {
+                long_help #"""
+Erase a path's saved versions from history
+
+Rewrites the history without the path, for a file you tracked by mistake that holds a secret. `untrack`, `rollback`, and `undo` only add checkpoints; they leave the old versions readable.
+
+Checkpoints that changed only this path are removed. The others stay, with their descriptions, dates, and IDs, minus the path. Without `--yes`, the command lists what would change and asks first.
+
+mise never rewrites history that is on the origin: if a saved version of the path was ever published, the command refuses. Rotate the secret, then see https://mise.jdx.dev/dotfiles/encryption.html#remove-plaintext-from-history.
+
+This does not stop tracking the path. If the file is still tracked, the next save records its current contents again, so run `mise dot untrack` first (or encrypt it). Stop the watcher service while this runs.
+"""#
+                flag "-n --dry-run" help="Show what would change without changing anything"
+                flag "-y --yes" help="Rewrite without prompting"
+                flag --backup help="Keep the replaced history in the repository under `refs/mise/purge-backup/`" {
+                    long_help #"""
+Keep the replaced history in the repository under `refs/mise/purge-backup/`
+
+The backup still holds the content you are erasing; delete it with `git update-ref -d` once you are sure.
+"""#
+                }
+                flag --keep-objects help="Leave the replaced objects on disk instead of deleting them"
+                flag "-h --help" help="Print help" action=help builtin=#true
+                arg <PATH>… help="Files or directories to erase from history" var=#true
+                example "mise dot history purge ~/.aws/credentials --dry-run" help="List the checkpoints that hold the file"
+                example "mise dot history purge ~/.aws/credentials --yes" help="Erase every saved version of the file"
             }
             cmd show help="Show a checkpoint: its trigger, changes, and operation journal" effect=read {
                 long_help #"""
@@ -1774,7 +1808,7 @@ trusted config mise has tracked, still declares it.
             example "mise bootstrap packages prune --manager vscode --dry-run" help="Preview removals for a package plugin named vscode"
         }
         cmd status help="Show the state of packages from `[bootstrap.packages]`" effect=read {
-            alias ls
+            alias ls list
             flag "-J --json" help="Output in JSON format"
             flag --missing help="Exit with status 1 if any package differs from the config (all are still listed)"
             flag "-h --help" help="Print help" action=help builtin=#true
@@ -2485,6 +2519,51 @@ they use.
 """#
     }
     flag "-h --help" help="Print help" action=help builtin=#true
+    cmd explain help="Describe each key in a mise TOML file" effect=read {
+        long_help #"""
+Describe each key in a mise TOML file
+
+Lists every key the file sets, with its line and what it does, from the same schema
+editors use to check a config. A key mise does not read is marked, with the known key it
+most likely meant, and so is a deprecated one. Reads the highest-precedence loaded TOML
+file by default; select another with `--file`, `--global`, or `--system`.
+"""#
+        flag "-f --file --path" help="Config file to read, or a directory whose config file to read" {
+            long_help #"""
+Config file to read, or a directory whose config file to read
+
+Defaults to the highest-precedence loaded TOML file other than the global override files.
+"""#
+            arg <FILE>
+        }
+        flag "-g --global" help="Read the global config file" {
+            conflicts "--file" "--system"
+        }
+        flag --system help="Read the system config file" {
+            conflicts "--file" "--global"
+        }
+        flag --override help="Read the global override file, `config.override.toml`" {
+            conflicts "--file" "--global" "--system"
+        }
+        flag "-J --json" help="Print the keys as JSON"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[KEY]" help="Dotted key path to describe, with the keys under it; omit for the whole file" help_long=#"""
+Dotted key path to describe, with the keys under it; omit for the whole file
+
+Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
+"""# required=#false
+        example #"""
+mise config explain
+~/src/app/mise.toml
+   1  tools                  dev tools to use
+   2  tools.node             a version of the tool, or a table with its version and options
+   4  settings               mise settings
+   5  settings.experimantal  not a key mise reads; did you mean experimental?
+"""# help="Describe the keys of the project config"
+        example "mise config explain tasks" help="Describe only the keys under [tasks]"
+        complete file type=path
+        complete key run="mise __complete_word__ --candidates key --line={{ words | shell_join | shell_quote }}"
+    }
     cmd get help="Print a value from one mise TOML file" effect=read {
         long_help #"""
 Print a value from one mise TOML file
@@ -2497,7 +2576,7 @@ template-expanded environment; use `mise env` for the resolved environment.
             long_help #"""
 Config file to read, or a directory whose config file to read
 
-For a directory, mise reads the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file.
+For a directory, mise reads the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file other than the global override files.
 """#
             arg <FILE>
         }
@@ -2507,8 +2586,15 @@ For a directory, mise reads the TOML config file already there, such as `.mise.t
         flag --system help="Read the system config file" {
             conflicts "--file" "--global"
         }
+        flag --override help="Read the global override file, `config.override.toml`" {
+            conflicts "--file" "--global" "--system"
+        }
         flag "-h --help" help="Print help" action=help builtin=#true
-        arg "[KEY]" help="Dotted key path to print, such as `tools.python`; omit to print the whole file" required=#false
+        arg "[KEY]" help="Dotted key path to print, such as `tools.python`; omit to print the whole file" help_long=#"""
+Dotted key path to print, such as `tools.python`; omit to print the whole file
+
+Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
+"""# required=#false
         example #"""
 mise config get tools.python
 3.13
@@ -2522,7 +2608,9 @@ mise config get tools.python
         long_help #"""
 List config files currently in use, from lowest to highest precedence
 
-Later files override earlier ones.
+Later files override earlier ones. Global override files
+(`config.override.toml`) rank above all project config and are labeled
+`override`.
 """#
         flag --truncate help="Truncate long terminal output to fit the available width" negate=--no-truncate default="true"
         flag "-J --json" help="Output in JSON format"
@@ -2569,12 +2657,15 @@ or `false` as text, and `--type integer` for a number.
             long_help #"""
 Config file to edit, or a directory whose config file to edit
 
-For a directory, mise edits the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file.
+For a directory, mise edits the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file other than the global override files.
 """#
             arg <FILE>
         }
         flag "-g --global" help="Edit the global config file" {
             conflicts "--file" "--system"
+        }
+        flag --override help="Edit the global override file, `config.override.toml`" {
+            conflicts "--file" "--global" "--system"
         }
         flag --system help="Edit the system config file" {
             conflicts "--file" "--global"
@@ -2595,7 +2686,11 @@ For a directory, mise edits the TOML config file already there, such as `.mise.t
             }
         }
         flag "-h --help" help="Print help" action=help builtin=#true
-        arg <KEY> help="Dotted key path to set, such as `tools.python`"
+        arg <KEY> help="Dotted key path to set, such as `tools.python`" help_long=#"""
+Dotted key path to set, such as `tools.python`
+
+Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
+"""#
         arg "[VALUE]" help="The value to set the key to (optional if provided as KEY=VALUE)" required=#false
         example "mise config set tools.python 3.13" help="Request python 3.13"
         example "mise config set env.NODE_ENV production" help="Set an environment variable"
@@ -3102,6 +3197,33 @@ Only checkpoints with this trigger, such as edit, save, agent, bootstrap, apply,
             flag "-h --help" help="Print help" action=help builtin=#true
             example "mise dot history ls -n 0" help="List every checkpoint"
             example "mise dot history ls --pending" help="List operations that did not finish"
+        }
+        cmd purge help="Erase a path's saved versions from history" effect=destructive {
+            long_help #"""
+Erase a path's saved versions from history
+
+Rewrites the history without the path, for a file you tracked by mistake that holds a secret. `untrack`, `rollback`, and `undo` only add checkpoints; they leave the old versions readable.
+
+Checkpoints that changed only this path are removed. The others stay, with their descriptions, dates, and IDs, minus the path. Without `--yes`, the command lists what would change and asks first.
+
+mise never rewrites history that is on the origin: if a saved version of the path was ever published, the command refuses. Rotate the secret, then see https://mise.jdx.dev/dotfiles/encryption.html#remove-plaintext-from-history.
+
+This does not stop tracking the path. If the file is still tracked, the next save records its current contents again, so run `mise dot untrack` first (or encrypt it). Stop the watcher service while this runs.
+"""#
+            flag "-n --dry-run" help="Show what would change without changing anything"
+            flag "-y --yes" help="Rewrite without prompting"
+            flag --backup help="Keep the replaced history in the repository under `refs/mise/purge-backup/`" {
+                long_help #"""
+Keep the replaced history in the repository under `refs/mise/purge-backup/`
+
+The backup still holds the content you are erasing; delete it with `git update-ref -d` once you are sure.
+"""#
+            }
+            flag --keep-objects help="Leave the replaced objects on disk instead of deleting them"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg <PATH>… help="Files or directories to erase from history" var=#true
+            example "mise dot history purge ~/.aws/credentials --dry-run" help="List the checkpoints that hold the file"
+            example "mise dot history purge ~/.aws/credentials --yes" help="Erase every saved version of the file"
         }
         cmd show help="Show a checkpoint: its trigger, changes, and operation journal" effect=read {
             long_help #"""
@@ -4828,6 +4950,36 @@ without release dates, or an empty one. Requires --json and
     example "mise ls-remote node --minimum-release-age 30d" help="Skip versions released in the last 30 days"
     example "mise ls-remote github:cli/cli --json" help="Include release dates, as JSON"
 }
+cmd lsp help="Run the language server for mise config files over stdin/stdout" effect=read {
+    long_help #"""
+Run the language server for mise config files over stdin/stdout
+
+Editors start this command and exchange Language Server Protocol messages with it.
+
+It serves `mise.toml` and the other config files mise loads (`.mise.toml`, `mise.<env>.toml`, `mise.local.toml`, `mise/config.toml`, and the files of a `conf.d`). It ignores every other file, including files that `[task_config] includes` lists, so it can be attached to the TOML language without touching `Cargo.toml` or `pyproject.toml`.
+
+It offers:
+- diagnostics: TOML syntax errors, unknown keys with a suggestion, values of the wrong type, deprecated keys, task names no task defines (`unknown-task`), and dependency cycles (`task-cycle`)
+- completion of keys, including inside inline tables, and of values that have a fixed set
+- hover documentation for keys
+- for tools: completion of tool names under `[tools]` from the registry, and hover with the tool's description and backends
+- quick fixes that replace an unknown key or task name with the suggested one, and rewrite a deprecated key to its replacement when the schema names one
+- formatting, as `mise fmt` does
+- for tasks: completion of task names in `depends`, `depends_post`, `wait_for` and `run = [{ task = "..." }]` (and of templates in `extends`), hover with the task's description and command, go to definition, find references, and rename together with every reference in the file
+
+Tasks come from the open file, the configs in the directories above it and the TOML files their `[task_config] includes` name.
+
+A client that runs another TOML server beside this one can switch features off with `initializationOptions`: `{"formatting": false, "hover": false, "completion": false, "definition": false, "references": false, "rename": false}`.
+
+The server only parses a config. It never renders templates or runs anything, so opening an untrusted file is safe.
+
+A mise that predates this command runs a task named `lsp` instead, so a client that needs to know whether the command exists can check that `mise help lsp` prints `Usage: mise lsp`.
+
+See https://mise.jdx.dev/ide-integration.html for editor configuration.
+"""#
+    flag "-h --help" help="Print help" action=help builtin=#true
+    example "mise lsp" help="Start the server; an editor's LSP configuration runs this command"
+}
 cmd mcp help="Run the Model Context Protocol server over stdin/stdout" {
     long_help #"""
 Run the Model Context Protocol server over stdin/stdout
@@ -6033,6 +6185,14 @@ See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
     flag "-g --global" help="Set the environment variable in the global config file" {
         overrides "--file" "--env"
     }
+    flag --override help="Set the environment variable in the global override file, `config.override.toml`" {
+        long_help #"""
+Set the environment variable in the global override file, `config.override.toml`
+
+The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration.html#override-file
+"""#
+        conflicts "--global" "--file"
+    }
     flag --age-encrypt help="[experimental] Encrypt the value with age before storing" requires=ENV_VAR
     flag --age-key-file help="[experimental] Age identity file whose public keys to encrypt to" requires=--age-encrypt {
         long_help #"""
@@ -6141,6 +6301,13 @@ Write to the nearest project config instead of the global config
 The nearest project config is the lowest-precedence TOML file in the nearest directory that has one, or ./mise.toml.
 """#
         }
+        flag --override help="Write to the global override file, `config.override.toml`" conflicts=--local {
+            long_help #"""
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config, so the setting wins over the same setting in a project's `mise.toml`.
+"""#
+        }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <SETTING> help="The array setting to append to"
         arg "[VALUE]" help="The value to append (or pass SETTING=VALUE)" required=#false
@@ -6212,6 +6379,13 @@ Write to the nearest project config instead of the global config
 The nearest project config is the lowest-precedence TOML file in the nearest directory that has one, or ./mise.toml.
 """#
         }
+        flag --override help="Write to the global override file, `config.override.toml`" conflicts=--local {
+            long_help #"""
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config, so the setting wins over the same setting in a project's `mise.toml`.
+"""#
+        }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg <SETTING> help="The setting to set"
         arg "[VALUE]" help="The value to set (or pass SETTING=VALUE)" required=#false
@@ -6232,6 +6406,13 @@ another config file.
 Write to the nearest project config instead of the global config
 
 The nearest project config is the lowest-precedence TOML file in the nearest directory that has one, or ./mise.toml.
+"""#
+        }
+        flag --override help="Write to the global override file, `config.override.toml`" conflicts=--local {
+            long_help #"""
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config, so the setting wins over the same setting in a project's `mise.toml`.
 """#
         }
         flag "-h --help" help="Print help" action=help builtin=#true
@@ -6552,7 +6733,7 @@ With no subcommand, lists tasks like `mise tasks ls` and accepts the same flags.
     flag "-J --json" help="Output in JSON format"
     flag "-l --local" help="Only show non-global tasks" overrides=--global
     flag "-x --extended" help="Show all columns"
-    flag --all help="Include tasks from every project in the monorepo, not only the current directory's hierarchy"
+    flag "-a --all" help="Include tasks from every project in the monorepo, not only the current directory's hierarchy"
     flag --complete help="Display tasks for usage completion" hide=#true
     flag --hidden help="Show hidden tasks"
     flag --name-only help="Print only task names, one per line (for fzf and similar tools)" {
@@ -6664,7 +6845,7 @@ Opens the file that defines the task in `$VISUAL` or `$EDITOR`: the script for a
         long_help #"""
 Show the monorepo project graph
 
-Lists the projects mise infers from Cargo, uv, Go, and Node.js workspace manifests, with each project's ID, root directory, dependencies, and metadata. `mise run --affected` uses this graph to decide which projects a change touches.
+Lists the projects mise infers from Cargo, uv, Go, Gradle, and Node.js workspace manifests, with each project's ID, root directory, dependencies, and metadata. `mise run --affected` uses this graph to decide which projects a change touches.
 
 See https://mise.jdx.dev/tasks/workspace-graph.html
 """#
@@ -6702,7 +6883,7 @@ See https://mise.jdx.dev/tasks/task-discovery.html
         flag "-J --json" help="Output in JSON format"
         flag "-l --local" help="Only show non-global tasks" overrides=--global
         flag "-x --extended" help="Show all columns"
-        flag --all help="Include tasks from every project in the monorepo, not only the current directory's hierarchy"
+        flag "-a --all" help="Include tasks from every project in the monorepo, not only the current directory's hierarchy"
         flag --complete help="Display tasks for usage completion" hide=#true
         flag --hidden help="Show hidden tasks"
         flag --name-only help="Print only task names, one per line (for fzf and similar tools)" {
@@ -7201,6 +7382,11 @@ Commands that run project code (`mise run`, task shorthand such as
 `mise daemons start|restart|register`) trust their active config
 automatically.
 
+In paranoid mode, `mise trust` with no path also trusts the env files and
+scripts that config reads (`env._.file`, `env._.source` and the `env_file`
+setting), which have trust of their own. Give a file's path to trust only
+that file.
+
 Trusting a config file in a repository's main checkout also trusts the same
 path in its git worktrees. Paranoid mode (https://mise.jdx.dev/paranoid.html)
 turns off automatic and worktree trust and requires trust, tied to the
@@ -7226,7 +7412,7 @@ Does not trust or untrust any files.
     flag --untrust help="Remove explicit trust for this config"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[CONFIG_FILE]" help="The config file whose trust status to change" required=#false
-    example "mise trust" help="Trust the nearest untrusted config in this directory or a parent"
+    example "mise trust" help="Trust the nearest untrusted config in this directory or a parent, and in paranoid mode the env files it reads"
     example "mise trust ~/src/app/mise.toml" help="Trust a specific file"
     example "mise trust --show" help="List configs here and above with their trust status"
     complete config_file type=path
@@ -7272,6 +7458,14 @@ Can be a file or a directory. For a directory, mise uses the config file in it, 
         arg <FILE>
     }
     flag "-g --global" help="Use the global config file" overrides=--file
+    flag --override help="Use the global override file, `config.override.toml`" {
+        long_help #"""
+Use the global override file, `config.override.toml`
+
+See https://mise.jdx.dev/configuration.html#override-file
+"""#
+        conflicts "--global" "--file"
+    }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[ENV_KEY]…" help="Environment variables to remove, such as NODE_ENV" required=#false var=#true
     example "mise unset NODE_ENV" help="Remove NODE_ENV from the project config"
@@ -7323,6 +7517,14 @@ Not the same as the global -E, which only chooses which config files are loaded.
         overrides "--global" "--env"
         arg <PATH>
     }
+    flag --override help="Write to the global override file, `config.override.toml`" {
+        long_help #"""
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration.html#override-file
+"""#
+        conflicts "--global" "--path"
+    }
     flag --no-prune help="Do not also prune the installed version"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <INSTALLED_TOOL@VERSION>… help="Tools to remove from the config, with the version written as in the config" var=#true
@@ -7350,7 +7552,14 @@ Pass `--prune` to remove it now or `--no-prune` to keep it.
         long_help #"""
 Upgrade past the configured range to the newest release, and update the config to match
 
-The config keeps its precision: `node = "20"` becomes `node = "22"`, and `node = "20.0.0"` becomes `node = "22.1.0"`. If you name a version on the command line (`node@latest`, `node@3`, or `node@prefix:3`), that request is written instead; `mise upgrade node@latest --bump` writes `latest`. With the `pin` setting on, a version request such as `node@3` is written as the version it resolved to. Requests that do not come from a config file mise can write, such as `MISE_NODE_VERSION`, are upgraded but not written.
+The config keeps its precision: `node = "20"` becomes `node = "22"`, and `node = "20.0.0"` becomes `node = "22.1.0"`. If you name a version on the command line (`node@latest`, `node@3`, or `node@prefix:3`), that request is written instead; `mise upgrade node@latest --bump` writes `latest`. With the `pin` setting on, a version request such as `node@3` is written as the version it resolved to, and a bare `mise upgrade --bump` writes the resolved version for every request that is not exact, such as `latest` or `20`. Requests that do not come from a config file mise can write, such as `MISE_NODE_VERSION`, are upgraded but not written.
+"""#
+    }
+    flag --pin help="With --bump, write the resolved version instead of keeping the request's precision" requires=--bump {
+        long_help #"""
+With --bump, write the resolved version instead of keeping the request's precision
+
+`node = "latest"` and `node = "20"` become `node = "24.14.0"`. A named request such as `node@3` is written as the version it resolved to. Make this the default with the `pin` setting (`MISE_PIN=1`).
 """#
     }
     flag "-i --interactive" help="Choose which tools to upgrade from a multiselect menu" conflicts=INSTALLED_TOOL@VERSION
@@ -7492,6 +7701,14 @@ For a directory, mise picks the file by the usual write-target rules.
 """#
         overrides "--global" "--env"
         arg <PATH>
+    }
+    flag --override help="Write to the global override file, `config.override.toml`" {
+        long_help #"""
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration.html#override-file
+"""#
+        conflicts "--global" "--path"
     }
     flag --dry-run-code help="Like --dry-run, but exit with code 1 if there are changes to make" {
         long_help #"""

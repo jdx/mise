@@ -1204,6 +1204,9 @@ fn check_list_still_missing(project: &str, located: &Located, check: Option<&Che
     }
 }
 
+/// Why a candidate is dropped when its verified release time is too new.
+const AFTER_CUTOFF: &str = "verified release time is after the allowed cutoff";
+
 /// How long resolution reuses a release it verified.
 ///
 /// Only resolution reads this: it decides which candidate a fuzzy request
@@ -1420,21 +1423,21 @@ impl PackslipBackend {
         }
         let asset_name = bundle_name(project);
         // GitHub's prerelease flag is not consulted: the version says.
-        let mut versions: Vec<VersionInfo> = github::list_releases_including_prereleases(repo)
-            .await?
-            .into_iter()
-            .filter(|r| r.assets.iter().any(|a| a.name == asset_name))
-            .filter_map(|r| {
-                version_info(
-                    tag_version(&r.tag_name, project),
-                    Some(r.released_at().to_string()),
-                    Some(format!(
-                        "https://github.com/{repo}/releases/tag/{}",
-                        r.tag_name
-                    )),
-                )
-            })
-            .collect();
+        let mut versions: Vec<VersionInfo> =
+            github::list_release_versions_with_asset(repo, &asset_name)
+                .await?
+                .into_iter()
+                .filter_map(|r| {
+                    version_info(
+                        tag_version(&r.tag_name, project),
+                        r.released_at,
+                        Some(format!(
+                            "https://github.com/{repo}/releases/tag/{}",
+                            r.tag_name
+                        )),
+                    )
+                })
+                .collect();
         versions.reverse();
         Ok(versions)
     }
@@ -1783,14 +1786,15 @@ impl PackslipBackend {
             .await?;
         let statement: Statement = serde_json::from_str(&verified.statement)?;
         // Parse errors are verification errors, not age-policy exclusions.
-        if !verified_age_allowed(
+        let past_cutoff = !verified_age_allowed(
             verified.logged_at.as_deref(),
             &verified.published_at,
             before,
-        )? {
-            return Ok(Some(
-                "verified release time is after the allowed cutoff".into(),
-            ));
+        )?;
+        // An installed version is checked against the host too, so that
+        // AFTER_CUTOFF returned for it means the cutoff is its only exclusion.
+        if past_cutoff && !self.is_installed_version(version) {
+            return Ok(Some(AFTER_CUTOFF.into()));
         }
         let artifact = match select_compatible_artifact(
             &statement.predicate.artifacts,
@@ -1809,7 +1813,14 @@ impl PackslipBackend {
         {
             return Ok(Some(requirements.failures.join("; ")));
         }
+        if past_cutoff {
+            return Ok(Some(AFTER_CUTOFF.into()));
+        }
         Ok(None)
+    }
+
+    fn is_installed_version(&self, version: &str) -> bool {
+        self.list_installed_versions().iter().any(|v| v == version)
     }
 
     /// [`Self::verified_release`] for choosing among candidates, reusing a
@@ -1881,7 +1892,11 @@ impl PackslipBackend {
             .candidate_exclusion(project, &version, opts, pin, before, stamps)
             .await?
         {
-            warn!("packslip:{project}: skipping {version}: {reason}");
+            // An installed version needs no upgrade, so skipping it is not news.
+            let installed = reason == AFTER_CUTOFF && self.is_installed_version(&version);
+            if !installed {
+                warn!("packslip:{project}: skipping {version}: {reason}");
+            }
             return Ok(false);
         }
         Ok(true)
@@ -2381,6 +2396,10 @@ impl PackslipBackend {
 
 #[async_trait]
 impl Backend for PackslipBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_packslip_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Packslip
     }

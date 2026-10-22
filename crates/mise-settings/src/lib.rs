@@ -25,6 +25,9 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 // settings are generated from settings.toml in the project root
 // make sure you run `mise run render` after updating settings.toml
+mod paranoid;
+pub use paranoid::{Paranoid, ParanoidCategory};
+
 include!(concat!(env!("OUT_DIR"), "/settings.rs"));
 
 pub enum SettingsType {
@@ -39,6 +42,7 @@ pub enum SettingsType {
     SetString,
     IndexMap,
     BoolOrString,
+    BoolOrList,
 }
 
 pub struct SettingsMeta {
@@ -155,32 +159,7 @@ pub enum SystemPackagesOstree {
     Layer,
 }
 
-/// How task output is presented. mise's task runner resolves it further; see
-/// `TaskOutputExt` there.
-#[derive(
-    Debug,
-    Default,
-    Clone,
-    Copy,
-    PartialEq,
-    strum::Display,
-    strum::EnumString,
-    strum::EnumIs,
-    serde::Serialize,
-    serde::Deserialize,
-)]
-#[serde(rename_all = "kebab-case")]
-#[strum(serialize_all = "kebab-case")]
-pub enum TaskOutput {
-    Interleave,
-    KeepOrder,
-    #[default]
-    Prefix,
-    Replacing,
-    Timed,
-    Quiet,
-    Silent,
-}
+pub use mise_config::task::TaskOutput;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PythonUvVenvAuto {
@@ -446,6 +425,24 @@ where
         "false" | "no" | "0" => Ok(false),
         _ => Ok(true),
     }
+}
+
+/// Deserialize one path or a list of paths, so a setting that took a single path can take several
+/// without breaking the configs that already name one.
+fn path_or_paths<'de, D>(deserializer: D) -> Result<Vec<PathBuf>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(PathBuf),
+        Many(Vec<PathBuf>),
+    }
+    Ok(match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(path) => vec![path],
+        OneOrMany::Many(paths) => paths,
+    })
 }
 
 fn set_by_comma<T, C>(input: &str) -> Result<C, <T as FromStr>::Err>

@@ -67,6 +67,7 @@ assert_succeed "mise bootstrap packages status"
 assert_contains "mise bootstrap packages status 2>&1" "unknown bootstrap package manager"
 
 # the manager prefix is required; entries without one warn but don't fail
+# schema: invalid
 cat <<EOF >mise.toml
 [bootstrap.packages]
 "noprefix" = "latest"

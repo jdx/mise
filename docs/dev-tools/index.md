@@ -198,10 +198,12 @@ python = { version = "3.13", auto_update = false }
 ::: tip A 24h delay can mean up to 48h
 Updates respect [`minimum_release_age`](/security.html#minimum-release-age),
 which defaults to `24h` for
-[most backends](/security.html#which-backends-have-a-default). A release becomes
+[every backend](/security.html#which-backends-have-a-default). A release becomes
 eligible 24 hours after publishing, and mise only notices it at the next check,
 so an update lands 24 to 48 hours after a release if you launch the tool at
-least once per check interval, and later if you don't.
+least once per check interval, and later if you don't. This holds only for a
+backend that reports release dates. A release it cannot date is not held back,
+and mise warns when it installs one.
 :::
 
 To wait longer, set `minimum_release_age` on the tool:

@@ -55,6 +55,7 @@ tokio = { version = "1", features = [
   "time",
 ] }
 url = "2"
+zip = { version = "9", default-features = false, features = ["deflate"] }
 xx = { version = "2", default-features = false, features = [
   "archive",
   "hash",
@@ -69,6 +70,7 @@ usage_rs = { package = "usage-rs", version = "7", features = [
 ], optional = true }
 tempfile = "3"
 mise-sigstore = { path = "../mise-sigstore", default-features = false }
+mise-tls = { path = "../mise-tls", default-features = false }
 
 [dev-dependencies]
 insta = "1"
@@ -84,12 +86,19 @@ native-tls = [
   "reqwest/native-tls",
   "mise-sigstore/native-tls",
 ]
-rustls = ["xx/rustls", "xx/http", "reqwest/rustls", "mise-sigstore/rustls"]
+rustls = [
+  "xx/rustls",
+  "xx/http",
+  "reqwest/rustls",
+  "mise-sigstore/rustls",
+  "mise-tls/rustls",
+]
 rustls-native-roots = [
   "reqwest/rustls",
   "xx/http",
   "xx/rustls-native-roots",
   "mise-sigstore/rustls",
+  "mise-tls/rustls",
 ]
 vendored-lua = ["mlua/vendored"]
 

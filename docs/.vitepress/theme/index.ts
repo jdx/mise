@@ -6,6 +6,7 @@ import "virtual:group-icons.css";
 import "./custom.css";
 import "./landing.css";
 import Layout from "./Layout.vue";
+import MiseTomlEditor from "../../components/mise-toml-editor.vue";
 import { nextTick, onMounted, onUnmounted } from "vue";
 import { anchorRedirectTarget } from "../redirects.mjs";
 import { data as starsData } from "../stars.data";
@@ -36,6 +37,7 @@ export default {
   Layout,
   enhanceApp({ app, router }) {
     enhanceAppWithTabs(app);
+    app.component("MiseTomlEditor", MiseTomlEditor);
     initBanner();
 
     const onBeforeRouteChange = router.onBeforeRouteChange;

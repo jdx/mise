@@ -30,11 +30,9 @@ fn main() -> Result<()> {
     }
     built::write_built_file()?;
     link_without_pie();
-    build_notification_helper()?;
     build_enclave_helper()?;
 
     let aqua_registry = load_aqua_registry()?;
-    codegen_daemon_presets()?;
     codegen_registry(&aqua_registry.packages);
     codegen_aqua_standard_registry(&aqua_registry)?;
     Ok(())
@@ -57,81 +55,6 @@ fn link_without_pie() {
     if linux_gnu && env::var("MISE_NO_PIE").as_deref() == Ok("1") {
         println!("cargo:rustc-link-arg-bins=-no-pie");
     }
-}
-
-fn build_notification_helper() -> Result<()> {
-    let source = "src/system/history/notify/macos.m";
-    let info = "src/system/history/notify/macos.plist";
-    let icon = "docs/public/android-chrome-512x512.png";
-    println!("cargo:rerun-if-changed={source}");
-    println!("cargo:rerun-if-changed={info}");
-    println!("cargo:rerun-if-changed={icon}");
-    println!("cargo:rerun-if-env-changed=MISE_NOTIFICATION_SIGN_IDENTITY");
-    if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
-        return Ok(());
-    }
-    let app = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("mise-notify.app");
-    let contents = app.join("Contents");
-    let output = contents.join("MacOS/mise-notify");
-    fs::create_dir_all(contents.join("MacOS"))?;
-    fs::create_dir_all(contents.join("Resources"))?;
-    let status = cc::Build::new()
-        .get_compiler()
-        .to_command()
-        .args(["-fobjc-arc", "-O2", "-mmacosx-version-min=10.14"])
-        .args([
-            "-framework",
-            "AppKit",
-            "-framework",
-            "UserNotifications",
-            "-framework",
-            "CoreServices",
-        ])
-        .arg(source)
-        .arg("-o")
-        .arg(&output)
-        .status()?;
-    if !status.success() {
-        return Err(eyre!("failed to build the macOS notification helper"));
-    }
-    // The compiler may place a debug-symbol bundle beside the executable.
-    // It is not needed at runtime and must not become part of the app's seal,
-    // because only the runtime bundle is embedded in mise.
-    let debug_symbols = output.with_extension("dSYM");
-    if debug_symbols.exists() {
-        fs::remove_dir_all(debug_symbols)?;
-    }
-    fs::copy(info, contents.join("Info.plist"))?;
-    let png = fs::read(icon)?;
-    let mut icns = Vec::with_capacity(png.len() + 16);
-    icns.extend_from_slice(b"icns");
-    icns.extend_from_slice(&u32::try_from(png.len() + 16)?.to_be_bytes());
-    icns.extend_from_slice(b"ic09");
-    icns.extend_from_slice(&u32::try_from(png.len() + 8)?.to_be_bytes());
-    icns.extend_from_slice(&png);
-    fs::write(contents.join("Resources/mise.icns"), icns)?;
-
-    let identity = env::var("MISE_NOTIFICATION_SIGN_IDENTITY").unwrap_or_else(|_| "-".into());
-    println!(
-        "cargo:rustc-env=MISE_NOTIFICATION_RELEASE_SIGNED={}",
-        if identity == "-" { "0" } else { "1" }
-    );
-    let mut codesign = Command::new("/usr/bin/codesign");
-    codesign
-        .args(["--force", "--sign"])
-        .arg(&identity)
-        .args(["--identifier", "dev.jdx.mise.notifications"]);
-    if identity != "-" {
-        codesign.args(["--options", "runtime", "--timestamp"]);
-    }
-    let signed = codesign.arg(&app).output()?;
-    if !signed.status.success() {
-        return Err(eyre!(
-            "failed to sign the macOS notification helper: {}",
-            String::from_utf8_lossy(&signed.stderr).trim()
-        ));
-    }
-    Ok(())
 }
 
 /// The Secure Enclave helper (`src/enclave/macos.swift`) keeps the GitHub OAuth
@@ -369,6 +292,16 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
             (cmd, expected, tools)
         });
         let mut backends = vec![];
+        // Each entry's backend and `[min_version, max_version)` range, to
+        // check that a backend listed more than once never overlaps itself.
+        type Range = (
+            String,
+            Vec<String>,
+            Option<semver::Version>,
+            Option<semver::Version>,
+            Vec<(String, String)>,
+        );
+        let mut ranges: Vec<Range> = vec![];
         for backend in info.get("backends").unwrap().as_array().unwrap() {
             match backend {
                 toml::Value::String(backend) => {
@@ -376,6 +309,7 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                         .strip_prefix("pipx:")
                         .map(|name| format!("pypi:{name}"))
                         .unwrap_or_else(|| backend.clone());
+                    ranges.push((backend.clone(), vec![], None, None, vec![]));
                     backends.push(format!(
                         r##"RegistryBackend{{
                             full: r#"{backend}"#,
@@ -426,6 +360,14 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                             "[{short}] backend min_version must be lower than max_version"
                         );
                     }
+                    let backend_options = parse_options(backend.get("options"));
+                    ranges.push((
+                        full.clone(),
+                        platforms.clone(),
+                        min_version.as_ref().map(|(_, v)| v.clone()),
+                        max_version.as_ref().map(|(_, v)| v.clone()),
+                        backend_options.clone(),
+                    ));
                     let bound_literal = |bound: Option<(String, semver::Version)>| {
                         bound
                             .map(|(value, _)| format!("Some({})", raw_string_literal(&value)))
@@ -448,7 +390,6 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                             format!("Some({})", raw_string_literal(value))
                         })
                         .unwrap_or_else(|| "None".to_string());
-                    let backend_options = parse_options(backend.get("options"));
                     backends.push(format!(
                         r##"RegistryBackend{{
                             full: r#"{full}"#,
@@ -475,6 +416,25 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                     ));
                 }
                 _ => panic!("Unknown backend type"),
+            }
+        }
+        // `lower < upper`, where a missing lower bound is -inf and a missing upper +inf.
+        let below =
+            |lower: &Option<semver::Version>, upper: &Option<semver::Version>| match (lower, upper)
+            {
+                (Some(lower), Some(upper)) => lower.cmp_precedence(upper).is_lt(),
+                _ => true,
+            };
+        for (i, (full, platforms, min, max, options)) in ranges.iter().enumerate() {
+            for (_, other_platforms, other_min, other_max, other_options) in
+                ranges[i + 1..].iter().filter(|(f, ..)| f == full)
+            {
+                assert!(
+                    options == other_options
+                        || !(below(min, other_max) && below(other_min, max))
+                        || platforms_disjoint(platforms, other_platforms),
+                    "[{short}] backend {full} is listed more than once with different options for overlapping min_version/max_version ranges"
+                );
             }
         }
         let os = info
@@ -1043,283 +1003,36 @@ fn aqua_canonical_package_id(package: &AquaPackage) -> Option<String> {
         .or_else(|| package.path.clone())
 }
 
-/// Validate the declarative parts of a daemon preset: named ports, version
-/// detection, typed options, and initialization steps. A preset that passes here
-/// deserializes into the runtime `Preset` struct.
-fn validate_daemon_preset(path: &Path, value: &toml::Value) -> Result<()> {
-    let bad = |msg: &str| eyre!("{}: {msg}", path.display());
-    let version = value
-        .get("version")
-        .and_then(toml::Value::as_table)
-        .ok_or_else(|| bad("missing [version]"))?;
-    let pattern = version
-        .get("pattern")
-        .and_then(toml::Value::as_str)
-        .ok_or_else(|| bad("missing version.pattern"))?;
-    let re =
-        regex::Regex::new(pattern).map_err(|e| bad(&format!("invalid version.pattern: {e}")))?;
-    if re.captures_len() != 2 {
-        return Err(bad("version.pattern needs exactly one capture group"));
-    }
-    if !is_string_list(version.get("args").unwrap_or(&toml::Value::Array(vec![]))) {
-        return Err(bad("version.args must be a list of strings"));
-    }
-    if let Some(ports) = value.get("ports") {
-        let ports = ports
-            .as_table()
-            .ok_or_else(|| bad("[ports] must be a table"))?;
-        for (name, port) in ports {
-            if RESERVED_TEMPLATE_NAMES.contains(&name.as_str()) {
-                return Err(bad(&format!(
-                    "named port {name:?} shadows a reserved template name"
-                )));
-            }
-            if !port.as_integer().is_some_and(|p| (1..=65535).contains(&p)) {
-                return Err(bad(&format!("invalid named port {name:?}")));
-            }
+/// Whether no platform matches both registry selector lists; mirrors
+/// `registry::platforms_disjoint`.
+fn platforms_disjoint(a: &[String], b: &[String]) -> bool {
+    const ARCHES: [&str; 5] = ["x64", "arm64", "x86", "loongarch64", "riscv64"];
+    let split = |selector: &str| -> (Option<String>, Option<String>) {
+        match selector.split_once('-') {
+            Some((os, arch)) => (Some(os.to_string()), Some(arch.to_string())),
+            None if ARCHES.contains(&selector) => (None, Some(selector.to_string())),
+            None => (Some(selector.to_string()), None),
         }
-    }
-    if let Some(file) = value.get("data_version_file")
-        && !file.is_str()
-    {
-        return Err(bad("data_version_file must be a string"));
-    }
-    for (name, option) in value
-        .get("options")
-        .and_then(toml::Value::as_table)
-        .into_iter()
-        .flatten()
-    {
-        // Options share one template context with the ports and the names the
-        // engine binds, and are inserted last, so a collision would silently
-        // shadow the value a template expects.
-        if RESERVED_TEMPLATE_NAMES.contains(&name.as_str())
-            || value
-                .get("ports")
-                .and_then(|p| p.get(name.as_str()))
-                .is_some()
-        {
-            return Err(bad(&format!(
-                "option {name:?} shadows a reserved template name"
-            )));
-        }
-        match option {
-            toml::Value::Table(spec) => {
-                let kind = spec
-                    .get("type")
-                    .and_then(toml::Value::as_str)
-                    .ok_or_else(|| bad(&format!("option {name:?} needs a type")))?;
-                if !["string", "path", "list", "int", "bool"].contains(&kind) {
-                    return Err(bad(&format!("option {name:?} has unknown type {kind:?}")));
-                }
-                let default = spec
-                    .get("default")
-                    .ok_or_else(|| bad(&format!("option {name:?} needs a default")))?;
-                let matches = match kind {
-                    "string" | "path" => default.is_str(),
-                    "list" => is_string_list(default),
-                    "int" => default.is_integer(),
-                    _ => default.is_bool(),
-                };
-                if !matches {
-                    return Err(bad(&format!("option {name:?} default is not a {kind}")));
-                }
-                if let Some(pattern) = spec.get("pattern") {
-                    let pattern = pattern
-                        .as_str()
-                        .ok_or_else(|| bad(&format!("option {name:?} pattern must be a string")))?;
-                    regex::Regex::new(pattern).map_err(|e| {
-                        bad(&format!("option {name:?} has an invalid pattern: {e}"))
-                    })?;
-                }
-                if let Some(entry) = spec.get("entry_value_in") {
-                    let other = entry.get("option").and_then(toml::Value::as_str);
-                    let tier = entry.get("key").and_then(toml::Value::as_str);
-                    let (Some(other), Some(_)) = (other, tier) else {
-                        return Err(bad(&format!(
-                            "option {name:?} entry_value_in needs an option and a key"
-                        )));
-                    };
-                    if value.get("options").and_then(|o| o.get(other)).is_none() {
-                        return Err(bad(&format!(
-                            "option {name:?} entry_value_in names unknown option {other:?}"
-                        )));
-                    }
-                }
-                for key in ["requires", "ignored_with"] {
-                    if let Some(names) = spec.get(key) {
-                        if !is_string_list(names) {
-                            return Err(bad(&format!("option {name:?} {key} must be strings")));
-                        }
-                        for other in names.as_array().into_iter().flatten() {
-                            let other = other.as_str().unwrap_or_default();
-                            if value.get("options").and_then(|o| o.get(other)).is_none() {
-                                return Err(bad(&format!(
-                                    "option {name:?} {key} names unknown option {other:?}"
-                                )));
-                            }
-                        }
-                    }
-                }
-            }
-            toml::Value::String(_) | toml::Value::Integer(_) | toml::Value::Boolean(_) => {}
-            toml::Value::Array(_) if is_string_list(option) => {}
-            _ => return Err(bad(&format!("option {name:?} has an unsupported default"))),
-        }
-    }
-    let init = match value.get("init") {
-        Some(init) => init
-            .as_table()
-            .ok_or_else(|| bad("[init] must be a table"))?,
-        None => return Ok(()),
     };
-    if let Some(server) = init.get("server") {
-        let server = server
-            .as_table()
-            .ok_or_else(|| bad("[init.server] must be a table"))?;
-        for key in ["run", "ready"] {
-            if !server.get(key).is_some_and(is_argv) {
-                return Err(bad(&format!(
-                    "init.server.{key} must be a non-empty list of strings"
-                )));
-            }
-        }
-    }
-    let steps = match init.get("steps") {
-        Some(steps) => steps
-            .as_array()
-            .ok_or_else(|| bad("init.steps must be an array of tables"))?
-            .as_slice(),
-        None => &[],
+    let differ =
+        |x: &Option<String>, y: &Option<String>| matches!((x, y), (Some(x), Some(y)) if x != y);
+    // Windows on arm64 also matches x64 selectors, as `backend_matches_platform` does.
+    let windows_arm64 = |list: &[String]| {
+        list.iter().any(|s| {
+            matches!(
+                s.as_str(),
+                "windows" | "arm64" | "windows-arm64" | "x64" | "windows-x64"
+            )
+        })
     };
-    for step in steps {
-        let step = step
-            .as_table()
-            .ok_or_else(|| bad("init steps must be tables"))?;
-        if !step.get("run").is_some_and(is_argv) {
-            return Err(bad("each init step needs a non-empty run list of strings"));
-        }
-        match step.get("always") {
-            None => {}
-            Some(toml::Value::Boolean(false)) => {}
-            // A repeating step runs against already-published data, where the
-            // ephemeral init server is not started and its ports do not exist.
-            Some(toml::Value::Boolean(true)) if init.contains_key("server") => {
-                return Err(bad(
-                    "an init step cannot be always when the preset declares init.server",
-                ));
-            }
-            Some(toml::Value::Boolean(true)) => {}
-            Some(_) => return Err(bad("init step always must be a boolean")),
-        }
-        if let Some(key) = step.get("for_each") {
-            let key = key
-                .as_str()
-                .ok_or_else(|| bad("init step for_each must be a string"))?;
-            let list = value
-                .get("options")
-                .and_then(|o| o.get(key))
-                .ok_or_else(|| bad(&format!("init step for_each {key:?} is not an option")))?;
-            let kind = list
-                .get("type")
-                .and_then(toml::Value::as_str)
-                .unwrap_or(if list.is_array() { "list" } else { "other" });
-            if kind != "list" {
-                return Err(bad(&format!(
-                    "init step for_each {key:?} is not a list option"
-                )));
-            }
-        }
+    if a.is_empty() || b.is_empty() || (windows_arm64(a) && windows_arm64(b)) {
+        return false;
     }
-    Ok(())
-}
-
-/// Names the preset engine binds in the template context itself. Ports and
-/// options are inserted after them, so either could silently shadow one.
-const RESERVED_TEMPLATE_NAMES: &[&str] = &[
-    "data",
-    "port",
-    "item",
-    "item_key",
-    "item_value",
-    "init_port",
-    "init_http_port",
-    // Set from the daemon's proxy hostname when it has one.
-    "host",
-    "url",
-];
-
-fn is_string_list(value: &toml::Value) -> bool {
-    value
-        .as_array()
-        .is_some_and(|items| items.iter().all(toml::Value::is_str))
-}
-
-/// A command the runtime will execute, so it must name a program.
-fn is_argv(value: &toml::Value) -> bool {
-    is_string_list(value) && value.as_array().is_some_and(|items| !items.is_empty())
-}
-
-fn codegen_daemon_presets() -> Result<()> {
-    let dir = Path::new("registry/daemon-presets");
-    println!("cargo:rerun-if-changed={}", dir.display());
-    let mut paths = fs::read_dir(dir)?
-        .map(|e| e.map(|e| e.path()))
-        .collect::<std::io::Result<Vec<_>>>()?;
-    paths.sort();
-    let mut code = String::from("&[\n");
-    for path in paths {
-        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
-            continue;
-        }
-        println!("cargo:rerun-if-changed={}", path.display());
-        let content = fs::read_to_string(&path)?;
-        let value: toml::Value = toml::from_str(&content)?;
-        for key in ["tool", "binary", "description"] {
-            if value.get(key).and_then(toml::Value::as_str).is_none() {
-                return Err(eyre!("{}: missing {key}", path.display()));
-            }
-        }
-        if value
-            .get("port")
-            .and_then(toml::Value::as_integer)
-            .is_none()
-            || value
-                .get("daemon")
-                .and_then(|v| v.get("run"))
-                .and_then(toml::Value::as_str)
-                .is_none()
-        {
-            return Err(eyre!("{}: missing port or daemon.run", path.display()));
-        }
-        // Match the runtime Preset shape: a successful registry build must not
-        // embed a preset that fails deserialization when first selected.
-        let valid_port = value
-            .get("port")
-            .and_then(toml::Value::as_integer)
-            .is_some_and(|port| (1..=65535).contains(&port));
-        let valid_options = value.get("options").is_some_and(toml::Value::is_table);
-        let valid_exports = value
-            .get("exports")
-            .and_then(toml::Value::as_table)
-            .is_some_and(|exports| exports.values().all(toml::Value::is_str));
-        if !valid_port || !valid_options || !valid_exports {
-            return Err(eyre!(
-                "{}: invalid preset port, options, or exports",
-                path.display()
-            ));
-        }
-        validate_daemon_preset(&path, &value)?;
-        code.push_str(&format!(
-            "({:?}, {}),\n",
-            path.file_stem().unwrap().to_string_lossy(),
-            raw_string_literal(&content)
-        ));
-    }
-    code.push(']');
-    fs::write(
-        PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("daemon_presets.rs"),
-        code,
-    )?;
-    Ok(())
+    a.iter().all(|a| {
+        let (a_os, a_arch) = split(a);
+        b.iter().all(|b| {
+            let (b_os, b_arch) = split(b);
+            differ(&a_os, &b_os) || differ(&a_arch, &b_arch)
+        })
+    })
 }

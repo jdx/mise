@@ -616,6 +616,20 @@ destination-variant entries also resolve against it. See
 env = "MISE_DOTFILES_ROOT"
 type = "Path"
 
+[dotfiles.windows_symlinks]
+default = false
+description = "On Windows, deploy dotfile files as symbolic links instead of copies."
+docs = """
+By default `symlink-each` copies each file on Windows, and `symlink` links a
+file only when Windows allows it and otherwise copies it. With this on, both
+create real file symbolic links and fail when Windows refuses, rather than
+leaving a copy that no longer follows its source. Creating them needs
+Developer Mode or an elevated shell. Directory links are always junctions.
+Ignored on other platforms. See [Windows](/dotfiles/managed.html#windows).
+"""
+env = "MISE_DOTFILES_WINDOWS_SYMLINKS"
+type = "Bool"
+
 [dotnet.cli_telemetry_optout]
 description = "Set `DOTNET_CLI_TELEMETRY_OPTOUT` to opt out of .NET CLI telemetry."
 docs = """
@@ -803,17 +817,34 @@ rc = true
 type = "Bool"
 
 [env_file]
-description = "Dotenv file name to load from the current directory and each parent directory."
+description = "Dotenv file names to load from the current directory and each parent directory."
+deserialize_with = "path_or_paths"
 docs = """
-mise loads every file with this name, such as `.env`, between the filesystem
-root and the current directory. When a variable appears in more than one file,
-the file nearest the current directory wins. An absolute path loads that one
+mise loads every file with one of these names, such as `.env` and `.env.local`,
+between the filesystem root and the current directory. When a variable appears
+in more than one file, the file nearest the current directory wins, and within
+one directory a name later in the list wins. An absolute path loads that one
 file. For a dotenv file that belongs to one project, use
 [`_.file`](/environments/#env-file) in `mise.toml` instead.
+
+```toml [~/.config/mise/config.toml]
+[settings]
+env_file = [".env", ".env.local"]
+```
+
+`MISE_ENV_FILE` takes the names separated by `:` (`;` on Windows).
+
+These values are applied after every config file's `[env]`, so they override
+it, except for a file that an `_.file` entry has already loaded, which this
+setting skips. An [`_.file`](/environments/#env-file) entry, including one with
+`find_up = true` in a global config, is an ordinary `[env]` entry that a
+project's own `[env]` values can override.
 """
 env = "MISE_ENV_FILE"
 optional = true
-type = "Path"
+parse_env = "list_by_os_path_separator"
+rust_type = "Vec<PathBuf>"
+type = "ListPath"
 
 [env_shell_expand]
 default = true
@@ -2100,11 +2131,12 @@ duration such as `7d`, `6mo` or `1y`, or a cutoff date such as `2024-06-01` or
 minimum_release_age = "7d"
 ```
 
-The `24h` default applies to aqua, cargo, core, forgejo, gem, github, gitlab,
-go, npm, packslip, pypi, spm and ubi tools. Tools from asdf, vfox (including
-vfox plugin backends), conda, dotnet, http, s3 and spinel get no default
-cutoff. A value you set applies to every backend, except for tools in
-[`minimum_release_age_excludes`](#minimum_release_age_excludes).
+The `24h` default applies to every backend, except for tools in
+[`minimum_release_age_excludes`](#minimum_release_age_excludes). A backend can
+only hold back versions it knows a release date for. When mise installs a
+version that has none, it warns that the cutoff could not be checked; see
+[Which backends have a default](/security.html#which-backends-have-a-default).
+A value you set applies to every backend.
 
 The cutoff applies when mise resolves a version request such as `node@22` or
 `latest`, for backends that report release dates. Exact versions such as
@@ -2544,7 +2576,7 @@ mise exports traces only when a traces endpoint is also set, with
 reads other options, such as `OTEL_EXPORTER_OTLP_HEADERS` and
 `OTEL_SERVICE_NAME`, from the standard OpenTelemetry variables. Because export
 needs this setting too, an endpoint set for another tool does not make mise send
-data. Export does not need `experimental = true`, and offline mode turns it off.
+data. Export also needs `experimental = true`, and offline mode turns it off.
 
 Task output is exported separately, with [`otel.logs`](#otel.logs). See
 [OpenTelemetry](/tasks/opentelemetry.html).
@@ -2559,6 +2591,7 @@ docs = """
 mise exports logs only when a logs endpoint is also set, with
 `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`. Each record
 is linked to its task's span, which [`otel.enabled`](#otel.enabled) exports.
+Log export also needs `experimental = true`.
 
 This is separate from `otel.enabled` because it sends task output, including
 any secret a task prints, to the collector. With log export on, `interleave`
@@ -2648,25 +2681,51 @@ rust_type = "Vec<String>"
 type = "ListString"
 
 [paranoid]
-description = "Require explicit, content-bound trust for project config, and re-verify provenance on every install."
+default = false
+description = "Turn on paranoid mode: `true` for every protection, or a list of categories (`config`, `env_files`, `plugins`, `provenance`) for only those."
 docs = """
-Every config file outside global and system config needs your approval, which
-is tied to the file's contents, so any edit needs approval again.
-`.miserc.toml` files and configs under
-[`trusted_config_paths`](#trusted_config_paths) still load without it.
-Automatic trust, CI trust and `--yes` for the trust prompt are turned off, and
-[`locked_verify_provenance`](#locked_verify_provenance) is turned on. See
-[Paranoid mode](/paranoid.html).
+`true` turns on every part of [paranoid mode](/paranoid.html). A list turns on
+only the categories it names, and `false` turns them all off:
+
+```toml
+[settings]
+paranoid = ["env_files"]
+```
+
+- `config`: every config file outside global and system config needs your
+  approval, which is tied to the file's contents, so any edit needs approval
+  again. `.miserc.toml` files and configs under
+  [`trusted_config_paths`](#trusted_config_paths) still load without it.
+  Automatic trust, CI trust and `--yes` for the trust prompt are turned off, and
+  trust is not shared between worktrees or through a monorepo marker.
+- `env_files`: files loaded by `env._.file`, `env._.source` and
+  [`env_file`](#env_file) need approval tied to their contents.
+- `plugins`: mise refuses to install an unregistered community plugin by short
+  name.
+- `provenance`: [`locked_verify_provenance`](#locked_verify_provenance) is turned
+  on, and a "no attestations" answer from mise-versions is confirmed with GitHub.
+
+From the environment, `MISE_PARANOID=1` selects every category and
+`MISE_PARANOID=config,env_files` selects those listed. An unknown category is an
+error. See [Paranoid mode](/paranoid.html).
 """
+enum = [
+  { value = "config", description = "content-bound trust for project config, no automatic or CI trust" },
+  { value = "env_files", description = "content-bound trust for env files and sourced scripts" },
+  { value = "plugins", description = "refuse unregistered community plugins" },
+  { value = "provenance", description = "re-verify provenance on every install" },
+]
 env = "MISE_PARANOID"
 global_only = true
-type = "Bool"
+rust_type = "Paranoid"
+type = "BoolOrList"
 
 [pin]
-description = "Make `mise use` write the resolved version, such as `24.14.0` for `node@24`, instead of the requested one."
+description = "Make `mise use` and `mise upgrade --bump` write the resolved version, such as `24.14.0` for `node@24`, instead of the requested one."
 docs = """
 Same as passing `--pin` every time; `--fuzzy` writes the requested version for
-one command. To record exact versions without changing `mise.toml`, use a
+one command. `mise upgrade --bump` also writes resolved versions, replacing
+requests such as `latest` or `20` in `mise.toml`. To record exact versions without changing `mise.toml`, use a
 [lockfile](/dev-tools/mise-lock.html).
 """
 env = "MISE_PIN"
@@ -2775,6 +2834,28 @@ env = "MISE_PRUNE_EXCLUDE"
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
+
+[pypi.keyring_provider]
+description = "Read a `pypi:` index password from a `keyring` command when the index URL names a user but no password."
+docs = """
+Set to `subprocess` to have mise run `keyring get <index-url> <username>` when
+[`pypi.registry_url`](#pypi.registry_url) (or a tool's `registry_url`) contains a
+username but no password, such as an Azure Artifacts feed written as
+`https://VssSessionToken@pkgs.dev.azure.com/.../simple/{}/`. The printed password
+is sent as HTTP Basic credentials when mise lists versions and locks. This is
+the same value and lookup uv's `keyring-provider = "subprocess"` uses, so
+`mise lock` reaches the index the way `mise install` does through uv. mise also
+sets `UV_KEYRING_PROVIDER=subprocess` for the `uv lock` it runs, which ignores
+`uv.toml`. The
+`keyring` executable must be on `PATH`; if it is missing or has no entry, the
+request goes out without credentials. The password is never written to the
+lockfile or the version cache. See
+[Private indexes](/dev-tools/backends/pypi.html#private-indexes).
+"""
+enum = ["disabled", "subprocess"]
+env = "MISE_PYPI_KEYRING_PROVIDER"
+optional = true
+type = "String"
 
 [pypi.registry_url]
 default_docs = "https://pypi.org/pypi/{}/json"
@@ -4468,7 +4549,7 @@ type = "Bool"
 
 [use_versions_host]
 default = true
-description = "Get version lists, public GitHub release metadata and attestations from mise-versions instead of upstream APIs."
+description = "Get version lists, public GitHub release metadata and attestations from mise-versions before upstream APIs."
 docs = """
 [mise-versions](https://mise-versions.jdx.dev) is a shared cache that refreshes
 version lists for registry tools and public GitHub release data on a schedule.
@@ -4482,14 +4563,37 @@ tool's version list, and keeps it as long as a version list
 index cannot answer exactly reads that tool's list as before.
 
 When the host does not list a registry tool's versions, mise lists them from
-the tool's own source. GitHub release data for public repositories comes only
-from the host: if it fails, mise reports the error rather than spend GitHub's
-anonymous rate limit. mise asks GitHub directly only
-for a repository the host does not know, which may be private, and only with
-GitHub credentials. Private repositories, GitHub Enterprise, custom GitHub API
-URLs, and installs with this setting off need normal
-[GitHub authentication](/dev-tools/github-tokens.html) to stay within GitHub's
-rate limits.
+the tool's own source. GitHub release data, tags, repository contents and
+attestations for public repositories come from the host first. When the host
+errors (a timeout, a lost connection, or a `429` or `5xx` response), mise asks
+`api.github.com` for the same data instead, with your GitHub token if one is
+set. If GitHub fails too, release data and tag lists fall back to a copy mise
+cached earlier when it has one; otherwise the error names both failures.
+Anything the host answers is trusted, including a `404` for a missing release,
+tag or repository and an empty list, so those never reach GitHub's anonymous
+rate limit.
+Paranoid mode also asks GitHub when the host can't settle an attestation
+answer. Otherwise mise asks GitHub directly only for a repository the host does
+not know, which may be private, and only with GitHub credentials. Private
+repositories, GitHub Enterprise, custom GitHub API URLs, and installs with this
+setting off need normal [GitHub authentication](/dev-tools/github-tokens.html)
+to stay within GitHub's rate limits.
+
+Every backend's list may come from the host, including `npm:`, `pipx:`,
+`cargo:`, `gem:` and `go:` tools, when the tool is a registry tool on its
+registry backend. The host is skipped for a tool whose source you have
+redirected, because its list describes the public one: an npm registry from
+`.npmrc` or `NPM_CONFIG_REGISTRY` (or any registry under `npm.shell_out`),
+[`pypi.registry_url`](#pypi.registry_url),
+[`cargo.registry_name`](#cargo.registry_name), a `GOPROXY`, `GOPRIVATE` or
+`GONOPROXY` other than the default, a gem source or a primary `gem sources`
+entry other than rubygems.org, [`dotnet.registry_url`](#dotnet.registry_url), an
+`AWS_ENDPOINT_URL` for S3, or a local tool option that changes the listing.
+`conda:` tools always list from their channel, since which versions exist
+depends on the platform.
+The host's list can trail a brand-new release, which the default
+[`minimum_release_age`](#minimum_release_age) hides anyway. Set this to `false`
+to list straight from the source.
 
 When [`url_replacements`](#url_replacements) reroutes `api.github.com`, or a
 repository's release or attestation API paths, mise does not use this host for
@@ -4625,8 +4729,9 @@ docs = """
 `mise dot edit` uses it too when it adds an entry. `mise dot track` does not:
 it writes new track entries to the global `config.toml`, or to
 `conf.d/dotfiles-tracking.toml` when another entry already manages the target.
-Existing entries stay in the file that declares them. The path must be absolute
-or start with `~/`, and name a file that mise loads from the global config
+Existing entries stay in the file that declares them. The path may be absolute,
+start with `~/`, or be relative to the `config_root` of the config file that sets it, and may use
+templates such as `{{ config_source | dirname }}`. It must name a file that mise loads from the global config
 directory, such as `~/.config/mise/conf.d/30-dotfiles.toml`. See
 [Send global writes to separate files](/configuration.html#global-section-write-targets).
 """
@@ -4639,8 +4744,9 @@ description = "Global config file where `--global` package commands create new `
 docs = """
 Used by `mise bootstrap packages use --global` and
 `mise bootstrap packages import --global`. Existing entries stay in the file
-that declares them. The path must be absolute or start with `~/`, and name a
-file that mise loads from the global config directory, such as
+that declares them. The path may be absolute, start with `~/`, or be relative to
+the `config_root` of the config file that sets it, and may use templates such as
+`{{ config_source | dirname }}`. It must name a file that mise loads from the global config directory, such as
 `~/.config/mise/conf.d/20-packages.toml`. See
 [Send global writes to separate files](/configuration.html#global-section-write-targets).
 """
@@ -4651,8 +4757,9 @@ type = "Path"
 [write_targets.tools]
 description = "Global config file where `mise use --global` creates new `[tools]` entries."
 docs = """
-Existing entries stay in the file that declares them. The path must be absolute
-or start with `~/`, and name a file that mise loads from the global config
+Existing entries stay in the file that declares them. The path may be absolute,
+start with `~/`, or be relative to the `config_root` of the config file that sets it, and may use
+templates such as `{{ config_source | dirname }}`. It must name a file that mise loads from the global config
 directory, such as `~/.config/mise/conf.d/10-tools.toml`. See
 [Send global writes to separate files](/configuration.html#global-section-write-targets).
 """

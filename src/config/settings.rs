@@ -8,6 +8,7 @@ use itertools::Itertools;
 use mise_util::network;
 use path_absolutize::Absolutize;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
@@ -38,6 +39,8 @@ enum SettingsSourcePolicy {
 enum SettingsTrustPolicy {
     AsDiscovered,
     TrustedOnly,
+    /// Global and system config only: no project file is consulted, trusted or not.
+    GlobalOnly,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,6 +61,13 @@ impl SettingsLoadPolicy {
     pub(crate) const TRUSTED_HIERARCHY: Self = Self {
         source: SettingsSourcePolicy::Hierarchy,
         trust: SettingsTrustPolicy::TrustedOnly,
+    };
+    /// Settings no project file can influence. The trust check reads a few of them
+    /// (`paranoid`, `trusted_config_paths`, ...), so they must exist before any project
+    /// file can be classified as trusted.
+    const GLOBAL_HIERARCHY: Self = Self {
+        source: SettingsSourcePolicy::Hierarchy,
+        trust: SettingsTrustPolicy::GlobalOnly,
     };
 }
 
@@ -91,6 +101,52 @@ impl IdiomaticVersionFileSettings {
 }
 
 static PACKAGE_QUERY_SETTINGS: AtomicBool = AtomicBool::new(false);
+type ParseCache = std::collections::HashMap<PathBuf, Result<SettingsPartial, String>>;
+
+thread_local! {
+    /// Settings files parsed during the current [`load`], so the global-only pass that
+    /// bootstraps trust and the trusted pass that follows it read each file once. `None`
+    /// outside a load. `load` runs on one thread, so this never mixes concurrent loads.
+    static LOAD_PARSE_CACHE: std::cell::RefCell<Option<ParseCache>> =
+        const { std::cell::RefCell::new(None) };
+    /// How many times each settings file was actually parsed on this thread.
+    #[cfg(test)]
+    static PARSE_COUNTS: std::cell::RefCell<std::collections::HashMap<PathBuf, usize>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+fn parse_settings_file_once(path: &Path) -> Result<SettingsPartial> {
+    let cached = LOAD_PARSE_CACHE
+        .with_borrow(|cache| cache.as_ref().and_then(|cache| cache.get(path).cloned()));
+    if let Some(cached) = cached {
+        return cached.map_err(|err| eyre::eyre!(err));
+    }
+    #[cfg(test)]
+    PARSE_COUNTS.with_borrow_mut(|counts| *counts.entry(path.to_path_buf()).or_default() += 1);
+    let parsed = Settings::parse_settings_file(path);
+    LOAD_PARSE_CACHE.with_borrow_mut(|cache| {
+        if let Some(cache) = cache {
+            cache.insert(
+                path.to_path_buf(),
+                parsed
+                    .as_ref()
+                    .map(Clone::clone)
+                    .map_err(|err| err.to_string()),
+            );
+        }
+    });
+    parsed
+}
+
+/// Set while [`load`] has published its global-only bootstrap snapshot, so the cache reads as
+/// loaded although the real settings are still being built.
+static BOOTSTRAPPING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the settings cache holds only the snapshot used to decide trust. Warnings that depend
+/// on the final settings must wait for them.
+pub(crate) fn is_bootstrapping() -> bool {
+    BOOTSTRAPPING.load(Ordering::Relaxed)
+}
 /// Caches the resolved `safe` value from the most recent settings load so
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static EXPLICIT_INLINE_SHELL: RwLock<Option<bool>> = RwLock::new(None);
@@ -643,13 +699,16 @@ fn resolve_task_disable_paths(settings: &mut toml::Table, path: &Path) {
     }
 }
 
-/// Resolve age identity paths while the settings file that declared them is
-/// still known. Once settings layers are merged, a relative `PathBuf` no
-/// longer carries enough information to distinguish two config roots.
-fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
-    let Some(age) = settings.get_mut("age").and_then(toml::Value::as_table_mut) else {
-        return Ok(());
-    };
+/// Build a resolver for path settings declared in the settings file at `path`.
+///
+/// The returned closure takes a `label` (e.g. `settings.age.key_file`) and a TOML value. It
+/// renders the value as a tera template (`config_root`, `xdg_config_home`, ...), then joins a
+/// relative result to `base`. Absolute and `~/` paths are kept as written. Render errors name
+/// `label` and the file.
+fn settings_path_resolver<'a>(
+    path: &'a Path,
+    base: PathBuf,
+) -> impl FnMut(&str, &mut toml::Value) -> Result<()> + 'a {
     let config_root = crate::config::config_file::config_root::config_root(path);
     let mut tera = crate::tera::get_miserc_tera();
     let mut context = tera::Context::new();
@@ -666,15 +725,16 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
     context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
     context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
     context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
+    context.insert("system_brew_prefix", &env::system_brew_prefix());
 
-    let mut resolve = |setting: &str, target: &mut toml::Value| -> Result<()> {
+    move |label: &str, target: &mut toml::Value| -> Result<()> {
         let Some(value) = target.as_str() else {
             return Ok(());
         };
         let rendered = if crate::tera::contains_template_syntax(value) {
             crate::tera::render_str(&mut tera, value, &context).map_err(|err| {
                 eyre!(
-                    "failed to render settings.age.{setting} in {}: {err}",
+                    "failed to render {label} in {}: {err}",
                     file::display_path(path)
                 )
             })?
@@ -688,7 +748,7 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
         {
             rendered_path.to_path_buf()
         } else {
-            let joined = config_root.join(rendered_path);
+            let joined = base.join(rendered_path);
             joined
                 .absolutize()
                 .map(|p| p.into_owned())
@@ -696,19 +756,53 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
         };
         *target = toml::Value::String(resolved.to_string_lossy().into_owned());
         Ok(())
-    };
+    }
+}
 
+/// Resolve age identity paths while the settings file that declared them is
+/// still known. Once settings layers are merged, a relative `PathBuf` no
+/// longer carries enough information to distinguish two config roots.
+fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
+    let Some(age) = settings.get_mut("age").and_then(toml::Value::as_table_mut) else {
+        return Ok(());
+    };
+    let config_root = crate::config::config_file::config_root::config_root(path);
+    let mut resolve = settings_path_resolver(path, config_root);
     if let Some(key_file) = age.get_mut("key_file") {
-        resolve("key_file", key_file)?;
+        resolve("settings.age.key_file", key_file)?;
     }
     for setting in ["identity_files", "ssh_identity_files"] {
         if let Some(values) = age.get_mut(setting).and_then(toml::Value::as_array_mut) {
             for value in values {
-                resolve(setting, value)?;
+                resolve(&format!("settings.age.{setting}"), value)?;
             }
         }
     }
     Ok(())
+}
+
+/// Resolve `write_targets` paths against the config root of the declaring settings file, for the
+/// same reason as [`resolve_age_paths`]. Templates such as `{{ xdg_config_home }}` let dotfiles
+/// shared between machines name a global fragment without hardcoding the config directory.
+fn resolve_write_target_paths(settings: &mut toml::Table, path: &Path) {
+    let Some(targets) = settings
+        .get_mut("write_targets")
+        .and_then(toml::Value::as_table_mut)
+    else {
+        return;
+    };
+    let config_root = crate::config::config_file::config_root::config_root(path);
+    let mut resolve = settings_path_resolver(path, config_root);
+    for section in ["tools", "packages", "dotfiles"] {
+        if let Some(target) = targets.get_mut(section)
+            && let Err(err) = resolve(&format!("settings.write_targets.{section}"), target)
+        {
+            // Dropping the whole settings layer would silently send global writes to the
+            // default file. The unrendered template is not an absolute path, so the write
+            // fails in `configured_global_write_path` instead.
+            warn!("{err}");
+        }
+    }
 }
 
 /// mise behavior layered on the generated [`Settings`] type, which lives in the
@@ -732,7 +826,6 @@ pub trait SettingsExt: Sized {
 
     fn erlang_compile(&self, purpose: CompilePurpose) -> Option<bool>;
 
-    #[cfg(not(windows))]
     fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool>;
 
     /// The log level the parsed CLI flags ask for, without a full settings build.
@@ -934,7 +1027,6 @@ impl SettingsExt for Settings {
         self.compile_setting(purpose, "erlang", self.erlang.compile)
     }
 
-    #[cfg(not(windows))]
     fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool> {
         self.compile_setting(purpose, "ruby", self.ruby.compile)
     }
@@ -964,9 +1056,10 @@ impl SettingsExt for Settings {
         let mut builder = Self::builder().env();
         // Reuse operator-owned authentication settings, including the OAuth
         // client ID needed to locate cached tokens. Never discover project files.
-        let paths = super::global_config_files()
+        let paths = super::override_config_files()
             .into_iter()
             .rev()
+            .chain(super::global_config_files().into_iter().rev())
             .chain(super::system_config_files().into_iter().rev());
         for path in paths {
             if let Ok(settings) = Self::parse_settings_file(&path) {
@@ -1025,6 +1118,7 @@ impl SettingsExt for Settings {
             // never rewritten.
             resolve_aqua_registry_paths(settings, path);
             resolve_age_paths(settings, path)?;
+            resolve_write_target_paths(settings, path);
             resolve_task_disable_paths(settings, path);
         }
         if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
@@ -1129,9 +1223,18 @@ impl SettingsExt for Settings {
         if let Some(cwd) = &*dirs::CWD
             && let Some(env_file) = &self.env_file
         {
-            let env_file = env_file.to_string_lossy().to_string();
-            for p in FindUp::new(cwd, &[env_file]) {
-                files.push(p);
+            let names = env_file
+                .iter()
+                .map(|name| name.to_string_lossy().to_string())
+                .collect::<Vec<_>>();
+            // An absolute name matches in every directory, so keep only its first (nearest)
+            // occurrence. Reversed below, the loader would otherwise see it at the farthest
+            // directory and let a nearer `.env` override a file the user listed after it.
+            let mut seen = HashSet::new();
+            for p in FindUp::new(cwd, &names) {
+                if seen.insert(p.clone()) {
+                    files.push(p);
+                }
             }
         }
         files.into_iter().rev().collect()
@@ -1451,11 +1554,16 @@ impl SettingsInternal for Settings {
             .filter(|path| match trust_policy {
                 SettingsTrustPolicy::AsDiscovered => true,
                 SettingsTrustPolicy::TrustedOnly => {
-                    crate::config::is_global_config(path)
-                        || crate::config::config_file::is_path_trusted(path)
+                    let usable = crate::config::is_global_config(path)
+                        || crate::config::config_file::is_path_trusted(path);
+                    if !usable {
+                        debug!("ignoring settings in untrusted config: {}", path.display());
+                    }
+                    usable
                 }
+                SettingsTrustPolicy::GlobalOnly => crate::config::is_global_config(path),
             })
-            .filter_map(|path| match Self::parse_settings_file(&path) {
+            .filter_map(|path| match parse_settings_file_once(&path) {
                 Ok(config) => Some(config),
                 Err(err) => {
                     // Name the file. mise reads several settings files and two of them can fail
@@ -1646,8 +1754,38 @@ fn load() -> Result<Arc<Settings>> {
         env::set_current_dir(cd)?;
     }
 
-    // Reload settings after current directory option processed
-    settings = Settings::load_sources_from(None, SettingsLoadPolicy::HIERARCHY)?;
+    // Reload settings after current directory option processed. A project's `[settings]` can
+    // repoint downloads and build commands, so they apply only once that project is trusted,
+    // just like its `[tools]` and `[env]`. Deciding trust reads a few settings of its own, so
+    // publish the ones no project file can influence first.
+    let previous = mise_settings::is_loaded()
+        .then(mise_settings::last_cached)
+        .flatten();
+    LOAD_PARSE_CACHE.set(Some(ParseCache::new()));
+    let bootstrap = Settings::load_sources_from(None, SettingsLoadPolicy::GLOBAL_HIERARCHY);
+    let bootstrap = match bootstrap {
+        Ok(bootstrap) => bootstrap,
+        Err(err) => {
+            LOAD_PARSE_CACHE.set(None);
+            return Err(err);
+        }
+    };
+    mise_settings::store(Arc::new(bootstrap));
+    BOOTSTRAPPING.store(true, Ordering::Relaxed);
+    let trusted = Settings::load_sources_from(None, SettingsLoadPolicy::TRUSTED_HIERARCHY);
+    BOOTSTRAPPING.store(false, Ordering::Relaxed);
+    LOAD_PARSE_CACHE.set(None);
+    settings = match trusted {
+        Ok(settings) => settings,
+        Err(err) => {
+            // A failed reload keeps the settings that were current before it.
+            match previous {
+                Some(previous) => mise_settings::store(previous),
+                None => mise_settings::clear(),
+            }
+            return Err(err);
+        }
+    };
     time!("try_get load2");
     if !settings.legacy_version_file {
         settings.idiomatic_version_file = Some(false);
@@ -1700,6 +1838,9 @@ fn load() -> Result<Arc<Settings>> {
     }
     trace!("Settings: {:#?}", redacted_settings_for_debug(&settings));
     let settings = Arc::new(settings);
+    // Replace the bootstrap snapshot published above; the loader's own result is not cached
+    // once the cache has changed underneath it.
+    mise_settings::store(settings.clone());
     let system_installs_changed = settings.system_installs_dir() != *env::MISE_SYSTEM_INSTALLS_DIR;
     if system_installs_changed {
         crate::toolset::install_state::reset_tools();
@@ -2212,6 +2353,54 @@ mod tests {
     /// The shape #5791 reported: the setting is accepted into the file, so without this it
     /// survives into the partial and `mise settings get` echoes it back while the config
     /// loader — which already ran — never saw it.
+    /// The global-only pass that bootstraps trust and the trusted pass after it both read the
+    /// config files, but a file must only be parsed once per load, and reads outside a load
+    /// must not be served from a cache.
+    #[test]
+    fn test_load_parses_each_settings_file_once() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let layers = || Settings::settings_layers_from(None, SettingsTrustPolicy::AsDiscovered);
+        let parses = || PARSE_COUNTS.with_borrow(|counts| counts.values().sum::<usize>());
+
+        LOAD_PARSE_CACHE.set(Some(ParseCache::new()));
+        let before = parses();
+        layers();
+        let first_pass = parses() - before;
+        layers();
+        let second_pass = parses() - before - first_pass;
+        LOAD_PARSE_CACHE.set(None);
+        // The unit-test config directory always holds at least one settings file.
+        assert!(first_pass >= 1, "no settings file was parsed");
+        assert_eq!(second_pass, 0, "the second pass re-parsed a cached file");
+
+        let before = parses();
+        layers();
+        assert_eq!(
+            parses() - before,
+            first_pass,
+            "a read outside a load was cached"
+        );
+    }
+
+    /// `load` must open the cache for its two passes and close it afterwards, or the first
+    /// settings reload after an edit would keep serving the old values.
+    #[test]
+    fn test_load_closes_its_parse_cache() {
+        let _settings = crate::test::SettingsGuard::lock();
+        // Tests may share a thread (`RUST_TEST_THREADS=1`), so count only this load's parses.
+        PARSE_COUNTS.with_borrow_mut(|counts| counts.clear());
+        let settings = load();
+        assert!(settings.is_ok(), "{:?}", settings.err());
+        assert!(LOAD_PARSE_CACHE.with_borrow(Option::is_none));
+        // Every file the real load touched was parsed exactly once.
+        PARSE_COUNTS.with_borrow(|counts| {
+            assert!(counts.values().all(|n| *n == 1), "{counts:?}");
+        });
+    }
+
+    /// The shape #5791 reported: the setting is accepted into the file, so without this it
+    /// survives into the partial and `mise settings get` echoes it back while the config
+    /// loader — which already ran — never saw it.
     #[test]
     fn test_parse_settings_file_strips_env_only_settings() {
         let dir = tempfile::tempdir().unwrap();
@@ -2655,6 +2844,55 @@ mod tests {
     }
 
     #[test]
+    fn write_targets_resolve_against_the_declaring_config_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("mise.toml");
+        let mut settings = toml::from_str::<toml::Table>(
+            r#"
+            [write_targets]
+            tools = "tools.toml"
+            packages = "{{ xdg_config_home }}/mise/packages.toml"
+            dotfiles = "~/dotfiles.toml"
+            "#,
+        )
+        .unwrap();
+
+        resolve_write_target_paths(&mut settings, &config_path);
+
+        assert_eq!(
+            settings["write_targets"]["tools"].as_str(),
+            Some(dir.path().join("tools.toml").to_str().unwrap())
+        );
+        assert_eq!(
+            Path::new(settings["write_targets"]["packages"].as_str().unwrap()),
+            env::XDG_CONFIG_HOME.join("mise/packages.toml")
+        );
+        assert_eq!(
+            settings["write_targets"]["dotfiles"].as_str(),
+            Some("~/dotfiles.toml")
+        );
+    }
+
+    #[test]
+    fn invalid_write_target_template_is_left_for_the_write_check_to_reject() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = toml::from_str::<toml::Table>(
+            r#"
+            [write_targets]
+            tools = "{{ missing_variable }}"
+            "#,
+        )
+        .unwrap();
+
+        resolve_write_target_paths(&mut settings, &dir.path().join("mise.toml"));
+
+        assert_eq!(
+            settings["write_targets"]["tools"].as_str(),
+            Some("{{ missing_variable }}")
+        );
+    }
+
+    #[test]
     fn invalid_age_path_template_names_the_setting_and_file() {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("mise.toml");
@@ -2803,7 +3041,7 @@ mod tests {
         let partial = settings_partial_from_table(settings);
 
         assert_eq!(partial.ci, Some(true));
-        assert_eq!(partial.paranoid, Some(true));
+        assert_eq!(partial.paranoid, Some(mise_settings::Paranoid::all()));
         assert_eq!(
             partial.trusted_config_paths,
             Some([PathBuf::from("/")].into_iter().collect())

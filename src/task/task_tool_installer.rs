@@ -244,7 +244,7 @@ impl<'a> TaskToolInstaller<'a> {
                 },
             )
             .await?;
-        if !dry_run && let Err(err) = crate::shims::ensure_lazy_shims(&missing) {
+        if !dry_run && let Err(err) = crate::shims::ensure_lazy_shims(&missing).await {
             warn!("failed to create shims for lazy tools: {err:#}");
         }
 

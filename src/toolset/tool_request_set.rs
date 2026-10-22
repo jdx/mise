@@ -1,3 +1,4 @@
+use crate::daemons::glue::DaemonSetExt;
 use std::fmt::{Debug, Display};
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
@@ -220,7 +221,7 @@ impl ToolRequestSetBuilder {
         if self.config_files.is_none() {
             config.daemons()?.add_tool_requests(&mut trs)?;
         } else {
-            crate::daemons::load(config_files)?.add_tool_requests(&mut trs)?;
+            crate::daemons::glue::load(config_files)?.add_tool_requests(&mut trs)?;
         }
         Ok(trs)
     }
@@ -326,7 +327,7 @@ pub fn apply_config_options_to_runtime_arg(
 /// act as the tool-level defaults when a command requests another version.
 /// Multiple supported exact matches or unmatched requests are ambiguous, so
 /// none of their options are applied arbitrarily.
-pub(super) fn configured_options_for_runtime_request(
+pub(crate) fn configured_options_for_runtime_request(
     configured: &[ToolRequest],
     runtime: &ToolRequest,
 ) -> Option<crate::toolset::ToolVersionOptions> {

@@ -119,6 +119,9 @@ export const commands: { [key: string]: Command } = {
               ls: {
                 hide: false,
               },
+              purge: {
+                hide: false,
+              },
               show: {
                 hide: false,
               },
@@ -423,6 +426,9 @@ export const commands: { [key: string]: Command } = {
   config: {
     hide: false,
     subcommands: {
+      explain: {
+        hide: false,
+      },
       get: {
         hide: false,
       },
@@ -574,6 +580,9 @@ export const commands: { [key: string]: Command } = {
             hide: false,
           },
           ls: {
+            hide: false,
+          },
+          purge: {
             hide: false,
           },
           show: {
@@ -736,6 +745,9 @@ export const commands: { [key: string]: Command } = {
     hide: false,
   },
   "ls-remote": {
+    hide: false,
+  },
+  lsp: {
     hide: false,
   },
   mcp: {

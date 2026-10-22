@@ -538,6 +538,19 @@ impl Backend for UnifiedGitBackend {
         VersionOrder::from_options_or(opts, self.ba.registry_version_order().unwrap_or_default())
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::with_platforms(
+            if self.is_gitlab() {
+                &["tool_gitlab_options", "tool_forge_options"]
+            } else if self.is_forgejo() {
+                &["tool_forgejo_options", "tool_forge_options"]
+            } else {
+                &["tool_github_options", "tool_forge_options"]
+            },
+            &["tool_forge_platforms"],
+        ))
+    }
+
     fn get_type(&self) -> BackendType {
         if self.is_gitlab() {
             BackendType::Gitlab
@@ -561,25 +574,15 @@ impl Backend for UnifiedGitBackend {
         if !self.is_version_installed(config, tv, check_symlink) {
             return Ok(false);
         }
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let raw_opts = tv.request.options();
         let patterns = self
             .options(&raw_opts)
             .additional_asset_patterns_for_target(&PlatformTarget::from_current());
         Ok(self.additional_assets_install_state_matches(tv, &patterns))
     }
 
-    async fn install_operation_count(&self, tv: &ToolVersion, ctx: &InstallContext) -> usize {
-        let raw_opts = ctx
-            .config
-            .get_tool_opts_with_overrides(&self.ba)
-            .await
-            .unwrap_or_else(|err| {
-                debug!(
-                    "failed to resolve merged options while counting install operations for {}: {err:#}",
-                    tv.style()
-                );
-                tv.request.options()
-            });
+    async fn install_operation_count(&self, tv: &ToolVersion, _ctx: &InstallContext) -> usize {
+        let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
         3 + opts
             .additional_asset_patterns_for_target(&PlatformTarget::from_current())
@@ -747,26 +750,24 @@ impl Backend for UnifiedGitBackend {
             // so flipping the `prerelease` tool option (e.g. via a project
             // override) is correct without invalidating the cache; the read
             // path filters on `prerelease` according to the current opts.
-            github::list_releases_including_prereleases_from_url(
-                api_url.as_str(),
-                &repo,
-                !skip_asset_check,
-            )
-            .await?
-            .into_iter()
-            .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
-            .filter(|r| skip_asset_check || github_release_has_assets(r))
-            .map(|r| {
-                let created_at = Some(r.released_at().to_string());
-                VersionInfo {
-                    version: self.strip_version_prefix(&r.tag_name, &opts),
-                    created_at,
-                    release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
-                    prerelease: Some(r.prerelease),
-                    ..Default::default()
-                }
-            })
-            .collect()
+            // Version-level data only: from mise-versions' whole list, one
+            // request however many releases the repository has.
+            github::list_release_versions(api_url.as_str(), &repo, !skip_asset_check)
+                .await?
+                .into_iter()
+                .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+                .filter(|r| skip_asset_check || r.has_assets)
+                .map(|r| {
+                    let created_at = r.released_at.clone();
+                    VersionInfo {
+                        version: self.strip_version_prefix(&r.tag_name, &opts),
+                        created_at,
+                        release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
+                        prerelease: Some(r.prerelease),
+                        ..Default::default()
+                    }
+                })
+                .collect()
         };
 
         // Apply common validation and reverse order
@@ -918,7 +919,9 @@ impl Backend for UnifiedGitBackend {
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
         let repo = self.repo();
-        let raw_opts = ctx.config.get_tool_opts_with_overrides(&self.ba).await?;
+        // the version's own request options: the config's are the first
+        // entry's, which a later entry of the same tool must not inherit
+        let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
         let current_target = PlatformTarget::from_current();
         let additional_patterns = opts.additional_asset_patterns_for_target(&current_target);
@@ -1186,12 +1189,12 @@ impl Backend for UnifiedGitBackend {
                 })
             }
             Err(e) => {
-                if Settings::get().generate_lockfiles()
-                    && !matches!(
-                        e.downcast_ref::<crate::errors::Error>(),
-                        Some(crate::errors::Error::UnsupportedTarget(_))
-                    )
-                {
+                // An unsupported target is reported to the lock command as such.
+                let unsupported = matches!(
+                    e.downcast_ref::<crate::errors::Error>(),
+                    Some(crate::errors::Error::UnsupportedTarget(_))
+                );
+                if unsupported || Settings::get().generate_lockfiles() {
                     return Err(e);
                 }
                 debug!(

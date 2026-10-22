@@ -18,7 +18,7 @@ repository's config run code.
 | Automation has to read config that someone else wrote                    | [Safe mode](#safe-mode)                         | Off; set `MISE_SAFE=1`                                       |
 | A trusted config changes after you reviewed it                           | [Paranoid mode](/paranoid.html)                 | Off                                                          |
 | A download was tampered with or replaced                                 | [Download verification](#download-verification) | On, where the backend and the upstream project support it    |
-| A newly published release is malicious                                   | [Minimum release age](#minimum-release-age)     | 24 hours for [most backends](#which-backends-have-a-default) |
+| A newly published release is malicious                                   | [Minimum release age](#minimum-release-age)     | 24 hours for [every backend](#which-backends-have-a-default) |
 | A task or command reads, writes or reaches more than it needs            | [Sandboxing](/sandboxing.html)                  | Off; Linux and macOS only                                    |
 | A secret ends up in your shell, a log or a process that does not need it | [Secrets](#secrets)                             | Opt in                                                       |
 
@@ -49,7 +49,10 @@ A `mise.toml` loads without trust when it has no template syntax
 - `[tasks]`, as long as no task lists `secrets`
 
 Anything else needs trust, including tool option tables, `[env]`, `[hooks]`,
-`[settings]`, `[tool_alias]` and `include`. Other files follow the same idea:
+`[settings]`, `[tool_alias]` and `include`. mise ignores the `[settings]` of a
+config that is not trusted, so a repository cannot change mirrors, build
+commands or other settings before you trust it. Other files follow the same
+idea:
 
 - `.tool-versions` needs trust only when it contains template syntax or inline
   tool options such as `node[postinstall=...] 24`.
@@ -59,7 +62,8 @@ Anything else needs trust, including tool option tables, `[env]`, `[hooks]`,
   contain template syntax or list `secrets`.
 - A [`.miserc.toml`](/configuration.html#miserc) never needs trust. It only
   holds early settings that choose which config files load, and its templates
-  cannot call `exec()` or `read_file()`.
+  cannot call `exec()`, `read_file()`, `read_json()`, `read_yaml()`, or
+  `read_toml()`.
 
 [Paranoid mode](/paranoid.html) removes these exemptions apart from
 `.miserc.toml`: every other config file outside global and system config needs
@@ -194,7 +198,8 @@ build scripts, such as a `cargo:` crate's `build.rs`.
 
 These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
 
-- `exec()` and `read_file()` in templates, in any config.
+- `exec()`, `read_file()`, `read_json()`, `read_yaml()`, and `read_toml()` in
+  templates, in any config.
 - Running tasks.
 - The tool options `postinstall` and `install_env`.
 - asdf plugin scripts, so tools from the `asdf:` backend cannot list or install
@@ -319,11 +324,9 @@ accepts relative durations (`7d`, `6mo`, `1y`) and dates (`2024-06-01`,
 
 ### Which backends have a default
 
-Without a configured value, mise applies the 24-hour default to `aqua:`,
-`cargo:`, core tools, `forgejo:`, `gem:`, `github:`, `gitlab:`, `go:`, `npm:`,
-`packslip:`, `pypi:`, `spm:` and `ubi:` tools. Other backends, such as `http:`,
-`s3:`, `conda:`, `dotnet:`, `asdf:` and `vfox:`, apply a cutoff only when you
-set one.
+Without a configured value, mise applies the 24-hour default to every backend.
+Use [`minimum_release_age_excludes`](/configuration/settings.html#minimum_release_age_excludes)
+to leave a tool or backend out.
 
 A backend can filter only versions it knows a release date for:
 
@@ -332,7 +335,9 @@ A backend can filter only versions it knows a release date for:
 | Filter the tool's own versions                   | Backends that report release dates, such as `aqua:`, `cargo:`, `github:`, `gitlab:`, `go:`, `npm:`, `pypi:` and most core tools |
 | Filter dependencies resolved during installation | `npm:` and `pypi:` (`pipx:` is an alias)                                                                                        |
 
-Versions without a release date are not filtered. Other backends can hold back
+Versions without a release date are not filtered. When mise installs one it
+warns that the cutoff could not be checked, so you know that version was not held
+back; switch to a backend that reports dates, or exclude the tool to silence it. Other backends can hold back
 the tool's own version, but not the dependencies its installer or compiler
 fetches. See the [npm](/dev-tools/backends/npm.html) and
 [PyPI](/dev-tools/backends/pypi.html) backend pages for how they pass the cutoff

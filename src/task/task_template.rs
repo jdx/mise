@@ -1,109 +1,7 @@
-use crate::config::config_file::mise_toml::{EnvList, deserialize_vars};
-use crate::config::config_file::toml::deserialize_arr;
+use crate::task::Task;
 use crate::task::task_sources::TaskOutputs;
-use crate::task::{
-    RunEntry, Silent, Task, TaskCacheConfig, TaskConfirm, TaskDep, TaskOutput, TaskRustCacheConfig,
-    TaskToolValue, TaskWatchOptions,
-};
-use indexmap::IndexMap;
-use serde::{Deserialize, Deserializer, de::Error as _};
 
-fn reject_template_secrets<'de, D: Deserializer<'de>>(_: D) -> Result<(), D::Error> {
-    Err(D::Error::custom(crate::secrets::G7_TEXT))
-}
-
-/// A task template definition that can be extended by tasks via `extends`
-/// Templates are defined in [task_templates.*] sections of mise.toml
-#[derive(Debug, Clone, Default, Deserialize)]
-pub struct TaskTemplate {
-    #[serde(default)]
-    pub description: String,
-    #[serde(default, rename = "alias", deserialize_with = "deserialize_arr")]
-    pub aliases: Vec<String>,
-    #[serde(default)]
-    pub confirm: Option<TaskConfirm>,
-    #[serde(default, deserialize_with = "deserialize_arr")]
-    pub depends: Vec<TaskDep>,
-    #[serde(default, deserialize_with = "deserialize_arr")]
-    pub depends_post: Vec<TaskDep>,
-    #[serde(default, deserialize_with = "deserialize_arr")]
-    pub wait_for: Vec<TaskDep>,
-    #[serde(default)]
-    pub daemons: Option<crate::task::TaskDaemons>,
-    /// Always an error: a template cannot list secrets (G7).
-    #[serde(
-        default,
-        rename = "secrets",
-        deserialize_with = "reject_template_secrets"
-    )]
-    pub(crate) _secrets: (),
-    #[serde(default)]
-    pub env: EnvList,
-    #[serde(default, deserialize_with = "deserialize_vars")]
-    pub vars: EnvList,
-    #[serde(default)]
-    pub dir: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_arr")]
-    pub sources: Vec<String>,
-    #[serde(default)]
-    pub watch: Option<TaskWatchOptions>,
-    #[serde(default)]
-    pub outputs: TaskOutputs,
-    #[serde(default)]
-    pub cache: Option<TaskCacheConfig>,
-    #[serde(default)]
-    pub rust_cache: Option<TaskRustCacheConfig>,
-    #[serde(default)]
-    pub output: Option<TaskOutput>,
-    #[serde(default)]
-    pub shell: Option<String>,
-    #[serde(default)]
-    pub silent: Option<Silent>,
-    #[serde(default)]
-    pub tools: IndexMap<String, TaskToolValue>,
-    #[serde(default)]
-    pub usage: String,
-    #[serde(default)]
-    pub timeout: Option<String>,
-    #[serde(default)]
-    pub skip_if: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_arr")]
-    pub run: Vec<RunEntry>,
-    #[serde(default, deserialize_with = "deserialize_arr")]
-    pub run_windows: Vec<RunEntry>,
-    #[serde(default)]
-    pub file: Option<String>,
-    /// Block reads, writes, network, and env vars
-    #[serde(default)]
-    pub deny_all: bool,
-    /// Block filesystem reads
-    #[serde(default)]
-    pub deny_read: bool,
-    /// Block all filesystem writes
-    #[serde(default)]
-    pub deny_write: bool,
-    /// Block all network access
-    #[serde(default)]
-    pub deny_net: bool,
-    /// Block env var inheritance
-    #[serde(default)]
-    pub deny_env: bool,
-    /// Allow reads from specific paths
-    #[serde(default)]
-    pub allow_read: Vec<std::path::PathBuf>,
-    /// Allow writes to specific paths
-    #[serde(default)]
-    pub allow_write: Vec<std::path::PathBuf>,
-    /// Allow network to specific hosts
-    #[serde(default)]
-    pub allow_net: Vec<String>,
-    /// Allow specific env vars through
-    #[serde(default)]
-    pub allow_env: Vec<String>,
-    /// Preserve ambient env vars when env inheritance is denied without hashing their values
-    #[serde(default)]
-    pub pass_through_env: Vec<String>,
-}
+pub(crate) use mise_config::task::TaskTemplate;
 
 /// What a merge does with the template's `usage` spec.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -273,7 +171,7 @@ impl Task {
             && let Some(ref silent) = template.silent
         {
             self.silent = silent.clone();
-            self.toml_bool_presence.record("silent");
+            self.toml_bool_presence.silent = true;
         }
 
         // usage: a task with no spec of its own takes the template's either way. A task that
@@ -328,6 +226,11 @@ impl Task {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::config_file::mise_toml::EnvList;
+    use crate::task::{
+        RunEntry, TaskCacheConfig, TaskDep, TaskOutput, TaskToolValue, TaskWatchOptions,
+    };
+    use indexmap::IndexMap;
 
     #[test]
     fn templates_reject_secrets() {

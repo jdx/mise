@@ -47,6 +47,12 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 mkdir -p dist/mise/bin
 cp "target/$Target/serious/mise.exe" dist/mise/bin/mise.exe
 cp "target/$Target/serious/mise-shim.exe" dist/mise/bin/mise-shim.exe
+# The linker can drop the version tag that `mise doctor` looks for; refuse to ship a shim without it.
+$ShimText = [System.Text.Encoding]::Latin1.GetString([System.IO.File]::ReadAllBytes("dist/mise/bin/mise-shim.exe"))
+if (-not $ShimText.Contains("mise-shim-version:")) {
+    Write-Error "mise-shim.exe has no mise-shim-version tag"
+    exit 1
+}
 cp README.md dist/mise/README.md
 cp LICENSE dist/mise/LICENSE
 Set-Location dist

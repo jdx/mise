@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+require_cmd python3
+
+# A simple index that answers 401 unless the request carries Basic credentials
+# for tester:s3cret, with no password in the URL itself.
+cat >"$HOME/index.py" <<'PY'
+import base64
+import http.server
+import sys
+
+EXPECTED = "Basic " + base64.b64encode(b"tester:s3cret").decode()
+PAGE = b'<html><body><a href="mytool-1.2.3.tar.gz">mytool-1.2.3.tar.gz</a></body></html>'
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.headers.get("Authorization") != EXPECTED:
+            self.send_response(401)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.end_headers()
+        self.wfile.write(PAGE)
+
+    def log_message(self, *args):
+        pass
+
+
+server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+print(server.server_port, flush=True)
+server.serve_forever()
+PY
+python3 "$HOME/index.py" >"$HOME/index.port" &
+server_pid=$!
+trap 'kill "$server_pid"' EXIT
+for _ in $(seq 50); do
+  [ -s "$HOME/index.port" ] && break
+  sleep 0.1
+done
+port=$(cat "$HOME/index.port")
+
+# A keyring executable that only knows the one entry uv's provider would ask for.
+mkdir -p "$HOME/bin"
+cat >"$HOME/bin/keyring" <<EOF2
+#!/usr/bin/env bash
+echo "\$*" >>"$HOME/keyring.log"
+if [ "\$1 \$3" = "get tester" ]; then
+	echo "s3cret"
+else
+	exit 1
+fi
+EOF2
+chmod +x "$HOME/bin/keyring"
+export PATH="$HOME/bin:$PATH"
+
+export MISE_PYPI_REGISTRY_URL="http://tester@127.0.0.1:$port/simple/{}/"
+
+# Without the keyring provider the empty password is rejected.
+assert_fail "mise ls-remote pipx:mytool" "401"
+
+export MISE_PYPI_KEYRING_PROVIDER=subprocess
+mise cache clear
+assert "mise ls-remote pipx:mytool" "1.2.3"
+assert_contains "cat $HOME/keyring.log" "get http://tester@127.0.0.1:$port/simple/ tester"
+
+# A keyring with no entry leaves the request unauthenticated.
+echo '#!/usr/bin/env bash
+exit 1' >"$HOME/bin/keyring"
+mise cache clear
+assert_fail "mise ls-remote pipx:mytool" "401"

@@ -89,7 +89,7 @@ jobs:
         run: |
           install -Dm755 target/debug/mise target/ci-artifacts/mise
           strip --strip-debug target/ci-artifacts/mise
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mise-ubuntu-latest
           path: target/ci-artifacts/mise
@@ -125,7 +125,7 @@ jobs:
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - parallel:
           - run: mise -v
-          - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+          - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
             with:
               name: mise-windows-latest
               path: |
@@ -171,7 +171,7 @@ jobs:
       # Namespace builds reuse local objects. Main also publishes a target/registry
       # archive so GitHub-hosted untrusted builds have a cache to restore.
       # Install mbx before bootstrapping this checkout's mise.
-      - uses: jdx/mr-boxington-action@d0825fbaf3cc36ca2609aa38e71046265a1f1e37 # v1.7.1
+      - uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
         with:
           backend: ${{ inputs.trusted && !(github.event_name == 'push' && github.ref == 'refs/heads/main') && 'local' || 'github' }}
           cache-generation: unit-macos-v1
@@ -234,7 +234,7 @@ jobs:
           - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2.75.28
             with:
               tool: cargo-deny,cargo-msrv,cargo-machete
-          - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+          - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
             with:
               name: mise-ubuntu-latest
               path: target/debug
@@ -319,7 +319,7 @@ jobs:
           api-secret: ${{ secrets.MISE_VERSIONS_API_SECRET }}
           count: "8"
       - parallel:
-          - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+          - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
             with:
               name: mise-ubuntu-latest
               path: target/debug
@@ -406,7 +406,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mise-ubuntu-latest
           path: target/debug
@@ -437,7 +437,7 @@ jobs:
           shared-key: windows-unit
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
       - name: cargo test
-        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        uses: jdx/workflows/retry@7e4ea6cf326e2b3bb4335f733381af531aaa699d # v1.2.1
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30
@@ -470,8 +470,32 @@ jobs:
           shared-key: windows-lint
           save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/tags/v')) }}
       - run: rustup component add clippy
+      # Retried once like windows-unit: the self-hosted runner has failed this step
+      # about once in 120 runs with a transient "directory name is invalid" (os error 267).
+      # Two 17-minute attempts plus the wait fit inside the job's 40-minute limit.
       - name: Run Clippy on Windows
-        run: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} clippy --workspace --all-targets --ignore-rust-version -- -D warnings
+        uses: jdx/workflows/retry@7e4ea6cf326e2b3bb4335f733381af531aaa699d # v1.2.1
+        with:
+          timeout_minutes: 17
+          retry_wait_seconds: 30
+          max_attempts: 2
+          command: ${{ inputs.trusted && vars.WINDOWS_SELF_HOSTED == 'true' && 'mbx' || 'cargo' }} clippy --workspace --all-targets --ignore-rust-version -- -D warnings
+      # Read-only: records the state of the runner when both attempts failed.
+      - name: Print runner diagnostics
+        if: failure()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Write-Output "runner: $env:RUNNER_NAME"
+          Write-Output "cwd: $((Get-Location).Path)"
+          Write-Output "GITHUB_WORKSPACE: $env:GITHUB_WORKSPACE (exists: $(Test-Path -LiteralPath $env:GITHUB_WORKSPACE))"
+          Write-Output "--- workspace root"
+          Get-ChildItem -LiteralPath $env:GITHUB_WORKSPACE -Force | Format-Table Mode, LastWriteTime, Length, Name | Out-String | Write-Output
+          Write-Output "--- processes"
+          Get-Process -Name cargo, rustc, 'mbx*', cl, link -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime, Path | Out-String -Width 250 | Write-Output
+          Write-Output "--- disk"
+          $drive = (Split-Path -Qualifier $env:GITHUB_WORKSPACE).TrimEnd(':')
+          Get-PSDrive -Name $drive | Format-Table Name, @{n='FreeGB';e={[math]::Round($_.Free / 1GB, 1)}}, @{n='UsedGB';e={[math]::Round($_.Used / 1GB, 1)}} | Out-String | Write-Output
   windows-e2e:
     permissions:
       contents: read
@@ -489,7 +513,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mise-windows-latest
           path: target/debug
@@ -497,11 +521,12 @@ jobs:
       - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - uses: ./.github/actions/mise-tools
       - name: e2e
-        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
+        uses: jdx/workflows/retry@7e4ea6cf326e2b3bb4335f733381af531aaa699d # v1.2.1
         with:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
+          shell: pwsh
           command: pwsh e2e-win\run.ps1
 
   test-ci:

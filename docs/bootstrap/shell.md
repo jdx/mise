@@ -204,8 +204,40 @@ login_shell = "/opt/homebrew/bin/fish"
 
 `mise bootstrap` installs packages before it changes the login shell, so one run
 does both. When you run `mise bootstrap user apply` on its own, install the
-shell first. The path must be absolute, such as `/bin/zsh`; mise ignores a
-relative name with a warning.
+shell first. The value is an absolute path, such as `/bin/zsh`, or a bare shell
+name, as described [below](#use-a-shell-name). mise ignores a relative path
+such as `bin/zsh` with a warning.
+
+### Use a shell name {#use-a-shell-name}
+
+To share one config across machines that install the shell in different
+places, give the executable's name instead of a path:
+
+```toml
+[bootstrap.packages]
+"brew:fish" = "latest"
+
+[bootstrap.user]
+login_shell = "fish"
+```
+
+mise resolves the name when it checks or applies the setting, so after
+`bootstrap.packages` has installed the shell. It searches `PATH`, never the mise
+shims directory, then the usual package-manager locations (`/opt/homebrew/bin`,
+`/usr/local/bin`, `/home/linuxbrew/.linuxbrew/bin`, `~/.linuxbrew/bin`,
+`/usr/bin`, and `/bin`), and uses the first executable it finds. The resolved
+path is what goes into `/etc/shells` and `chsh`, and what
+`mise bootstrap user status` shows (`resolved` in `--json`).
+
+Shells from [package manager plugins](/bootstrap/packages/plugins.html) are
+installed after the login shell step in a full `mise bootstrap` run (see the
+[run order](/bootstrap.html#how-it-runs)), so a name is not found on a first
+run, and an absolute path does not avoid that. Run `mise bootstrap --skip user`
+first, which installs the plugin packages, then `mise bootstrap user apply`.
+
+If no executable is found, `status` reports `not installed`, `apply` fails
+without touching `/etc/shells` or the account, and `apply --dry-run` says the
+path is resolved after installation.
 
 Many systems accept only shells listed in `/etc/shells`, so mise adds the path
 there when it is missing. Then, if the account's shell differs, mise runs
@@ -221,6 +253,11 @@ This changes only the account's login shell. It does not affect the shell you
 are in, so `mise bootstrap` ends with a follow-up reminding you to start a new
 login session. It also does not set up [activation](#activate-mise-in-your-shell)
 in the new shell.
+
+`login_shell` is a template, so it can use `[vars]` and the other
+[template variables](/templates.html), such as
+<code v-pre>login_shell = "{{ vars.brew_prefix }}/bin/zsh"</code>. mise renders it without
+`exec()`.
 
 A project config can override a global `login_shell`; the most local value
 wins. mise changes the login shell only when you run `mise bootstrap` or

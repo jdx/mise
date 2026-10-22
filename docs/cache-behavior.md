@@ -48,6 +48,13 @@ Lists that do not date every version, and every list once you set
 `fetch_remote_versions_cache` yourself, are refetched after
 `fetch_remote_versions_cache` instead.
 
+The same window applies to the mise-versions index that stands in for many
+tools' lists at once, and to the latest release a `pipx:` tool's registry
+reports, which is the newest dated release in that same list. A `latest`
+pointer that a maintainer can move to any version, such as npm's `latest`
+dist-tag or an asdf plugin's `latest-stable` script, is still refetched after
+`fetch_remote_versions_cache`.
+
 Set [`prefer_offline`](/configuration/settings.html#prefer_offline) to make
 every command use cached lists the same way, or
 [`offline`](/configuration/settings.html#offline) to block network requests

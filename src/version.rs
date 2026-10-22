@@ -5,13 +5,7 @@ use versions::Versioning;
 use crate::build_time::BUILD_TIME;
 use crate::platform::{ARCH, OS};
 
-pub static VERSION_PLAIN: Lazy<String> = Lazy::new(|| {
-    let mut v = V.to_string();
-    if cfg!(debug_assertions) {
-        v.push_str("-DEBUG");
-    };
-    v
-});
+pub use mise_util::deprecation::VERSION_PLAIN;
 
 pub static VERSION: Lazy<String> = Lazy::new(|| {
     let build_time = BUILD_TIME.format("%Y-%m-%d");

@@ -379,6 +379,8 @@ The worktree label is the linked worktree's directory name. To choose it
 yourself, set `worktree_label` in a pitchfork config file inside that worktree,
 which is where pitchfork reads it:
 
+<!-- schema: skip -->
+
 ```toml
 # pitchfork.local.toml, in the worktree
 worktree_label = "pr-42"

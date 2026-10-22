@@ -47,7 +47,15 @@ impl Vfox {
         let mut verified_attestation = None;
         let mut checksum_verified = false;
         if let Some(url) = pre_install.url.as_ref().map(|s| Url::from_str(s)) {
-            let file = self.download(&url?, &sdk, version, download_dir).await?;
+            let file = self
+                .download(
+                    &url?,
+                    &sdk,
+                    version,
+                    download_dir,
+                    pre_install.headers.as_ref(),
+                )
+                .await?;
             verified_attestation = self.verify(&pre_install, &file).await?;
             self.extract(&file, install_dir)?;
             // Note: sha1/md5 are verified in `verify`, but intentionally excluded here.
@@ -147,27 +155,91 @@ impl Vfox {
         sdk: &Plugin,
         version: &str,
         download_dir: &Path,
+        plugin_headers: Option<&HeaderMap>,
     ) -> Result<PathBuf> {
         let path = Self::download_path_for(download_dir, &sdk.name, version, url)?;
         let mut request_url = url.clone();
         self.rewrite_url(&mut request_url);
         self.log_emit(format!("Downloading {request_url}"));
         let url_str = request_url.to_string();
+        let client = client()?;
+        let no_redirect_client = no_redirect_client()?;
         let bytes = retry_async(&url_str, || async {
-            let mut request = CLIENT.get(request_url.clone());
-            if let Some(resolver) = &self.http_headers_resolver {
-                request = request.headers(resolver(&request_url));
-            }
-            let resp = request.send().await?;
+            let resp = match plugin_headers.filter(|h| !h.is_empty()) {
+                Some(plugin_headers) => {
+                    // The headers belong to the plugin's own `url`; a rewritten
+                    // mirror is not trusted with them.
+                    match self
+                        .get_following_redirects(
+                            no_redirect_client,
+                            &request_url,
+                            url,
+                            plugin_headers,
+                        )
+                        .await?
+                    {
+                        Some(resp) => resp,
+                        None => return Ok(None),
+                    }
+                }
+                None => {
+                    let mut request = client.get(request_url.clone());
+                    if let Some(resolver) = &self.http_headers_resolver {
+                        request = request.headers(resolver(&request_url));
+                    }
+                    request.send().await?
+                }
+            };
             let resp = resp.error_for_status()?;
-            resp.bytes().await
+            resp.bytes().await.map(Some)
         })
-        .await?;
+        .await?
+        .ok_or_else(|| format!("too many redirects downloading {request_url}"))?;
         file::mkdirp(path.parent().unwrap())?;
         let mut file = tokio::fs::File::create(&path).await?;
         tokio::io::AsyncWriteExt::write_all(&mut file, &bytes).await?;
         file.sync_all().await?;
         Ok(path)
+    }
+
+    /// GET `url` with the plugin's headers, following redirects by hand so the
+    /// headers are only sent to the origin of `trusted` (the plugin's own
+    /// `url`). A rewritten mirror or a redirect to another host, port or scheme
+    /// (e.g. a signed storage URL) does not receive them. Returns `None` when
+    /// the redirect limit is exceeded.
+    async fn get_following_redirects(
+        &self,
+        client: &reqwest::Client,
+        url: &Url,
+        trusted: &Url,
+        plugin_headers: &HeaderMap,
+    ) -> reqwest::Result<Option<reqwest::Response>> {
+        const MAX_REDIRECTS: usize = 10;
+        let mut current = url.clone();
+        for _ in 0..=MAX_REDIRECTS {
+            let mut headers = self
+                .http_headers_resolver
+                .as_ref()
+                .map(|resolver| resolver(&current))
+                .unwrap_or_default();
+            if current.origin() == trusted.origin() {
+                headers.extend(plugin_headers.clone());
+            }
+            let resp = client.get(current.clone()).headers(headers).send().await?;
+            if !resp.status().is_redirection() {
+                return Ok(Some(resp));
+            }
+            let Some(next) = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|l| l.to_str().ok())
+                .and_then(|l| current.join(l).ok())
+            else {
+                return Ok(Some(resp));
+            };
+            current = next;
+        }
+        Ok(None)
     }
 
     pub(super) fn download_path_for(
@@ -324,8 +396,18 @@ impl Vfox {
             xx::archive::untar_bz2(file, tmp.path())?;
             move_to_install()?;
         } else if filename.ends_with(".zip") {
-            xx::archive::unzip(file, tmp.path())?;
+            // `ZipArchive::extract` creates symlink entries (rejecting ones that escape the
+            // destination); `xx::archive::unzip` would write them as regular files.
+            zip::ZipArchive::new(std::fs::File::open(file)?)
+                .and_then(|mut archive| archive.extract(tmp.path()))
+                .map_err(|err| format!("failed to extract {file:?}: {err}"))?;
             move_to_install()?;
+            // `extract` only checks links against the temporary directory; stripping a
+            // top-level directory moves them, so check them against the install directory.
+            if let Err(err) = ensure_symlinks_stay_within(install_dir) {
+                let _ = file::remove_dir_all(install_dir);
+                return Err(err);
+            }
         } else {
             file::mv(file, install_dir.join(&filename))?;
             #[cfg(unix)]
@@ -333,6 +415,80 @@ impl Vfox {
         }
         Ok(())
     }
+}
+
+/// Fails if a symlink under `root` points outside of it. Each target is resolved component
+/// by component, following every link on the way, so chains and links through linked
+/// directories are checked; components that do not exist are taken as written.
+fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
+    if std::fs::symlink_metadata(root)?.file_type().is_symlink() {
+        return Err(format!("the archive's top-level entry is a symlink: {root:?}").into());
+    }
+    let real_root = root.canonicalize()?;
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir)? {
+            let path = entry?.path();
+            let kind = std::fs::symlink_metadata(&path)?.file_type();
+            if kind.is_dir() {
+                dirs.push(path);
+            } else if kind.is_symlink() {
+                let target = std::fs::read_link(&path)?;
+                let base = path.parent().unwrap().canonicalize()?;
+                if !link_target_stays_within(&real_root, &base, &target) {
+                    return Err(format!(
+                        "symlink {path:?} points outside of the install directory: {target:?}"
+                    )
+                    .into());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Resolves `target` as seen from the directory `base` (already real), following every
+/// link on the way, and reports whether each step stays under `root`. Components that do
+/// not exist are taken as written. A chain of links that loops without leaving `root` is
+/// harmless, so the walk stops after `MAX_LINKS` links and accepts it.
+fn link_target_stays_within(root: &Path, base: &Path, target: &Path) -> bool {
+    use std::collections::VecDeque;
+    use std::path::Component;
+    const MAX_LINKS: usize = 40;
+    let mut current = base.to_path_buf();
+    let mut pending: VecDeque<PathBuf> = target
+        .components()
+        .map(|part| PathBuf::from(part.as_os_str()))
+        .collect();
+    let mut followed = 0;
+    while let Some(part) = pending.pop_front() {
+        match Path::new(&part).components().next().unwrap() {
+            Component::Prefix(_) | Component::RootDir => current = part,
+            Component::CurDir => {}
+            Component::ParentDir => {
+                current.pop();
+            }
+            Component::Normal(name) => {
+                let candidate = current.join(name);
+                match std::fs::read_link(&candidate) {
+                    Ok(link) => {
+                        followed += 1;
+                        if followed > MAX_LINKS {
+                            return true;
+                        }
+                        for part in link.components().rev() {
+                            pending.push_front(PathBuf::from(part.as_os_str()));
+                        }
+                    }
+                    Err(_) => current = candidate,
+                }
+            }
+        }
+        if !current.starts_with(root) {
+            return false;
+        }
+    }
+    true
 }
 
 /// The name prefix of the directory an archive is extracted into before it is moved to
@@ -385,5 +541,146 @@ mod tests {
             .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
             .collect();
         assert_eq!(entries, vec!["tool-abcd1234".to_string()]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_keeps_symlinks() {
+        use std::io::Write;
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default().unix_permissions(0o755);
+            zip.start_file("tool-1.0/bin/tool", options).unwrap();
+            zip.write_all(b"#!/bin/sh\n").unwrap();
+            zip.add_symlink("tool-1.0/bin/tool-link", "tool", options)
+                .unwrap();
+            zip.start_file("tool-1.0/lib/node_modules/npm/bin/npm-cli.js", options)
+                .unwrap();
+            zip.write_all(b"// npm\n").unwrap();
+            zip.add_symlink(
+                "tool-1.0/bin/npm",
+                "../lib/node_modules/npm/bin/npm-cli.js",
+                options,
+            )
+            .unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        Vfox::test().extract(&archive, &install_dir).unwrap();
+
+        let link = install_dir.join("bin/tool-link");
+        assert!(link.is_symlink());
+        assert_eq!(std::fs::read_link(&link).unwrap(), Path::new("tool"));
+        // a link into a sibling directory, checked after the top-level directory is stripped
+        let npm = install_dir.join("bin/npm");
+        assert!(npm.is_symlink());
+        assert_eq!(std::fs::read_to_string(&npm).unwrap(), "// npm\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_rejects_symlinks_that_escape_once_the_top_level_directory_is_stripped() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            // inside the extraction directory, but a sibling of the install directory
+            zip.add_symlink("tool-1.0/bin/link", "../../other-tool", options)
+                .unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        assert!(Vfox::test().extract(&archive, &install_dir).is_err());
+        assert!(!install_dir.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_rejects_chained_symlinks_that_escape_once_stripped() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            // each link stays inside the extraction directory; together they leave the
+            // install directory once the top-level directory is stripped
+            zip.add_symlink("tool-1.0/x/up", "..", options).unwrap();
+            zip.add_symlink("tool-1.0/y", "x/up/..", options).unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        assert!(Vfox::test().extract(&archive, &install_dir).is_err());
+        assert!(!install_dir.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_rejects_dangling_links_through_a_linked_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            zip.add_symlink("tool-1.0/alias", "..", options).unwrap();
+            zip.add_symlink("tool-1.0/link", "alias/../missing/outside", options)
+                .unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        assert!(Vfox::test().extract(&archive, &install_dir).is_err());
+        assert!(!install_dir.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_rejects_a_symlink_as_the_top_level_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            zip.add_symlink("a", ".", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        assert!(Vfox::test().extract(&archive, &install_dir).is_err());
+        assert!(!install_dir.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_accepts_symlink_loops_that_stay_inside() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            zip.add_symlink("tool-1.0/a", "b", options).unwrap();
+            zip.add_symlink("tool-1.0/b", "a", options).unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        Vfox::test().extract(&archive, &install_dir).unwrap();
+        assert!(install_dir.join("a").is_symlink());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_zip_rejects_symlinks_that_escape_the_install_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let archive = temp.path().join("tool-1.0.zip");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            zip.add_symlink("tool-1.0/escape", "../../../outside", options)
+                .unwrap();
+            zip.finish().unwrap();
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        assert!(Vfox::test().extract(&archive, &install_dir).is_err());
+        assert!(!install_dir.exists());
     }
 }

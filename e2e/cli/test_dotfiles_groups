@@ -132,6 +132,9 @@ echo "dark" >"$DOTS/app/dot-config/app/themes/dark.toml"
 echo "light" >"$DOTS/app/dot-config/app/themes/light.toml"
 echo "secret={{ env.HOME }}" >"$DOTS/app/conf/secret.tmpl"
 echo "plain" >"$DOTS/app/dot-plainrc"
+echo "name={{ env.HOME }}" >"$DOTS/app/dot-config/app/inferred.conf.tera"
+echo "git={{ env.HOME }}" >"$DOTS/app/.literal.tera"
+echo "nested={{ env.HOME }}" >"$DOTS/app/dot-config/app/.nested.tera"
 echo "stale" >"$HOME/.app-old.conf"
 cat <<EOF >mise.toml
 [dotfile_groups.app]
@@ -144,6 +147,9 @@ dot_prefix = true
 "~/.secret.conf" = { source = "conf/secret.tmpl", mode = "template" }
 "~/.app-old.conf" = { mode = "absent" }
 "~/.plainrc" = {}
+"~/.config/app/inferred.conf" = { mode = "template" }
+"~/.literal" = { mode = "template" }
+"~/.config/app/.nested" = { mode = "template" }
 EOF
 assert_succeed "mise dot apply --yes"
 assert "readlink $HOME/.config/app/main.toml" "$DOTS/app/dot-config/app/main.toml"
@@ -154,6 +160,13 @@ assert "cat $HOME/.secret.conf" "secret=$HOME"
 assert_fail "test -e $HOME/.app-old.conf"
 # a file entry without a mode is linked, like the tree's files
 assert "readlink $HOME/.plainrc" "$DOTS/app/dot-plainrc"
+# a template entry without a source finds it with a .tera suffix
+assert "cat $HOME/.config/app/inferred.conf" "name=$HOME"
+assert_fail "test -e $HOME/.config/app/inferred.conf.tera"
+assert "cat $HOME/.literal" "git=$HOME"
+assert_fail "test -e $HOME/.literal.tera"
+assert "cat $HOME/.config/app/.nested" "nested=$HOME"
+assert_fail "test -e $HOME/.config/app/.nested.tera"
 # an entry's source inside the tree is not also deployed by the walk
 assert_fail "test -e $HOME/conf/secret.tmpl"
 
@@ -254,6 +267,7 @@ cat <<EOF >mise.toml
 root = "keep"
 EOF
 assert_succeed "mise dot apply --yes"
+# schema: invalid
 cat <<EOF >mise.toml
 [dotfile_groups.keep]
 EOF

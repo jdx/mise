@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+cat <<EOF2 >mise.toml
+[env]
+BREW_PREFIX = "{{ system_brew_prefix }}"
+EOF2
+
+unset MISE_SYSTEM_BREW_PREFIX
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  assert "mise env -s bash | grep BREW_PREFIX" "export BREW_PREFIX=/opt/homebrew"
+else
+  assert "mise env -s bash | grep BREW_PREFIX" "export BREW_PREFIX=/home/linuxbrew/.linuxbrew"
+fi
+
+# the same override the brew package manager honors
+export MISE_SYSTEM_BREW_PREFIX=/tmp/custom-brew
+assert "mise env -s bash | grep BREW_PREFIX" "export BREW_PREFIX=/tmp/custom-brew"

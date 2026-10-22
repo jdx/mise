@@ -51,7 +51,8 @@ function PLUGIN:Available(ctx)
             seen[tag] = true
             table.insert(result, {
                 version = tag,
-                note = release.prerelease and "pre-release" or ""
+                note = release.prerelease and "pre-release" or "",
+                created_at = type(release.published_at) == "string" and release.published_at or nil
             })
         end
     end

@@ -10,8 +10,10 @@ import {
 } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type MarkdownIt from "markdown-it";
 import { defineConfig } from "vitepress";
 import { sidebar } from "./sidebar";
+import { referenceKeys, referenceMarkdown } from "../config-reference.data";
 import { pageRedirects, redirectStub, stubFile } from "./redirects.mjs";
 import { releaseNotesPlugin } from "@jdxcode/docs-releases/vitepress";
 import {
@@ -133,6 +135,63 @@ function writeRedirectStubs(outDir: string) {
 }
 
 // https://vitepress.dev/reference/site-config
+/** Whether a file at this path is read as a mise config (mirrors `path_is_config` in the schema conformance test). */
+function pathIsConfig(path: string): boolean {
+  const name = path.split("/").pop()!;
+  if (!name.endsWith(".toml")) return false;
+  let stem = name.slice(0, -".toml".length);
+  if (stem.startsWith(".")) stem = stem.slice(1);
+  if (stem === "mise" || stem.startsWith("mise."))
+    return stem !== "mise.plugin";
+  const inConfigDir =
+    path.includes("mise/") || path.includes("MISE_CONFIG_DIR");
+  return (
+    inConfigDir &&
+    (stem === "config" ||
+      stem.startsWith("config.") ||
+      path.includes("conf.d/"))
+  );
+}
+
+/**
+ * Every ```` ```toml ```` or ```` ```mise-toml ```` block that shows a mise config (no title, a label, or a title naming a
+ * mise config file) is shown in a mise.toml editor that knows the schema: hovering a key says
+ * what it is. It is read-only unless the fence says ```` ```toml editor ````, which also lets the
+ * reader try changes; `share` keeps the config in the URL. A `<!-- schema: skip -->` or
+ * `<!-- schema: invalid -->` line above a block leaves it a plain code block, as the schema
+ * conformance test treats it. A `plain` flag does the same.
+ */
+function miseTomlEditorFence(md: MarkdownIt) {
+  const fence = md.renderer.rules.fence!;
+  md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+    const info = tokens[idx].info.trim();
+    const [lang, ...flags] = info.split(/\s+/);
+    if (!["toml", "mise-toml"].includes(lang) || flags.includes("plain")) {
+      return fence(tokens, idx, options, env, self);
+    }
+    const explicit = flags.includes("editor");
+    const title = /\[([^\]]*)\]/.exec(info)?.[1];
+    const isConfig =
+      title === undefined || !/[./]/.test(title) || pathIsConfig(title);
+    const above = tokens[idx - 1];
+    const marked =
+      above?.type === "html_block" &&
+      /^\s*<!--\s*schema:\s*(skip|invalid)\b/.test(above.content);
+    if (!explicit && (!isConfig || marked)) {
+      return fence(tokens, idx, options, env, self);
+    }
+    const code = md.utils.escapeHtml(tokens[idx].content);
+    const readonly = explicit && !flags.includes("readonly") ? "" : " readonly";
+    const share = flags.includes("share") ? " share" : "";
+    const compact = explicit ? "" : " compact";
+    const label = title ? ` title="${md.utils.escapeHtml(title)}"` : "";
+    // VitePress's code groups show and hide their blocks by this wrapper's `language-*` and
+    // `active` classes, so a config inside a group keeps them.
+    const active = flags.includes("active") ? " active" : "";
+    return `<div class="language-toml${active}"><MiseTomlEditor code="${code}"${readonly}${share}${compact}${label} /></div>\n`;
+  };
+}
+
 export default withMermaid(
   defineConfig({
     title: "mise-en-place",
@@ -251,6 +310,7 @@ export default withMermaid(
       config(md) {
         md.use(groupIconMdPlugin);
         md.use(tabsMarkdownPlugin);
+        md.use(miseTomlEditorFence);
       },
     },
     vite: {
@@ -512,6 +572,15 @@ export default withMermaid(
     buildEnd(siteConfig) {
       assertNoEmptyDocPages(siteConfig.outDir);
       writeRedirectStubs(siteConfig.outDir);
+      // The mise.toml reference page shows most keys only once its script runs;
+      // these files have all of them as plain Markdown.
+      for (const [path, content] of referenceMarkdown(
+        referenceKeys((s) => s),
+      )) {
+        const file = join(siteConfig.outDir, path);
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, content);
+      }
     },
   }),
 );

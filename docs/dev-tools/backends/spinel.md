@@ -10,8 +10,8 @@ Ruby ahead-of-time compiler. The result runs without Ruby or Spinel installed.
 
 ::: warning Experimental
 This backend may change, or be removed if Spinel or the backend stops being
-practical to support. It installs tools without `experimental = true`, but
-`mise edit` offers it only when that setting is on.
+practical to support. Installing a tool with it needs `experimental = true`,
+and `mise edit` offers it only when that setting is on.
 :::
 
 ## Requirements
@@ -32,6 +32,9 @@ gems, copy data files or fetch submodules.
 Most tools need options, such as the entrypoint, so declare them in `mise.toml`:
 
 ```toml
+[settings]
+experimental = true
+
 [tools."spinel:tobi/try"]
 version = "1.10.1"
 entrypoint = "try.rb"

@@ -31,11 +31,8 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 mod test {
     // See `mise::testing::init`; this is the same constructor for the binary's
     // own tests, which also need the frontend hooks that only `cli` can register.
-    #[cfg_attr(
-        target_vendor = "apple",
-        ctor::ctor(unsafe, body(link_section = "__TEXT,__text,regular,pure_instructions"))
-    )]
-    #[cfg_attr(not(target_vendor = "apple"), ctor::ctor(unsafe))]
+    mise_util::run_before_main!(init);
+
     fn init() {
         crate::cli::register_frontend();
         mise::testing::init();

@@ -21,11 +21,12 @@ jq = "latest"
 lua-language-server = "latest"
 stylua = "latest"
 "npm:markdownlint-cli" = "latest"
-prettier = "3.9.9"
+oxfmt = "0.73.0"
 "npm:ajv-cli" = "latest"
 shellcheck = "latest"
 shfmt = "latest"
 taplo = "latest"
+tombi = "latest"
 usage = { version = "latest", minimum_release_age = "0s" }
 wait-for-gh-rate-limit = { version = "latest", minimum_release_age = "0s" }
 sops = "latest"

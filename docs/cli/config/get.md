@@ -18,14 +18,17 @@ template-expanded environment; use `mise env` for the resolved environment.
 ## Arguments
 - **`[KEY]`** — Dotted key path to print, such as `tools.python`; omit to print the whole file
 
+  Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
+
 ## Flags
 - **`-f --file <FILE>`** — Config file to read, or a directory whose config file to read
 
-  For a directory, mise reads the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file.
+  For a directory, mise reads the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file other than the global override files.
 
   **Aliases:** `--path`
 - **`-g --global`** — Read the global config file
 - **`--system`** — Read the system config file
+- **`--override`** — Read the global override file, `config.override.toml`
 - **`-h --help`** — Print help
 
 ## Examples

@@ -989,20 +989,32 @@ fn get_env_diff() -> EnvDiff {
 /// this returns the environment as if __MISE_DIFF was reversed.
 /// putting the shell back into a state before hook-env was run
 fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
+    let orig_path: HashSet<PathBuf> = orig_env
+        .get("__MISE_ORIG_PATH")
+        .map(|p| split_paths(p).collect())
+        .unwrap_or_default();
     let mut env = reverse_diff_preserving_overrides(mise_diff, orig_env);
 
     // get the current path as a vector
-    let path = match env.get(&*PATH_KEY) {
+    let path: Vec<PathBuf> = match env.get(&*PATH_KEY) {
         Some(path) => split_paths(path).collect(),
         None => vec![],
     };
     // get the paths that were removed by mise as a hashset
     let mut to_remove = mise_diff.path.iter().collect::<HashSet<_>>();
 
-    // remove those paths that were added by mise, but only once (the first time)
+    // remove those paths that were added by mise, but only once (the first time).
+    // A directory that was already on PATH before activation appears twice unless the
+    // shell deduplicates PATH (e.g. zsh `typeset -U path`); with a single occurrence it
+    // is the pre-activation entry, so keep it.
+    let counts = path.iter().counts();
     let path = path
-        .into_iter()
-        .filter(|p| !to_remove.remove(p))
+        .iter()
+        .filter(|p| {
+            let single_orig = orig_path.contains(*p) && counts.get(p) == Some(&1);
+            single_orig || !to_remove.remove(p)
+        })
+        .cloned()
         .collect_vec();
 
     // put the pristine PATH back into the environment
@@ -1399,6 +1411,17 @@ static MISE_ENV: std::sync::OnceLock<fn() -> &'static [String]> = std::sync::Onc
 /// command-line flags, the environment and `.miserc.toml`, which mise resolves.
 pub fn set_mise_env(f: fn() -> &'static [String]) {
     let _ = MISE_ENV.set(f);
+}
+
+/// The prefix mise's built-in Homebrew support installs into: the platform
+/// default, unless the undocumented `MISE_SYSTEM_BREW_PREFIX` override (used
+/// to test the pour pipeline without touching the real prefix) is set.
+pub fn system_brew_prefix() -> PathBuf {
+    match var("MISE_SYSTEM_BREW_PREFIX") {
+        Ok(p) if !p.is_empty() => PathBuf::from(p),
+        _ if cfg!(target_os = "macos") => PathBuf::from("/opt/homebrew"),
+        _ => PathBuf::from("/home/linuxbrew/.linuxbrew"),
+    }
 }
 
 /// The active `MISE_ENV` environments. See [`set_mise_env`].
@@ -1937,6 +1960,38 @@ mod tests {
         assert_eq!(
             reverse_diff_preserving_overrides(&diff, current),
             [("CHANGED".into(), "before".into())].into()
+        );
+    }
+
+    /// A directory on PATH before activation that mise also added stays in the pristine PATH
+    /// when the shell deduplicated PATH, and loses only mise's copy when it did not.
+    #[test]
+    fn test_pristine_path_keeps_deduplicated_orig_entry() {
+        let diff = EnvDiff {
+            path: vec![PathBuf::from("/x/bin")],
+            ..Default::default()
+        };
+        let join = |dirs: &[&str]| {
+            join_paths(dirs.iter().map(PathBuf::from))
+                .unwrap()
+                .to_string_lossy()
+                .to_string()
+        };
+        let pristine_path = |dirs: &[&str]| {
+            let orig = [
+                (PATH_KEY.to_string(), join(dirs)),
+                ("__MISE_ORIG_PATH".into(), join(&["/usr/bin", "/x/bin"])),
+            ]
+            .into();
+            get_pristine_env(&diff, orig)[&*PATH_KEY].clone()
+        };
+        assert_eq!(
+            pristine_path(&["/x/bin", "/usr/bin"]),
+            join(&["/x/bin", "/usr/bin"])
+        );
+        assert_eq!(
+            pristine_path(&["/x/bin", "/usr/bin", "/x/bin"]),
+            join(&["/usr/bin", "/x/bin"])
         );
     }
 

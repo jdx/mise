@@ -261,6 +261,7 @@ fn test_settings_toml_is_sorted() {
 const SCALAR_SETTING_TYPES: &[&str] = &[
     "Bool",
     "BoolOrString",
+    "BoolOrList",
     "Duration",
     "Integer",
     "Path",
@@ -396,4 +397,25 @@ fn auto_update_accepts_a_bool_or_an_interval() {
     assert_eq!(parse(r#""off""#), AutoUpdate::Off);
     assert_eq!(AutoUpdate::Every("6h".to_string()).interval(), Some("6h"));
     assert!(!AutoUpdate::Off.is_on());
+}
+
+#[test]
+fn only_the_provenance_category_forces_provenance_verification() {
+    let verify = |paranoid: Paranoid| {
+        let settings = Settings {
+            paranoid,
+            ..Default::default()
+        };
+        settings.force_provenance_verify()
+    };
+    assert!(verify(Paranoid::all()));
+    assert!(verify(Paranoid::only([ParanoidCategory::Provenance])));
+    for category in [
+        ParanoidCategory::Config,
+        ParanoidCategory::EnvFiles,
+        ParanoidCategory::Plugins,
+    ] {
+        assert!(!verify(Paranoid::only([category])), "{category}");
+    }
+    assert!(!verify(Paranoid::none()));
 }

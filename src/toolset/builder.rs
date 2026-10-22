@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::daemons::glue::DaemonSetExt;
 use eyre::Result;
 use itertools::Itertools;
 
@@ -171,7 +172,7 @@ impl ToolsetBuilder {
         let daemons = if self.config_files.is_none() && matches!(self.scope, ConfigScope::All) {
             config.daemons()?
         } else {
-            scoped_daemons = crate::daemons::load(&scoped_files)?;
+            scoped_daemons = crate::daemons::glue::load(&scoped_files)?;
             &scoped_daemons
         };
         if !daemons.daemons.values().any(|daemon| daemon.tool.is_some()) {

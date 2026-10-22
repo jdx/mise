@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# The env_file setting takes several names. The file nearest the current directory wins, and
+# within one directory a name later in the list wins.
+mkdir -p proj/sub
+printf 'LIST_A=root\nLIST_ROOT=1\n' >proj/.env
+printf 'LIST_A=nearer\nLIST_B=b\n' >proj/sub/.env
+printf 'LIST_A=local\nLIST_C=c\n' >proj/sub/.env.local
+printf 'LIST_B=parent-local\nLIST_D=parent-local\n' >proj/.env.local
+printf 'LIST_ABS=abs\nLIST_A=abs\n' >proj/sub/.abs.env
+cd proj/sub || exit 1
+
+assert "MISE_ENV_FILE=.env mise env --dotenv" "LIST_A=nearer
+LIST_B=b
+LIST_ROOT=1"
+assert "MISE_ENV_FILE=.env:.env.local mise env --dotenv" "LIST_A=local
+LIST_B=b
+LIST_C=c
+LIST_D=parent-local
+LIST_ROOT=1"
+# The order of the names decides which wins.
+assert_contains "MISE_ENV_FILE=.env.local:.env mise env --dotenv" "LIST_A=nearer"
+
+# A single name in config still works, as a string or as a list.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOS'
+[settings]
+env_file = ".env"
+EOS
+assert_contains "mise env --dotenv" "LIST_A=nearer"
+assert_not_contains "mise env --dotenv" "LIST_C"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOS'
+[settings]
+env_file = [".env", ".env.local"]
+EOS
+assert_contains "mise env --dotenv" "LIST_A=local"
+assert_contains "mise env --dotenv" "LIST_C=c"
+assert "mise settings get env_file" '[".env", ".env.local"]'
+
+# Directory distance beats name order: the child .env sets LIST_B, the parent .env.local also sets
+# it, and .env.local is listed later, yet the child value wins.
+assert_contains "MISE_ENV_FILE=.env:.env.local mise env --dotenv" "LIST_B=b"
+assert_contains "MISE_ENV_FILE=.env:.env.local mise env --dotenv" "LIST_D=parent-local"
+
+# An absolute name loads that one file, ranked by where the list puts it, not by directory.
+assert_contains "MISE_ENV_FILE=.env:$PWD/.abs.env mise env --dotenv" "LIST_A=abs"
+assert_contains "MISE_ENV_FILE=$PWD/.abs.env:.env mise env --dotenv" "LIST_A=nearer"

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use indexmap::IndexMap;
 
 use crate::{Plugin, error::Result};
@@ -11,7 +13,34 @@ pub struct BackendListVersionsContext {
 
 #[derive(Debug, Clone)]
 pub struct BackendListVersionsResponse {
-    pub versions: Vec<String>,
+    pub versions: Vec<BackendVersion>,
+    /// Moving names the registry publishes, such as `recommended`, mapped to
+    /// the version they currently point at
+    pub aliases: BTreeMap<String, String>,
+}
+
+/// One entry of the `versions` list. A plugin returns either a plain version
+/// string or a table with `version` and an optional `created_at`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackendVersion {
+    pub version: String,
+    /// RFC 3339 release date, used by `minimum_release_age` and `--before`
+    pub created_at: Option<String>,
+}
+
+impl FromLua for BackendVersion {
+    fn from_lua(value: Value, lua: &Lua) -> std::result::Result<Self, LuaError> {
+        match value {
+            Value::Table(table) => Ok(BackendVersion {
+                version: table.get::<String>("version")?,
+                created_at: table.get::<Option<String>>("created_at")?,
+            }),
+            other => Ok(BackendVersion {
+                version: String::from_lua(other, lua)?,
+                created_at: None,
+            }),
+        }
+    }
 }
 
 impl Plugin {
@@ -41,7 +70,10 @@ impl FromLua for BackendListVersionsResponse {
     fn from_lua(value: Value, _: &Lua) -> std::result::Result<Self, LuaError> {
         match value {
             Value::Table(table) => Ok(BackendListVersionsResponse {
-                versions: table.get::<Vec<String>>("versions")?,
+                versions: table.get::<Vec<BackendVersion>>("versions")?,
+                aliases: table
+                    .get::<Option<BTreeMap<String, String>>>("aliases")?
+                    .unwrap_or_default(),
             }),
             _ => Err(LuaError::FromLuaConversionError {
                 from: value.type_name(),
@@ -58,6 +90,57 @@ mod tests {
     use mlua::{IntoLua, Lua};
 
     use super::*;
+
+    fn eval_response(lua_src: &str) -> BackendListVersionsResponse {
+        let lua = Lua::new();
+        let value: Value = lua.load(lua_src).eval().unwrap();
+        BackendListVersionsResponse::from_lua(value, &lua).unwrap()
+    }
+
+    #[test]
+    fn test_response_accepts_plain_strings() {
+        let r = eval_response(r#"return { versions = { "1.0.0", "1.1.0" } }"#);
+        assert_eq!(
+            r.versions,
+            vec![
+                BackendVersion {
+                    version: "1.0.0".into(),
+                    created_at: None
+                },
+                BackendVersion {
+                    version: "1.1.0".into(),
+                    created_at: None
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_response_aliases_are_optional() {
+        let r = eval_response(r#"return { versions = { "1.0.0" } }"#);
+        assert!(r.aliases.is_empty());
+        let r = eval_response(
+            r#"return { versions = { "1.0.0" }, aliases = { recommended = "1.0.0" } }"#,
+        );
+        assert_eq!(r.aliases["recommended"], "1.0.0");
+    }
+
+    #[test]
+    fn test_response_accepts_tables_and_mixed_entries() {
+        let r = eval_response(
+            r#"return { versions = {
+                { version = "1.0.0", created_at = "2026-01-31T12:00:00Z" },
+                { version = "1.1.0" },
+                "1.2.0",
+            } }"#,
+        );
+        assert_eq!(
+            r.versions[0].created_at.as_deref(),
+            Some("2026-01-31T12:00:00Z")
+        );
+        assert_eq!(r.versions[1].created_at, None);
+        assert_eq!(r.versions[2].version, "1.2.0");
+    }
 
     #[test]
     fn test_context_construction_and_clone() {

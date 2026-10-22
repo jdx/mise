@@ -73,12 +73,20 @@ dot_prefix = true
 - An entry without `source` finds it under the root, at its path inside the
   group's target: `~/.config/kitty` in the `home` group reads
   `~/.dotfiles/home/dot-config/kitty`.
+  With `mode = "template"`, a missing file falls back to the same path plus
+  `.tera`, so `"~/.config/git/config" = { mode = "template" }` renders
+  `home/dot-config/git/config.tera` and does not also deploy it with the suffix.
 - A relative `source` starts at the root. When it lies inside the root, or
   inside the tree of another entry that walks a directory, that walk skips it,
   so `git/config.tmpl` is rendered to `~/.gitconfig` and not also linked to
   `~/git/config.tmpl`.
 - An entry without `mode` deploys like the group: a directory the group's way,
   a file as one link, or as one copy in a `copy` group.
+  The exception is an entry that sets only `permissions`: it does not inherit
+  the group's `mode`, deploys nothing, and only adjusts the permissions of an
+  existing target (see [Permissions](/dotfiles/managed.html#permissions)). To
+  deploy a file and set its permissions, set `mode` too, for example
+  `{ mode = "copy", permissions = "0600" }`.
 - An entry that walks a directory inherits the group's `dot_prefix` and
   `manifest`, and the group's `exclude` patterns that contain no `/`, unless
   it sets its own.
@@ -122,14 +130,17 @@ records what each group deployed in its
 orphaned when a selected group stops deploying it, for example after a new
 `exclude` pattern or after you delete a copied source file. A file that any
 active entry still deploys is never orphaned, even when the entry has moved to
-another group. If mise cannot read a group, for example because its `root` is
+another group. A permissions-only entry deploys nothing, so it does not keep a file
+from being orphaned: dropping `mode` from an entry that deployed a file leaves
+that file orphaned, and `--prune` removes it. If mise cannot read a group, for example because its `root` is
 missing, it warns about the group instead of listing its files.
 
 To remove orphaned files, or every file of one group:
 
 ```sh
-mise dot apply --prune          # apply, then remove orphaned files
-mise dot unapply --group work   # remove one group's files
+mise dot apply --prune           # apply, then remove orphaned files
+mise bootstrap --prune-dotfiles  # the same, as part of a bootstrap run
+mise dot unapply --group work    # remove one group's files
 ```
 
 `--prune` and `unapply --group` remove a link only while it still points at

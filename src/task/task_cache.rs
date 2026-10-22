@@ -35,17 +35,7 @@ const TASK_ACTION_VERSION: u8 = 1;
 static CLEANED_PARTIAL_CACHE_DIRS: LazyLock<Mutex<BTreeSet<PathBuf>>> =
     LazyLock::new(|| Mutex::new(BTreeSet::new()));
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct TaskCacheConfig {
-    pub enabled: bool,
-    /// Report project files read or written outside the declared cache contract.
-    pub audit: bool,
-    /// Ambient environment variables whose resolved values affect the cache key.
-    pub env: Vec<String>,
-    /// Commands whose stdout and stderr affect the cache key.
-    pub command_inputs: Vec<String>,
-}
+pub use mise_config::task::TaskCacheConfig;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, usage_rs::ValueEnum)]
 pub enum TaskCacheMode {

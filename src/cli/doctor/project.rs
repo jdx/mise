@@ -5,6 +5,7 @@ use std::time::Duration;
 use eyre::{Result, bail};
 use futures_util::{StreamExt, stream};
 use serde::Serialize;
+use tokio::sync::watch;
 
 use crate::cmd::CmdLineRunner;
 use crate::config::doctor::DoctorCheck;
@@ -41,6 +42,7 @@ enum Status {
     Fail,
     Error,
     Skipped,
+    Blocked,
 }
 
 #[derive(Debug, Serialize)]
@@ -99,6 +101,7 @@ impl Project {
                     Status::Fail => "FAIL",
                     Status::Error => "ERROR",
                     Status::Skipped => "SKIP",
+                    Status::Blocked => "BLOCKED",
                 };
                 miseprintln!(
                     "{status} {}: {}",
@@ -145,7 +148,13 @@ impl Project {
                 std::env::current_dir()?
             };
             for (name, check) in declared {
-                checks.insert(name, (path.clone(), root.clone(), check));
+                // A bad template only fails its own check, and only where it applies.
+                let rendered = if crate::config::doctor::applies(&check) {
+                    cf.render_doctor_check(&check).map_err(|e| format!("{e:#}"))
+                } else {
+                    Ok(check.clone())
+                };
+                checks.insert(name, (path.clone(), root.clone(), check, rendered));
             }
         }
         let mut report = Report::default();
@@ -155,7 +164,10 @@ impl Project {
         // No tool installation, task dependencies, or task hooks are run here.
         // Preserve every declared check even if building the toolset fails.
         let environment = async {
-            if !checks.values().any(|(_, _, check)| check.applies()) {
+            if !checks
+                .values()
+                .any(|(_, _, check, _)| crate::config::doctor::applies(check))
+            {
                 return Ok(EnvMap::default());
             }
             Settings::ensure_not_safe("Running project diagnostic commands")?;
@@ -169,11 +181,35 @@ impl Project {
             toolset.full_env(&config).await
         }
         .await;
-        report.checks = stream::iter(checks)
-            .map(|(name, (source, root, check))| {
+        let order = dependency_order(&checks)?;
+        // Each check publishes whether it passed. Every check is admitted at once
+        // and waits for its dependencies without holding anything; only running a
+        // command takes one of the `jobs` permits, so a waiting check never keeps a
+        // ready one from starting.
+        let permits = tokio::sync::Semaphore::new(crate::jobs::normalize(Settings::get().jobs));
+        let total = order.len();
+        let outcomes: BTreeMap<String, watch::Sender<Option<bool>>> = order
+            .iter()
+            .map(|name| (name.clone(), watch::channel(None).0))
+            .collect();
+        let ordered = order
+            .into_iter()
+            .map(|name| {
+                let entry = checks.remove(&name).expect("ordered from checks");
+                (name, entry)
+            })
+            .collect::<Vec<_>>();
+        report.checks = stream::iter(ordered)
+            .map(|(name, (source, root, check, rendered))| {
                 let environment = &environment;
                 let config = &config;
+                let outcomes = &outcomes;
+                let permits = &permits;
                 async move {
+                    let (check, render_error) = match rendered {
+                        Ok(check) => (check, None),
+                        Err(err) => (check, Some(err)),
+                    };
                     let mut result = CheckResult {
                         name,
                         description: check.description.clone(),
@@ -182,13 +218,35 @@ impl Project {
                         message: None,
                         hint: check.hint.clone(),
                     };
-                    if !check.applies() {
+                    // A check excluded by `os` is skipped without waiting on anything.
+                    let applies = crate::config::doctor::applies(&check);
+                    let mut unmet = None;
+                    for dep in check.depends.iter().filter(|_| applies) {
+                        let mut rx = outcomes[dep].subscribe();
+                        let passed = rx.wait_for(|v| v.is_some()).await.ok().and_then(|v| *v);
+                        if passed != Some(true) {
+                            unmet = Some(dep.clone());
+                            break;
+                        }
+                    }
+                    if let Some(dep) = unmet {
+                        result.status = Status::Blocked;
+                        result.message = Some(format!("Blocked: dependency {dep} did not pass"));
+                    } else if let Some(err) = render_error {
+                        result.status = Status::Error;
+                        result.message = Some(err);
+                    } else if !applies {
                         result.status = Status::Skipped;
                         result.message =
                             Some("Check does not apply to this operating system".into());
                     } else {
                         match environment {
-                            Ok(environment) => match run_check(&check, &root, environment).await {
+                            Ok(environment) => match async {
+                                let _permit = permits.acquire().await?;
+                                run_check(&check, &root, environment).await
+                            }
+                            .await
+                            {
                                 Ok(output) => {
                                     if !output.status.success() {
                                         result.status = Status::Fail;
@@ -208,6 +266,7 @@ impl Project {
                             }
                         }
                     }
+                    outcomes[&result.name].send_replace(Some(result.status == Status::Pass));
                     result.message = result.message.map(|message| config.redact(&message));
                     result.hint = result.hint.map(|hint| config.redact(&hint));
                     result.description = result
@@ -216,14 +275,53 @@ impl Project {
                     result
                 }
             })
-            // Unordered so a slow probe does not hold back admission of the
-            // remaining checks; the report is sorted by name afterwards.
-            .buffer_unordered(crate::jobs::normalize(Settings::get().jobs))
+            // Unordered so a slow probe does not hold back the others; the report
+            // is sorted by name afterwards.
+            .buffer_unordered(total)
             .collect()
             .await;
         report.checks.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(report)
     }
+}
+
+type CheckEntry = (PathBuf, PathBuf, DoctorCheck, Result<DoctorCheck, String>);
+
+/// Check names with every check after the checks it depends on. Rejects unknown
+/// dependencies and cycles, since either would leave a check waiting forever.
+fn dependency_order(checks: &BTreeMap<String, CheckEntry>) -> Result<Vec<String>> {
+    for (name, (_, _, check, _)) in checks {
+        for dep in &check.depends {
+            if !checks.contains_key(dep) {
+                bail!("Check {name} depends on unknown check {dep}");
+            }
+        }
+    }
+    let mut order = Vec::with_capacity(checks.len());
+    let mut done = std::collections::BTreeSet::new();
+    while order.len() < checks.len() {
+        let ready = checks
+            .iter()
+            .filter(|(name, (_, _, check, _))| {
+                !done.contains(*name) && check.depends.iter().all(|dep| done.contains(dep))
+            })
+            .map(|(name, _)| name.clone())
+            .collect::<Vec<_>>();
+        if ready.is_empty() {
+            let cyclic = checks
+                .keys()
+                .filter(|name| !done.contains(*name))
+                .cloned()
+                .collect::<Vec<_>>();
+            bail!(
+                "Checks have a dependency cycle involving: {}",
+                cyclic.join(", ")
+            );
+        }
+        done.extend(ready.iter().cloned());
+        order.extend(ready);
+    }
+    Ok(order)
 }
 
 async fn run_check(

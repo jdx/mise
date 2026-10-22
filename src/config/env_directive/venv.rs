@@ -248,7 +248,7 @@ pub(crate) async fn create_python_venv(
     .envs(env_vars);
     cmd.execute()?;
     // Mark venv as stale so deps knows to run
-    crate::deps::mark_output_stale(venv.to_path_buf());
+    crate::deps::mark_output_stale(venv);
     Ok(true)
 }
 
@@ -357,6 +357,7 @@ mod tests {
                             redact: Some(false),
                             required: crate::config::env_directive::RequiredValue::False,
                             expand: false,
+                            find_up: false,
                             prompt: None,
                         },
                     },
@@ -374,6 +375,7 @@ mod tests {
                             redact: Some(false),
                             required: crate::config::env_directive::RequiredValue::False,
                             expand: false,
+                            find_up: false,
                             prompt: None,
                         },
                     },

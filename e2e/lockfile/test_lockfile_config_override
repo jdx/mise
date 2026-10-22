@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+# A tool the global override file declares shadows the project's pin: it resolves
+# from the global lockfile, never from the project's mise.lock, and --locked does
+# not hold it to the project lock. Every other tool is still enforced.
+
+export MISE_LOCKFILE=1
+export MISE_CEILING_PATHS="$HOME"
+
+detect_platform
+cat >mise.toml <<'TOML'
+[tools]
+tiny = "1"
+TOML
+cat >mise.lock <<TOML
+[[tools.tiny]]
+version = "1.0.0"
+backend = "vfox:jdx/vfox-tiny"
+specifiers = ["1"]
+"platforms.$MISE_PLATFORM" = { url = "https://example.com/tiny-1.0.0.tar.gz" }
+TOML
+
+# the project pin is honored without an override
+assert_succeed "MISE_LOCKED=1 mise install --dry-run"
+assert_contains "mise install --dry-run 2>&1" "tiny@1.0.0"
+
+cat >"$MISE_CONFIG_DIR/config.override.toml" <<'TOML'
+[tools]
+tiny = "2"
+TOML
+
+# the override wins and is resolved fresh, not against the project lock
+assert_contains "mise install --dry-run 2>&1" "tiny@2 "
+assert_not_contains "mise install --dry-run 2>&1" "tiny@1.0.0"
+assert_succeed "MISE_LOCKED=1 mise install --dry-run"
+# installing it does not add the override's version to the project lock
+assert_succeed "mise install tiny@2"
+assert "grep -c '^version = ' mise.lock" "1"
+assert_contains "cat mise.lock" 'version = "1.0.0"'
+
+# --locked still enforces every other tool
+cat >mise.toml <<'TOML'
+[tools]
+tiny = "1"
+dummy = "latest"
+TOML
+assert_fail_contains "MISE_LOCKED=1 mise install --dry-run 2>&1" "dummy@latest is not in the lockfile"
+assert_not_contains "MISE_LOCKED=1 mise install --dry-run 2>&1 || true" "tiny@2 is not in the lockfile"

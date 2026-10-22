@@ -52,6 +52,21 @@ credentials. For a private feed, add it to `NuGet.Config` and point
 `dotnet.registry_url` at its service index; changing the setting alone does not
 add an install source.
 
+The two steps authenticate separately. mise's version listing sends
+[`netrc`](/configuration/settings.html#netrc) credentials to a matching host
+with HTTP Basic authentication, so a password-protected Nexus or Artifactory
+feed needs a `~/.netrc` entry for it:
+
+```text
+machine nexus.example.com
+  login myuser
+  password mytoken
+```
+
+`dotnet tool install` does not read netrc. Give the feed's credentials to
+NuGet in `NuGet.Config`, either as a `packageSourceCredentials` entry or
+with `dotnet nuget add source`.
+
 ## Tool options
 
 Set these on the tool's entry in `[tools]`, or inline, as in

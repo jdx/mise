@@ -151,10 +151,10 @@ replay a uv graph. `uvx_args` and `pipx_args` cannot be locked: a plain
 with the tool, and configure [Python](#choosing-python) and the
 [registry URL](#registry-url) directly.
 
-`mise lock` needs a Python that uv can find, though not necessarily the tool's
-configured version. Installs from a graph use the selected mise Python and do
-not download another. A locked install from a lockfile in format 2 or later
-fails if the tool's graph is missing; run `mise lock` to create it.
+`mise lock` can resolve a graph from package metadata without first installing
+the selected interpreter. Installs from a graph use the selected mise Python
+and do not download another. A locked install from a lockfile in format 2 or
+later fails if the tool's graph is missing; run `mise lock` to create it.
 
 The graph covers the Python range that every locked requirement supports,
 starting at Python 3.8, and keeps every published wheel target, so sidecars can
@@ -175,6 +175,18 @@ locking for one tool; its version-only installs also need the index in
 registry credentials in the installer's environment or credential provider: a
 URL containing credentials or a query string cannot be recorded in the
 lockfile.
+
+When the index authenticates through a keyring, write the URL with a username
+and no password, and set
+[`pypi.keyring_provider`](/dev-tools/backends/pypi.html#pypi.keyring_provider)
+to `subprocess` so mise's own version listing and locking read the password
+from `keyring get` as uv does:
+
+```toml
+[settings.pypi]
+keyring_provider = "subprocess"
+registry_url = "https://VssSessionToken@pkgs.dev.azure.com/org/project/_packaging/feed/pypi/simple/{}/"
+```
 
 ## Minimum release age
 
@@ -200,6 +212,24 @@ Graph-locked installs use the Python configured in mise, or the first one on
 tool's environment does not depend on a Python uv downloaded itself; pass your
 own `--python` in [`uvx_args`](/dev-tools/backends/pypi.html#uvx-args) to choose another. pipx uses its own
 default interpreter; pass `--python` in [`pipx_args`](/dev-tools/backends/pypi.html#pipx-args) to choose one.
+
+To make one tool independent of the default Python, set its `python` option to
+a numeric CPython minor or exact patch. mise resolves and installs that runtime
+as a private dependency of the tool; it does not add Python to the shell's
+active tools. The selected runtime is recorded as an ordinary `python` entry in
+the same lockfile scope, so commit the refreshed lockfile before using locked
+installs. This requires a mise version that supports the `python` PyPI-tool
+option.
+
+```toml
+[tools]
+"pypi:black" = { version = "latest", python = "3.12" }
+"pypi:ruff" = { version = "latest", python = "3.12.12" }
+```
+
+The selector applies to both uv and pipx installs and also narrows a dependency
+graph to the Python versions the selected runtime can satisfy. It cannot be
+combined with `--python` or `-p` in `uvx_args` or `pipx_args`.
 
 ## Python upgrades
 
@@ -265,6 +295,7 @@ described under [tool options](/dev-tools/#tool-options).
 | `with`                   | uv                        |
 | `expose`                 | uv 0.8.5 or later         |
 | `dependency_prereleases` | uv                        |
+| `python`                 | uv and pipx               |
 | `uvx_args`               | uv, version-only installs |
 | `uvx`                    | chooses pipx when `false` |
 | `pipx_args`              | pipx                      |

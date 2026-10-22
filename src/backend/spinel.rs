@@ -57,6 +57,10 @@ impl<'a> SpinelOptions<'a> {
 
 #[async_trait]
 impl Backend for SpinelBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_spinel_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Spinel
     }

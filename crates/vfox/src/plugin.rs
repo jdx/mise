@@ -30,12 +30,24 @@ pub struct Plugin {
     pub name: String,
     pub dir: PathBuf,
     pub runtime_env_type: Option<String>,
+    /// Persistent directory exposed to hooks as `RUNTIME.cacheDirPath`
+    pub cache_dir_path: Option<PathBuf>,
     source: PluginSource,
     lua: Lua,
     metadata: OnceCell<Metadata>,
 }
 
 impl Plugin {
+    /// The cache directory to expose to hooks, created on demand. `None` when it can't
+    /// be created, so a hook never writes into a directory mise promised but doesn't have.
+    pub(crate) fn usable_cache_dir_path(&self) -> Option<PathBuf> {
+        self.cache_dir_path.clone().filter(|dir| {
+            std::fs::create_dir_all(dir)
+                .inspect_err(|err| debug!("[vfox:{}] no cache dir {dir:?}: {err}", self.name))
+                .is_ok()
+        })
+    }
+
     pub fn from_dir(dir: &Path) -> Result<Self> {
         if !dir.exists() {
             error!("Plugin directory not found: {:?}", dir);
@@ -48,6 +60,7 @@ impl Plugin {
             name,
             dir: dir.to_path_buf(),
             runtime_env_type: None,
+            cache_dir_path: None,
             source: PluginSource::Filesystem(dir.to_path_buf()),
             lua,
             metadata: OnceCell::new(),
@@ -65,6 +78,7 @@ impl Plugin {
             name: name.to_string(),
             dir: dummy_dir,
             runtime_env_type: None,
+            cache_dir_path: None,
             source: PluginSource::Embedded(embedded),
             lua,
             metadata: OnceCell::new(),
@@ -306,7 +320,11 @@ impl Plugin {
             self.set_global("PLUGIN", metadata.clone())?;
             self.set_global(
                 "RUNTIME",
-                Runtime::get(self.dir.clone(), self.runtime_env_type.as_deref()),
+                Runtime::get(
+                    self.dir.clone(),
+                    self.usable_cache_dir_path(),
+                    self.runtime_env_type.as_deref(),
+                ),
             )?;
             self.set_global("OS_TYPE", config::os())?;
             self.set_global("ARCH_TYPE", config::arch())?;

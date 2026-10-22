@@ -38,6 +38,12 @@ pub enum Error {
         display_path(.0)
     )]
     UntrustedConfig(PathBuf),
+    #[error(
+        "The environment file or script {} is not trusted, and paranoid mode ties trust to a file's contents.\nReview it, then trust it with `mise trust` or `mise trust {}`. See https://mise.jdx.dev/paranoid.html#environment-files for more information.",
+        display_path(.0),
+        display_path(.0)
+    )]
+    UntrustedEnvFile(PathBuf),
     #[error("{}", format_install_failures(.failed_installations))]
     InstallFailed {
         successful_installations: Vec<ToolVersion>,

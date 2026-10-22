@@ -7,12 +7,12 @@
 // (kit/rest.ts screenBadges), and the fresh machine's badge has faded from
 // the chrome just before it. Its output prints at real time: the repository
 // line and two paragraphs of prose, dimmed to texture (BOOTSTRAP_DIM), the
-// plan table and its prompt, and the pane holds it for its read. The pane
+// plan table, and the pane holds it for its read. The pane
 // keeps its size and its 26 px type throughout, so every line it prints can
 // be read; `~/.zshrc` lifts off its own `create` row as a card and flies out
 // along it and up to the top of the empty column, and then the steps' tiles
-// come in under it, pending. The prompt is answered on camera; once `Wrote 2
-// file(s)` has printed, a thread runs from it along the gutter to Dotfiles
+// come in under it, pending. mise applies the plan without asking; once
+// `Wrote 2 file(s)` has printed, a thread runs from it along the gutter to Dotfiles
 // and Config, which tick as it lands, and caption 1 follows. The services
 // prompt is answered; once `applied mise-history` and `mise bootstrap:
 // tools` have printed, their threads run to Watcher (which ticks; neither
@@ -30,10 +30,12 @@ import {
   type Capture,
   capture,
   fileOf,
+  firstWith,
   type ReelData,
   reelData,
   rowText,
   screenAt,
+  stepOf,
 } from "../captures";
 import { staggerOf } from "../kit/diagrams/common";
 import { bootstrapLabels, type Tile, tiles } from "../kit/diagrams/tiles";
@@ -46,6 +48,7 @@ import {
   keep,
   LEFT,
   type Play,
+  play,
   rectOf,
   rest,
   seatMark,
@@ -112,9 +115,21 @@ const schedule = perFacts((d: ReelData | null) => {
   const labels = bootstrapLabels(d?.variant ?? "systemd");
   const watcher = labels.includes("Watcher");
   const p = new Pace("bootstrap", { d });
-  const adopt = termAct(p, "adopt", c, (c, at) => [step(c, "confirm-1", at)], {
-    lines: 5,
-  });
+  // mise applies the plan without asking, so the take's one prompt is the
+  // services' (`confirm-1`): the first two acts split the take at the line
+  // that says the files were written.
+  const wrote = (c: Capture): number => {
+    const s = stepOf(c, "confirm-1");
+    const t = firstWith(c, /^Wrote \d+ file/, s.enter);
+    return t !== null && t <= s.end ? t : s.end;
+  };
+  const adopt = termAct(
+    p,
+    "adopt",
+    c,
+    (c, at) => [step(c, "confirm-1", at, { until: wrote(c) - 0.01 })],
+    { lines: 5 },
+  );
   // The create row takes its seat mark a flick before the card lifts off
   // it; the card flies to the top of the column while the column is still
   // empty, and then the tiles come in under it.
@@ -125,9 +140,13 @@ const schedule = perFacts((d: ReelData | null) => {
     "tiles",
     DUR.enter + staggerOf(labels.length - 1, labels.length),
   );
-  const yes1 = termAct(p, "yes1", c, (c, at) => [step(c, "confirm-2", at)], {
-    lines: 3,
-  });
+  const yes1 = termAct(
+    p,
+    "yes1",
+    c,
+    (c, at) => [play(at, wrote(c) - 0.01, stepOf(c, "confirm-1").end)],
+    { lines: 3 },
+  );
   const tick1 = moveOr(p, c, "tick1", DUR.stagger + TICK);
   p.caption(0);
   const yes2 = termAct(

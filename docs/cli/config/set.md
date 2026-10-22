@@ -29,15 +29,18 @@ or `false` as text, and `--type integer` for a number.
 
 ## Arguments
 - **`<KEY>`** — Dotted key path to set, such as `tools.python`
+
+  Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
 - **`[VALUE]`** — The value to set the key to (optional if provided as KEY=VALUE)
 
 ## Flags
 - **`-f --file <FILE>`** — Config file to edit, or a directory whose config file to edit
 
-  For a directory, mise edits the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file.
+  For a directory, mise edits the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest-precedence loaded TOML file other than the global override files.
 
   **Aliases:** `--path`
 - **`-g --global`** — Edit the global config file
+- **`--override`** — Edit the global override file, `config.override.toml`
 - **`--system`** — Edit the system config file
 - **`--append`** — Append the value to a list without duplicating an existing entry
 - **`--remove`** — Remove the value from an existing list

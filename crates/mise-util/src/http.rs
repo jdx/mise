@@ -126,12 +126,14 @@ impl std::error::Error for UnavailableHttpHost {}
 struct RetryState {
     headers: HeaderMap,
     use_netrc: bool,
+    netrc_replacement_only: bool,
 }
 
-fn new_retry_state(headers: &HeaderMap) -> RetryStateHandle {
+fn new_retry_state(headers: &HeaderMap, netrc_replacement_only: bool) -> RetryStateHandle {
     Arc::new(Mutex::new(RetryState {
         headers: headers.clone(),
         use_netrc: true,
+        netrc_replacement_only,
     }))
 }
 
@@ -141,11 +143,16 @@ fn attempt_options(
     retry_state: &RetryStateHandle,
     error_for_status: bool,
 ) -> (HeaderMap, SendOnceOptions) {
-    let (headers, use_netrc) = {
+    let (headers, use_netrc, netrc_replacement_only) = {
         let state = retry_state.lock().unwrap();
-        (state.headers.clone(), state.use_netrc)
+        (
+            state.headers.clone(),
+            state.use_netrc,
+            state.netrc_replacement_only,
+        )
     };
-    let options = SendOnceOptions::new(Some(retry_state.clone()), use_netrc);
+    let mut options = SendOnceOptions::new(Some(retry_state.clone()), use_netrc);
+    options.netrc_replacement_only = netrc_replacement_only;
     let options = if error_for_status {
         options
     } else {
@@ -167,6 +174,8 @@ struct RetryableRequest<'a> {
 #[derive(Clone)]
 struct SendOnceOptions {
     use_netrc: bool,
+    /// Apply netrc only when a URL replacement moved the request to another host.
+    netrc_replacement_only: bool,
     retry_github_oauth_401: bool,
     error_for_status: bool,
     allow_range_not_satisfiable: bool,
@@ -194,6 +203,7 @@ impl SendOnceOptions {
     fn new(retry_state: Option<RetryStateHandle>, use_netrc: bool) -> Self {
         Self {
             use_netrc,
+            netrc_replacement_only: false,
             retry_github_oauth_401: true,
             error_for_status: true,
             allow_range_not_satisfiable: false,
@@ -214,6 +224,7 @@ impl SendOnceOptions {
     fn recursive_retry(&self) -> Self {
         Self {
             use_netrc: false,
+            netrc_replacement_only: false,
             retry_github_oauth_401: false,
             error_for_status: self.error_for_status,
             allow_range_not_satisfiable: self.allow_range_not_satisfiable,
@@ -267,7 +278,8 @@ impl DownloadValidator {
 /// download has nothing to check a kept file against.
 fn cache_allowed(pin: Option<&str>) -> bool {
     let settings = Settings::get();
-    settings.download_cache && (pin.is_some() || !(settings.locked || settings.paranoid))
+    settings.download_cache
+        && (pin.is_some() || !(settings.locked || settings.paranoid.provenance()))
 }
 
 /// How a download may use the store of finished downloads.
@@ -888,25 +900,28 @@ impl Client {
         downgrade: Downgrade,
         read_timeout: Option<Duration>,
     ) -> Result<reqwest::Client> {
-        let builder = Self::_new().connect_timeout(timeout);
-        let builder = match read_timeout {
-            Some(read_timeout) => builder.read_timeout(read_timeout),
-            None => builder,
-        };
-        // Applied to every kind rather than per match arm, so no client can be
-        // added — or edited back — into existence without it. Downloads are
-        // checksum-verified where a checksum is known, but not every caller has
-        // one, and a silent downgrade is worth refusing on its own. Redirects
-        // are otherwise unchanged: the policy defers to the default for
-        // anything that is not a downgrade. The one exception is
-        // `HTTP_CHECKSUM_PINNED`, whose only caller verifies every byte.
-        let policy = match downgrade {
-            Downgrade::Refuse => https_downgrade_policy(kind.redirect_subject()),
-            #[cfg(unix)]
-            Downgrade::FollowChecksumPinned => reqwest::redirect::Policy::default(),
-        };
-        let builder = builder.redirect(policy);
-        Ok(builder.build()?)
+        // Built through `build_client` so an empty system trust store falls back
+        // to bundled roots; it may call this closure twice.
+        Ok(mise_tls::build_client(|| {
+            let builder = Self::_new().connect_timeout(timeout);
+            let builder = match read_timeout {
+                Some(read_timeout) => builder.read_timeout(read_timeout),
+                None => builder,
+            };
+            // Applied to every kind rather than per match arm, so no client can be
+            // added — or edited back — into existence without it. Downloads are
+            // checksum-verified where a checksum is known, but not every caller has
+            // one, and a silent downgrade is worth refusing on its own. Redirects
+            // are otherwise unchanged: the policy defers to the default for
+            // anything that is not a downgrade. The one exception is
+            // `HTTP_CHECKSUM_PINNED`, whose only caller verifies every byte.
+            let policy = match downgrade {
+                Downgrade::Refuse => https_downgrade_policy(kind.redirect_subject()),
+                #[cfg(unix)]
+                Downgrade::FollowChecksumPinned => reqwest::redirect::Policy::default(),
+            };
+            builder.redirect(policy)
+        })?)
     }
 
     #[doc(hidden)]
@@ -959,12 +974,13 @@ impl Client {
         let client = self
             .manual_redirects
             .get_or_init(|| {
-                Self::_new()
-                    .read_timeout(self.timeout)
-                    .connect_timeout(self.timeout)
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .map_err(|err| format!("{err:#}"))
+                mise_tls::build_client(|| {
+                    Self::_new()
+                        .read_timeout(self.timeout)
+                        .connect_timeout(self.timeout)
+                        .redirect(reqwest::redirect::Policy::none())
+                })
+                .map_err(|err| format!("{err:#}"))
             })
             .as_ref()
             .map_err(|err| {
@@ -1111,6 +1127,39 @@ impl Client {
         self.head_async_with_headers(url, &headers).await
     }
 
+    /// HEAD without `.netrc` credentials for the requested host (netrc for a
+    /// URL-replacement host still applies). For reachability probes where a
+    /// credentialed request changes the answer: github.com redirects an
+    /// authenticated release download to a presigned URL that rejects HEAD.
+    pub async fn head_without_netrc<U: IntoUrl>(&self, url: U) -> Result<Response> {
+        ensure!(
+            !crate::network::offline(&Settings::get()),
+            "offline mode is enabled"
+        );
+        let url = url.into_url()?;
+        let headers = host_auth_headers(&url)?;
+        let retry_state = new_retry_state(&headers, true);
+        let resp = retry_async_with_retries(
+            "HEAD",
+            &url,
+            crate::network::http_retries(&Settings::get()),
+            || async {
+                let (headers, options) = attempt_options(&retry_state, true);
+                self.send_once_with_https_fallback_with_retry_headers(
+                    Method::HEAD,
+                    url.clone(),
+                    &headers,
+                    "HEAD",
+                    options,
+                )
+                .await
+            },
+        )
+        .await?;
+        resp.error_for_status_ref()?;
+        Ok(resp)
+    }
+
     pub async fn head_async_with_headers<U: IntoUrl>(
         &self,
         url: U,
@@ -1200,7 +1249,17 @@ impl Client {
 
     pub async fn get_html<U: IntoUrl>(&self, url: U) -> Result<String> {
         let url = url.into_url()?;
-        let resp = self.get_async(url.clone()).await?;
+        let headers = host_auth_headers(&url)?;
+        self.get_html_with_headers(url, &headers).await
+    }
+
+    pub async fn get_html_with_headers<U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+    ) -> Result<String> {
+        let url = url.into_url()?;
+        let resp = self.get_async_with_headers(url.clone(), headers).await?;
         let is_html = resp
             .headers()
             .get(CONTENT_TYPE)
@@ -2004,7 +2063,7 @@ impl Client {
         retries: i64,
         error_for_status: bool,
     ) -> Result<Response> {
-        let retry_state = new_retry_state(headers);
+        let retry_state = new_retry_state(headers, false);
         retry_async_with_retries(verb_label, &url, retries, || async {
             let (headers, options) = attempt_options(&retry_state, error_for_status);
             self.send_once_with_https_fallback_with_retry_headers(
@@ -2027,7 +2086,7 @@ impl Client {
         F: Fn(Response) -> Fut,
         Fut: std::future::Future<Output = Result<T>>,
     {
-        let retry_state = new_retry_state(req.headers);
+        let retry_state = new_retry_state(req.headers, false);
         retry_async_with_retries(req.verb_label, &req.url, req.retries, || async {
             let (headers, options) = attempt_options(&retry_state, req.error_for_status);
             let resp = self
@@ -2194,7 +2253,9 @@ impl Client {
         // than the direct request, or an http mirror fronting an https origin (#7164)
         // becomes unusable.
         ensure_secure_replacement_credentials(&original_url, &url, &final_headers)?;
-        if options.use_netrc {
+        if options.use_netrc
+            && !(options.netrc_replacement_only && url.host() == original_url.host())
+        {
             final_headers =
                 apply_netrc_credentials(final_headers, &original_url, &url, netrc_headers(&url));
         }
@@ -2267,6 +2328,7 @@ impl Client {
                             *retry_state.lock().unwrap() = RetryState {
                                 headers: headers.clone(),
                                 use_netrc: false,
+                                netrc_replacement_only: false,
                             };
                         }
                         debug!(

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 // Bump when the archived index or package layout changes.
-const COMPILED_REGISTRY_CACHE_VERSION: &str = "v10";
+const COMPILED_REGISTRY_CACHE_VERSION: &str = "v11";
 
 #[derive(Debug, Clone)]
 pub struct RegistryCache {

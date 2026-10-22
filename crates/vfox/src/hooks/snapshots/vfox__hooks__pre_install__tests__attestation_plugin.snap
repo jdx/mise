@@ -32,4 +32,5 @@ PreInstall {
             slsa_signer_issuer: None,
         },
     ),
+    headers: None,
 }

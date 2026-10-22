@@ -63,7 +63,7 @@ async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
         return load_local(parent, reference);
     }
     let pin = classify(reference)?;
-    if pin == Pin::Mutable && Settings::try_get().is_ok_and(|s| s.paranoid) {
+    if pin == Pin::Mutable && Settings::try_get().is_ok_and(|s| s.paranoid.config()) {
         bail!(
             "paranoid mode binds trust to content, so a config include must be pinned to a \
              commit sha or an OCI digest: {reference}"
@@ -84,7 +84,7 @@ async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
     // A body is only cached once it is known to load, so a bad edit upstream
     // can never replace a copy that works.
     let fetched = match fetch(reference).await {
-        Ok(body) => MiseToml::parse_remote_fragment(&body, parent)
+        Ok(body) => MiseToml::parse_remote_fragment(&body, parent, None)
             .map(|_| body)
             .wrap_err_with(|| format!("invalid config include {reference}")),
         Err(err) => Err(err),
@@ -113,7 +113,7 @@ async fn load(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
 fn load_local(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
     // Paranoid mode binds trust to the including file's hash, which does not
     // cover a file that can change without it.
-    if Settings::try_get().is_ok_and(|s| s.paranoid) {
+    if Settings::try_get().is_ok_and(|s| s.paranoid.config()) {
         bail!(
             "paranoid mode binds trust to content, so a local config include is not \
              allowed: {reference}"
@@ -125,7 +125,7 @@ fn load_local(parent: &Path, reference: &str) -> Result<(PathBuf, String)> {
         bail!("a config include must be a file: {}", path.display());
     }
     let body = file::read_to_string(&path)?;
-    MiseToml::parse_remote_fragment(&body, parent)
+    MiseToml::parse_remote_fragment(&body, parent, None)
         .wrap_err_with(|| format!("invalid config include {reference}"))?;
     Ok((path, body))
 }

@@ -201,15 +201,26 @@ message, except where a hook's section below says otherwise.
 Return a list of tables, newest first, ordered by the publisher's release
 policy:
 
-| Field      | Required | Value                                                              |
-| ---------- | -------- | ------------------------------------------------------------------ |
-| `version`  | yes      | The version string, unchanged apart from a documented prefix       |
-| `rolling`  | no       | `true` for a channel whose contents change, such as `nightly`      |
-| `checksum` | no       | For a rolling channel, the SHA-256 of the current platform's asset |
+| Field        | Required | Value                                                              |
+| ------------ | -------- | ------------------------------------------------------------------ |
+| `version`    | yes      | The version string, unchanged apart from a documented prefix       |
+| `rolling`    | no       | `true` for a channel whose contents change, such as `nightly`      |
+| `checksum`   | no       | For a rolling channel, the SHA-256 of the current platform's asset |
+| `created_at` | no       | When the version was released, as an RFC 3339 timestamp            |
 
 mise reverses the list into its own oldest-first order. `BackendListVersions` in
 a backend plugin returns oldest first instead. `Available` receives no tool
 options, so the version list cannot depend on them.
+
+#### Release dates {#release-dates}
+
+Return `created_at` when the publisher's index says when a version was
+released, such as `created_at = "2026-01-31T12:00:00Z"`. mise uses it for
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age) and
+`--before`: a version with no date, or one mise cannot parse as RFC 3339, is
+treated as undated, and an undated version is never hidden by a cutoff. If the
+publisher exposes dates, return them, or the cooldown silently lets new releases
+through.
 
 #### Rolling releases {#rolling-releases}
 
@@ -250,6 +261,7 @@ Return a table:
 | `sha256` or `sha512` | no       | The file's checksum; return one with every `url`                               |
 | `sha1` or `md5`      | no       | Weaker checksums, also checked                                                 |
 | `attestation`        | no       | A signature or provenance to verify; see [Verify downloads](#verify-downloads) |
+| `headers`            | no       | Request headers for the download, such as a token                              |
 
 mise downloads `url`, checks every checksum and attestation you return, and
 extracts the file into the install directory. It extracts `.tar.gz`, `.tgz`,
@@ -258,6 +270,32 @@ archive holds a single top-level directory, that directory's contents become
 the install directory. Any other file is moved into the install directory and
 marked executable. Without a `url`, mise downloads nothing and `PostInstall`
 does the install, as in a build from source.
+
+### Authenticated downloads
+
+When the artifact needs a token, return a `headers` table next to `url`:
+
+```lua
+function PLUGIN:PreInstall(ctx)
+    return {
+        version = ctx.version,
+        url = "https://api.github.com/repos/acme/dist/releases/assets/12345",
+        sha256 = sha256,
+        headers = {
+            Accept = "application/octet-stream",
+            Authorization = "Bearer " .. token,
+        },
+    }
+end
+```
+
+mise sends the headers only to the origin (scheme, host and port) of `url`. It
+drops them when a redirect leads to another origin, which is what signed
+storage URLs such as GitHub's need. A mirror configured with
+[`url_replacements`](/url-replacements) never receives them. A `headers` `Authorization` wins over
+netrc and the automatic GitHub token. Header values are kept out of debug
+output, and headers are not recorded in `mise.lock`. mise downloads the file
+with these headers, so checksums, retries and `mise lock` keep working.
 
 mise also calls `PreInstall` to record download URLs in `mise.lock` for other
 platforms. `RUNTIME` then describes the target platform, so build the URL from

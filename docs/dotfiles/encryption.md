@@ -253,7 +253,13 @@ This uses the user service manager on Linux, macOS, and Windows, and keeps it
 from restarting the watcher during the repair. If you named the service
 differently, use that name.
 
-If the plaintext was never pushed, you can drop the affected checkpoints and
+If the plaintext was never pushed, run
+[`mise dot history purge`](/dotfiles/history.html#purge) on the file. It removes
+only that file's versions and keeps every other checkpoint. The rest of this
+section is the manual alternative, and the way to clean up history the origin
+already has.
+
+You can also drop the affected checkpoints and
 save the current file again with encryption on. This drops all checkpoints
 after the last safe commit, including changes to other files. Find that commit
 with `mise dot history`, or inspect the repository with the `git log` command

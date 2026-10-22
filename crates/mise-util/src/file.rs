@@ -373,7 +373,10 @@ pub fn try_rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> std::io::Re
 
 #[cfg(windows)]
 fn do_rename(from: &Path, to: &Path) -> std::io::Result<()> {
-    const MAX_ATTEMPTS: u32 = 5;
+    // Renaming a freshly extracted directory fails while antivirus is still scanning the files
+    // inside it, which takes tens of seconds for a multi-gigabyte archive such as flutter's.
+    const MAX_ATTEMPTS: u32 = 20;
+    const MAX_DELAY_MS: u64 = 5000;
     let mut last_err = None;
     for attempt in 0..MAX_ATTEMPTS {
         match fs::rename(from, to) {
@@ -381,10 +384,11 @@ fn do_rename(from: &Path, to: &Path) -> std::io::Result<()> {
             Err(e) if matches!(e.raw_os_error(), Some(5) | Some(32)) => {
                 // ERROR_ACCESS_DENIED (5) or ERROR_SHARING_VIOLATION (32):
                 // likely a transient lock from antivirus or the OS.
-                // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
+                // Exponential backoff from 50ms, capped at 5s (about a minute in total).
                 last_err = Some(e);
                 if attempt + 1 < MAX_ATTEMPTS {
-                    std::thread::sleep(std::time::Duration::from_millis(50 * (1 << attempt)));
+                    let delay = (50u64 << attempt).min(MAX_DELAY_MS);
+                    std::thread::sleep(std::time::Duration::from_millis(delay));
                 }
             }
             Err(e) => return Err(e),
@@ -2613,6 +2617,22 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
             archive.file_name().unwrap().to_string_lossy()
         ));
     }
+    // sevenz-rust2 rejects any `..` in an entry's destination path, but `dest`
+    // can legitimately contain one (e.g. a localized mise under `tools/../.mise`).
+    let resolved_dest;
+    let dest = if dest
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        // canonicalize follows symlinks, so `..` means what the caller's path means
+        create_dir_all(dest)?;
+        resolved_dest = dest
+            .canonicalize()
+            .wrap_err_with(|| format!("failed to resolve {}", display_path(dest)))?;
+        &resolved_dest
+    } else {
+        dest
+    };
     run_blocking(|| {
         sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
             let dest_path = dest.join(
@@ -3038,13 +3058,13 @@ fn archive_content_files_zip(
         if file.is_symlink() {
             bail!(
                 "content-level SLSA verification does not support symlink archive entry: {}",
-                file.name()
+                file.name().as_deref().unwrap_or("<unreadable name>")
             );
         }
         let enclosed_name = file.enclosed_name().ok_or_else(|| {
             eyre::eyre!(
                 "content-level SLSA verification rejected unsafe zip path: {}",
-                file.name()
+                file.name().as_deref().unwrap_or("<unreadable name>")
             )
         })?;
         let name = normalize_archive_content_path(&enclosed_name, strip_components)?;

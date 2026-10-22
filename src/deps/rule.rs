@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use eyre::{Result, WrapErr};
 use serde::{Deserialize, Serialize};
+
+pub(crate) use mise_config::deps::{DepsDecl, DepsProviderDecl};
 use tera::Context as TeraContext;
 
 use crate::config::Settings;
@@ -17,31 +19,16 @@ pub(crate) struct DepsTemplateContext {
     pub(crate) context: TeraContext,
 }
 
-/// List of built-in provider names that have specialized implementations
-pub(super) const BUILTIN_PROVIDERS: &[&str] = &[
-    "npm",
-    "yarn",
-    "pnpm",
-    "bun",           // Node.js
-    "aube",          // Node.js
-    "deno",          // Deno
-    "go",            // Go
-    "pip",           // Python (requirements.txt)
-    "poetry",        // Python (poetry)
-    "uv",            // Python (uv)
-    "bundler",       // Ruby
-    "composer",      // PHP
-    "dart",          // Dart
-    "flutter",       // Flutter
-    "git-submodule", // Git
-];
+pub(super) use mise_config::deps::BUILTIN_PROVIDERS;
 
+/// A deps provider (built-in or custom), as declared in [`DepsProviderDecl`] plus what mise
+/// needs to render it.
+///
 /// Configuration for a deps provider (both built-in and custom)
 ///
 /// Built-in providers have auto-detected sources/outputs and default run commands.
 /// Custom providers require explicit sources, outputs, and run.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct DepsProviderConfig {
     /// Whether to auto-run this provider before mise x/run (default: false)
     #[serde(default)]
@@ -229,7 +216,7 @@ fn expand_shell_vars(
 /// All providers are configured at the same level:
 /// - `[deps.npm]` - built-in npm provider
 /// - `[deps.codegen]` - custom provider
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct DepsConfig {
     /// List of provider IDs to disable at runtime
     #[serde(default)]
@@ -237,6 +224,38 @@ pub struct DepsConfig {
     /// All provider configurations (both built-in and custom)
     #[serde(flatten)]
     pub providers: BTreeMap<String, DepsProviderConfig>,
+}
+
+impl DepsConfig {
+    /// The runtime config for a declared `[deps]` table. The providers' template context is
+    /// attached by the config file that declared them.
+    pub(crate) fn from_decl(decl: DepsDecl) -> Self {
+        Self {
+            disable: decl.disable,
+            providers: decl
+                .providers
+                .into_iter()
+                .map(|(id, provider)| (id, DepsProviderConfig::from_decl(provider)))
+                .collect(),
+        }
+    }
+}
+
+impl DepsProviderConfig {
+    fn from_decl(decl: DepsProviderDecl) -> Self {
+        Self {
+            auto: decl.auto,
+            run: decl.run,
+            sources: decl.sources,
+            outputs: decl.outputs,
+            env: decl.env,
+            dir: decl.dir,
+            description: decl.description,
+            depends: decl.depends,
+            timeout: decl.timeout,
+            template_context: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -346,11 +365,12 @@ mod tests {
 
     #[test]
     fn path_options_preserve_omitted_and_explicit_empty() {
-        let omitted: DepsConfig = toml::from_str("[npm]\n").unwrap();
+        let omitted = DepsConfig::from_decl(toml::from_str("[npm]\n").unwrap());
         assert_eq!(omitted.providers["npm"].sources, None);
         assert_eq!(omitted.providers["npm"].outputs, None);
 
-        let empty: DepsConfig = toml::from_str("[npm]\nsources = []\noutputs = []\n").unwrap();
+        let empty =
+            DepsConfig::from_decl(toml::from_str("[npm]\nsources = []\noutputs = []\n").unwrap());
         assert_eq!(empty.providers["npm"].sources, Some(vec![]));
         assert_eq!(empty.providers["npm"].outputs, Some(vec![]));
     }

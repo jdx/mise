@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Regression for #14647: `ignore-scripts=true` in the user's .npmrc must not
+# override scripts approved with `allow_builds` in the embedded aube install.
+
+export NPM_CONFIG_USERCONFIG="$HOME/hardened.npmrc"
+echo "ignore-scripts=true" >"$NPM_CONFIG_USERCONFIG"
+
+cat >mise.toml <<'TOML'
+[tools]
+node = "20"
+"npm:node-pty" = { version = "1.0.0", allow_builds = ["node-pty"] }
+TOML
+
+assert_succeed "mise install"
+
+# node-pty's install script is `node-gyp rebuild`; the native binding only
+# exists if the approved script actually ran.
+pkg_dir="$(find "$MISE_DATA_DIR/installs/npm-node-pty/1.0.0" -type d -name node-pty | head -1)"
+assert_succeed "test -n \"$pkg_dir\""
+binding="$(find "$pkg_dir" -path '*/build/Release/*.node' | head -1)"
+assert_succeed "test -n \"$binding\""

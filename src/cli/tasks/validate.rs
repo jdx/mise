@@ -487,7 +487,7 @@ impl TasksValidate {
         // monorepo the daemon may be declared by a subproject, or a same-named
         // one in the caller's project may not be the one that would start.
         let scoped = match &task.config_root {
-            Some(root) => crate::daemons::runtime::config_for_root(config, root).await,
+            Some(root) => crate::daemons::glue::config_for_root(config, root).await,
             None => Ok(config.clone()),
         };
         // A malformed declaration fails the run, so it has to fail validation

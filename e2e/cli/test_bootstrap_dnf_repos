@@ -7,6 +7,7 @@ if [[ "$(uname)" != "Linux" ]]; then
   exit 0
 fi
 
+# schema: invalid
 cat <<EOF >mise.toml
 [bootstrap.dnf.repos]
 ghostty = { copr = "scottames/ghostty" }

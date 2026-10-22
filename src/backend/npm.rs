@@ -778,6 +778,10 @@ impl Backend for NPMBackend {
         AUBE_OPERATION_WEIGHTS.to_vec()
     }
 
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_npm_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Npm
     }
@@ -890,6 +894,76 @@ impl Backend for NPMBackend {
             );
         }
         options
+    }
+
+    /// A registry other than npmjs.org, from `.npmrc` or `NPM_CONFIG_*`, lists
+    /// its own versions, which the shared versions host cannot know.
+    ///
+    /// `npm.shell_out` lists through `npm view` in the dependency environment,
+    /// whose registry settings mise does not interpret, so it always lists
+    /// directly. Its cache is keyed by what `npm` reads there, so one
+    /// registry's list is not reused for another.
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        if Settings::get().npm.shell_out {
+            let env = self.dependency_env(config).await?;
+            // `npm view` resolves its registry from the whole environment, since
+            // an `.npmrc` can interpolate any variable (`registry=${REGISTRY}`),
+            // and from the `.npmrc` files it finds: the global config, the user config (under
+            // `HOME`, `USERPROFILE`, or `NPM_CONFIG_USERCONFIG`) and the one in
+            // the prefix it runs in. Hash all of them.
+            let env_path = |name: &str| {
+                env.iter()
+                    .find(|(key, _)| key.eq_ignore_ascii_case(name))
+                    .map(|(_, path)| PathBuf::from(path))
+            };
+            let user_config = env_path("npm_config_userconfig");
+            // The global config: the file `NPM_CONFIG_GLOBALCONFIG` names, or
+            // `etc/npmrc` under the prefix an environment variable sets.
+            let global_configs = env_path("npm_config_globalconfig").into_iter().chain(
+                ["npm_config_prefix", "prefix"]
+                    .into_iter()
+                    .filter_map(env_path)
+                    .map(|prefix| prefix.join("etc").join("npmrc")),
+            );
+            let homes = ["HOME", "USERPROFILE"]
+                .into_iter()
+                .filter_map(|key| env.get(key))
+                .map(|home| PathBuf::from(home).join(".npmrc"));
+            let prefix = Self::npm_meta_prefix().ok().map(|dir| dir.join(".npmrc"));
+            let npmrcs = user_config
+                .into_iter()
+                .chain(global_configs)
+                .chain(homes)
+                .chain(prefix)
+                .map(|path| std::fs::read_to_string(path).ok())
+                .collect::<Vec<_>>();
+            // Only what decides npm's registry stays in the key: its own
+            // `NPM_CONFIG_*` settings, the variables that locate its config
+            // files, and any variable an `.npmrc` interpolates
+            // (`registry=${MISE_ENV}`). The rest of the environment (mise's
+            // `MISE_OFFLINE`, session state, `PATH`) changes with how mise runs
+            // and would only miss the cache, an offline run most of all.
+            static VAR_REF: LazyLock<regex::Regex> =
+                LazyLock::new(|| regex::Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)").unwrap());
+            let referenced = npmrcs
+                .iter()
+                .flatten()
+                .flat_map(|rc| VAR_REF.captures_iter(rc))
+                .map(|cap| cap[1].to_ascii_lowercase())
+                .collect::<HashSet<_>>();
+            let env = env
+                .iter()
+                .filter(|(key, _)| {
+                    let key = key.to_ascii_lowercase();
+                    referenced.contains(&key)
+                        || key.starts_with("npm_config_")
+                        || matches!(key.as_str(), "home" | "userprofile" | "prefix")
+                })
+                .collect::<BTreeMap<_, _>>();
+            return Ok(Some(crate::hash::hash_to_str(&(env, npmrcs))));
+        }
+        let registry = npm_registry::package_registry(&self.tool_name());
+        Ok((!npm_registry::is_public_registry(&registry)).then_some(registry))
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
@@ -2118,7 +2192,14 @@ impl NPMBackend {
     ) -> Result<()> {
         // Validate the fallible options before writing anything, so a malformed
         // value fails without leaving a half-written project dir behind.
-        let aube_config = self.aube_project_config(before_date, options, resolved_from_lockfile)?;
+        let mut aube_config =
+            self.aube_project_config(before_date, options, resolved_from_lockfile)?;
+        // mise reads and writes `aube-lock.yaml` here; a user's own
+        // `defaultLockfile`/`defaultLockfileFormat` must not redirect it.
+        aube_config.insert(
+            "defaultLockfile".to_string(),
+            toml::Value::String("aube-lock.yaml".to_string()),
+        );
 
         let mut manifest = serde_json::json!({
             "name": "mise-npm-install",
@@ -2261,7 +2342,23 @@ impl NPMBackend {
         let trust_policy_excludes = options.trust_policy_excludes()?;
         let allow_low_downloads = options.allow_low_downloads()?;
         let allow_exotic_deps = options.allow_exotic_deps()?;
+        let allow_builds = options.allow_builds()?;
         let mut config = toml::Table::new();
+        if !matches!(allow_builds, AllowBuilds::None) {
+            // The user's `.npmrc` `ignore-scripts=true` would otherwise win over
+            // the in-process `ignore_scripts = false` and silently skip the
+            // scripts `allow_builds` approved. Project config outranks it.
+            config.insert("ignoreScripts".to_string(), toml::Value::Boolean(false));
+        }
+        if matches!(allow_builds, AllowBuilds::Packages(_)) {
+            // aube merges its bundled trusted-dependencies list into every
+            // allowlist, so a package list would approve far more than it
+            // names. An explicit list means exactly those packages.
+            config.insert(
+                "useDefaultTrustedDependencies".to_string(),
+                toml::Value::Boolean(false),
+            );
+        }
         if let Some(before_date) = before_date {
             let minutes = Self::build_aube_minimum_release_age(elapsed_seconds_ceil(
                 before_date,
@@ -2890,6 +2987,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "trust_policy_excludes".into(),
         "allow_low_downloads".into(),
         "allow_exotic_deps".into(),
+        "checksum".into(),
     ]
 }
 
@@ -4437,6 +4535,10 @@ pkg@1.2.0 '1.2.0'
                 toml::Value::String("undici@^5".to_string()),
             ])
         );
+        assert_eq!(
+            config["defaultLockfile"],
+            toml::Value::String("aube-lock.yaml".to_string())
+        );
         assert!(!install_path.join(".npmrc").exists());
         // The build-script allowlist goes in package.json's aube namespace.
         let manifest: serde_json::Value =
@@ -4445,6 +4547,13 @@ pkg@1.2.0 '1.2.0'
         assert_eq!(
             manifest["aube"]["allowBuilds"],
             serde_json::json!({ "esbuild": true })
+        );
+        // Approved builds must run even if the user's .npmrc ignores scripts.
+        assert_eq!(config["ignoreScripts"], toml::Value::Boolean(false));
+        // A package list approves exactly those packages, not aube's defaults.
+        assert_eq!(
+            config["useDefaultTrustedDependencies"],
+            toml::Value::Boolean(false)
         );
         assert_eq!(
             std::fs::read_to_string(install_path.join("aube-workspace.yaml")).unwrap(),
@@ -4882,6 +4991,9 @@ pkg@1.2.0 '1.2.0'
         )
         .unwrap();
         assert!(!config.contains_key("allowedUnpopularPackages"));
+        // Without allow_builds, the user's ignore-scripts stays in charge.
+        assert!(!config.contains_key("ignoreScripts"));
+        assert!(!config.contains_key("useDefaultTrustedDependencies"));
         assert!(!install_path.join(".npmrc").exists());
     }
 

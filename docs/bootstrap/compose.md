@@ -124,8 +124,16 @@ services = ["proxy", "grafana"]
 ```
 
 `services` limits `up` and `stop` to those services; without it, mise manages
-every service that the files and profiles enable. Put secret values in an
-environment file that a [`[bootstrap.files]`](/bootstrap/files.html) template
+every service that the files and profiles enable.
+
+Set `files` if a service uses `network_mode: service:vpn`, `ipc: service:`, or
+`pid: service:`. Compose hashes those after
+resolving them to container ids, so mise pins them to the running containers
+before comparing hashes, and it can only do that with explicit `files`. Without
+`files`, a project that uses them reports an update on every run. `volumes_from`
+references to a service cannot be pinned and also report an update on every run.
+
+Put secret values in an environment file that a [`[bootstrap.files]`](/bootstrap/files.html) template
 writes with mode `0600`, not in `mise.toml`.
 
 ## Use Podman or another engine {#engines-and-privileges}

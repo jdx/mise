@@ -11,6 +11,9 @@ full = "http:julia"
 [backends.options]
 checksum_expr = '"sha256:" + filter(fromJSON(body)[version + ""].files, { #.url == url })[0].sha256'
 checksum_url = "https://julialang-s3.julialang.org/bin/versions.json"
+# versions.json gained a last-modified on each release's files in August 2026, so
+# releases before then (and prereleases like 1.12.0-rc1) stay undated.
+version_date_expr = 'let all = fromJSON(body); map(keys(all), { let v = #; let dated = filter(all[v].files, { #["last-modified"] != nil }); [v, len(dated) > 0 ? dated[0]["last-modified"] : ""] })'
 version_expr = 'sortVersions(filter(keys(fromJSON(body)), { # matches "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z\\.-]+)?$" }))'
 version_list_url = "https://julialang-s3.julialang.org/bin/versions.json"
 

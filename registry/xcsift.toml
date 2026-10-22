@@ -1,5 +1,7 @@
-backends = ["github:ldomaradzki/xcsift"]
+backends = [
+  { full = "packslip:github.com/ldomaradzki/xcsift", min_version = "1.7.0", options = { workflow = "release.yml" } },
+  "github:ldomaradzki/xcsift",
+]
 description = "Swift tool to parse and format xcodebuild output for coding agents"
-os = ["macos"]
 test = { cmd = "xcsift --version", expected = "{{version}}" }
 version_order = "semver"

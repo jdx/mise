@@ -305,6 +305,158 @@ async fn test_read_file() {
 }
 
 #[test]
+fn test_read_structured_files() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("package.json"),
+        r#"{"volta": {"node": "20.1.0"}, "packageManager": "pnpm@9.12.0", "names": ["a", "b"], "my-key": 7}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("Pulumi.yaml"),
+        "name: my-project\nrequiredPulumiVersion: \"3.270.0\"\nflags:\n  - on\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("pyproject.toml"),
+        "[tool.mytool]\nversion = \"1.2.3\"\nreleased = 2026-01-02\n",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("bad.json"), "{nope").unwrap();
+    {
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        read_structured_cases(dir.path());
+    }
+    let _v1 = SettingsGuard::tera_v1();
+    read_structured_cases(dir.path());
+}
+
+fn read_structured_cases(dir: &Path) {
+    let mut tera_ctx = BASE_CONTEXT.clone();
+    tera_ctx.insert("config_root", dir.to_str().unwrap());
+    tera_ctx.insert("cwd", dir.to_str().unwrap());
+    let mut tera = get_tera(Some(dir));
+    let mut render = |input: &str| render_str(&mut tera, input, &tera_ctx);
+    // Neither engine parses `.key` straight after a call, so these bind with `set` or use `get`
+    // (v2 also takes `['key']`, below)
+    for (input, expected) in [
+        (
+            "{% set pkg = read_json(path='package.json') %}{{ pkg.volta.node }}",
+            "20.1.0",
+        ),
+        (
+            "{{ read_json(path='package.json') | get(key='volta') | get(key='node') }}",
+            "20.1.0",
+        ),
+        (
+            "{% set pkg = read_json(path='package.json') %}{{ pkg.packageManager | split(pat='@') | last }}",
+            "9.12.0",
+        ),
+        (
+            "{% set pkg = read_json(path='package.json') %}{{ pkg.names[1] }}{{ pkg['my-key'] }}",
+            "b7",
+        ),
+        (
+            "{% set p = read_yaml(path='Pulumi.yaml') %}{{ p.requiredPulumiVersion }}",
+            "3.270.0",
+        ),
+        // only true and false are booleans in YAML, as everywhere else in mise
+        (
+            "{% set p = read_yaml(path='Pulumi.yaml') %}{{ p.flags[0] }}",
+            "on",
+        ),
+        (
+            "{% set p = read_toml(path='pyproject.toml') %}{{ p.tool.mytool.version }}",
+            "1.2.3",
+        ),
+        (
+            "{% set p = read_toml(path='pyproject.toml') %}{{ p.tool.mytool.released }}",
+            "2026-01-02",
+        ),
+    ] {
+        assert_eq!(render(input).unwrap(), expected, "{input}");
+    }
+    if !use_tera_v1() {
+        for (input, expected) in [
+            (
+                "{{ read_json(path='package.json')['volta']['node'] }}",
+                "20.1.0",
+            ),
+            ("{{ read_json(path='package.json')['names'][1] }}", "b"),
+            ("{{ read_json(path='package.json')['my-key'] }}", "7"),
+            (
+                "{{ read_toml(path='pyproject.toml')['tool']['mytool']['version'] }}",
+                "1.2.3",
+            ),
+        ] {
+            assert_eq!(render(input).unwrap(), expected, "{input}");
+        }
+        assert!(render("{{ read_json(path='package.json')['volta']['deno'] }}").is_err());
+    }
+    let err = format!(
+        "{:?}",
+        render("{{ read_json(path='bad.json') }}").unwrap_err()
+    );
+    assert!(err.contains("read_json("), "{err}");
+    assert!(err.contains("failed to parse file"), "{err}");
+    let err = format!(
+        "{:?}",
+        render("{{ read_yaml(path='missing.yaml') }}").unwrap_err()
+    );
+    assert!(err.contains("failed to read file"), "{err}");
+    // an absent key is an error rather than an empty string
+    assert!(render("{% set p = read_json(path='package.json') %}{{ p.volta.deno }}").is_err());
+    assert_eq!(
+        render(
+            "{% set p = read_json(path='package.json') %}{{ p.volta.deno | default(value='none') }}"
+        )
+        .unwrap(),
+        "none"
+    );
+}
+
+#[test]
+fn test_read_structured_files_refused_in_safe_mode_and_oci() {
+    let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    for v1 in [false, true] {
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.safe = Some(true);
+        settings.tera_v1 = Some(v1);
+        crate::testing::reset_settings(Some(settings));
+        let mut tera = get_tera(None);
+        for name in ["read_json", "read_yaml", "read_toml"] {
+            assert_refused(
+                &mut tera,
+                name,
+                &format!("{name}() is disabled in safe mode"),
+            );
+        }
+        // OCI dotfile templates must not read host files, even outside safe mode
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.tera_v1 = Some(v1);
+        crate::testing::reset_settings(Some(settings));
+        let mut tera = get_tera_for_oci(None);
+        for name in ["read_json", "read_yaml", "read_toml"] {
+            assert_refused(&mut tera, name, "host file access is disabled");
+        }
+    }
+    crate::testing::reset_settings(None);
+}
+
+fn assert_refused(tera: &mut TeraEngine, name: &str, message: &str) {
+    let err = render_str(
+        tera,
+        &format!("{{{{ {name}(path='x') }}}}"),
+        &BASE_CONTEXT.clone(),
+    )
+    .unwrap_err();
+    assert!(
+        format!("{err:?}").contains(message),
+        "{name}: {err:?} should contain {message}"
+    );
+}
+
+#[test]
 fn test_render_for_dry_run() {
     {
         let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);

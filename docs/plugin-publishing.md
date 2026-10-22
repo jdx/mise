@@ -171,8 +171,15 @@ mise accepts a plugin release when:
   directories: no symbolic or hard links, no `.git` directory, no absolute
   paths or `..` components, and no names containing `\` or `:`.
 
+A [backend plugin](/backend-plugin-development.html) ships the same way. Its
+archive also declares `extensions.mise.plugin = "vfox"`, because that names the
+archive format, not the plugin kind; mise tells a backend plugin apart by its
+`hooks/backend_install.lua`. Users install it with the `vfox-backend:` prefix,
+for example `mise plugins install vfox-backend:my-backend 'packslip:your-org/my-backend#1.2.3'`.
+
 Declare the artifact in the repository's `packslip.toml`:
 
+<!-- schema: skip -->
 ```toml
 [[artifact]]
 path = "dist/my-plugin.tar.gz"

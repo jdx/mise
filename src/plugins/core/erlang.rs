@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::{
     ffi::OsString,
     path::{Path, PathBuf},
@@ -16,6 +16,7 @@ use crate::config::{CompilePurpose, Config, Settings, SettingsExt};
 #[cfg(unix)]
 use crate::file::ExtractOptions;
 use crate::file::display_path;
+use crate::github::ReleaseVersion;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lock_file::LockFile;
@@ -672,24 +673,26 @@ impl Backend for ErlangPlugin {
             self.update_kerl().await?;
             let kerl_path = self.kerl_path().to_string_lossy().to_string();
             let kerl_base_dir = self.ba.cache_path().join("kerl");
-            plugins::core::run_fetch_task_with_timeout_async(async move || {
-                let output = crate::cmd::cmd_read_async_inherited_env(
+            let output = plugins::core::run_fetch_task_with_timeout_async(async move || {
+                crate::cmd::cmd_read_async_inherited_env(
                     &kerl_path,
                     &["list", "releases", "all"],
                     [("KERL_BASE_DIR", kerl_base_dir.as_os_str())],
                 )
-                .await?;
-                let versions = output
-                    .split('\n')
-                    .filter(|s| regex!(r"^[0-9].+$").is_match(s))
-                    .map(|s| VersionInfo {
-                        version: s.to_string(),
-                        ..Default::default()
-                    })
-                    .collect();
-                Ok(versions)
+                .await
             })
-            .await?
+            .await?;
+            // kerl lists every release but no dates. erlang/otp's GitHub
+            // releases carry them; without them `minimum_release_age` could not
+            // hold a version back.
+            let dates = match erlang_release_dates(&output).await {
+                Ok(dates) => dates,
+                Err(err) => {
+                    warn!("could not read erlang release dates from GitHub: {err}");
+                    HashMap::new()
+                }
+            };
+            kerl_versions(&output, &dates)
         };
         Ok(versions)
     }
@@ -792,6 +795,72 @@ impl Backend for ErlangPlugin {
     }
 }
 
+/// How many versions missing from the release list get a lookup of their own.
+const MAX_MISSING_DATE_LOOKUPS: usize = 5;
+
+/// Dates for the versions in `kerl list releases all` output (oldest first).
+/// The release list may be cached from before a new release, which would leave
+/// exactly the version a cooldown exists for undated, so the newest versions it
+/// lacks are looked up one by one.
+async fn erlang_release_dates(kerl_output: &str) -> Result<HashMap<String, String>> {
+    let repo = "erlang/otp";
+    // One deadline covers every request, and a lookup that misses it costs
+    // only its own date, not the ones already read.
+    let deadline = tokio::time::Instant::now() + Settings::get().fetch_remote_versions_timeout();
+    let releases = tokio::time::timeout_at(
+        deadline,
+        github::list_release_versions(github::API_URL, repo, false),
+    )
+    .await
+    .map_err(|_| eyre::eyre!("timed out reading erlang releases from GitHub"))??;
+    let mut dates = release_dates(&releases);
+    let missing = kerl_versions(kerl_output, &HashMap::new())
+        .into_iter()
+        .rev()
+        .filter(|v| !dates.contains_key(&v.version))
+        .take(MAX_MISSING_DATE_LOOKUPS)
+        .map(|v| v.version)
+        .collect::<Vec<_>>();
+    for version in missing {
+        let tag = ErlangPlugin::release_tag(&version);
+        match tokio::time::timeout_at(deadline, github::get_release(repo, &tag)).await {
+            Ok(Ok(release)) => {
+                dates.insert(version, release.released_at().to_string());
+            }
+            Ok(Err(err)) => debug!("no GitHub release for erlang {version}: {err}"),
+            Err(_) => {
+                debug!("timed out looking up the GitHub release for erlang {version}");
+                break;
+            }
+        }
+    }
+    Ok(dates)
+}
+
+/// Publication date by version, from the `OTP-X.Y` tags of erlang/otp releases.
+fn release_dates(releases: &[ReleaseVersion]) -> HashMap<String, String> {
+    releases
+        .iter()
+        .filter_map(|r| {
+            let version = r.tag_name.strip_prefix("OTP-")?;
+            Some((version.to_string(), r.released_at.clone()?))
+        })
+        .collect()
+}
+
+/// The versions in `kerl list releases all` output, dated where GitHub knows them.
+fn kerl_versions(output: &str, dates: &HashMap<String, String>) -> Vec<VersionInfo> {
+    output
+        .split('\n')
+        .filter(|s| regex!(r"^[0-9].+$").is_match(s))
+        .map(|s| VersionInfo {
+            version: s.to_string(),
+            created_at: dates.get(s).cloned(),
+            ..Default::default()
+        })
+        .collect()
+}
+
 fn source_build_kerl_env(
     install_env: IndexMap<String, crate::config::env_directive::EnvValue>,
     kerl_base_dir: &Path,
@@ -891,6 +960,53 @@ fn require_locked_precompiled_checksum(version: &str, checksum: Option<&str>) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::duration::parse_into_timestamp;
+
+    fn release(tag: &str, released_at: Option<&str>) -> ReleaseVersion {
+        ReleaseVersion {
+            tag_name: tag.to_string(),
+            released_at: released_at.map(str::to_string),
+            prerelease: false,
+            has_assets: true,
+        }
+    }
+
+    fn dated_kerl_versions() -> Vec<VersionInfo> {
+        let dates = release_dates(&[
+            release("OTP-27.0", Some("2024-05-20T10:00:00Z")),
+            release("OTP-27.1", Some("2024-09-11T10:00:00Z")),
+            release("OTP-26.2.5", None),
+            release("not-a-version-tag", Some("2024-01-01T00:00:00Z")),
+        ]);
+        kerl_versions("Fetching\n26.2.5\n27.0\n27.1\nR16B03\n17.0\n", &dates)
+    }
+
+    #[test]
+    fn test_kerl_versions_are_dated_from_github_releases() {
+        let dated: Vec<_> = dated_kerl_versions()
+            .into_iter()
+            .map(|v| (v.version, v.created_at))
+            .collect();
+        assert_eq!(
+            dated,
+            [
+                ("26.2.5".to_string(), None),
+                ("27.0".to_string(), Some("2024-05-20T10:00:00Z".to_string())),
+                ("27.1".to_string(), Some("2024-09-11T10:00:00Z".to_string())),
+                ("17.0".to_string(), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_kerl_versions_released_after_the_cutoff_are_hidden() {
+        let cutoff = parse_into_timestamp("2024-06-01T00:00:00Z").unwrap();
+        let kept: Vec<_> = VersionInfo::filter_by_date(dated_kerl_versions(), cutoff)
+            .into_iter()
+            .map(|v| v.version)
+            .collect();
+        assert_eq!(kept, ["26.2.5", "27.0", "17.0"]);
+    }
 
     #[test]
     fn test_parse_hex_build_checksum_requires_exact_publisher_record() {

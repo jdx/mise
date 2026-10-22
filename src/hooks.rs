@@ -60,174 +60,56 @@ fn hook_backend_identifier(full: &str) -> String {
     format!("{backend}:{url}")
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    serde::Serialize,
-    serde::Deserialize,
-    strum::Display,
-    Ord,
-    PartialOrd,
-    Eq,
-    PartialEq,
-    Hash,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum Hooks {
-    Enter,
-    Leave,
-    Cd,
-    Preinstall,
-    Postinstall,
+pub use mise_config::hooks::Hooks;
+pub(crate) use mise_config::hooks::{HookDef, HookDefItem};
+
+/// The hooks a `[hooks]` entry declares for `hook_type`.
+pub(crate) fn hooks_from_def(def: HookDef, hook_type: Hooks) -> Vec<Hook> {
+    def.into_items()
+        .into_iter()
+        .map(|item| hook_from_item(item, hook_type))
+        .collect()
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(untagged)]
-pub(crate) enum HookScripts {
-    One(String),
-    Many(Vec<String>),
-}
-
-impl HookScripts {
-    fn into_script(self) -> String {
-        match self {
-            Self::One(script) => script,
-            Self::Many(scripts) => scripts.join("\n"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(untagged)]
-pub(crate) enum HookDef {
-    /// Array of hook definitions: `enter = ["echo hello", { task = "setup" }]`
-    Array(Vec<HookDefItem>),
-    One(HookDefItem),
-}
-
-impl HookDef {
-    /// This definition followed by the hooks of `later`, so both run.
-    pub(crate) fn then(self, later: HookDef) -> HookDef {
-        let items = |def: HookDef| match def {
-            HookDef::Array(items) => items,
-            HookDef::One(item) => vec![item],
-        };
-        let mut all = items(self);
-        all.extend(items(later));
-        HookDef::Array(all)
-    }
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(untagged, deny_unknown_fields)]
-pub(crate) enum HookDefItem {
-    /// Simple run string: `enter = "echo hello"`
-    RunString(String),
-    /// Table with run: `enter = { run = "echo hello" }`
-    Run(HookRunTable),
-    /// Table with script and optional shell: `enter = { script = "echo hello", shell = "bash" }`
-    ScriptTable {
-        script: HookScripts,
-        shell: Option<String>,
-    },
-    /// Table with scripts and optional shell: `enter = { scripts = ["echo hello"], shell = "bash" }`
-    ScriptsTable {
-        scripts: Vec<String>,
-        shell: Option<String>,
-    },
-    /// Task reference: `enter = { task = "setup" }`
-    TaskRef { task: String },
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct HookRunTable {
-    run: Option<String>,
-    run_windows: Option<String>,
-    shell: Option<String>,
-}
-
-impl<'de> serde::Deserialize<'de> for HookRunTable {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(serde::Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Helper {
-            run: Option<String>,
-            run_windows: Option<String>,
-            shell: Option<String>,
-        }
-
-        let helper = <Helper as serde::Deserialize>::deserialize(deserializer)?;
-        if helper.run.is_none() && helper.run_windows.is_none() {
-            return Err(serde::de::Error::custom(
-                "hook run table must define `run` or `run_windows`",
-            ));
-        }
-        Ok(Self {
-            run: helper.run,
-            run_windows: helper.run_windows,
-            shell: helper.shell,
-        })
-    }
-}
-
-impl HookDef {
-    /// Convert to a list of Hook structs with the given hook type
-    pub(crate) fn into_hooks(self, hook_type: Hooks) -> Vec<Hook> {
-        match self {
-            HookDef::One(def) => vec![def.into_hook(hook_type)],
-            HookDef::Array(arr) => arr
-                .into_iter()
-                .map(|def| def.into_hook(hook_type))
-                .collect(),
-        }
-    }
-}
-
-impl HookDefItem {
-    fn into_hook(self, hook_type: Hooks) -> Hook {
-        match self {
-            HookDefItem::RunString(script) => Hook {
-                hook: hook_type,
-                action: HookAction::Run {
-                    run: Some(script),
-                    run_windows: None,
-                    shell: None,
-                    legacy_script: false,
-                    ignored_shell: None,
-                },
-                global: false,
+fn hook_from_item(item: HookDefItem, hook_type: Hooks) -> Hook {
+    match item {
+        HookDefItem::RunString(script) => Hook {
+            hook: hook_type,
+            action: HookAction::Run {
+                run: Some(script),
+                run_windows: None,
+                shell: None,
+                legacy_script: false,
+                ignored_shell: None,
             },
-            HookDefItem::Run(table) => Hook {
-                hook: hook_type,
-                action: HookAction::Run {
-                    run: table.run,
-                    run_windows: table.run_windows,
-                    shell: table.shell,
-                    legacy_script: false,
-                    ignored_shell: None,
-                },
-                global: false,
+            global: false,
+        },
+        HookDefItem::Run(table) => Hook {
+            hook: hook_type,
+            action: HookAction::Run {
+                run: table.run,
+                run_windows: table.run_windows,
+                shell: table.shell,
+                legacy_script: false,
+                ignored_shell: None,
             },
-            HookDefItem::ScriptTable { script, shell } => Hook {
-                hook: hook_type,
-                action: script_hook_action(hook_type, script.into_script(), shell, true),
-                global: false,
-            },
-            HookDefItem::ScriptsTable { scripts, shell } => Hook {
-                hook: hook_type,
-                action: script_hook_action(hook_type, scripts.join("\n"), shell, true),
-                global: false,
-            },
-            HookDefItem::TaskRef { task } => Hook {
-                hook: hook_type,
-                action: HookAction::Task { task_name: task },
-                global: false,
-            },
-        }
+            global: false,
+        },
+        HookDefItem::ScriptTable { script, shell } => Hook {
+            hook: hook_type,
+            action: script_hook_action(hook_type, script.into_script(), shell, true),
+            global: false,
+        },
+        HookDefItem::ScriptsTable { scripts, shell } => Hook {
+            hook: hook_type,
+            action: script_hook_action(hook_type, scripts.join("\n"), shell, true),
+            global: false,
+        },
+        HookDefItem::TaskRef { task } => Hook {
+            hook: hook_type,
+            action: HookAction::Task { task_name: task },
+            global: false,
+        },
     }
 }
 
@@ -865,7 +747,7 @@ async fn execute_task(
     task_name: &str,
     installed_tools: Option<&[InstalledToolInfo]>,
 ) -> Result<()> {
-    let mise_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mise"));
+    let mise_bin = crate::shims::running_mise_bin();
 
     let mut env = if hook.hook == Hooks::Preinstall {
         ts.full_env_without_tools(config).await?
@@ -1066,7 +948,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        let hooks = parsed.hook.into_hooks(Hooks::Postinstall);
+        let hooks = hooks_from_def(parsed.hook, Hooks::Postinstall);
 
         assert_eq!(hooks.len(), 1);
         match &hooks[0].action {
@@ -1092,7 +974,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        let hooks = parsed.hook.into_hooks(Hooks::Postinstall);
+        let hooks = hooks_from_def(parsed.hook, Hooks::Postinstall);
 
         assert_eq!(hooks.len(), 3);
         let runs = hooks
@@ -1165,11 +1047,13 @@ mod tests {
 
     #[test]
     fn scripts_tables_are_legacy_only_when_spawned() {
-        let spawned = HookDef::One(HookDefItem::ScriptsTable {
-            scripts: vec!["echo one".into(), "echo two".into()],
-            shell: None,
-        })
-        .into_hooks(Hooks::Postinstall);
+        let spawned = hooks_from_def(
+            HookDef::One(HookDefItem::ScriptsTable {
+                scripts: vec!["echo one".into(), "echo two".into()],
+                shell: None,
+            }),
+            Hooks::Postinstall,
+        );
         assert!(matches!(
             &spawned[0].action,
             HookAction::Run {
@@ -1178,11 +1062,13 @@ mod tests {
             }
         ));
 
-        let current_shell = HookDef::One(HookDefItem::ScriptsTable {
-            scripts: vec!["echo one".into(), "echo two".into()],
-            shell: Some("bash".into()),
-        })
-        .into_hooks(Hooks::Enter);
+        let current_shell = hooks_from_def(
+            HookDef::One(HookDefItem::ScriptsTable {
+                scripts: vec!["echo one".into(), "echo two".into()],
+                shell: Some("bash".into()),
+            }),
+            Hooks::Enter,
+        );
         assert!(matches!(
             &current_shell[0].action,
             HookAction::CurrentShell { .. }
