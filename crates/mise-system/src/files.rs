@@ -359,8 +359,17 @@ fn validate_file_variants(
     }
     for variant in variants {
         let destination = variant.target.as_deref().unwrap_or(target);
-        // a template is checked once it is rendered, when a variant is selected
+        // a template is checked once it is rendered, when a variant is selected;
+        // its syntax can be checked now without evaluating it
         if variant.target.is_some() && mise_util::tera::contains_template_syntax(destination) {
+            mise_util::tera::get_tera_without_exec(None)
+                .validate_template_syntax("variant target", destination)
+                .map_err(|err| {
+                    eyre::eyre!(
+                        "variant target {destination:?}: {}",
+                        mise_util::tera::error_chain(&err)
+                    )
+                })?;
             continue;
         }
         if !variant_target_is_absolute(destination) {
@@ -396,6 +405,14 @@ fn logical_source_path(key: &str) -> Result<PathBuf> {
     Ok(relative)
 }
 
+/// The text of a destination outside its `{{ }}`, `{% %}` and `{# #}` blocks,
+/// which is all of it that can be checked before the template is rendered.
+fn template_literal(target: &str) -> String {
+    static BLOCKS: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"(?s)\{\{.*?\}\}|\{%.*?%\}|\{#.*?#\}").unwrap());
+    BLOCKS.replace_all(target, "").into_owned()
+}
+
 /// Render a selected variant `target` with the template context every config
 /// file gets (`env`, `xdg_config_home`, `config_root`, ...), without `exec()`
 /// so a preview cannot run commands, then check the result is a destination.
@@ -403,6 +420,9 @@ fn render_variant_target(target: &str, origin: &ResourceOrigin) -> Result<String
     let rendered = if mise_util::tera::contains_template_syntax(target) {
         let mut ctx = mise_util::tera::BASE_CONTEXT.clone();
         ctx.insert("config_root", &origin.config_root);
+        let config_source =
+            std::path::absolute(&origin.config).unwrap_or_else(|_| origin.config.clone());
+        ctx.insert("config_source", &config_source.to_string_lossy());
         let mut tera = mise_util::tera::get_tera_without_exec(origin.config.parent());
         mise_util::tera::render_str(&mut tera, target, &ctx).map_err(|err| {
             eyre::eyre!(
@@ -1144,8 +1164,8 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     );
                 }
                 // composition checks whichever destination a variant selects,
-                // so every one of them must be a single path; a template is
-                // checked once rendered, when its variant is selected
+                // so every one of them must be a single path; a template's
+                // literal text is checked now and its rendering when selected
                 if mode == FileMode::Absent
                     && std::iter::once(target.as_str())
                         .chain(
@@ -1154,8 +1174,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                                 .flatten()
                                 .filter_map(|variant| variant.target.as_deref()),
                         )
-                        .filter(|path| !mise_util::tera::contains_template_syntax(path))
-                        .any(|path| is_glob_pattern(&resolve_target_arg(path)))
+                        .any(|path| is_glob_pattern(&resolve_target_arg(&template_literal(path))))
                 {
                     bail!("dotfile {target}: an absent target cannot use wildcards");
                 }
