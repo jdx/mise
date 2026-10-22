@@ -553,6 +553,7 @@ impl Toolset {
                     // back to it even though the upgrade installed a newer one.
                     let same_slot = |d: &&ToolVersion| {
                         d.install_satisfied != Some(true)
+                            && !private_dependency_keys.contains(&graph_key(&d.request))
                             && d.ba().installs_path() == tv.ba().installs_path()
                             && d.request.source() == tv.request.source()
                             && d.request.lockfile_scope() == tv.request.lockfile_scope()
