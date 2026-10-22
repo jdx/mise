@@ -405,11 +405,15 @@ fn logical_source_path(key: &str) -> Result<PathBuf> {
     Ok(relative)
 }
 
-/// The text of a destination outside its `{{ }}`, `{% %}` and `{# #}` blocks,
-/// which is all of it that can be checked before the template is rendered.
+/// The text of a destination outside its `{{ }}` and `{# #}` blocks, which
+/// must appear in the rendered path. A `{% %}` block can drop text, so a
+/// template with one has nothing certain to check before it is rendered.
 fn template_literal(target: &str) -> String {
+    if target.contains("{%") {
+        return String::new();
+    }
     static BLOCKS: std::sync::LazyLock<Regex> =
-        std::sync::LazyLock::new(|| Regex::new(r"(?s)\{\{.*?\}\}|\{%.*?%\}|\{#.*?#\}").unwrap());
+        std::sync::LazyLock::new(|| Regex::new(r"(?s)\{\{.*?\}\}|\{#.*?#\}").unwrap());
     BLOCKS.replace_all(target, "").into_owned()
 }
 
@@ -6568,6 +6572,28 @@ variants = [
             crate::host::parse_config_body(&invalid, &path)?,
         );
         assert!(validate_incoming_files(&configs).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn variant_target_templates_are_checked_in_incoming_config_preflight() -> Result<()> {
+        let path = dirs::HOME.join(".config/mise/config.toml");
+        let check = |target: &str, mode: &str| -> Result<()> {
+            let body = format!(
+                "[dotfiles.example]\nmode = \"{mode}\"\nvariants = [{{ default = true, target = '{target}' }}]\n"
+            );
+            let mut configs = ConfigMap::new();
+            configs.insert(path.clone(), crate::host::parse_config_body(&body, &path)?);
+            validate_incoming_files(&configs)
+        };
+        check("{{ xdg_config_home }}/example", "absent")?;
+        // a control block may drop the wildcard, so only the render can tell
+        check(
+            "{% if false %}*{% endif %}{{ xdg_config_home }}/example",
+            "absent",
+        )?;
+        assert!(check("{{", "absent").is_err());
+        assert!(check("{{ xdg_config_home }}/*", "absent").is_err());
         Ok(())
     }
 
