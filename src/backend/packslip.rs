@@ -861,11 +861,18 @@ impl Pin {
         if policy.issuer.as_deref().is_none_or(str::is_empty) {
             bail!("packslip: list_identity_prefix requires an issuer");
         }
-        Ok(Self::Identity(Policy {
+        let policy = Policy {
             issuer: policy.issuer.clone(),
             identity: None,
             identity_prefix: Some(prefix.to_string()),
-        }))
+        };
+        Ok(match self {
+            // A forge project's list is still held to the repository ID mise
+            // pinned: the option changes who may sign it, not which
+            // repository it must come from.
+            Pin::Forge(_) | Pin::Workflows(_) => Self::Workflows(vec![policy]),
+            Pin::Identity(_) | Pin::Key(_) => Self::Identity(policy),
+        })
     }
 
     /// The identity policy, or for several the first, which carries the issuer
@@ -1106,13 +1113,15 @@ async fn verify_project_release_list_uncached(
             require_log,
             trusted_root: &root,
         };
-        // A workflow pin's list is verified under its policies, as its
-        // bundles are, and then held to the repository ID.
+        // A workflow pin's list, or one a `list_identity_prefix` signs, is
+        // verified under its policies and then held to the repository ID by
+        // the certificate's source repository, which a list signer's
+        // workflow need not belong to.
         let (list, check) = if matches!(pin, Pin::Workflows(_)) {
             let verified = pin.verify_any(|trust| {
                 packslip::verify_release_list(bundle, trust, options).map_err(|e| eyre!("{e}"))
             })?;
-            let check = forge.check(
+            let check = forge.check_source(
                 bundle,
                 &verified.list.predicate.project,
                 &verified.key_id,
@@ -3630,6 +3639,67 @@ mod tests {
             let raw: ToolVersionOptions = toml::from_str(r#"workflow = "release.yml""#).unwrap();
             pin(project, &PackslipOptions::new(&raw))
         }
+    }
+
+    #[tokio::test]
+    async fn a_list_signer_override_keeps_the_repository_id_check() {
+        // jdx/hk's v2.3.0 packslip, signed as GitHub repository 922514152;
+        // it stands in for a list signed by the same workflow.
+        const HK: &str = include_str!("../../test/fixtures/packslip-forge/hk-v2.3.0.sigstore.json");
+        let project = "github.com/jdx/hk";
+        let prefix = "https://github.com/jdx/hk/.github/workflows/release.yml@";
+        let recreated = PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml".into(),
+            ),
+            repository_id: Some("1".into()),
+            ..Default::default()
+        };
+        for options in [
+            format!("list_identity_prefix = {prefix:?}"),
+            format!("workflow = \"release.yml\"\nlist_identity_prefix = {prefix:?}"),
+        ] {
+            let raw: ToolVersionOptions = toml::from_str(&options).unwrap();
+            let opts = PackslipOptions::new(&raw);
+            let list_pin = pin(project, &opts)
+                .unwrap()
+                .for_release_list(&opts)
+                .unwrap();
+            let Pin::Workflows(policies) = &list_pin else {
+                panic!("expected the list to stay held to the repository: {list_pin:?}");
+            };
+            assert_eq!(policies[0].identity_prefix.as_deref(), Some(prefix));
+            // The list is held to what the lockfile pins, as bundles are.
+            let forge = list_pin
+                .forge(project, [&recreated], HK)
+                .await
+                .unwrap()
+                .expect("a forge expectation for the list");
+            let err = forge
+                .check_source(
+                    HK,
+                    project,
+                    "https://github.com/jdx/hk/.github/workflows/release.yml@refs/tags/v2.3.0",
+                    Some(GITHUB_ISSUER),
+                )
+                .unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("mise.lock pins GitHub repository ID 1 for it"),
+                "{err}"
+            );
+        }
+        // A project off the forges has no repository to hold the list to.
+        let raw: ToolVersionOptions = toml::from_str(&format!(
+            "issuer = {GITHUB_ISSUER:?}\nidentity_prefix = {prefix:?}\nlist_identity_prefix = {prefix:?}"
+        ))
+        .unwrap();
+        let opts = PackslipOptions::new(&raw);
+        let list_pin = pin("tool.example.com", &opts)
+            .unwrap()
+            .for_release_list(&opts)
+            .unwrap();
+        assert!(matches!(list_pin, Pin::Identity(_)), "{list_pin:?}");
     }
 
     #[test]

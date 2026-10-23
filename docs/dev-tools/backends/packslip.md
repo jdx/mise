@@ -332,7 +332,10 @@ When a different workflow signs the vendor's release list, pin its certificate
 identity prefix separately. It replaces `identity` and `identity_prefix` for the
 vendor's list only; release bundles still need their original signer. The OIDC
 `issuer` is shared, including an issuer derived from a forge project. Without
-this option, the list uses the same policy as release bundles.
+this option, the list uses the same policy as release bundles. For a GitHub or
+GitLab project, the list is still held to the
+[repository ID](#renamed-repositories) mise pinned: its certificate must record
+the project's repository.
 
 The value must be a non-empty string and requires an issuer. It cannot be
 combined with `pubkey`, and it does not affect configured stampers, whose lists

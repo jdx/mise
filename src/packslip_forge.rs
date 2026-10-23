@@ -291,6 +291,29 @@ impl ForgeExpect {
         .map_err(|err| self.identity_error(err))
     }
 
+    /// [`ForgeExpect::check`] by the certificate's source repository rather
+    /// than the workflow that signed, as [`ForgeExpect::verify_list`] does: a
+    /// release list's signer may be a workflow the tool options name, of
+    /// another repository than the project's. Without a source repository
+    /// the signer must be a workflow of the project.
+    pub(crate) fn check_source(
+        &self,
+        bundle: &str,
+        signed_project: &str,
+        identity: &str,
+        issuer: Option<&str>,
+    ) -> eyre::Result<Check> {
+        let source = packslip::sigstore::source_repository(bundle).map_err(|e| eyre!("{e}"))?;
+        packslip::forge::check_source(
+            &self.expected(),
+            signed_project,
+            identity,
+            issuer,
+            source.as_ref(),
+        )
+        .map_err(|err| self.identity_error(err))
+    }
+
     fn error(&self, err: ForgeError) -> Report {
         match err {
             ForgeError::Identity(err) => self.identity_error(err),
