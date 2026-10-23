@@ -392,7 +392,11 @@ impl Doctor {
         }
 
         // Printed to stdout, outside the logger, and meant to be shared.
-        let out = redact_output(&serde_json::to_string_pretty(&data)?);
+        let data: BTreeMap<String, serde_json::Value> = data
+            .into_iter()
+            .map(|(k, v)| (redact_output(&k), redact_json(v)))
+            .collect();
+        let out = serde_json::to_string_pretty(&data)?;
         let written = miseprint!("{out}\n");
 
         // Diagnosed problems decide the exit status even when the reader has gone away.
@@ -1826,9 +1830,59 @@ fn install_dir_is_empty(path: &Path) -> bool {
     }
 }
 
+/// `value` with every string in it, keys included, redacted the way the logger
+/// redacts a record. Redacting the strings rather than the serialized text
+/// keeps the JSON valid whatever a registered secret is (`false`, `"`, `:`).
+fn redact_json(value: serde_json::Value) -> serde_json::Value {
+    redact_json_with(value, &redact_output)
+}
+
+fn redact_json_with(
+    value: serde_json::Value,
+    redact: &dyn Fn(&str) -> String,
+) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Value::String(s) => Value::String(redact(&s)),
+        Value::Array(values) => Value::Array(
+            values
+                .into_iter()
+                .map(|v| redact_json_with(v, redact))
+                .collect(),
+        ),
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(k, v)| (redact(&k), redact_json_with(v, redact)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{install_dir_is_empty, sync_failure_duration};
+    use super::{install_dir_is_empty, redact_json_with, sync_failure_duration};
+
+    /// A registered secret that happens to be JSON syntax (`false`) must not
+    /// turn into `[redacted]` outside a string.
+    #[test]
+    fn json_report_redacts_strings_not_syntax() {
+        let redactor =
+            mise_util::redactions::Redactor::new(["false".to_string(), "s3cret".to_string()]);
+        let redact =
+            |s: &str| mise_util::redactions::redact_url_userinfo(&redactor.redact(s)).into_owned();
+        let value = serde_json::json!({
+            "activated": false,
+            "env": {"TOKEN": "s3cret", "s3cret": "x"},
+            "urls": ["https://u:p@host/x"],
+        });
+        let out = serde_json::to_string(&redact_json_with(value, &redact)).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["activated"], false);
+        assert_eq!(parsed["env"]["TOKEN"], "[redacted]");
+        assert_eq!(parsed["env"]["[redacted]"], "x");
+        assert_eq!(parsed["urls"][0], "https://[redacted]@host/x");
+    }
     use crate::system::history::sync::run::SyncStatus;
 
     fn ago(now: chrono::DateTime<chrono::Utc>, secs: i64) -> Option<String> {
