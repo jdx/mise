@@ -725,7 +725,7 @@ impl Backend for UnifiedGitBackend {
                 .filter(|r| skip_asset_check || gitlab_release_has_assets(r))
                 .map(|r| VersionInfo {
                     version: self.strip_version_prefix(&r.tag_name, &opts),
-                    created_at: r.released_at,
+                    created_at: r.published_at().map(str::to_string),
                     release_url: Some(format!("{}/-/releases/{}", web_url_base, r.tag_name)),
                     ..Default::default()
                 })
@@ -3949,6 +3949,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         gitlab::GitlabRelease {
             tag_name: "v1.0.0".into(),
             description: None,
+            created_at: None,
             released_at: None,
             assets: gitlab::GitlabAssets {
                 sources: sources

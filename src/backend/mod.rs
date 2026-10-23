@@ -3614,8 +3614,9 @@ pub trait Backend: Debug + Send + Sync {
     /// no dates at all, but it lets the cutoff lapse for one that dated only
     /// part of its listing — `go:`, where reading a private module's dates
     /// costs a VCS round trip apiece, dates only the newest few. Resolution
-    /// calls this for a candidate it is about to select that arrived undated,
-    /// so a backend pays one query per version the cutoff actually hides.
+    /// calls this for candidates it may select that arrived undated, and
+    /// searches for the newest one that passes, so a backend pays a handful
+    /// of queries however many versions the cutoff hides.
     ///
     /// Returning `None`, the default, keeps the shared behavior.
     async fn fetch_version_created_at(
@@ -4175,8 +4176,16 @@ pub trait Backend: Debug + Send + Sync {
     /// could only afford to date part of its listing stops honoring the cutoff
     /// past that point. Ask [`Backend::fetch_version_created_at`] for the dates
     /// that decide the outcome: resolution takes the last entry of an ordered
-    /// candidate list, so only the trailing candidates need one, and the walk
-    /// stops at the first candidate that survives.
+    /// candidate list, so all it needs is where the hidden candidates at the
+    /// end of that list begin.
+    ///
+    /// Each date can cost a network round trip, and how many versions sit
+    /// past the cutoff is up to whoever publishes them (a Go tag on a commit
+    /// dated in the future stays too new for good). So search for that point
+    /// rather than walk to it: step back from the newest candidate, doubling
+    /// the step, until one survives, then bisect the gap. That is a lookup per
+    /// hidden version while the cutoff hides one or two, and logarithmic in
+    /// the number of candidates when it hides hundreds or all of them.
     ///
     /// The check on what gets returned is exact; picking the *newest* eligible
     /// version is not. A backend whose version order is not chronological can
@@ -4201,11 +4210,23 @@ pub trait Backend: Debug + Send + Sync {
             .filter(|v| v.created_at.is_some())
             .map(|v| v.version)
             .collect();
-        while let Some(candidate) = matches.last() {
-            if dated.contains(candidate) {
-                // Already checked against the cutoff by `filter_by_date`.
-                break;
-            }
+        // `filter_by_date` already checked the last dated candidate against
+        // the cutoff, so only the undated ones after it are in question:
+        // `lo..hi`, where everything from `hi` on is hidden.
+        let mut lo = matches
+            .iter()
+            .rposition(|v| dated.contains(v))
+            .map_or(0, |i| i + 1);
+        let mut hi = matches.len();
+        let mut bisecting = false;
+        while lo < hi {
+            let probe = if bisecting {
+                lo + (hi - lo) / 2
+            } else {
+                // One more than the distance covered so far: 1, 2, 4, 8...
+                hi.saturating_sub(matches.len() - hi + 1).max(lo)
+            };
+            let candidate = &matches[probe];
             let created_at = self
                 // A version the request named in full is the user's own choice,
                 // not one the cutoff picked, so it needs no warning. `latest` and
@@ -4223,16 +4244,24 @@ pub trait Backend: Debug + Send + Sync {
                 created_at,
                 ..Default::default()
             };
-            if !info.hidden_by_date(before) {
+            if info.hidden_by_date(before) {
+                debug!(
+                    "Dropping {}@{candidate}: released {:?}, after the {before} cutoff",
+                    self.id(),
+                    info.created_at
+                );
+                hi = probe;
+            } else if info.created_at_timestamp().is_none() {
+                // Allowed, and nothing to search by. Settle for it rather than
+                // go on asking a source that may take the full timeout to fail.
+                hi = probe + 1;
                 break;
+            } else {
+                lo = probe + 1;
+                bisecting = true;
             }
-            debug!(
-                "Dropping {}@{candidate}: released {:?}, after the {before} cutoff",
-                self.id(),
-                info.created_at
-            );
-            matches.pop();
         }
+        matches.truncate(hi);
         Ok(())
     }
 
@@ -6974,6 +7003,98 @@ mod latest_version_tests {
         // Each date costs a network round trip, and the second resolution — or
         // the error message explaining the cutoff — must not pay for it again.
         assert_eq!(backend.lazy_date_calls(), 2);
+    }
+
+    /// `count` versions the listing left undated, the newest `hidden` of them
+    /// released after a 2025-06-01 cutoff.
+    fn undated_backend(name: &str, count: usize, hidden: usize) -> LatestBackend {
+        let versions: Vec<String> = (0..count).map(|i| format!("1.0.{i}")).collect();
+        let dates: Vec<(&str, &str)> = versions
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let date = if i + hidden < count {
+                    "2025-01-01"
+                } else {
+                    "2025-12-01"
+                };
+                (v.as_str(), date)
+            })
+            .collect();
+        LatestBackend::new(name)
+            .with_stable_result(None)
+            .with_remote_versions(
+                versions
+                    .iter()
+                    .map(|version| VersionInfo {
+                        version: version.clone(),
+                        ..Default::default()
+                    })
+                    .collect(),
+            )
+            .with_lazy_dates(&dates)
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_does_not_date_every_version_it_hides() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        // Whoever publishes the versions decides how many are past the
+        // cutoff, so a round trip for each would let them stall resolution.
+        let backend = undated_backend("test-lazy-dates-all-hidden", 1000, 1000);
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap(),
+            None
+        );
+        assert!(
+            backend.lazy_date_calls() <= 20,
+            "{} lookups",
+            backend.lazy_date_calls()
+        );
+
+        // A deep cutoff still lands on the newest version it allows.
+        for hidden in [1, 2, 3, 300, 999] {
+            let backend =
+                undated_backend(&format!("test-lazy-dates-{hidden}-hidden"), 1000, hidden);
+            assert_eq!(
+                backend
+                    .latest_version(&config, Some("latest".to_string()), Some(before))
+                    .await
+                    .unwrap(),
+                Some(format!("1.0.{}", 999 - hidden))
+            );
+            assert!(
+                backend.lazy_date_calls() <= 40,
+                "{hidden} hidden: {} lookups",
+                backend.lazy_date_calls()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_stops_at_a_version_it_cannot_date() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let backend = undated_backend("test-lazy-dates-run-out", 100, 0)
+            .with_lazy_dates(&[("1.0.99", "2025-12-01"), ("1.0.97", "2025-12-01")]);
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+
+        // A lookup that fails can take the whole fetch timeout to do so, so
+        // the first undatable one ends the search, as it ended the walk.
+        assert_eq!(
+            backend
+                .latest_version(&config, Some("latest".to_string()), Some(before))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.93")
+        );
+        assert_eq!(backend.lazy_date_calls(), 3);
     }
 
     #[test]

@@ -61,6 +61,11 @@ assert_fail_contains "mise plugins install vfox:squatted 'packslip:mise-plugins/
 assert_fail_contains "mise plugins install vfox:squatted 'packslip:mise-plugins/vfox-bfs#0.1.0-dev.2'" \
   'run `mise packslip forget github.com/mise-plugins/vfox-bfs` and install again'
 assert_directory_not_exists "$MISE_DATA_DIR/plugins/squatted"
+# A `workflow` option, as the registry sets on its packslip shorthands, narrows
+# the signer to that workflow and still holds the release to the pinned ID.
+assert_fail_contains "mise install 'packslip:mise-plugins/vfox-bfs[workflow=release.yml@refs/heads/codex/packslip-releases]@0.1.0-dev.2'" \
+  "The name now belongs to a different repository"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/packslip-mise-plugins-vfox-bfs"
 # Forgetting the pin is the explicit way to accept it.
 mise packslip forget github.com/mise-plugins/vfox-bfs
 mise plugins install vfox:squatted 'packslip:mise-plugins/vfox-bfs#0.1.0-dev.2'
@@ -95,6 +100,21 @@ assert_directory_not_exists "$MISE_DATA_DIR/plugins/followed"
 # whatever owner ID an older mise recorded in it.
 old_pin someone-else/vfox-bfs release.yml 999
 mise plugins install vfox:followed 'packslip:mise-plugins/vfox-bfs#0.1.0-dev.2'
-assert_not_contains "cat '$pins'" "someone-else"
+assert_not_contains "cat '$pins'" '[pins."github.com/someone-else'
 assert_contains "cat '$pins'" '[pins."github.com/mise-plugins/vfox-bfs"]'
 assert_contains "cat '$pins'" 'pinned_at = "2026-09-01T00:00:00Z"'
+# The name it moved away from stays held to it, whoever takes that name next.
+assert_contains "cat '$pins'" 'former_names = ["github.com/someone-else/vfox-bfs"]'
+sed -i.bak 's/repository_id = "1106235958"/repository_id = "1"/' "$pins"
+assert_fail_contains "mise plugins install vfox:taken 'packslip:someone-else/vfox-bfs#0.1.0-dev.2'" \
+  "The name now belongs to a different repository"
+assert_directory_not_exists "$MISE_DATA_DIR/plugins/taken"
+
+# A pin that recorded no repository ID holds by name: what the forge says the
+# name resolves to now does not show that a signer under another name is the
+# pinned one.
+old_pin mise-plugins/bfs-renamed release.yml 128710789
+sed -i.bak '/\.forge\]$/,$d' "$pins"
+assert_fail_contains "mise plugins install vfox:unpinned 'packslip:mise-plugins/bfs-renamed#0.1.0-dev.2'" \
+  "signed what mise accepted before"
+assert_directory_not_exists "$MISE_DATA_DIR/plugins/unpinned"

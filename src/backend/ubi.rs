@@ -294,7 +294,7 @@ impl Backend for UbiBackend {
                                     format!("{}/-/releases/{}", release_url_base, r.tag_name);
                                 VersionInfo {
                                     version: strip_v_prefix(&r.tag_name),
-                                    created_at: r.released_at,
+                                    created_at: r.published_at().map(str::to_string),
                                     release_url: Some(release_url),
                                     ..Default::default()
                                 }
