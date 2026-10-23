@@ -22,11 +22,12 @@ It offers:
 - for tools: completion of tool names under `[tools]` from the registry, and hover with the tool's description and backends
 - quick fixes that replace an unknown key or task name with the suggested one, and rewrite a deprecated key to its replacement when the schema names one
 - formatting, as `mise fmt` does
+- semantic tokens, which color task, tool and env var names, env directives, deprecated keys and the `{{ }}` and `{% %}` of templates
 - for tasks: completion of task names in `depends`, `depends_post`, `wait_for` and `run = [{ task = "..." }]` (and of templates in `extends`), hover with the task's description and command, go to definition, find references, and rename together with every reference in the file
 
 Tasks come from the open file, the configs in the directories above it and the TOML files their `[task_config] includes` name.
 
-A client that runs another TOML server beside this one can switch features off with `initializationOptions`: `{"formatting": false, "hover": false, "completion": false, "definition": false, "references": false, "rename": false}`.
+A client that runs another TOML server beside this one can switch features off with `initializationOptions`: `{"formatting": false, "hover": false, "completion": false, "definition": false, "references": false, "rename": false, "semanticTokens": false}`.
 
 The server only parses a config. It never renders templates or runs anything, so opening an untrusted file is safe.
 
