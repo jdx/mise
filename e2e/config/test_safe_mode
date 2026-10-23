@@ -113,8 +113,10 @@ exec-env-dummy = { version = "1.0.0", install_env = { BASH_ENV = "$MISE_PROJECT_
 EOF
 assert_not_contains "MISE_SAFE=1 mise env </dev/null" "FROM_EXEC_ENV"
 assert_fail "test -e bash-env-ran"
-# without safe mode the same command works (last, because the result is cached)
+# without safe mode the same command works, and caches the result
 assert_contains "mise env </dev/null" "export FROM_EXEC_ENV=1.0.0"
+# safe mode does not serve the cached result either
+assert_not_contains "MISE_SAFE=1 mise env </dev/null" "FROM_EXEC_ENV"
 rm -f mise.toml untrusted.sh bash-env-ran
 
 echo "=== plugin installation is refused ==="
