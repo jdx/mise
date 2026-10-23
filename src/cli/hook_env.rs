@@ -115,8 +115,13 @@ impl HookEnv {
                 _ => None,
             })
             .collect();
-        // Printed together with the new environment once it is known to fit, so
-        // a refused update leaves the shell as it was rather than half undone.
+        // Printed only after the new environment is known to fit, together with
+        // it, so a refused update leaves the shell as it was rather than half
+        // undone. These undo commands are not size-checked themselves: they put
+        // back values the shell held before mise changed them, and a PATH no
+        // longer than the current one, so they fit wherever the shell's
+        // environment already does. Refusing them over a variable the user set
+        // would instead keep mise's old variables in the shell indefinitely.
         let old_output = hook_env::build_env_commands(&*shell, &old_patches);
 
         // Use env_with_path_and_split which handles caching internally
