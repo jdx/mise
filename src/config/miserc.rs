@@ -380,6 +380,11 @@ fn scan_tag<'a>(
 }
 
 fn check_tag_tokens(tokens: &[TemplateToken<'_>]) -> std::result::Result<(), String> {
+    // Tera 2 also loops inside expressions, in list comprehensions
+    // (`[x for x in xs]`), and nesting them multiplies their sizes.
+    if tokens.contains(&TemplateToken::Ident("for")) {
+        return Err("a `for` loop is not allowed, including in a list comprehension".to_string());
+    }
     for (idx, token) in tokens.iter().enumerate() {
         let TemplateToken::Ident(name) = token else {
             continue;
@@ -686,6 +691,26 @@ ceiling_paths = ["/home/user"]
         }
         let long = format!("# {}\n{{{{ os() }}}}", "a".repeat(PROJECT_TEMPLATE_MAX_LEN));
         assert!(check_project_template(&long).is_err());
+    }
+
+    #[test]
+    fn test_check_project_template_refuses_list_comprehensions() {
+        // Tera 2 renders nested list comprehensions, so each level multiplies
+        // the work: a few levels over a literal list would never finish.
+        let nested = r#"{{ [[x ~ y for x in ["a", "b"]] for y in ["c", "d", "e"]] | length }}"#;
+        let mut tera = crate::tera::get_miserc_tera();
+        assert_eq!(
+            crate::tera::render_str_with_env(&mut tera, nested, &Context::new()).unwrap(),
+            "3"
+        );
+        for template in [
+            nested,
+            r#"{% if [x for x in ["a"]] %}x{% endif %}"#,
+            r#"{{ ["a", "b"] | length }}{{ [y for y in "ab"] }}"#,
+        ] {
+            let err = check_project_template(template).unwrap_err();
+            assert!(err.contains("`for` loop"), "{template}: {err}");
+        }
     }
 
     #[test]
