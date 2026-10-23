@@ -296,6 +296,18 @@ impl TasksValidate {
                         .to_string(),
                 ),
             });
+        } else if unfetched {
+            issues.push(ValidationIssue {
+                task: task.name.clone(),
+                severity: Severity::Warning,
+                category: "safe_mode".to_string(),
+                message:
+                    "Task file is a remote source, which safe mode does not fetch; not validated"
+                        .to_string(),
+                details: Some(
+                    "Run `mise tasks validate` without MISE_SAFE to validate the file".to_string(),
+                ),
+            });
         }
 
         // 1. Validate missing task references

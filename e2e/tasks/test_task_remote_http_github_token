@@ -32,9 +32,15 @@ assert_not_contains "cat headers/*.json" "uthorization"
 # Safe mode loads the untrusted config without a prompt, so it does not fetch
 # the URL it names, as for remote includes. The task is listed from its TOML.
 rm -f headers/*.json
+# `global` is set by mise while loading and is not in the schema.
+# schema: skip
 cat <<EOF >mise.toml
 [tasks.lint]
 file = "http://127.0.0.1:${HTTP_PORT}/api/v3/lint.sh"
+# A project task cannot declare itself global to get its file fetched.
+global = true
 EOF
 assert_contains "MISE_SAFE=1 MISE_YES=0 mise tasks ls" "lint"
+# validate says the file was not checked rather than passing it silently
+assert_contains "MISE_SAFE=1 MISE_YES=0 mise tasks validate 2>&1" "safe mode does not fetch"
 assert_directory_empty headers
