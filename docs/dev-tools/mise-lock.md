@@ -414,9 +414,10 @@ for the tool and platform you care about.
 
 Locked mode does not require a URL for `asdf`, `cargo`, `dotnet`, `gem`, `go`,
 `npm`, `pypi` (`pipx`), `spinel`, `spm`, `ubi`, `core:dotnet`, `core:rust`,
-`core:swift` and vfox backend plugins, because those backends do not record
-one. The exemption covers artifact URLs only; npm and PyPI dependency graphs
-have their own checks.
+`core:swift` and vfox backend plugins. Most of them do not record one; `spm`
+(for an artifact bundle install) and `core:swift` record a URL and checksum,
+and a recorded checksum is still verified. The exemption covers artifact URLs
+only; npm and PyPI dependency graphs have their own checks.
 
 A `provenance` field is not proof that mise verified the bytes; see
 [provenance and verification](#provenance-and-security).

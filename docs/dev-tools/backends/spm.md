@@ -131,8 +131,9 @@ to always build from source; it conflicts with the
 
 Installing from a bundle records its checksum in `mise.lock`. While the lockfile
 has a checksum for the current platform, a bundle that is missing from the
-release or does not match the checksum fails the install instead of falling back
-to a source build.
+release, does not match the checksum, or has no binary for the current Swift
+target fails the install instead of falling back to a source build. Set
+`artifactbundle = false` to build from source instead.
 
 ```toml
 [tools]

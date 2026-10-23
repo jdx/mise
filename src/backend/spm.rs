@@ -303,9 +303,17 @@ impl Backend for SPMBackend {
                         repo.shorthand
                     );
                 }
-                Ok(false) => {}
                 // A source build has nothing to check the lockfile's checksum against,
                 // so it must not stand in for a locked bundle that cannot be installed.
+                Ok(false) if artifactbundle_locked => {
+                    bail!(
+                        "{} locks a SwiftPM artifact bundle of {}, but it has no binary for this Swift target, \
+                         and a source build is not covered by mise.lock; set artifactbundle = false to build from source",
+                        self.describe_lock_entry(&tv, &self.get_platform_key()),
+                        repo.shorthand
+                    );
+                }
+                Ok(false) => {}
                 Err(err) if artifactbundle_required || artifactbundle_locked => return Err(err),
                 Err(err) if Settings::get().spm.artifactbundle_only => return Err(err),
                 Err(err) => {
@@ -614,7 +622,10 @@ impl SPMBackend {
         .await?;
 
         let platform_key = self.get_platform_key();
-        let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+        // A bundle with no binary for this target is not what gets installed, so its
+        // URL and checksum must not end up in the lock entry of a source build.
+        let previous_lock_entry = tv.lock_platforms.get(&platform_key).cloned();
+        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
         platform_info.url = Some(asset.url.clone());
         platform_info.url_api = asset.url_api.clone();
         if platform_info.checksum.is_none() {
@@ -627,13 +638,17 @@ impl SPMBackend {
 
         let triples = swift_target_triples(ctx, self, tv).await?;
         let binaries = artifactbundle_binaries(&bundle_dir, &triples)?;
+        let binaries = if binaries.is_empty() {
+            binaries
+        } else {
+            filter_artifactbundle_binaries(opts, binaries)?
+        };
         if binaries.is_empty() {
             file::remove_all(tv.cache_path())?;
-            return Ok(false);
-        }
-        let binaries = filter_artifactbundle_binaries(opts, binaries)?;
-        if binaries.is_empty() {
-            file::remove_all(tv.cache_path())?;
+            match previous_lock_entry {
+                Some(entry) => tv.lock_platforms.insert(platform_key, entry),
+                None => tv.lock_platforms.remove(&platform_key),
+            };
             return Ok(false);
         }
 

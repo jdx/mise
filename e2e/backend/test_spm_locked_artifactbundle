@@ -7,12 +7,14 @@
 export MISE_LOCKFILE=1
 export MISE_USE_VERSIONS_HOST=0
 
-# Stands in for the Swift toolchain: it only reports the target triple, so an
-# attempted source build fails.
+# Stands in for the Swift toolchain: it only reports the target triple (read
+# from $HOME/swift-triple), so an attempted source build fails.
+echo test-triple >"$HOME/swift-triple"
 cat <<'EOF' >"$HOME/bin/swift"
 #!/usr/bin/env bash
 [[ $* == "-print-target-info" ]] || exit 1
-echo '{"target": {"triple": "test-triple", "unversionedTriple": "test-triple", "moduleTriple": "test-triple"}}'
+triple=$(cat "$(dirname "$0")/../swift-triple")
+echo "{\"target\": {\"triple\": \"$triple\", \"unversionedTriple\": \"$triple\", \"moduleTriple\": \"$triple\"}}"
 EOF
 chmod +x "$HOME/bin/swift"
 
@@ -85,3 +87,9 @@ assert_fail_contains "mise install" "locks a SwiftPM artifact bundle"
 publish_release genuine
 mise install --locked
 assert "mise x -- tool" "genuine"
+
+# A pinned bundle with no binary for this Swift target must not turn into a
+# source build either
+mise uninstall spm:acme/tool@1.0.0
+echo other-triple >"$HOME/swift-triple"
+assert_fail_contains "mise install" "has no binary for this Swift target"
