@@ -1818,7 +1818,8 @@ resolve from the directory that holds it, and relative paths in
 Commands that act on every tracked config (`mise prune`, `mise ls --prunable`
 and the stale-version check in `mise upgrade`) honor only the environment
 variable and the global and system `miserc.toml` files, so a project's
-`.miserc.toml` cannot hide other projects' configs from them.
+`.miserc.toml` cannot hide other projects' configs from them. The same applies
+to global and system config: a project's `.miserc.toml` cannot ignore it.
 
 `mise settings` and `mise settings add` refuse this setting, because mise
 reads it before config files load; put it in a `.miserc.toml` file or the

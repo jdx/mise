@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+
+# A project .miserc.toml loads without trust, so its ignored_config_paths must
+# not hide global or system config and the global-only settings held there.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset MISE_IGNORED_CONFIG_PATHS
+export MISE_SYSTEM_CONFIG_DIR="$HOME/system-mise"
+
+mkdir -p "$MISE_SYSTEM_CONFIG_DIR" "$MISE_CONFIG_DIR/conf.d"
+cat <<TOML >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+paranoid = true
+[env]
+FROM_GLOBAL = "1"
+TOML
+cat <<TOML >"$MISE_CONFIG_DIR/conf.d/fragment.toml"
+[env]
+FROM_FRAGMENT = "1"
+TOML
+cat <<TOML >"$MISE_SYSTEM_CONFIG_DIR/config.toml"
+[env]
+FROM_SYSTEM = "1"
+TOML
+
+for ignored in '"~/.config/mise", "~/system-mise"' '"~"' '"/**/*.toml"'; do
+  echo "ignored_config_paths = [$ignored]" >.miserc.toml
+  assert "mise settings get paranoid" "true"
+  assert_contains "mise env" "FROM_GLOBAL"
+  assert_contains "mise env" "FROM_FRAGMENT"
+  assert_contains "mise env" "FROM_SYSTEM"
+done
+
+# Content-bound trust from the global `paranoid` setting survives the ignore.
+rm .miserc.toml
+echo 'env.GREETING = "reviewed"' >mise.toml
+assert "mise trust"
+assert_contains "mise env" "GREETING=reviewed"
+echo 'env.GREETING = "edited"' >mise.toml
+echo 'ignored_config_paths = ["~/.config/mise"]' >.miserc.toml
+assert_fail_contains "mise env 2>&1" "not trusted"
+rm mise.toml .miserc.toml
+
+# The global miserc is the user's own, so it can still ignore global config.
+echo 'ignored_config_paths = ["~/.config/mise/config.toml"]' >"$MISE_CONFIG_DIR/miserc.toml"
+assert_not_contains "mise env" "FROM_GLOBAL"
+assert_contains "mise env" "FROM_FRAGMENT"
+assert_contains "mise env" "FROM_SYSTEM"

@@ -1067,19 +1067,20 @@ pub(crate) fn is_ignored_via_setting(path: &Path) -> bool {
 /// `ignored_config_paths` setting.
 ///
 /// A global or system config is matched as discovered, not by its symlink
-/// target. With `~/.config/mise` symlinked into a project, a project
-/// `.miserc.toml` that ignores the project's copy would otherwise resolve onto
-/// the global config too and hide it.
+/// target. With `~/.config/mise` symlinked into a project, an entry that
+/// ignores the project's copy would otherwise resolve onto the global config
+/// too and hide it.
+///
+/// Only the env var and the system/global miserc files can ignore a global or
+/// system config. A project `.miserc.toml` loads without trust, so letting it
+/// name that config would drop the global-only settings held there, such as
+/// `paranoid` and `safe`.
 pub(crate) fn is_config_ignored_via_setting(path: &Path) -> bool {
     let root = config_trust_root(path);
     if !config::is_global_config(path) {
         return is_ignored_via_setting(&root) || is_ignored_via_setting(path);
     }
-    let matcher = if GLOBAL_IGNORE_SCOPE.try_with(|_| ()).is_ok() {
-        &*GLOBAL_IGNORED_CONFIG_PATH_MATCHER
-    } else {
-        &*IGNORED_CONFIG_PATH_MATCHER
-    };
+    let matcher = &*GLOBAL_IGNORED_CONFIG_PATH_MATCHER;
     matcher.is_match_as_written(&root) || matcher.is_match_as_written(path)
 }
 

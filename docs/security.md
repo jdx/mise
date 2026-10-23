@@ -151,7 +151,8 @@ Two settings decide trust by location:
   stops configs under these paths from loading. It overrides
   `trusted_config_paths` and `mise trust`. mise reads it before it looks for
   config files, so set it in a [`.miserc.toml`](/configuration.html#miserc) or
-  in `MISE_IGNORED_CONFIG_PATHS`.
+  in `MISE_IGNORED_CONFIG_PATHS`. A project's `.miserc.toml` cannot ignore
+  global or system config.
 
 ```toml
 # ~/.config/mise/config.toml
