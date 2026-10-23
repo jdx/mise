@@ -46,7 +46,9 @@ path prefix needs no regular expression:
 `https://github.com/` does not match `https://api.github.com/`, so the two rules
 do not overlap. Reroute the API only if the proxy serves it: doing so also stops
 mise from using [mise-versions](/configuration/settings.html#use_versions_host)
-for GitHub release and attestation metadata. If the proxy mirrors only release
+for GitHub release and attestation metadata. A rerouted API also cannot confirm
+a repository rename or transfer, so GitHub attestations and SLSA provenance have
+to name the repository exactly as you configured it. If the proxy mirrors only release
 downloads, keep only the first rule.
 
 ## How rules match

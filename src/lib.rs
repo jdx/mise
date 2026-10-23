@@ -11,9 +11,6 @@ use crate::config::SettingsExt;
 #[macro_use]
 mod test;
 
-#[cfg(test)]
-#[path = "../build/lockfile_rollout.rs"]
-mod lockfile_rollout;
 #[path = "../build/registry_url.rs"]
 mod registry_url;
 

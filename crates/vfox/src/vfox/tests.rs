@@ -16,6 +16,7 @@ fn slsa_detection_requires_signer_fields() {
         slsa_min_level: None,
         slsa_signer_identity: None,
         slsa_signer_issuer: None,
+        slsa_source_repository: None,
     };
     assert!(attestation_to_verified(attestation).is_none());
 }

@@ -89,6 +89,31 @@ async fn fixture_bundles_verify_against_their_artifact() {
 }
 
 #[test]
+fn public_good_bundles_cannot_opt_out_of_the_transparency_log() {
+    let digest =
+        Sha256Hash::from_hex("b4058dece685259910d3aba5782445996eea79dbdb3cf952a6eb81aadf0373ff")
+            .unwrap();
+    let root = embedded_sigstore_root();
+    let mut bundle = fixture_bundle(include_str!(
+        "../../tests/fixtures/github_build_provenance_jdx_mise.json"
+    ));
+    verify_bundle(Artifact::from(&digest), &bundle, None, &root).unwrap();
+
+    // No signature covers the log entry, so whoever serves the bundle can
+    // strip the inclusion proof or drop the Rekor entry altogether. Neither
+    // may switch off the tlog check for a public-good certificate.
+    let mut stripped = bundle.clone();
+    stripped.verification_material.tlog_entries[0].inclusion_proof = None;
+    bundle.verification_material.tlog_entries.clear();
+    for tampered in [&stripped, &bundle] {
+        let err = verify_bundle(Artifact::from(&digest), tampered, None, &root)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("inclusion proof"), "{err}");
+    }
+}
+
+#[test]
 fn release_statements_are_only_trusted_from_the_release_attester() {
     // A workflow certificate carrying a statement that claims to be a
     // release of another repository: the certificate's own source

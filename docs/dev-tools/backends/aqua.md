@@ -244,6 +244,14 @@ available in both values. Copy the signer from the project's release provenance,
 not from an unreviewed source. These options only supply the signer: they do not
 turn on SLSA for a package whose recipe has no `slsa_provenance`.
 
+A reusable workflow like the one above has the same identity in every repository
+that calls it, so mise also requires the workflow run to belong to the package's
+repository: the recipe's `slsa_provenance.source_uri`, or else the repository
+the provenance is published in. Provenance built before that repository was
+renamed or transferred passes when api.github.com, not a
+[`url_replacements`](/url-replacements.html) mirror, confirms the two names
+are the same repository.
+
 ## Settings
 
 <script setup>
