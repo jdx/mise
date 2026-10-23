@@ -1232,7 +1232,19 @@ mod tests {
         use confique::Layer;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        /// Holds the settings lock for the test and restores the settings after.
+        struct SettingsGuard {
+            _lock: std::sync::MutexGuard<'static, ()>,
+        }
+        impl Drop for SettingsGuard {
+            fn drop(&mut self) {
+                crate::testing::reset_settings(None);
+            }
+        }
+
+        let _settings = SettingsGuard {
+            _lock: crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK),
+        };
         let mut settings = mise_settings::SettingsPartial::empty();
         settings.http_download_timeout = Some("200ms".to_string());
         settings.http_retries = Some(0);
@@ -1265,7 +1277,6 @@ mod tests {
         )
         .await
         .expect("the body deadline did not end the read");
-        crate::testing::reset_settings(None);
 
         let err = result.unwrap_err();
         assert!(is_temporarily_unavailable(&err), "{err:#}");
