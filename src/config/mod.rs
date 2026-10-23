@@ -2108,7 +2108,7 @@ pub fn monorepo_lockfile_dir(root: &Path) -> PathBuf {
     if let Some(dir) = MONOREPO_LOCKFILE_DIRS.lock().unwrap().get(root) {
         return dir.clone();
     }
-    let dir = config_paths_in_dir(root)
+    let base_configs = config_paths_in_dir(root)
         .into_iter()
         .filter(|path| {
             path.extension().is_some_and(|ext| ext == "toml")
@@ -2116,8 +2116,21 @@ pub fn monorepo_lockfile_dir(root: &Path) -> PathBuf {
                 && lockfile::extract_env_from_config_path(path).is_none()
                 && !is_conf_d_folder_file(path)
         })
-        .find_map(|path| {
-            let (lockfile, _) = lockfile::lockfile_path_for_config(&path, None);
+        .collect_vec();
+    // Prefer the base config that declares the root (read statically, nothing
+    // evaluated); otherwise the first base config.
+    let declares_root = |path: &PathBuf| {
+        file::read_to_string(path)
+            .ok()
+            .and_then(|body| MiseToml::for_monorepo_inspection(&body, path).ok())
+            .is_some_and(|cf| cf.monorepo_root() == Some(true))
+    };
+    let dir = base_configs
+        .iter()
+        .find(|path| declares_root(path))
+        .or(base_configs.first())
+        .and_then(|path| {
+            let (lockfile, _) = lockfile::lockfile_path_for_config(path, None);
             lockfile.parent().map(Path::to_path_buf)
         })
         .unwrap_or_else(|| root.to_path_buf());

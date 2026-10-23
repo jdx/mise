@@ -39,3 +39,15 @@ EOT2
 mise -C monorepo2 lock
 assert_succeed "test -f monorepo2/.config/mise.lock"
 assert_fail "test -e monorepo2/mise.lock"
+
+# The root declared in .config/mise.toml wins over a sibling mise.toml.
+mkdir -p monorepo4/.config monorepo4/apps/foo
+cp monorepo/.config/mise.toml monorepo4/.config/mise.toml
+cp monorepo/apps/foo/mise.toml monorepo4/apps/foo/mise.toml
+cat >monorepo4/mise.toml <<'EOT2'
+[tools]
+"npm:cowsay" = "1.6.0"
+EOT2
+mise -C monorepo4 lock
+assert_succeed "test -f monorepo4/.config/mise.lock"
+assert_fail "test -e monorepo4/mise.lock"
