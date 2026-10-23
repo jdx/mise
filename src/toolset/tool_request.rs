@@ -10,6 +10,7 @@ use eyre::{Result, bail, eyre};
 use xx::file;
 
 use crate::args::BackendArg;
+use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::config::config_file::config_root;
 use crate::dirs;
@@ -480,6 +481,15 @@ impl ToolRequest {
         if !options.core.install_env.is_empty() {
             Settings::ensure_not_safe(&format!(
                 "using tool-level install_env for {}",
+                self.ba().short
+            ))?;
+        }
+        // spm runs this shell command in place of `swift build`.
+        if self.ba().backend_type() == BackendType::Spm
+            && options.opts.contains_key("install_command")
+        {
+            Settings::ensure_not_safe(&format!(
+                "running tool-level install_command for {}",
                 self.ba().short
             ))?;
         }

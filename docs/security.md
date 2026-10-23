@@ -201,7 +201,8 @@ These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
 - `exec()`, `read_file()`, `read_json()`, `read_yaml()`, and `read_toml()` in
   templates, in any config.
 - Running tasks.
-- The tool options `postinstall` and `install_env`.
+- The tool options `postinstall` and `install_env`, and the `spm:` backend's
+  `install_command`.
 - asdf plugin scripts, so tools from the `asdf:` backend cannot list or install
   versions.
 - Installing plugins. vfox plugins that are already installed or built in still

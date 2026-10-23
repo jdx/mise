@@ -3282,9 +3282,9 @@ Use it for bots and CI jobs that process config you did not write, such as a bot
 that runs `mise lock --bump` on pull request branches. Project config then loads
 without a trust prompt.
 
-Safe mode refuses template `exec()` and `read_file()`, tasks, the `postinstall`
-and `install_env` tool options, asdf plugin scripts, plugin installs, mise
-secrets and `mise daemons`, with an error. It skips hooks, as `--no-hooks`
+Safe mode refuses template `exec()` and `read_file()`, tasks, the `postinstall`,
+`install_env` and spm `install_command` tool options, asdf plugin scripts,
+plugin installs, mise secrets and `mise daemons`, with an error. It skips hooks, as `--no-hooks`
 does, and ignores project `[env]`, `[shell_alias]`, `[settings]`, remote
 includes, `[bootstrap]` and `[dotfiles]`, so a repository cannot turn off
 verification, redirect a backend or write files into your home directory.
