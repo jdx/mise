@@ -4831,6 +4831,11 @@ pub trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        // Before anything is keyed by the version: it names the install directory, which plugin
+        // hooks put into shell commands, and backends format it into download URLs.
+        if tv.request.uses_resolved_version_as_pathname() {
+            crate::toolset::tool_request::validate_installable_version(&tv.version)?;
+        }
         // Read the entry through the BackendArg so a tool alias reaches it, and only warn
         // when the resolved backend is one of its own, so a plugin that overrides the
         // shorthand doesn't get a warning about a CLI it doesn't install.

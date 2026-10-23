@@ -338,6 +338,14 @@ impl ToolRequest {
             | Self::System { options: o, .. } => o,
         }
     }
+    /// Whether the version this request resolves to names its install directory as written
+    /// (`Ref`, `Path` and `System` derive the name from the request instead).
+    pub(crate) fn uses_resolved_version_as_pathname(&self) -> bool {
+        matches!(
+            self,
+            Self::Version { .. } | Self::Prefix { .. } | Self::Sub { .. }
+        )
+    }
     pub fn version(&self) -> String {
         match self {
             Self::Version { version: v, .. } => v.clone(),
@@ -775,6 +783,35 @@ fn contains_dot_dot(s: &str) -> bool {
     s.contains("..") || s.to_ascii_lowercase().replace("%2e", ".").contains("..")
 }
 
+/// Validate the version a `Version`, `Prefix` or `Sub` request resolved to.
+///
+/// [`ToolRequest::new`] only sees what was requested; the concrete version can come from a remote
+/// version list, a release tag or `mise.lock`, and it names the install, download and cache
+/// directories as written. So on top of the request rules it may not be empty or `.`, both of
+/// which name the directory that holds every version of the tool.
+pub(crate) fn validate_resolved_version(s: &str) -> Result<()> {
+    if s.is_empty() || s == "." {
+        bail!("invalid tool version {s:?}: not usable as a directory name");
+    }
+    validate_version_string(s)
+}
+
+/// Validate a concrete version that is about to be installed.
+///
+/// A request has to allow whitespace and `; & | < > ( )` because it may be a range
+/// (`>=20 <21 || >=22`). A version that gets installed never holds them, nor URL syntax
+/// (`% # ?`), and plugin hooks put the install path into shell commands and the version into
+/// download URLs. A range that never resolved fails here instead of inside a plugin.
+pub(crate) fn validate_installable_version(s: &str) -> Result<()> {
+    validate_resolved_version(s)?;
+    if let Some(c) = s.chars().find(|c| {
+        c.is_whitespace() || matches!(c, ';' | '&' | '|' | '<' | '>' | '(' | ')' | '%' | '#' | '?')
+    }) {
+        bail!("invalid tool version {s:?}: contains forbidden character {c:?}");
+    }
+    Ok(())
+}
+
 /// Validate `ref:`/`branch:`/`tag:`/`rev:` values. Same character rules as
 /// version strings: branch/tag names already use the same broad vocabulary
 /// (`/`, `+`, `-`, etc.), so only shell-quote-breaking characters and leading
@@ -986,7 +1023,8 @@ impl Display for ToolRequest {
 #[cfg(test)]
 mod tests {
     use super::{
-        LockfileScope, ToolRequest, validate_ref_string, validate_version_string, version_sub,
+        LockfileScope, ToolRequest, validate_installable_version, validate_ref_string,
+        validate_resolved_version, validate_version_string, version_sub,
     };
     use crate::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolSource, ToolVersionOptions};
@@ -1159,6 +1197,63 @@ mod tests {
         ] {
             assert!(
                 validate_version_string(v).is_err(),
+                "expected {v:?} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_resolved_version_rejects_directory_names() {
+        for v in [
+            "1.2.3",
+            "lts/hydrogen",
+            "temurin-21.0.1+12",
+            "3.12.0a1",
+            ">=20 <21",
+        ] {
+            assert!(
+                validate_resolved_version(v).is_ok(),
+                "expected {v:?} to be accepted"
+            );
+        }
+        // `installs/<tool>/..` is the directory that holds every tool; `.` and the empty string
+        // are the one that holds every version of this tool
+        for v in ["..", ".", "", "v1/%2e%2e", "1.0$(id)", "4.0.0\"; cd; \""] {
+            assert!(
+                validate_resolved_version(v).is_err(),
+                "expected {v:?} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_installable_version_rejects_shell_and_url_syntax() {
+        for v in [
+            "1.2.3",
+            "lts/hydrogen",
+            "1.2.3+build",
+            "1.2.3~rc1",
+            "2024.01.15",
+        ] {
+            assert!(
+                validate_installable_version(v).is_ok(),
+                "expected {v:?} to be accepted"
+            );
+        }
+        for v in [
+            "2.0.0; cd; touch f #",
+            "2.0.0 || cd | touch f ||",
+            ">=20 <21",
+            "1.0&x",
+            "1.0(x)",
+            "1.0#x",
+            "1.0?x",
+            "1.0%41",
+            "..",
+            "",
+        ] {
+            assert!(
+                validate_installable_version(v).is_err(),
                 "expected {v:?} to be rejected"
             );
         }
