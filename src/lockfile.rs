@@ -2735,7 +2735,14 @@ fn legacy_lockfile_path_for_config(config_path: &Path, monorepo_root: &Path) -> 
     }
     let (source, _) = lockfile_path_for_config(config_path, None);
     let target_dir = crate::config::monorepo_lockfile_dir(monorepo_root);
-    (source.parent() != Some(target_dir.as_path())).then_some(source)
+    if source.parent() != Some(target_dir.as_path()) {
+        return Some(source);
+    }
+    // The root config's own lockfile is the target; when the target moved off
+    // the root (`.config/`), the lockfile shared at the root is the legacy one.
+    (target_dir != monorepo_root)
+        .then(|| source.file_name().map(|name| monorepo_root.join(name)))
+        .flatten()
 }
 
 /// The stubs a lockfile references that still exist, as paths.
