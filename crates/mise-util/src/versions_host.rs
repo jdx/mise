@@ -933,9 +933,11 @@ fn pin_github_release_assets(
     Ok(())
 }
 
-/// API asset URLs whose asset ID mise-versions chose. Only these need their
-/// identity confirmed before use (see `github::checked_api_asset_url`);
-/// GitHub's own release data, such as for private repos, is taken as given.
+/// API asset URLs whose asset ID and digest mise-versions chose. Only these
+/// need their identity confirmed before use (see `github::checked_api_asset_url`),
+/// and only their digest may not pick a kept download (see
+/// `digest_download_pin`); GitHub's own release data, such as for private
+/// repos, is taken as given.
 /// Filled when mise-versions data is pinned, again from each
 /// `GithubAsset::from_versions_host` when a release comes out of a cache, and
 /// from every lockfile that is read (see `remember_locked_asset_api_url`).
@@ -969,6 +971,16 @@ pub fn remember_locked_asset_api_url(url: &str) {
 
 pub fn is_mirrored_asset_api_url(url: &str) -> bool {
     MIRRORED_ASSET_API_URLS.lock().unwrap().contains(url)
+}
+
+/// A release asset's `digest`, when it may serve as a download pin, which hands
+/// back a kept file with no request. A digest mise-versions supplied may not:
+/// it could choose which kept download is installed, so it is only compared
+/// with the file after the download. `url_api` is the asset's API URL.
+pub fn digest_download_pin(digest: Option<&str>, url_api: Option<&str>) -> Option<String> {
+    digest
+        .filter(|_| !url_api.is_some_and(is_mirrored_asset_api_url))
+        .map(str::to_string)
 }
 
 fn valid_github_release_tag(release: &GithubRelease, tag: &str) -> bool {

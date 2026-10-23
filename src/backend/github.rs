@@ -392,6 +392,30 @@ async fn asset_download_url(asset: &ReleaseAsset) -> String {
     }
 }
 
+/// Record `asset` in its lockfile entry, its digest as the checksum when the
+/// entry has none, and return the checksum that may pick a kept download with
+/// no request: `pinned` (the tool's or the lockfile's, read before this) or else
+/// the asset's digest. A digest mise-versions supplied is not used that way, or
+/// it could choose which kept file is installed; it is only compared with the
+/// file after the download.
+fn record_release_asset(
+    platform_info: &mut PlatformInfo,
+    asset: &ReleaseAsset,
+    pinned: Option<String>,
+) -> Option<String> {
+    platform_info.url = Some(asset.url.clone());
+    platform_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
+    if let Some(digest) = &asset.digest
+        && platform_info.checksum.is_none()
+    {
+        debug!("using GitHub API digest for checksum verification");
+        platform_info.checksum = Some(digest.clone());
+    }
+    pinned.or_else(|| {
+        crate::versions_host::digest_download_pin(asset.digest.as_deref(), Some(&asset.url_api))
+    })
+}
+
 /// Whether `url` is under one of the public forges' API base URLs. Compared on
 /// the parsed URL, because the parser also accepts other spellings of the same
 /// host (`HTTPS://`, a leading space, userinfo) that a prefix test would take
@@ -1781,15 +1805,10 @@ impl UnifiedGitBackend {
             .lock_platforms
             .get(&platform_key)
             .is_some_and(|p| p.checksum.is_some());
+        // Read before the asset's digest is recorded below.
+        let pinned = pinned_checksum(tv, &platform_key, opts.raw());
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        platform_info.url = Some(asset.url.clone());
-        platform_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
-        if let Some(digest) = &asset.digest
-            && !lockfile_has_checksum
-        {
-            debug!("using GitHub API digest for checksum verification");
-            platform_info.checksum = Some(digest.clone());
-        }
+        let pinned = record_release_asset(platform_info, asset, pinned);
 
         let url = asset_download_url(asset).await;
 
@@ -1802,7 +1821,6 @@ impl UnifiedGitBackend {
         };
 
         ctx.pr.set_message(format!("download {filename}"));
-        let pinned = pinned_checksum(tv, &self.get_platform_key(), opts.raw());
         HTTP.download_file_linked(
             url,
             &file_path,
@@ -3290,6 +3308,48 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_mirrored_digest_is_recorded_but_not_a_download_pin() {
+        let asset = |url_api: &str| ReleaseAsset {
+            name: "b.tar.gz".to_string(),
+            url: "https://github.com/acme/b/releases/download/v1/b.tar.gz".to_string(),
+            url_api: url_api.to_string(),
+            digest: Some("sha256:aaaa".to_string()),
+            release_tag: Some("v1".to_string()),
+        };
+
+        // mise-versions supplied this asset, digest included: the digest is
+        // still compared after the download, but a kept file is not served by it.
+        let mirrored = "https://api.github.com/repos/acme/b/releases/assets/9001";
+        crate::versions_host::remember_mirrored_asset_api_url(mirrored);
+        let mut info = PlatformInfo::default();
+        assert_eq!(
+            record_release_asset(&mut info, &asset(mirrored), None),
+            None
+        );
+        assert_eq!(info.checksum.as_deref(), Some("sha256:aaaa"));
+
+        // GitHub's own digest (private repos, `use_versions_host = false`) is.
+        let direct = "https://api.github.com/repos/acme/b/releases/assets/9002";
+        let mut info = PlatformInfo::default();
+        assert_eq!(
+            record_release_asset(&mut info, &asset(direct), None).as_deref(),
+            Some("sha256:aaaa")
+        );
+
+        // A tool option or lockfile checksum wins, and the lockfile's is kept.
+        let mut info = PlatformInfo {
+            checksum: Some("sha256:bbbb".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            record_release_asset(&mut info, &asset(mirrored), Some("sha256:bbbb".into()))
+                .as_deref(),
+            Some("sha256:bbbb")
+        );
+        assert_eq!(info.checksum.as_deref(), Some("sha256:bbbb"));
+    }
 
     #[test]
     fn test_public_forge_api_url_is_compared_parsed() {

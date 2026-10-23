@@ -619,7 +619,11 @@ impl Backend for AquaBackend {
         // Public repos download from the browser URL; private repos return 404/HTML there
         // and must be fetched from the API asset endpoint instead.
         let download_url = select_github_download_url(pkg.private, &url, url_api.as_deref()).await;
-        self.download(ctx, &tv, &download_url, &filename, api_digest.as_deref())
+        // verify() still compares a digest mise-versions supplied after the
+        // download; it just may not pick a kept file.
+        let pin_digest =
+            crate::versions_host::digest_download_pin(api_digest.as_deref(), url_api.as_deref());
+        self.download(ctx, &tv, &download_url, &filename, pin_digest.as_deref())
             .await?;
 
         // Snapshot before any mutation so verify() knows whether the lockfile
