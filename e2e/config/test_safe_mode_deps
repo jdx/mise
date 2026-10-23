@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# A [deps] provider is a command line that `mise deps` and `mise exec` run.
+# Safe mode loads project config without trust, so it ignores project [deps];
+# providers in global and system config still run.
+
+export MISE_EXPERIMENTAL=1
+
+cat <<'EOF' >mise.toml
+[deps.codegen]
+auto = true
+run = "touch codegen-provider-ran"
+
+[deps.vendor]
+run = "touch vendor-provider-ran"
+EOF
+
+assert_succeed "MISE_SAFE=1 mise exec -- true"
+assert_fail "test -e codegen-provider-ran"
+assert_succeed "MISE_SAFE=1 mise deps"
+assert_fail "test -e vendor-provider-ran"
+assert_contains "MISE_SAFE=1 mise deps --list" "No deps providers found"
+
+# without safe mode the same config runs its providers
+assert_succeed "mise exec -- true"
+assert_succeed "test -e codegen-provider-ran"
+assert_succeed "mise deps"
+assert_succeed "test -e vendor-provider-ran"
+
+# providers in global config are the operator's and still run
+rm mise.toml
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[deps.globalgen]
+run = "touch $PWD/global-provider-ran"
+EOF
+assert_succeed "MISE_SAFE=1 mise deps"
+assert_succeed "test -e global-provider-ran"

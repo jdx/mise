@@ -228,6 +228,8 @@ These are skipped without an error, so resolution commands keep working:
 - Project `[settings]`, so a repository cannot turn off verification or redirect
   a backend.
 - Remote `include` entries in project config, which mise does not fetch.
+- Project `[deps]`, so `mise deps` and `mise exec` do not run a repository's
+  dependency providers. Providers in global and system config still run.
 - Project daemon declarations. Daemons also do not start or stop when you change
   directories.
 - Project `[bootstrap]`, `[dotfiles]` and `[dotfile_groups]`, and the

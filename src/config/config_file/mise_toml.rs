@@ -27,7 +27,8 @@ use crate::config::config_file::{
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvValue};
 use crate::config::settings::SettingsPartial;
 use crate::config::{
-    Alias, AliasMap, CommandWrapper, Config, Settings, safe_mode_ignores_bootstrap,
+    Alias, AliasMap, CommandWrapper, Config, Settings, SettingsExt, is_global_config,
+    safe_mode_ignores_bootstrap,
 };
 use crate::deps::{DepsConfig, DepsTemplateContext};
 use crate::env_diff::EnvMap;
@@ -1965,6 +1966,17 @@ impl ConfigFile for MiseToml {
         let Some(decl) = self.deps.clone() else {
             return Ok(None);
         };
+        // A provider is a command line that `mise deps`, `mise exec` and
+        // `mise deps add` run. Safe mode loads project config without trust,
+        // so like project `[env]` and `[wrappers]` only global and system
+        // config may declare providers there.
+        if Settings::safe_mode() && !is_global_config(&self.path) {
+            debug!(
+                "ignoring [deps] in {}: safe mode (MISE_SAFE=1)",
+                display_path(&self.path)
+            );
+            return Ok(None);
+        }
         let mut deps = DepsConfig::from_decl(decl);
         let context = self.template_context();
         for (provider_id, provider) in &mut deps.providers {
