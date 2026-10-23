@@ -5165,6 +5165,13 @@ pub async fn untrusted_task_reached(
             // Resolved by the executor's own lookup, so the tasks found here are the ones it
             // would start, with the arguments it would give them.
             for entry in task.run() {
+                // The executor renders a templated entry with the task's usage values and
+                // environment before it looks the names up. Rendering it here the same way would
+                // need that environment, so such an entry is left to the executor, which checks
+                // the tasks it resolves before it schedules them or installs their tools.
+                if crate::task::RunEntryExt::has_tera_template(entry) {
+                    continue;
+                }
                 let (specs, entry_args) = match entry {
                     RunEntry::Script(_) => (&[][..], None),
                     RunEntry::SingleTask { task, args, .. } => (
@@ -5175,8 +5182,7 @@ pub async fn untrusted_task_reached(
                 };
                 for spec in specs {
                     let spec = crate::task::resolve_task_pattern(spec, Some(task));
-                    // A name that does not resolve as written, such as a template the executor
-                    // renders first, is left to the executor's own check when it runs.
+                    // A name that does not resolve as written is left to the executor too.
                     if let Ok(tasks) = crate::task::task_executor::resolve_injected_tasks(
                         config,
                         &[spec],

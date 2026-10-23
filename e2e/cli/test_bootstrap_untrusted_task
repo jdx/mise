@@ -178,3 +178,23 @@ EOF
 assert_fail "cd tool-shadow && MISE_YES=0 mise bootstrap" "not trusted"
 assert_fail "test -f $HOME/project_task_ran"
 assert_fail "test -e $MISE_DATA_DIR/installs/dummy/2.0.0"
+
+# a `run` entry with templated args renders before the task it names resolves
+# its dependencies, so the preflight leaves it to the executor
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[tasks.real]
+run = "touch $HOME/global_real_ran"
+
+[tasks.pick]
+usage = 'arg "[target]" default="missing"'
+depends = ["{{usage.target}}"]
+run = "touch $HOME/global_pick_ran"
+
+[tasks.bootstrap]
+run = [{ task = "pick", args = ["{{ 'real' }}"] }, "touch $HOME/global_task_ran"]
+EOF
+rm -f "$HOME"/*_ran
+assert_succeed "cd unrelated && MISE_YES=0 mise bootstrap --skip tools"
+assert "test -f $HOME/global_real_ran"
+assert "test -f $HOME/global_pick_ran"
+assert "test -f $HOME/global_task_ran"
