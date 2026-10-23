@@ -1132,6 +1132,11 @@ fn shell_from_shebang(script: &str) -> Option<Vec<String>> {
     Some(once(shell.to_string()).chain(args).collect())
 }
 
+/// Whether a render error is a template reading a field of `env` that the context lacks.
+fn is_missing_env_field(err: &str) -> bool {
+    err.contains("is not defined") && (err.contains("env.") || err.contains("env["))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2552,9 +2557,4 @@ cmd "parent" {
             "spec with only examples should be recognized as having usage"
         );
     }
-}
-
-/// Whether a render error is a template reading a field of `env` that the context lacks.
-fn is_missing_env_field(err: &str) -> bool {
-    err.contains("is not defined") && (err.contains("env.") || err.contains("env["))
 }
