@@ -24,6 +24,14 @@ truncate -s 17M mise-tasks/big.toml
 assert_fail "mise tasks ls" "not reading ~/workdir/mise-tasks/big.toml: it is larger than 16 MiB"
 rm -r mise-tasks
 
+# An executable file task is read for its `#MISE` header the same way.
+mkdir mise-tasks
+printf '#!/bin/sh\n#MISE description="big"\n' >mise-tasks/big
+truncate -s 17M mise-tasks/big
+chmod +x mise-tasks/big
+assert_fail "mise tasks ls" "not reading ~/workdir/mise-tasks/big: it is larger than 16 MiB"
+rm -r mise-tasks
+
 truncate -s 17M .node-version
 assert_fail "MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node mise ls" "not reading ~/workdir/.node-version: it is larger than 16 MiB"
 rm .node-version

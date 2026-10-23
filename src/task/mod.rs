@@ -1273,7 +1273,7 @@ impl Task {
         // Stripped before scanning: the header patterns anchor at the start of a line, so a
         // byte-order mark would hide a `#MISE` written on line 1 -- which is where a task with
         // an executable extension rather than a shebang puts it.
-        let body = file::read_to_string(path)?;
+        let body = file::read_config_to_string(path)?;
         let info = parse_mise_header_toml(file::strip_utf8_bom(&body))?
             .into_iter()
             .filter_map(|toml| toml.as_table().cloned())
