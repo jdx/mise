@@ -136,6 +136,39 @@ async fn github_attestation_sources_fails_when_all_methods_fail() {
         == "cached GitHub attestation verification failed overall: no attestation verified"));
 }
 
+#[tokio::test]
+async fn github_attestation_made_by_another_repository_is_rejected() {
+    // Whatever answers the attestations request picks the list, and any
+    // repository can attest any digest, so a genuine jdx/mise attestation
+    // must not pass for another repository.
+    let digest = fixture_digest();
+    let attestations = [fixture_attestation(include_str!(
+        "../../tests/fixtures/github_release_attestation_jdx_mise.json"
+    ))];
+    let verify = async |repository| {
+        crate::bundle::verify_attestation_bundles_for_artifact(
+            Artifact::from(&digest),
+            &attestations,
+            repository,
+            None,
+            &mut TrustRoots::default(),
+        )
+        .await
+    };
+
+    assert!(verify("jdx/mise").await.unwrap());
+    assert!(verify("JDX/Mise").await.unwrap());
+    let error = verify("erlang/rebar3").await.unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            AttestationError::RepositoryMismatch { expected, found }
+                if expected == "erlang/rebar3" && found == &["jdx/mise"]
+        ),
+        "{error}"
+    );
+}
+
 #[test]
 fn attestation_diagnostic_logs_do_not_leak_secrets() {
     let capture = capture_logs();
@@ -204,6 +237,7 @@ async fn unreachable_tuf_repository_is_a_trust_root_error_not_a_signature_failur
                 "../../tests/fixtures/github_release_attestation_jdx_mise.json"
             )),
         ],
+        "jdx/mise",
         None,
         &mut TrustRoots::default(),
     )
