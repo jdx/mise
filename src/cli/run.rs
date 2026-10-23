@@ -665,6 +665,12 @@ fn display_affected_text(text: &str) -> String {
 }
 
 impl Run {
+    /// The parser leaves `--help` to the task, so `mise run --help` arrives here as a task name.
+    /// It prints this command's own help and runs nothing the project defines.
+    pub(crate) fn only_prints_help(&self) -> bool {
+        matches!(self.task.as_deref(), Some("-h" | "--help"))
+    }
+
     pub(crate) async fn run(mut self) -> Result<()> {
         // Check help flags before doing any work
         if self.task.as_deref() == Some("-h") {

@@ -489,12 +489,14 @@ impl Commands {
         )
     }
 
+    /// Whether running this command is the user's decision to run the project's code. Asking a
+    /// command for its own help is not: the parser leaves `--help` to the task for `run` and
+    /// `watch`, so those see it here.
     fn implicitly_trusts_active_config(&self) -> bool {
         matches!(self, Self::Daemons(cmd) if cmd.starts())
-            || matches!(
-                self,
-                Self::Exec(_) | Self::Install(_) | Self::Run(_) | Self::Watch(_)
-            )
+            || matches!(self, Self::Run(cmd) if !cmd.only_prints_help())
+            || matches!(self, Self::Watch(cmd) if !cmd.only_prints_help())
+            || matches!(self, Self::Exec(_) | Self::Install(_))
     }
 
     /// Builds the subcommand's future on the heap instead of awaiting it
@@ -1113,7 +1115,10 @@ impl Cli {
             cli.command
                 .as_ref()
                 .is_some_and(Commands::implicitly_trusts_active_config)
-                || cli.task.is_some(),
+                || cli
+                    .task
+                    .as_deref()
+                    .is_some_and(|task| !matches!(task, "help" | "-h" | "--help")),
         );
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;
@@ -2029,6 +2034,11 @@ mod tests {
             vec!["mise", "hook-env", "-s", "bash"],
             vec!["mise", "env"],
             vec!["mise", "ls"],
+            vec!["mise", "run", "--help"],
+            vec!["mise", "run", "-h"],
+            vec!["mise", "run", "--force", "--help"],
+            vec!["mise", "watch", "--", "--help"],
+            vec!["mise", "watch", "--", "-h"],
         ];
         for args in non_trusting {
             let cli = parse_cli(&args).unwrap();
