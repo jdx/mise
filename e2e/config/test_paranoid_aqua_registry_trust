@@ -39,6 +39,19 @@ write_registry registry.yaml "edited after approval"
 assert_not_contains "mise tool aqua:example/tool --description" "edited after approval"
 assert_contains "mise ls-remote aqua:example/tool 2>&1 || true" "registry.yaml is not trusted"
 
+# an entry that names a directory covers the registry file read from it
+mkdir -p registry-dir
+write_registry registry-dir/registry.yaml "from the registry directory"
+cat <<EOF >mise.toml
+[settings]
+aqua.registries = ["registry-dir"]
+EOF
+mise trust mise.toml
+assert_not_contains "mise tool aqua:example/tool --description" "from the registry directory"
+assert_contains "mise ls-remote aqua:example/tool 2>&1 || true" "registry-dir/registry.yaml is not trusted"
+mise trust registry-dir/registry.yaml
+assert_contains "mise tool aqua:example/tool --description" "from the registry directory"
+
 # a registry file that global config names is trusted by path
 rm mise.toml
 write_registry global-registry.yaml "from the global registry"

@@ -693,12 +693,13 @@ fn record_local_aqua_registry(file: PathBuf, declared_by_global: bool) {
 /// than by global or system config. Paranoid mode binds a project config's
 /// trust to its own content, which does not cover a registry file that can
 /// change without it, so such a file needs trust of its own there.
+///
+/// An entry may name a directory, which the reader looks up `registry.yaml` or
+/// `registry.yml` in, so the nearest recorded ancestor of `file` decides.
 pub(crate) fn local_aqua_registry_needs_trust(file: &Path) -> bool {
-    LOCAL_AQUA_REGISTRIES
-        .lock()
-        .unwrap()
-        .get(file)
-        .copied()
+    let registries = LOCAL_AQUA_REGISTRIES.lock().unwrap();
+    file.ancestors()
+        .find_map(|path| registries.get(path).copied())
         .unwrap_or(false)
 }
 
