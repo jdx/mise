@@ -572,6 +572,28 @@ pub const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
 // Public functions for use by cmd.rs (which can't access private submodules)
 
+/// Keep the variables an env sandbox withholds out of reach through mise's own
+/// process (Linux only).
+///
+/// The filter only shapes the child's environment. mise itself still holds the
+/// full one, and a child running as the same user can read it from
+/// `/proc/<mise pid>/environ` or attach to mise with ptrace. A non-dumpable
+/// process's `/proc` entries belong to root and it cannot be attached to
+/// without `CAP_SYS_PTRACE`, which closes both routes for an unprivileged
+/// child. The flag stays for the rest of this mise process; `execve` resets
+/// it, so the commands mise starts are unaffected.
+#[cfg(target_os = "linux")]
+pub fn hide_environment_from_children() -> eyre::Result<()> {
+    let ret = unsafe { nix::libc::prctl(nix::libc::PR_SET_DUMPABLE, 0, 0, 0, 0) };
+    if ret != 0 {
+        eyre::bail!(
+            "sandbox: failed to hide mise's environment from the sandboxed command: {}",
+            std::io::Error::last_os_error()
+        );
+    }
+    Ok(())
+}
+
 /// Check that the running kernel's Landlock can enforce `config` (Linux only).
 #[cfg(target_os = "linux")]
 pub fn landlock_check(config: &SandboxConfig) -> eyre::Result<()> {

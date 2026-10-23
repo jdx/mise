@@ -2128,6 +2128,11 @@ impl<'a> CmdLineRunner<'a> {
             // pre_exec reaches the parent as a bare errno, so refuse it here
             // where the message survives.
             crate::sandbox::landlock_check(&sandbox)?;
+            // The child gets a filtered environment, but this process keeps the
+            // full one; do not let the child read it back through /proc.
+            if sandbox.effective_deny_env() {
+                crate::sandbox::hide_environment_from_children()?;
+            }
             // Use pre_exec to apply Landlock/seccomp in the child process
             // before it execs the target program. This avoids restricting the mise process.
             let sandbox = sandbox.clone();

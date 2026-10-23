@@ -169,6 +169,19 @@ includes the tools mise adds. A task also keeps the variables in its
 `pass_through_env` and in its cache `env`. On Windows a few more variables
 stay; see [Windows](#windows).
 
+The filter decides what the command is given; it does not hide variables that
+other processes hold. On Linux, `mise run` keeps the command from reading the
+full environment back from mise's own `/proc/<pid>/environ`: while an
+environment-filtered task runs, mise marks itself non-dumpable, which also
+stops the command from attaching to mise with ptrace. `mise exec` replaces
+itself with the command, so no mise process is left holding the variables.
+Neither covers the shell or other process that started mise: a variable
+exported there stays readable to a command running as the same user. None of
+this holds for a command running as root. Against a command you do not trust,
+also restrict writes with `--deny-write` or `--deny-all`: on Linux a command
+under a read or write restriction runs in a Landlock domain, which cannot read
+the environment of processes outside it.
+
 ## When the sandbox blocks something
 
 A blocked operation fails inside the command, and the command decides what to
