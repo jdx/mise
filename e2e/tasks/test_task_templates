@@ -224,3 +224,22 @@ mise run '//...:demo'
 assert "cat pkgs/a/out.txt" "v2"
 
 echo '' >mise.toml
+
+# A file task that extends a template gets the template's usage spec
+mkdir -p .mise-tasks
+cat <<'EOT' >mise.toml
+[task_templates.tmpl]
+usage = '''
+flag "-t --test" help="template flag"
+'''
+EOT
+cat <<'EOT' >.mise-tasks/file_task
+#!/usr/bin/env bash
+#MISE extends="tmpl"
+#USAGE flag "--own" help="own flag"
+echo "test=${usage_test:-no}"
+EOT
+chmod +x .mise-tasks/file_task
+assert_contains "mise file_task -h" "template flag"
+assert_contains "mise file_task -h" "own flag"
+assert "mise run file_task -t" "test=true"
