@@ -206,10 +206,12 @@ mise pins GitHub and GitLab projects by the forge's repository ID, not only by
 name. A renamed or transferred repository keeps installing, including releases
 signed under the new name, and mise warns once with the new name; update your
 configuration when convenient. The pin and the `mise.lock` commitment follow the
-repository, so you do not need `mise packslip forget`. A pin or lockfile entry
-that recorded no repository ID, such as one an older mise wrote, follows a
-rename only when api.github.com itself confirms it, and then records the ID;
-otherwise the rename needs `mise packslip forget` or new lockfile entries.
+repository, so you do not need `mise packslip forget`. A machine pin that
+recorded no repository ID, such as one an older mise wrote, follows a rename
+only when api.github.com itself confirms it, and then records the ID;
+otherwise the rename needs `mise packslip forget`. A `mise.lock` entry that
+recorded no repository ID never follows a rename: remove the entry and run
+`mise lock` again.
 
 A different repository that takes the old name is refused, because that is what
 a deleted repository whose name someone else took looks like. The error names
