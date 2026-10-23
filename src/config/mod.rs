@@ -5123,14 +5123,24 @@ pub(crate) fn runs_only_trusted_tasks() -> bool {
 /// against every loaded task and a name matches every task it could mean, so an untrusted
 /// task that could stand in for one of them counts as reached. This is the early answer, before
 /// anything runs; a name only the executor can resolve, such as a templated `run` entry, is
-/// checked when the executor schedules it (see [`runs_only_trusted_tasks`]).
+/// checked when the executor schedules it (see [`runs_only_trusted_tasks`]). `skip_deps` is the
+/// run's own: tasks a `run` entry starts are then followed without their dependencies, as the
+/// executor starts them, and so are the roots.
 pub async fn untrusted_task_reached(
     config: &Arc<Config>,
     roots: Vec<Task>,
+    skip_deps: bool,
 ) -> Result<Option<Task>> {
     // A task reached with other arguments can depend on other tasks, so it counts again.
     let mut seen: HashSet<(String, Vec<String>)> = HashSet::new();
     let mut pending = roots;
+    if skip_deps {
+        for task in &mut pending {
+            task.depends.clear();
+            task.depends_post.clear();
+            task.wait_for.clear();
+        }
+    }
     while !pending.is_empty() {
         let deps =
             crate::task::Deps::new_for_inspection(config, std::mem::take(&mut pending)).await?;
@@ -5160,6 +5170,7 @@ pub async fn untrusted_task_reached(
                         config,
                         &[spec],
                         entry_args,
+                        skip_deps,
                     )
                     .await
                     {

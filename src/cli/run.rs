@@ -841,7 +841,8 @@ impl Run {
         // schedules it.
         if config_file::requires_explicit_trust()
             && let Some(task) =
-                crate::config::untrusted_task_reached(&config, task_list.clone()).await?
+                crate::config::untrusted_task_reached(&config, task_list.clone(), self.skip_deps)
+                    .await?
         {
             return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
         }

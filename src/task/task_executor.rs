@@ -1281,7 +1281,7 @@ impl TaskExecutor {
         } = ctx;
         trace!("inject start: {}", specs.join(", "));
         let mut to_run: Vec<Task> = vec![];
-        for mut t in resolve_injected_tasks(config, specs, override_args).await? {
+        for mut t in resolve_injected_tasks(config, specs, override_args, self.skip_deps).await? {
             // Apply entry-level env via with_dependency_env (high priority,
             // consistent with depends/depends_post) so it overrides the
             // sub-task's own declared env.
@@ -1305,11 +1305,6 @@ impl TaskExecutor {
                         t.name
                     );
                 }
-            }
-            if self.skip_deps {
-                t.depends.clear();
-                t.depends_post.clear();
-                t.wait_for.clear();
             }
             to_run.push(t);
         }
@@ -3161,11 +3156,13 @@ fn shell_from_shebang(path: &Path) -> Option<Vec<String>> {
 /// The tasks a `run` entry's `specs` start, as the executor injects them: looked up among the
 /// tasks loaded for those names, by name or alias with `get_matching`'s preference for an exact
 /// name, each given `override_args` (the entry's `args`) or else the arguments written after its
-/// name. A name that matches nothing is an error.
+/// name. With `skip_deps` (`--skip-deps`, `task.skip_depends`) they start without their
+/// dependencies. A name that matches nothing is an error.
 pub(crate) async fn resolve_injected_tasks(
     config: &Arc<Config>,
     specs: &[String],
     override_args: Option<&[String]>,
+    skip_deps: bool,
 ) -> Result<Vec<Task>> {
     use crate::task::TaskLoadContext;
     // Create a TaskLoadContext from the specs to ensure project tasks are loaded
@@ -3194,6 +3191,11 @@ pub(crate) async fn resolve_injected_tasks(
             t.args = override_args
                 .map(|a| a.to_vec())
                 .unwrap_or_else(|| args.clone());
+            if skip_deps {
+                t.depends.clear();
+                t.depends_post.clear();
+                t.wait_for.clear();
+            }
             resolved.push(t);
         }
     }

@@ -2482,7 +2482,12 @@ impl Bootstrap {
                 // and every task it reaches have to come from config the user trusts. Tasks it
                 // does not reach may come from anywhere. Safe mode refuses to run tasks below.
                 if !Settings::safe_mode()
-                    && let Some(task) = config::untrusted_task_reached(&config, roots).await?
+                    && let Some(task) = config::untrusted_task_reached(
+                        &config,
+                        roots,
+                        Settings::get().task.skip_depends,
+                    )
+                    .await?
                 {
                     bail!(
                         "bootstrap: not running the `bootstrap` task: it would run `{}` from {}, which is not trusted; review it and run `mise trust {}`, or pass `--skip task`",

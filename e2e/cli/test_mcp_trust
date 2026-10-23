@@ -124,6 +124,13 @@ run = "echo REAL-DEP"
 
 [tasks.nested]
 run = [{ task = "pick", args = ["real"] }]
+
+[tasks.outer]
+run = [{ task = "inner" }]
+
+[tasks.inner]
+depends = ["not-defined"]
+run = "echo INNER-RAN"
 EOF
 mise trust ../with_args
 run_pick="cd ../with_args && python3 ../workdir/mcp_call.py run_task '{\"task\": \"pick\", \"args\": [\"real\"]}'"
@@ -132,3 +139,9 @@ assert_contains "$run_pick" "REAL-DEP"
 run_nested="cd ../with_args && python3 ../workdir/mcp_call.py run_task '{\"task\": \"nested\"}'"
 assert_contains "$run_nested" "status=ok"
 assert_contains "$run_nested" "REAL-DEP"
+
+# With dependencies skipped, a task a `run` entry starts runs without them,
+# so a dependency nobody defined does not stop the check.
+run_outer="cd ../with_args && MISE_TASK_SKIP_DEPENDS=1 python3 ../workdir/mcp_call.py run_task '{\"task\": \"outer\"}'"
+assert_contains "$run_outer" "status=ok"
+assert_contains "$run_outer" "INNER-RAN"
