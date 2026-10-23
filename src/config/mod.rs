@@ -2121,7 +2121,7 @@ pub fn monorepo_lockfile_dir(root: &Path) -> PathBuf {
     // Prefer the base config that declares the root (read statically, nothing
     // evaluated); otherwise the first base config.
     let declares_root = |path: &PathBuf| {
-        file::read_to_string(path)
+        file::read_config_to_string(path)
             .ok()
             .and_then(|body| MiseToml::for_monorepo_inspection(&body, path).ok())
             .is_some_and(|cf| cf.monorepo_root() == Some(true))
@@ -2198,7 +2198,7 @@ pub(crate) fn monorepo_lockfile_root_from_dir(dir: &Path) -> Option<PathBuf> {
             // is decoded without a trust check: nothing in it is evaluated,
             // and a stub run must not prompt for or record trust. An
             // unreadable config just cannot declare a root.
-            let Ok(body) = file::read_to_string(&path) else {
+            let Ok(body) = file::read_config_to_string(&path) else {
                 continue;
             };
             if let Ok(cf) = MiseToml::for_monorepo_inspection(&body, &path) {
@@ -7568,6 +7568,11 @@ async fn load_task_sources_from_configs(
 }
 
 fn trust_check_task_include(path: &Path, require_trust: bool) -> Result<()> {
+    // A TOML task file over the size limit is refused by the loader anyway;
+    // refuse it here, before the trust check below reads it whole.
+    if path.extension().is_some_and(|e| e == "toml") {
+        file::ensure_config_file_size(path)?;
+    }
     if require_trust && !is_global_task_include_path(path) && task_include_requires_trust(path) {
         trust_check(path)?;
     }
@@ -7590,7 +7595,7 @@ fn remote_task_file_requires_trust(path: &Path) -> bool {
     if Settings::try_get().is_ok_and(|settings| settings.paranoid.config()) {
         return true;
     }
-    let Ok(body) = file::read_to_string(path) else {
+    let Ok(body) = file::read_config_to_string(path) else {
         return true;
     };
     crate::task::header_has_decoded_template(&body) || crate::task::header_declares_secrets(&body)
@@ -7605,7 +7610,8 @@ fn task_include_requires_trust(path: &Path) -> bool {
     if Settings::try_get().is_ok_and(|settings| settings.paranoid.config()) {
         return true;
     }
-    let Ok(body) = file::read_to_string(path) else {
+    // Bounded: a file too large to scan needs trust like one that cannot be read.
+    let Ok(body) = file::read_config_to_string(path) else {
         // can't read it — fall back to requiring trust
         return true;
     };
