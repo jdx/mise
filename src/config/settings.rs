@@ -150,6 +150,12 @@ pub(crate) fn is_bootstrapping() -> bool {
 /// Caches the resolved `safe` value from the most recent settings load so
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static EXPLICIT_INLINE_SHELL: RwLock<Option<bool>> = RwLock::new(None);
+/// Resolved `trusted_config_paths` entries. Unlike `canonicalize_cached` this remembers entries
+/// that don't exist: each lookup can be a slow autofs/network call, and every config checked in
+/// the process would repeat it. Cleared whenever settings change, so a path created since is seen.
+static TRUSTED_PATHS_RESOLVED: Lazy<Mutex<std::collections::HashMap<PathBuf, Option<PathBuf>>>> =
+    Lazy::new(Default::default);
+
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
 /// Settings files that failed to parse, held until warnings can be printed.
@@ -894,6 +900,11 @@ pub trait SettingsExt: Sized {
     /// Errors on invalid platform strings (same validation as `mise lock --platform`).
     fn lockfile_platforms(&self) -> Result<Option<Vec<Platform>>>;
 
+    /// The `trusted_config_paths` entries as written (with `~` expanded), without touching the
+    /// filesystem.
+    fn trusted_config_paths_as_written(&self) -> impl Iterator<Item = PathBuf> + '_;
+
+    /// The `trusted_config_paths` entries that exist, canonicalized.
     fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_;
 
     fn global_tools_file(&self) -> PathBuf;
@@ -1162,12 +1173,14 @@ impl SettingsExt for Settings {
         // Clear caches that depend on settings and environment
         crate::config::config_file::config_root::reset();
         crate::toolset::install_state::reset_tools();
+        TRUSTED_PATHS_RESOLVED.lock().unwrap().clear();
     }
 
     fn reload() -> Result<()> {
         *EXPLICIT_INLINE_SHELL.write().unwrap() = None;
         crate::config::config_file::config_root::reset();
         crate::toolset::install_state::reset_tools();
+        TRUSTED_PATHS_RESOLVED.lock().unwrap().clear();
         rebuild()
     }
 
@@ -1178,6 +1191,7 @@ impl SettingsExt for Settings {
         updater(lock.get_or_insert_with(SettingsPartial::empty));
         drop(lock);
         crate::toolset::install_state::reset_tools();
+        TRUSTED_PATHS_RESOLVED.lock().unwrap().clear();
         let result = rebuild();
         if result.is_err() {
             *CLI_SETTINGS.lock().unwrap() = previous;
@@ -1194,12 +1208,31 @@ impl SettingsExt for Settings {
         }
     }
 
-    fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
+    fn trusted_config_paths_as_written(&self) -> impl Iterator<Item = PathBuf> + '_ {
         self.trusted_config_paths
             .iter()
             .filter(|p| !p.to_string_lossy().is_empty())
             .map(file::replace_path)
-            .filter_map(|p| file::canonicalize_cached(&p))
+    }
+
+    fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
+        self.trusted_config_paths_as_written().filter_map(|p| {
+            // A relative entry resolves against the current directory, which can change.
+            if !p.is_absolute() {
+                return file::canonicalize_cached(&p);
+            }
+            if let Some(resolved) = TRUSTED_PATHS_RESOLVED.lock().unwrap().get(&p) {
+                return resolved.clone();
+            }
+            // Not `canonicalize_cached`: its own process-wide cache would survive a reset and
+            // keep a symlink entry pointing at its old target.
+            let resolved = p.canonicalize().ok();
+            TRUSTED_PATHS_RESOLVED
+                .lock()
+                .unwrap()
+                .insert(p, resolved.clone());
+            resolved
+        })
     }
 
     fn global_tools_file(&self) -> PathBuf {
@@ -1844,6 +1877,7 @@ fn load() -> Result<Arc<Settings>> {
     let system_installs_changed = settings.system_installs_dir() != *env::MISE_SYSTEM_INSTALLS_DIR;
     if system_installs_changed {
         crate::toolset::install_state::reset_tools();
+        TRUSTED_PATHS_RESOLVED.lock().unwrap().clear();
     }
     time!("try_get done");
     Ok(settings)
