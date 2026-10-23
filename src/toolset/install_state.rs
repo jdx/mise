@@ -512,6 +512,11 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
     measure!("install_state full_scan_tools", {
         // Shared with the per-tool path so the manifest is parsed once.
         let manifest = root_manifest();
+        for (dir_name, mt) in manifest.iter() {
+            if credential_named_dir(&mt.short).as_ref() == Some(dir_name) {
+                remove_credential_named_installs(&mt.short);
+            }
+        }
         let subdirs = file::dir_subdirs(&dirs::INSTALLS)?;
 
         // Only clone the manifest for mutation if we actually need to migrate
@@ -700,6 +705,7 @@ fn merge_scanned_into(recorded: &mut InstallStateTool, scanned: InstallStateTool
 }
 
 fn load_tool(short: &str) -> Option<InstallStateTool> {
+    remove_credential_named_installs(short);
     let manifest = root_manifest();
     let dir_name = crate::backend::tool_directory_name(short);
     let scan_named = |dir_name: &str| {
@@ -1067,6 +1073,12 @@ pub(crate) fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> 
         crate::backend::tool_directory_name(&ba.short),
         manifest_tool.clone(),
     );
+    if let Some(named) = credential_named_dir(&ba.short)
+        && let Some(installs_dir) = path.parent()
+        && installs_dir.join(&named).symlink_metadata().is_err()
+    {
+        manifest.remove(&named);
+    }
     write_manifest_to(path, &manifest)?;
     if let Some(installs_dir) = path.parent() {
         let tool_manifest = tool_manifest_path(installs_dir, &ba.short);
@@ -1075,6 +1087,126 @@ pub(crate) fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> 
         }
     }
     Ok(())
+}
+
+/// The installs directory named after `short` with its URL credentials spelled
+/// out, when that differs from [`crate::backend::tool_directory_name`].
+fn credential_named_dir(short: &str) -> Option<String> {
+    use heck::ToKebabCase;
+    // Cheap test first: this runs for every tool lookup.
+    if !(short.contains("://") && short.contains('@')) {
+        return None;
+    }
+    let named = short.to_kebab_case();
+    (named != crate::backend::tool_directory_name(short)).then_some(named)
+}
+
+/// Remove each version under the credential-named installs directory of
+/// `short` that is also installed under the tool's own directory, with the
+/// runtime symlinks and shims that point into it. The directory name spells the
+/// credentials of the tool's URL, and the path reaches logs, errors and `PATH`.
+///
+/// Only that one directory directly under the installs directory is touched,
+/// symlinks are removed rather than followed, and a removal that fails is a
+/// warning: the install under the tool's own directory is what gets used.
+pub(crate) fn remove_credential_named_installs(short: &str) {
+    let Some(named) = credential_named_dir(short) else {
+        return;
+    };
+    remove_credential_named_installs_in(
+        &dirs::INSTALLS,
+        &named,
+        &crate::backend::tool_directory_name(short),
+        &[mise_util::dirs::shims(), mise_util::dirs::system_shims()],
+    );
+}
+
+fn remove_credential_named_installs_in(
+    installs: &Path,
+    named: &str,
+    clean: &str,
+    shims_dirs: &[PathBuf],
+) {
+    let named_dir = installs.join(named);
+    // A real directory, not a link that would lead out of the installs dir.
+    if !named_dir.symlink_metadata().is_ok_and(|m| m.is_dir()) {
+        return;
+    }
+    let clean_dir = installs.join(clean);
+    let Some(entries) = std::fs::read_dir(&named_dir).ok() else {
+        return;
+    };
+    let mut removed: Vec<PathBuf> = vec![];
+    let mut kept_versions = false;
+    let mut links = vec![];
+    for entry in entries.flatten() {
+        // `file_type` does not follow symlinks.
+        let Some(file_type) = entry.file_type().ok() else {
+            continue;
+        };
+        let path = entry.path();
+        if file_type.is_symlink() {
+            links.push(path);
+            continue;
+        }
+        if !file_type.is_dir() {
+            continue;
+        }
+        if clean_dir
+            .join(entry.file_name())
+            .symlink_metadata()
+            .is_err()
+        {
+            kept_versions = true;
+            continue;
+        }
+        for shims in shims_dirs {
+            remove_links_into(shims, &path);
+        }
+        match file::remove_all(&path) {
+            std::result::Result::Ok(()) => removed.push(path),
+            Err(err) => {
+                kept_versions = true;
+                warn!("could not remove {}: {err:#}", display_path(&path));
+            }
+        }
+    }
+    if removed.is_empty() {
+        return;
+    }
+    // Runtime symlinks (`latest`, `1`, ...) that pointed at a removed version.
+    for link in links {
+        let Some(target) = std::fs::read_link(&link).ok() else {
+            continue;
+        };
+        let target = named_dir.join(target);
+        if removed.iter().any(|r| target.starts_with(r)) || !target.exists() {
+            let _ = file::remove_all(&link);
+        }
+    }
+    if !kept_versions {
+        if let Err(err) = file::remove_all(&named_dir) {
+            warn!("could not remove {}: {err:#}", display_path(&named_dir));
+        }
+    }
+}
+
+/// Remove the symlinks directly in `dir` whose target lies inside `inside`.
+fn remove_links_into(dir: &Path, inside: &Path) {
+    let Some(entries) = std::fs::read_dir(dir).ok() else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if !entry.file_type().is_ok_and(|t| t.is_symlink()) {
+            continue;
+        }
+        let path = entry.path();
+        if std::fs::read_link(&path).is_ok_and(|target| dir.join(target).starts_with(inside))
+            && let Err(err) = file::remove_all(&path)
+        {
+            warn!("could not remove {}: {err:#}", display_path(&path));
+        }
+    }
 }
 
 fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
@@ -1919,10 +2051,82 @@ explicit_backend = true
 
 #[cfg(test)]
 mod credential_tests {
-    use super::persistent_opts;
+    use super::{credential_named_dir, persistent_opts, remove_credential_named_installs_in};
     use crate::args::BackendArg;
     use crate::toolset::ToolVersionOptions;
     use crate::toolset::tool_version_options::strip_option_credentials as strip_url_credentials;
+
+    #[test]
+    fn credential_named_dir_only_for_urls_with_credentials() {
+        assert_eq!(
+            credential_named_dir("cargo:https://bot:t0ken@host/r.git").as_deref(),
+            Some("cargo-https-bot-t0ken-host-r-git")
+        );
+        assert_eq!(credential_named_dir("cargo:https://host/r.git"), None);
+        assert_eq!(credential_named_dir("cargo:ssh://git@host/r.git"), None);
+        assert_eq!(credential_named_dir("npm:@antfu/ni"), None);
+    }
+
+    /// The credential-named copy of a version goes once the tool's own
+    /// directory has it, with the links into it; nothing is followed out.
+    #[cfg(unix)]
+    #[test]
+    fn credential_named_installs_are_removed_once_installed_cleanly() {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path().join("installs");
+        let shims = tmp.path().join("shims");
+        let outside = tmp.path().join("outside");
+        let named = installs.join("named");
+        for dir in [
+            named.join("1.0.0/bin"),
+            named.join("2.0.0"),
+            installs.join("clean/1.0.0"),
+            shims.clone(),
+            outside.clone(),
+        ] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(named.join("1.0.0/bin/tool"), "").unwrap();
+        std::fs::write(named.join(".mise.backend.toml"), "").unwrap();
+        std::fs::write(outside.join("keep"), "").unwrap();
+        symlink(&outside, named.join("1.0.0/escape")).unwrap();
+        symlink("./1.0.0", named.join("latest")).unwrap();
+        symlink("./2.0.0", named.join("2")).unwrap();
+        symlink(named.join("1.0.0/bin/tool"), shims.join("tool")).unwrap();
+        symlink(outside.join("keep"), shims.join("other")).unwrap();
+
+        remove_credential_named_installs_in(&installs, "named", "clean", &[shims.clone()]);
+
+        assert!(!named.join("1.0.0").exists());
+        assert!(named.join("latest").symlink_metadata().is_err());
+        assert!(named.join("2.0.0").is_dir(), "not installed cleanly yet");
+        assert!(named.join("2").symlink_metadata().is_ok());
+        assert!(shims.join("tool").symlink_metadata().is_err());
+        assert!(shims.join("other").symlink_metadata().is_ok());
+        assert!(outside.join("keep").exists(), "a symlink was followed");
+
+        std::fs::create_dir_all(installs.join("clean/2.0.0")).unwrap();
+        remove_credential_named_installs_in(&installs, "named", "clean", &[shims.clone()]);
+        assert!(named.symlink_metadata().is_err());
+        assert!(installs.join("clean/2.0.0").is_dir());
+    }
+
+    /// A credential-named entry that is a symlink is not followed.
+    #[cfg(unix)]
+    #[test]
+    fn credential_named_symlink_is_left_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path().join("installs");
+        let elsewhere = tmp.path().join("elsewhere");
+        std::fs::create_dir_all(elsewhere.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(installs.join("clean/1.0.0")).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, installs.join("named")).unwrap();
+
+        remove_credential_named_installs_in(&installs, "named", "clean", &[]);
+
+        assert!(elsewhere.join("1.0.0").is_dir());
+    }
 
     /// These manifests live under the data directory, which is backed up and
     /// synced, so a registry URL must not carry its token onto disk. Templating

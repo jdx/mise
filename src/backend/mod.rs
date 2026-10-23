@@ -5214,6 +5214,7 @@ pub trait Backend: Debug + Send + Sync {
             if install_path.starts_with(*dirs::INSTALLS)
                 || crate::install_layout::resolver::is_primary_install(&install_path)
             {
+                install_state::remove_credential_named_installs(&self.ba().short);
                 install_state::write_backend_meta(self.ba())?;
                 update_install_state = true;
             } else if env::install_path_category(&install_path) != env::InstallPathCategory::Local {
