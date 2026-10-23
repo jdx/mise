@@ -223,6 +223,7 @@ impl HookEnv {
             hook_env::clear_untrusted_config_warning(&mut patches);
         }
 
+        hook_env::ensure_env_fits(&patches)?;
         let output = hook_env::build_env_commands(&*shell, &patches);
         miseprint!("{output}")?;
         if !untrusted_configs.is_empty()

@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::BTreeSet, sync::Arc};
 
 use base64::prelude::*;
-use eyre::Result;
+use eyre::{Result, bail};
 use flate2::Compression;
 use flate2::write::{ZlibDecoder, ZlibEncoder};
 use indexmap::IndexSet;
@@ -840,6 +840,30 @@ fn compute_deactivated_path() -> String {
         .unwrap_or(pristine_path)
 }
 
+/// Linux refuses every `execve` while one `NAME=value` string of the
+/// environment, with its terminating NUL, is longer than this
+/// (`MAX_ARG_STRLEN`). Other systems cap arguments and environment together
+/// (1 MiB on macOS), which a variable this large eats much of.
+const MAX_ENV_STRING_LEN: usize = 128 * 1024;
+
+/// Refuse patches that would leave the shell unable to start any program,
+/// including the next `mise hook-env` that could replace the variable. Files
+/// that load without trust decide the size of `__MISE_SESSION` (one entry per
+/// config file) and of `PATH` (one entry per requested tool version).
+pub fn ensure_env_fits(patches: &EnvDiffPatches) -> Result<()> {
+    for patch in patches {
+        if let EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) = patch
+            && k.len() + v.len() + 2 > MAX_ENV_STRING_LEN
+        {
+            bail!(
+                "not applying the environment for this directory: {k} would be {} bytes, and no program can be started with an environment variable of {MAX_ENV_STRING_LEN} bytes or more",
+                v.len()
+            );
+        }
+    }
+    Ok(())
+}
+
 pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String {
     let mut output = String::new();
 
@@ -900,6 +924,21 @@ mod tests {
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn ensure_env_fits_rejects_a_variable_execve_would_refuse() {
+        use super::{MAX_ENV_STRING_LEN, ensure_env_fits};
+        use crate::env_diff::EnvDiffOperation::{Add, Change, Remove};
+
+        // `K=` and the terminating NUL count towards the limit
+        let fits = "v".repeat(MAX_ENV_STRING_LEN - 3);
+        let too_long = "v".repeat(MAX_ENV_STRING_LEN - 2);
+        let k = || "K".to_string();
+        let ok = vec![Add(k(), fits.clone()), Change(k(), fits), Remove(k())];
+        assert!(ensure_env_fits(&ok).is_ok());
+        assert!(ensure_env_fits(&vec![Add(k(), too_long.clone())]).is_err());
+        assert!(ensure_env_fits(&vec![Change(k(), too_long)]).is_err());
     }
 
     #[test]
