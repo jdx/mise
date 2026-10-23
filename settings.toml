@@ -3289,8 +3289,8 @@ with an error. It skips hooks, as `--no-hooks` does, and ignores project
 `[env]`, `[shell_alias]`, `[settings]`, `[deps]`, lazy tools, `path:` versions,
 remote includes, `[bootstrap]` and `[dotfiles]`, so a repository cannot turn off
 verification, redirect a backend, run its dependency providers or write files
-into your home directory. Project templates see an empty `env`, a project
-`api_url` or `version_list_url` gets none of your forge tokens or netrc
+into your home directory. Project templates see an empty `env`, the hosts a
+project `api_url` or download URL names get none of your forge tokens or netrc
 credentials, and a project `[tool_alias]` cannot redirect a tool global config
 declares.
 Global and system config still apply. Version resolution and `mise.lock`

@@ -510,8 +510,9 @@ impl ToolRequest {
 
     /// In safe mode, records the hosts this request's options send requests to, so that the
     /// operator's credentials stay away from hosts project config chose: a project `api_url`
-    /// gets no forge token and a project `version_list_url` no netrc credentials. An `api_url`
-    /// in global or system config is the operator's and keeps its token.
+    /// gets no forge token, and a project `url`, `checksum_url`, `version_list_url` or
+    /// `version_date_url` no netrc credentials. The same options in global or system config
+    /// are the operator's and keep theirs.
     pub(crate) fn record_safe_mode_credential_hosts(&self) {
         if !Settings::safe_mode() {
             return;
@@ -965,10 +966,12 @@ pub(crate) fn record_safe_mode_credential_hosts(
             toml::Value::String(url) => match key {
                 "api_url" if project => mise_util::untrusted_hosts::deny_forge_token_for_url(url),
                 "api_url" => mise_util::untrusted_hosts::allow_forge_token_for_url(url),
-                "version_list_url" if project => {
+                "url" | "checksum_url" | "version_list_url" | "version_date_url" if project => {
                     mise_util::untrusted_hosts::deny_netrc_for_url(url)
                 }
-                "version_list_url" => mise_util::untrusted_hosts::allow_netrc_for_url(url),
+                "url" | "checksum_url" | "version_list_url" | "version_date_url" => {
+                    mise_util::untrusted_hosts::allow_netrc_for_url(url)
+                }
                 _ => {}
             },
             toml::Value::Table(table) => {
