@@ -68,6 +68,9 @@ cat <<EOF2 >spm/mise.toml
 [tools]
 "spm:http://127.0.0.1:${sink_port}/o/r.git" = "latest"
 EOF2
+# GITHUB_TOKEN is still exported from above; the Enterprise token is what a
+# non-github.com host would get first.
+export MISE_GITHUB_ENTERPRISE_TOKEN=ghes_inline_option_secret
 export GITLAB_TOKEN=glpat_inline_option_secret
 for cmd in ls outdated; do
   assert_fail_contains "cd spm && MISE_YES=0 mise $cmd 2>&1" "not trusted"
