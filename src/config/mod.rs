@@ -5128,7 +5128,6 @@ pub async fn untrusted_task_reached(
     config: &Arc<Config>,
     roots: Vec<Task>,
 ) -> Result<Option<Task>> {
-    let all_tasks = config.tasks().await?;
     // A task reached with other arguments can depend on other tasks, so it counts again.
     let mut seen: HashSet<(String, Vec<String>)> = HashSet::new();
     let mut pending = roots;
@@ -5142,26 +5141,30 @@ pub async fn untrusted_task_reached(
             if !seen.insert((task.name.clone(), task.args.clone())) {
                 continue;
             }
-            // Named and given arguments the way the executor injects them: the entry's `args`
-            // when it has some, else the ones written after the name.
+            // Resolved by the executor's own lookup, so the tasks found here are the ones it
+            // would start, with the arguments it would give them.
             for entry in task.run() {
                 let (specs, entry_args) = match entry {
                     RunEntry::Script(_) => (&[][..], None),
                     RunEntry::SingleTask { task, args, .. } => (
                         std::slice::from_ref(task),
-                        (!args.is_empty()).then_some(args),
+                        (!args.is_empty()).then_some(args.as_slice()),
                     ),
                     RunEntry::TaskGroup { tasks } => (tasks.as_slice(), None),
                 };
                 for spec in specs {
                     let spec = crate::task::resolve_task_pattern(spec, Some(task));
-                    let (name, inline_args) = crate::task::task_list::split_task_spec(&spec);
-                    let args = entry_args.cloned().unwrap_or(inline_args);
-                    pending.extend(all_tasks.values().filter(|t| t.is_match(name)).map(|t| {
-                        let mut t = t.clone();
-                        t.args = args.clone();
-                        t
-                    }));
+                    // A name that does not resolve as written, such as a template the executor
+                    // renders first, is left to the executor's own check when it runs.
+                    if let Ok(tasks) = crate::task::task_executor::resolve_injected_tasks(
+                        config,
+                        &[spec],
+                        entry_args,
+                    )
+                    .await
+                    {
+                        pending.extend(tasks);
+                    }
                 }
             }
         }
