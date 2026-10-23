@@ -1147,9 +1147,11 @@ fn selection_already_made(tv: &ToolVersion) -> bool {
     tv.resolved_from_lockfile() || tv.request_pinned_this_version()
 }
 
+/// Refuse a release newer than the cutoff; see [`verified_age_allowed`].
 fn check_verified_age(
     logged_at: Option<&str>,
     published_at: &str,
+    allow_unlogged: bool,
     before: Option<jiff::Timestamp>,
 ) -> Result<()> {
     let Some(before) = before else {
@@ -1157,9 +1159,12 @@ fn check_verified_age(
     };
     let (time, source) = match logged_at {
         Some(time) => (time, "transparency log"),
-        None => (published_at, "unlogged manifest"),
+        None if allow_unlogged => (published_at, "unlogged manifest"),
+        None => bail!(
+            "packslip release has no transparency-log time, so only the manifest itself says how old it is; refusing to bypass minimum_release_age"
+        ),
     };
-    if !verified_age_allowed(logged_at, published_at, Some(before))? {
+    if !verified_age_allowed(logged_at, published_at, allow_unlogged, Some(before))? {
         bail!(
             "packslip release was recorded by the {source} at {time}, after the allowed cutoff {before}; refusing to bypass minimum_release_age"
         );
@@ -1183,16 +1188,26 @@ fn refuse_if_withdrawn(project: &str, version: &str, entry: &ReleaseRef) -> Resu
     Ok(())
 }
 
+/// Whether a release is old enough for the cutoff, by the time the
+/// transparency log recorded it. The manifest's own `published_at` dates it
+/// only when the user agreed to take unlogged bundles (`allow_unlogged`):
+/// a logged bundle can verify while its entry carries no time, and with
+/// nothing else to date it by, it is too new.
 fn verified_age_allowed(
     logged_at: Option<&str>,
     published_at: &str,
+    allow_unlogged: bool,
     before: Option<jiff::Timestamp>,
 ) -> Result<bool> {
     let Some(before) = before else {
         return Ok(true);
     };
-    let recorded: jiff::Timestamp = logged_at
-        .unwrap_or(published_at)
+    let recorded = match logged_at {
+        Some(time) => time,
+        None if allow_unlogged => published_at,
+        None => return Ok(false),
+    };
+    let recorded: jiff::Timestamp = recorded
         .parse()
         .wrap_err("invalid verified packslip timestamp")?;
     Ok(recorded <= before)
@@ -1842,6 +1857,7 @@ impl PackslipBackend {
         let past_cutoff = !verified_age_allowed(
             verified.logged_at.as_deref(),
             &verified.published_at,
+            opts.allow_unlogged(),
             before,
         )?;
         // An installed version is checked against the host too, so that
@@ -2255,6 +2271,7 @@ impl PackslipBackend {
         check_verified_age(
             verified.logged_at.as_deref(),
             &verified.published_at,
+            opts.allow_unlogged(),
             before,
         )?;
 
@@ -2801,6 +2818,7 @@ impl Backend for PackslipBackend {
         check_verified_age(
             verified.logged_at.as_deref(),
             &verified.published_at,
+            opts.allow_unlogged(),
             before,
         )?;
         let host = HostPlatform::from_platform(&target.platform);
@@ -3974,13 +3992,29 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
         let before = Some("2026-09-03T00:00:00Z".parse().unwrap());
         let old = "2026-09-01T00:00:00Z";
         let new = "2026-09-04T00:00:00Z";
-        assert!(check_verified_age(Some(new), old, before).is_err());
-        assert!(check_verified_age(Some(old), new, before).is_ok());
-        assert!(check_verified_age(None, old, before).is_ok());
-        assert!(check_verified_age(None, new, before).is_err());
-        assert!(check_verified_age(Some(new), old, None).is_ok());
-        assert!(check_verified_age(Some("invalid"), old, before).is_err());
-        assert!(check_verified_age(Some("2026-09-03T00:00:00Z"), old, before).is_ok());
+        for allow_unlogged in [false, true] {
+            assert!(check_verified_age(Some(new), old, allow_unlogged, before).is_err());
+            assert!(check_verified_age(Some(old), new, allow_unlogged, before).is_ok());
+            assert!(check_verified_age(Some(new), old, allow_unlogged, None).is_ok());
+            assert!(check_verified_age(Some("invalid"), old, allow_unlogged, before).is_err());
+            assert!(
+                check_verified_age(Some("2026-09-03T00:00:00Z"), old, allow_unlogged, before)
+                    .is_ok()
+            );
+            assert!(check_verified_age(None, new, allow_unlogged, before).is_err());
+        }
+        // Only a bundle the user agreed to take unlogged is dated by its
+        // manifest. A logged bundle whose entry carries no time has nothing
+        // else to go by, so it is too new for a cutoff.
+        assert!(check_verified_age(None, old, true, before).is_ok());
+        let err = check_verified_age(None, old, false, before).unwrap_err();
+        assert!(
+            err.to_string().contains("no transparency-log time"),
+            "{err}"
+        );
+        assert!(verified_age_allowed(None, old, true, before).unwrap());
+        assert!(!verified_age_allowed(None, old, false, before).unwrap());
+        assert!(check_verified_age(None, old, false, None).is_ok());
     }
 
     #[test]

@@ -195,7 +195,8 @@ applies to packslip tools as to other backends; see
 itself. Discovery timestamps filter candidates first. Before downloading an
 artifact, mise checks the verified transparency-log timestamp against the
 cutoff; only an explicitly allowed unlogged bundle uses the signed publication
-timestamp instead.
+timestamp instead. A logged bundle whose entry carries no verified time is
+treated as too new rather than dated by the manifest's own word.
 
 The cutoff decides which release a version request may pick, so it does not
 apply to a release that is already chosen. An exact pin such as
