@@ -13,6 +13,11 @@ assert_fail "mise ssh devbox --github-relay-read-only --github-relay-all-repos -
 assert_fail "mise bootstrap remote --host devbox --adopt owner/repo --source ."
 assert_fail "mise bootstrap remote --adopt owner/repo"
 assert_fail "mise bootstrap remote --host devbox --adopt not/a/repository --dry-run"
+# A directory in the current project must not stand in for the GitHub repository.
+mkdir -p owner/repo
+assert_fail "mise bootstrap remote --host devbox --adopt owner/repo --dry-run" "both a GitHub repository and a local path"
+assert_fail "mise bootstrap --adopt owner/repo --dry-run" "both a GitHub repository and a local path"
+rm -rf owner
 # A dry run fetches the repository like a real run; an unreachable one fails
 # before any connection is made.
 assert_fail "mise bootstrap remote --host devbox --adopt file://$PWD/missing.git --dry-run" "could not fetch setup repository"

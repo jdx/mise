@@ -140,17 +140,27 @@ fn repository(value: &str) -> Result<String> {
 
 /// Expand only unambiguous shorthand, preserving paths and explicit transports.
 pub fn expand_repository(value: &str) -> Result<String> {
-    if value.contains(':')
-        || value.starts_with(['/', '.', '~'])
-        || std::path::Path::new(value).exists()
-    {
+    if value.contains(':') || value.starts_with(['/', '.', '~']) {
         return Ok(value.to_string());
     }
-    repository(value)?;
-    Ok(format!(
+    // The working directory may be an untrusted project, so its contents must
+    // not choose between GitHub and a local clone for the same OWNER/REPO.
+    let exists = std::path::Path::new(value).exists();
+    if let Err(error) = repository(value) {
+        return if exists {
+            Ok(value.to_string())
+        } else {
+            Err(error)
+        };
+    }
+    let url = format!(
         "https://github.com/{}.git",
         value.strip_suffix(".git").unwrap_or(value)
-    ))
+    );
+    if exists {
+        bail!("{value} is both a GitHub repository and a local path; use {url} or ./{value}");
+    }
+    Ok(url)
 }
 
 #[derive(Debug, PartialEq)]
@@ -1446,6 +1456,13 @@ mod tests {
             assert_eq!(expand_repository(value).unwrap(), value);
         }
         assert!(expand_repository("not/a/repository").is_err());
+        // Tests run from the crate root, so these exist relative to it. Only a
+        // path that cannot be shorthand is taken as one without a leading `./`.
+        for value in ["src", "src/git/tests"] {
+            assert_eq!(expand_repository(value).unwrap(), value);
+        }
+        let error = expand_repository("src/git").unwrap_err().to_string();
+        assert!(error.contains("./src/git"), "{error}");
     }
 
     #[test]
