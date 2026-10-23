@@ -4452,6 +4452,11 @@ They override trust prompts you declined and `mise trust --ignore`, but
 [`ignored_config_paths`](#ignored_config_paths) still stops configs from
 loading. Paranoid mode still trusts these paths, without tying trust to file
 contents. See [Trust by path](/security.html#trust-by-path).
+
+mise resolves each entry on disk when it checks a config that isn't already
+trusted, so entries on autofs or network mounts (such as `/home/...` on macOS,
+which is an autofs mount) add a filesystem lookup each. Use `~/...` or a path
+that exists locally instead.
 """
 env = "MISE_TRUSTED_CONFIG_PATHS"
 global_only = true
