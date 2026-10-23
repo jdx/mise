@@ -521,25 +521,27 @@ fn read_glab_hosts() -> Option<HashMap<String, String>> {
             return None;
         }
     };
-    let expired = warn_glab_expired_tokens(&contents);
-    match tokens::yaml_hosts_to_tokens(&contents) {
-        Some(mut tokens) => {
-            // An expired OAuth2 token only earns a 401, so fall through to an
-            // unauthenticated request rather than send it.
-            // Only drop the host when the selected token is the expired one; a valid
-            // token for the same host from another config section must survive.
-            for (host, expired_token) in expired {
-                if tokens.get(&host) == Some(&expired_token) {
-                    tokens.remove(&host);
-                }
-            }
-            Some(tokens)
-        }
-        None => {
-            debug!("failed to parse glab config.yml at {}", path.display());
-            None
+    let hosts = glab_usable_tokens(&contents);
+    if hosts.is_none() {
+        debug!("failed to parse glab config.yml at {}", path.display());
+    }
+    hosts
+}
+
+/// Parse glab's config into host tokens, warning about and dropping expired OAuth2 tokens.
+fn glab_usable_tokens(contents: &str) -> Option<HashMap<String, String>> {
+    let expired = warn_glab_expired_tokens(contents);
+    let mut tokens = tokens::yaml_hosts_to_tokens(contents)?;
+    // An expired OAuth2 token only earns a 401, so fall through to an
+    // unauthenticated request rather than send it.
+    // Only drop the host when the selected token is the expired one; a valid
+    // token for the same host from another config section must survive.
+    for (host, expired_token) in expired {
+        if tokens.get(&host) == Some(&expired_token) {
+            tokens.remove(&host);
         }
     }
+    Some(tokens)
 }
 
 /// Warn if any glab OAuth2 tokens are expired.
@@ -654,7 +656,7 @@ hosts:
     }
 
     #[test]
-    fn test_read_glab_hosts_keeps_valid_login_over_expired_host_token() {
+    fn test_glab_usable_tokens_keeps_valid_login_over_expired_host_token() {
         let yaml = r#"
 hosts:
   gitlab.com:
@@ -665,13 +667,7 @@ logins:
   - name: gitlab.com
     token: glpat-valid
 "#;
-        let expired = warn_glab_expired_tokens(yaml);
-        let mut tokens = tokens::yaml_hosts_to_tokens(yaml).unwrap();
-        for (host, expired_token) in expired {
-            if tokens.get(&host) == Some(&expired_token) {
-                tokens.remove(&host);
-            }
-        }
+        let tokens = glab_usable_tokens(yaml).unwrap();
         assert_eq!(tokens.get("gitlab.com").unwrap(), "glpat-valid");
     }
 
