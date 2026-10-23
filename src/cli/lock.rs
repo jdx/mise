@@ -2068,7 +2068,7 @@ impl Lock {
         };
         for (ba, tv) in tools.iter().filter(|(ba, _)| named(ba)) {
             current_versions
-                .entry(ba.short.clone())
+                .entry(crate::toolset::install_state::state_short(&ba.short).into_owned())
                 .or_default()
                 .insert(tv.version.clone());
         }
@@ -2933,7 +2933,9 @@ impl Lock {
             completed += 1;
             match result {
                 Ok(resolution) => {
-                    let short = resolution.0.clone();
+                    // Named the way the lockfile keys the tool.
+                    let short =
+                        crate::toolset::install_state::state_short(&resolution.0).into_owned();
                     let version = resolution.1.clone();
                     let platform_key = resolution.3.to_key();
                     let resolution_error = resolution.4.as_ref().err().cloned();

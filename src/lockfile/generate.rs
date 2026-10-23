@@ -396,7 +396,11 @@ pub async fn generate(
         tool_stubs: previous.tool_stubs.clone(),
         ..Default::default()
     };
-    let selected: BTreeSet<_> = tools.iter().map(|(ba, _)| ba.short.as_str()).collect();
+    // Compared with lockfile keys, which are credential-free.
+    let selected: BTreeSet<String> = tools
+        .iter()
+        .map(|(ba, _)| crate::toolset::install_state::state_short(&ba.short).into_owned())
+        .collect();
     let mut targets = Vec::new();
     let mut keys = BTreeSet::new();
     for (ba, tv) in tools {
@@ -405,7 +409,10 @@ pub async fn generate(
             for platform in backend.platform_variants_for(tv, platform) {
                 let options = backend
                     .lockfile_options(&tv.request, &PlatformTarget::new(platform.clone()))?;
-                keys.insert((ba.short.clone(), platform.to_key()));
+                keys.insert((
+                    crate::toolset::install_state::state_short(&ba.short).into_owned(),
+                    platform.to_key(),
+                ));
                 targets.push((ba.clone(), tv.clone(), platform, options));
             }
         }
@@ -413,7 +420,7 @@ pub async fn generate(
     for (short, entries) in &previous.tools {
         for entry in entries {
             let mut untouched = entry.clone();
-            if selected.contains(short.as_str()) {
+            if selected.contains(short) {
                 if !matches!(platform_selection, PlatformSelection::Explicit(_)) {
                     continue;
                 }
@@ -488,7 +495,7 @@ pub async fn generate(
                 ordinal,
                 tv.request.version(),
                 (
-                    ba.short.clone(),
+                    crate::toolset::install_state::state_short(&ba.short).into_owned(),
                     tv.version.clone(),
                     ba.stored_full(),
                     platform,
@@ -505,7 +512,7 @@ pub async fn generate(
             let _permit = semaphore.acquire().await?;
             let mut resolution = if let Some(info) = actual {
                 (
-                    ba.short.clone(),
+                    crate::toolset::install_state::state_short(&ba.short).into_owned(),
                     tv.version.clone(),
                     ba.stored_full(),
                     platform,
@@ -655,13 +662,13 @@ pub async fn populate_aube_locks(
         return Ok(());
     }
     if !crate::backend::npm::NPMBackend::uses_embedded_aube() {
-        let selected_npm_tools: BTreeSet<_> = tools
+        let selected_npm_tools: BTreeSet<String> = tools
             .iter()
             .filter(|(ba, _)| ba.backend_type() == BackendType::Npm)
-            .map(|(ba, _)| ba.short.as_str())
+            .map(|(ba, _)| crate::toolset::install_state::state_short(&ba.short).into_owned())
             .collect();
         for (short, entries) in &mut lockfile.tools {
-            if selected_npm_tools.contains(short.as_str()) {
+            if selected_npm_tools.contains(short) {
                 for entry in entries {
                     entry.aube = None;
                 }
@@ -1452,6 +1459,73 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(old.tools, generated.tools);
+    }
+
+    /// A tool configured with URL credentials is selected under its
+    /// credential-free lockfile key, so neither a partial run nor explicit
+    /// platforms keep its old entry as untouched next to the new one.
+    #[tokio::test]
+    async fn a_credentialed_tool_is_selected_by_its_lockfile_key() {
+        crate::backend::load_tools().await.unwrap();
+        let raw = "http:https://ci:t0ken@example.invalid/fixture";
+        let clean = "http:https://example.invalid/fixture";
+        let ba = BackendArg::new(raw.into(), Some(raw.into()));
+        let request = ToolRequest::new_with_options(
+            Arc::new(ba.clone()),
+            "1",
+            ToolVersionOptions::default(),
+            ToolSource::Argument,
+        )
+        .unwrap();
+        let tool = (ba, ToolVersion::new(request, "1.0".into()));
+        let mut old = Lockfile::default();
+        for platform in ["linux-x64", "macos-arm64"] {
+            old.set_platform_info(
+                clean,
+                "1.0",
+                Some(clean),
+                &BTreeMap::new(),
+                platform,
+                PlatformInfo {
+                    url: Some("https://example.invalid/never-download".into()),
+                    checksum: Some("sha256:unchanged".into()),
+                    provenance_verified: Some(false),
+                    ..Default::default()
+                },
+            );
+        }
+        let linux = [Platform::parse("linux-x64").unwrap()];
+        for (retain, selection) in [
+            (true, PlatformSelection::Default),
+            (false, PlatformSelection::Explicit(BTreeSet::new())),
+        ] {
+            let generated = generate(
+                &old,
+                std::slice::from_ref(&tool),
+                &linux,
+                retain,
+                selection,
+                1,
+                &[],
+            )
+            .await
+            .unwrap();
+            assert_eq!(generated.tools.keys().collect::<Vec<_>>(), [clean]);
+            assert_eq!(generated.tools[clean].len(), 1, "{:?}", generated.tools);
+            // A selected tool is rebuilt for the targeted platforms; only an
+            // explicit platform selection carries the others forward.
+            let platforms = generated.tools[clean][0]
+                .platforms
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
+            let expected: &[&str] = if retain {
+                &["linux-x64"]
+            } else {
+                &["linux-x64", "macos-arm64"]
+            };
+            assert_eq!(platforms, expected, "retain={retain}");
+        }
     }
 
     #[tokio::test]
