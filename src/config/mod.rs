@@ -2083,17 +2083,6 @@ fn monorepo_lockfile_root_for(config_files: &ConfigMap) -> Option<PathBuf> {
         return None;
     }
     let monorepo_root = config.root;
-    // The root config's own lockfile stays where it lives without monorepo mode
-    // (`.config/mise.toml` -> `.config/mise.lock`); descendants share it.
-    let (root_lockfile, _) =
-        lockfile::lockfile_path_for_config(config.root_config.get_path(), None);
-    if let Some(dir) = root_lockfile.parent() {
-        MONOREPO_LOCKFILE_DIRS
-            .lock()
-            .unwrap()
-            .insert(monorepo_root.clone(), dir.to_path_buf());
-    }
-
     // An explicit opt-in always routes descendant configs to the root
     // lockfile, even when config_roots cannot be resolved. Avoid expanding
     // config_roots here because this method is called for every tool during
@@ -2112,14 +2101,31 @@ fn monorepo_lockfile_root_for(config_files: &ConfigMap) -> Option<PathBuf> {
 static MONOREPO_LOCKFILE_DIRS: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> = Lazy::new(Default::default);
 
 /// The directory holding the shared lockfile of the monorepo rooted at `root`:
-/// the lockfile directory of the config that declares `monorepo_root = true`.
+/// where the root's own base config keeps its lockfile without monorepo mode
+/// (`.config/mise.toml` -> `.config/`). It depends only on the files in `root`,
+/// not on which config views are loaded, so every lookup agrees.
 pub fn monorepo_lockfile_dir(root: &Path) -> PathBuf {
+    if let Some(dir) = MONOREPO_LOCKFILE_DIRS.lock().unwrap().get(root) {
+        return dir.clone();
+    }
+    let dir = config_paths_in_dir(root)
+        .into_iter()
+        .filter(|path| {
+            path.extension().is_some_and(|ext| ext == "toml")
+                && !lockfile::is_local_config(path)
+                && lockfile::extract_env_from_config_path(path).is_none()
+                && !is_conf_d_folder_file(path)
+        })
+        .find_map(|path| {
+            let (lockfile, _) = lockfile::lockfile_path_for_config(&path, None);
+            lockfile.parent().map(Path::to_path_buf)
+        })
+        .unwrap_or_else(|| root.to_path_buf());
     MONOREPO_LOCKFILE_DIRS
         .lock()
         .unwrap()
-        .get(root)
-        .cloned()
-        .unwrap_or_else(|| root.to_path_buf())
+        .insert(root.to_path_buf(), dir.clone());
+    dir
 }
 
 fn monorepo_config_root_dirs_for(
