@@ -136,15 +136,39 @@ fn dedup_key(path: &std::path::Path) -> PathBuf {
 /// on another disk, are the user's own.
 #[cfg(unix)]
 fn symlink_check_roots(cwd: &std::path::Path, project_roots: &[&std::path::Path]) -> Vec<PathBuf> {
-    let home = crate::dirs::HOME.canonicalize().ok();
+    let home: &std::path::Path = &crate::dirs::HOME;
     let mut roots: Vec<PathBuf> = std::iter::once(cwd)
         .chain(project_roots.iter().copied())
         .filter_map(|root| root.canonicalize().ok())
-        .filter(|root| !home.as_ref().is_some_and(|home| home.starts_with(root)))
+        .filter(|root| {
+            !file_identity(root).is_some_and(|root| is_within(home, &root, file_identity))
+        })
         .collect();
     roots.sort();
     roots.dedup();
     roots
+}
+
+/// Which file a path names, independent of how it is spelled: a
+/// case-insensitive volume (the macOS default) accepts `PROJECT` for
+/// `project`, so comparing spellings would miss that both are one directory.
+#[cfg(unix)]
+fn file_identity(path: &std::path::Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path)
+        .ok()
+        .map(|meta| (meta.dev(), meta.ino()))
+}
+
+/// Whether `path` or one of its ancestors is the directory identified by `dir`.
+#[cfg(unix)]
+fn is_within<I: PartialEq>(
+    path: &std::path::Path,
+    dir: &I,
+    identity: impl Fn(&std::path::Path) -> Option<I>,
+) -> bool {
+    path.ancestors()
+        .any(|ancestor| identity(ancestor).as_ref() == Some(dir))
 }
 
 /// Refuse an allow-list path when a symlink inside one of `roots` leads out of
@@ -155,10 +179,26 @@ fn symlink_check_roots(cwd: &std::path::Path, project_roots: &[&std::path::Path]
 /// (`/var` -> `/private/var` on macOS), and so is a link that stays in its
 /// root. This walks the path the way the kernel will, so the check does not
 /// depend on how the path was spelled: relative, absolute, through `..`, or
-/// from a template.
+/// from a template. Containment is decided by file identity, not by comparing
+/// spellings, which a case-insensitive volume would defeat.
 #[cfg(unix)]
 fn check_symlinks_stay_in_roots(path: &std::path::Path, roots: &[PathBuf]) -> eyre::Result<()> {
+    check_symlinks_stay_in_roots_by(path, roots, file_identity)
+}
+
+/// [`check_symlinks_stay_in_roots`] with the notion of "same directory"
+/// passed in, so tests can model a case-insensitive volume.
+#[cfg(unix)]
+fn check_symlinks_stay_in_roots_by<I: PartialEq>(
+    path: &std::path::Path,
+    roots: &[PathBuf],
+    identity: impl Fn(&std::path::Path) -> Option<I> + Copy,
+) -> eyre::Result<()> {
     use std::path::Component;
+    let roots: Vec<(&PathBuf, I)> = roots
+        .iter()
+        .filter_map(|root| identity(root).map(|id| (root, id)))
+        .collect();
     let mut resolved = PathBuf::new();
     for component in path.components() {
         match component {
@@ -177,10 +217,13 @@ fn check_symlinks_stay_in_roots(path: &std::path::Path, roots: &[PathBuf]) -> ey
                         let Ok(target) = candidate.canonicalize() else {
                             return Ok(());
                         };
-                        if let Some(root) = roots
-                            .iter()
-                            .find(|root| candidate.starts_with(root) && !target.starts_with(root))
-                        {
+                        // The link sits in a root when its directory is the
+                        // root or below it; it stays there when its target does.
+                        let link_dir = candidate.parent().unwrap_or(&candidate);
+                        if let Some((root, _)) = roots.iter().find(|(_, root)| {
+                            is_within(link_dir, root, identity)
+                                && !is_within(&target, root, identity)
+                        }) {
                             eyre::bail!(
                                 "sandbox: {} leads out of {} through the symlink {} -> {}.\n\
                                  A project can ship such a link to widen what the sandbox allows. \
@@ -884,6 +927,32 @@ mod tests {
         }
         // Without the project as a root, the same link is followed.
         check_symlinks_stay_in_roots(&project.join("dist"), &[]).unwrap();
+    }
+
+    /// On a case-insensitive volume `PROJECT/dist` is the project's `dist`, so
+    /// the guard must recognize the root by identity, not by spelling. Linux
+    /// has no such volume here: model one with an identity that ignores case,
+    /// and a second directory standing in for the other spelling.
+    #[cfg(unix)]
+    #[test]
+    fn test_check_symlinks_stay_in_roots_ignores_spelling() {
+        let root_dir = tempfile::tempdir().unwrap();
+        let tmp = root_dir.path().canonicalize().unwrap();
+        let project = tmp.join("project");
+        let other_spelling = tmp.join("PROJECT");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&other_spelling).unwrap();
+        std::os::unix::fs::symlink("/", other_spelling.join("dist")).unwrap();
+        let case_insensitive =
+            |path: &std::path::Path| path.exists().then(|| path.to_string_lossy().to_lowercase());
+
+        let err = check_symlinks_stay_in_roots_by(
+            &other_spelling.join("dist"),
+            std::slice::from_ref(&project),
+            case_insensitive,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("leads out of"), "{err}");
     }
 
     /// `resolve_paths` refuses the escaping path itself rather than dropping
