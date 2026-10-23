@@ -244,7 +244,9 @@ Version resolution keeps working for backends that query HTTP APIs, such as core
 tools, `aqua:`, `github:`, `gitlab:`, `http:`, `cargo:`, `pypi:`, `gem:`,
 `dotnet:` and `npm:`. The `go:` backend runs `go list` with
 `GOTOOLCHAIN=local`, so a project's `go.mod` cannot make Go download another
-toolchain. Listing installed tools and refreshing `mise.lock` work as usual.
+toolchain. Listing installed tools and refreshing `mise.lock` work as usual,
+except that a project's `mise.lock` is not written through a symlink that leaves
+its directory.
 
 Safe mode loads untrusted config without a prompt or an error, in paranoid mode
 too. It does not mark the config trusted for later runs without safe mode. Syntax

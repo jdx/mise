@@ -1552,7 +1552,15 @@ impl Lockfile {
 
             match fs::canonicalize(path) {
                 Ok(link_target) => {
-                    source_symlink = Some(graph::absolute(path));
+                    let link = graph::absolute(path);
+                    if !may_write_through_symlink(&link, &link_target) {
+                        bail!(
+                            "refusing to write lockfile {} through its symlink to {}: a link out of the lockfile's directory is only followed for global config, or for trusted config outside safe mode",
+                            display_path(path),
+                            display_path(&link_target)
+                        );
+                    }
+                    source_symlink = Some(link);
                     trace!(
                         "resolved lockfile symlink {} to {}",
                         display_path(path),
@@ -2432,6 +2440,66 @@ pub(crate) fn same_file_path(a: &Path, b: &Path) -> bool {
     a.file_name() == b.file_name()
         && canonical_dir(a).is_some()
         && canonical_dir(a) == canonical_dir(b)
+}
+
+/// Whether `lockfile` is where global or system config keeps its lockfile.
+/// Matched by where the file sits, not by what it resolves to: a project's
+/// lockfile or config linked to the global one is still project content.
+fn is_global_lockfile(lockfile: &Path) -> bool {
+    crate::config::global_config_files()
+        .iter()
+        .chain(&crate::config::override_config_files())
+        .chain(&crate::config::system_config_files())
+        .any(|config| same_file_path(&lockfile_path_for_config(config, None).0, lockfile))
+}
+
+/// Whether the user vouches for the lockfile at `lockfile`: it is the global
+/// or system lockfile, or a config in `config` that keeps its lock entries
+/// there is trusted.
+///
+/// A lockfile comes with its project's working tree, and a `mise.toml` that
+/// only lists plain tool versions loads without trust, so until the project
+/// is trusted its lockfile is no more trusted than it is.
+pub(crate) fn lockfile_is_trusted(config: &Config, lockfile: &Path) -> bool {
+    if is_global_lockfile(lockfile) {
+        return true;
+    }
+    let monorepo_root = config.monorepo_lockfile_root();
+    config.config_files.keys().any(|path| {
+        // `is_global_config` resolves symlinks, so it also holds for a
+        // project config linked to the global one; the global lockfile
+        // itself was matched by location above.
+        !crate::config::is_global_config(path)
+            // A legacy monorepo lockfile still belongs to the config beside it.
+            && [monorepo_root.as_deref(), None]
+                .into_iter()
+                .any(|root| same_file_path(&lockfile_path_for_config(path, root).0, lockfile))
+            && crate::config::config_file::is_path_trusted(path)
+    })
+}
+
+/// Whether writing the lockfile symlink `link` may replace `target`, the
+/// file it resolves to.
+///
+/// The link comes with the working tree, so in a checkout nobody trusted its
+/// author would choose which of the user's files the lockfile replaces. A
+/// link that stays in its own directory is followed regardless. One that
+/// leaves it, as a dotfiles deployment does, is followed only for the global
+/// or system lockfile, or for a trusted project outside safe mode, which
+/// keeps project config inert whether or not it is trusted.
+fn may_write_through_symlink(link: &Path, target: &Path) -> bool {
+    if link
+        .parent()
+        .and_then(|dir| fs::canonicalize(dir).ok())
+        .is_some_and(|dir| target.starts_with(dir))
+    {
+        return true;
+    }
+    if is_global_lockfile(link) {
+        return true;
+    }
+    !Settings::safe_mode()
+        && Config::maybe_get().is_some_and(|config| lockfile_is_trusted(&config, link))
 }
 
 /// Checks if a config path is a "local" config (should go to mise.local.lock)

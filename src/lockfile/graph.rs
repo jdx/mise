@@ -659,10 +659,11 @@ mod tests {
         for deploy_sidecars in [true, false] {
             let temp = tempfile::tempdir().unwrap();
             let root = temp.path().canonicalize().unwrap();
-            let repo = root.join("repo/mise");
+            // Below the link's directory: a link out of a temp dir, which is
+            // neither the global config nor a trusted project, is refused.
             let global = root.join(".config/mise");
+            let repo = global.join("repo/mise");
             std::fs::create_dir_all(&repo).unwrap();
-            std::fs::create_dir_all(&global).unwrap();
             let target = repo.join("mise.lock");
             let link = global.join("mise.lock");
             let mut lock = Lockfile::default();
@@ -677,7 +678,7 @@ mod tests {
             lock.tools.insert("pypi:fixture".into(), vec![py]);
             lock.tools.insert("npm:fixture".into(), vec![npm]);
             lock.save(&target).unwrap();
-            symlink("../../repo/mise/mise.lock", &link).unwrap();
+            symlink("repo/mise/mise.lock", &link).unwrap();
             let files = [
                 ".mise/locks/pypi-fixture/1.0.0/uv.lock",
                 ".mise/locks/pypi-fixture/1.0.0/pyproject.toml",
@@ -740,6 +741,34 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_out_of_an_unvouched_directory_is_not_written_through() {
+        // A checkout can commit mise.lock as a link to any file of the user.
+        // Nothing vouches for a link out of a temp dir: it is neither the
+        // global lockfile nor one a trusted config keeps.
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("home/config.toml");
+        let link = temp.path().join("checkout/mise.lock");
+        for path in [&target, &link] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        }
+        std::fs::write(&target, "[settings]\nparanoid = true\n").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let mut lock = Lockfile::read(&link).unwrap();
+        let mut tool = entry("pypi:fixture");
+        tool.uv = Some(uv().into());
+        lock.tools.insert("pypi:fixture".into(), vec![tool]);
+        let error = lock.save(&link).unwrap_err();
+        assert!(error.to_string().contains("refusing to write lockfile"));
+        assert!(link.is_symlink());
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "[settings]\nparanoid = true\n"
+        );
+        assert!(!sidecar_root(&target).exists());
     }
 
     #[cfg(unix)]
