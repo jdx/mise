@@ -513,7 +513,11 @@ pub async fn get_task_lists(
         let original_name = t.clone();
         let t = crate::task::expand_colon_task_syntax(&t, config)?;
 
-        if let Some(path) = script_path_arg(&t) {
+        // `mise mcp` passes a client's task name here, which must not become a script to run,
+        // even if a file by that path appears after the server checked the name.
+        if !*crate::env::MISE_TASK_NAMES_ONLY
+            && let Some(path) = script_path_arg(&t)
+        {
             let config_root = config
                 .project_root
                 .clone()

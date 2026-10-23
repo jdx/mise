@@ -338,6 +338,9 @@ impl MiseServer {
         }
 
         let mut command = mise_child(&cmd_args)?;
+        // The child looks the name up as a task only, never as the path of a script: the check in
+        // `validate_task_name` cannot see a file that appears before the child starts.
+        command.env(crate::env::MISE_TASK_NAMES_ONLY_ENV, "1");
         // Answers a task's `confirm` prompt. It cannot grant trust: the child
         // requires explicit trust, which ignores `yes`.
         command.env("MISE_YES", "1");
@@ -715,11 +718,11 @@ fn validate_task_name(task: &str) -> std::result::Result<(), ErrorData> {
 /// (`./`, `../`, `~/`, `.\`), absolute (`/x`, `\x`, UNC `\\host\share`) and drive (`C:\`,
 /// `C:/`) paths all count, and none of them is a task name. A leading `//` is the monorepo
 /// spelling (`//packages/app:build`), which names a task by its `:`; without one there is no
-/// task in it, only the path `mise run` makes of it by dropping a `/`. A monorepo name is still
-/// refused when it is the path of an existing file.
+/// task in it, only the path `mise run` makes of it by dropping a `/`. A monorepo name that is
+/// also the path of a file is no risk: the child `run_task` starts resolves names as tasks only.
 fn is_path_like(task: &str) -> bool {
     if task.starts_with("//") {
-        return !task.contains(':') || crate::task::task_list::script_path_arg(task).is_some();
+        return !task.contains(':');
     }
     xx::regex!(r"^((\.*|~)[/\\]|\w:[/\\])").is_match(task)
 }
