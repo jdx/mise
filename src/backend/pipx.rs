@@ -1287,6 +1287,9 @@ impl PIPXBackend {
                 .cache_path()
                 .join(format!("latest_version_info_{registry_hash}.msgpack.z")),
         )
+        // The directory is named by the kebab-cased short name, which two
+        // packages can share.
+        .with_cache_key(self.ba.full())
         .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
         .build()
     }

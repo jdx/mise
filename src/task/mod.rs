@@ -3521,7 +3521,10 @@ impl Task {
             vars: decl.vars,
             dir: decl.dir,
             hide: decl.hide.unwrap_or(false),
-            global: decl.global,
+            // Where the task was loaded from decides this, never the declaration: a
+            // project task that says `global = true` would otherwise pass for a global
+            // one, which safe mode and other checks trust.
+            global: self.global,
             raw: decl.raw.unwrap_or(false),
             raw_args: decl.raw_args.unwrap_or(false),
             interactive: decl.interactive.unwrap_or(false),
@@ -5544,6 +5547,24 @@ echo "hello world"
         assert!(!Task::from_decl(decl).run_windows_declared);
     }
 
+    /// A project task cannot pass for a global one by declaring it: safe mode
+    /// fetches only global tasks' remote files.
+    #[test]
+    fn test_declared_global_is_ignored() {
+        let decl: mise_config::task::TaskDecl =
+            toml::from_str("file = 'https://example.com/x.sh'\nglobal = true").unwrap();
+        assert!(!Task::from_decl(decl).global);
+
+        // Loading from a global config still marks it, after the declaration.
+        let decl: mise_config::task::TaskDecl = toml::from_str("run = 'echo hi'").unwrap();
+        let mut task = Task {
+            global: true,
+            ..Default::default()
+        };
+        task.apply_decl(decl);
+        assert!(task.global);
+    }
+
     #[test]
     fn test_resolve_task_pattern() {
         use super::resolve_task_pattern;
@@ -6693,7 +6714,8 @@ echo "test"
 
         assert_eq!(task.vars.0.len(), 1);
         assert_eq!(task.timeout, Some("5m".to_string()));
-        assert!(task.global);
+        // Where a task was loaded from makes it global, never its own header.
+        assert!(!task.global);
         assert_eq!(task.args, ["--verbose"]);
         assert!(
             task.deny_all && task.deny_read && task.deny_write && task.deny_net && task.deny_env

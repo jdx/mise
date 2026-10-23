@@ -428,6 +428,26 @@ only; npm and PyPI dependency graphs have their own checks.
 A `provenance` field is not proof that mise verified the bytes; see
 [provenance and verification](#provenance-and-security).
 
+### Checksums from mise-versions {#checksums}
+
+For a public GitHub repository, `mise lock` reads release metadata from
+[mise-versions](/configuration/settings.html#use_versions_host), including each
+asset's checksum, and records it without downloading the asset. Such a checksum
+is marked:
+
+```toml [mise.lock]
+[tools.ripgrep."platforms.linux-x64"]
+checksum = "sha256:…"
+checksum_source = "mise-versions"
+url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz"
+```
+
+mise compares a marked checksum with the file after a real download, as it does
+any checksum, but never uses it to reuse a kept download. Otherwise
+mise-versions could pick which file from the [download cache](#restored-caches)
+gets installed. A checksum that `mise lock` checked against a download, for a
+lock-time provenance check, is not marked. Older mise versions ignore the field.
+
 ## Dependency graphs
 
 Format version 2 and later lock the transitive dependencies of npm and PyPI
@@ -461,7 +481,10 @@ such as Ruby, the lockfile doesn't vouch for the compiled output, and a tool
 that downloads its own source may record no checksum for it at all.
 
 Downloads are different. mise keeps them in a cache and reuses one only when
-the server confirms it is unchanged, or when it hashes to a pinned checksum. A
+the server confirms it is unchanged, or when it hashes to a pinned checksum and
+was downloaded from the same URL. A lockfile checksum never hands back a file
+another URL served, and a [checksum from mise-versions](#checksums) never hands
+back a kept file at all. A
 pinned checksum is always checked after the download; without one, a cache that
 someone can write to is trusted. With `--locked`, only pinned downloads are
 reused, so a restored download cache is safe to trust. See

@@ -279,10 +279,12 @@ impl TasksValidate {
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
-        // A `git::` file left unfetched (experimental is off) can't be read, so its usage
-        // header and file are not checked; the rest of the task's TOML still is.
-        let unfetched = TaskFetcher::is_unfetched_git_task(task);
-        if unfetched {
+        // A remote file left unfetched (a `git::` file with experimental off, or any remote
+        // file of project config in safe mode) can't be read, so its usage header and file
+        // are not checked; the rest of the task's TOML still is.
+        let unfetched = TaskFetcher::is_unfetched_remote_task(task);
+        if TaskFetcher::is_unfetched_git_task(task) && !crate::config::Settings::get().experimental
+        {
             issues.push(ValidationIssue {
                 task: task.name.clone(),
                 severity: Severity::Warning,
@@ -292,6 +294,18 @@ impl TasksValidate {
                 details: Some(
                     "Enable it with `mise settings experimental=true` to validate the file"
                         .to_string(),
+                ),
+            });
+        } else if unfetched {
+            issues.push(ValidationIssue {
+                task: task.name.clone(),
+                severity: Severity::Warning,
+                category: "safe_mode".to_string(),
+                message:
+                    "Task file is a remote source, which safe mode does not fetch; not validated"
+                        .to_string(),
+                details: Some(
+                    "Run `mise tasks validate` without MISE_SAFE to validate the file".to_string(),
                 ),
             });
         }

@@ -10,7 +10,7 @@
 //!   request can ask the server whether it changed and take `304 Not Modified`
 //!   as an answer.
 //! - `pins/`: a checksum a tool pinned to a blob, so a download can be reused
-//!   with no request at all.
+//!   with no request at all, for one of the URLs it was downloaded from.
 //!
 //! Nothing in an index is trusted on its own. A blob is hashed again before
 //! it is used, against the pin when there is one, and an entry that no longer
@@ -66,6 +66,13 @@ struct UrlEntry {
 struct PinEntry {
     blake3: String,
     effective_filename: Option<String>,
+    /// The URLs this blob was downloaded from under the pin. A pin is reused
+    /// only for one of them: a checksum from a lockfile or from release
+    /// metadata must not hand back a file another URL served, such as another
+    /// tool's archive or an older release. Entries written before this was
+    /// recorded have none and are fetched once more.
+    #[serde(default)]
+    urls: Vec<String>,
 }
 
 /// Tests that don't ask for a directory never touch the user's cache.
@@ -117,6 +124,14 @@ fn parse_pin(pin: &str) -> Option<(&str, String)> {
     (PIN_ALGOS.contains(&algo) && is_hex(hex)).then(|| (algo, hex.to_lowercase()))
 }
 
+/// Whether `path` hashes to `pin`, whichever algorithm it names. The caller
+/// checks the same pin after the download, so one it can't check fails here
+/// too.
+fn matches_pin(path: &Path, pin: &str) -> bool {
+    pin.split_once(':')
+        .is_some_and(|(algo, hex)| crate::hash::ensure_checksum(path, hex, None, algo).is_ok())
+}
+
 fn pin_path(root: &Path, algo: &str, hex: &str) -> PathBuf {
     root.join("pins").join(algo).join(format!("{hex}.json"))
 }
@@ -131,8 +146,9 @@ pub(super) struct Hit {
 }
 
 enum Verify {
-    /// The blob must hash to its own name.
-    Blake3(String),
+    /// The blob must hash to its own name, and to the tool's pinned checksum
+    /// when there is one.
+    Blake3 { name: String, pin: Option<String> },
     /// The blob must hash to the tool's pinned checksum.
     Pin { algo: String, hex: String },
 }
@@ -153,7 +169,10 @@ impl Cached {
     }
 }
 
-pub(super) fn lookup_url(request_hash: &str) -> Option<Cached> {
+/// The download last kept for `request_hash`. With a `pin` it is only handed
+/// back once it hashes to the pin too: an entry written by an unpinned
+/// download of the same URL may hold bytes the pin would reject.
+pub(super) fn lookup_url(request_hash: &str, pin: Option<&str>) -> Option<Cached> {
     let root = root()?;
     let entry = url_path(&root, request_hash);
     let url: UrlEntry = serde_json::from_slice(&std::fs::read(&entry).ok()?).ok()?;
@@ -167,17 +186,21 @@ pub(super) fn lookup_url(request_hash: &str) -> Option<Cached> {
             blob,
             effective_filename: url.effective_filename,
             entry,
-            verify: Verify::Blake3(url.blake3),
+            verify: Verify::Blake3 {
+                name: url.blake3,
+                pin: pin.map(str::to_string),
+            },
         },
     })
 }
 
-pub(super) fn lookup_pin(pin: &str) -> Option<Hit> {
+/// The download kept under `pin`, if it was downloaded from `url`.
+pub(super) fn lookup_pin(pin: &str, url: &str) -> Option<Hit> {
     let root = root()?;
     let (algo, hex) = parse_pin(pin)?;
     let entry = pin_path(&root, algo, &hex);
     let pinned: PinEntry = serde_json::from_slice(&std::fs::read(&entry).ok()?).ok()?;
-    if !is_hex(&pinned.blake3) {
+    if !is_hex(&pinned.blake3) || !pinned.urls.iter().any(|kept| kept == url) {
         return None;
     }
     let blob = blob_file(&blob_dir(&root, &pinned.blake3))?;
@@ -197,8 +220,11 @@ impl Hit {
     /// drop what pointed at it and return `None`.
     pub(super) fn verified(&self) -> Option<PathBuf> {
         let intact = match &self.verify {
-            Verify::Blake3(expected) => {
-                crate::hash::file_hash_blake3(&self.blob, None).is_ok_and(|hash| hash == *expected)
+            Verify::Blake3 { name, pin } => {
+                crate::hash::file_hash_blake3(&self.blob, None).is_ok_and(|hash| hash == *name)
+                    && pin
+                        .as_deref()
+                        .is_none_or(|pin| matches_pin(&self.blob, pin))
             }
             Verify::Pin { algo, hex } => {
                 crate::hash::ensure_checksum(&self.blob, hex, None, algo).is_ok()
@@ -282,6 +308,8 @@ fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
 /// What kept a download: how to find it again.
 pub(super) struct Keep<'a> {
     pub(super) request_hash: &'a str,
+    /// The URL requested.
+    pub(super) url: &'a str,
     /// The checksum the tool pinned.
     pub(super) pin: Option<&'a str>,
     pub(super) validator: Option<&'a DownloadValidator>,
@@ -289,13 +317,15 @@ pub(super) struct Keep<'a> {
 }
 
 /// Keep `path`, just downloaded, by copying it into the store. Returns the
-/// stored file, or `None` when there is nothing to index it by.
+/// stored file, or `None` when there is nothing to index it by or it doesn't
+/// match its pin.
 pub(super) fn store(path: &Path, keep: Keep<'_>) -> Result<Option<PathBuf>> {
     keep_file(path, keep, false)
 }
 
 /// Keep `path`, which sits in the store's staging area, by moving it into the
-/// store. Returns the stored file.
+/// store. Returns the stored file, or `None` as [`store`] does, with `path`
+/// left where it was.
 pub(super) fn ingest(path: &Path, keep: Keep<'_>) -> Result<Option<PathBuf>> {
     keep_file(path, keep, true)
 }
@@ -304,15 +334,15 @@ fn keep_file(path: &Path, keep: Keep<'_>, move_in: bool) -> Result<Option<PathBu
     let Some(root) = root() else {
         return Ok(None);
     };
-    // The caller checks the pin after the download. Checking here too keeps a
-    // wrong file from ever being indexed under it.
-    let pin = keep.pin.and_then(parse_pin).filter(|(algo, hex)| {
-        let ok = crate::hash::ensure_checksum(path, hex, None, algo).is_ok();
-        if !ok {
-            debug!("not indexing a download that doesn't match its pin");
-        }
-        ok
-    });
+    // The caller checks the pin after the download and rejects the file.
+    // Checking here too keeps a wrong file out of the store: indexed under its
+    // URL, a `304 Not Modified` would hand it back to be rejected again, and
+    // the right file would never be fetched.
+    if keep.pin.is_some_and(|pin| !matches_pin(path, pin)) {
+        debug!("not keeping a download that doesn't match its pin");
+        return Ok(None);
+    }
+    let pin = keep.pin.and_then(parse_pin);
     if keep.validator.is_none() && pin.is_none() {
         return Ok(None);
     }
@@ -371,15 +401,69 @@ fn keep_file(path: &Path, keep: Keep<'_>, move_in: bool) -> Result<Option<PathBu
             &serde_json::to_vec(&entry)?,
         )?;
     }
-    if let Some((algo, hex)) = pin {
-        let entry = PinEntry {
-            blake3,
-            effective_filename: keep.effective_filename,
-        };
-        write_atomic(&pin_path(&root, algo, &hex), &serde_json::to_vec(&entry)?)?;
+    // The blob is in place, and possibly moved out of staging, so a pin that
+    // can't be recorded costs only its reuse, never the download.
+    if let Some((algo, hex)) = pin
+        && let Err(err) = record_pin(&root, algo, &hex, blake3, &keep)
+    {
+        debug!("not recording the pin of a kept download: {err:#}");
     }
     evict(&root, blob.parent());
     Ok(Some(blob))
+}
+
+/// How long recording a pin waits for another process recording one. Each
+/// holds the lock for one small read and write, so this is only exceeded by a
+/// lock that is stuck.
+const PIN_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// A shorter wait for a test that holds the lock on purpose, so it doesn't sit
+/// out the whole of [`PIN_LOCK_WAIT`].
+#[cfg(test)]
+pub(super) static TEST_PIN_LOCK_WAIT: std::sync::Mutex<Option<std::time::Duration>> =
+    std::sync::Mutex::new(None);
+
+fn pin_lock_wait() -> std::time::Duration {
+    #[cfg(test)]
+    if let Some(wait) = *TEST_PIN_LOCK_WAIT.lock().unwrap() {
+        return wait;
+    }
+    PIN_LOCK_WAIT
+}
+
+/// Add `keep.url` to the URLs the pin `algo:hex` was kept from. Locked across
+/// the read and the write, or two downloads of the same file from different
+/// URLs would each write their own list and one URL would be lost.
+fn record_pin(root: &Path, algo: &str, hex: &str, blake3: String, keep: &Keep<'_>) -> Result<()> {
+    let lock_path = root.join("pins.lock");
+    let started = std::time::Instant::now();
+    let wait = pin_lock_wait();
+    let _lock = loop {
+        if let Some(lock) = crate::lock_file::LockFile::at(&lock_path).try_lock()? {
+            break lock;
+        }
+        eyre::ensure!(
+            started.elapsed() < wait,
+            "the pin index stayed locked for {wait:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let path = pin_path(root, algo, hex);
+    let mut urls = std::fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<PinEntry>(&bytes).ok())
+        .filter(|existing| existing.blake3 == blake3)
+        .map(|existing| existing.urls)
+        .unwrap_or_default();
+    if !urls.iter().any(|kept| kept == keep.url) {
+        urls.push(keep.url.to_string());
+    }
+    let entry = PinEntry {
+        blake3,
+        effective_filename: keep.effective_filename.clone(),
+        urls,
+    };
+    write_atomic(&path, &serde_json::to_vec(&entry)?)
 }
 
 /// Past `download_cache_max_size` the least recently used blobs go first, except

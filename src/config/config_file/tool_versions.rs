@@ -281,7 +281,7 @@ fn body_requires_trust(body: &str) -> bool {
         || body.lines().any(|line| {
             let line = line.split_once('#').map_or(line, |(line, _)| line);
             let mut tokens = line.split_whitespace();
-            tokens.next().is_some_and(|tool| tool.contains('['))
+            tokens.next().is_some_and(super::tool_key_requires_trust)
                 || tokens.any(super::version_requires_trust)
         })
 }
@@ -300,6 +300,12 @@ mod tests {
             "github:sharkdp/fd[api_url=http://attacker.example/api/v3] latest\n"
         ));
         assert!(body_requires_trust("node 20\n  node[postinstall=id] 20\n"));
+        assert!(body_requires_trust(
+            "spm:https://evil.example/o/r.git latest\n"
+        ));
+        assert!(!body_requires_trust(
+            "spm:https://github.com/o/r.git latest\n"
+        ));
         assert!(body_requires_trust("node path:./local\n"));
         assert!(body_requires_trust("node 20 path:./local # x\n"));
         assert!(!body_requires_trust("node 20 # path:./local\n"));
