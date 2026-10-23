@@ -372,6 +372,43 @@ fn untrusted_lockfile_may_confirm_a_backend_but_not_choose_one() {
 }
 
 #[test]
+fn entries_whose_backend_names_no_tool_are_ignored() {
+    for full in ["", "asdf:", ":", "[=]", "asdf:[=]", "-"] {
+        assert!(backend_names_no_tool(full), "{full:?}");
+    }
+    for full in [
+        "core:node",
+        "aqua:mvdan/sh",
+        "aqua:mvdan/sh[a=b]",
+        "asdf:tiny",
+    ] {
+        assert!(!backend_names_no_tool(full), "{full:?}");
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    file::write(
+        &path,
+        r#"[[tools.shfmt]]
+version = "3.10.0"
+backend = ""
+
+[[tools.shfmt]]
+version = "3.11.0"
+backend = "aqua:mvdan/sh"
+
+[[tools.tiny]]
+version = "1.0.0"
+backend = "asdf:"
+"#,
+    )
+    .unwrap();
+    let lockfile = Lockfile::read(&path).unwrap();
+    assert_eq!(lockfile.tools.keys().collect::<Vec<_>>(), vec!["shfmt"]);
+    assert_eq!(lockfile.tools["shfmt"].len(), 1);
+    assert_eq!(lockfile.tools["shfmt"][0].version, "3.11.0");
+}
+
+#[test]
 fn untrusted_lockfile_keeps_pins_but_not_download_locations() {
     let mut pinned = basic_tool("3.10.0", "aqua:mvdan/sh");
     pinned.platforms.insert(

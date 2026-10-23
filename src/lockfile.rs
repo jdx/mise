@@ -1480,7 +1480,26 @@ impl Lockfile {
                     }
                     Ok(entry)
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .filter(|entry| {
+                    let Some(full) = entry.backend.as_deref() else {
+                        return true;
+                    };
+                    if !backend_names_no_tool(full) {
+                        return true;
+                    }
+                    warn_once!(
+                        "{} locks {short}@{} to the backend {full:?}, which names no tool; ignoring the entry",
+                        display_path(path),
+                        entry.version,
+                    );
+                    false
+                })
+                .collect_vec();
+            if versions.is_empty() {
+                continue;
+            }
             lockfile.tools.entry(short).or_default().extend(versions);
         }
 
@@ -4815,6 +4834,16 @@ fn push_existing_lockfile(config: &Config, lockfiles: &mut Vec<Lockfile>, path: 
             handle_lockfile_read_error(err, path);
         }
     }
+}
+
+/// Whether a recorded backend designates no tool at all: `""`, `"asdf:"`,
+/// `":"` or an options suffix alone. Building a backend from such a string
+/// trips the assertions that a backend has a name, so an entry that records
+/// one is ignored when the lockfile is read, trusted or not.
+fn backend_names_no_tool(full: &str) -> bool {
+    let id = crate::args::split_bracketed_opts(full).map_or(full, |(id, _)| id);
+    let name = id.split_once(':').map_or(id, |(_, name)| name);
+    name.trim().is_empty() || backend::tool_directory_name(id).is_empty()
 }
 
 /// Whether a lock entry that binds `short` to the backend `full` may only
