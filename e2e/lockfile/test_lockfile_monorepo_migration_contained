@@ -46,6 +46,14 @@ assert_contains "cat other/mise.lock" "deploy-cli"
 assert_succeed "$lock"
 rm checkout/packages/a/mise
 
+# So can a config root's lockfile itself: it is not merged into the checkout.
+ln -s ../../../other/mise.lock checkout/packages/a/mise.lock
+(eval "$lock" >lock.log 2>&1) || true
+assert_succeed "test -L checkout/packages/a/mise.lock"
+assert_not_contains "cat lock.log" "migrated"
+assert_contains "cat other/mise.lock" "deploy-cli"
+rm checkout/packages/a/mise.lock
+
 # The config root's own lockfiles still migrate.
 echo 'env = ["staging"]' >checkout/.miserc.toml
 echo '[tools]' >checkout/packages/a/mise.staging.lock

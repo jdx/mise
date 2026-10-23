@@ -2833,18 +2833,24 @@ fn discover_monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf>
     source_lockfiles
 }
 
-/// Migration deletes its sources, so keep only those that resolve inside the
-/// monorepo, the same test `config_roots` pass. The roots themselves are
-/// contained, but a directory below one, such as `mise` or `.config/mise`,
-/// can be a symlink that leads out of the checkout.
+/// Migration reads, merges and deletes its sources, so keep only those that
+/// resolve inside the monorepo, the same test `config_roots` pass. The roots
+/// themselves are contained, but a directory below one, such as `mise` or
+/// `.config/mise`, or the lockfile itself can be a symlink that leads out of
+/// the checkout.
 fn retain_sources_inside_monorepo(sources: &mut IndexSet<PathBuf>, monorepo_root: &Path) {
     let canonical_root = monorepo_root.canonicalize().ok();
     sources.retain(|source| {
-        let contained = source
-            .parent()
-            .and_then(|dir| dir.canonicalize().ok())
+        // A source that is there is judged by the file it resolves to; one
+        // that is not yet (or a dangling link) by its directory.
+        let resolved = if fs::symlink_metadata(source).is_ok() {
+            source.canonicalize().ok()
+        } else {
+            source.parent().and_then(|dir| dir.canonicalize().ok())
+        };
+        let contained = resolved
             .zip(canonical_root.as_ref())
-            .is_some_and(|(dir, root)| dir.starts_with(root));
+            .is_some_and(|(path, root)| path.starts_with(root));
         if !contained {
             debug!(
                 "skipping lockfile migration source outside the monorepo: {}",
