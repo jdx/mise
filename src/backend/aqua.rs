@@ -1735,6 +1735,7 @@ impl AquaBackend {
                         self.verify_checksum_file_matches_expected(
                             checksum_config,
                             &checksum_path,
+                            &artifact_path,
                             &filename,
                             expected_checksum,
                         )?;
@@ -1810,6 +1811,7 @@ impl AquaBackend {
                     self.verify_checksum_file_matches_expected(
                         checksum_config,
                         &checksum_path,
+                        &artifact_path,
                         &filename,
                         expected_checksum,
                     )?;
@@ -1832,6 +1834,7 @@ impl AquaBackend {
                     self.verify_checksum_file_matches_expected(
                         checksum_config,
                         &checksum_path,
+                        &artifact_path,
                         &filename,
                         expected_checksum,
                     )?;
@@ -2365,10 +2368,16 @@ impl AquaBackend {
         }
     }
 
+    /// Bind the downloaded artifact to a checksum file whose signature has already been
+    /// verified. The expected checksum (usually GitHub's asset digest, which is sha256 and
+    /// follows a re-upload) can only be compared with the signed digest when both use the
+    /// same algorithm. Otherwise the artifact itself is hashed with the signed file's
+    /// algorithm: skipping the comparison would leave nothing tying it to the signature.
     fn verify_checksum_file_matches_expected(
         &self,
         checksum_config: &AquaChecksum,
         checksum_path: &Path,
+        artifact_path: &Path,
         artifact_filename: &str,
         expected_checksum: Option<&str>,
     ) -> Result<()> {
@@ -2378,16 +2387,24 @@ impl AquaBackend {
             checksum_config,
             artifact_filename,
         )?;
-        let checksum_val = format!("{}:{}", checksum_config.algorithm(), checksum_str);
+        let algorithm = checksum_config.algorithm();
+        let checksum_val = format!("{algorithm}:{checksum_str}");
         if let Some(expected) = expected_checksum
             && same_checksum_algorithm(expected, &checksum_val)
-            && expected != checksum_val
         {
-            bail!(
-                "verified checksum file digest does not match expected checksum for {artifact_filename}"
-            );
+            if expected != checksum_val {
+                bail!(
+                    "verified checksum file digest does not match expected checksum for {artifact_filename}"
+                );
+            }
+            return Ok(());
         }
-        Ok(())
+        crate::hash::ensure_checksum(artifact_path, &checksum_str, None, algorithm.as_ref())
+            .wrap_err_with(|| {
+                format!(
+                    "verified checksum file digest does not match downloaded {artifact_filename}"
+                )
+            })
     }
 
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
@@ -4783,6 +4800,7 @@ mod lock_candidate_tests {
             .verify_checksum_file_matches_expected(
                 &checksum,
                 &path,
+                &tmp.path().join(ARTIFACT),
                 ARTIFACT,
                 Some(&format!("sha256:{DIGEST}")),
             )
@@ -4794,12 +4812,51 @@ mod lock_candidate_tests {
             .verify_checksum_file_matches_expected(
                 &checksum,
                 &path,
+                &tmp.path().join(ARTIFACT),
                 ARTIFACT,
                 Some(&format!("sha256:{}", "0".repeat(64))),
             )
             .unwrap_err()
             .to_string();
         assert!(err.contains("does not match expected checksum"), "{err}");
+    }
+
+    /// A signed sha512 checksum file cannot be compared with GitHub's sha256 asset digest, so
+    /// the downloaded artifact itself has to match it. Skipping the check let `mise lock`
+    /// record a re-uploaded artifact as signature-verified.
+    #[test]
+    fn test_verify_checksum_file_hashes_artifact_when_algorithms_differ() {
+        const ARTIFACT: &str = "tool_linux_amd64";
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let artifact = tmp.path().join(ARTIFACT);
+        std::fs::write(&artifact, "published").unwrap();
+        let sums = tmp.path().join("SHA512SUMS");
+        let digest = crate::hash::file_hash_prog::<sha2::Sha512>(&artifact, None).unwrap();
+        std::fs::write(&sums, format!("{digest}  {ARTIFACT}\n")).unwrap();
+
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let checksum: AquaChecksum = serde_json::from_str(r#"{"algorithm":"sha512"}"#).unwrap();
+        // the asset digest follows a re-upload, the signed file does not
+        let verify = || {
+            let api_digest = crate::hash::file_hash_sha256(&artifact, None).unwrap();
+            backend.verify_checksum_file_matches_expected(
+                &checksum,
+                &sums,
+                &artifact,
+                ARTIFACT,
+                Some(&format!("sha256:{api_digest}")),
+            )
+        };
+
+        verify().unwrap();
+
+        std::fs::write(&artifact, "replaced").unwrap();
+        let err = format!("{:?}", verify().unwrap_err());
+        assert!(err.contains("does not match downloaded"), "{err}");
     }
 
     /// A checksum file listing several other filenames, but not the requested one, must not
