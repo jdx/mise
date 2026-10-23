@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# Trust does not apply to global or system config, so `mise trust --ignore` must
+# not put it on the ignore list and drop the global-only settings held there.
+
+# Override the blanket trust the e2e harness sets so trust is enforced.
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+cat <<TOML >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+paranoid = true
+[env]
+FROM_GLOBAL = "1"
+TOML
+echo 'env.FROM_PROJECT = "1"' >mise.toml
+
+# The first call takes the project config. The second has no project config left
+# and used to fall through to the global one.
+assert_contains "mise trust --ignore 2>&1" "ignored ~/workdir/mise.toml"
+assert_contains "mise trust --ignore 2>&1" "No trusted config files found."
+assert_contains "mise trust --untrust 2>&1" "No trusted config files found."
+assert_contains "mise untrust 2>&1" "No trusted config files found."
+assert "mise settings get paranoid" "true"
+assert_contains "mise env" "FROM_GLOBAL"
+
+# Naming it does not work either, directly or through a symlink in a project.
+assert_fail_contains "mise trust --ignore $MISE_CONFIG_DIR/config.toml" "cannot be ignored"
+ln -s "$MISE_CONFIG_DIR/config.toml" mise.local.toml
+assert_fail_contains "mise trust --ignore mise.local.toml" "cannot be ignored"
+assert "mise settings get paranoid" "true"
+assert_contains "mise env" "FROM_GLOBAL"
+
+# Outside paranoid mode a project config in the home directory shares its trust
+# root with the global config, which must not go when that project is ignored.
+rm mise.local.toml
+cat <<TOML >"$MISE_CONFIG_DIR/config.toml"
+[env]
+FROM_GLOBAL = "1"
+TOML
+cd "$HOME" || exit 1
+echo 'env.FROM_HOME = "1"' >mise.toml
+assert_contains "mise trust --ignore 2>&1" "ignored ~"
+assert_not_contains "mise env" "FROM_HOME"
+assert_contains "mise env" "FROM_GLOBAL"

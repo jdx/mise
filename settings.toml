@@ -919,6 +919,23 @@ it, check whether it still happens with `experimental = false`, then
 env = "MISE_EXPERIMENTAL"
 type = "Bool"
 
+[extract_max_ratio]
+default = 100
+description = "How many times its own size a downloaded archive or compressed file may unpack to."
+docs = """
+A small download can be built to unpack to far more data than the disk holds:
+1 GiB of zeroes is under 1 KiB of bzip2. When mise unpacks a tool's archive or
+compressed file, it stops, and the install fails, once the output is larger
+than 256 MiB and more than this many times the size of the download. Tool
+archives rarely unpack to more than 10 times their size.
+
+Raise it for a tool that legitimately unpacks to more, such as an archive of
+mostly empty disk images. `0` means no limit.
+"""
+env = "MISE_EXTRACT_MAX_RATIO"
+global_only = true
+type = "Integer"
+
 [fetch_remote_versions_cache]
 default_docs = "1h"
 description = "How long a tool's cached list of available versions stays fresh."
@@ -1704,6 +1721,10 @@ and sends a strong `ETag` or `Last-Modified` value, mise keeps a partial
 download and resumes it on the next attempt, even in a later run; otherwise the
 download starts over. Changing the URL or request headers discards the partial
 file.
+
+The same limit bounds reading the body of a response that mise parses instead
+of saving, such as a checksum file or a version list, so a server that sends it
+a byte at a time cannot hold a command forever.
 """
 env = "MISE_HTTP_DOWNLOAD_TIMEOUT"
 type = "Duration"
@@ -1818,7 +1839,8 @@ resolve from the directory that holds it, and relative paths in
 Commands that act on every tracked config (`mise prune`, `mise ls --prunable`
 and the stale-version check in `mise upgrade`) honor only the environment
 variable and the global and system `miserc.toml` files, so a project's
-`.miserc.toml` cannot hide other projects' configs from them.
+`.miserc.toml` cannot hide other projects' configs from them. The same applies
+to global and system config: a project's `.miserc.toml` cannot ignore it.
 
 `mise settings` and `mise settings add` refuse this setting, because mise
 reads it before config files load; put it in a `.miserc.toml` file or the
@@ -3284,12 +3306,17 @@ Use it for bots and CI jobs that process config you did not write, such as a bot
 that runs `mise lock --bump` on pull request branches. Project config then loads
 without a trust prompt.
 
-Safe mode refuses template `exec()` and `read_file()`, tasks, the `postinstall`
-and `install_env` tool options, asdf plugin scripts, plugin installs, mise
-secrets and `mise daemons`, with an error. It skips hooks, as `--no-hooks`
-does, and ignores project `[env]`, `[shell_alias]`, `[settings]`, remote
-includes, `[bootstrap]` and `[dotfiles]`, so a repository cannot turn off
-verification, redirect a backend or write files into your home directory.
+Safe mode refuses template `exec()`, `read_file()` and `get_env()`, tasks, the
+`postinstall`, `install_env` and spm `install_command` tool options, asdf
+plugin scripts, S3 requests, plugin installs, mise secrets and `mise daemons`,
+with an error. It skips hooks, as `--no-hooks` does, and ignores project
+`[env]`, `[shell_alias]`, `[settings]`, `[deps]`, lazy tools, `path:` versions,
+remote includes, `[bootstrap]` and `[dotfiles]`, so a repository cannot turn off
+verification, redirect a backend, run its dependency providers or write files
+into your home directory. Project templates see an empty `env`, the hosts a
+project `api_url` or download URL names get none of your forge tokens or netrc
+credentials, and a project `[tool_alias]` cannot redirect a tool global config
+declares.
 Global and system config still apply. Version resolution and `mise.lock`
 updates keep working for backends that query HTTP APIs, such as core tools,
 `aqua:`, `github:`, `pypi:` and `npm:`.

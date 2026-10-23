@@ -34,7 +34,7 @@ use crate::hooks::parse_legacy_file::ParseLegacyFileResponse;
 use crate::hooks::post_install::PostInstallContext;
 use crate::hooks::pre_install::{PreInstall, PreInstallAttestation, VerifiedAttestation};
 use crate::hooks::pre_uninstall::PreUninstallContext;
-use crate::http::{HttpHeadersResolver, client, no_redirect_client, retry_async};
+use crate::http::{HttpHeadersResolver, client, download_to_file, no_redirect_client};
 use crate::metadata::Metadata;
 use crate::plugin::Plugin;
 use crate::registry;

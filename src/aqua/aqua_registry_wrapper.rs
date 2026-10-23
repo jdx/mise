@@ -384,6 +384,18 @@ async fn download_registry_url(url: &str) -> aqua_registry::Result<String> {
         })?;
         let path_display = path.display().to_string();
         return tokio::task::spawn_blocking(move || {
+            // A registry file a project config names needs trust of its own in
+            // paranoid mode: the hash of that config does not cover it.
+            if Settings::try_get().is_ok_and(|settings| settings.paranoid.config())
+                && crate::config::settings::local_aqua_registry_needs_trust(&path)
+                && path.is_file()
+            {
+                crate::config::config_file::trust_check(&path).map_err(|err| {
+                    AquaRegistryError::RegistryNotAvailable(format!(
+                        "aqua registry source {path_display} is not trusted, run `mise trust {path_display}`: {err}"
+                    ))
+                })?;
+            }
             std::fs::read_to_string(&path).map_err(|err| {
                 AquaRegistryError::RegistryNotAvailable(format!(
                     "failed to read aqua registry source {path_display}: {err}"

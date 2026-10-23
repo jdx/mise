@@ -37,6 +37,7 @@ pub use install_options::InstallOptions;
 pub use running::RunningProcess;
 pub use tool_deps::ensure_compatible_install_requests;
 pub use tool_request::ToolRequest;
+pub(crate) use tool_request::{record_safe_mode_credential_hosts, with_safe_mode_tool_scope};
 pub(crate) use tool_request_set::configured_options_for_runtime_request;
 pub use tool_request_set::{
     ToolRequestSet, ToolRequestSetBuilder, apply_config_options_to_runtime_arg, tool_env_var_name,
@@ -419,11 +420,12 @@ impl Toolset {
 
     /// Whether any configured tool is declared `lazy = true`. Such a tool installs the
     /// first time one of its bootstrap shims runs, so environments mise builds for this
-    /// toolset have to make those shims reachable behind the real tool paths.
+    /// toolset have to make those shims reachable behind the real tool paths. Safe mode
+    /// ignores the declarations of project config (see [`ToolRequest::provides_lazy_bins`]).
     pub fn has_lazy_declarations(&self) -> bool {
         self.list_current_requests()
             .iter()
-            .any(|request| request.options().lazy == Some(true))
+            .any(|request| request.provides_lazy_bins())
     }
 
     pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &ToolVersionList)> {

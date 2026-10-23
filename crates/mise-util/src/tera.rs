@@ -85,11 +85,74 @@ impl TeraEngine {
 }
 
 pub fn render_str(tera: &mut TeraEngine, input: &str, context: &Context) -> TeraResult<String> {
+    tera.render_str(input, &safe_context(context))
+}
+
+/// [`render_str`] for a template the operator wrote, in global or system
+/// config, which keeps `env` in safe mode.
+pub fn render_str_with_env(
+    tera: &mut TeraEngine,
+    input: &str,
+    context: &Context,
+) -> TeraResult<String> {
     tera.render_str(input, context)
 }
 
 pub fn render_str_v2(tera: &mut Tera, input: &str, context: &Context) -> TeraResult<String> {
-    tera.render_str(input, context, false)
+    tera.render_str(input, &safe_context(context), false)
+}
+
+/// Whether safe mode is on. Unlike `Settings::get()` this never loads
+/// settings, because `.miserc.toml` and `[settings]` templates render while
+/// they load.
+fn safe_mode() -> bool {
+    match mise_settings::last_cached() {
+        Some(settings) => settings.safe,
+        None => env::var_is_true("MISE_SAFE"),
+    }
+}
+
+tokio::task_local! {
+    static TRUSTED_TEMPLATES: bool;
+}
+
+/// Runs `future` so that [`render_str`] keeps `env` in safe mode. It is for
+/// work done for a tool that global or system config declares, whose backends
+/// render that config's options (a global `[tool_alias]` such as
+/// `http:tool[url=https://files.example/{{ env.CHANNEL }}/tool]`) only when
+/// they need them, long after the file was read.
+pub async fn with_trusted_templates<T>(future: impl std::future::Future<Output = T>) -> T {
+    TRUSTED_TEMPLATES.scope(true, future).await
+}
+
+/// Runs `future` with `env` kept ([`with_trusted_templates`]) or explicitly
+/// emptied in safe mode, whatever an outer scope said.
+pub async fn with_templates_trusted<T>(
+    trusted: bool,
+    future: impl std::future::Future<Output = T>,
+) -> T {
+    TRUSTED_TEMPLATES.scope(trusted, future).await
+}
+
+/// Whether the current task runs inside [`with_trusted_templates`].
+pub fn in_trusted_templates() -> bool {
+    TRUSTED_TEMPLATES
+        .try_with(|trusted| *trusted)
+        .unwrap_or(false)
+}
+
+/// Empties `env` in safe mode. Project config loads without trust there, and
+/// what its templates render reaches the URLs mise requests, the lockfile and
+/// command output, so they must not see the credentials in the operator's
+/// environment. This is done on every render rather than where a context is
+/// built because backends and tasks render with contexts of their own.
+fn safe_context(context: &Context) -> std::borrow::Cow<'_, Context> {
+    if !context.contains_key("env") || !safe_mode() || in_trusted_templates() {
+        return std::borrow::Cow::Borrowed(context);
+    }
+    let mut context = context.clone();
+    context.insert("env", &EnvMap::new());
+    std::borrow::Cow::Owned(context)
 }
 
 fn tera_err(message: impl ToString) -> tera::Error {
@@ -1293,11 +1356,7 @@ pub fn get_tera_v2(dir: Option<&Path>) -> Tera {
     let mut tera = TERA.clone();
     let dir = dir.map(PathBuf::from);
     if Settings::get().safe {
-        tera.register_function("exec", safe_disabled_fn("exec"));
-        tera.register_function("read_file", safe_disabled_fn("read_file"));
-        for (name, _) in STRUCTURED_FORMATS {
-            tera.register_function(name, safe_disabled_fn(name));
-        }
+        disable_in_safe_mode(&mut tera);
     } else {
         tera.register_function("exec", tera_exec(dir.clone(), env::PRISTINE_ENV.clone()));
         tera.register_function("read_file", tera_read_file(dir.clone()));
@@ -1312,11 +1371,7 @@ fn get_tera_v1(dir: Option<&Path>) -> tera1::Tera {
     let mut tera = TERA1.clone();
     let dir = dir.map(PathBuf::from);
     if Settings::get().safe {
-        tera.register_function("exec", safe_disabled_fn_v1("exec"));
-        tera.register_function("read_file", safe_disabled_fn_v1("read_file"));
-        for (name, _) in STRUCTURED_FORMATS {
-            tera.register_function(name, safe_disabled_fn_v1(name));
-        }
+        disable_in_safe_mode_v1(&mut tera);
     } else {
         tera.register_function("exec", tera1_exec(dir.clone(), env::PRISTINE_ENV.clone()));
         tera.register_function("read_file", tera1_read_file(dir.clone()));
@@ -1325,6 +1380,79 @@ fn get_tera_v1(dir: Option<&Path>) -> tera1::Tera {
         }
     }
     tera
+}
+
+/// What safe mode takes away from templates: running commands, and reading the
+/// operator's environment (see also [`safe_context`]) or files. The filters only
+/// reveal a file's digest, size or age, but that is enough to confirm a guess
+/// about a file outside the project, and reading `/dev/zero` never ends.
+const SAFE_DISABLED_FUNCTIONS: [&str; 3] = ["exec", "read_file", "get_env"];
+const SAFE_DISABLED_FILTERS: [&str; 4] =
+    ["hash_file", "file_size", "last_modified", "canonicalize"];
+/// The tests that ask whether a path exists, which would let a template probe
+/// files outside the project.
+const SAFE_DISABLED_TESTS: [&str; 3] = ["dir", "file", "exists"];
+
+fn disable_in_safe_mode(tera: &mut Tera) {
+    let structured = STRUCTURED_FORMATS.iter().map(|(name, _)| *name);
+    for name in SAFE_DISABLED_FUNCTIONS.into_iter().chain(structured) {
+        tera.register_function(name, safe_disabled_fn(name));
+    }
+    for name in SAFE_DISABLED_FILTERS {
+        tera.register_filter(name, safe_disabled_filter(name));
+    }
+    for name in SAFE_DISABLED_TESTS {
+        tera.register_test(name, safe_disabled_test(name));
+    }
+}
+
+fn disable_in_safe_mode_v1(tera: &mut tera1::Tera) {
+    let structured = STRUCTURED_FORMATS.iter().map(|(name, _)| *name);
+    for name in SAFE_DISABLED_FUNCTIONS.into_iter().chain(structured) {
+        tera.register_function(name, safe_disabled_fn_v1(name));
+    }
+    for name in SAFE_DISABLED_FILTERS {
+        tera.register_filter(name, safe_disabled_filter_v1(name));
+    }
+    for name in SAFE_DISABLED_TESTS {
+        tera.register_tester(name, safe_disabled_test_v1(name));
+    }
+}
+
+fn safe_disabled_test(name: &'static str) -> impl Fn(Value, Kwargs, &State) -> TeraResult<bool> {
+    move |_: Value, _: Kwargs, _: &State| -> TeraResult<bool> {
+        Err(tera_err(format!(
+            "the {name} test is disabled in safe mode (MISE_SAFE=1)"
+        )))
+    }
+}
+
+fn safe_disabled_test_v1(
+    name: &'static str,
+) -> impl Fn(Option<&JsonValue>, &[JsonValue]) -> tera1::Result<bool> {
+    move |_: Option<&JsonValue>, _: &[JsonValue]| -> tera1::Result<bool> {
+        Err(tera1_err(format!(
+            "the {name} test is disabled in safe mode (MISE_SAFE=1)"
+        )))
+    }
+}
+
+fn safe_disabled_filter(name: &'static str) -> impl Fn(Value, Kwargs, &State) -> TeraResult<Value> {
+    move |_: Value, _: Kwargs, _: &State| -> TeraResult<Value> {
+        Err(tera_err(format!(
+            "the {name} filter is disabled in safe mode (MISE_SAFE=1)"
+        )))
+    }
+}
+
+fn safe_disabled_filter_v1(
+    name: &'static str,
+) -> impl Fn(&JsonValue, &HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |_: &JsonValue, _: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+        Err(tera1_err(format!(
+            "the {name} filter is disabled in safe mode (MISE_SAFE=1)"
+        )))
+    }
 }
 
 /// Replacement for template functions that must not run in safe mode. Kept
@@ -1353,8 +1481,13 @@ fn safe_disabled_fn_v1(
 /// because they are only registered in [`get_tera`], not in `TERA` itself — so they
 /// cannot accidentally become available here if `TERA` changes in the future. This also
 /// intentionally ignores `tera_v1`, since Settings are not fully loaded at this stage.
+/// In safe mode it also refuses what [`get_tera`] refuses there, such as `get_env()`.
 pub fn get_miserc_tera() -> TeraEngine {
-    TeraEngine::V2(Box::new(TERA.clone()))
+    let mut tera = TERA.clone();
+    if safe_mode() {
+        disable_in_safe_mode(&mut tera);
+    }
+    TeraEngine::V2(Box::new(tera))
 }
 
 /// Returns a renderer without mise's custom template functions or filters.

@@ -10,6 +10,7 @@ use eyre::{Result, bail, eyre};
 use xx::file;
 
 use crate::args::BackendArg;
+use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::config::config_file::config_root;
 use crate::dirs;
@@ -370,13 +371,39 @@ impl ToolRequest {
         self.resolved_options().effective().clone()
     }
 
+    /// Whether this request's `lazy = true` may claim command names: bootstrap shims, the
+    /// shim farms on PATH, and an install when one of those commands runs. Like `[wrappers]`,
+    /// that hands commands such as `git` to whatever the config names, so safe mode honours it
+    /// only in an entry of global or system config (or a CLI argument), and only when that
+    /// entry sets the options itself rather than a project's tool alias or the project entry
+    /// a runtime argument inherits. The tool stays out of automatic installs either way.
+    pub(crate) fn provides_lazy_bins(&self) -> bool {
+        if self.resolved_options().effective().lazy != Some(true) {
+            return false;
+        }
+        if !Settings::safe_mode() {
+            return true;
+        }
+        let set_by_entry = |key| {
+            matches!(
+                self.option_source(key),
+                None | Some(ToolOptionSource::Request | ToolOptionSource::InlineBackendArg)
+            )
+        };
+        self.source()
+            .path()
+            .is_none_or(crate::config::is_global_config)
+            && set_by_entry("lazy")
+            && set_by_entry("lazy_bins")
+    }
+
     /// Command names that should receive bootstrap shims before a lazy tool is installed.
     /// Registry metadata is authoritative when the config does not provide an explicit list.
     pub(crate) fn lazy_bins(&self) -> Result<Option<Vec<String>>> {
-        let options = self.resolved_options().effective();
-        if options.lazy != Some(true) {
+        if !self.provides_lazy_bins() {
             return Ok(None);
         }
+        let options = self.resolved_options().effective();
         if !options.lazy_bins.is_empty() {
             return Ok(Some(options.lazy_bins.clone()));
         }
@@ -478,6 +505,35 @@ impl ToolRequest {
         self.resolved_options().source_for_key(key)
     }
 
+    /// Whether safe mode ignores this request. A `path:` version needs no install, so one
+    /// from project config would put a directory the project names on PATH, which is why
+    /// safe mode ignores the project's `_.path` too. Global config is the operator's, and a
+    /// tool stub or CLI argument is run by the user.
+    pub(crate) fn ignored_in_safe_mode(&self) -> bool {
+        matches!(self, Self::Path { .. })
+            && Settings::safe_mode()
+            && match self.source() {
+                ToolSource::MiseToml(path)
+                | ToolSource::MiseTomlDaemon(path)
+                | ToolSource::ToolVersions(path)
+                | ToolSource::IdiomaticVersionFile(path) => !crate::config::is_global_config(path),
+                _ => false,
+            }
+    }
+
+    /// In safe mode, records the hosts this request's options name; see
+    /// [`record_safe_mode_credential_hosts`].
+    pub(crate) fn record_safe_mode_credential_hosts(&self) {
+        if !Settings::safe_mode() {
+            return;
+        }
+        let Some(path) = self.source().path() else {
+            return;
+        };
+        let project = !crate::config::is_global_config(path);
+        record_safe_mode_credential_hosts(&self.options().opts, project);
+    }
+
     /// Rejects install options that can execute configuration-provided code in safe mode.
     pub(crate) fn ensure_safe_install_options(&self) -> Result<()> {
         if !Settings::safe_mode() {
@@ -493,6 +549,15 @@ impl ToolRequest {
         if !options.core.install_env.is_empty() {
             Settings::ensure_not_safe(&format!(
                 "using tool-level install_env for {}",
+                self.ba().short
+            ))?;
+        }
+        // spm runs this shell command in place of `swift build`.
+        if self.ba().backend_type() == BackendType::Spm
+            && options.opts.contains_key("install_command")
+        {
+            Settings::ensure_not_safe(&format!(
+                "running tool-level install_command for {}",
                 self.ba().short
             ))?;
         }
@@ -945,6 +1010,91 @@ fn is_forbidden_cmd_char(_c: char) -> bool {
     false
 }
 
+/// Calls `f` with each string value under one of `keys` in tool options. Backends read options
+/// per platform, from a platform table (`platforms.linux-x64.url`) or a flat key
+/// (`platforms_linux_x64_url`), so both count.
+fn visit_option_strings(
+    opts: &indexmap::IndexMap<String, toml::Value>,
+    keys: &[&str],
+    f: &mut dyn FnMut(&str, &str),
+) {
+    fn matches(key: &str, keys: &[&str]) -> bool {
+        keys.contains(&key)
+            || (key.starts_with("platforms_") || key.starts_with("platform_"))
+                && keys.iter().any(|k| key.ends_with(&format!("_{k}")))
+    }
+    fn visit(key: &str, value: &toml::Value, keys: &[&str], f: &mut dyn FnMut(&str, &str)) {
+        match value {
+            toml::Value::String(s) if matches(key, keys) => f(key, s),
+            toml::Value::Table(table) => {
+                for (key, value) in table {
+                    visit(key, value, keys, f);
+                }
+            }
+            _ => {}
+        }
+    }
+    for (key, value) in opts {
+        visit(key, value, keys, f);
+    }
+}
+
+/// The tool options that name a host a tool sends requests to: where it downloads from,
+/// lists versions from, or (for a forge, which falls back to netrc without a token) its API.
+const NETRC_SCOPED_URL_OPTIONS: [&str; 5] = [
+    "url",
+    "checksum_url",
+    "version_list_url",
+    "version_date_url",
+    "api_url",
+];
+
+/// Records, in safe mode, the hosts that tool options from one config file send requests to.
+/// `project` is false for global and system config. A project `api_url` gets no forge token
+/// (unless global config names the same host), and no host a project URL option names gets
+/// netrc credentials outside [`with_safe_mode_tool_scope`]. See
+/// [`ToolRequest::record_safe_mode_credential_hosts`].
+pub(crate) fn record_safe_mode_credential_hosts(
+    opts: &indexmap::IndexMap<String, toml::Value>,
+    project: bool,
+) {
+    visit_option_strings(opts, &NETRC_SCOPED_URL_OPTIONS, &mut |key, url| {
+        let api_url = key == "api_url" || key.ends_with("_api_url");
+        match (project, api_url) {
+            (true, true) => {
+                mise_util::untrusted_hosts::deny_forge_token_for_url(url);
+                mise_util::untrusted_hosts::deny_netrc_for_url(url);
+            }
+            (true, false) => mise_util::untrusted_hosts::deny_netrc_for_url(url),
+            (false, true) => mise_util::untrusted_hosts::allow_forge_token_for_url(url),
+            (false, false) => {}
+        }
+    });
+}
+
+/// Runs `future`, work done for the tool `ba`. In safe mode, netrc credentials are withheld
+/// from every host a project tool's URL options name, whichever code path makes the request;
+/// a tool that global or system config declares runs here in a trusted scope, so its requests
+/// keep their credentials on such a host, and the templates its backend renders from that
+/// config's options (a global `[tool_alias]` `url`, say) keep `env`. A path that does not come
+/// through here loses credentials rather than leaking them.
+pub(crate) async fn with_safe_mode_tool_scope<T>(
+    ba: &BackendArg,
+    future: impl std::future::Future<Output = T>,
+) -> T {
+    // Boxed: this wraps resolving, installing and listing, whose futures are large,
+    // and holding one inline here (twice over, in the scopes) overflows the stack
+    // of a debug build.
+    let future = Box::pin(future);
+    if !Settings::safe_mode() {
+        return future.await;
+    }
+    // Set either way: a project tool reached from a global tool's work (a dependency, say)
+    // must not run in that tool's trusted scope.
+    let trusted = !crate::config::is_safe_mode_project_tool(ba);
+    mise_util::untrusted_hosts::with_tool_scope(trusted, future).await
+}
+
 /// Resolve a `path:` tool version request value against the config file's directory.
 ///
 /// - `~/` is expanded to `$HOME`
@@ -1046,6 +1196,36 @@ mod tests {
     use pretty_assertions::assert_str_eq;
     use std::sync::Arc;
     use test_log::test;
+
+    #[test]
+    fn netrc_scope_reads_platform_url_options() {
+        let opts = crate::toolset::parse_tool_options(
+            r#"url="https://top.example/t",platforms_linux_x64_url="https://flat.example/t",platform_macos_arm64_api_url="https://flat-api.example",bin="t""#,
+        );
+        let mut opts = opts.opts.into_map();
+        opts.insert(
+            "platforms".into(),
+            toml::from_str::<toml::Value>(
+                r#"linux-arm64 = { url = "https://nested.example/t", checksum_url = "https://nested-sum.example/s" }"#,
+            )
+            .unwrap(),
+        );
+        let mut urls = vec![];
+        super::visit_option_strings(&opts, &super::NETRC_SCOPED_URL_OPTIONS, &mut |_, url| {
+            urls.push(url.to_string());
+        });
+        urls.sort();
+        assert_eq!(
+            urls,
+            [
+                "https://flat-api.example",
+                "https://flat.example/t",
+                "https://nested-sum.example/s",
+                "https://nested.example/t",
+                "https://top.example/t",
+            ]
+        );
+    }
 
     fn test_ba() -> Arc<BackendArg> {
         let short = "lockfile-query-test";

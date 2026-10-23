@@ -285,7 +285,7 @@ async fn revalidate_policy_text(url: &str, store: &Path) -> Result<Option<String
     // expiry and sequence, before anything trusts it.
     let etag = header(ETAG);
     let last_modified = header(LAST_MODIFIED);
-    let text = resp.text().await?;
+    let text = crate::http::buffer_body(resp).await?.text().await?;
     if etag.is_some() || last_modified.is_some() {
         let stored = StoredPolicy {
             url: url.to_string(),
@@ -727,30 +727,49 @@ pub(crate) enum Pin {
     /// this policy for the name it is requested under.
     Forge(Policy),
     Identity(Policy),
-    /// Several identities, any one of which may have signed: a project whose
-    /// signing workflow changed across the releases the registry covers.
-    Identities(Vec<Policy>),
+    /// The workflows a `workflow` option names, any one of which may have
+    /// signed: the forge policy narrowed to each, several for a project
+    /// whose signing workflow changed across the releases the registry
+    /// covers. The release is still held to the repository ID, as under
+    /// [`Pin::Forge`].
+    Workflows(Vec<Policy>),
     Key(packslip::minisign::PublicKey),
 }
 
+/// The text of the `.pub` file a pinned key names, or none when the value
+/// is the key line itself. A minisign key line is also a valid relative
+/// path, so it is read as a key first: a file of that name in the working
+/// directory, which may be anybody's, must not take the place of the key
+/// that was pinned.
+pub(crate) fn pubkey_file_text(value: &str) -> Result<Option<String>> {
+    pubkey_file_text_with(value, Path::is_file)
+}
+
+fn pubkey_file_text_with(value: &str, is_file: impl Fn(&Path) -> bool) -> Result<Option<String>> {
+    if packslip::minisign::PublicKey::parse(value).is_ok() || !is_file(Path::new(value)) {
+        return Ok(None);
+    }
+    Ok(Some(file::read_to_string(value)?))
+}
+
+/// The key a pin gives as a minisign public key line or as the path of a
+/// `.pub` file; see [`pubkey_file_text`].
+pub(crate) fn pinned_key(value: &str) -> Result<packslip::minisign::PublicKey> {
+    let text = pubkey_file_text(value)?;
+    packslip::minisign::PublicKey::parse(text.as_deref().unwrap_or(value)).map_err(|e| eyre!("{e}"))
+}
+
 fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
-    // An identity pin, not a forge one: forge verification derives its own
-    // repository-wide policy from the bundle and would ignore the workflow.
+    // Verified under the workflow policies, not the forge's: forge
+    // verification derives its own repository-wide policy from the bundle
+    // and would ignore the workflow. The repository ID is checked after.
     if let Some(workflows) = opts.workflows(project)? {
-        let mut policies = workflow_policies(project, opts, &workflows)?;
-        return Ok(match policies.len() {
-            1 => Pin::Identity(policies.remove(0)),
-            _ => Pin::Identities(policies),
-        });
+        return Ok(Pin::Workflows(workflow_policies(
+            project, opts, &workflows,
+        )?));
     }
     if let Some(pubkey) = opts.pubkey() {
-        let text = if Path::new(&pubkey).is_file() {
-            file::read_to_string(&pubkey)?
-        } else {
-            pubkey
-        };
-        let key = packslip::minisign::PublicKey::parse(&text)
-            .map_err(|e| eyre!("packslip:{project}: pubkey: {e}"))?;
+        let key = pinned_key(&pubkey).map_err(|e| eyre!("packslip:{project}: pubkey: {e}"))?;
         return Ok(Pin::Key(key));
     }
     let explicit = Policy {
@@ -842,11 +861,18 @@ impl Pin {
         if policy.issuer.as_deref().is_none_or(str::is_empty) {
             bail!("packslip: list_identity_prefix requires an issuer");
         }
-        Ok(Self::Identity(Policy {
+        let policy = Policy {
             issuer: policy.issuer.clone(),
             identity: None,
             identity_prefix: Some(prefix.to_string()),
-        }))
+        };
+        Ok(match self {
+            // A forge project's list is still held to the repository ID mise
+            // pinned: the option changes who may sign it, not which
+            // repository it must come from.
+            Pin::Forge(_) | Pin::Workflows(_) => Self::Workflows(vec![policy]),
+            Pin::Identity(_) | Pin::Key(_) => Self::Identity(policy),
+        })
     }
 
     /// The identity policy, or for several the first, which carries the issuer
@@ -854,7 +880,7 @@ impl Pin {
     fn first_policy(&self) -> Option<&Policy> {
         match self {
             Pin::Forge(policy) | Pin::Identity(policy) => Some(policy),
-            Pin::Identities(policies) => policies.first(),
+            Pin::Workflows(policies) => policies.first(),
             Pin::Key(_) => None,
         }
     }
@@ -862,9 +888,12 @@ impl Pin {
     /// The signers a `workflow` list names together, as the signer pin records
     /// them: listing several says a release may move from one to another.
     fn listed_signers(&self) -> Vec<String> {
-        let Pin::Identities(policies) = self else {
+        let Pin::Workflows(policies) = self else {
             return Vec::new();
         };
+        if policies.len() < 2 {
+            return Vec::new();
+        }
         policies
             .iter()
             .filter_map(|policy| policy.identity.as_ref().or(policy.identity_prefix.as_ref()))
@@ -876,7 +905,7 @@ impl Pin {
     fn trusts(&self) -> Vec<Trust<'_>> {
         match self {
             Pin::Forge(policy) | Pin::Identity(policy) => vec![Trust::Identity(policy)],
-            Pin::Identities(policies) => policies.iter().map(Trust::Identity).collect(),
+            Pin::Workflows(policies) => policies.iter().map(Trust::Identity).collect(),
             Pin::Key(key) => vec![Trust::Key(key)],
         }
     }
@@ -898,8 +927,11 @@ impl Pin {
     }
 
     /// What a forge project's `bundle` must be signed by, given the lock
-    /// entries its install or lock resolution already has; none for a pin
-    /// the tool options give, which the options alone decide.
+    /// entries its install or lock resolution already has; none for an
+    /// identity or a key the tool options give, which the options alone
+    /// decide. A `workflow` option only narrows the forge's policy to named
+    /// workflow files, so it is held to the repository ID like the forge pin
+    /// it narrows.
     async fn forge<'a>(
         &self,
         project: &str,
@@ -907,8 +939,10 @@ impl Pin {
         bundle: &str,
     ) -> Result<Option<ForgeExpect>> {
         match self {
-            Pin::Forge(_) => Ok(Some(ForgeExpect::new(project, lock, bundle).await?)),
-            Pin::Identity(_) | Pin::Identities(_) | Pin::Key(_) => Ok(None),
+            Pin::Forge(_) | Pin::Workflows(_) => {
+                Ok(Some(ForgeExpect::new(project, lock, bundle).await?))
+            }
+            Pin::Identity(_) | Pin::Key(_) => Ok(None),
         }
     }
 }
@@ -950,7 +984,9 @@ fn verify_bundle(
             require_log,
             trusted_root: &root,
         };
-        if let Some(forge) = forge {
+        if let Some(forge) = forge
+            && !matches!(pin, Pin::Workflows(_))
+        {
             let verified = forge.verify(bundle, options, artifacts)?;
             return Ok(Accepted {
                 verified: verified.verified,
@@ -960,10 +996,18 @@ fn verify_bundle(
         let verified = pin.verify_any(|trust| {
             packslip::verify(bundle, trust, options, artifacts).map_err(|e| eyre!("{e}"))
         })?;
-        Ok(Accepted {
-            verified,
-            check: None,
-        })
+        // A workflow pin, verified under its own policies, is held to the
+        // repository ID as one verified under the forge's is.
+        let check = match forge {
+            Some(forge) => Some(forge.check(
+                bundle,
+                &verified.project,
+                &verified.key_id,
+                verified.issuer.as_deref(),
+            )?),
+            None => None,
+        };
+        Ok(Accepted { verified, check })
     })
 }
 
@@ -977,11 +1021,15 @@ fn verify_bundle(
 /// under a given pin and this machine's pins is done once per process. Only
 /// the latest text is kept for each project and signer. Expiry is checked
 /// every time.
+///
+/// `lock` is the selected version's lock entries, whose repository IDs the
+/// list is held to as its bundles are; none when no version is selected yet.
 async fn verify_project_release_list(
     project: &str,
     bundle: &str,
     pin: &Pin,
     require_log: bool,
+    lock: &[&PlatformInfo],
 ) -> Result<(ReleaseListStatement, Option<ForgePin>)> {
     use sha2::{Digest, Sha256};
     struct Verified {
@@ -992,7 +1040,7 @@ async fn verify_project_release_list(
     }
     static VERIFIED: std::sync::LazyLock<std::sync::Mutex<BTreeMap<String, Verified>>> =
         std::sync::LazyLock::new(Default::default);
-    let key = format!("{project}\0{pin:?}\0{require_log}");
+    let key = release_list_cache_key(project, pin, require_log, lock);
     let text = hex::encode(Sha256::digest(bundle.as_bytes()));
     let pins = pins_digest()?;
     if let Some(verified) = VERIFIED.lock().unwrap().get(&key)
@@ -1003,7 +1051,7 @@ async fn verify_project_release_list(
         return Ok((verified.list.clone(), verified.forge.clone()));
     }
     let (list, forge) =
-        verify_project_release_list_uncached(project, bundle, pin, require_log).await?;
+        verify_project_release_list_uncached(project, bundle, pin, require_log, lock).await?;
     let verified = Verified {
         text,
         pins,
@@ -1012,6 +1060,24 @@ async fn verify_project_release_list(
     };
     VERIFIED.lock().unwrap().insert(key, verified);
     Ok((list, forge))
+}
+
+/// What a verified release list is cached under: the project, the pin, and
+/// the repository IDs its lock entries commit to, since a list one lockfile
+/// refuses must not be served to it from a verification made without it.
+fn release_list_cache_key(
+    project: &str,
+    pin: &Pin,
+    require_log: bool,
+    lock: &[&PlatformInfo],
+) -> String {
+    let ids: std::collections::BTreeSet<String> = lock
+        .iter()
+        .filter_map(|info| packslip_forge::lock_pin(project, info))
+        .map(|pin| pin.repository_id)
+        .collect();
+    let ids = ids.into_iter().join(",");
+    format!("{project}\0{pin:?}\0{require_log}\0{ids}")
 }
 
 /// A digest of this machine's signer pins, every project's: a pin left under a
@@ -1036,8 +1102,9 @@ async fn verify_project_release_list_uncached(
     bundle: &str,
     pin: &Pin,
     require_log: bool,
+    lock: &[&PlatformInfo],
 ) -> Result<(ReleaseListStatement, Option<ForgePin>)> {
-    let Some(forge) = pin.forge(project, [], bundle).await? else {
+    let Some(forge) = pin.forge(project, lock.iter().copied(), bundle).await? else {
         return Ok((verify_release_list(bundle, pin, require_log)?, None));
     };
     file::run_blocking(|| {
@@ -1046,9 +1113,27 @@ async fn verify_project_release_list_uncached(
             require_log,
             trusted_root: &root,
         };
-        let verified = forge.verify_list(bundle, options)?;
-        check_list_current(&verified.verified.list)?;
-        Ok((verified.verified.list, verified.check.pin))
+        // A workflow pin's list, or one a `list_identity_prefix` signs, is
+        // verified under its policies and then held to the repository ID by
+        // the certificate's source repository, which a list signer's
+        // workflow need not belong to.
+        let (list, check) = if matches!(pin, Pin::Workflows(_)) {
+            let verified = pin.verify_any(|trust| {
+                packslip::verify_release_list(bundle, trust, options).map_err(|e| eyre!("{e}"))
+            })?;
+            let check = forge.check_source(
+                bundle,
+                &verified.list.predicate.project,
+                &verified.key_id,
+                verified.issuer.as_deref(),
+            )?;
+            (verified.list, check)
+        } else {
+            let verified = forge.verify_list(bundle, options)?;
+            (verified.verified.list, verified.check)
+        };
+        check_list_current(&list)?;
+        Ok((list, check.pin))
     })
 }
 
@@ -1094,9 +1179,11 @@ fn selection_already_made(tv: &ToolVersion) -> bool {
     tv.resolved_from_lockfile() || tv.request_pinned_this_version()
 }
 
+/// Refuse a release newer than the cutoff; see [`verified_age_allowed`].
 fn check_verified_age(
     logged_at: Option<&str>,
     published_at: &str,
+    allow_unlogged: bool,
     before: Option<jiff::Timestamp>,
 ) -> Result<()> {
     let Some(before) = before else {
@@ -1104,9 +1191,12 @@ fn check_verified_age(
     };
     let (time, source) = match logged_at {
         Some(time) => (time, "transparency log"),
-        None => (published_at, "unlogged manifest"),
+        None if allow_unlogged => (published_at, "unlogged manifest"),
+        None => bail!(
+            "packslip release has no transparency-log time, so only the manifest itself says how old it is; refusing to bypass minimum_release_age"
+        ),
     };
-    if !verified_age_allowed(logged_at, published_at, Some(before))? {
+    if !verified_age_allowed(logged_at, published_at, allow_unlogged, Some(before))? {
         bail!(
             "packslip release was recorded by the {source} at {time}, after the allowed cutoff {before}; refusing to bypass minimum_release_age"
         );
@@ -1130,16 +1220,26 @@ fn refuse_if_withdrawn(project: &str, version: &str, entry: &ReleaseRef) -> Resu
     Ok(())
 }
 
+/// Whether a release is old enough for the cutoff, by the time the
+/// transparency log recorded it. The manifest's own `published_at` dates it
+/// only when the user agreed to take unlogged bundles (`allow_unlogged`):
+/// a logged bundle can verify while its entry carries no time, and with
+/// nothing else to date it by, it is too new.
 fn verified_age_allowed(
     logged_at: Option<&str>,
     published_at: &str,
+    allow_unlogged: bool,
     before: Option<jiff::Timestamp>,
 ) -> Result<bool> {
     let Some(before) = before else {
         return Ok(true);
     };
-    let recorded: jiff::Timestamp = logged_at
-        .unwrap_or(published_at)
+    let recorded = match logged_at {
+        Some(time) => time,
+        None if allow_unlogged => published_at,
+        None => return Ok(false),
+    };
+    let recorded: jiff::Timestamp = recorded
         .parse()
         .wrap_err("invalid verified packslip timestamp")?;
     Ok(recorded <= before)
@@ -1266,9 +1366,9 @@ fn resolution_verification_key(
         }
     }
     if let Some(pubkey) = opts.pubkey()
-        && Path::new(&pubkey).is_file()
+        && let Some(text) = pubkey_file_text(&pubkey)?
     {
-        signer.insert("pubkey_file", file::read_to_string(&pubkey)?);
+        signer.insert("pubkey_file", text);
     }
     let key = ResolutionVerificationKey {
         project,
@@ -1447,6 +1547,7 @@ impl PackslipBackend {
         project: &str,
         pin: &Pin,
         opts: &PackslipOptions<'_>,
+        lock: &[&PlatformInfo],
     ) -> Result<ReleaseListStatement> {
         let pin = pin.for_release_list(opts)?;
         let url = well_known_url(project);
@@ -1458,7 +1559,7 @@ impl PackslipBackend {
                 format!("fetching the release list of packslip:{project} from {url}")
             })?;
         let (list, forge) =
-            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
+            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged(), lock)
                 .await
                 .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
         if list.predicate.project != project && !matches!(pin, Pin::Forge(_)) {
@@ -1482,6 +1583,7 @@ impl PackslipBackend {
         repo: &str,
         pin: &Pin,
         opts: &PackslipOptions<'_>,
+        lock: &[&PlatformInfo],
     ) -> Result<Option<ReleaseListStatement>> {
         let pin = pin.for_release_list(opts)?;
         let path = match repository_subpath(project) {
@@ -1501,7 +1603,7 @@ impl PackslipBackend {
             return Ok(None);
         };
         let (list, forge) =
-            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
+            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged(), lock)
                 .await
                 .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
         if list.predicate.project != project && !matches!(pin, Pin::Forge(_)) {
@@ -1526,8 +1628,11 @@ impl PackslipBackend {
         pin: &Pin,
         opts: &PackslipOptions<'_>,
     ) -> Result<Vendor> {
+        // The version is chosen, so the list is held to the repository IDs
+        // its lock entries commit to, as the bundle will be.
+        let lock: Vec<&PlatformInfo> = tv.lock_platforms.values().collect();
         if let Some(repo) = Self::repo(project) {
-            let Some(list) = self.github_list(project, &repo, pin, opts).await? else {
+            let Some(list) = self.github_list(project, &repo, pin, opts, &lock).await? else {
                 return Ok(Vendor::NoList);
             };
             let Some(entry) = list
@@ -1545,7 +1650,7 @@ impl PackslipBackend {
                 list_missing: false,
             }));
         }
-        let list = self.release_list(project, pin, opts).await?;
+        let list = self.release_list(project, pin, opts, &lock).await?;
         let Some(entry) = list
             .predicate
             .releases
@@ -1738,12 +1843,12 @@ impl PackslipBackend {
     ) -> Result<Option<String>> {
         let Some(repo) = Self::repo(project) else {
             return Ok(self
-                .release_list(project, pin, opts)
+                .release_list(project, pin, opts, &[])
                 .await?
                 .predicate
                 .latest);
         };
-        let list = self.github_list(project, &repo, pin, opts).await?;
+        let list = self.github_list(project, &repo, pin, opts, &[]).await?;
         if let Some(latest) = list.as_ref().and_then(|l| l.predicate.latest.as_ref()) {
             return Ok(Some(latest.clone()));
         }
@@ -1789,6 +1894,7 @@ impl PackslipBackend {
         let past_cutoff = !verified_age_allowed(
             verified.logged_at.as_deref(),
             &verified.published_at,
+            opts.allow_unlogged(),
             before,
         )?;
         // An installed version is checked against the host too, so that
@@ -1808,7 +1914,10 @@ impl PackslipBackend {
             Err(err) if err.is::<NoHostArtifact>() => return Ok(Some(err.to_string())),
             Err(err) => return Err(err),
         };
-        let requirements = crate::packslip_requirements::check(artifact, &BTreeMap::new()).await;
+        // A required command can only warn, and a warning is not an
+        // exclusion, so resolving starts none of them: the manifest names
+        // the command, and the config naming the manifest may be untrusted.
+        let requirements = crate::packslip_requirements::check_host(artifact).await;
         if !requirements.failures.is_empty() && opts.raw.get("ignore_requirements") != Some("true")
         {
             return Ok(Some(requirements.failures.join("; ")));
@@ -1969,7 +2078,7 @@ impl PackslipBackend {
             // The repository's own signed list, when it keeps one, is the
             // last word on what it names: a withdrawn release goes, and a
             // release whose tag names no version is added.
-            if let Some(list) = self.github_list(&project, &repo, &pin, &opts).await? {
+            if let Some(list) = self.github_list(&project, &repo, &pin, &opts, &[]).await? {
                 for entry in &list.predicate.releases {
                     if entry.is_yanked() {
                         versions.retain(|v| v.version != entry.version);
@@ -1986,7 +2095,7 @@ impl PackslipBackend {
             }
             return Ok(versions);
         }
-        let list = self.release_list(&project, &pin, &opts).await?;
+        let list = self.release_list(&project, &pin, &opts, &[]).await?;
         let mut versions: Vec<VersionInfo> = list
             .predicate
             .releases
@@ -2135,8 +2244,14 @@ impl PackslipBackend {
         let bundle_path = tv.download_path().join(bundle_name(&project));
         file::create_dir_all(tv.download_path())?;
         ctx.pr.set_message("download packslip".into());
-        crate::packslip::download_file(&located.url, &bundle_path, None, Some(ctx.pr.as_ref()))
-            .await?;
+        crate::packslip::download_file(
+            &located.url,
+            &bundle_path,
+            None,
+            Some(ctx.pr.as_ref()),
+            Some(crate::packslip::MAX_MANIFEST_BYTES),
+        )
+        .await?;
         let pinned: Vec<&String> = located.digest.iter().chain(vendor_digest.iter()).collect();
         if !pinned.is_empty() {
             let (actual, _) = packslip::digest_file(&bundle_path)?;
@@ -2199,6 +2314,7 @@ impl PackslipBackend {
         check_verified_age(
             verified.logged_at.as_deref(),
             &verified.published_at,
+            opts.allow_unlogged(),
             before,
         )?;
 
@@ -2227,11 +2343,11 @@ impl PackslipBackend {
         let platform_key = self.get_platform_key();
         // The signer describes the release, so every platform's lock entry
         // speaks for it, not only this host's. After a rename it is the same
-        // workflow of the same repository, by the forge check, under the
-        // repository's new name.
+        // workflow of the same repository, by the forge check against the
+        // entry's own repository ID, under the repository's new name.
         for info in tv.lock_platforms.values() {
             if let Some(locked) = &info.signer
-                && !packslip_forge::lock_signer_continues(locked, &signer, check)
+                && !packslip_forge::lock_signer_continues(info, &signer, check)
             {
                 bail!(
                     "mise.lock says {} signed {}, but this release is signed by {signer}; remove the entry from mise.lock to accept the new signer",
@@ -2300,8 +2416,14 @@ impl PackslipBackend {
         let signed = statement
             .digest_of(&artifact.name)
             .map(|sha256| format!("sha256:{sha256}"));
-        crate::packslip::download_file(&url, &file_path, signed.as_deref(), Some(ctx.pr.as_ref()))
-            .await?;
+        crate::packslip::download_file(
+            &url,
+            &file_path,
+            signed.as_deref(),
+            Some(ctx.pr.as_ref()),
+            None,
+        )
+        .await?;
 
         // The signed digest and size first, then what the lockfile remembers:
         // a lock entry written from an earlier packslip keeps its checksum and
@@ -2745,6 +2867,7 @@ impl Backend for PackslipBackend {
         check_verified_age(
             verified.logged_at.as_deref(),
             &verified.published_at,
+            opts.allow_unlogged(),
             before,
         )?;
         let host = HostPlatform::from_platform(&target.platform);
@@ -3440,18 +3563,44 @@ mod tests {
     }
 
     #[test]
+    fn a_pubkey_line_is_never_looked_up_as_a_file() {
+        let key = |seed| packslip::minisign::SecretKey::from_seed([seed; 32]).public_key();
+        let (pinned, other) = (key(7), key(8));
+        let line = pinned.to_file().lines().nth(1).unwrap().to_string();
+        // A key line is a valid relative path: whatever a file of that name
+        // in the working directory holds, the line is the key.
+        assert_eq!(pubkey_file_text_with(&line, |_| true).unwrap(), None);
+        assert_eq!(pinned_key(&line).unwrap(), pinned);
+
+        // A path is still read, and something that is neither is an error.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vendor.pub");
+        file::write(&path, other.to_file()).unwrap();
+        let raw: ToolVersionOptions =
+            toml::from_str(&format!("pubkey = {:?}", path.to_str().unwrap())).unwrap();
+        let Pin::Key(read) = pin("tool.example.com", &PackslipOptions::new(&raw)).unwrap() else {
+            panic!("expected a key");
+        };
+        assert_eq!(read, other);
+        let raw: ToolVersionOptions = toml::from_str(r#"pubkey = "not a key""#).unwrap();
+        let err = pin("tool.example.com", &PackslipOptions::new(&raw))
+            .expect_err("not a key, not a file");
+        assert!(err.to_string().contains("pubkey"), "{err}");
+    }
+
+    #[test]
     fn workflow_option_pins_one_workflow_on_tags() {
         let policy = |project: &str, toml: &str| {
             let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
             pin(project, &PackslipOptions::new(&raw))
         };
-        let Pin::Identity(policy) = policy(
-            "github.com/max-sixty/worktrunk",
-            r#"workflow = "release.yaml""#,
-        )
-        .unwrap() else {
-            panic!("expected an identity policy");
-        };
+        let policy = one_workflow(
+            policy(
+                "github.com/max-sixty/worktrunk",
+                r#"workflow = "release.yaml""#,
+            )
+            .unwrap(),
+        );
         assert_eq!(policy.issuer.as_deref(), Some(GITHUB_ISSUER));
         assert_eq!(policy.identity, None);
         assert_eq!(
@@ -3461,9 +3610,7 @@ mod tests {
             )
         );
         // A monorepo tool is pinned by its repository's workflow.
-        let Pin::Identity(policy) = policy_for("github.com/o/r/tool") else {
-            panic!("expected an identity policy");
-        };
+        let policy = one_workflow(policy_for("github.com/o/r/tool"));
         assert_eq!(
             policy.identity_prefix.as_deref(),
             Some("https://github.com/o/r/.github/workflows/release.yml@refs/tags/")
@@ -3506,16 +3653,146 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn a_list_signer_override_keeps_the_repository_id_check() {
+        // jdx/hk's v2.3.0 packslip, signed as GitHub repository 922514152;
+        // it stands in for a list signed by the same workflow.
+        const HK: &str = include_str!("../../test/fixtures/packslip-forge/hk-v2.3.0.sigstore.json");
+        let project = "github.com/jdx/hk";
+        let prefix = "https://github.com/jdx/hk/.github/workflows/release.yml@";
+        let recreated = PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml".into(),
+            ),
+            repository_id: Some("1".into()),
+            ..Default::default()
+        };
+        for options in [
+            format!("list_identity_prefix = {prefix:?}"),
+            format!("workflow = \"release.yml\"\nlist_identity_prefix = {prefix:?}"),
+        ] {
+            let raw: ToolVersionOptions = toml::from_str(&options).unwrap();
+            let opts = PackslipOptions::new(&raw);
+            let list_pin = pin(project, &opts)
+                .unwrap()
+                .for_release_list(&opts)
+                .unwrap();
+            let Pin::Workflows(policies) = &list_pin else {
+                panic!("expected the list to stay held to the repository: {list_pin:?}");
+            };
+            assert_eq!(policies[0].identity_prefix.as_deref(), Some(prefix));
+            // The list is held to what the lockfile pins, as bundles are.
+            let forge = list_pin
+                .forge(project, [&recreated], HK)
+                .await
+                .unwrap()
+                .expect("a forge expectation for the list");
+            let err = forge
+                .check_source(
+                    HK,
+                    project,
+                    "https://github.com/jdx/hk/.github/workflows/release.yml@refs/tags/v2.3.0",
+                    Some(GITHUB_ISSUER),
+                )
+                .unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("mise.lock pins GitHub repository ID 1 for it"),
+                "{err}"
+            );
+        }
+        // A project off the forges has no repository to hold the list to.
+        let raw: ToolVersionOptions = toml::from_str(&format!(
+            "issuer = {GITHUB_ISSUER:?}\nidentity_prefix = {prefix:?}\nlist_identity_prefix = {prefix:?}"
+        ))
+        .unwrap();
+        let opts = PackslipOptions::new(&raw);
+        let list_pin = pin("tool.example.com", &opts)
+            .unwrap()
+            .for_release_list(&opts)
+            .unwrap();
+        assert!(matches!(list_pin, Pin::Identity(_)), "{list_pin:?}");
+    }
+
+    #[test]
+    fn a_verified_release_list_is_cached_per_lock_commitment() {
+        let project = "github.com/jdx/hk";
+        let pin = Pin::Forge(Policy::for_project(project).unwrap());
+        let entry = |id: Option<&str>| PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml".into(),
+            ),
+            repository_id: id.map(str::to_string),
+            ..Default::default()
+        };
+        let (pinned, other, unpinned) = (entry(Some("922514152")), entry(Some("1")), entry(None));
+        let key = |lock: &[&PlatformInfo]| release_list_cache_key(project, &pin, true, lock);
+        // A list verified without the lockfile, or under one that pins
+        // another repository, is not the verification a lockfile gets.
+        assert_ne!(key(&[]), key(&[&pinned]));
+        assert_ne!(key(&[&pinned]), key(&[&other]));
+        assert_ne!(key(&[&pinned]), key(&[&pinned, &other]));
+        // Entries that commit to the same repository share one.
+        assert_eq!(key(&[&pinned]), key(&[&pinned, &pinned]));
+        assert_eq!(key(&[&pinned, &other]), key(&[&other, &pinned]));
+        // An entry with no ID commits to no repository.
+        assert_eq!(key(&[]), key(&[&unpinned]));
+    }
+
+    #[tokio::test]
+    async fn a_workflow_pin_is_held_to_the_repository_id() {
+        // jdx/hk's v2.3.0 packslip, signed by its release.yml as GitHub
+        // repository 922514152.
+        const HK: &str = include_str!("../../test/fixtures/packslip-forge/hk-v2.3.0.sigstore.json");
+        let raw: ToolVersionOptions = toml::from_str(r#"workflow = "release.yml""#).unwrap();
+        let project = "github.com/jdx/hk";
+        let pin = pin(project, &PackslipOptions::new(&raw)).unwrap();
+        let recreated = PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml".into(),
+            ),
+            repository_id: Some("1".into()),
+            ..Default::default()
+        };
+        let forge = pin.forge(project, [&recreated], HK).await.unwrap();
+        let err = verify_bundle(HK, &pin, forge.as_ref(), true, &[])
+            .err()
+            .expect("a release from another repository under the pinned name");
+        assert!(
+            err.to_string()
+                .contains("mise.lock pins GitHub repository ID 1 for it"),
+            "{err}"
+        );
+
+        // With no ID pinned yet, the release is accepted and its ID is what
+        // the signer pin and lock entries record.
+        let forge = pin.forge(project, [], HK).await.unwrap();
+        let accepted = verify_bundle(HK, &pin, forge.as_ref(), true, &[]).unwrap();
+        let recorded = accepted.check.and_then(|check| check.pin);
+        assert_eq!(
+            recorded.map(|pin| pin.repository_id),
+            Some("922514152".into())
+        );
+    }
+
+    /// The one workflow policy a `workflow` option gives.
+    fn one_workflow(pin: Pin) -> Policy {
+        match pin {
+            Pin::Workflows(mut policies) if policies.len() == 1 => policies.remove(0),
+            pin => panic!("expected one workflow, got {pin:?}"),
+        }
+    }
+
     #[test]
     fn workflow_list_accepts_each_named_workflow_on_tags() {
         let pin_for = |toml: &str| {
             let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
             pin("github.com/o/r", &PackslipOptions::new(&raw))
         };
-        let Pin::Identities(policies) =
+        let Pin::Workflows(policies) =
             pin_for(r#"workflow = ["release-plz.yml", "release.yml", "release.yml"]"#).unwrap()
         else {
-            panic!("expected several identities");
+            panic!("expected several workflows");
         };
         let prefixes: Vec<_> = policies
             .iter()
@@ -3534,10 +3811,10 @@ mod tests {
                 .all(|p| p.issuer.as_deref() == Some(GITHUB_ISSUER))
         );
         // A one-item list is the same pin as the bare name.
-        assert!(matches!(
-            pin_for(r#"workflow = ["release.yml"]"#).unwrap(),
-            Pin::Identity(_)
-        ));
+        assert_eq!(
+            one_workflow(pin_for(r#"workflow = ["release.yml"]"#).unwrap()),
+            one_workflow(pin_for(r#"workflow = "release.yml""#).unwrap())
+        );
         for bad in [
             "workflow = []",
             r#"workflow = [1]"#,
@@ -3554,27 +3831,21 @@ mod tests {
             let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
             pin("github.com/o/r", &PackslipOptions::new(&raw))
         };
-        let Pin::Identity(policy) = pin_for(r#"workflow = "release.yml@refs/heads/main""#).unwrap()
-        else {
-            panic!("expected an identity policy");
-        };
+        let policy = one_workflow(pin_for(r#"workflow = "release.yml@refs/heads/main""#).unwrap());
         assert_eq!(
             policy.identity.as_deref(),
             Some("https://github.com/o/r/.github/workflows/release.yml@refs/heads/main")
         );
         assert_eq!(policy.identity_prefix, None);
-        let Pin::Identity(policy) = pin_for(r#"workflow = "release.yml@refs/tags/""#).unwrap()
-        else {
-            panic!("expected an identity policy");
-        };
+        let policy = one_workflow(pin_for(r#"workflow = "release.yml@refs/tags/""#).unwrap());
         assert_eq!(
             policy.identity_prefix.as_deref(),
             Some("https://github.com/o/r/.github/workflows/release.yml@refs/tags/")
         );
-        let Pin::Identities(policies) =
+        let Pin::Workflows(policies) =
             pin_for(r#"workflow = ["a.yml@refs/heads/main", "b.yml"]"#).unwrap()
         else {
-            panic!("expected several identities");
+            panic!("expected several workflows");
         };
         assert_eq!(policies.len(), 2);
         for bad in [
@@ -3594,7 +3865,7 @@ mod tests {
             identity: None,
             identity_prefix: Some(name.to_string()),
         };
-        let pin = Pin::Identities(vec![policy("a"), policy("b")]);
+        let pin = Pin::Workflows(vec![policy("a"), policy("b")]);
         let accepted = pin
             .verify_any(|trust| match trust {
                 Trust::Identity(p) if p.identity_prefix.as_deref() == Some("b") => Ok("b"),
@@ -3856,13 +4127,29 @@ list_identity_prefix = "https://github.com/jdx/packslip/.github/workflows/packsl
         let before = Some("2026-09-03T00:00:00Z".parse().unwrap());
         let old = "2026-09-01T00:00:00Z";
         let new = "2026-09-04T00:00:00Z";
-        assert!(check_verified_age(Some(new), old, before).is_err());
-        assert!(check_verified_age(Some(old), new, before).is_ok());
-        assert!(check_verified_age(None, old, before).is_ok());
-        assert!(check_verified_age(None, new, before).is_err());
-        assert!(check_verified_age(Some(new), old, None).is_ok());
-        assert!(check_verified_age(Some("invalid"), old, before).is_err());
-        assert!(check_verified_age(Some("2026-09-03T00:00:00Z"), old, before).is_ok());
+        for allow_unlogged in [false, true] {
+            assert!(check_verified_age(Some(new), old, allow_unlogged, before).is_err());
+            assert!(check_verified_age(Some(old), new, allow_unlogged, before).is_ok());
+            assert!(check_verified_age(Some(new), old, allow_unlogged, None).is_ok());
+            assert!(check_verified_age(Some("invalid"), old, allow_unlogged, before).is_err());
+            assert!(
+                check_verified_age(Some("2026-09-03T00:00:00Z"), old, allow_unlogged, before)
+                    .is_ok()
+            );
+            assert!(check_verified_age(None, new, allow_unlogged, before).is_err());
+        }
+        // Only a bundle the user agreed to take unlogged is dated by its
+        // manifest. A logged bundle whose entry carries no time has nothing
+        // else to go by, so it is too new for a cutoff.
+        assert!(check_verified_age(None, old, true, before).is_ok());
+        let err = check_verified_age(None, old, false, before).unwrap_err();
+        assert!(
+            err.to_string().contains("no transparency-log time"),
+            "{err}"
+        );
+        assert!(verified_age_allowed(None, old, true, before).unwrap());
+        assert!(!verified_age_allowed(None, old, false, before).unwrap());
+        assert!(check_verified_age(None, old, false, None).is_ok());
     }
 
     #[test]

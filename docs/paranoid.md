@@ -82,7 +82,9 @@ in these ways:
 - Trust is bound to content. `mise trust` stores a hash of the file, and any edit
   makes it untrusted again.
 - Each file is trusted on its own. Trusting `mise.toml` does not trust
-  `mise.local.toml` beside it.
+  `mise.local.toml` beside it, the task files beside it, or a local
+  [`aqua.registries`](/dev-tools/backends/aqua.html) file it names. Run
+  `mise trust <file>` for each of those.
 - `mise run`, `mise install`, `mise exec`, `mise watch` and the `mise daemons`
   start, restart and register commands do not trust the config they load.
 - CI does not make config trusted, and `--yes`, `MISE_YES=1` and `CI` do not

@@ -6,8 +6,8 @@ use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
     ArchiveLayout, VerifiableError, ensure_plain_asset_name, get_filename_from_url,
-    install_artifact, lookup_platform_key, lookup_with_fallback, pinned_checksum, tag_candidates,
-    template_string, try_release_tags, try_with_v_prefix, verify_artifact,
+    install_artifact, lookup_platform_key, lookup_with_fallback, pinned_checksum, render_bin_path,
+    tag_candidates, template_string, try_release_tags, try_with_v_prefix, verify_artifact,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::config::{Config, Settings, SettingsExt};
@@ -725,7 +725,7 @@ impl Backend for UnifiedGitBackend {
                 .filter(|r| skip_asset_check || gitlab_release_has_assets(r))
                 .map(|r| VersionInfo {
                     version: self.strip_version_prefix(&r.tag_name, &opts),
-                    created_at: r.released_at,
+                    created_at: r.published_at().map(str::to_string),
                     release_url: Some(format!("{}/-/releases/{}", web_url_base, r.tag_name)),
                     ..Default::default()
                 })
@@ -2054,7 +2054,7 @@ impl UnifiedGitBackend {
         let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
         if let Some(bin_path_template) = opts.bin_path() {
-            let bin_path = template_string(&bin_path_template, tv);
+            let bin_path = render_bin_path(&bin_path_template, tv)?;
             return Ok(vec![tv.install_path().join(&bin_path)]);
         }
 
@@ -3949,6 +3949,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         gitlab::GitlabRelease {
             tag_name: "v1.0.0".into(),
             description: None,
+            created_at: None,
             released_at: None,
             assets: gitlab::GitlabAssets {
                 sources: sources
@@ -4332,6 +4333,28 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
     #[test]
     fn test_additional_asset_patterns_is_an_install_time_key() {
         assert!(install_time_option_keys().contains(&"additional_asset_patterns".to_string()));
+    }
+
+    #[test]
+    fn test_discover_bin_paths_keeps_bin_path_in_install_dir() {
+        use crate::backend::static_helpers::test_tool_version;
+        let backend = create_test_backend();
+
+        let tv = test_tool_version(&backend, "1.0.0", &[("bin_path", "t-{{ version }}/bin")]);
+        assert_eq!(
+            backend.discover_bin_paths(&tv).unwrap(),
+            vec![tv.install_path().join("t-1.0.0/bin")]
+        );
+
+        // The rendered value is what gets checked, not the template.
+        for bin_path in ["/proc/self/cwd/evil", "../../evil", "{{ '..' }}/evil"] {
+            let tv = test_tool_version(&backend, "1.0.0", &[("bin_path", bin_path)]);
+            let err = backend.discover_bin_paths(&tv).unwrap_err();
+            assert!(
+                err.to_string().contains("inside the install directory"),
+                "unexpected error for {bin_path:?}: {err}"
+            );
+        }
     }
 
     #[test]

@@ -821,10 +821,11 @@ mod tests {
         let base = tmp.path().join("daemons");
         let dir = write_state(&base, "gone", &tmp.path().join("gone"), &[("db/one", 1)]);
         // Stand in for a file that cannot be removed: a directory entry that
-        // read_dir reports and remove_all then fails on.
+        // read_dir reports and remove_all then fails on. Its owner cannot read
+        // it, so remove_all cannot restore access to it either.
         let busy = dir.join("data");
         let mut perms = std::fs::metadata(&busy).unwrap().permissions();
-        perms.set_mode(0o500);
+        perms.set_mode(0o000);
         std::fs::set_permissions(&busy, perms).unwrap();
 
         let lock = super::super::ProjectLock::try_acquire(&dir)

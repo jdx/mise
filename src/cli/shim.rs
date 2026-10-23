@@ -269,7 +269,12 @@ async fn command_wrapper_for(
     };
     // `command` renders from `vars` and the process environment only: the full toolset context
     // needs the project's tools installed, and the command may be what installs them.
-    let command = render_template(wrapper.command(), &with_source(&config.tera_ctx), &dir)?;
+    let command = render_template(
+        wrapper.command(),
+        &with_source(&config.tera_ctx),
+        &dir,
+        source.as_deref(),
+    )?;
     if command.trim().is_empty() {
         bail!(
             "command wrapper command rendered blank: {:?}",
@@ -299,12 +304,17 @@ async fn command_wrapper_for(
     let args = wrapper
         .args()
         .iter()
-        .map(|arg| render_template(arg, &ctx, &dir))
+        .map(|arg| render_template(arg, &ctx, &dir, source.as_deref()))
         .collect::<Result<Vec<_>>>()?;
     let env = wrapper
         .env()
         .iter()
-        .map(|(key, value)| Ok((key.clone(), render_template(value, &ctx, &dir)?)))
+        .map(|(key, value)| {
+            Ok((
+                key.clone(),
+                render_template(value, &ctx, &dir, source.as_deref())?,
+            ))
+        })
         .collect::<Result<_>>()?;
     Ok(Some(CommandWrapper::Detailed(CommandWrapperOptions {
         command,
@@ -314,13 +324,22 @@ async fn command_wrapper_for(
 }
 
 /// Render a wrapper value as a template, so a wrapper can use `vars` and the path functions
-/// like a task. Values without template syntax are left untouched.
-fn render_template(input: &str, ctx: &tera::Context, dir: &Path) -> Result<String> {
+/// like a task. Values without template syntax are left untouched. `source` is the file that
+/// declares the wrapper; one from global or system config keeps `env` in safe mode.
+fn render_template(
+    input: &str,
+    ctx: &tera::Context,
+    dir: &Path,
+    source: Option<&Path>,
+) -> Result<String> {
     if !crate::tera::contains_template_syntax(input) {
         return Ok(input.to_string());
     }
     let mut tera = crate::tera::get_tera(Some(dir));
-    Ok(crate::tera::render_str(&mut tera, input, ctx)?)
+    Ok(match source {
+        Some(source) => crate::tera::render_config_str(&mut tera, input, ctx, source)?,
+        None => crate::tera::render_str(&mut tera, input, ctx)?,
+    })
 }
 
 /// Whether two command names find the same shim. Windows file names are case-insensitive, so a

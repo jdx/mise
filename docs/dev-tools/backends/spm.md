@@ -177,6 +177,7 @@ manages on `PATH`, and `PREFIX` and `MISE_TOOL_INSTALL_PATH` set to the install
 directory. It applies
 only to source builds and cannot be combined with `filter_bins`. mise never runs
 a package's Makefile or install script unless you configure it here.
+[Safe mode](/security.html#safe-mode) refuses to install a tool that sets it.
 
 Use it for packages that install more than the executable, such as a dynamic
 library or Swift modules placed by the package's own `make install`:

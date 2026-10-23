@@ -426,7 +426,7 @@ async fn fetch_() -> Result<VersionsIndex> {
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or_default()
                 .to_string();
-            let body = resp.text().await?;
+            let body = crate::http::buffer_body(resp).await?.text().await?;
             let index = VersionsIndex::parse(&body)?;
             // A copy that cannot be written only costs the next command a fetch.
             if let Err(err) = write_copy(&etag, &body) {

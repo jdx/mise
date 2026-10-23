@@ -27,7 +27,6 @@ use zip::ZipArchive;
 
 use crate::progress::SingleReport;
 use crate::{dirs, env};
-#[cfg(windows)]
 use mise_settings::Settings;
 
 pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
@@ -167,7 +166,7 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
             trace!("rm -rf {}", display_path(path));
             // `map_err` rather than `wrap_err_with`: the hint depends on the error, and
             // `wrap_err_with`'s closure is not given it.
-            fs::remove_dir_all(path).map_err(|e| {
+            remove_dir_all_restoring_owner_access(path).map_err(|e| {
                 let msg = with_io_hint(
                     // Not "rm -rf": mise calls `remove_dir_all`, and on Windows it is naming a
                     // command the reader does not have.
@@ -180,6 +179,77 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
         }
         _ => {}
     };
+    Ok(())
+}
+
+/// [`fs::remove_dir_all`], retried once after the owner regains full access to every
+/// directory in the tree. An archive can install directories without the owner's write bit (a
+/// sealed `0555` runtime, or Go's read-only module cache), and nothing can be unlinked from such
+/// a directory, so `mise uninstall` failed with "Permission denied" on what mise had installed.
+fn remove_dir_all_restoring_owner_access(path: &Path) -> std::io::Result<()> {
+    let result = fs::remove_dir_all(path);
+    #[cfg(unix)]
+    if let Err(err) = &result
+        && err.kind() == std::io::ErrorKind::PermissionDenied
+        && restore_owner_access(path).is_ok()
+    {
+        return fs::remove_dir_all(path);
+    }
+    result
+}
+
+#[cfg(unix)]
+fn restore_owner_access(path: &Path) -> Result<()> {
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    let Some(name) = path.file_name() else {
+        bail!("no directory name in {}", display_path(path));
+    };
+    restore_owner_access_at(File::open(parent)?, name)
+}
+
+/// Give the owner read, write and search access to the directory `name` under `parent` and to
+/// every directory below it. Each directory is opened relative to the descriptor of the one
+/// holding it with `O_NOFOLLOW` and changed through its own descriptor, as [`remove_all_at`]
+/// walks a tree, so neither a link in the tree nor one swapped in mid-walk can redirect the
+/// change to a directory outside it. A directory the owner cannot open stops the walk.
+#[cfg(unix)]
+fn restore_owner_access_at<Fd: std::os::fd::AsFd>(
+    parent: Fd,
+    name: &std::ffi::OsStr,
+) -> Result<()> {
+    let fd = nix::fcntl::openat(
+        &parent,
+        name,
+        nix::fcntl::OFlag::O_RDONLY
+            | nix::fcntl::OFlag::O_DIRECTORY
+            | nix::fcntl::OFlag::O_NOFOLLOW
+            | nix::fcntl::OFlag::O_CLOEXEC,
+        nix::sys::stat::Mode::empty(),
+    )?;
+    let mode = nix::sys::stat::fstat(&fd)?.st_mode;
+    if mode & 0o700 != 0o700 {
+        nix::sys::stat::fchmod(&fd, nix::sys::stat::Mode::from_bits_truncate(mode | 0o700))?;
+    }
+    let mut directory = nix::dir::Dir::from_fd(fd)?;
+    let entries = directory
+        .iter()
+        .map(|entry| entry.map(|entry| entry.file_name().to_owned()))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for entry in entries {
+        let entry = std::ffi::OsStr::from_bytes(entry.to_bytes());
+        if entry == "." || entry == ".." {
+            continue;
+        }
+        let stat =
+            nix::sys::stat::fstatat(&directory, entry, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)?;
+        let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode & nix::libc::S_IFMT);
+        if kind == nix::sys::stat::SFlag::S_IFDIR {
+            restore_owner_access_at(&directory, entry)?;
+        }
+    }
     Ok(())
 }
 
@@ -2055,10 +2125,71 @@ pub fn executable_names(bin: &str) -> Vec<String> {
     names
 }
 
+/// Unpacking may always produce this much, whatever `extract_max_ratio` allows:
+/// a small download that compresses well is no threat to the disk. Lower in
+/// tests, which have to unpack more than this to reach the limit.
+const EXTRACT_MIN_LIMIT: u64 = if cfg!(test) {
+    256 * 1024
+} else {
+    256 * 1024 * 1024
+};
+
+/// The most bytes unpacking `input` may produce: `extract_max_ratio` times its
+/// size, and at least [`EXTRACT_MIN_LIMIT`]. Release archives rarely unpack to
+/// more than 10 times their size, while 1 GiB of zeroes is under 1 KiB of
+/// bzip2, so without a bound a small download could fill the disk.
+fn extract_limit(input: &Path) -> Result<u64> {
+    let ratio = Settings::get().extract_max_ratio;
+    if ratio <= 0 {
+        return Ok(u64::MAX);
+    }
+    let size = input.metadata()?.len();
+    Ok(size.saturating_mul(ratio as u64).max(EXTRACT_MIN_LIMIT))
+}
+
+fn extract_limit_error(limit: u64) -> std::io::Error {
+    std::io::Error::other(format!(
+        "unpacked size exceeds {limit} bytes, the limit set by the extract_max_ratio setting"
+    ))
+}
+
+/// Fails once more than `remaining` bytes have been read from `inner`.
+struct LimitedReader<R> {
+    inner: R,
+    limit: u64,
+    remaining: u64,
+}
+
+impl<R: Read> LimitedReader<R> {
+    fn new(inner: R, limit: u64) -> Self {
+        Self {
+            inner,
+            limit,
+            remaining: limit,
+        }
+    }
+
+    /// Bounds what `decoder` may produce from the compressed file `input`.
+    fn for_input(input: &Path, decoder: R) -> Result<Self> {
+        Ok(Self::new(decoder, extract_limit(input)?))
+    }
+}
+
+impl<R: Read> Read for LimitedReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.remaining = self
+            .remaining
+            .checked_sub(n as u64)
+            .ok_or_else(|| extract_limit_error(self.limit))?;
+        Ok(n)
+    }
+}
+
 pub fn un_gz(input: &Path, dest: &Path) -> Result<()> {
     debug!("gunzip {} > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = GzDecoder::new(f);
+    let mut dec = LimitedReader::for_input(input, GzDecoder::new(f))?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-gzip: {}", display_path(input)))?;
@@ -2068,7 +2199,7 @@ pub fn un_gz(input: &Path, dest: &Path) -> Result<()> {
 pub fn un_xz(input: &Path, dest: &Path) -> Result<()> {
     debug!("xz -d {} -c > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = xz2::read::XzDecoder::new(f);
+    let mut dec = LimitedReader::for_input(input, xz2::read::XzDecoder::new(f))?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-xz: {}", display_path(input)))?;
@@ -2092,7 +2223,7 @@ fn zstd_decoder<R: Read>(reader: R) -> Result<zstd::Decoder<'static, BufReader<R
 pub fn un_zst(input: &Path, dest: &Path) -> Result<()> {
     debug!("zstd -d {} -c > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = zstd_decoder(f)?;
+    let mut dec = LimitedReader::for_input(input, zstd_decoder(f)?)?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-zst: {}", display_path(input)))?;
@@ -2102,7 +2233,7 @@ pub fn un_zst(input: &Path, dest: &Path) -> Result<()> {
 pub fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
     debug!("bzip2 -d {} -c > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = BzDecoder::new(f);
+    let mut dec = LimitedReader::for_input(input, BzDecoder::new(f))?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-bz2: {}", display_path(input)))?;
@@ -2381,9 +2512,12 @@ pub fn untar(
     })
 }
 
+/// The decoded tar stream of `archive`, bounded by [`extract_limit`]. Sparse
+/// members are the exception: jdx-tar makes up their holes itself, and writes
+/// them as holes, so they never pass through this reader.
 fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io::Read>> {
     let f = File::open(archive)?;
-    Ok(match format {
+    let tar: Box<dyn std::io::Read> = match format {
         // TODO: we probably shouldn't assume raw is tar.gz, but this was to retain existing behavior
         ExtractionFormat::TarGz | ExtractionFormat::Raw => Box::new(GzDecoder::new(f)),
         ExtractionFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
@@ -2405,7 +2539,8 @@ fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io:
         ExtractionFormat::Zip => bail!("zip format not supported"),
         ExtractionFormat::SevenZip => bail!("7z format not supported"),
         ExtractionFormat::Rar => bail!("rar format not supported"),
-    })
+    };
+    Ok(Box::new(LimitedReader::for_input(archive, tar)?))
 }
 
 fn reset_dir_mtime_to_now(dir: &Path) -> Result<()> {
@@ -2485,12 +2620,21 @@ pub fn unzip(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<(
         ));
     }
     run_blocking(|| {
-        ZipArchive::new(File::open(archive)?)
-            .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
-            .extract(dest)
-            .wrap_err_with(|| {
-                format!("failed to extract zip archive: {}", display_path(archive))
-            })?;
+        let mut zip = ZipArchive::new(File::open(archive)?)
+            .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?;
+        let err = || format!("failed to extract zip archive: {}", display_path(archive));
+        // The zip crate fails an entry that unpacks to more than the size its
+        // central directory record declares, so those sizes bound what
+        // `extract` writes, even when several records share one member.
+        let limit = extract_limit(archive)?;
+        let mut declared = 0u64;
+        for i in 0..zip.len() {
+            declared = declared.saturating_add(zip.by_index_raw(i).wrap_err_with(err)?.size());
+            if declared > limit {
+                return Err(eyre::Report::new(extract_limit_error(limit)).wrap_err(err()));
+            }
+        }
+        zip.extract(dest).wrap_err_with(err)?;
 
         if !opts.preserve_mtime {
             reset_dir_mtime_to_now(dest)?;
@@ -2654,12 +2798,22 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
         dest
     };
     run_blocking(|| {
+        let limit = extract_limit(archive)?;
+        let mut remaining = limit;
         sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
             let dest_path = dest.join(
                 sanitize_7z_entry_path(entry.name())
                     .map_err(|err| sevenz_rust2::Error::Other(format!("{err:#}").into()))?,
             );
-            sevenz_rust2::default_entry_extract_fn(entry, reader, &dest_path)
+            // One budget across entries, not one per entry.
+            let mut reader = LimitedReader {
+                inner: reader,
+                limit,
+                remaining,
+            };
+            let extracted = sevenz_rust2::default_entry_extract_fn(entry, &mut reader, &dest_path);
+            remaining = reader.remaining;
+            extracted
         })
         .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
 
@@ -2973,7 +3127,6 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Inspects the top-level contents of a tar archive without extracting it
 /// Skips leading CurDir (".") components from a path's components iterator.
 /// Archives often have paths like "./foo/bar" where the leading "." should be ignored.
 fn skip_curdir_components(path: &Path) -> impl Iterator<Item = std::path::Component<'_>> {
@@ -2981,6 +3134,12 @@ fn skip_curdir_components(path: &Path) -> impl Iterator<Item = std::path::Compon
         .skip_while(|c| matches!(c, std::path::Component::CurDir))
 }
 
+/// Inspects the top-level contents of a tar archive without extracting it.
+///
+/// Stops at the second distinct top-level entry, which already settles
+/// [`should_strip_components`]. A tar entry name can be up to 1 MiB and
+/// compresses to a few bytes, so collecting every name would let a tiny
+/// archive hold gigabytes of memory.
 pub fn inspect_tar_contents(
     archive: &Path,
     format: ExtractionFormat,
@@ -3006,15 +3165,20 @@ pub fn inspect_tar_contents(
 
             // Update the component's directory status
             // A component is a directory if ANY entry indicates it's a directory
-            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            let existing = top_level_components.entry(name).or_insert(false);
             *existing = *existing || is_directory;
+            if top_level_components.len() > 1 {
+                break;
+            }
         }
     }
 
     Ok(top_level_components.into_iter().collect())
 }
 
-/// Inspects the top-level contents of a zip archive without extracting it
+/// Inspects the top-level contents of a zip archive without extracting it.
+///
+/// Like [`inspect_tar_contents`], stops at the second distinct top-level entry.
 pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     let f = File::open(archive)?;
     let mut archive = ZipArchive::new(f)
@@ -3034,8 +3198,11 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
                 // It's a directory if the entry type is dir OR if there are more components after the first
                 let is_directory = file.is_dir() || components.next().is_some();
 
-                let existing = top_level_components.entry(name.clone()).or_insert(false);
+                let existing = top_level_components.entry(name).or_insert(false);
                 *existing = *existing || is_directory;
+                if top_level_components.len() > 1 {
+                    break;
+                }
             }
         }
     }
@@ -3043,7 +3210,8 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     Ok(top_level_components.into_iter().collect())
 }
 
-/// Adapted from inspect_tar_contents for 7z archives
+/// Adapted from inspect_tar_contents for 7z archives, and like it stops at the
+/// second distinct top-level entry.
 pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     let sevenz = sevenz_rust2::Archive::open(archive)?;
     let mut top_level_components = std::collections::HashMap::new();
@@ -3059,8 +3227,11 @@ pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
             // It's a directory if the entry type is dir OR if there are more components after the first
             let is_directory = file.is_directory() || components.next().is_some();
 
-            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            let existing = top_level_components.entry(name).or_insert(false);
             *existing = *existing || is_directory;
+            if top_level_components.len() > 1 {
+                break;
+            }
         }
     }
 
@@ -3090,6 +3261,17 @@ pub struct ArchiveContent {
     pub sha256: String,
 }
 
+/// How many bytes [`archive_content_files`] hashes per byte of archive before it
+/// gives up.
+///
+/// Nothing has vouched for the archive yet, and hashing writes nothing, so no
+/// full disk ends it. Zip entries that share one member, sparse tar members and
+/// plain decompression bombs would otherwise turn a few kilobytes of download
+/// into hours of hashing, or no end at all.
+const ARCHIVE_CONTENT_MAX_RATIO: u64 = 100;
+/// An archive may always unpack to this much, whatever its ratio.
+const ARCHIVE_CONTENT_MIN_BUDGET: u64 = 256 * 1024 * 1024;
+
 /// Return the regular files in an archive after applying strip-components.
 ///
 /// This is intentionally stricter than extraction: content-level provenance is
@@ -3104,6 +3286,10 @@ pub fn archive_content_files(
     if strip_components > 1 {
         bail!("content-level SLSA verification only supports strip_components values of 0 or 1");
     }
+    let budget = fs::metadata(archive_path)?
+        .len()
+        .saturating_mul(ARCHIVE_CONTENT_MAX_RATIO)
+        .max(ARCHIVE_CONTENT_MIN_BUDGET);
 
     match format {
         ExtractionFormat::TarGz
@@ -3114,9 +3300,9 @@ pub fn archive_content_files(
         | ExtractionFormat::TarBr
         | ExtractionFormat::TarLz4
         | ExtractionFormat::TarSz => {
-            archive_content_files_tar(archive_path, format, strip_components)
+            archive_content_files_tar(archive_path, format, strip_components, budget)
         }
-        ExtractionFormat::Zip => archive_content_files_zip(archive_path, strip_components),
+        ExtractionFormat::Zip => archive_content_files_zip(archive_path, strip_components, budget),
         ExtractionFormat::SevenZip => {
             bail!("content-level SLSA verification does not support 7z archives")
         }
@@ -3138,6 +3324,7 @@ fn archive_content_files_tar(
     archive_path: &Path,
     format: ExtractionFormat,
     strip_components: usize,
+    mut budget: u64,
 ) -> Result<Vec<ArchiveContent>> {
     let tar = open_tar(format, archive_path)?;
     let mut archive = Archive::new(tar);
@@ -3157,7 +3344,10 @@ fn archive_content_files_tar(
             );
         }
         let name = normalize_archive_content_path(&path, strip_components)?;
-        let sha256 = sha256_reader(&mut entry)?;
+        // For a sparse member this is the size including its holes, which
+        // jdx-tar reads back as zeroes.
+        let size = entry.size();
+        let sha256 = sha256_reader(&mut entry, size, &mut budget)?;
         files.push(ArchiveContent { name, sha256 });
     }
 
@@ -3167,6 +3357,7 @@ fn archive_content_files_tar(
 fn archive_content_files_zip(
     archive_path: &Path,
     strip_components: usize,
+    mut budget: u64,
 ) -> Result<Vec<ArchiveContent>> {
     let f = File::open(archive_path)?;
     let mut archive = ZipArchive::new(f)
@@ -3194,14 +3385,28 @@ fn archive_content_files_zip(
             )
         })?;
         let name = normalize_archive_content_path(&enclosed_name, strip_components)?;
-        let sha256 = sha256_reader(&mut file)?;
+        let size = file.size();
+        let sha256 = sha256_reader(&mut file, size, &mut budget)?;
         files.push(ArchiveContent { name, sha256 });
     }
 
     validate_archive_content_files(files)
 }
 
-fn sha256_reader(reader: &mut impl Read) -> Result<String> {
+/// Hash an archive entry and deduct what was read from `budget`.
+///
+/// The declared `size` refuses an oversized entry before any work is done. What
+/// is deducted is what was read, because a zip entry can inflate to more than it
+/// declares.
+fn sha256_reader(reader: &mut impl Read, size: u64, budget: &mut u64) -> Result<String> {
+    let over_budget = || {
+        eyre::eyre!(
+            "content-level SLSA verification rejected an archive that unpacks to more than {ARCHIVE_CONTENT_MAX_RATIO} times its size"
+        )
+    };
+    if size > *budget {
+        return Err(over_budget());
+    }
     let mut hasher = Sha256::new();
     let mut buf = [0; 8192];
     loop {
@@ -3209,6 +3414,7 @@ fn sha256_reader(reader: &mut impl Read) -> Result<String> {
         if n == 0 {
             break;
         }
+        *budget = budget.checked_sub(n as u64).ok_or_else(over_budget)?;
         hasher.update(&buf[..n]);
     }
     Ok(hex::encode(hasher.finalize()))

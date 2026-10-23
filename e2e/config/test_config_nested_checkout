@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# A repository cloned into a trusted directory under the name `mise`, `.mise`
+# or `.config` is a project of its own, not that directory's config folder.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+mkdir -p projects/sibling
+cd projects || exit 1
+cat <<EOF >mise.toml
+[env]
+PARENT_ENV = "1"
+EOF
+mise trust
+
+# a config folder that is part of the directory still loads
+mkdir -p mise/tasks
+cat <<EOF >mise/config.toml
+[env]
+CLONE_ENV = "1"
+EOF
+cat <<EOF >mise/tasks/clonetask
+#!/usr/bin/env bash
+echo clonetask
+EOF
+chmod +x mise/tasks/clonetask
+assert_contains "mise env -s bash" "CLONE_ENV"
+assert_contains "mise tasks ls" "clonetask"
+
+# once it is a checkout of its own, neither its config nor its tasks belong to
+# the directory, here or in a project below it
+git init -q mise
+assert_contains "mise env -s bash" "PARENT_ENV"
+assert_not_contains "mise env -s bash 2>&1" "CLONE_ENV"
+assert_not_contains "mise tasks ls 2>&1" "clonetask"
+cd sibling || exit 1
+assert_not_contains "mise env -s bash 2>&1" "CLONE_ENV"
+
+# the same holds for a checkout named .mise
+cd .. || exit 1
+rm -rf mise
+mkdir .mise
+cat <<EOF >.mise/config.toml
+[env]
+CLONE_ENV = "1"
+EOF
+git init -q .mise
+assert_not_contains "mise env -s bash 2>&1" "CLONE_ENV"
+
+# A checkout named .config is outside config for the directory above it, but
+# run inside it, its mise.toml is its own project config and trusted on its own.
+rm -rf .mise
+mkdir .config
+cat <<EOF >.config/mise.toml
+[env]
+CHECKOUT_ENV = "{{ 1 + 1 }}"
+EOF
+git init -q .config
+assert_not_contains "mise env -s bash 2>&1" "CHECKOUT_ENV"
+cd .config || exit 1
+# trust in the directory above does not cover it
+assert_fail_contains "MISE_YES=0 mise env -s bash 2>&1" ".config/mise.toml are not trusted"
+mise trust
+assert_contains "mise env -s bash" "CHECKOUT_ENV"
+assert_contains "mise trust --show" ".config: trusted"
+cd .. || exit 1
+assert_not_contains "mise env -s bash 2>&1" "CHECKOUT_ENV"
+
+# A checkout cloned into the home directory as mise-tasks does not supply
+# global tasks either, while a plain directory there does.
+echo "[env]" >"$MISE_CONFIG_DIR/config.toml"
+mkdir -p "$HOME/mise-tasks"
+cat <<EOF >"$HOME/mise-tasks/hometask"
+#!/usr/bin/env bash
+echo hometask
+EOF
+chmod +x "$HOME/mise-tasks/hometask"
+assert_contains "mise tasks ls 2>&1" "hometask"
+git init -q "$HOME/mise-tasks"
+assert_not_contains "mise tasks ls 2>&1" "hometask"

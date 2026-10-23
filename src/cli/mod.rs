@@ -572,7 +572,7 @@ impl Commands {
             Self::Trust(cmd) => Box::pin(cmd.run()),
             Self::Uninstall(cmd) => Box::pin(cmd.run()),
             Self::Unset(cmd) => Box::pin(cmd.run()),
-            Self::Untrust(cmd) => Box::pin(async move { cmd.run() }),
+            Self::Untrust(cmd) => Box::pin(cmd.run()),
             Self::Unuse(cmd) => Box::pin(cmd.run()),
             Self::Upgrade(cmd) => Box::pin(cmd.run()),
             Self::Usage(cmd) => Box::pin(async move { cmd.run() }),

@@ -40,11 +40,18 @@ pub struct Pin {
     /// For a GitHub or GitLab project, the forge's repository ID from the
     /// last accepted release, and the name it was signed under. A rename or a
     /// transfer to another owner keeps the ID, so the pin follows the
-    /// repository rather than the name. Pins written before mise recorded it
-    /// have none, and gain it from the next release accepted. An owner ID
-    /// that older pins recorded is still read, and ignored.
+    /// repository rather than the name. Pins written before mise recorded it,
+    /// or under signer options that skip the forge check, have none: they
+    /// hold by name, and gain it from the next release accepted under that
+    /// name with a forge check. An owner ID that older pins recorded is still
+    /// read, and ignored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forge: Option<ForgePin>,
+    /// The names the pin was recorded under before it followed a rename to
+    /// the one it is under now. A name its repository left is free for
+    /// anyone to take, so each stays held to the pin.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub former_names: BTreeSet<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -115,15 +122,20 @@ impl Pins {
     }
 
     /// The names of the pins that speak for `project`, its own first: every
-    /// one of [`Self::repository_keys`] that has a pin, and one recorded for
-    /// a release last signed as `project`, which is how a config that
-    /// followed a rename finds the pin the old name set.
+    /// one of [`Self::repository_keys`] that has a pin, one recorded for a
+    /// release last signed as `project`, which is how a config that followed
+    /// a rename finds the pin the old name set, and one that was recorded
+    /// under `project` before it followed a rename, which holds the name to
+    /// the repository that left it whatever a certificate shows under it now.
     fn pin_keys(&self, project: &str, verified: Option<&ForgePin>) -> Vec<String> {
         let mut keys = self.repository_keys(project, verified);
         keys.extend(
             self.pins
                 .iter()
-                .filter(|(_, pin)| pin.forge.as_ref().is_some_and(|f| f.project == project))
+                .filter(|(_, pin)| {
+                    pin.forge.as_ref().is_some_and(|f| f.project == project)
+                        || pin.former_names.contains(project)
+                })
                 .map(|(key, _)| key.clone()),
         );
         let mut keys: Vec<String> = keys
@@ -132,6 +144,13 @@ impl Pins {
             .collect();
         keys.sort_by_key(|key| key.as_str() != project);
         keys
+    }
+
+    /// The forge identity the pins under `keys` hold: that of the first with
+    /// one. A pin set without a forge check has none, and says nothing
+    /// against the ID another name recorded for the same repository.
+    fn forge_of(&self, keys: &[String]) -> Option<ForgePin> {
+        keys.iter().find_map(|key| self.pins[key].forge.clone())
     }
 
     /// Move what a release list left under `from` to `to`, keeping the
@@ -197,8 +216,9 @@ pub struct Observed<'a> {
     pub provenance: bool,
     pub logged: bool,
     /// The forge check the release passed, for a GitHub or GitLab project
-    /// verified by repository ID. With it, a signer is the pinned one when it
-    /// is the same workflow of the same repository under a new name.
+    /// verified by repository ID. With it, and a pin that recorded the same
+    /// ID, a signer is the pinned one when it is the same workflow of the
+    /// same repository under a new name.
     pub forge: Option<&'a Check>,
     /// Signers the tool options name together, as a `workflow` list does for
     /// a project that moved its signing workflow: a person's say-so that a
@@ -242,10 +262,7 @@ pub fn forge_pin(project: &str) -> Result<Option<ForgePin>> {
 
 pub fn forge_pin_at(path: &Path, project: &str) -> Result<Option<ForgePin>> {
     let pins = load(path)?;
-    Ok(pins
-        .pin_keys(project, None)
-        .first()
-        .and_then(|key| pins.pins[key].forge.clone()))
+    Ok(pins.forge_of(&pins.pin_keys(project, None)))
 }
 
 /// Compare what a release showed with the project's pin, refusing what
@@ -295,14 +312,16 @@ fn check_against(pin: &Pin, key: &str, project: &str, observed: Observed<'_>) ->
     };
     let signer = signer_of(observed.scheme, observed.key_id);
     let mut problems = Vec::new();
-    // A check made from the pin always holds the workflow; going through
-    // `continues_signer` keeps both arms on mise's one rule regardless.
+    // Only the repository ID the pin itself recorded shows that a signer
+    // under another name is the pinned one. A pin that recorded none holds
+    // by name: the ID `observed.forge` was checked against is what the forge
+    // says the name belongs to today, or what a lockfile recorded, and says
+    // nothing about the repository this pin was set for.
     let listed = |signer: &str| observed.listed.iter().any(|listed| listed == signer);
     let same_signer = pin.signer == signer
         || (listed(&pin.signer) && listed(&signer))
         || by_pin
             .as_ref()
-            .or(observed.forge)
             .is_some_and(|check| continues_signer(check, &pin.signer));
     if pin.scheme != observed.scheme || !same_signer {
         problems.push(format!(
@@ -349,7 +368,8 @@ fn forge_refusal(project: &str, key: &str, err: IdentityError) -> Report {
 /// got stronger is remembered, what stayed the same is left alone. Checks
 /// again under the lock, since the file may have changed since [`check`].
 /// A pin a rename left under another name moves to `project`, with its
-/// release list's sequence, so one repository keeps one pin.
+/// release list's sequence, so one repository keeps one pin; the name it
+/// leaves stays held to it.
 pub fn record(project: &str, observed: Observed<'_>) -> Result<Pin> {
     record_at(&pins_file(), project, observed)
 }
@@ -370,6 +390,7 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
             unlogged: !observed.logged,
             pinned_at: jiff::Timestamp::now().to_string(),
             forge,
+            former_names: BTreeSet::new(),
         };
         pins.pins.insert(project.to_string(), pin.clone());
         save(path, &pins)?;
@@ -389,7 +410,17 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
         attested_by: observed.attested_by.to_string(),
         provenance: observed.provenance || any(|pin| pin.provenance),
         unlogged: !observed.logged || any(|pin| pin.unlogged),
-        forge: forge.or(pin.forge.clone()),
+        // Like the floors, from every pin merged: the project's own may
+        // have been set without a forge check while another name's has one.
+        forge: forge.or_else(|| pins.forge_of(&keys)),
+        // The names the pin leaves by moving to `project` stay held to it,
+        // with those it left before.
+        former_names: keys
+            .iter()
+            .flat_map(|key| pins.pins[key].former_names.iter().chain([key]))
+            .filter(|name| name.as_str() != project)
+            .cloned()
+            .collect(),
         ..pin.clone()
     };
     let moved: Vec<&String> = keys.iter().filter(|key| key.as_str() != project).collect();
@@ -780,6 +811,7 @@ pinned_at = "2026-09-01T00:00:00Z"
                 unlogged: false,
                 pinned_at: "2026-09-01T00:00:00Z".into(),
                 forge: Some(ForgePin::of("github.com/new/r", "42")),
+                former_names: BTreeSet::new(),
             },
         );
         save(&path, &pins).unwrap();
@@ -800,6 +832,36 @@ pinned_at = "2026-09-01T00:00:00Z"
         // Forgetting the new name forgets the pin found under it.
         assert!(forget_at(&path, "github.com/new/r").unwrap());
         assert_eq!(forge_pin_at(&path, "github.com/old/r").unwrap(), None);
+    }
+
+    #[test]
+    fn merging_pins_keeps_the_repository_id_another_name_recorded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let (old, new) = ("github.com/o/old", "github.com/o/r");
+        // The new name was pinned without a forge check, as under signer
+        // options, and then the old name with one.
+        let v1 = oidc("v1");
+        let unchecked = record_at(&path, new, observed("sigstore-oidc", &v1)).unwrap();
+        assert_eq!(unchecked.forge, None);
+        let mut pins = load(&path).unwrap();
+        pins.pins.insert(
+            old.into(),
+            Pin {
+                forge: Some(repo(new, "42")),
+                ..unchecked
+            },
+        );
+        save(&path, &pins).unwrap();
+        assert_eq!(forge_pin_at(&path, new).unwrap(), Some(repo(new, "42")));
+        // Another release that brings no ID merges the two into one pin,
+        // which keeps the ID.
+        let pin = record_at(&path, new, observed("sigstore-oidc", &v1)).unwrap();
+        assert_eq!(pin.forge, Some(repo(new, "42")));
+        assert_eq!(
+            list_at(&path).unwrap(),
+            BTreeMap::from([(new.to_string(), pin)])
+        );
     }
 
     fn repo(project: &str, id: &str) -> ForgePin {
@@ -988,6 +1050,86 @@ pinned_at = "2026-09-01T00:00:00Z"
     }
 
     #[test]
+    fn a_name_the_pin_moved_away_from_stays_held_to_it() {
+        use packslip::sigstore::{GITHUB_ISSUER, SourceRepository};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let (old, new) = ("github.com/o/old", "github.com/o/new");
+        // A release of repository `id`, requested and signed as `name`.
+        let release = |name: &str, id: &str| {
+            let key_id = format!("https://{name}/.github/workflows/release.yml@refs/tags/v1");
+            let source = SourceRepository::new(format!("https://{name}")).with_id(id);
+            let check = forge::check(
+                &Expected::new(name),
+                name,
+                &key_id,
+                Some(GITHUB_ISSUER),
+                Some(&source),
+            )
+            .unwrap();
+            (key_id, check)
+        };
+        let (key_id, check) = release(old, "42");
+        let first = Observed {
+            forge: Some(&check),
+            ..observed("sigstore-oidc", &key_id)
+        };
+        record_at(&path, old, first).unwrap();
+        // Another config already names the repository as it is called now:
+        // the pin moves, and remembers the name it leaves.
+        let (key_id, check) = release(new, "42");
+        let followed = Observed {
+            forge: Some(&check),
+            ..observed("sigstore-oidc", &key_id)
+        };
+        let pin = record_at(&path, new, followed).unwrap();
+        let pins = list_at(&path).unwrap();
+        assert_eq!(pins.keys().collect::<Vec<_>>(), [new]);
+        assert_eq!(pins[new], pin);
+        assert_eq!(pin.former_names, BTreeSet::from([old.to_string()]));
+        assert!(
+            file::read_to_string(&path)
+                .unwrap()
+                .contains(r#"former_names = ["github.com/o/old"]"#)
+        );
+        // The old name is still pinned to the repository it was set for...
+        assert_eq!(forge_pin_at(&path, old).unwrap(), Some(repo(new, "42")));
+        // ...so another repository that takes it is not a first install.
+        let (key_id, check) = release(old, "99");
+        let taken = Observed {
+            forge: Some(&check),
+            ..observed("sigstore-oidc", &key_id)
+        };
+        let err = check_at(&path, old, taken).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("is not from the repository mise pinned as packslip:github.com/o/new"),
+            "{err}"
+        );
+        assert!(record_at(&path, old, taken).is_err());
+        assert_eq!(
+            list_at(&path).unwrap().keys().collect::<Vec<_>>(),
+            [new],
+            "a refusal moves nothing"
+        );
+        // Nor is a release under the old name checked by name alone.
+        assert!(check_at(&path, old, observed("sigstore-oidc", &key_id)).is_err());
+        // The repository's own release under the old name still passes,
+        // and the pin moving back keeps the other name held.
+        check_at(&path, old, first).unwrap();
+        let back = record_at(&path, old, first).unwrap();
+        assert_eq!(back.former_names, BTreeSet::from([new.to_string()]));
+        assert_eq!(list_at(&path).unwrap().keys().collect::<Vec<_>>(), [old]);
+        // Forgetting either name forgets the pin found by it, and is the
+        // explicit way to accept the new holder.
+        assert!(forget_at(&path, new).unwrap());
+        assert!(list_at(&path).unwrap().is_empty());
+        let pin = record_at(&path, old, taken).unwrap();
+        assert_eq!(pin.forge, Some(repo(old, "99")));
+        assert!(pin.former_names.is_empty());
+    }
+
+    #[test]
     fn an_owner_id_an_older_pin_recorded_is_read_and_ignored() {
         // mise 2026.9 recorded the repository's owner ID too. Such a pin still
         // reads, and a release of the same repository under another owner,
@@ -1071,6 +1213,7 @@ owner_id = "7"
                 unlogged: false,
                 pinned_at: "2026-09-01T00:00:00Z".into(),
                 forge: Some(repo(new, "42")),
+                former_names: BTreeSet::new(),
             },
         );
         pins.list_forges.clear();

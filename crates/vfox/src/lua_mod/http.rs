@@ -6,8 +6,8 @@ use reqwest::{RequestBuilder, Response};
 use url::Url;
 
 use crate::http::{
-    HttpCancellation, client, http_cancellation, http_retry_attempts, is_transient, retry_async,
-    retry_delay, should_retry_status,
+    HttpCancellation, client, download_to_file, http_cancellation, http_retry_attempts,
+    is_transient, retry_delay, should_retry_status, text_limited,
 };
 
 /// The `nil, err` result of the `try_*` functions.
@@ -320,7 +320,9 @@ async fn get_with_cancellation(
     let t = lua.create_table()?;
     t.set("status_code", resp.status().as_u16())?;
     t.set("headers", get_headers(lua, resp.headers())?)?;
-    let body = cancel_on_signal(resp.text(), cancellation.cancelled()).await?;
+    let body = cancel_on_signal(text_limited(resp), cancellation.cancelled())
+        .await?
+        .map_err(mlua::Error::RuntimeError)?;
     t.set("body", body)?;
     Ok(t)
 }
@@ -336,30 +338,27 @@ async fn download_file(lua: &Lua, input: MultiValue) -> Result<()> {
     let headers = add_default_headers_for_request(lua, &url, &request_url, headers);
     let path: String = input.iter().nth(1).unwrap().to_string()?;
     let client = client().map_err(mlua::Error::RuntimeError)?;
-    // Retry the whole flow (request + body) so a mid-stream drop restarts the
-    // download instead of failing.
-    let bytes = cancel_on_interrupt(retry_async(&request_url, || async {
-        let resp = client
-            .get(&request_url)
-            .headers(headers.clone())
-            .send()
-            .await?;
-        let resp = resp.error_for_status()?;
-        resp.bytes().await
-    }))
-    .await?;
     // Create the parent directory so plugins don't have to shell out to `mkdir`
     // before downloading into a fresh install path.
     if let Some(parent) = std::path::Path::new(&path).parent() {
         tokio::fs::create_dir_all(parent).await.into_lua_err()?;
     }
-    let mut file = tokio::fs::File::create(&path).await.into_lua_err()?;
-    tokio::io::AsyncWriteExt::write_all(&mut file, &bytes)
-        .await
-        .into_lua_err()?;
-    tokio::io::AsyncWriteExt::flush(&mut file)
-        .await
-        .into_lua_err()?;
+    // Retry the whole flow (request + body) so a mid-stream drop restarts the
+    // download instead of failing.
+    cancel_on_interrupt(download_to_file(
+        &request_url,
+        std::path::Path::new(&path),
+        || async {
+            client
+                .get(&request_url)
+                .headers(headers.clone())
+                .send()
+                .await
+                .map(Some)
+        },
+    ))
+    .await?
+    .into_lua_err()?;
     Ok(())
 }
 
@@ -418,8 +417,9 @@ async fn try_get_with_cancellation(
     let t = lua.create_table()?;
     t.set("status_code", resp.status().as_u16())?;
     t.set("headers", get_headers(lua, resp.headers())?)?;
-    match cancel_on_signal(resp.text(), cancellation.cancelled()).await {
-        Ok(body) => t.set("body", body)?,
+    match cancel_on_signal(text_limited(resp), cancellation.cancelled()).await {
+        Ok(Ok(body)) => t.set("body", body)?,
+        Ok(Err(e)) => return try_failure(lua, e),
         Err(e) => {
             return Ok(MultiValue::from_vec(vec![
                 Value::Nil,
@@ -491,57 +491,31 @@ async fn try_download_file(lua: &Lua, input: MultiValue) -> Result<MultiValue> {
         Ok(client) => client,
         Err(e) => return try_failure(lua, e),
     };
-    let bytes = match cancel_on_interrupt(retry_async(&request_url, || async {
-        let resp = client
-            .get(&request_url)
-            .headers(headers.clone())
-            .send()
-            .await?;
-        let resp = resp.error_for_status()?;
-        resp.bytes().await
-    }))
-    .await
-    {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            return Ok(MultiValue::from_vec(vec![
-                Value::Nil,
-                Value::String(lua.create_string(e.to_string())?),
-            ]));
-        }
-    };
     // Create the parent directory so plugins don't have to shell out to `mkdir`
     // before downloading into a fresh install path.
     if let Some(parent) = std::path::Path::new(&path).parent()
         && let Err(e) = tokio::fs::create_dir_all(parent).await
     {
-        return Ok(MultiValue::from_vec(vec![
-            Value::Nil,
-            Value::String(lua.create_string(e.to_string())?),
-        ]));
+        return try_failure(lua, e.to_string());
     }
-    let mut file = match tokio::fs::File::create(&path).await {
-        Ok(f) => f,
-        Err(e) => {
-            return Ok(MultiValue::from_vec(vec![
-                Value::Nil,
-                Value::String(lua.create_string(e.to_string())?),
-            ]));
-        }
-    };
-    if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut file, &bytes).await {
-        return Ok(MultiValue::from_vec(vec![
-            Value::Nil,
-            Value::String(lua.create_string(e.to_string())?),
-        ]));
+    let downloaded = cancel_on_interrupt(download_to_file(
+        &request_url,
+        std::path::Path::new(&path),
+        || async {
+            client
+                .get(&request_url)
+                .headers(headers.clone())
+                .send()
+                .await
+                .map(Some)
+        },
+    ))
+    .await;
+    match downloaded {
+        Ok(Ok(_)) => Ok(MultiValue::from_vec(vec![Value::Boolean(true), Value::Nil])),
+        Ok(Err(e)) => try_failure(lua, e.to_string()),
+        Err(e) => try_failure(lua, e.to_string()),
     }
-    if let Err(e) = tokio::io::AsyncWriteExt::flush(&mut file).await {
-        return Ok(MultiValue::from_vec(vec![
-            Value::Nil,
-            Value::String(lua.create_string(e.to_string())?),
-        ]));
-    }
-    Ok(MultiValue::from_vec(vec![Value::Boolean(true), Value::Nil]))
 }
 
 fn get_headers(lua: &Lua, headers: &reqwest::header::HeaderMap) -> Result<Table> {

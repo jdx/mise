@@ -559,12 +559,12 @@ pub(super) async fn parse_detected(
 /// A `path:<dir>` version names a directory that is already on disk, so it needs
 /// no install step: its `bin` is put on PATH as soon as the config loads, which
 /// would let an untrusted repository shadow any command.
-fn version_requires_trust(version: &str) -> bool {
+pub(crate) fn version_requires_trust(version: &str) -> bool {
     version.starts_with("path:")
 }
 
 /// Whether a detected config requires trust before tracked loading may parse it.
-pub(super) fn detection_requires_trust(path: &Path, detection: &ConfigFileDetection) -> bool {
+pub(super) async fn detection_requires_trust(path: &Path, detection: &ConfigFileDetection) -> bool {
     if Settings::safe_mode() {
         return false;
     }
@@ -578,8 +578,10 @@ pub(super) fn detection_requires_trust(path: &Path, detection: &ConfigFileDetect
         ConfigFileDetection::Recognized(ConfigFileType::ToolVersions) => {
             ToolVersions::path_requires_trust(path)
         }
-        ConfigFileDetection::Recognized(ConfigFileType::IdiomaticVersion(_))
-        | ConfigFileDetection::DisabledIdiomatic
+        ConfigFileDetection::Recognized(ConfigFileType::IdiomaticVersion(backends)) => {
+            IdiomaticVersionFile::path_requires_trust(path, backends).await
+        }
+        ConfigFileDetection::DisabledIdiomatic
         | ConfigFileDetection::Unknown
         | ConfigFileDetection::DiscoveryFailed(_) => false,
     }
@@ -617,6 +619,10 @@ fn looks_like_config_file(path: &Path) -> bool {
 pub fn config_trust_root(path: &Path) -> PathBuf {
     if settings::is_loaded() && Settings::get().paranoid.config() {
         path.to_path_buf()
+    } else if let Some(checkout) = config_root::nested_checkout(path) {
+        // A checkout of its own is trusted on its own, not through the
+        // directory it was cloned into.
+        checkout
     } else {
         config_root::config_root(path)
     }
@@ -1103,19 +1109,20 @@ pub(crate) fn is_ignored_via_setting(path: &Path) -> bool {
 /// `ignored_config_paths` setting.
 ///
 /// A global or system config is matched as discovered, not by its symlink
-/// target. With `~/.config/mise` symlinked into a project, a project
-/// `.miserc.toml` that ignores the project's copy would otherwise resolve onto
-/// the global config too and hide it.
+/// target. With `~/.config/mise` symlinked into a project, an entry that
+/// ignores the project's copy would otherwise resolve onto the global config
+/// too and hide it.
+///
+/// Only the env var and the system/global miserc files can ignore a global or
+/// system config. A project `.miserc.toml` loads without trust, so letting it
+/// name that config would drop the global-only settings held there, such as
+/// `paranoid` and `safe`.
 pub(crate) fn is_config_ignored_via_setting(path: &Path) -> bool {
     let root = config_trust_root(path);
     if !config::is_global_config(path) {
         return is_ignored_via_setting(&root) || is_ignored_via_setting(path);
     }
-    let matcher = if GLOBAL_IGNORE_SCOPE.try_with(|_| ()).is_ok() {
-        &*GLOBAL_IGNORED_CONFIG_PATH_MATCHER
-    } else {
-        &*IGNORED_CONFIG_PATH_MATCHER
-    };
+    let matcher = &*GLOBAL_IGNORED_CONFIG_PATH_MATCHER;
     matcher.is_match_as_written(&root) || matcher.is_match_as_written(path)
 }
 
