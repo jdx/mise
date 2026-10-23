@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+# Removing a named version prunes only that version, not the tool's other unused
+# versions, and says why a version stays when something else still needs it.
+# https://github.com/jdx/mise/issues/14855
+mise uninstall --all dummy
+assert "mise install dummy@1.0.0 dummy@2.0.0 dummy@3.0.0"
+mkdir -p "$HOME/unuse-kept"
+printf '[tools]\ndummy = "1.0.0"\n' >"$HOME/unuse-kept/mise.toml"
+# loading a config records it as tracked, which is what keeps 1.0.0 needed
+mise -C "$HOME/unuse-kept" ls >/dev/null
+printf '[tools]\ndummy = "2.0.0"\n' >mise.toml
+assert_not_contains "mise unuse dummy@2.0.0 2>&1" "is kept"
+assert_fail "ls $MISE_DATA_DIR/installs/dummy/2.0.0"
+# 1.0.0 and 3.0.0 are unused or needed elsewhere, but neither was asked for
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+assert "ls $MISE_DATA_DIR/installs/dummy/3.0.0"
+
+printf '[tools]\ndummy = "1.0.0"\n' >mise.toml
+assert_contains "mise unuse dummy@1.0.0 2>&1" "dummy@1.0.0 is kept: required by "
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+assert "ls $MISE_DATA_DIR/installs/dummy/3.0.0"
+
+# without a version the whole tool is pruned, as before
+printf '[tools]\ndummy = "1.0.0"\n' >mise.toml
+assert "mise unuse dummy"
+assert_fail "ls $MISE_DATA_DIR/installs/dummy/3.0.0"
+
+# A ref installs into `ref-main` but resolves as `ref:main`; it is still the
+# installation the argument names.
+printf '[tools]\ndummy = "ref:main"\n' >mise.toml
+mkdir -p "$MISE_DATA_DIR/installs/dummy/ref-main" "$MISE_DATA_DIR/installs/dummy/other"
+assert "mise unuse dummy@ref:main"
+assert_fail "ls $MISE_DATA_DIR/installs/dummy/ref-main"
+# the unused sibling was not named, so it stays
+assert "ls $MISE_DATA_DIR/installs/dummy/other"
+
+# A versioned argument whose backend cannot be resolved has nothing to prune and
+# must not fail a command that has already edited the config.
+printf '[tools]\nno-such-tool-xyz = "1.0.0"\n' >mise.toml
+assert "mise unuse --no-prune no-such-tool-xyz@1.0.0"
+printf '[tools]\nno-such-tool-xyz = "1.0.0"\n' >mise.toml
+assert "mise unuse no-such-tool-xyz@1.0.0"
+assert_not_contains "cat mise.toml" "no-such-tool-xyz"
