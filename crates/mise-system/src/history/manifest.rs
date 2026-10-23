@@ -5,6 +5,7 @@ use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::ops::ControlFlow;
+use std::path::Path;
 
 use super::select::Variant;
 use super::shadow::{HistoryRepo, Overlay};
@@ -57,6 +58,34 @@ impl Default for Manifest {
             permissions: BTreeMap::new(),
         }
     }
+}
+
+/// Whether an ancestor of `path` is a file or link in `tree`, so that nothing
+/// can be placed beneath it.
+fn beneath_non_tree(repo: &HistoryRepo, tree: &str, path: &str) -> Result<bool> {
+    for ancestor in Path::new(path).ancestors().skip(1) {
+        let Some(ancestor) = ancestor.to_str().filter(|ancestor| !ancestor.is_empty()) else {
+            continue;
+        };
+        if repo
+            .object_at(tree, ancestor)?
+            .is_some_and(|(mode, _)| mode != "040000")
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// What a manifest read does about an enrollment under a symlinked parent.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Ancestors {
+    /// Do not look: saved enrollment is read without today's filesystem.
+    Skip,
+    /// Fail the read.
+    Reject,
+    /// Leave the entry out and record why.
+    Report,
 }
 
 impl Manifest {
@@ -339,16 +368,26 @@ impl Manifest {
     /// Restore enrollment from Git without needing a captured mise config.
     /// Deployment inputs are validated separately; none are inferred here.
     pub fn tracking(&self) -> Result<super::tracked::TrackedSet> {
-        self.tracking_view(true)
+        self.tracking_view(Ancestors::Reject)
+    }
+
+    /// Like [`Self::tracking`], but an entry whose path now runs through a
+    /// symlinked parent is left out of the set and reported in `invalid`
+    /// instead of failing the whole read. A saved enrollment outlives the
+    /// directory layout it was made under (`~/.claude/skills/x/SKILL.md`
+    /// from before `x` became a link), and one such entry must not stop
+    /// every other entry from being captured.
+    pub(crate) fn tracking_lenient(&self) -> Result<super::tracked::TrackedSet> {
+        self.tracking_view(Ancestors::Report)
     }
 
     /// Read saved enrollment without validating it against today's filesystem.
     /// Live capture and replay still validate their destination paths separately.
     pub(crate) fn saved_tracking(&self) -> Result<super::tracked::TrackedSet> {
-        self.tracking_view(false)
+        self.tracking_view(Ancestors::Skip)
     }
 
-    fn tracking_view(&self, check_ancestors: bool) -> Result<super::tracked::TrackedSet> {
+    fn tracking_view(&self, ancestors: Ancestors) -> Result<super::tracked::TrackedSet> {
         self.validate()?;
         let roots = super::sync::layout::Roots::current();
         let environments = super::select::active_environments();
@@ -371,8 +410,17 @@ impl Manifest {
                 .path()
                 .ok_or_else(|| eyre::eyre!("invalid enrollment path {}", enrollment.path))?
                 .to_path_buf();
-            if check_ancestors {
-                super::tracked::ensure_portable_ancestors(&local)?;
+            if ancestors != Ancestors::Skip
+                && let Err(error) = super::tracked::ensure_portable_ancestors(&local)
+            {
+                if ancestors == Ancestors::Reject {
+                    return Err(error);
+                }
+                tracked.invalid.push(super::store::PathReason {
+                    path: mise_util::file::display_path(&local),
+                    reason: error.to_string(),
+                });
+                continue;
             }
             let mut policy = crate::files::FilePolicy::for_mode(crate::files::FileMode::Track);
             policy.autosave = enrollment.autosave;
@@ -419,6 +467,15 @@ impl Manifest {
             .max_by_key(|entry| portable_components(&entry.path))
     }
 
+    /// Whether this machine's path for the enrollment now runs through a
+    /// symlinked parent, which capture cannot read through.
+    fn under_symlinked_parent(&self, entry: &Enrollment) -> bool {
+        super::sync::layout::Roots::current()
+            .locate(&entry.path)
+            .path()
+            .is_some_and(|local| super::tracked::ensure_portable_ancestors(local).is_err())
+    }
+
     /// Carry inactive streams and repository-owned files from the same parent
     /// tree. Paths explicitly untracked since that parent are deliberately not
     /// carried; no live file is removed by this tree construction.
@@ -444,6 +501,20 @@ impl Manifest {
             };
             let carry = match self.owner(&portable) {
                 None => previous.owner(&portable).is_none(),
+                // an enrollment under a symlinked parent is left out of capture
+                // (see `tracking_lenient`): not seeing its files is no evidence
+                // they were deleted, so the last saved contents stay
+                // only the streams it still declares, and never beneath a link
+                // the capture saved as the link itself, where `compose` would
+                // refuse the child
+                Some(entry) if self.under_symlinked_parent(entry) => {
+                    variant.map_or(entry.variants.is_empty(), |name| {
+                        entry
+                            .variants
+                            .iter()
+                            .any(|variant| variant.declares_stream(name))
+                    }) && !beneath_non_tree(repo, tree, &file.path)?
+                }
                 Some(entry) => {
                     let selected = match super::select::select(&entry.variants, &environments) {
                         super::select::Selection::Single => None,
@@ -1267,6 +1338,129 @@ mod tests {
         assert_eq!(record.tree.roots.len(), 1);
         assert_eq!(record.tree.roots[0].files, 1);
         assert!(record.operation.is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn capture_carries_saved_files_of_an_enrollment_under_a_symlinked_parent() {
+        let roots = crate::history::sync::layout::Roots::current();
+        let temp = tempfile::tempdir_in(&roots.home).unwrap();
+        let real = temp.path().join("real");
+        let alias = temp.path().join("alias");
+        std::fs::create_dir(&real).unwrap();
+        std::os::unix::fs::symlink("real", &alias).unwrap();
+        let Some(repo) =
+            HistoryRepo::open_or_init_in(temp.path().join("history").as_path()).unwrap()
+        else {
+            return;
+        };
+        let path = roots.branch_path(&alias.join("config"), None).unwrap();
+        let manifest = Manifest {
+            enrollment: vec![Enrollment {
+                path: path.clone(),
+                autosave: true,
+                encrypt: false,
+                allow_plaintext: None,
+                variants: vec![],
+                exclude: None,
+                include: None,
+            }],
+            ..Default::default()
+        };
+        let empty = repo.empty_object("tree").unwrap();
+        let saved = repo.hash_blob(b"saved").unwrap();
+        let prior = repo
+            .compose(
+                &empty,
+                &[Overlay {
+                    path: path.clone(),
+                    object: Some(("100644".into(), saved.clone())),
+                }],
+            )
+            .unwrap();
+        let prior = manifest.write(&repo, &prior).unwrap();
+        let parent = repo.commit_tree(&prior, vec![], "initial").unwrap();
+        repo.update_ref(HistoryRepo::HISTORY_REF, &parent, None)
+            .unwrap();
+        // the capture skipped the entry, so its file is absent from the new tree
+        let next = manifest.preserve_other_files(&repo, &empty).unwrap();
+        assert_eq!(
+            repo.object_at(&next, &path).unwrap(),
+            Some(("100644".into(), saved))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skipped_enrollment_keeps_only_declared_streams_and_nothing_beneath_a_captured_link() {
+        let roots = crate::history::sync::layout::Roots::current();
+        let temp = tempfile::tempdir_in(&roots.home).unwrap();
+        std::fs::create_dir(temp.path().join("real")).unwrap();
+        std::os::unix::fs::symlink("real", temp.path().join("alias")).unwrap();
+        let Some(repo) =
+            HistoryRepo::open_or_init_in(temp.path().join("history").as_path()).unwrap()
+        else {
+            return;
+        };
+        let path = roots
+            .branch_path(&temp.path().join("alias/config"), None)
+            .unwrap();
+        let declared = Variant {
+            os: vec!["declared-test-platform".into()],
+            ..Default::default()
+        };
+        let removed = Variant {
+            os: vec!["removed-test-platform".into()],
+            ..Default::default()
+        };
+        let stream = |variant: &Variant| {
+            let (root, rest) = path.split_once('/').unwrap();
+            format!("{root}@{}/{rest}", variant.selector_name())
+        };
+        let (declared_path, removed_path) = (stream(&declared), stream(&removed));
+        let manifest = Manifest {
+            enrollment: vec![Enrollment {
+                path: path.clone(),
+                autosave: true,
+                encrypt: false,
+                allow_plaintext: None,
+                variants: vec![declared],
+                exclude: None,
+                include: None,
+            }],
+            ..Default::default()
+        };
+        let empty = repo.empty_object("tree").unwrap();
+        let blob = repo.hash_blob(b"saved").unwrap();
+        let overlay = |path: &String| Overlay {
+            path: path.clone(),
+            object: Some(("100644".into(), blob.clone())),
+        };
+        let prior = repo
+            .compose(&empty, &[overlay(&declared_path), overlay(&removed_path)])
+            .unwrap();
+        let prior = manifest.write(&repo, &prior).unwrap();
+        let parent = repo.commit_tree(&prior, vec![], "initial").unwrap();
+        repo.update_ref(HistoryRepo::HISTORY_REF, &parent, None)
+            .unwrap();
+        let next = manifest.preserve_other_files(&repo, &empty).unwrap();
+        assert!(repo.object_at(&next, &declared_path).unwrap().is_some());
+        assert!(repo.object_at(&next, &removed_path).unwrap().is_none());
+
+        // a directory entry captured the parent as a link: the child is not carried
+        let link_dir = declared_path.rsplit_once('/').unwrap().0.to_owned();
+        let link = repo.hash_blob(b"real").unwrap();
+        let captured = repo
+            .compose(
+                &empty,
+                &[Overlay {
+                    path: link_dir,
+                    object: Some(("120000".into(), link)),
+                }],
+            )
+            .unwrap();
+        let next = manifest.preserve_other_files(&repo, &captured).unwrap();
+        assert!(repo.object_at(&next, &declared_path).unwrap().is_none());
     }
 
     #[test]
