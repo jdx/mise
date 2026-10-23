@@ -211,6 +211,14 @@ enum GithubAttestationStatus {
 
 /// What `install_version_` needs before it fetches anything, and the point at which aqua can
 /// already tell that a version is not installable on this machine.
+/// The version as aqua templates it (`{{.Version}}`), and the release tag it
+/// names, when mise knows it.
+#[derive(Clone, Copy)]
+struct AquaVersion<'a> {
+    v: &'a str,
+    release_tag: Option<&'a str>,
+}
+
 struct ResolvedPackage {
     platform_key: String,
     existing_platform: Option<String>,
@@ -218,6 +226,9 @@ struct ResolvedPackage {
     pkg: AquaPackage,
     v: String,
     v_prefixed: Option<String>,
+    /// `v`, when it is the release tag and not a guess: the tag was listed or
+    /// is in the lockfile's URL, or the recipe's `version_prefix` makes it.
+    release_tag: Option<String>,
 }
 
 /// The versions an aqua fuzzy `query` selects. Resolution runs this for every
@@ -489,6 +500,7 @@ impl Backend for AquaBackend {
             mut pkg,
             v,
             v_prefixed,
+            release_tag,
         } = self.resolve_validated_package(&tv).await?;
 
         // Validate lockfile URL matches expected asset pattern from registry
@@ -609,6 +621,13 @@ impl Backend for AquaBackend {
             (url, url_api, v.to_string(), filename, digest)
         };
 
+        // A lockfile's URL only hints at `v` (the prefix may not be in it), so it
+        // can't name the tag. Otherwise `v` is the tag the asset was found under.
+        let release_tag = match validated_url {
+            Some(_) => release_tag,
+            None => Some(v.clone()),
+        };
+
         let original_linux_replacement = pkg.replacements.get("linux").cloned();
         pkg = Self::apply_selected_asset_libc_replacement(pkg, os(), &filename);
         let selected_libc_sibling =
@@ -645,8 +664,19 @@ impl Backend for AquaBackend {
         if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) || api_digest.is_some() {
             ctx.pr.next_operation();
         }
-        self.verify(ctx, &mut tv, &pkg, &v, &filename, lockfile_has_checksum)
-            .await?;
+        let version = AquaVersion {
+            v: &v,
+            release_tag: release_tag.as_deref(),
+        };
+        self.verify(
+            ctx,
+            &mut tv,
+            &pkg,
+            version,
+            &filename,
+            lockfile_has_checksum,
+        )
+        .await?;
 
         // Advance to extraction operation if applicable
         if needs_extraction(format, &pkg.package_type()) {
@@ -1176,6 +1206,7 @@ impl AquaBackend {
         }
         validate(&pkg, &v)?;
         ensure_url_safe_version(&v)?;
+        let release_tag = (tag.is_some() || pkg.version_prefix.is_some()).then(|| v.clone());
 
         Ok(ResolvedPackage {
             platform_key,
@@ -1184,6 +1215,7 @@ impl AquaBackend {
             pkg,
             v,
             v_prefixed,
+            release_tag,
         })
     }
 
@@ -1816,7 +1848,7 @@ impl AquaBackend {
             }
             ProvenanceType::Slsa { .. } => {
                 let provenance_url = self
-                    .run_slsa_check(&artifact_path, pkg, v, tmp_dir.path(), None)
+                    .run_slsa_check(&artifact_path, pkg, v, Some(v), tmp_dir.path(), None)
                     .await?;
                 Ok(Some(ProvenanceType::Slsa {
                     url: Some(provenance_url),
@@ -2058,6 +2090,7 @@ impl AquaBackend {
         artifact_path: &Path,
         pkg: &AquaPackage,
         v: &str,
+        release_tag: Option<&str>,
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<String> {
@@ -2065,9 +2098,9 @@ impl AquaBackend {
             eyre!("SLSA provenance requires signer_identity and signer_issuer in Aqua registry metadata")
         })?;
         let source_repository = slsa_source_repository(pkg);
-        let source_tag = slsa_source_tag(pkg, v);
+        let source_tag = slsa_source_tag(pkg, release_tag);
         if source_tag.is_none() {
-            debug!("the registry turns off the SLSA source tag check for {v}");
+            debug!("no release tag known for {v}; not checking the SLSA provenance's tag");
         }
         let signer = crate::github::sigstore::SlsaSignerIdentity {
             identity: &identity,
@@ -3159,7 +3192,7 @@ impl AquaBackend {
         ctx: &InstallContext,
         tv: &mut ToolVersion,
         pkg: &AquaPackage,
-        v: &str,
+        version: AquaVersion<'_>,
         filename: &str,
         lockfile_has_checksum: bool,
     ) -> Result<()> {
@@ -3202,7 +3235,7 @@ impl AquaBackend {
             // Verifying for real needs the expected signer; without one the locked SLSA
             // requirement would be dropped silently.
             Self::ensure_locked_slsa_signer(tv, recorded_provenance.as_ref(), pkg)?;
-            self.verify_provenance(ctx, tv, pkg, v, filename, required)
+            self.verify_provenance(ctx, tv, pkg, version, filename, required)
                 .await?;
         }
 
@@ -3233,10 +3266,11 @@ impl AquaBackend {
         ctx: &InstallContext,
         tv: &mut ToolVersion,
         pkg: &AquaPackage,
-        v: &str,
+        version: AquaVersion<'_>,
         filename: &str,
         required: Option<ProvenanceType>,
     ) -> Result<()> {
+        let AquaVersion { v, release_tag } = version;
         // Check if the lockfile expects provenance for this platform, then clear it
         // so we can detect whether verification actually re-set it. The registry's
         // requirement, when there is one, takes precedence: a lockfile may have been
@@ -3280,7 +3314,8 @@ impl AquaBackend {
                 .and_then(|pi| pi.provenance.as_ref())
                 .is_some_and(|p| *p > ProvenanceType::Slsa { url: None });
             if !already_verified {
-                self.verify_slsa(ctx, tv, pkg, v, filename).await?;
+                self.verify_slsa(ctx, tv, pkg, v, release_tag, filename)
+                    .await?;
             }
         }
         if !skip_minisign {
@@ -3536,6 +3571,7 @@ impl AquaBackend {
         tv: &mut ToolVersion,
         pkg: &AquaPackage,
         v: &str,
+        release_tag: Option<&str>,
         filename: &str,
     ) -> Result<()> {
         let settings = Settings::get();
@@ -3559,6 +3595,7 @@ impl AquaBackend {
                     &artifact_path,
                     pkg,
                     v,
+                    release_tag,
                     &tv.download_path(),
                     Some(ctx.pr.as_ref()),
                 )
@@ -4654,9 +4691,9 @@ fn slsa_source_repository(pkg: &AquaPackage) -> String {
 
 /// The tag a package's SLSA provenance must have been built from, as
 /// slsa-verifier's `--source-tag` took it: the recipe's `source_tag`, or else
-/// the version as aqua resolved it, which is the release tag. A `source_tag`
-/// of `-` turns the check off, for tools built from a branch.
-fn slsa_source_tag<'a>(pkg: &'a AquaPackage, v: &'a str) -> Option<&'a str> {
+/// the version's release tag, when mise knows it. A `source_tag` of `-` turns
+/// the check off, for tools built from a branch.
+fn slsa_source_tag<'a>(pkg: &'a AquaPackage, release_tag: Option<&'a str>) -> Option<&'a str> {
     match pkg
         .slsa_provenance
         .as_ref()
@@ -4664,7 +4701,7 @@ fn slsa_source_tag<'a>(pkg: &'a AquaPackage, v: &'a str) -> Option<&'a str> {
     {
         Some("-") => None,
         Some(tag) => Some(tag),
-        None => Some(v),
+        None => release_tag,
     }
 }
 
@@ -5436,15 +5473,14 @@ slsa_provenance:
                 "type: github_release\nrepo_owner: owner\nrepo_name: tool\nversion_prefix: tool-\nslsa_provenance:\n  type: github_release\n  asset: tool.intoto.jsonl\n{slsa}"
             ))
         };
-        assert_eq!(slsa_source_tag(&pkg(""), "tool-1.2.3"), Some("tool-1.2.3"));
+        let tag = Some("tool-1.2.3");
+        assert_eq!(slsa_source_tag(&pkg(""), tag), tag);
+        assert_eq!(slsa_source_tag(&pkg(""), None), None);
         assert_eq!(
-            slsa_source_tag(&pkg("  source_tag: release-1.2.3\n"), "tool-1.2.3"),
+            slsa_source_tag(&pkg("  source_tag: release-1.2.3\n"), None),
             Some("release-1.2.3")
         );
-        assert_eq!(
-            slsa_source_tag(&pkg("  source_tag: \"-\"\n"), "tool-1.2.3"),
-            None
-        );
+        assert_eq!(slsa_source_tag(&pkg("  source_tag: \"-\"\n"), tag), None);
     }
 
     #[test]
