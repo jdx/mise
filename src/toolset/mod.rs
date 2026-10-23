@@ -1417,10 +1417,17 @@ fn keep_uv_python_variants(
                 }
             };
             let (python, version) = selected_python_receipt(&contents, &receipt)?;
+            // The receipt may reach the interpreter through a minor-version symlink
+            // (`python/3.14 -> ./3.14.9`), and the data dir may itself be a symlink; compare both
+            // spellings.
+            let resolved = resolve_receipt_python(&python);
+            let in_dir = |dir: &Path| receipt_python_in_dir(&python, &resolved, dir);
 
             let identity_install = crate::install_layout::resolver::installs_of(&python_ba)
                 .into_iter()
-                .find(|(_, python_dir)| python.starts_with(python_dir));
+                .find(|(name, python_dir)| {
+                    python.starts_with(python_dir) || (*name == version && in_dir(python_dir))
+                });
             if let Some((_, python_dir)) = identity_install {
                 let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&python_dir)
                 else {
@@ -1438,7 +1445,7 @@ fn keep_uv_python_variants(
             }
 
             let legacy_dir = python_ba.installs_path().join(&version);
-            if python.starts_with(&legacy_dir) {
+            if in_dir(&legacy_dir) {
                 needed
                     .entry((python_ba.short.to_string(), version.to_string()))
                     .or_default()
@@ -1464,6 +1471,27 @@ fn keep_uv_python_variants(
         }
     }
     Ok(())
+}
+
+/// Whether a receipt's interpreter lives in `dir`. A path that only matches once the
+/// symlinks in it are followed counts only for the install the identity names: the
+/// live `python/3.14` link may since have moved on to a newer patch release.
+fn receipt_python_in_dir(python: &Path, resolved: &Path, dir: &Path) -> bool {
+    python.starts_with(dir)
+        || resolved.starts_with(dir)
+        || dir
+            .canonicalize()
+            .is_ok_and(|dir| resolved.starts_with(dir))
+}
+
+fn resolve_receipt_python(python: &Path) -> PathBuf {
+    match (
+        python.parent().and_then(|p| p.canonicalize().ok()),
+        python.file_name(),
+    ) {
+        (Some(dir), Some(name)) => dir.join(name),
+        _ => python.to_path_buf(),
+    }
 }
 
 fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<(PathBuf, String)> {
@@ -1620,6 +1648,46 @@ mod tests {
                 .to_string()
                 .contains("does not name a mise core Python runtime")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_receipt_python_follows_the_minor_version_symlink() {
+        let tmp = tempfile::tempdir().unwrap();
+        let concrete = tmp.path().join("python/3.14.9");
+        std::fs::create_dir_all(concrete.join("bin")).unwrap();
+        std::os::unix::fs::symlink("./3.14.9", tmp.path().join("python/3.14")).unwrap();
+        let resolved = resolve_receipt_python(&tmp.path().join("python/3.14/bin/python"));
+        assert_eq!(
+            resolved,
+            concrete.canonicalize().unwrap().join("bin/python")
+        );
+        // A symlinked data dir still matches the install dir spelled through it.
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(tmp.path(), &link).unwrap();
+        let python = link.join("python/3.14/bin/python");
+        let resolved = resolve_receipt_python(&python);
+        assert!(receipt_python_in_dir(
+            &python,
+            &resolved,
+            &link.join("python/3.14.9")
+        ));
+        assert!(!receipt_python_in_dir(
+            &python,
+            &resolved,
+            &link.join("python/3.13.1")
+        ));
+        // Once `python/3.14` has moved on to a newer patch, a receipt that names 3.14.9
+        // through it must not match the install the link now points at.
+        std::fs::create_dir_all(tmp.path().join("python/3.14.10/bin")).unwrap();
+        std::fs::remove_file(tmp.path().join("python/3.14")).unwrap();
+        std::os::unix::fs::symlink("./3.14.10", tmp.path().join("python/3.14")).unwrap();
+        let python = tmp.path().join("python/3.14/bin/python");
+        let resolved = resolve_receipt_python(&python);
+        assert!(!receipt_python_in_dir(&python, &resolved, &concrete));
+        // A path that does not exist is left alone rather than failing.
+        let missing = tmp.path().join("nope/bin/python");
+        assert_eq!(resolve_receipt_python(&missing), missing);
     }
 
     #[tokio::test]
