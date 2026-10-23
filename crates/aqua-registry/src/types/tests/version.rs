@@ -179,3 +179,27 @@ fn test_unconditional_package_ignores_version_prefix() {
     assert_eq!(resolved.version_prefix.as_deref(), Some("jq-"));
     assert_eq!(resolved.asset, "jq-{{.OS}}-{{.Arch}}");
 }
+
+#[test]
+fn test_split_version_prefix() {
+    assert_eq!(split_version_prefix("latest"), ("".into(), "latest".into()));
+    assert_eq!(split_version_prefix("v1.2.3"), ("v".into(), "1.2.3".into()));
+    assert_eq!(
+        split_version_prefix("cli/1.2.3"),
+        ("cli/".into(), "1.2.3".into())
+    );
+    assert_eq!(
+        split_version_prefix("\u{5de5}\u{5177}-v1.2.3"),
+        ("\u{5de5}\u{5177}-v".into(), "1.2.3".into())
+    );
+    assert_eq!(
+        split_version_prefix("\u{5de5}1"),
+        ("".into(), "\u{5de5}1".into())
+    );
+}
+
+#[test]
+fn test_version_override_multibyte_version() {
+    assert!(!constraint_holds("semver(\">= 1.0.0\")", "\u{5de5}1"));
+    assert!(constraint_holds("semver(\">= 1.0.0\")", "\u{5de5}-v1.2.3"));
+}
