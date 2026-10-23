@@ -4594,6 +4594,11 @@ fn test_lock_options_drop_credentials() {
                 .to_string(),
         ),
         (
+            "pnpm_args".to_string(),
+            "--//npm.example.com/:_authToken=\"npm_\"tok3nSuffix --_auth tok3n --save-exact"
+                .to_string(),
+        ),
+        (
             "api_url".to_string(),
             "https://ghe.example.com/api/v3".to_string(),
         ),
@@ -4602,16 +4607,32 @@ fn test_lock_options_drop_credentials() {
     assert!(
         stripped
             .values()
-            .all(|v| !v.contains("tok3n") && !v.contains("second")),
+            .all(|v| !v.contains("tok3n") && !v.contains("second") && !v.contains("npm_\"")),
         "{stripped:?}"
     );
     assert_eq!(
         stripped["pipx_args"],
         "--pip-args='--index-url https://packages.example.com/simple'"
     );
+    // Each credential is masked as the shell word npm reads, whole.
+    let words = |v: &str| shell_words::split(v).unwrap();
     assert_eq!(
-        stripped["npm_args"],
-        "--//npm.example.com/:_authToken=[redacted] --_auth=[redacted] --registry=https://npm.example.com/ --_password=[redacted]"
+        words(&stripped["npm_args"]),
+        [
+            "--//npm.example.com/:_authToken=[redacted]",
+            "--_auth=[redacted]",
+            "--registry=https://npm.example.com/",
+            "--_password=[redacted]",
+        ]
+    );
+    assert_eq!(
+        words(&stripped["pnpm_args"]),
+        [
+            "--//npm.example.com/:_authToken=[redacted]",
+            "--_auth",
+            "[redacted]",
+            "--save-exact",
+        ]
     );
     assert_eq!(stripped["api_url"], "https://ghe.example.com/api/v3");
     // Stripping twice changes nothing, so read and computed options agree.

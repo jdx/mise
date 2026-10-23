@@ -5573,9 +5573,45 @@ fn is_credential_query_param(name: &str) -> bool {
 
 fn strip_lock_option_credentials(value: &str) -> String {
     let value = mise_util::redactions::strip_url_credentials(value);
-    regex!(r#"(--(?:\S*:)?_(?:auth|authToken|password)=)(?:"[^"]*"|'[^']*'|\S+)"#)
-        .replace_all(&value, "${1}[redacted]")
-        .into_owned()
+    // An npm credential setting is masked as the installer reads it: split into
+    // shell words the way `npm_args` is, so a value made of quoted and unquoted
+    // parts (`--_authToken="npm_"suffix`) is one word and goes whole, and so
+    // does the value of `--_authToken <value>`.
+    let setting = regex!(r"^(--(?:\S*:)?_(?:auth|authToken|password))(=.*)?$");
+    let Ok(words) = shell_words::split(&value) else {
+        // Not valid shell words, so no installer reads it as arguments; mask
+        // up to the next whitespace.
+        return regex!(r"(--(?:\S*:)?_(?:auth|authToken|password)=)\S+")
+            .replace_all(&value, "${1}[redacted]")
+            .into_owned();
+    };
+    let mut masked = false;
+    let mut mask_next = false;
+    let words: Vec<String> = words
+        .into_iter()
+        .map(|word| {
+            if std::mem::take(&mut mask_next) {
+                masked = true;
+                return "[redacted]".to_string();
+            }
+            match setting.captures(&word) {
+                Some(captures) if captures.get(2).is_some() => {
+                    masked = true;
+                    format!("{}=[redacted]", &captures[1])
+                }
+                Some(_) => {
+                    mask_next = true;
+                    word
+                }
+                None => word,
+            }
+        })
+        .collect();
+    if masked {
+        shell_words::join(words)
+    } else {
+        value.into_owned()
+    }
 }
 
 fn lockfile_tool_with_request_options(
