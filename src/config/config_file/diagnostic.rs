@@ -150,6 +150,28 @@ fn reached_through_link(path: &Path, root: &Path) -> bool {
     }
 }
 
+/// Whether a project version file (`.tool-versions`, `.node-version`, ...)
+/// is reached through a symlink, as [`may_quote`] decides, to a file of
+/// another name. Such a file is not read: a version file links to another
+/// version file, while a link to `~/.netrc` or a token file would put that
+/// file's text into tool names and versions, which mise prints in warnings,
+/// `mise ls` and install errors, and puts into download URLs.
+pub(crate) fn links_to_another_name(path: &Path) -> bool {
+    if may_quote(path) {
+        return false;
+    }
+    let target = path.canonicalize().ok();
+    target.as_deref().and_then(Path::file_name) != path.file_name()
+}
+
+/// The warning for a version file [`links_to_another_name`] skips.
+pub(crate) fn warn_linked_version_file(path: &Path) {
+    warn_once!(
+        "not reading {}: it is a symlink to a file of another name, and mise reads a linked version file only when the target has the same name",
+        display_path(path)
+    );
+}
+
 /// The 1-based line and column of `offset`, for a diagnostic that cannot show
 /// the line itself.
 fn position(source: &str, offset: usize) -> (usize, usize) {
@@ -268,5 +290,30 @@ mod tests {
         symlink(&home, tasks.join("group")).unwrap();
         assert!(!may_quote_below(&tasks.join("group/mise.toml"), &project));
         assert!(may_quote_below(&via.join("mise.toml"), &via));
+    }
+
+    #[test]
+    fn a_version_file_linked_to_another_name_is_not_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tmp.path();
+        std::fs::write(tmp.join("netrc"), "password s3cr3t\n").unwrap();
+        std::fs::create_dir(tmp.join("shared")).unwrap();
+        std::fs::write(tmp.join("shared/.tool-versions"), "node 22\n").unwrap();
+        let project = tmp.join("project");
+        std::fs::create_dir(&project).unwrap();
+        std::fs::write(project.join(".node-version"), "22\n").unwrap();
+        symlink(tmp.join("netrc"), project.join(".tool-versions")).unwrap();
+        symlink(tmp.join("shared/.tool-versions"), project.join("ok")).unwrap();
+        std::fs::create_dir(project.join("sub")).unwrap();
+        symlink(
+            tmp.join("shared/.tool-versions"),
+            project.join("sub/.tool-versions"),
+        )
+        .unwrap();
+
+        assert!(links_to_another_name(&project.join(".tool-versions")));
+        assert!(links_to_another_name(&project.join("ok")));
+        assert!(!links_to_another_name(&project.join("sub/.tool-versions")));
+        assert!(!links_to_another_name(&project.join(".node-version")));
     }
 }

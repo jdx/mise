@@ -31,6 +31,10 @@ impl IdiomaticVersionFile {
     pub(crate) async fn parse(path: PathBuf, plugins: BackendList) -> Result<Self> {
         let source = ToolSource::IdiomaticVersionFile(path.clone());
         let mut tools = ToolRequestSet::new();
+        if super::diagnostic::links_to_another_name(&path) {
+            super::diagnostic::warn_linked_version_file(&path);
+            return Ok(Self { tools, path });
+        }
 
         for plugin in plugins {
             match plugin.parse_idiomatic_file_with_options(&path).await {

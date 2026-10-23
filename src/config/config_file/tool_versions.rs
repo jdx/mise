@@ -29,6 +29,8 @@ pub(crate) struct ToolVersions {
     pre: String,
     plugins: Mutex<IndexMap<BackendArg, ToolVersionPlugin>>,
     tools: Mutex<ToolRequestSet>,
+    /// Skipped because it links to a file of another name; never written back.
+    unread: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +58,13 @@ impl ToolVersions {
 
     pub(crate) fn from_file(path: &Path) -> Result<Self> {
         trace!("parsing tool-versions: {}", path.display());
+        if super::diagnostic::links_to_another_name(path) {
+            super::diagnostic::warn_linked_version_file(path);
+            return Ok(Self {
+                unread: true,
+                ..Self::init(path)
+            });
+        }
         let body = file::read_to_string(path)?;
         // The first whitespace-separated token on a line is the tool name, so a leading
         // byte-order mark becomes part of it and the entry silently resolves to nothing.
@@ -190,6 +199,12 @@ impl ConfigFile for ToolVersions {
     }
 
     fn save(&self) -> Result<()> {
+        if self.unread {
+            eyre::bail!(
+                "not writing {}: it is a symlink to a file of another name, which mise did not read",
+                display_path(&self.path)
+            );
+        }
         let s = self.dump()?;
         file::write_atomic(&self.path, s)
     }
@@ -247,6 +262,7 @@ impl Clone for ToolVersions {
             pre: self.pre.clone(),
             plugins: Mutex::new(self.plugins.lock().unwrap().clone()),
             tools: Mutex::new(self.tools.lock().unwrap().clone()),
+            unread: self.unread,
         }
     }
 }
