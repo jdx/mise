@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export MISE_PYTHON_GITHUB_ATTESTATIONS=0
+
+# A mise started by `uv venv` (it probes mise's python shims) must not create the venv again,
+# or the shims re-enter mise without bound (discussions#14926).
+cat >mise.toml <<EOF2
+[tools]
+python = "3.12.3"
+uv = "0.5.4"
+
+[settings]
+python.uv_venv_auto = "create|source"
+EOF2
+touch uv.lock
+mise i
+
+__MISE_CREATING_VENV=1 mise env >/dev/null
+assert_fail "test -d .venv"
+
+mise env >/dev/null
+assert "test -d .venv && echo created" "created"

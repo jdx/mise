@@ -74,6 +74,11 @@ pub(crate) fn load_venv(
     }
 }
 
+/// Set on the interpreter-creating child (`uv venv`, `python -m venv`). That child can probe
+/// mise's own `python` shims, which re-enter mise and would create the venv again, without bound.
+/// A mise started inside one sees this and declines to create a venv.
+const CREATING_VENV: &str = "__MISE_CREATING_VENV";
+
 fn build_uv_venv_command<'a>(
     uv_bin: PathBuf,
     venv: &'a Path,
@@ -140,6 +145,13 @@ pub(crate) async fn create_python_venv(
     env_vars: EnvMap,
     options: PythonVenvOptions,
 ) -> Result<bool> {
+    if std::env::var_os(CREATING_VENV).is_some() {
+        debug!(
+            "not creating venv at {}: already inside a venv creation",
+            display_path(venv)
+        );
+        return Ok(false);
+    }
     let PythonVenvOptions {
         python,
         active_python,
@@ -245,7 +257,8 @@ pub(crate) async fn create_python_venv(
     } else {
         build_stdlib_venv_command(venv, python_path.as_deref(), python, python_create_args)
     }
-    .envs(env_vars);
+    .envs(env_vars)
+    .env(CREATING_VENV, "1");
     cmd.execute()?;
     // Mark venv as stale so deps knows to run
     crate::deps::mark_output_stale(venv);
