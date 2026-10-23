@@ -84,7 +84,9 @@ setting set to `musl`, it picks the `musl` build. Windows on arm64 gets the
 native build from Bun 1.3.10 on, and the x64 baseline build for older versions.
 
 The archive is checked against the checksum Bun publishes in `SHASUMS256.txt`,
-and [`mise lock`](/cli/lock.html) records that checksum for each platform.
+and [`mise lock`](/cli/lock.html) records that checksum for each platform. The
+install fails if that file cannot be fetched or does not list the archive; only
+a release that never published one installs unchecked, with a warning.
 
 An installed plugin named `bun` takes precedence over the built-in
 installer. If mise behaves differently from this page, check

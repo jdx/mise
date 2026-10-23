@@ -16,7 +16,10 @@ use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{backend::static_helpers::fetch_checksum_from_shasums, platform::detect_libc};
+use crate::{
+    backend::static_helpers::{fetch_checksum_from_shasums, fetch_published_checksum_from_shasums},
+    platform::detect_libc,
+};
 use crate::{
     backend::{Backend, GitHubReleaseInfo, VersionInfo, platform_target::PlatformTarget},
     config::{Config, Settings},
@@ -85,12 +88,15 @@ impl BunPlugin {
             .entry(self.get_platform_key())
             .or_default();
         if platform_info.checksum.is_none() {
-            match fetch_checksum_from_shasums(&shasums_url, filename).await {
+            match fetch_published_checksum_from_shasums(&shasums_url, filename).await? {
                 Some(checksum) => {
                     platform_info.url = Some(url.clone());
                     platform_info.checksum = Some(checksum);
                 }
-                None => warn!("bun: no checksum for {filename} in {shasums_url}"),
+                // A release that never published SHASUMS256.txt. It would come from the
+                // same host as the zip and is unsigned, so failing here would protect
+                // nothing that host could not also forge.
+                None => warn!("bun: {shasums_url} not found, skipping checksum verification"),
             }
         }
 

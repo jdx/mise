@@ -81,7 +81,9 @@ mise lists Deno versions from its
 release archive for your platform from `dl.deno.land` and runs `deno -V` to
 check it. On Linux, mise installs the glibc builds that Deno publishes. The
 archive is checked against the `.sha256sum` file published next to it, and
-[`mise lock`](/cli/lock.html) records that checksum for each platform.
+[`mise lock`](/cli/lock.html) records that checksum for each platform. The
+install fails if that file cannot be fetched or holds no checksum; only a
+release that never published one installs unchecked, with a warning.
 
 An installed plugin named `deno` takes precedence over the built-in
 installer. If mise behaves differently from this page, check
