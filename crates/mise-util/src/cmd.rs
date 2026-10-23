@@ -2124,6 +2124,10 @@ impl<'a> CmdLineRunner<'a> {
             if sandbox.effective_deny_read() || sandbox.effective_deny_write() {
                 sandbox.warn_missing_allow_paths();
             }
+            // Likewise a kernel that cannot enforce the rules: an error from
+            // pre_exec reaches the parent as a bare errno, so refuse it here
+            // where the message survives.
+            crate::sandbox::landlock_check(&sandbox)?;
             // Use pre_exec to apply Landlock/seccomp in the child process
             // before it execs the target program. This avoids restricting the mise process.
             let sandbox = sandbox.clone();

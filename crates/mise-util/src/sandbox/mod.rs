@@ -471,6 +471,12 @@ pub const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
 // Public functions for use by cmd.rs (which can't access private submodules)
 
+/// Check that the running kernel's Landlock can enforce `config` (Linux only).
+#[cfg(target_os = "linux")]
+pub fn landlock_check(config: &SandboxConfig) -> eyre::Result<()> {
+    landlock::check_kernel_support(config)
+}
+
 /// Apply Landlock filesystem restrictions (Linux only).
 #[cfg(target_os = "linux")]
 pub fn landlock_apply(

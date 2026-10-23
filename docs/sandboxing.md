@@ -18,7 +18,7 @@ hooks outside it. To load config you have not reviewed, use
 
 | Restriction                                                                       | Linux                                   | macOS                                   | Windows          |
 | --------------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------- | ---------------- |
-| Reads and writes (`--deny-read`, `--deny-write`, `--allow-read`, `--allow-write`) | Landlock, Linux 5.13 or later           | Seatbelt (`sandbox-exec`)               | Not enforced     |
+| Reads and writes (`--deny-read`, `--deny-write`, `--allow-read`, `--allow-write`) | Landlock, Linux 5.13 (writes: 6.2)      | Seatbelt (`sandbox-exec`)               | Not enforced     |
 | All network access (`--deny-net`)                                                 | seccomp, on x86_64 and arm64            | Seatbelt                                | Not enforced     |
 | Access to particular hosts (`--allow-net`)                                        | Not supported; mise exits with an error | Not supported; mise exits with an error | Not enforced     |
 | Environment variables (`--deny-env`, `--allow-env`)                               | Filtered by mise                        | Filtered by mise                        | Filtered by mise |
@@ -188,9 +188,11 @@ when a command may reach only certain hosts.
 ### Linux
 
 Filesystem rules use [Landlock](https://landlock.io/), available since Linux
-5.13. Landlock gained features over several kernel releases, and mise uses what
-the running kernel supports, so an older kernel enforces fewer rules. If Landlock
-is unavailable or cannot apply the rules, the command fails.
+5.13. Restricting writes needs Linux 6.2 or later, because an older kernel
+cannot stop a command from truncating files; on such a kernel `--deny-write`,
+`--allow-write` and `--deny-all` fail instead of running with a weaker
+sandbox. If Landlock is unavailable or cannot apply the rules, the command
+fails.
 
 Network rules use a
 [seccomp-bpf](https://www.kernel.org/doc/html/latest/userspace-api/seccomp_filter.html)
