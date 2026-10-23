@@ -1234,7 +1234,7 @@ mod tests {
 
         let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
         let mut settings = mise_settings::SettingsPartial::empty();
-        settings.http_download_timeout = Some("500ms".to_string());
+        settings.http_download_timeout = Some("200ms".to_string());
         settings.http_retries = Some(0);
         crate::testing::reset_settings(Some(settings));
 

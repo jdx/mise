@@ -181,7 +181,12 @@ pub(crate) fn retry_delay(attempt: usize) -> Duration {
 /// Most decoded bytes `http.get` and `http.try_get` hold in memory. reqwest
 /// inflates compressed replies transparently, so a few KiB on the wire can
 /// otherwise become gigabytes.
-pub(crate) const MAX_BODY_BYTES: usize = 128 * 1024 * 1024;
+/// Lower in tests, which have to send more than this to reach it.
+pub(crate) const MAX_BODY_BYTES: usize = if cfg!(test) {
+    1024 * 1024
+} else {
+    128 * 1024 * 1024
+};
 
 /// The body as text, decoded like [`reqwest::Response::text`], or the inner
 /// error once it passes [`MAX_BODY_BYTES`]. The outer error is the transfer's.

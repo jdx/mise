@@ -2058,7 +2058,7 @@ pub fn executable_names(bin: &str) -> Vec<String> {
 /// a small download that compresses well is no threat to the disk. Lower in
 /// tests, which have to unpack more than this to reach the limit.
 const EXTRACT_MIN_LIMIT: u64 = if cfg!(test) {
-    1024 * 1024
+    256 * 1024
 } else {
     256 * 1024 * 1024
 };

@@ -2790,7 +2790,12 @@ pub struct BodyTimedOut {
 /// GitHub release pages, are a few tens of MiB. Downloads stream to disk and
 /// are not affected; a caller that parses something larger passes its own
 /// limit to [`buffer_body_with_limit`].
-pub const MAX_BODY_BYTES: usize = 128 * 1024 * 1024;
+/// Lower in tests, which have to send more than this to reach it.
+pub const MAX_BODY_BYTES: usize = if cfg!(test) {
+    1024 * 1024
+} else {
+    128 * 1024 * 1024
+};
 
 /// [`buffer_body_with_limit`] with [`MAX_BODY_BYTES`].
 pub async fn buffer_body(resp: Response) -> Result<Response> {

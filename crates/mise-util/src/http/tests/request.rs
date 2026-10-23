@@ -437,7 +437,7 @@ async fn request_timeout_error_hides_url_credentials() {
 async fn test_buffered_bodies_are_bounded_after_decompression() {
     use std::io::{Read, Write};
 
-    // About 128 KiB on the wire, one byte over the limit once inflated.
+    // About 1 KiB on the wire, one byte over the limit once inflated.
     let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
     let mut padding = std::io::repeat(b' ').take(MAX_BODY_BYTES as u64 - 1);
     std::io::copy(&mut padding, &mut gzip).unwrap();
@@ -465,10 +465,7 @@ async fn test_buffered_bodies_are_bounded_after_decompression() {
         client.get_html(&url).await.unwrap_err(),
         client.get_bytes(&url).await.map(|_| ()).unwrap_err(),
     ] {
-        assert!(
-            err.to_string().contains("is larger than 128.0 MiB"),
-            "{err}"
-        );
+        assert!(err.to_string().contains("is larger than 1.0 MiB"), "{err}");
         assert!(!is_transient(&err));
     }
     mock.assert_async().await;
@@ -530,7 +527,7 @@ async fn test_body_timeout_bounds_trickling_text_response() {
                 error_for_status: true,
             },
             |resp| async move { Ok(resp.text().await?) },
-            Duration::from_millis(500),
+            Duration::from_millis(200),
         ),
     )
     .await
@@ -539,7 +536,7 @@ async fn test_body_timeout_bounds_trickling_text_response() {
     let message = err.to_string();
 
     assert!(
-        message.contains("HTTP response body timed out after 500.0ms"),
+        message.contains("HTTP response body timed out after 200.0ms"),
         "{message}"
     );
     assert!(message.contains(&url), "{message}");
@@ -554,7 +551,7 @@ async fn test_get_html_body_is_bounded_by_http_download_timeout() {
     let _settings = {
         let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
         let mut settings = mise_settings::SettingsPartial::empty();
-        settings.http_download_timeout = Some("500ms".to_string());
+        settings.http_download_timeout = Some("200ms".to_string());
         crate::testing::reset_settings(Some(settings));
         SettingsGuard { _lock: lock }
     };
@@ -592,7 +589,7 @@ async fn test_buffer_body_is_bounded_by_http_download_timeout() {
     let _settings = {
         let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
         let mut settings = mise_settings::SettingsPartial::empty();
-        settings.http_download_timeout = Some("500ms".to_string());
+        settings.http_download_timeout = Some("200ms".to_string());
         crate::testing::reset_settings(Some(settings));
         SettingsGuard { _lock: lock }
     };
