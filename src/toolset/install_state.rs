@@ -600,7 +600,7 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
                     .get_or_insert_with(|| manifest.as_ref().clone())
                     .insert(dir_name.clone(), mt);
             }
-            tools.insert(tool.short.clone(), tool);
+            insert_scanned_tool(&mut tools, &dir_name, tool);
         }
 
         // Write updated manifest if we migrated any legacy entries
@@ -743,6 +743,26 @@ pub(crate) fn get_tool(short: &str) -> Option<InstallStateTool> {
                 _ => {}
             }
             o.get().clone()
+        }
+    }
+}
+
+/// Add the scan of directory `dir_name` to `tools`. Two directories can record
+/// the same tool (its own and a credential-named one); then the versions of
+/// both are kept, and the tool's own directory supplies its identity and path.
+fn insert_scanned_tool(tools: &mut InstallStateTools, dir_name: &str, tool: InstallStateTool) {
+    match tools.entry(tool.short.clone()) {
+        std::collections::btree_map::Entry::Vacant(v) => {
+            v.insert(tool);
+        }
+        std::collections::btree_map::Entry::Occupied(mut o) => {
+            if crate::backend::tool_directory_name(&tool.short) == dir_name {
+                let other = o.insert(tool);
+                merge_scanned_into(o.get_mut(), other);
+            } else {
+                merge_scanned_into(o.get_mut(), tool);
+            }
+            sort_versions(&mut o.get_mut().versions);
         }
     }
 }
@@ -1180,19 +1200,50 @@ pub(crate) fn remove_credential_named_installs(short: &str) {
     let Some(named) = credential_named_dir(short) else {
         return;
     };
+    let clean = crate::backend::tool_directory_name(short);
+    let clean_dir = dirs::INSTALLS.join(&clean);
     remove_credential_named_installs_in(
         &dirs::INSTALLS,
         &named,
-        &crate::backend::tool_directory_name(short),
+        &clean,
         &[mise_util::dirs::shims(), mise_util::dirs::system_shims()],
+        &|version| claim_complete_install(&clean, &clean_dir.join(version), version),
     );
 }
 
-fn remove_credential_named_installs_in(
+/// Locks for the install of `version` under the tool's own directory, held
+/// while its credential-named copy is removed, once that install is complete:
+/// no incomplete marker, and no other process holding its install lock. An
+/// identity-layout install is also checked under its own directory's name,
+/// which is the key its marker and lock use. `None` leaves the copy alone.
+fn claim_complete_install(
+    clean: &str,
+    path: &Path,
+    version: &str,
+) -> Option<Vec<fslock::LockFile>> {
+    let mut keys = vec![version.to_string()];
+    if let Some(target) = std::fs::read_link(path).ok()
+        && let Some(name) = target.file_name()
+    {
+        keys.push(name.to_string_lossy().into_owned());
+    }
+    let mut locks = vec![];
+    for key in &keys {
+        let identity = dirs::CACHE.join(clean).join(key).join("incomplete");
+        locks.push(LockFile::new(&identity).with_pid().try_lock().ok()??);
+    }
+    // Checked under the locks, so an install cannot start in between.
+    keys.iter()
+        .all(|key| !is_incomplete_in(clean, key))
+        .then_some(locks)
+}
+
+fn remove_credential_named_installs_in<G>(
     installs: &Path,
     named: &str,
     clean: &str,
     shims_dirs: &[PathBuf],
+    claim: &dyn Fn(&str) -> Option<G>,
 ) {
     let named_dir = installs.join(named);
     // A real directory, not a link that would lead out of the installs dir.
@@ -1219,14 +1270,19 @@ fn remove_credential_named_installs_in(
         if !file_type.is_dir() {
             continue;
         }
-        if clean_dir
-            .join(entry.file_name())
+        let version = entry.file_name().to_string_lossy().into_owned();
+        // Only once the version is installed under the tool's own directory,
+        // and that install is complete and not being changed right now.
+        let claimed = clean_dir
+            .join(&version)
             .symlink_metadata()
-            .is_err()
-        {
+            .is_ok()
+            .then(|| claim(&version))
+            .flatten();
+        let Some(_claimed) = claimed else {
             kept_versions = true;
             continue;
-        }
+        };
         for shims in shims_dirs {
             remove_links_into(shims, &path);
         }
@@ -2166,6 +2222,7 @@ mod credential_tests {
             "named",
             "clean",
             std::slice::from_ref(&shims),
+            &|_: &str| Some(()),
         );
 
         assert!(!named.join("1.0.0").exists());
@@ -2176,15 +2233,76 @@ mod credential_tests {
         assert!(shims.join("other").symlink_metadata().is_ok());
         assert!(outside.join("keep").exists(), "a symlink was followed");
 
+        // An install under the tool's own name that is not complete (or is in
+        // progress) does not stand in for the copy yet.
         std::fs::create_dir_all(installs.join("clean/2.0.0")).unwrap();
         super::remove_credential_named_installs_in(
             &installs,
             "named",
             "clean",
             std::slice::from_ref(&shims),
+            &|_: &str| None::<()>,
+        );
+        assert!(
+            named.join("2.0.0").is_dir(),
+            "removed for an incomplete install"
+        );
+
+        super::remove_credential_named_installs_in(
+            &installs,
+            "named",
+            "clean",
+            std::slice::from_ref(&shims),
+            &|_: &str| Some(()),
         );
         assert!(named.symlink_metadata().is_err());
         assert!(installs.join("clean/2.0.0").is_dir());
+    }
+
+    /// The tool's own directory and a credential-named one record the same
+    /// tool; a full scan keeps the versions of both, in either order.
+    #[test]
+    fn two_directories_of_one_tool_merge_their_versions() {
+        let short = "cargo:https://host/acme/tool.git";
+        let tool = |dir: &str, versions: &[&str]| super::InstallStateTool {
+            short: short.to_string(),
+            full: Some(short.to_string()),
+            versions: versions.iter().map(|v| v.to_string()).collect(),
+            explicit_backend: true,
+            opts: Default::default(),
+            installs_path: Some(std::path::PathBuf::from(dir)),
+        };
+        let own = crate::backend::tool_directory_name(short);
+        let named = "cargo-https-bot-t0ken-host-acme-tool-git";
+        for order in [[named, own.as_str()], [own.as_str(), named]] {
+            let mut tools = super::InstallStateTools::new();
+            for dir in order {
+                let versions: &[&str] = if dir == named { &["1.0.0"] } else { &["2.0.0"] };
+                super::insert_scanned_tool(&mut tools, dir, tool(dir, versions));
+            }
+            let merged = &tools[short];
+            assert_eq!(merged.versions, ["1.0.0", "2.0.0"], "{order:?}");
+            assert_eq!(
+                merged.installs_path.as_deref(),
+                Some(std::path::Path::new(&own)),
+                "{order:?}"
+            );
+        }
+    }
+
+    /// An install that is incomplete, or locked by an install in progress, is
+    /// not taken as the replacement of a credential-named copy.
+    #[test]
+    fn an_incomplete_or_locked_install_is_not_claimed() {
+        let ba = BackendArg::from("cargo:https://host/acme/claim-test.git");
+        let clean = crate::backend::tool_directory_name(&ba.short);
+        let path = std::path::Path::new("/nonexistent/claim-test");
+        super::mark_incomplete(&ba, "9.9.9").unwrap();
+        assert!(super::claim_complete_install(&clean, path, "9.9.9").is_none());
+        super::clear_incomplete_marker(&ba, "9.9.9").unwrap();
+        assert!(super::claim_complete_install(&clean, path, "9.9.9").is_some());
+        let _lock = super::lock_tool_version(&ba, "9.9.9").unwrap();
+        assert!(super::claim_complete_install(&clean, path, "9.9.9").is_none());
     }
 
     /// A manifest that records a tool's URL with its credentials is read
@@ -2244,7 +2362,9 @@ mod credential_tests {
         std::fs::create_dir_all(installs.join("clean/1.0.0")).unwrap();
         std::os::unix::fs::symlink(&elsewhere, installs.join("named")).unwrap();
 
-        super::remove_credential_named_installs_in(&installs, "named", "clean", &[]);
+        super::remove_credential_named_installs_in(&installs, "named", "clean", &[], &|_: &str| {
+            Some(())
+        });
 
         assert!(elsewhere.join("1.0.0").is_dir());
     }
