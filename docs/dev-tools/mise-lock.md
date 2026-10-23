@@ -476,7 +476,10 @@ So treat a cache of installed files as trusted build input:
 
 For supported backends, `mise lock` records provenance such as SLSA, Cosign,
 Minisign or GitHub artifact attestations. mise verifies new provenance against
-each target platform's artifact before it records it.
+each target platform's artifact before it records it. For an aqua package that
+declares GitHub artifact attestations and also Cosign, Minisign or SLSA, a
+release without an attestation has to pass the other check, as it does at
+install, before `mise lock` records it.
 
 When an entry has both a checksum and provenance, `mise install` can skip
 repeating the provenance check. That makes the lockfile a trust input: review

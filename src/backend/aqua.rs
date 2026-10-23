@@ -1706,22 +1706,20 @@ impl AquaBackend {
         }
         let expected_checksum = checksum.as_deref();
 
-        match detected {
+        // GitHub attestations are the only mechanism that can come back with nothing to
+        // check. As at install, that is not the end of it: the next mechanism the registry
+        // declares (SLSA, cosign or minisign) still has to vouch for the artifact, or bytes
+        // nobody signed would be locked on the strength of their own checksum, and a later
+        // install would trust that entry without looking at any signature.
+        let detected = match detected {
             ProvenanceType::GithubAttestations => {
-                if let Some(attestations) = pkg
+                let status = if let Some(attestations) = pkg
                     .github_artifact_attestations
                     .as_ref()
                     .filter(|attestations| attestations.enabled != Some(false))
                 {
-                    match self
-                        .run_github_attestation_check(&artifact_path, pkg, attestations)
+                    self.run_github_attestation_check(&artifact_path, pkg, attestations)
                         .await?
-                    {
-                        GithubAttestationStatus::Verified => {
-                            Ok(Some(ProvenanceType::GithubAttestations))
-                        }
-                        GithubAttestationStatus::Unavailable => Ok(None),
-                    }
                 } else {
                     let (checksum_config, attestations) =
                         Self::checksum_github_attestations_config(pkg).wrap_err(
@@ -1730,22 +1728,37 @@ impl AquaBackend {
                     let checksum_path = self
                         .download_checksum_file(checksum_config, pkg, v, tmp_dir.path(), None)
                         .await?;
-                    match self
+                    let status = self
                         .run_github_attestation_check(&checksum_path, pkg, attestations)
-                        .await?
-                    {
-                        GithubAttestationStatus::Verified => {
-                            self.verify_checksum_file_matches_expected(
-                                checksum_config,
-                                &checksum_path,
-                                &filename,
-                                expected_checksum,
-                            )?;
-                            Ok(Some(ProvenanceType::GithubAttestations))
+                        .await?;
+                    if status == GithubAttestationStatus::Verified {
+                        self.verify_checksum_file_matches_expected(
+                            checksum_config,
+                            &checksum_path,
+                            &filename,
+                            expected_checksum,
+                        )?;
+                    }
+                    status
+                };
+                match status {
+                    GithubAttestationStatus::Verified => {
+                        return Ok(Some(ProvenanceType::GithubAttestations));
+                    }
+                    GithubAttestationStatus::Unavailable => {
+                        match self.detect_non_github_provenance_type(pkg) {
+                            Some(next) => next,
+                            None => return Ok(None),
                         }
-                        GithubAttestationStatus::Unavailable => Ok(None),
                     }
                 }
+            }
+            detected => detected.clone(),
+        };
+
+        match detected {
+            ProvenanceType::GithubAttestations => {
+                unreachable!("detect_non_github_provenance_type never returns GitHub attestations")
             }
             ProvenanceType::Slsa { .. } => {
                 let provenance_url = self
