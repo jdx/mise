@@ -132,12 +132,30 @@ pub(crate) static SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 /// `Settings::reset`, minus config files.
 #[cfg(test)]
 pub(crate) fn reset_settings(overrides: Option<mise_settings::SettingsPartial>) {
-    use confique::Config;
-    let mut builder = mise_settings::Settings::builder().env();
-    if let Some(overrides) = overrides {
-        builder = builder.preloaded(overrides);
-    }
+    use confique::{Config, Layer};
+    let mut overrides = overrides.unwrap_or_else(mise_settings::SettingsPartial::empty);
+    overrides
+        .lockfile_mode
+        .get_or_insert_with(|| "merge".into());
+    let builder = mise_settings::Settings::builder()
+        .env()
+        .preloaded(overrides);
     mise_settings::store(std::sync::Arc::new(builder.load().unwrap()));
+}
+
+/// The `settings.toml` defaults, except `lockfile_mode`: the download tests
+/// count requests and stored files, which generate mode, the default, shares
+/// and skips.
+#[cfg(test)]
+fn load_test_defaults() -> eyre::Result<std::sync::Arc<mise_settings::Settings>> {
+    use confique::{Config, Layer};
+    let mut partial = mise_settings::SettingsPartial::empty();
+    partial.lockfile_mode = Some("merge".into());
+    Ok(std::sync::Arc::new(
+        mise_settings::Settings::builder()
+            .preloaded(partial)
+            .load()?,
+    ))
 }
 
 /// Run `$f` (a `fn()`) before `main`, in a binary that links this crate.
@@ -180,7 +198,7 @@ crate::run_before_main!(register_default_settings);
 /// caches on.
 #[cfg(test)]
 fn register_default_settings() {
-    mise_settings::set_loader(mise_settings::load_defaults);
+    mise_settings::set_loader(load_test_defaults);
     crate::cache::set_base_cache_keys(vec!["mise-util-tests".to_string()]);
     crate::user_agent::set("mise-util-tests".to_string());
     crate::deprecation::set_version("0.0.0");
