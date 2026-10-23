@@ -1156,7 +1156,7 @@ fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
 /// whatever its `.git` file says.
 fn registered_main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     let gitdir = worktree_gitdir(dotgit_file)?;
-    let pointer = PathBuf::from(std::fs::read_to_string(gitdir.join("gitdir")).ok()?.trim());
+    let pointer = PathBuf::from(read_pointer_file(&gitdir.join("gitdir"))?.trim());
     // `worktree.useRelativePaths` writes the pointer relative to the entry
     // holding it, as `commondir` is written.
     let pointer = if pointer.is_relative() {
