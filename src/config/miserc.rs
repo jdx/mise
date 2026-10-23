@@ -20,7 +20,8 @@ use crate::dirs;
 use crate::env;
 use crate::file;
 use crate::tera::{
-    TeraEngine, contains_template_syntax, get_miserc_tera, render_str, take_tera_accessed_files,
+    TeraEngine, contains_template_syntax, get_miserc_tera, render_str, render_str_with_env,
+    take_tera_accessed_files,
 };
 
 static MISERC: OnceLock<MisercSettings> = OnceLock::new();
@@ -184,7 +185,16 @@ fn render_miserc_template(
     context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
     context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
     context.insert("system_brew_prefix", &env::system_brew_prefix());
-    match render_str(tera, content, &context) {
+    // In safe mode `env` is empty outside the global and system files: what a
+    // project file renders becomes `MISE_ENV`, which picks the config files mise
+    // loads and is visible to project templates.
+    let rendered =
+        if config_root == *dirs::CONFIG || config_root == env::MISE_SYSTEM_CONFIG_DIR.as_path() {
+            render_str_with_env(tera, content, &context)
+        } else {
+            render_str(tera, content, &context)
+        };
+    match rendered {
         Ok(rendered) => rendered,
         Err(e) => {
             warn!("Failed to render template in miserc: {e}");

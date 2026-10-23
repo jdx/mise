@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# Safe mode renders project config templates, and what they render reaches the
+# URLs mise requests, mise.lock and command output. So project templates must
+# not see the environment of the process that runs mise, or read files.
+
+safe_template_tool() {
+  echo "tools.\"http:safe-template\" = { version = \"$1\", url = \"https://example.invalid/archive.tar.gz\" }"
+}
+
+echo "=== project templates see an empty env ==="
+safe_template_tool "{{ env.SAFE_TEMPLATE | default(value='1.0.0') }}" >mise.toml
+assert_contains "SAFE_TEMPLATE=2.0.0 mise ls --json" '"requested_version": "2.0.0"'
+assert_contains "SAFE_TEMPLATE=2.0.0 MISE_SAFE=1 mise ls --json" '"requested_version": "1.0.0"'
+
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = "echo build"
+description = "token={{ env.SAFE_TEMPLATE | default(value='none') }}"
+EOF
+assert_contains "SAFE_TEMPLATE=secret mise tasks ls" "token=secret"
+assert_contains "SAFE_TEMPLATE=secret MISE_SAFE=1 mise tasks ls" "token=none"
+assert_not_contains "SAFE_TEMPLATE=secret MISE_SAFE=1 mise tasks ls" "secret"
+
+echo "=== get_env() and the file filters are refused ==="
+for template in "get_env(name='HOME')" "'/etc/hostname' | hash_file" "'/etc/hostname' | file_size" "'/etc/hostname' | last_modified"; do
+  safe_template_tool "{{ $template }}" >mise.toml
+  assert_fail "MISE_SAFE=1 mise ls" "disabled in safe mode (MISE_SAFE=1)"
+done
+
+echo "=== a project .miserc.toml sees an empty env too ==="
+# its env list becomes MISE_ENV, which project templates can read
+echo 'env = ["{{ env.SAFE_TEMPLATE }}"]' >.miserc.toml
+safe_template_tool "{{ mise_env | join(sep='-') }}" >mise.toml
+assert_contains "SAFE_TEMPLATE=2.0.0 mise ls --json" '"requested_version": "2.0.0"'
+assert_not_contains "SAFE_TEMPLATE=2.0.0 MISE_SAFE=1 mise ls --json 2>&1" "2.0.0"
+rm .miserc.toml mise.toml
+
+echo "=== global config is the operator's, so its templates see the env ==="
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+$(safe_template_tool "{{ env.SAFE_TEMPLATE }}")
+
+[env]
+FROM_GLOBAL = "{{ env.SAFE_TEMPLATE }}"
+EOF
+assert_contains "SAFE_TEMPLATE=2.0.0 MISE_SAFE=1 mise ls --json" '"requested_version": "2.0.0"'
+assert_contains "SAFE_TEMPLATE=2.0.0 MISE_SAFE=1 mise env" "FROM_GLOBAL=2.0.0"

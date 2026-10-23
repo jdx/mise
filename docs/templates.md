@@ -182,7 +182,9 @@ AWS_ACCOUNT_ID = "{{ exec(command='aws sts get-caller-identity --query Account -
 
 Both functions need a [trusted](/security.html#configuration-trust) config. In
 [safe mode](/security.html#safe-mode) (`MISE_SAFE=1`), they fail with an error
-instead of running, and neither is available in `.miserc.toml`.
+instead of running, and neither is available in `.miserc.toml`. Safe mode also
+refuses `get_env()` and the `hash_file`, `file_size` and `last_modified`
+filters, and `env` is empty outside global and system config files.
 
 ::: warning
 `exec()` runs every time its template renders, including under `--dry-run`.

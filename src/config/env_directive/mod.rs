@@ -6,7 +6,7 @@ use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::path_env::PathEnv;
 use crate::tera::{
-    TeraEngine, contains_template_syntax, get_tera, render_str, tera_exec, tera1_exec,
+    TeraEngine, contains_template_syntax, get_tera, render_config_str, tera_exec, tera1_exec,
 };
 use crate::toolset::Toolset;
 use eyre::{Context, eyre};
@@ -901,7 +901,7 @@ impl EnvResults {
                 }
                 tera
             });
-            output = render_str(tera, input, ctx)
+            output = render_config_str(tera, input, ctx, path)
                 .wrap_err_with(|| eyre!("failed to parse template: '{input}'"))?;
         }
 

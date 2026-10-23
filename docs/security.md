@@ -201,8 +201,9 @@ build scripts, such as a `cargo:` crate's `build.rs`.
 
 These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
 
-- `exec()`, `read_file()`, `read_json()`, `read_yaml()`, and `read_toml()` in
-  templates, in any config.
+- `exec()`, `read_file()`, `read_json()`, `read_yaml()`, `read_toml()` and
+  `get_env()` in templates, and the `hash_file`, `file_size` and
+  `last_modified` filters, in any config.
 - Running tasks.
 - The tool options `postinstall` and `install_env`, and the `spm:` backend's
   `install_command`.
@@ -227,6 +228,12 @@ These are skipped without an error, so resolution commands keep working:
   `_.file`.
 - Project `path:` tool versions, and project `[tool_alias]` versions that point
   to one.
+- The environment of the process that runs mise, in templates: `env` is empty
+  in templates outside global and system config files, so a repository cannot
+  put your credentials into a URL mise requests, into `mise.lock` or into
+  command output. A template that reads a variable without a `default` fails, as
+  it does when the variable is unset. This covers a project's `.miserc.toml`
+  too.
 - `_.source` in every config, including global config.
 - Project `[shell_alias]`.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.

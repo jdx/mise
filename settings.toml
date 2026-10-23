@@ -3282,13 +3282,14 @@ Use it for bots and CI jobs that process config you did not write, such as a bot
 that runs `mise lock --bump` on pull request branches. Project config then loads
 without a trust prompt.
 
-Safe mode refuses template `exec()` and `read_file()`, tasks, the `postinstall`,
-`install_env` and spm `install_command` tool options, asdf plugin scripts,
-S3 requests, plugin installs, mise secrets and `mise daemons`, with an error.
-It skips hooks, as `--no-hooks` does, and ignores project `[env]`, `[shell_alias]`, `[settings]`, `[deps]`,
+Safe mode refuses template `exec()`, `read_file()` and `get_env()`, tasks, the
+`postinstall`, `install_env` and spm `install_command` tool options, asdf
+plugin scripts, S3 requests, plugin installs, mise secrets and `mise daemons`,
+with an error. It skips hooks, as `--no-hooks` does, and ignores project
+`[env]`, `[shell_alias]`, `[settings]`, `[deps]`, lazy tools, `path:` versions,
 remote includes, `[bootstrap]` and `[dotfiles]`, so a repository cannot turn off
 verification, redirect a backend, run its dependency providers or write files
-into your home directory.
+into your home directory. Project templates see an empty `env`.
 Global and system config still apply. Version resolution and `mise.lock`
 updates keep working for backends that query HTTP APIs, such as core tools,
 `aqua:`, `github:`, `pypi:` and `npm:`.
