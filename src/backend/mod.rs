@@ -55,7 +55,6 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use platform_target::PlatformTarget;
 use std::sync::LazyLock as Lazy;
-use versions::Versioning;
 
 use self::options::VersionOrder;
 
@@ -4477,15 +4476,15 @@ pub trait Backend: Debug + Send + Sync {
                         return Ok(Some(version));
                     }
                 }
-                let installed = file::dir_subdirs(&installs_path)
+                let mut installed = file::dir_subdirs(&installs_path)
                     .unwrap_or_default()
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
                     .filter(|v| !install_state::is_incomplete(self.ba(), v))
                     .filter(|v| v != "latest")
-                    .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .collect_vec();
+                install_state::sort_versions(&mut installed);
                 // Prefer a stable install, but a tool that only publishes
                 // pre-releases (an npm package whose `latest` dist-tag is an rc)
                 // must still resolve `latest` to what is installed.
@@ -8354,6 +8353,41 @@ mod latest_version_tests {
         assert_eq!(
             backend.latest_installed_version(None).unwrap(),
             Some("2.0.0".into())
+        );
+    }
+
+    #[test]
+    fn test_latest_installed_version_orders_build_metadata_numerically() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut ba = BackendArg::new_raw(
+            "latest-build-meta".into(),
+            None,
+            "latest-build-meta".into(),
+            None,
+            BackendResolution::new(false),
+        );
+        ba.set_installs_path(temp_dir.path().join("installs").join("latest-build-meta"));
+        fs::create_dir_all(ba.installs_path().join("temurin-25.0.4+101.0.LTS")).unwrap();
+        fs::create_dir_all(ba.installs_path().join("temurin-25.0.4+7.0.LTS")).unwrap();
+
+        let backend = LatestBackend {
+            ba: Arc::new(ba),
+            stable_result: None,
+            stable_info: None,
+            remote_versions: vec![],
+            listing_keys: &[],
+            lazy_dates: BTreeMap::new(),
+            lazy_dates_fail: false,
+            stable_calls: AtomicUsize::new(0),
+            stable_info_calls: AtomicUsize::new(0),
+            list_calls: AtomicUsize::new(0),
+            lazy_date_calls: AtomicUsize::new(0),
+        };
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap(),
+            Some("temurin-25.0.4+101.0.LTS".into())
         );
     }
 

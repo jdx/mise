@@ -110,9 +110,9 @@ pub struct TaskDecl {
     #[serde(default, deserialize_with = "crate::de::deserialize_arr")]
     #[schemars(with = "TaskRunDecl")]
     pub run: Vec<RunEntry>,
-    #[serde(default, deserialize_with = "crate::de::deserialize_arr")]
+    #[serde(default, deserialize_with = "crate::de::deserialize_opt_arr")]
     #[schemars(with = "TaskRunDecl")]
-    pub run_windows: Vec<RunEntry>,
+    pub run_windows: Option<Vec<RunEntry>>,
     /// Execute an external script
     #[serde(default)]
     pub file: Option<PathBuf>,
@@ -252,8 +252,8 @@ pub struct TaskTemplate {
     pub skip_if: Option<String>,
     #[serde(default, deserialize_with = "crate::de::deserialize_arr")]
     pub run: Vec<RunEntry>,
-    #[serde(default, deserialize_with = "crate::de::deserialize_arr")]
-    pub run_windows: Vec<RunEntry>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_opt_arr")]
+    pub run_windows: Option<Vec<RunEntry>>,
     #[serde(default)]
     pub file: Option<String>,
     /// Block reads, writes, network, and env vars

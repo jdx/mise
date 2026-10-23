@@ -28,8 +28,28 @@ fn normalize_version_for_sort(v: &str) -> &str {
 pub(crate) fn sort_versions(versions: &mut [String]) {
     versions.sort_by_cached_key(|v| {
         let normalized = normalize_version_for_sort(v);
-        (Versioning::new(normalized), v.to_string())
+        (
+            Versioning::new(normalized),
+            build_metadata_key(normalized),
+            v.to_string(),
+        )
     });
+}
+
+/// Orders versions that `Versioning` treats as equal because they differ only
+/// in the build metadata after a `+`, such as Java's `temurin-25.0.4+7.0.LTS`
+/// and `temurin-25.0.4+101.0.LTS`. Numeric segments compare as numbers, so
+/// build 101 follows build 7 instead of preceding it as text.
+fn build_metadata_key(v: &str) -> Vec<(bool, u64, String)> {
+    let Some((_, meta)) = v.split_once('+') else {
+        return vec![];
+    };
+    meta.split('.')
+        .map(|seg| match seg.parse::<u64>().ok() {
+            Some(n) => (false, n, String::new()),
+            None => (true, 0, seg.to_string()),
+        })
+        .collect()
 }
 
 type InstallStatePlugins = BTreeMap<String, PluginType>;
@@ -1415,6 +1435,24 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
     use versions::Versioning;
+
+    #[test]
+    fn sort_versions_orders_build_metadata_numerically() {
+        let mut versions = vec![
+            "temurin-25.0.4+7.0.LTS".to_string(),
+            "temurin-25.0.4+101.0.LTS".to_string(),
+            "temurin-25.0.4+36.0.LTS".to_string(),
+        ];
+        super::sort_versions(&mut versions);
+        assert_eq!(
+            versions,
+            [
+                "temurin-25.0.4+7.0.LTS",
+                "temurin-25.0.4+36.0.LTS",
+                "temurin-25.0.4+101.0.LTS"
+            ]
+        );
+    }
 
     #[test]
     fn empty_tool_manifest_is_ignored() {

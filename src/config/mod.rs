@@ -287,6 +287,7 @@ impl Config {
                 file::clear_desymlink_cache();
                 GLOB_RESULTS.lock().unwrap().clear();
                 crate::lockfile::invalidate_caches();
+                MONOREPO_LOCKFILE_DIRS.lock().unwrap().clear();
                 crate::task::reset();
                 for hook in RESET_HOOKS
                     .lock()
@@ -2083,7 +2084,6 @@ fn monorepo_lockfile_root_for(config_files: &ConfigMap) -> Option<PathBuf> {
         return None;
     }
     let monorepo_root = config.root;
-
     // An explicit opt-in always routes descendant configs to the root
     // lockfile, even when config_roots cannot be resolved. Avoid expanding
     // config_roots here because this method is called for every tool during
@@ -2097,6 +2097,52 @@ fn monorepo_lockfile_root_for(config_files: &ConfigMap) -> Option<PathBuf> {
         Ok(config_roots) if !config_roots.is_empty() => Some(monorepo_root),
         Ok(_) | Err(_) => None,
     }
+}
+
+static MONOREPO_LOCKFILE_DIRS: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> = Lazy::new(Default::default);
+
+/// The directory holding the shared lockfile of the monorepo rooted at `root`:
+/// the `.config/` directory when the root's own base config lives in
+/// `.config/mise.toml`, otherwise the root itself. It depends only on the files in `root`,
+/// not on which config views are loaded, so every lookup agrees.
+pub fn monorepo_lockfile_dir(root: &Path) -> PathBuf {
+    if let Some(dir) = MONOREPO_LOCKFILE_DIRS.lock().unwrap().get(root) {
+        return dir.clone();
+    }
+    let base_configs = config_paths_in_dir(root)
+        .into_iter()
+        .filter(|path| {
+            path.extension().is_some_and(|ext| ext == "toml")
+                && !lockfile::is_local_config(path)
+                && lockfile::extract_env_from_config_path(path).is_none()
+                && !is_conf_d_folder_file(path)
+        })
+        .collect_vec();
+    // Prefer the base config that declares the root (read statically, nothing
+    // evaluated); otherwise the first base config.
+    let declares_root = |path: &PathBuf| {
+        file::read_to_string(path)
+            .ok()
+            .and_then(|body| MiseToml::for_monorepo_inspection(&body, path).ok())
+            .is_some_and(|cf| cf.monorepo_root() == Some(true))
+    };
+    let dir = base_configs
+        .iter()
+        .find(|path| declares_root(path))
+        .or(base_configs.first())
+        // Only `.config/` moves the shared lockfile; `mise/` and `.mise/` roots
+        // keep it at the root as before.
+        .filter(|path| path.parent().is_some_and(|dir| dir.ends_with(".config")))
+        .and_then(|path| {
+            let (lockfile, _) = lockfile::lockfile_path_for_config(path, None);
+            lockfile.parent().map(Path::to_path_buf)
+        })
+        .unwrap_or_else(|| root.to_path_buf());
+    MONOREPO_LOCKFILE_DIRS
+        .lock()
+        .unwrap()
+        .insert(root.to_path_buf(), dir.clone());
+    dir
 }
 
 fn monorepo_config_root_dirs_for(

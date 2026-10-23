@@ -525,6 +525,14 @@ async fn whole_list(
             debug!("mise-versions' {list:?} list for {repo} is truncated; paging instead");
             None
         }
+        // An empty list is no answer either: a repository mise asks about
+        // nearly always has releases or tags, and a baked list that lost them
+        // (a bad read of GitHub) would otherwise hide every version. The paged
+        // endpoints are asked, and answer a repository that really has none.
+        Ok(Some(found)) if found.releases.is_empty() && found.tags.is_empty() => {
+            debug!("mise-versions' {list:?} list for {repo} is empty; paging instead");
+            None
+        }
         Ok(Some(found)) => Some(found),
         Ok(None) => None,
         Err(err) => {
