@@ -74,11 +74,18 @@ impl PackageJsonData {
             .map(str::to_string)
     }
 
-    /// Extract a package manager version and checksum from the same declaration.
+    /// Extract a package manager version and the checksum declared for it.
     /// Checks devEngines.packageManager first, then falls back to the packageManager field.
+    /// The checksum may come from either declaration as long as it names the selected version,
+    /// so a `packageManager` checksum is not dropped when `devEngines` repeats the version
+    /// without one. A checksum for a different version never applies.
     fn package_manager_spec(&self, tool_name: &str) -> Option<(String, Option<String>)> {
-        self.dev_engine_package_manager_spec(tool_name)
-            .or_else(|| self.top_level_package_manager_spec(tool_name))
+        let (version, checksum) = self
+            .dev_engine_package_manager_spec(tool_name)
+            .or_else(|| self.top_level_package_manager_spec(tool_name))?;
+        let checksum =
+            checksum.or_else(|| self.package_manager_checksum_for_version(tool_name, &version));
+        Some((version, checksum))
     }
 
     fn dev_engine_package_manager_spec(&self, tool_name: &str) -> Option<(String, Option<String>)> {
@@ -315,6 +322,34 @@ mod tests {
 
         let parsed = parse_with_options(&path, "pnpm").unwrap();
         assert_eq!(parsed, vec![("10.0.0".to_string(), None)]);
+    }
+
+    #[test]
+    fn test_dev_engines_version_uses_matching_package_manager_checksum() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(
+            &path,
+            r#"{
+                "devEngines": {
+                    "packageManager": { "name": "npm", "version": "11.0.0" }
+                },
+                "packageManager": "npm@11.0.0+sha512.abcdef"
+            }"#,
+        )
+        .unwrap();
+
+        let parsed = parse_with_options(&path, "npm").unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].0, "11.0.0");
+        assert_eq!(
+            parsed[0]
+                .1
+                .as_ref()
+                .and_then(|options| options.opts.get("package_manager_checksum"))
+                .and_then(|value| value.as_str()),
+            Some("sha512:abcdef")
+        );
     }
 
     /// package.json is read without trust, and `mise use` can write the
