@@ -35,7 +35,7 @@ use crate::{
 use eyre::{Result, eyre};
 use globset::{GlobBuilder, GlobMatcher};
 use idiomatic_version::IdiomaticVersionFile;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use std::sync::LazyLock as Lazy;
 use tool_versions::ToolVersions;
 
@@ -1150,6 +1150,64 @@ pub fn trust(path: &Path) -> Result<()> {
         file::write(trust_hash_path, hash)?;
     }
     Ok(())
+}
+
+/// Records trust for the root of a config file mise has just written for the user, as
+/// `mise use` and `mise set` do. Safe mode loads config without a trust decision, so a write
+/// there has none to record and leaves trust as it was.
+pub fn trust_after_write(path: &Path) -> Result<()> {
+    if Settings::safe_mode() {
+        return Ok(());
+    }
+    trust(&config_trust_root(path))
+}
+
+/// Asks for the trust that [`trust_after_write`] is about to record, before the write.
+///
+/// That record is for the whole config root, so it also covers the other config files there.
+/// A command that loads the full config (`mise use`) has checked them already, but `mise set`,
+/// `mise unset` and `mise tasks add` read only the file they edit: a sibling mise refused to
+/// load (`mise.local.toml`, `.config/mise/conf.d/*.toml`, a profile of another `MISE_ENV`)
+/// would start to load without anyone having decided to trust it. Each one that needs trust
+/// goes through [`trust_check`], which prompts, or fails without a terminal, like any other
+/// untrusted config. So does the file itself, for a writer that edits it as text.
+///
+/// Global config is trusted without a record, so writing it decides nothing about a project.
+pub fn trust_check_before_write(path: &Path) -> Result<()> {
+    if Settings::safe_mode() || config::is_global_config(path) {
+        return Ok(());
+    }
+    let config_root = config_trust_root(path);
+    let mut files = if config_root.as_path() == path {
+        IndexSet::new()
+    } else {
+        config::config_files_in_dir_for_any_env(&config_root)
+    };
+    files.insert(path.to_path_buf());
+    for file in files {
+        if file.is_file()
+            && !is_config_ignored_via_setting(&file)
+            && !is_path_trusted(&file)
+            && config_requires_trust(&file)
+        {
+            trust_check(&file)?;
+        }
+    }
+    Ok(())
+}
+
+/// Whether a config file, as it is on disk, loads only once trusted.
+fn config_requires_trust(path: &Path) -> bool {
+    if config::is_tool_versions_file(path)
+        || matches!(
+            detect_config_file_type_by_filename(path),
+            Some(ConfigFileType::ToolVersions)
+        )
+    {
+        ToolVersions::path_requires_trust(path)
+    } else {
+        !MiseToml::path_is_trust_exempt(path)
+    }
 }
 
 /// Synchronizes the derived monorepo marker used to trust descendant configs.

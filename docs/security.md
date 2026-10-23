@@ -101,7 +101,11 @@ parent directories, as if you had run `mise trust`. A config on the ignore list
 stays ignored.
 
 mise also trusts a config file when it writes one, for example with
-[`mise use`](/cli/use.html) or [`mise set`](/cli/set.html).
+[`mise use`](/cli/use.html) or [`mise set`](/cli/set.html). That trust covers
+the file's whole config root, so if another config file there is not trusted
+yet, such as a `mise.local.toml` or a `mise.staging.toml`, mise asks about it
+first, the way it does when that file loads. In safe mode a write records no
+trust.
 
 ### CI and `--yes`
 
@@ -250,8 +254,9 @@ tools, `aqua:`, `github:`, `gitlab:`, `http:`, `cargo:`, `pypi:`, `gem:`,
 toolchain. Listing installed tools and refreshing `mise.lock` work as usual.
 
 Safe mode loads untrusted config without a prompt or an error, in paranoid mode
-too. It does not mark the config trusted for later runs without safe mode. Syntax
-errors and refused operations still fail.
+too. It does not mark the config trusted for later runs without safe mode, not
+even when a command such as `mise use` or `mise set` edits it. Syntax errors and
+refused operations still fail.
 
 Safe mode limits what project config can do. It is not an operating-system
 sandbox for mise, its network requests or the plugins the operator installed.

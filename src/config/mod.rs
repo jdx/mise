@@ -2777,6 +2777,25 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
         .collect()
 }
 
+/// [`config_files_in_dir`] plus the files of every `MISE_ENV`, not only the selected ones:
+/// trust recorded for `dir` covers `mise.staging.toml` too, and it loads as soon as that
+/// environment is selected.
+pub(crate) fn config_files_in_dir_for_any_env(dir: &Path) -> IndexSet<PathBuf> {
+    let mut files = config_files_in_dir(dir);
+    if env::MISE_OVERRIDE_CONFIG_FILENAMES.is_empty() {
+        for prefix in [".config/mise", "mise", ".mise"] {
+            for pattern in [
+                format!("{prefix}.*.toml"),
+                format!("{prefix}/config.*.toml"),
+                format!("{prefix}/conf.d/*/mise.*.toml"),
+            ] {
+                files.extend(config_glob(dir, &pattern));
+            }
+        }
+    }
+    files
+}
+
 pub fn config_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
     config_paths_in_dir_with_filenames(dir, &DEFAULT_CONFIG_FILENAMES)
 }
