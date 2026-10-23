@@ -242,8 +242,10 @@ These are skipped without an error, so resolution commands keep working:
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
 - Your credentials, for hosts project config chooses: a project `api_url` gets
   no GitHub, GitLab or Forgejo token (unless global config names the same host),
-  and a project `version_list_url` no `~/.netrc` credentials. A project that
-  points at a private forge or file server therefore cannot list versions there.
+  and requests to the host of a project `version_list_url` get no `~/.netrc`
+  credentials, apart from the `version_list_url`s that global config lists
+  itself. A project that points at a private forge or file server therefore
+  cannot list versions there.
 - A project `[tool_alias]` for a tool that global config declares, so a
   repository cannot point your tool at another backend, options or versions.
 - Project [lazy tools](/dev-tools/shims.html#lazy-tools): mise writes no shims

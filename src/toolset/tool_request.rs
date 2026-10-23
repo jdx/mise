@@ -968,6 +968,7 @@ pub(crate) fn record_safe_mode_credential_hosts(
                 "version_list_url" if project => {
                     mise_util::untrusted_hosts::deny_netrc_for_url(url)
                 }
+                "version_list_url" => mise_util::untrusted_hosts::allow_netrc_for_url(url),
                 _ => {}
             },
             toml::Value::Table(table) => {

@@ -17,6 +17,11 @@ static FORGE_TOKEN_DENIED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 static FORGE_TOKEN_ALLOWED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 /// Hosts a project `version_list_url` names, which get no netrc credentials.
 static NETRC_DENIED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+/// The `version_list_url`s that global or system config names. They keep
+/// their netrc credentials even on a host a project also names. This is kept
+/// per URL rather than per host: allowing the host would let a project read any
+/// other path on the operator's server with the operator's credentials.
+static NETRC_ALLOWED_URLS: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 
 /// The public forges. A token sent there goes to the service it was issued for,
 /// so a project naming one of them is not a reason to withhold it.
@@ -33,6 +38,10 @@ fn insert(set: &Mutex<Option<HashSet<String>>>, host: String) {
         .unwrap()
         .get_or_insert_with(HashSet::new)
         .insert(host);
+}
+
+fn normalized_url(url: &str) -> Option<String> {
+    url::Url::parse(url).ok().map(String::from)
 }
 
 fn contains(set: &Mutex<Option<HashSet<String>>>, host: &str) -> bool {
@@ -70,14 +79,38 @@ pub fn deny_netrc_for_url(url: &str) {
     }
 }
 
-/// Whether netrc credentials must not be sent to `host`.
-pub fn netrc_denied(host: &str) -> bool {
-    contains(&NETRC_DENIED, host)
+/// Records a `version_list_url` that global or system config set.
+pub fn allow_netrc_for_url(url: &str) {
+    if let Some(url) = normalized_url(url) {
+        NETRC_ALLOWED_URLS
+            .lock()
+            .unwrap()
+            .get_or_insert_with(HashSet::new)
+            .insert(url);
+    }
+}
+
+/// Whether netrc credentials must not be sent with a request for `url`: its host
+/// is one a project `version_list_url` named, and global or system config does
+/// not list this URL itself.
+pub fn netrc_denied(url: &url::Url) -> bool {
+    url.host_str()
+        .is_some_and(|host| contains(&NETRC_DENIED, host))
+        && !NETRC_ALLOWED_URLS
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|urls| urls.contains(url.as_str()))
 }
 
 #[cfg(test)]
 pub(crate) fn reset() {
-    for set in [&FORGE_TOKEN_DENIED, &FORGE_TOKEN_ALLOWED, &NETRC_DENIED] {
+    for set in [
+        &FORGE_TOKEN_DENIED,
+        &FORGE_TOKEN_ALLOWED,
+        &NETRC_DENIED,
+        &NETRC_ALLOWED_URLS,
+    ] {
         *set.lock().unwrap() = None;
     }
 }
@@ -98,9 +131,13 @@ mod tests {
         assert!(!forge_token_denied("api.github.com"));
         assert!(!forge_token_denied("ghe.corp.example"));
         assert!(!forge_token_denied("other.example"));
-        deny_netrc_for_url("https://files.example/versions.txt");
-        assert!(netrc_denied("FILES.example"));
-        assert!(!netrc_denied("evil.example"));
+        let url = |s: &str| url::Url::parse(s).unwrap();
+        deny_netrc_for_url("https://files.example/project.txt");
+        allow_netrc_for_url("https://FILES.example/global.txt");
+        assert!(netrc_denied(&url("https://files.example/project.txt")));
+        assert!(netrc_denied(&url("https://files.example/secret.env")));
+        assert!(!netrc_denied(&url("https://files.example/global.txt")));
+        assert!(!netrc_denied(&url("https://evil.example/versions.txt")));
         reset();
     }
 }
