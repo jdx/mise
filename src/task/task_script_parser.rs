@@ -378,6 +378,31 @@ impl TaskScriptParser {
         });
     }
 
+    /// Render a file task's inherited `usage` (the one from a template it extends), which no
+    /// other step renders for a file task. The script's own `#USAGE` lines are left alone.
+    pub(crate) async fn render_inherited_usage(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+        preflight: bool,
+    ) -> Result<String> {
+        // A workspace default also fills `usage`, but it only fills what a task leaves unset,
+        // and a file task's `#USAGE` lines already set it.
+        if task.extends.is_none() {
+            return Ok(String::new());
+        }
+        if !contains_template_syntax(&task.usage) {
+            return Ok(task.usage.clone());
+        }
+        let (mut tera, _, _, _) = self.setup_tera_for_spec_parsing(task);
+        let tera_ctx = if preflight {
+            task.tera_ctx_for_usage_preflight(config)
+        } else {
+            task.tera_ctx_for_usage(config).await?
+        };
+        Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)
+    }
+
     fn setup_tera_for_spec_parsing(&self, task: &Task) -> TeraSpecParsingResult {
         let mut tera = self.get_tera();
         let arg_order = Arc::new(Mutex::new(HashMap::new()));

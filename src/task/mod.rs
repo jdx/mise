@@ -1951,8 +1951,11 @@ impl Task {
         }
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
             let include_env = self.usage_include_env(config, &file);
+            let inherited = TaskScriptParser::new(None)
+                .render_inherited_usage(config, self, false)
+                .await?;
             (
-                parse_task_script_usage_or_warn(&file, Some(&include_env), &self.usage),
+                parse_task_script_usage_or_warn(&file, Some(&include_env), &inherited),
                 vec![],
             )
         } else {
@@ -2037,10 +2040,13 @@ impl Task {
         let dir = self.dir(config).await.unwrap_or(None);
         let mut spec = if let Some(file) = self.file_path(config).await? {
             let env = self.usage_include_env(config, &file);
+            let inherited = TaskScriptParser::new(None)
+                .render_inherited_usage(config, self, false)
+                .await?;
             if strict {
-                parse_task_script_usage_checked(&file, Some(&env), &self.usage)?
+                parse_task_script_usage_checked(&file, Some(&env), &inherited)?
             } else {
-                parse_task_script_usage_or_warn(&file, Some(&env), &self.usage)
+                parse_task_script_usage_or_warn(&file, Some(&env), &inherited)
             }
         } else {
             let scripts_only = self.run_script_strings();
@@ -2062,7 +2068,10 @@ impl Task {
     ) -> Result<usage::Spec> {
         let mut spec = if let Some(file) = self.file_path_raw() {
             let env = self.usage_include_env(config, &file);
-            parse_task_script_usage_or_warn(&file, Some(&env), &self.usage)
+            let inherited = TaskScriptParser::new(None)
+                .render_inherited_usage(config, self, true)
+                .await?;
+            parse_task_script_usage_or_warn(&file, Some(&env), &inherited)
         } else {
             let scripts_only = self.run_script_strings();
             TaskScriptParser::new(self.config_root.clone())

@@ -243,3 +243,20 @@ chmod +x .mise-tasks/file_task
 assert_contains "mise file_task -h" "template flag"
 assert_contains "mise file_task -h" "own flag"
 assert "mise run file_task -t" "test=true"
+
+# The inherited usage is rendered with the task context
+cat <<'EOT' >mise.toml
+[vars]
+profile = "dev"
+
+[task_templates.tmpl]
+usage = '''
+flag "--profile <p>" default="{{ vars.profile }}"
+'''
+EOT
+cat <<'EOT' >.mise-tasks/file_task
+#!/usr/bin/env bash
+#MISE extends="tmpl"
+echo "profile=$usage_profile"
+EOT
+assert "mise run file_task" "profile=dev"
