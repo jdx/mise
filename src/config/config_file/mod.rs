@@ -720,7 +720,7 @@ fn trust_and_reload_settings(config_root: &Path) -> eyre::Result<()> {
 
 /// Checks whether a config may load, prompting for trust when appropriate.
 /// Automatic yes decisions cannot grant trust in paranoid mode.
-pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
+pub fn trust_check(path: &Path) -> eyre::Result<()> {
     // In safe mode, config is inert (no code execution, no env injection — see
     // MISE_SAFE / the `safe` setting), so loading an untrusted config is
     // harmless and no trust is required. `safe` is global-only, so a project

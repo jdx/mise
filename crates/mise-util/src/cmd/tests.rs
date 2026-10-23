@@ -658,6 +658,38 @@ async fn test_deny_env_sandbox_marks_env_cleared() {
     );
 }
 
+/// An env sandbox filters only the child's own environment. Without more, the child reads the
+/// withheld variables back from `/proc/<mise pid>/environ` of the process that started it.
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn test_deny_env_sandbox_hides_parent_environ() {
+    use nix::libc;
+
+    // Root reads any process's environ whatever its dumpable flag, so there is nothing to test.
+    if nix::unistd::geteuid().is_root() {
+        return;
+    }
+    let set_dumpable = |dumpable: libc::c_ulong| {
+        assert_eq!(
+            unsafe { libc::prctl(libc::PR_SET_DUMPABLE, dumpable, 0, 0, 0) },
+            0
+        );
+    };
+    // Another test in this process may already have hidden it; start from the default.
+    set_dumpable(1);
+    let mut runner = super::CmdLineRunner::new("sh")
+        .arg("-c")
+        .arg("cat /proc/$PPID/environ >/dev/null 2>&1 && echo readable || echo hidden")
+        .with_sandbox(crate::sandbox::SandboxConfig {
+            deny_env: true,
+            ..Default::default()
+        });
+    runner.apply_sandbox().await.unwrap();
+    let output = runner.read().await;
+    set_dumpable(1);
+    assert_eq!(output.unwrap().trim(), "hidden");
+}
+
 #[cfg(target_os = "macos")]
 #[tokio::test]
 async fn test_macos_sandbox_preserves_env_removals() {
@@ -683,6 +715,23 @@ async fn test_macos_sandbox_preserves_env_removals() {
         env.iter()
             .any(|(key, value)| *key == OsStr::new("DROP") && value.is_none())
     );
+}
+
+/// The wrapper is looked up with the task's `PATH`, so a bare name would resolve to a
+/// `sandbox-exec` in a tool's bin directory or a `_.path` entry.
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn test_macos_sandbox_uses_system_sandbox_exec() {
+    let mut runner = super::CmdLineRunner::new("true")
+        .env("PATH", "/planted/bin:/usr/bin:/bin")
+        .with_sandbox(crate::sandbox::SandboxConfig {
+            deny_net: true,
+            ..Default::default()
+        });
+
+    runner.apply_sandbox().await.unwrap();
+
+    assert_eq!(runner.cmd.as_std().get_program(), "/usr/bin/sandbox-exec");
 }
 
 #[cfg(target_os = "macos")]

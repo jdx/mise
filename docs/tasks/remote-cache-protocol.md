@@ -253,7 +253,9 @@ A directory object has media type `application/vnd.mise.cache-directory.v1+json`
 Each node list is sorted by the UTF-8 bytes of `name`. A name must be a single
 path component and must not be empty, `.`, or `..`, contain a slash or NUL, or
 collide with another node. Absolute symlink targets and targets that escape the
-declared output root must be rejected during restoration.
+declared output root must be rejected during restoration. A `..` component is
+only allowed at the start of a target: after a named component, which may itself
+be a symlink, it cannot be checked without resolving the tree.
 
 The portable metadata set is file contents, directory structure, symbolic links,
 executable state, and the portable permission bits in `mode`. Owners, groups,

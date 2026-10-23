@@ -2887,6 +2887,11 @@ impl Task {
             *paths = rendered;
             Ok(())
         };
+        // An allow list implies its deny, also when every entry renders to
+        // nothing: an unset optional path allows no path, it does not lift
+        // the restriction.
+        self.deny_read |= !self.allow_read.is_empty();
+        self.deny_write |= !self.allow_write.is_empty();
         // Tilde expansion is applied later when task and CLI sandbox paths are normalized.
         render_sandbox_paths(&mut self.allow_read)?;
         render_sandbox_paths(&mut self.allow_write)?;
@@ -5150,6 +5155,23 @@ exec proxy "$@"
 
         assert_eq!(task.allow_read, vec![crate::env::HOME.join("read")]);
         assert_eq!(task.allow_write, vec![crate::env::HOME.join("write")]);
+    }
+
+    /// A list whose only entry renders to nothing allows no path; it must not
+    /// turn the write restriction off.
+    #[tokio::test]
+    async fn test_render_sandbox_allow_paths_keeps_deny_when_all_render_empty() {
+        let config = Config::get().await.unwrap();
+        let mut task = Task {
+            allow_write: vec![Path::new("{{ \"\" }}").into()],
+            ..Default::default()
+        };
+
+        task.render(&config, Path::new(".")).await.unwrap();
+
+        assert!(task.allow_write.is_empty());
+        assert!(task.deny_write);
+        assert!(!task.deny_read);
     }
 
     #[tokio::test]
