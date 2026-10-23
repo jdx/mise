@@ -79,6 +79,10 @@ pub(crate) fn load_venv(
 /// A mise started inside one sees this and declines to create a venv.
 const CREATING_VENV: &str = "__MISE_CREATING_VENV";
 
+fn inside_venv_creation() -> bool {
+    std::env::var_os(CREATING_VENV).is_some()
+}
+
 fn build_uv_venv_command<'a>(
     uv_bin: PathBuf,
     venv: &'a Path,
@@ -145,7 +149,7 @@ pub(crate) async fn create_python_venv(
     env_vars: EnvMap,
     options: PythonVenvOptions,
 ) -> Result<bool> {
-    if std::env::var_os(CREATING_VENV).is_some() {
+    if inside_venv_creation() {
         debug!(
             "not creating venv at {}: already inside a venv creation",
             display_path(venv)
@@ -297,7 +301,13 @@ impl EnvResults {
         trust_check(ctx.source)?;
         let venv = ctx.parse_template("python.venv", &path)?;
         let venv = ctx.normalize_path(venv.into());
-        let venv_lock = LockFile::new(&venv).lock()?;
+        // The mise that is creating the venv holds this lock while its child runs, so one started
+        // inside that child would wait on it forever. It creates nothing, so it needs no lock.
+        let venv_lock = if inside_venv_creation() {
+            None
+        } else {
+            Some(LockFile::new(&venv).lock()?)
+        };
         // Record whichever python the caller actually has active. The toolset rebuilt below comes
         // from the config files, so on its own it cannot see a CLI override — `mise run --tool
         // python@3.12` would silently build the venv from the first `[tools] python` entry (#5281).
