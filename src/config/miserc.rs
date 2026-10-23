@@ -213,6 +213,7 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
     let mut tera: Option<TeraEngine> = None;
 
     for path in files.into_iter().rev() {
+        file::ensure_config_file_size(&path)?;
         if let Ok(content) = file::read_to_string(&path) {
             let config_root = path.parent().unwrap_or(Path::new("."));
             let content = render_miserc_template(&mut tera, &content, config_root);

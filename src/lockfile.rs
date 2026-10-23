@@ -1294,7 +1294,7 @@ fn existing_lockfile_doc_url(content: &str) -> Option<String> {
 }
 
 fn existing_lockfile_doc_url_from_path(path: &Path) -> Option<String> {
-    file::read_to_string(path)
+    file::read_config_to_string(path)
         .ok()
         .and_then(|content| existing_lockfile_doc_url(&content))
 }
@@ -1431,7 +1431,7 @@ impl Lockfile {
             .transpose()?;
         let link = path;
         let path = target.as_deref().unwrap_or(path);
-        let content = file::read_to_string(path)?;
+        let content = file::read_config_to_string(path)?;
         let generated_header_url = existing_lockfile_doc_url(&content);
         // Named by the link, not its target: the link decides whether to quote.
         let mut table: toml::Table = toml::from_str(&content).map_err(|err| {

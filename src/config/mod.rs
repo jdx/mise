@@ -7625,7 +7625,7 @@ async fn load_task_file(
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
     mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
 ) -> Result<Vec<Task>> {
-    let raw = file::read_to_string_async(path).await?;
+    let raw = file::read_config_to_string_async(path).await?;
     if crate::secrets::may_name_secrets(&raw)
         && let Ok(table) = toml::from_str::<toml::Table>(&raw)
     {

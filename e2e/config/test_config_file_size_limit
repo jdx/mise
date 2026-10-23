@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Config files found in a checkout are read whole before anything is trusted,
+# so mise refuses one larger than 16 MiB, far more than any real config or
+# lockfile needs, instead of allocating as much as the file holds. The files
+# below are sparse, so the test writes almost nothing to disk.
+
+echo 'tools.dummy = "1"' >mise.toml
+assert_contains "mise ls dummy" "1"
+
+truncate -s 17M .tool-versions
+assert_fail "mise ls" "not reading ~/workdir/.tool-versions: it is larger than 16 MiB"
+rm .tool-versions
+
+truncate -s 17M mise.lock
+assert_contains "mise ls 2>&1" "not reading ~/workdir/mise.lock: it is larger than 16 MiB"
+rm mise.lock
+
+truncate -s 17M .miserc.toml
+assert_fail "mise ls" "not reading ~/workdir/.miserc.toml: it is larger than 16 MiB"
+rm .miserc.toml
+
+mkdir mise-tasks
+truncate -s 17M mise-tasks/big.toml
+assert_fail "mise tasks ls" "not reading ~/workdir/mise-tasks/big.toml: it is larger than 16 MiB"
+rm -r mise-tasks
+
+truncate -s 17M .node-version
+assert_fail "MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node mise ls" "not reading ~/workdir/.node-version: it is larger than 16 MiB"
+rm .node-version
+
+rm mise.toml
+truncate -s 17M mise.toml
+assert_fail "mise ls" "not reading ~/workdir/mise.toml: it is larger than 16 MiB"

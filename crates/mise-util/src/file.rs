@@ -713,6 +713,61 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
         .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))
 }
 
+/// Largest config file mise reads: `mise.toml`, `.tool-versions`, idiomatic
+/// version files, `mise.lock`, `.miserc.toml` and task TOML. These are found in
+/// whatever directory mise runs in, before anything is trusted, and are read
+/// whole, so without a limit a checkout could make every prompt allocate as much
+/// as the file holds. Real files are kilobytes: mise's own lockfile, covering
+/// dozens of tools on every platform, is about 70 KiB, and a config file a
+/// person writes is a few KiB. 16 MiB leaves more than two hundred times that
+/// while keeping the cost of a hostile file small.
+pub const CONFIG_FILE_LIMIT: u64 = 16 * 1024 * 1024;
+
+fn config_file_too_large(path: &Path) -> eyre::Report {
+    eyre::eyre!(
+        "not reading {}: it is larger than {} MiB, the most mise reads from a config file",
+        path.display_user(),
+        CONFIG_FILE_LIMIT / 1024 / 1024
+    )
+}
+
+/// [`read_to_string`] for a config file, refusing one larger than
+/// [`CONFIG_FILE_LIMIT`].
+pub fn read_config_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref();
+    trace!("cat {}", path.display_user());
+    let mut body = String::new();
+    File::open(path)
+        .and_then(|file| file.take(CONFIG_FILE_LIMIT + 1).read_to_string(&mut body))
+        .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))?;
+    if body.len() as u64 > CONFIG_FILE_LIMIT {
+        return Err(config_file_too_large(path));
+    }
+    Ok(body)
+}
+
+/// Fails when `path` is a config file larger than [`CONFIG_FILE_LIMIT`], for
+/// readers that open the file themselves. A file that cannot be inspected is
+/// left to the reader to report.
+pub fn ensure_config_file_size<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.len() > CONFIG_FILE_LIMIT => Err(config_file_too_large(path)),
+        _ => Ok(()),
+    }
+}
+
+/// [`read_to_string_async`] for a config file, see [`read_config_to_string`].
+pub async fn read_config_to_string_async<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref();
+    ensure_config_file_size(path)?;
+    let body = read_to_string_async(path).await?;
+    if body.len() as u64 > CONFIG_FILE_LIMIT {
+        return Err(config_file_too_large(path));
+    }
+    Ok(body)
+}
+
 /// The bytes of a UTF-8 byte-order mark, as [`decode_text`] matches them below.
 #[cfg(windows)]
 pub const UTF8_BOM_BYTES: [u8; 3] = [0xef, 0xbb, 0xbf];

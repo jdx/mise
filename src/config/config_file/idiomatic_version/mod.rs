@@ -31,6 +31,7 @@ impl IdiomaticVersionFile {
     pub(crate) async fn parse(path: PathBuf, plugins: BackendList) -> Result<Self> {
         let source = ToolSource::IdiomaticVersionFile(path.clone());
         let mut tools = ToolRequestSet::new();
+        file::ensure_config_file_size(&path)?;
         if super::diagnostic::links_to_another_name(&path) {
             super::diagnostic::warn_linked_version_file(&path);
             return Ok(Self { tools, path });
@@ -154,7 +155,7 @@ impl ConfigFile for IdiomaticVersionFile {
 
     #[cfg_attr(coverage_nightly, coverage(off))]
     fn dump(&self) -> Result<String> {
-        file::read_to_string(&self.path)
+        file::read_config_to_string(&self.path)
     }
 
     fn source(&self) -> ToolSource {

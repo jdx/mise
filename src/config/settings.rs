@@ -1115,7 +1115,7 @@ impl SettingsExt for Settings {
     }
 
     fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {
-        let raw = file::read_to_string(path)?;
+        let raw = file::read_config_to_string(path)?;
         let mut raw: toml::Value = toml::from_str(&raw).map_err(|err| {
             crate::config::config_file::diagnostic::hide_linked_source(err, &raw, path)
         })?;

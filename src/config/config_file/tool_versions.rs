@@ -65,14 +65,14 @@ impl ToolVersions {
                 ..Self::init(path)
             });
         }
-        let body = file::read_to_string(path)?;
+        let body = file::read_config_to_string(path)?;
         // The first whitespace-separated token on a line is the tool name, so a leading
         // byte-order mark becomes part of it and the entry silently resolves to nothing.
         Self::parse_str(file::strip_utf8_bom(&body), path.to_path_buf())
     }
 
     pub(crate) fn path_requires_trust(path: &Path) -> bool {
-        match file::read_to_string(path) {
+        match file::read_config_to_string(path) {
             Ok(body) => body_requires_trust(file::strip_utf8_bom(&body)),
             Err(_) => true,
         }

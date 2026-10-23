@@ -475,7 +475,7 @@ impl MiseToml {
     }
 
     pub fn from_file(path: &Path) -> eyre::Result<Self> {
-        let body = file::read_to_string(path)?;
+        let body = file::read_config_to_string(path)?;
         Self::from_str(&body, path)
     }
 
@@ -711,7 +711,7 @@ impl MiseToml {
     /// [`Self::is_trust_exempt`]). Returns false for unreadable files and for
     /// non-mise.toml files (e.g. `.tool-versions`), which have their own flow.
     pub(crate) fn path_is_trust_exempt(path: &Path) -> bool {
-        file::read_to_string(path).is_ok_and(|body| Self::is_trust_exempt(&body, path))
+        file::read_config_to_string(path).is_ok_and(|body| Self::is_trust_exempt(&body, path))
     }
 
     /// Whether this config body can be loaded without trusting the file.
@@ -741,7 +741,7 @@ impl MiseToml {
             .lock()
             .unwrap()
             .get_or_try_init(|| {
-                let body = file::read_to_string(&self.path).unwrap_or_default();
+                let body = file::read_config_to_string(&self.path).unwrap_or_default();
                 Ok(body.parse()?)
             })
             .cloned()

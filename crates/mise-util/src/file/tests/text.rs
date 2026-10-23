@@ -121,3 +121,33 @@ async fn test_run_blocking_multi_thread_runtime() {
     // tokio::task::block_in_place path
     assert_eq!(run_blocking(|| 42), 42);
 }
+
+/// A config file larger than any real one is refused rather than read whole.
+#[test]
+fn config_files_over_the_limit_are_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let small = tmp.path().join("mise.toml");
+    std::fs::write(&small, "[tools]\n").unwrap();
+    assert_eq!(read_config_to_string(&small).unwrap(), "[tools]\n");
+    ensure_config_file_size(&small).unwrap();
+
+    // Sparse, so the test writes nothing near the limit to disk.
+    let at_limit = tmp.path().join("at_limit.toml");
+    File::create(&at_limit)
+        .unwrap()
+        .set_len(CONFIG_FILE_LIMIT)
+        .unwrap();
+    assert_eq!(
+        read_config_to_string(&at_limit).unwrap().len() as u64,
+        CONFIG_FILE_LIMIT
+    );
+
+    let large = tmp.path().join("large.toml");
+    File::create(&large)
+        .unwrap()
+        .set_len(CONFIG_FILE_LIMIT + 1)
+        .unwrap();
+    let err = read_config_to_string(&large).unwrap_err().to_string();
+    assert!(err.contains("larger than 16 MiB"), "{err}");
+    assert!(ensure_config_file_size(&large).is_err());
+}
