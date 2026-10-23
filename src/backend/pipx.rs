@@ -413,20 +413,18 @@ impl Backend for PIPXBackend {
                     Self::fetch_simple_index(&registry_url, &package, url).await?
                 }
             }
-            PipxRequest::Git(source) => match PipxRequest::github_repo(&source.repo) {
-                Some(repo) => match github::list_releases(&repo).await {
-                    Ok(data) => Self::versions_from_github_releases(data),
-                    // A private repository is invisible to the versions host
-                    // and the API without a token, but an SSH remote already
-                    // shows the user can reach it with their key.
-                    Err(err) if PipxRequest::is_ssh_remote(&source.repo) => {
-                        debug!("{repo} not listed by GitHub ({err}), trying git ls-remote");
-                        Self::versions_from_git_tags(&source.remote()).await?
-                    }
-                    Err(err) => return Err(err),
-                },
-                None => Self::versions_from_git_tags(&source.remote()).await?,
-            },
+            PipxRequest::Git(source) => {
+                Self::git_source_versions(
+                    &source,
+                    async |repo| {
+                        Ok(Self::versions_from_github_releases(
+                            github::list_releases(repo).await?,
+                        ))
+                    },
+                    Self::versions_from_git_tags,
+                )
+                .await?
+            }
         };
         Ok(versions.into_iter().map(stamp_pep440_prerelease).collect())
     }
@@ -990,6 +988,28 @@ impl PIPXBackend {
             let (sha, git_ref) = line.split_once('\t')?;
             (git_ref == "HEAD").then(|| sha.to_string())
         })
+    }
+
+    /// Lists the versions of a Git source: GitHub releases for a github.com
+    /// remote, Git tags otherwise. A private repository is invisible to the
+    /// versions host and the API without a token, but an SSH remote already
+    /// shows the user can reach it with their key, so only that case falls
+    /// back to Git tags when GitHub cannot list it.
+    async fn git_source_versions(
+        source: &GitSource,
+        github_releases: impl AsyncFnOnce(&str) -> Result<Vec<VersionInfo>>,
+        git_tags: impl AsyncFnOnce(&str) -> Result<Vec<VersionInfo>>,
+    ) -> Result<Vec<VersionInfo>> {
+        let Some(repo) = PipxRequest::github_repo(&source.repo) else {
+            return git_tags(&source.remote()).await;
+        };
+        match github_releases(&repo).await {
+            Err(err) if PipxRequest::is_ssh_remote(&source.repo) => {
+                debug!("{repo} not listed by GitHub ({err}), trying git ls-remote");
+                git_tags(&source.remote()).await
+            }
+            result => result,
+        }
     }
 
     /// Lists tags from a Git remote while preserving Git's source ordering.
@@ -2785,6 +2805,43 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         );
         assert!(PipxRequest::is_ssh_remote("ssh://git@github.com/psf/black"));
         assert!(!PipxRequest::is_ssh_remote("https://github.com/psf/black"));
+    }
+
+    fn git_source(repo: &str) -> GitSource {
+        GitSource::new(repo, None)
+    }
+
+    fn tag_versions() -> Vec<VersionInfo> {
+        PIPXBackend::versions_from_git_ls_remote("abc\trefs/tags/v1.0.0\n")
+    }
+
+    #[tokio::test]
+    async fn ssh_github_source_falls_back_to_git_tags_when_github_cannot_list_it() {
+        let source = git_source("ssh://git@github.com/owner/private");
+        let versions = PIPXBackend::git_source_versions(
+            &source,
+            async |_| Err(eyre::eyre!("404")),
+            async |remote| {
+                assert_eq!(remote, "ssh://git@github.com/owner/private");
+                Ok(tag_versions())
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(versions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn https_github_source_keeps_the_github_error_without_calling_git() {
+        let source = git_source("https://github.com/owner/private");
+        let err = PIPXBackend::git_source_versions(
+            &source,
+            async |_| Err(eyre::eyre!("404")),
+            async |_| panic!("git must not be called"),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.to_string(), "404");
     }
 
     #[tokio::test]
