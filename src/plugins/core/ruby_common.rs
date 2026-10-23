@@ -229,7 +229,7 @@ pub(crate) fn gemfile_watch_patterns(gemfile_path: &Path) -> Vec<String> {
     {
         return vec![];
     }
-    let Ok(body) = file::read_to_string(gemfile_path) else {
+    let Ok(body) = file::read_config_to_string(gemfile_path) else {
         return vec![];
     };
     match gemfile_ruby_directive(&body).and_then(|line| ruby_file_option(&line)) {
@@ -251,7 +251,7 @@ fn read_ruby_file_option(gemfile_path: &Path, filename: &str) -> Option<String> 
     if is_gemfile_path(&path) || !path.is_file() {
         return None;
     }
-    let version = parse_bundler_ruby_version_file(&file::read_to_string(&path).ok()?);
+    let version = parse_bundler_ruby_version_file(&file::read_config_to_string(&path).ok()?);
     if is_ruby_version_string(&version) {
         Some(version)
     } else {
@@ -435,6 +435,22 @@ mod tests {
 
         file::write(&gemfile, "ruby file: \".ruby-version\"\n").unwrap();
         assert_eq!(parse_gemfile(&gemfile).unwrap(), "");
+    }
+
+    /// The Gemfile is read without trust, so the file its `ruby file:` names
+    /// is read only up to the config size limit, like any version file.
+    #[test]
+    fn parse_gemfile_file_option_refuses_an_oversized_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let gemfile = dir.path().join("Gemfile");
+        let ruby_version = dir.path().join(".ruby-version");
+        // A version line Bundler accepts, padded past the limit with blank lines.
+        let mut body = "ruby 3.3.6\n".to_string();
+        body.push_str(&"\n".repeat(file::CONFIG_FILE_LIMIT as usize));
+        file::write(&ruby_version, body).unwrap();
+        file::write(&gemfile, "ruby file: \".ruby-version\"\n").unwrap();
+        assert_eq!(parse_gemfile(&gemfile).unwrap(), "");
+        assert!(gemfile_watch_patterns(&gemfile).len() == 1);
     }
 
     #[test]
