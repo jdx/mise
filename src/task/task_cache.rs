@@ -1394,17 +1394,20 @@ fn ensure_declared_outputs(
         }
         for entry in WalkDir::new(&staged_root).follow_links(false) {
             let entry = entry?;
-            // Excluded directories are still staged as parents of selected files.
-            if entry.file_type().is_dir() {
+            let rel = entry.path().strip_prefix(staging)?;
+            let is_dir = entry.file_type().is_dir();
+            if is_output(matcher, &matcher.path().join(rel), is_dir) {
                 continue;
             }
-            let rel = entry.path().strip_prefix(staging)?;
-            if !is_output(matcher, &matcher.path().join(rel), false) {
-                bail!(
-                    "task cache entry contains undeclared output {}",
-                    rel.display()
-                );
+            // `store` archives only selected entries, so an excluded directory is
+            // staged only as the parent of one; its contents are checked in turn.
+            if is_dir && fs::read_dir(entry.path())?.next().is_some() {
+                continue;
             }
+            bail!(
+                "task cache entry contains undeclared output {}",
+                rel.display()
+            );
         }
     }
     Ok(())
@@ -2151,6 +2154,13 @@ mod tests {
         assert!(check(&["dist"], &["nested/dist"]).is_err());
         assert!(check(&[], &["mise.local.toml"]).is_err());
         assert!(check(&["dist", "!dist/private/**"], &["dist"]).is_err());
+
+        // An excluded directory may only be the parent of selected entries.
+        fs::remove_file(staging.path().join("dist/private/keep")).unwrap();
+        assert!(check(&["dist"], &["dist"]).is_ok());
+        assert!(check(&["dist", "!dist/private"], &["dist"]).is_err());
+        fs::create_dir(staging.path().join("dist/private/nested")).unwrap();
+        assert!(check(&["dist", "!dist/private"], &["dist"]).is_err());
     }
 
     #[cfg(unix)]
