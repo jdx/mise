@@ -376,6 +376,18 @@ pub const MISE_SHIM_PATH_ENV: &str = "__MISE_SHIM_PATH";
 pub static MISE_SHIM_PATH: Lazy<RwLock<Option<PathBuf>>> =
     Lazy::new(|| RwLock::new(var_path(MISE_SHIM_PATH_ENV)));
 
+/// Set by `mise mcp` on the `mise run` it starts for a client: the run's arguments name tasks
+/// only, never the path of a script to run. Read once, then kept out of the environment the run
+/// gives its tasks (see `get_pristine_env`), so a `mise run ./script` that a task itself makes
+/// keeps working.
+pub const MISE_TASK_NAMES_ONLY_ENV: &str = "__MISE_TASK_NAMES_ONLY";
+
+pub static MISE_TASK_NAMES_ONLY: Lazy<bool> = Lazy::new(|| {
+    let set = var_os(MISE_TASK_NAMES_ONLY_ENV).is_some_and(|v| !v.is_empty());
+    remove_var(MISE_TASK_NAMES_ONLY_ENV);
+    set
+});
+
 /// What `mise x` resolved a shim's tool to. A native shim that finds its own path here was picked
 /// instead of the tool, so it stops rather than dispatching back to `mise x`.
 pub const MISE_SHIM_TARGET_ENV: &str = "__MISE_SHIM_TARGET";
@@ -994,6 +1006,8 @@ fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
         .map(|p| split_paths(p).collect())
         .unwrap_or_default();
     let mut env = reverse_diff_preserving_overrides(mise_diff, orig_env);
+    // meant for this process only, not for the commands it starts
+    env.remove(MISE_TASK_NAMES_ONLY_ENV);
 
     // get the current path as a vector
     let path: Vec<PathBuf> = match env.get(&*PATH_KEY) {

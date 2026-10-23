@@ -2470,6 +2470,36 @@ impl Bootstrap {
                 t.aliases.iter().any(|a| a == "bootstrap")
                     || (!t.name.contains(':') && t.is_match("bootstrap"))
             }) {
+                // The task `mise run bootstrap` below starts, found the way it finds it, so an
+                // exact name wins over an alias another task declares.
+                let skip_deps = Settings::get().task.skip_depends;
+                let roots = crate::task::task_list::get_task_lists(
+                    &config,
+                    &["bootstrap".to_string()],
+                    false,
+                    skip_deps,
+                    false,
+                )
+                .await?;
+                // Tasks-only config and template-free task files load without trust because
+                // their tasks are inert until `mise run` names one. Nobody named this one, and a
+                // project task replaces a global one of the same name, so the `bootstrap` task
+                // and every task it reaches have to come from config the user trusts. Tasks it
+                // does not reach may come from anywhere. Safe mode refuses to run tasks below.
+                if !Settings::safe_mode()
+                    && let Some(task) =
+                        config::untrusted_task_reached(&config, roots, skip_deps).await?
+                {
+                    bail!(
+                        "bootstrap: not running the `bootstrap` task: it would run `{}` from {}, which is not trusted; review it and run `mise trust {}`, or pass `--skip task`",
+                        task.name,
+                        task.config_source.display_user(),
+                        config::config_file::config_trust_root(&task.config_source).display_user()
+                    );
+                }
+                // The check above follows the names as written; the executor checks the
+                // tasks it actually resolves, templated `run` entries included.
+                config::run_only_trusted_tasks();
                 info!("bootstrap: running `bootstrap` task");
                 self.run_task("bootstrap", skip.contains(&BootstrapPart::Tools))
                     .await?;

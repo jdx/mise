@@ -640,6 +640,13 @@ impl TaskExecutor {
             otel_span_cx,
             injected,
         } = ctx;
+        // Every task reaches this point before it runs, whether it was named, a dependency, or
+        // the rendered name of a `run` entry, so this is where a run that must not execute
+        // untrusted tasks checks the task it actually resolved.
+        if crate::config::runs_only_trusted_tasks() && !crate::config::task_is_trusted(config, task)
+        {
+            return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
+        }
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
         Self::check_interruption(allow_during_interruption)?;
@@ -1272,68 +1279,46 @@ impl TaskExecutor {
             completion_state,
             allow_during_interruption,
         } = ctx;
-        use crate::task::TaskLoadContext;
         trace!("inject start: {}", specs.join(", "));
-        // Build tasks list from specs
-        // Create a TaskLoadContext from the specs to ensure project tasks are loaded
-        let ctx = TaskLoadContext::from_patterns(specs.iter().map(|s| {
-            let (name, _) = split_task_spec(s);
-            name
-        }));
-        let tasks = config.tasks_with_context(Some(&ctx)).await?;
-        let tasks_map: BTreeMap<String, Task> = tasks
-            .values()
-            .flat_map(|t| {
-                t.aliases
-                    .iter()
-                    .map(|a| (a.to_string(), t.clone()))
-                    .chain(once((t.name.clone(), t.clone())))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
         let mut to_run: Vec<Task> = vec![];
-        for spec in specs {
-            let (name, args) = split_task_spec(spec);
-            let matches = tasks_map.get_matching(name)?;
-            ensure!(!matches.is_empty(), "task not found: {}", name);
-            for t in matches {
-                let mut t = (*t).clone();
-                t.args = override_args
-                    .map(|a| a.to_vec())
-                    .unwrap_or_else(|| args.clone());
-                // Apply entry-level env via with_dependency_env (high priority,
-                // consistent with depends/depends_post) so it overrides the
-                // sub-task's own declared env.
-                if let Some(env) = override_env {
-                    let env_directives: Vec<EnvDirective> = env
-                        .iter()
-                        .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
-                        .collect();
-                    t = t.with_dependency_env(&env_directives);
-                    if let Some(config_root) = t.config_root.clone() {
-                        let env_map: IndexMap<String, String> = env.iter().cloned().collect();
-                        t.outputs.re_render_with_env(
-                            &mut t.raw_outputs,
-                            &mut t.raw_path_env,
-                            &env_map,
-                            &config_root,
-                        )?;
-                    } else {
-                        trace!(
-                            "re_render_with_env skipped: task {} has no config_root",
-                            t.name
-                        );
-                    }
+        for mut t in resolve_injected_tasks(config, specs, override_args, self.skip_deps).await? {
+            // Apply entry-level env via with_dependency_env (high priority,
+            // consistent with depends/depends_post) so it overrides the
+            // sub-task's own declared env.
+            if let Some(env) = override_env {
+                let env_directives: Vec<EnvDirective> = env
+                    .iter()
+                    .map(|(k, v)| EnvDirective::Val(k.clone(), v.clone(), Default::default()))
+                    .collect();
+                t = t.with_dependency_env(&env_directives);
+                if let Some(config_root) = t.config_root.clone() {
+                    let env_map: IndexMap<String, String> = env.iter().cloned().collect();
+                    t.outputs.re_render_with_env(
+                        &mut t.raw_outputs,
+                        &mut t.raw_path_env,
+                        &env_map,
+                        &config_root,
+                    )?;
+                } else {
+                    trace!(
+                        "re_render_with_env skipped: task {} has no config_root",
+                        t.name
+                    );
                 }
-                if self.skip_deps {
-                    t.depends.clear();
-                    t.depends_post.clear();
-                    t.wait_for.clear();
-                }
-                to_run.push(t);
             }
+            to_run.push(t);
         }
         let sub_deps = Deps::new_pruned(config, to_run, completion_state).await?;
+        // Scheduling an injected task installs its tools before `run_task_sched` looks at it,
+        // so a run that must not execute untrusted tasks refuses the whole sub-graph here,
+        // before any of it is scheduled.
+        if crate::config::runs_only_trusted_tasks()
+            && let Some(task) = sub_deps
+                .all()
+                .find(|t| !crate::config::task_is_trusted(config, t))
+        {
+            return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
+        }
         // Give these tasks their keep-order slots now, while the order they were
         // written in is still known and before any of them can produce a line.
         // Reaching this from `&self` is fine: the state is behind the shared
@@ -3186,6 +3171,55 @@ fn shell_from_shebang(path: &Path) -> Option<Vec<String>> {
     };
     let args: Vec<String> = parts.map(|s| s.to_string()).collect();
     Some(once(shell.to_string()).chain(args).collect())
+}
+
+/// The tasks a `run` entry's `specs` start, as the executor injects them: looked up among the
+/// tasks loaded for those names, by name or alias with `get_matching`'s preference for an exact
+/// name, each given `override_args` (the entry's `args`) or else the arguments written after its
+/// name. With `skip_deps` (`--skip-deps`, `task.skip_depends`) they start without their
+/// dependencies. A name that matches nothing is an error.
+pub(crate) async fn resolve_injected_tasks(
+    config: &Arc<Config>,
+    specs: &[String],
+    override_args: Option<&[String]>,
+    skip_deps: bool,
+) -> Result<Vec<Task>> {
+    use crate::task::TaskLoadContext;
+    // Create a TaskLoadContext from the specs to ensure project tasks are loaded
+    let ctx = TaskLoadContext::from_patterns(specs.iter().map(|s| {
+        let (name, _) = split_task_spec(s);
+        name
+    }));
+    let tasks = config.tasks_with_context(Some(&ctx)).await?;
+    let tasks_map: BTreeMap<String, Task> = tasks
+        .values()
+        .flat_map(|t| {
+            t.aliases
+                .iter()
+                .map(|a| (a.to_string(), t.clone()))
+                .chain(once((t.name.clone(), t.clone())))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let mut resolved = vec![];
+    for spec in specs {
+        let (name, args) = split_task_spec(spec);
+        let matches = tasks_map.get_matching(name)?;
+        ensure!(!matches.is_empty(), "task not found: {}", name);
+        for t in matches {
+            let mut t = (*t).clone();
+            t.args = override_args
+                .map(|a| a.to_vec())
+                .unwrap_or_else(|| args.clone());
+            if skip_deps {
+                t.depends.clear();
+                t.depends_post.clear();
+                t.wait_for.clear();
+            }
+            resolved.push(t);
+        }
+    }
+    Ok(resolved)
 }
 
 #[cfg(test)]

@@ -61,7 +61,12 @@ mise edits your shell startup files.
 
 The same configuration also works in a project `mise.toml`, but a project file
 needs [`mise trust`](/cli/trust.html) before mise reads it. The global config
-does not.
+does not. A project file with only `[tasks]` loads without trust, but its tasks
+can replace yours by name, so the `bootstrap` task runs only when it and every
+task it reaches (its `depends`, and tasks its `run` entries name) come from the
+global config or a trusted project. Other project tasks do not matter. If one of
+them is untrusted, trust the project, run `mise bootstrap` from another
+directory, or pass `--skip task`.
 
 ## What you can declare {#what-goes-where}
 

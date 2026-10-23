@@ -1895,10 +1895,13 @@ async fn list_tool_bins(
 }
 
 /// The `sh` script that runs a plugin's own shim through `mise x`. The target is quoted: it is a
-/// path, and a directory name may hold shell syntax.
+/// path, and a directory name may hold shell syntax. Like the Windows shims, it names itself in
+/// `__MISE_SHIM_PATH`, so `mise x` knows the user did not type `mise x` and does not trust the
+/// active config on their behalf.
 fn plugin_shim_contents(data_dir: &Path, fake_asdf_dir: &Path, target: &Path) -> String {
     format!(
-        "{GENERATED_SHELL_SHIM_HEADER}export ASDF_DATA_DIR={data_dir}\nexport PATH=\"{fake_asdf_dir}:$PATH\"\nmise x -- {target} \"$@\"\n",
+        "{GENERATED_SHELL_SHIM_HEADER}export ASDF_DATA_DIR={data_dir}\nexport PATH=\"{fake_asdf_dir}:$PATH\"\nexport {shim_env}=\"$0\"\nmise x -- {target} \"$@\"\n",
+        shim_env = env::MISE_SHIM_PATH_ENV,
         data_dir = data_dir.display(),
         fake_asdf_dir = fake_asdf_dir.display(),
         target = shell_escape::unix::escape(target.to_string_lossy()),
@@ -2143,6 +2146,11 @@ mod tests {
         );
         assert!(
             contents.contains("mise x -- '/data/plugins/a;id>x;#/shims/ls' \"$@\"\n"),
+            "{contents}"
+        );
+        // names itself, so `mise x` does not take the dispatch for a typed command
+        assert!(
+            contents.contains("export __MISE_SHIM_PATH=\"$0\"\n"),
             "{contents}"
         );
         assert!(is_generated_shell_shim(contents.as_bytes()));

@@ -37,7 +37,7 @@ use crate::{
 use eyre::{Result, eyre};
 use globset::{GlobBuilder, GlobMatcher};
 use idiomatic_version::IdiomaticVersionFile;
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use std::sync::LazyLock as Lazy;
 use tool_versions::ToolVersions;
 
@@ -638,10 +638,9 @@ pub fn is_path_trusted(path: &Path) -> bool {
 
 static IMPLICITLY_TRUST_ACTIVE_CONFIG: AtomicBool = AtomicBool::new(false);
 
-/// Set while `mise trust` resolves the env to find files that need trust. `mise trust` normally
-/// loads every config without asking, since trusting is its job, but here that would run an
-/// untrusted config's templates just to look for files. With this set, an untrusted config is
-/// skipped like it is for `hook-env`, and nothing prompts.
+/// Set while `mise trust` resolves the env to find files that need trust. Loading an untrusted
+/// config there would run its templates just to look for files. With this set, an untrusted
+/// config is skipped like it is for `hook-env`, and nothing prompts.
 static STRICT_TRUST: AtomicBool = AtomicBool::new(false);
 
 /// Env files and scripts that paranoid mode skipped as untrusted, with the config that named
@@ -661,12 +660,18 @@ pub fn untrusted_env_files() -> Vec<(PathBuf, Option<PathBuf>)> {
 /// Set on a `mise` that acts for someone other than the user who typed it,
 /// such as the children the MCP server starts. Such a process trusts nothing
 /// on its own: not the config its command would implicitly trust, and not on
-/// a `yes` setting. Untrusted config fails with [`UntrustedConfig`] instead.
+/// a `yes` setting. Untrusted config fails with [`UntrustedConfig`] instead,
+/// and so do the task files a typed `mise run` would be the consent to run.
 /// The variable is inherited, so a `mise` a task starts follows it too.
 pub const REQUIRE_EXPLICIT_TRUST_ENV: &str = "__MISE_REQUIRE_EXPLICIT_TRUST";
 
 static REQUIRE_EXPLICIT_TRUST: Lazy<bool> =
     Lazy::new(|| std::env::var_os(REQUIRE_EXPLICIT_TRUST_ENV).is_some_and(|v| !v.is_empty()));
+
+/// Whether this process trusts nothing on its own. See [`REQUIRE_EXPLICIT_TRUST_ENV`].
+pub fn requires_explicit_trust() -> bool {
+    *REQUIRE_EXPLICIT_TRUST
+}
 
 pub fn set_implicitly_trust_active_config(enabled: bool) {
     IMPLICITLY_TRUST_ACTIVE_CONFIG.store(enabled, Ordering::Relaxed);
@@ -748,9 +753,16 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     let config_root = config_trust_root(path);
     let default_cmd = String::new();
     let args = env::ARGS.read().unwrap();
-    let cmd = args.get(1).unwrap_or(&default_cmd).as_str();
+    // A shim's arguments belong to the tool it stands for, not to mise.
+    let cmd = if *env::IS_RUNNING_AS_SHIM {
+        default_cmd.as_str()
+    } else {
+        args.get(1).unwrap_or(&default_cmd).as_str()
+    };
     let strict = STRICT_TRUST.load(Ordering::Relaxed);
-    if is_path_trusted(path) || (cmd == "trust" && !strict) || mise_util::testing::in_tests() {
+    // No command is exempt: `mise trust` decides about config without loading it, and the
+    // word `trust` in argv says nothing about who is asking (`docker trust …` through a shim).
+    if is_path_trusted(path) || mise_util::testing::in_tests() {
         return Ok(());
     }
     if *REQUIRE_EXPLICIT_TRUST {
@@ -908,13 +920,17 @@ fn is_trusted_without_config_paths(
 
     // Check if this path is within a trusted monorepo root
     // Monorepo roots are marked with a special marker file when trusted.
+    // The marker only extends the root's own trust to its descendants, so it
+    // counts for nothing unless the root is still trusted itself: trust that
+    // ended (`mise trust --ignore`, a `trusted_config_paths` entry removed, a CI
+    // run) must not live on in a marker.
     // The marker trusts descendants by path, so paranoid mode, which binds
     // trust to file contents, ignores it and checks each file's hash below.
     if !content_bound && let Some(parent) = canonicalized_path.parent() {
         let mut current = parent;
         while let Some(dir) = current.parent() {
             let monorepo_marker = with_appended_extension(&trust_path(dir), "monorepo");
-            if monorepo_marker.exists() {
+            if monorepo_marker.exists() && is_trusted_with(dir, content_bound) {
                 add_trusted(canonicalized_path.to_path_buf());
                 return true;
             }
@@ -1195,9 +1211,76 @@ pub fn trust(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Synchronizes the derived monorepo marker used to trust descendant configs.
-pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()> {
+/// Records trust for the root of a config file mise has just written for the user, as
+/// `mise use` and `mise set` do. Safe mode loads config without a trust decision, so a write
+/// there has none to record and leaves trust as it was.
+pub fn trust_after_write(path: &Path) -> Result<()> {
+    if Settings::safe_mode() {
+        return Ok(());
+    }
+    trust(&config_trust_root(path))
+}
+
+/// Asks for the trust that [`trust_after_write`] is about to record, before the write.
+///
+/// That record is for the whole config root, so it also covers the other config files there.
+/// A command that loads the full config (`mise use`) has checked them already, but `mise set`,
+/// `mise unset` and `mise tasks add` read only the file they edit: a sibling mise refused to
+/// load (`mise.local.toml`, `.config/mise/conf.d/*.toml`, a profile of another `MISE_ENV`)
+/// would start to load without anyone having decided to trust it. Each one that needs trust
+/// goes through [`trust_check`], which prompts, or fails without a terminal, like any other
+/// untrusted config. So does the file itself, for a writer that edits it as text.
+///
+/// Global config is trusted without a record, so writing it decides nothing about a project.
+pub fn trust_check_before_write(path: &Path) -> Result<()> {
+    if Settings::safe_mode() || config::is_global_config(path) {
+        return Ok(());
+    }
     let config_root = config_trust_root(path);
+    let mut files = if config_root.as_path() == path {
+        IndexSet::new()
+    } else {
+        config::config_files_in_dir_for_any_env(&config_root)
+    };
+    files.insert(path.to_path_buf());
+    for file in files {
+        if file.is_file()
+            && !is_config_ignored_via_setting(&file)
+            && !is_path_trusted(&file)
+            && config_requires_trust(&file)
+        {
+            trust_check(&file)?;
+        }
+    }
+    Ok(())
+}
+
+/// Whether a config file, as it is on disk, loads only once trusted.
+fn config_requires_trust(path: &Path) -> bool {
+    if config::is_tool_versions_file(path)
+        || matches!(
+            detect_config_file_type_by_filename(path),
+            Some(ConfigFileType::ToolVersions)
+        )
+    {
+        ToolVersions::path_requires_trust(path)
+    } else {
+        !MiseToml::path_is_trust_exempt(path)
+    }
+}
+
+/// Synchronizes the derived monorepo marker used to trust descendant configs.
+///
+/// The marker outlives the run, so it is only written for a root that is
+/// trusted: a root that merely loaded is not, since safe mode loads config
+/// nobody trusted. CI trusts everything and records nothing, so it leaves the
+/// marker alone.
+pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()> {
+    if ci_info::is_ci() {
+        return Ok(());
+    }
+    let config_root = config_trust_root(path);
+    let enabled = enabled && is_trusted(&config_root);
     let hashed_path = trust_path(&config_root);
     let monorepo_marker = with_appended_extension(&hashed_path, "monorepo");
     if enabled && !monorepo_marker.exists() {
