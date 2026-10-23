@@ -162,10 +162,9 @@ which repository the requested name now belongs to. If it cannot ask, for
 example offline or when rate-limited, it compares names only and refuses the
 release.
 
-A pin or a `mise.lock` entry that recorded no repository ID holds by name and
-never follows a rename. Versions of mise from before it recorded IDs left such
-records, and so do the `identity`, `identity_prefix`, and `pubkey` options. The
-forge's answer says which repository has the name today, not which one was
+A pin or a `mise.lock` entry without a repository ID holds by name and never
+follows a rename. The `identity`, `identity_prefix`, and `pubkey` options leave
+such records. The forge's answer says which repository has the name today, not which one was
 pinned, so a release signed under another name is a different signer and is
 refused. For a machine pin, run `mise packslip forget <tool>` and install
 again; for a lockfile entry, remove it and run `mise lock` again. The next

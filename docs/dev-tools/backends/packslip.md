@@ -208,8 +208,8 @@ signed under the new name, and mise warns once with the new name; update your
 configuration when convenient. The pin and the `mise.lock` commitment follow the
 repository, so you do not need `mise packslip forget`.
 
-A pin or lockfile entry that recorded no repository ID, such as one an older
-mise wrote, holds by name and never follows a rename. For a machine pin, run
+A pin or `mise.lock` entry without a repository ID holds by name and never
+follows a rename. For a machine pin, run
 `mise packslip forget <tool>` and install again. For a `mise.lock` entry,
 remove the entry and run `mise lock` again.
 
