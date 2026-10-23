@@ -146,11 +146,11 @@ fn parse_package_manager_version(raw: &str) -> Option<(String, Option<String>)> 
 ///
 /// package.json is read without trust and the result becomes a tool option,
 /// which `mise use` can write into a mise.toml, so nothing but a checksum may
-/// pass.
+/// pass. The algorithms are the ones Corepack writes.
 fn checksum_from_suffix(suffix: &str) -> Option<String> {
+    const ALGORITHMS: &[&str] = &["sha1", "sha224", "sha256", "sha384", "sha512"];
     let (algorithm, digest) = suffix.split_once('.')?;
-    let valid = !algorithm.is_empty()
-        && algorithm.bytes().all(|b| b.is_ascii_alphanumeric())
+    let valid = ALGORITHMS.contains(&algorithm)
         && !digest.is_empty()
         && digest.bytes().all(|b| b.is_ascii_hexdigit());
     valid.then(|| format!("{algorithm}:{digest}"))
@@ -362,6 +362,9 @@ mod tests {
             "sha512.abcdef{% raw %}",
             "sha512.abcdef\n",
             "sha512.nothex",
+            "sha999.abcdef",
+            "SHA512.abcdef",
+            "md5.abcdef",
             "sha512.",
             ".abcdef",
             "sha512",
