@@ -226,6 +226,30 @@ fn validate_git_alias(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Reject a registry package version that is not a version, range or dist-tag.
+///
+/// The version reaches the package manager as `<name>@<version>` or as the
+/// root dependency's specifier, and both are parsed as full package specs: a
+/// version that is a path (`/x`, `~/x`, `x.tgz`), a URL or `owner/repo` would
+/// install that in place of the registry package. A plain tool list sets the
+/// version without trust, so only the characters a version, a range or a
+/// dist-tag needs are accepted.
+fn validate_registry_version(name: &str, version: &str) -> Result<()> {
+    let lower = version.to_ascii_lowercase();
+    let valid = !version.is_empty()
+        && !version.starts_with('.')
+        && version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || " .-_+^~<>=|*".contains(c))
+        && ![".tgz", ".tar", ".tar.gz"]
+            .iter()
+            .any(|ext| lower.ends_with(ext));
+    if !valid {
+        eyre::bail!("npm:{name}: {version:?} is not a version, range or dist-tag");
+    }
+    Ok(())
+}
+
 fn git_package_install_spec(name: &str, version: &str, has_checksum: bool) -> Result<String> {
     validate_git_alias(name)?;
     if has_checksum {
@@ -1487,6 +1511,7 @@ impl NPMBackend {
         if is_git_spec(&tool_name) {
             return git_package_install_spec(&tool_name, &tv.version, options.checksum().is_some());
         }
+        validate_registry_version(&tool_name, &tv.version)?;
         let Some(checksum) = options.checksum() else {
             return Ok(format!("{tool_name}@{}", tv.version));
         };
@@ -1517,12 +1542,13 @@ impl NPMBackend {
     }
 
     /// The root dependency specifier: the version, or a git URL with the ref.
-    fn package_requirement(&self, tv: &ToolVersion) -> String {
+    fn package_requirement(&self, tv: &ToolVersion) -> Result<String> {
         let name = self.tool_name();
         if is_git_spec(&name) {
-            git_requirement(&name, &tv.version)
+            Ok(git_requirement(&name, &tv.version))
         } else {
-            tv.version.clone()
+            validate_registry_version(&name, &tv.version)?;
+            Ok(tv.version.clone())
         }
     }
 
@@ -2248,7 +2274,7 @@ impl NPMBackend {
         let mut manifest: serde_json::Value =
             serde_json::from_str(&crate::file::read_to_string(&path)?)?;
         manifest["dependencies"] =
-            serde_json::json!({ self.package_key(): self.package_requirement(tv) });
+            serde_json::json!({ self.package_key(): self.package_requirement(tv)? });
         crate::file::write(
             path,
             format!("{}\n", serde_json::to_string_pretty(&manifest)?),
@@ -2269,7 +2295,7 @@ impl NPMBackend {
             .and_then(|v| v.get(self.package_key()))
             .and_then(|v| v.get("specifier"))
             .and_then(toml::Value::as_str);
-        if requirement != Some(self.package_requirement(tv).as_str()) {
+        if requirement != Some(self.package_requirement(tv)?.as_str()) {
             eyre::bail!(
                 "npm:{} dependency graph does not match root version {}; run `mise lock`",
                 self.display_tool_name(),
@@ -3314,6 +3340,50 @@ mod tests {
             );
         }
         assert!(error.contains("git ls-remote 127.0.0.1:mise-git-head-does-not-exist?"));
+    }
+
+    #[test]
+    fn registry_version_rejects_package_spec_syntax() {
+        for version in [
+            "3.6.2",
+            "3",
+            "^3",
+            "~3.6",
+            ">=3 <4",
+            "1.x || 2.x",
+            "1.2.3 - 2.3.4",
+            "*",
+            "latest",
+            "next",
+            "1.0.0-rc.1+build.5",
+        ] {
+            assert!(
+                validate_registry_version("prettier", version).is_ok(),
+                "{version}"
+            );
+        }
+        for version in [
+            "/proc/self/cwd/payload",
+            "./payload",
+            "~/payload",
+            "attacker/repo#v1.0.0",
+            "github:attacker/repo",
+            "file:payload",
+            "link:payload",
+            "https://example.com/x.tgz",
+            "payload.tgz",
+            "payload.TAR.GZ",
+            "payload.tar",
+            ".",
+            "ref:sqlite",
+            "npm:other@1",
+            "",
+        ] {
+            assert!(
+                validate_registry_version("prettier", version).is_err(),
+                "{version}"
+            );
+        }
     }
 
     #[test]
