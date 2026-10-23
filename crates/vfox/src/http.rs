@@ -274,23 +274,35 @@ where
     })
 }
 
-/// A temporary file in `dir`, removed when dropped. It stays owner-only, as
-/// tempfile creates it, while the download is written.
-fn temp_file_in(
-    dir: &std::path::Path,
-) -> std::io::Result<(tempfile::NamedTempFile, std::fs::File)> {
+/// A temporary file in `dir`, removed when dropped, owner-only while the
+/// download is written.
+///
+/// Opened with `std::fs` rather than by tempfile, which on Windows marks its
+/// files `FILE_ATTRIBUTE_TEMPORARY` and relies on `persist` to clear it again;
+/// the download is moved into place with `std::fs::rename` instead (see
+/// [`replace_with`]), so the mark would stay on the installed file. tempfile
+/// still picks the name and removes the file on drop.
+fn temp_file_in(dir: &std::path::Path) -> std::io::Result<(TempDownload, std::fs::File)> {
     let temp = tempfile::Builder::new()
         .prefix(".vfox-download-")
-        .tempfile_in(dir)?;
-    let file = temp.reopen()?;
+        .make_in(dir, |path| {
+            let mut options = std::fs::OpenOptions::new();
+            options.read(true).write(true).create_new(true);
+            #[cfg(unix)]
+            std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+            options.open(path)
+        })?;
+    let file = temp.as_file().try_clone()?;
     Ok((temp, file))
 }
+
+type TempDownload = tempfile::NamedTempFile<std::fs::File>;
 
 /// Moves the finished download `temp` to `path`, with the permissions `path`
 /// already has, or for a new file the ones a file created in `dir` gets under
 /// the user's umask, as before downloads went through a temporary file.
 fn replace_with(
-    temp: tempfile::NamedTempFile,
+    temp: TempDownload,
     path: &std::path::Path,
     dir: &std::path::Path,
 ) -> std::io::Result<()> {
@@ -311,11 +323,13 @@ fn replace_with(
     // not get the extended-length path handling `std::fs` applies, and fails
     // well before `MAX_PATH` (mise measured it breaking at a 253-character
     // target where `fs::rename` succeeded at 415). Closing the file first lets
-    // the rename replace an existing target there. Until the rename succeeds,
-    // dropping the `TempPath` removes the temporary file.
-    let temp = temp.into_temp_path();
+    // the rename replace an existing target there. The `TempPath` is held
+    // until the rename succeeds, so any failure still removes the temporary
+    // file; only then is cleanup turned off. Not `keep()`: on Windows that
+    // resets the attributes of the old path, which no longer exists.
+    let mut temp = temp.into_temp_path();
     std::fs::rename(&temp, path)?;
-    let _ = temp.keep();
+    temp.disable_cleanup(true);
     Ok(())
 }
 
@@ -418,6 +432,21 @@ mod tests {
         replace_with(temp, &target, dir.path()).unwrap();
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "new");
         assert_eq!(mode(&target), 0o640);
+    }
+
+    #[test]
+    fn a_failed_replace_removes_the_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        // A non-empty directory where the download should go: the rename fails.
+        let target = dir.path().join("downloaded");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("inside"), "x").unwrap();
+        let (temp, file) = temp_file_in(dir.path()).unwrap();
+        drop(file);
+        let temp_path = temp.path().to_path_buf();
+        assert!(replace_with(temp, &target, dir.path()).is_err());
+        assert!(!temp_path.exists());
+        assert!(target.join("inside").exists());
     }
 
     #[test]
