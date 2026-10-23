@@ -2445,13 +2445,15 @@ fn idiomatic_version_file_disabled(
 /// `Settings::get()` is a process-wide snapshot rooted at the invocation directory. Resolving
 /// from the monorepo config root keeps normal environment, hierarchy, global/system, safe-mode,
 /// and `--no-config` behavior without maintaining a second precedence implementation.
+/// Like the main settings load, it skips the `[settings]` of untrusted project configs, so
+/// a subproject cannot turn on idiomatic version files for itself before it is trusted.
 async fn idiomatic_filenames_for_root(
     root: &Path,
     default_idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<BTreeMap<String, Vec<String>>> {
     let rooted = settings::IdiomaticVersionFileSettings::resolve_from(
         root,
-        settings::SettingsLoadPolicy::HIERARCHY,
+        settings::SettingsLoadPolicy::TRUSTED_HIERARCHY,
     )?;
     if rooted == settings::IdiomaticVersionFileSettings::current() {
         return Ok(default_idiomatic_filenames.clone());

@@ -54,10 +54,6 @@ impl SettingsLoadPolicy {
         source: SettingsSourcePolicy::EnvironmentOnly,
         trust: SettingsTrustPolicy::AsDiscovered,
     };
-    pub(crate) const HIERARCHY: Self = Self {
-        source: SettingsSourcePolicy::Hierarchy,
-        trust: SettingsTrustPolicy::AsDiscovered,
-    };
     pub(crate) const TRUSTED_HIERARCHY: Self = Self {
         source: SettingsSourcePolicy::Hierarchy,
         trust: SettingsTrustPolicy::TrustedOnly,
