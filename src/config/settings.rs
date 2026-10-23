@@ -1886,8 +1886,14 @@ fn load() -> Result<Arc<Settings>> {
 
 fn redacted_settings_for_debug(settings: &Settings) -> Settings {
     let mut debug_settings = settings.clone();
-    if debug_settings.task.cache.remote_token.is_some() {
-        debug_settings.task.cache.remote_token = Some("[redacted]".to_string());
+    for secret in [
+        &mut debug_settings.task.cache.remote_token,
+        &mut debug_settings.task.cache_remote_token,
+        &mut debug_settings.sops.age_key,
+    ] {
+        if secret.is_some() {
+            *secret = Some("[redacted]".to_string());
+        }
     }
     debug_settings
 }
@@ -2288,11 +2294,25 @@ mod tests {
     fn debug_settings_redact_remote_cache_token() {
         let mut settings = Settings::default();
         settings.task.cache.remote_token = Some("super-secret-token".to_string());
+        settings.sops.age_key = Some("AGE-SECRET-KEY-1SECRET".to_string());
 
         let debug = format!("{:?}", redacted_settings_for_debug(&settings));
 
         assert!(!debug.contains("super-secret-token"));
+        assert!(!debug.contains("AGE-SECRET-KEY-1SECRET"));
         assert!(debug.contains("[redacted]"));
+    }
+
+    #[test]
+    fn settings_dictionary_redacts_the_age_key() {
+        let mut settings = Settings::default();
+        settings.sops.age_key = Some("AGE-SECRET-KEY-1SECRET".to_string());
+        settings.sops.age_key_file = Some("/keys/age.txt".into());
+
+        let encoded = toml::to_string(&settings.as_dict().unwrap()).unwrap();
+
+        assert!(!encoded.contains("AGE-SECRET-KEY-1SECRET"), "{encoded}");
+        assert!(encoded.contains("/keys/age.txt"), "{encoded}");
     }
 
     #[test]

@@ -1594,19 +1594,15 @@ fn mise_dirs() -> Vec<(String, PathBuf)> {
 }
 
 fn mise_env_vars() -> Vec<(String, String)> {
-    const REDACT_KEYS: &[&str] = &[
-        "MISE_GITHUB_TOKEN",
-        "MISE_GITLAB_TOKEN",
-        "MISE_GITHUB_ENTERPRISE_TOKEN",
-        "MISE_GITLAB_ENTERPRISE_TOKEN",
-    ];
     env::vars_safe()
         .filter(|(k, _)| k.starts_with("MISE_"))
         .map(|(k, v)| {
-            let v = if REDACT_KEYS.contains(&k.as_str()) {
+            // By the shape of the name, so a credential variable added later
+            // (`MISE_SOPS_AGE_KEY`, `MISE_FORGEJO_TOKEN`, ...) is hidden too.
+            let v = if mise_settings::is_secret_name(&k) {
                 style::ndim("REDACTED").to_string()
             } else {
-                v
+                mise_util::redactions::redact_output(&v)
             };
             (k, v)
         })
