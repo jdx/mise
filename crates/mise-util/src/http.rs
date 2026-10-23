@@ -1265,11 +1265,13 @@ impl Client {
             .get(CONTENT_TYPE)
             .and_then(|content_type| content_type.to_str().ok())
             .is_some_and(|content_type| {
-                content_type
+                let media_type = content_type
                     .split_once(';')
                     .map_or(content_type, |(media_type, _)| media_type)
                     .trim()
-                    .eq_ignore_ascii_case("text/html")
+                    .to_ascii_lowercase();
+                // `+html` covers PEP 691 (`application/vnd.pypi.simple.v1+html`)
+                media_type == "text/html" || media_type.ends_with("+html")
             });
         if !is_html {
             bail!("Got non-HTML text from {}", log_url(&url));
