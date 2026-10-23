@@ -455,7 +455,8 @@ mise renders [`.miserc.toml`](/configuration.html#miserc) before it reads
 `mise.toml` or settings, so only information from the operating system is
 available:
 
-- `env`: the environment mise started with
+- `env`: the environment mise started with, in the global and system files
+  only (see [below](#miserc-project-templates))
 - `config_root`: the directory that holds the `.miserc.toml` file
 - `cwd`
 - `xdg_cache_home`, `xdg_config_home`, `xdg_data_home`, `xdg_state_home`
@@ -495,7 +496,42 @@ ceiling_paths = ["{{ env.HOME }}/work"]
 If a template fails to render, for example because of an undefined variable or
 a call to `exec()`, mise silently uses the file's raw, unrendered content. No
 warning is printed, because mise reads `.miserc.toml` before logging starts. To
-keep a literal <span v-pre>`{{`</span>, use a [`raw` block](#syntax).
+keep a literal <span v-pre>`{{`</span>, use a [`raw` block](#syntax) (in the
+global and system files).
+
+### Project .miserc.toml files {#miserc-project-templates}
+
+A `.miserc.toml`, `.miserc.local.toml` or `.config/miserc.toml` in a project
+loads without [trust](/security.html#configuration-trust), so its templates are
+limited, and the global and system files keep everything above:
+
+- `env` is empty, and `get_env()` is not available, so a repository cannot
+  copy your environment into the config environments it selects.
+- The only statements are `if`, `elif`, `else` and `endif`, so a template cannot
+  loop. The only functions are `arch()`, `os()`, `os_family()`, `libc()`,
+  `avx2()` and `num_cpus()`. The filters are `default`, `lower`, `upper`,
+  `capitalize`, `title`, `trim`, `trim_start`, `trim_end`, `basename`,
+  `dirname`, `extname`, `file_stem`, `first`, `last`, `length`, `str`, `int`,
+  `float` and the case filters such as `kebabcase`, and the tests are `defined`,
+  `undefined`, `string`, `number`, `starting_with`, `ending_with` and
+  `containing`.
+- The file may be at most 16 KiB.
+
+These limits keep a template from taking unbounded time or memory, which would
+otherwise stall every mise command, the shell prompt hook included, below the
+project. mise leaves a file that breaks them unrendered and warns.
+
+<div v-pre>
+
+```toml [.miserc.toml]
+{% if os() == "macos" %}
+env = ["mac"]
+{% else %}
+env = ["{{ config_root | basename }}"]
+{% endif %}
+```
+
+</div>
 
 ## Migrating from Tera v1 {#tera-v2-migration}
 

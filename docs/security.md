@@ -64,9 +64,11 @@ idea:
   [`task_config.includes`](/tasks/task-discovery.html), need trust only when they
   contain template syntax or list `secrets`.
 - A [`.miserc.toml`](/configuration.html#miserc) never needs trust. It only
-  holds early settings that choose which config files load, and its templates
-  cannot call `exec()`, `read_file()`, `read_json()`, `read_yaml()`, or
-  `read_toml()`.
+  holds early settings that choose which config files load. Templates in a
+  project `.miserc.toml` see no environment variables and may use only `if`
+  statements and a short list of functions and filters, so they cannot leak your
+  environment or hang mise; see
+  [templates in .miserc.toml](/templates.html#miserc-template-support).
 
 [Paranoid mode](/paranoid.html) removes these exemptions apart from
 `.miserc.toml`: every other config file outside global and system config needs

@@ -28,11 +28,11 @@ for template in "get_env(name='HOME')" "'/etc/hostname' | hash_file" "'/etc/host
   assert_fail "MISE_SAFE=1 mise ls" "disabled in safe mode (MISE_SAFE=1)"
 done
 
-echo "=== a project .miserc.toml sees an empty env too ==="
+echo "=== a project .miserc.toml sees no env, in any mode ==="
 # its env list becomes MISE_ENV, which project templates can read
 echo 'env = ["{{ env.SAFE_TEMPLATE }}"]' >.miserc.toml
 safe_template_tool "{{ mise_env | join(sep='-') }}" >mise.toml
-assert_contains "SAFE_TEMPLATE=2.0.0 mise ls --json" '"requested_version": "2.0.0"'
+assert_not_contains "SAFE_TEMPLATE=2.0.0 mise ls --json 2>&1" "2.0.0"
 assert_not_contains "SAFE_TEMPLATE=2.0.0 MISE_SAFE=1 mise ls --json 2>&1" "2.0.0"
 rm .miserc.toml mise.toml
 

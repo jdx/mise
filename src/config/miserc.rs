@@ -18,6 +18,7 @@ use crate::config::config_file::diagnostic::toml_parse_error;
 use crate::config::settings::MisercSettings;
 use crate::dirs;
 use crate::env;
+use crate::env_diff::EnvMap;
 use crate::file;
 use crate::tera::{
     TeraEngine, contains_template_syntax, get_miserc_tera, render_str, render_str_with_env,
@@ -150,7 +151,9 @@ pub(crate) fn get_override_tool_versions_filenames() -> Option<&'static Vec<Stri
 
 /// Render any Tera template syntax in miserc content before TOML parsing.
 /// Uses a minimal context that is safe to build before the main config is loaded:
-/// - `env` – OS environment variables (from PRISTINE_ENV)
+/// - `env` – OS environment variables (from PRISTINE_ENV), in the global and
+///   system files only; a project file gets an empty map and is checked by
+///   [`check_project_template`] first
 /// - `config_root` – directory containing the miserc file
 /// - `cwd` – current working directory
 /// - `xdg_*` – XDG base directory variables
@@ -169,9 +172,25 @@ fn render_miserc_template(
     }
     // Lazily initialize the Tera instance — only pay the clone cost if at least one file
     // contains template syntax.
+    let global = is_global_miserc_dir(config_root);
+    if !global && let Err(reason) = check_project_template(content) {
+        // queued: the logger is not up yet while miserc loads
+        crate::config::settings::warn_settings_file_error(format!(
+            "not rendering the templates of the .miserc.toml in {}: {reason}",
+            file::display_path(config_root)
+        ));
+        return content.to_string();
+    }
     let tera = tera.get_or_insert_with(get_miserc_tera);
     let mut context = Context::new();
-    context.insert("env", &*env::PRISTINE_ENV);
+    // A project file loads without trust, and what it renders becomes
+    // `MISE_ENV`, which picks the config files mise loads (and the hosts their
+    // tools are fetched from), so it gets no environment.
+    if global {
+        context.insert("env", &*env::PRISTINE_ENV);
+    } else {
+        context.insert("env", &EnvMap::new());
+    }
     context.insert("config_root", config_root);
     // Use the invocation directory, not the current one: the global ignore list
     // is rendered lazily, possibly after `-C` changed directory, and must match
@@ -185,15 +204,11 @@ fn render_miserc_template(
     context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
     context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
     context.insert("system_brew_prefix", &env::system_brew_prefix());
-    // In safe mode `env` is empty outside the global and system files: what a
-    // project file renders becomes `MISE_ENV`, which picks the config files mise
-    // loads and is visible to project templates.
-    let rendered =
-        if config_root == *dirs::CONFIG || config_root == env::MISE_SYSTEM_CONFIG_DIR.as_path() {
-            render_str_with_env(tera, content, &context)
-        } else {
-            render_str(tera, content, &context)
-        };
+    let rendered = if global {
+        render_str_with_env(tera, content, &context)
+    } else {
+        render_str(tera, content, &context)
+    };
     match rendered {
         Ok(rendered) => rendered,
         Err(e) => {
@@ -201,6 +216,196 @@ fn render_miserc_template(
             content.to_string()
         }
     }
+}
+
+/// Whether the miserc file in `config_root` is the global or system one, which
+/// the operator wrote.
+fn is_global_miserc_dir(config_root: &Path) -> bool {
+    config_root == *dirs::CONFIG || config_root == env::MISE_SYSTEM_CONFIG_DIR.as_path()
+}
+
+/// The most bytes of a project `.miserc.toml` that mise renders.
+const PROJECT_TEMPLATE_MAX_LEN: usize = 16 * 1024;
+/// The statements a project `.miserc.toml` may use. None of them loops or
+/// assigns, so rendering takes one pass over the template.
+const PROJECT_STATEMENTS: [&str; 4] = ["if", "elif", "else", "endif"];
+/// The functions a project `.miserc.toml` may call: host facts, none of which
+/// reads the environment or a file or builds a value of a requested size.
+const PROJECT_FUNCTIONS: [&str; 6] = ["arch", "os", "os_family", "libc", "avx2", "num_cpus"];
+/// The filters a project `.miserc.toml` may use. None of them reads the
+/// environment or a file, and none makes its input much longer, so chaining
+/// them cannot build a large value.
+const PROJECT_FILTERS: [&str; 24] = [
+    "default",
+    "lower",
+    "upper",
+    "capitalize",
+    "title",
+    "trim",
+    "trim_start",
+    "trim_end",
+    "basename",
+    "dirname",
+    "extname",
+    "file_stem",
+    "first",
+    "last",
+    "length",
+    "str",
+    "int",
+    "float",
+    "kebabcase",
+    "snakecase",
+    "lowercamelcase",
+    "uppercamelcase",
+    "shoutykebabcase",
+    "shoutysnakecase",
+];
+/// The tests a project `.miserc.toml` may use; the ones that look at the
+/// filesystem are left out.
+const PROJECT_TESTS: [&str; 7] = [
+    "defined",
+    "undefined",
+    "string",
+    "number",
+    "starting_with",
+    "ending_with",
+    "containing",
+];
+/// Words of the expression syntax that are followed by `(` without being calls.
+const KEYWORDS: [&str; 5] = ["and", "or", "not", "in", "is"];
+
+#[derive(Debug, PartialEq)]
+enum TemplateToken<'a> {
+    Ident(&'a str),
+    Symbol(u8),
+}
+
+/// Checks that a project `.miserc.toml` template renders in bounded time and
+/// memory. A project file loads without trust, and Tera bounds neither, so a
+/// loop or a string doubled in a loop would hang or crash every command run
+/// below the project. The template may therefore use only `if` statements and
+/// the functions, filters and tests listed above. The scan follows Tera's
+/// lexer (strings with `\` escapes, the tag delimiters) and rejects anything it
+/// does not recognize.
+fn check_project_template(content: &str) -> std::result::Result<(), String> {
+    if content.len() > PROJECT_TEMPLATE_MAX_LEN {
+        return Err(format!(
+            "a template may be at most {PROJECT_TEMPLATE_MAX_LEN} bytes"
+        ));
+    }
+    let bytes = content.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let Some(open) = content[i..].find('{').map(|pos| i + pos) else {
+            break;
+        };
+        let close: &str = match bytes.get(open + 1) {
+            Some(b'{') => "}}",
+            Some(b'%') => "%}",
+            Some(b'#') => {
+                let end = content[open + 2..]
+                    .find("#}")
+                    .ok_or("a comment is not closed")?;
+                i = open + 2 + end + 2;
+                continue;
+            }
+            _ => {
+                i = open + 1;
+                continue;
+            }
+        };
+        let (tokens, end) = scan_tag(content, open + 2, close)?;
+        if close == "%}" {
+            match tokens.first() {
+                Some(TemplateToken::Ident(word)) if PROJECT_STATEMENTS.contains(word) => {}
+                Some(TemplateToken::Ident(word)) => {
+                    return Err(format!("the `{word}` statement is not allowed"));
+                }
+                _ => return Err("a statement must start with a keyword".to_string()),
+            }
+        }
+        check_tag_tokens(&tokens)?;
+        i = end;
+    }
+    Ok(())
+}
+
+/// Splits the tag that starts at `start` into identifiers and symbols, and
+/// returns them with the index after the closing delimiter.
+fn scan_tag<'a>(
+    content: &'a str,
+    start: usize,
+    close: &str,
+) -> std::result::Result<(Vec<TemplateToken<'a>>, usize), String> {
+    let bytes = content.as_bytes();
+    let mut tokens = vec![];
+    let mut i = start;
+    if bytes.get(i) == Some(&b'-') {
+        i += 1;
+    }
+    loop {
+        let Some(&c) = bytes.get(i) else {
+            return Err("a tag is not closed".to_string());
+        };
+        if c.is_ascii_whitespace() {
+            i += 1;
+        } else if bytes[i..].starts_with(close.as_bytes()) {
+            return Ok((tokens, i + close.len()));
+        } else if c == b'-' && bytes[i + 1..].starts_with(close.as_bytes()) {
+            return Ok((tokens, i + 1 + close.len()));
+        } else if matches!(c, b'\'' | b'"' | b'`') {
+            let mut j = i + 1;
+            loop {
+                match bytes.get(j) {
+                    None => return Err("a string is not closed".to_string()),
+                    Some(b'\\') => j += 2,
+                    Some(&q) if q == c => break,
+                    Some(_) => j += 1,
+                }
+            }
+            i = j + 1;
+        } else if c == b'_' || c.is_ascii_alphabetic() {
+            let len = bytes[i..]
+                .iter()
+                .take_while(|&&c| c == b'_' || c.is_ascii_alphanumeric())
+                .count();
+            tokens.push(TemplateToken::Ident(&content[i..i + len]));
+            i += len;
+        } else {
+            tokens.push(TemplateToken::Symbol(c));
+            i += 1;
+        }
+    }
+}
+
+fn check_tag_tokens(tokens: &[TemplateToken<'_>]) -> std::result::Result<(), String> {
+    for (idx, token) in tokens.iter().enumerate() {
+        let TemplateToken::Ident(name) = token else {
+            continue;
+        };
+        let prev = idx.checked_sub(1).and_then(|p| tokens.get(p));
+        let before_prev = idx.checked_sub(2).and_then(|p| tokens.get(p));
+        let next = tokens.get(idx + 1);
+        if prev == Some(&TemplateToken::Symbol(b'|')) {
+            if !PROJECT_FILTERS.contains(name) {
+                return Err(format!("the `{name}` filter is not allowed"));
+            }
+        } else if prev == Some(&TemplateToken::Ident("is"))
+            || (prev == Some(&TemplateToken::Ident("not"))
+                && before_prev == Some(&TemplateToken::Ident("is")))
+        {
+            if *name != "not" && !PROJECT_TESTS.contains(name) {
+                return Err(format!("the `{name}` test is not allowed"));
+            }
+        } else if next == Some(&TemplateToken::Symbol(b'('))
+            && !KEYWORDS.contains(name)
+            && !PROJECT_FUNCTIONS.contains(name)
+        {
+            return Err(format!("the `{name}()` function is not allowed"));
+        }
+    }
+    Ok(())
 }
 
 /// Load and merge all miserc settings files.
@@ -420,11 +625,76 @@ ceiling_paths = ["/home/user"]
             .cloned()
             .unwrap_or_else(|| "/root".to_string());
         let content = r#"ceiling_paths = ["{{ env.HOME }}"]"#;
-        let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
+        let result = render_miserc_template(&mut tera, content, &dirs::CONFIG);
         assert!(
             result.contains(&home),
             "Expected HOME ({home}) in rendered output, got: {result}"
         );
+    }
+
+    #[test]
+    fn test_render_project_miserc_template_has_no_env() {
+        let mut tera = None;
+        let content = r#"env = ["{{ env.HOME | default(value='none') }}"]"#;
+        let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
+        assert_eq!(result, r#"env = ["none"]"#);
+    }
+
+    #[test]
+    fn test_check_project_template() {
+        for ok in [
+            r#"env = ["{{ os() }}-{{ arch() }}"]"#,
+            r#"env = ["{{ config_root | basename | lower }}"]"#,
+            r#"{% if os() == "linux" %}env = ["a"]{% else %}env = ["b"]{% endif %}"#,
+            r#"{%- if xdg_config_home is defined and cwd is not starting_with("/tmp") -%}x{%- endif %}"#,
+            r#"env = ["{{ 'a(b' ~ "{{ range(end=3) }}" }}"] # range( in a string"#,
+            "{# {% for x in y %} #}env = []",
+            "env = [] # { not a tag",
+        ] {
+            assert_eq!(check_project_template(ok), Ok(()), "{ok}");
+        }
+        for (bad, why) in [
+            (
+                r#"{% for a in range(end=100000) %}{% endfor %}"#,
+                "`for` statement",
+            ),
+            (
+                r#"{% set s = "aa" %}{% set_global s = s ~ s %}"#,
+                "`set` statement",
+            ),
+            (r#"{% raw %}{% endraw %}"#, "`raw` statement"),
+            ("{{ range(end=9) | join }}", "`range()` function"),
+            ("{{ get_env(name='HOME') }}", "`get_env()` function"),
+            (
+                "{{ choice(n=9999999, alphabet='a') }}",
+                "`choice()` function",
+            ),
+            ("{{ '/dev/zero' | hash_file }}", "`hash_file` filter"),
+            ("{{ 'a' | replace(from='a', to='bb') }}", "`replace` filter"),
+            ("{{ ['a'] | join(sep='b') }}", "`join` filter"),
+            ("{% if '/etc' is exists %}{% endif %}", "`exists` test"),
+            ("{% if x is not dir %}{% endif %}", "`dir` test"),
+            // a string that hides the tag's end, or escapes its own quote
+            (r#"{{ "}}" ~ range(end=9) }}"#, "`range()` function"),
+            (r#"{{ "\" }}" ~ range(end=9) }}"#, "`range()` function"),
+            ("{{ os() ", "not closed"),
+            ("{{ 'a }}", "not closed"),
+            ("{# a", "not closed"),
+        ] {
+            let err = check_project_template(bad).unwrap_err();
+            assert!(err.contains(why), "{bad}: {err}");
+        }
+        let long = format!("# {}\n{{{{ os() }}}}", "a".repeat(PROJECT_TEMPLATE_MAX_LEN));
+        assert!(check_project_template(&long).is_err());
+    }
+
+    #[test]
+    fn test_render_project_miserc_template_refuses_unbounded_templates() {
+        // nested loops that would never finish are not rendered
+        let mut tera = None;
+        let content = r#"env = ["{% for a in range(end=100000) %}{% for b in range(end=100000) %}{% endfor %}{% endfor %}x"]"#;
+        let result = render_miserc_template(&mut tera, content, Path::new("/some/dir"));
+        assert_eq!(result, content);
     }
 
     #[test]
