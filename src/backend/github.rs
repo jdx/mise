@@ -1588,7 +1588,10 @@ impl UnifiedGitBackend {
                     .find(|a| a.name == provenance_name)
                     .expect("provenance asset should exist since we found its name");
 
-                let provenance_path = tmp_dir.path().join(&provenance_asset.name);
+                // Under a fixed name in a directory of its own: the release chooses the
+                // asset's name, which may equal the artifact's or climb out with `..`.
+                let provenance_dir = tempfile::tempdir_in(tmp_dir.path())?;
+                let provenance_path = provenance_dir.path().join("provenance");
                 HTTP.download_file(
                     &provenance_asset.browser_download_url,
                     &provenance_path,
@@ -3088,9 +3091,15 @@ impl UnifiedGitBackend {
             .find(|a| a.name == provenance_name)
             .expect("provenance asset should exist since we found its name");
 
-        // Download the provenance file
-        let download_dir = tv.download_path();
-        let provenance_path = download_dir.join(&provenance_asset.name);
+        // Download the provenance file under a fixed name in a directory of its own.
+        // The release chooses the asset's name: next to the artifact, a name equal to
+        // the artifact's (or `provenance/../<artifact>`) would replace the file whose
+        // checksum was just verified, and more `..` would write outside the download
+        // directory.
+        let provenance_dir = tempfile::tempdir_in(tv.download_path()).map_err(|e| {
+            VerificationStatus::Error(format!("Failed to create provenance directory: {e}"))
+        })?;
+        let provenance_path = provenance_dir.path().join("provenance");
 
         ctx.pr
             .set_message(format!("download {}", provenance_asset.name));
@@ -3165,7 +3174,8 @@ impl UnifiedGitBackend {
 /// Prefer provenance explicitly attached to the selected release asset. This is
 /// important when `asset_pattern` intentionally selects an asset for a platform
 /// other than the host. Fall back to the existing platform-aware picker for
-/// shared provenance files and releases without an exact sidecar.
+/// shared provenance files and releases without an exact sidecar. The selected
+/// asset is never its own provenance, even when its name looks like one.
 fn pick_slsa_provenance(
     picker: &AssetPicker,
     assets: &[String],
@@ -3176,7 +3186,14 @@ fn pick_slsa_provenance(
         .iter()
         .find(|asset| asset.eq_ignore_ascii_case(&sidecar))
         .cloned()
-        .or_else(|| picker.pick_best_provenance(assets))
+        .or_else(|| {
+            let others = assets
+                .iter()
+                .filter(|asset| !asset.eq_ignore_ascii_case(selected_asset))
+                .cloned()
+                .collect::<Vec<_>>();
+            picker.pick_best_provenance(&others)
+        })
 }
 
 /// Templates a string pattern with version and target platform values
@@ -3909,6 +3926,27 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         assert_eq!(
             pick_slsa_provenance(&picker, &assets, "tool-linux-amd64").as_deref(),
             Some("tool-linux-amd64.provenance.json")
+        );
+    }
+
+    /// An artifact whose name looks like provenance must not be offered as its own
+    /// provenance: downloading it a second time would replace the verified file.
+    #[test]
+    fn test_pick_slsa_provenance_never_returns_selected_asset() {
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec!["tool-linux-x64-provenance".to_string()];
+        assert_eq!(
+            pick_slsa_provenance(&picker, &assets, "tool-linux-x64-provenance"),
+            None
+        );
+
+        let assets = vec![
+            "tool-linux-x64-provenance".to_string(),
+            "tool-linux-x64.provenance.json".to_string(),
+        ];
+        assert_eq!(
+            pick_slsa_provenance(&picker, &assets, "tool-linux-x64-provenance").as_deref(),
+            Some("tool-linux-x64.provenance.json")
         );
     }
 
