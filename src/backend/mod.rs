@@ -8763,7 +8763,7 @@ pub(crate) fn fuzzy_version_matches(query: &str, version: &str) -> bool {
 /// credentials, including `ssh://git@host` URLs, keeps the name it always had.
 pub fn tool_directory_name(short: &str) -> String {
     use heck::ToKebabCase;
-    mise_util::redactions::strip_url_credentials_in_arg(short).to_kebab_case()
+    crate::toolset::install_state::state_short(short).to_kebab_case()
 }
 
 pub(crate) fn canonical_backend_full(backend: &str) -> std::borrow::Cow<'_, str> {
@@ -8810,6 +8810,8 @@ fn test_tool_directory_name_omits_url_credentials() {
         "cargo:https://bot:t0ken@host/acme/tool.git",
         "cargo:https://t0ken@host/acme/tool.git",
         "cargo:https://bot:my t0ken@host/acme/tool.git",
+        "cargo:https://host/acme/tool.git?token=t0ken",
+        "cargo:https://host/acme/tool.git?private_token=t0ken",
     ] {
         assert_eq!(
             tool_directory_name(short),

@@ -116,6 +116,90 @@ pub fn strip_url_credentials_in_arg(arg: &str) -> Cow<'_, str> {
     rewrite_userinfo(arg, false, Userinfo::Strip)
 }
 
+/// Whether a URL query parameter named `name` (decoded) carries a credential,
+/// judged by its name: `token`, `access_token`, `key`, `sig`, `signature`,
+/// `password`, `X-Amz-Credential`, or one ending in `_token`, `-key`,
+/// `_secret`, `_password`, `-signature` and the like.
+pub fn is_credential_query_param(name: &str) -> bool {
+    const NAMES: &[&str] = &[
+        "token",
+        "access_token",
+        "private_token",
+        "auth",
+        "api_key",
+        "apikey",
+        "key",
+        "sig",
+        "signature",
+        "password",
+        "passwd",
+        "pwd",
+        "secret",
+        "credential",
+        "credentials",
+        "x-amz-credential",
+        "x-goog-credential",
+    ];
+    const SUFFIXES: &[&str] = &["token", "key", "secret", "password", "signature"];
+    let name = name.to_ascii_lowercase();
+    NAMES.contains(&name.as_str())
+        || SUFFIXES.iter().any(|suffix| {
+            name.strip_suffix(suffix)
+                .is_some_and(|rest| rest.ends_with('_') || rest.ends_with('-'))
+        })
+}
+
+static URL_QUERY: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r#"(://[^\s?#'"]*)\?([^\s#'"]*)"#).unwrap());
+
+/// The decoded names of the query parameters of every URL in `text`.
+pub fn url_query_param_names(text: &str) -> Vec<String> {
+    URL_QUERY
+        .captures_iter(text)
+        .flat_map(|captures| {
+            url::form_urlencoded::parse(captures[2].as_bytes())
+                .map(|(name, _)| name.into_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// `text` without the query parameters, of any URL in it, whose names say
+/// they carry a credential ([`is_credential_query_param`]). The other
+/// parameters are kept as written, so two URLs that select different things
+/// stay different, and stripping twice changes nothing. For identifiers that
+/// are stored or used as names; a lockfile refuses such URLs instead.
+pub fn strip_credential_query_params(text: &str) -> Cow<'_, str> {
+    if !text.contains("://") || !text.contains('?') {
+        return Cow::Borrowed(text);
+    }
+    let mut changed = false;
+    let out = URL_QUERY.replace_all(text, |captures: &regex::Captures<'_>| {
+        let kept = captures[2]
+            .split('&')
+            .filter(|pair| {
+                let name = url::form_urlencoded::parse(pair.as_bytes())
+                    .next()
+                    .map(|(name, _)| name.into_owned())
+                    .unwrap_or_default();
+                let credential = is_credential_query_param(&name);
+                changed |= credential;
+                !credential
+            })
+            .collect::<Vec<_>>();
+        if kept.is_empty() {
+            captures[1].to_string()
+        } else {
+            format!("{}?{}", &captures[1], kept.join("&"))
+        }
+    });
+    if changed {
+        Cow::Owned(out.into_owned())
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+
 /// Text that mise writes to the terminal or a file without going through the
 /// logger, redacted the way the logger redacts every record: registered secrets,
 /// then the userinfo of every URL.
@@ -348,6 +432,36 @@ fn replace_spans(input: &str, mut spans: Vec<(usize, usize)>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_strip_credential_query_params() {
+        let cases = [
+            (
+                "cargo:https://host/r.git?token=s3cret",
+                "cargo:https://host/r.git",
+            ),
+            (
+                "http:https://host/t.tgz?ref=main&private_token=s3cret&page=2",
+                "http:https://host/t.tgz?ref=main&page=2",
+            ),
+            ("https://host/t?api%5Fkey=s3cret&x=1", "https://host/t?x=1"),
+            ("https://host/t?ref=main", "https://host/t?ref=main"),
+            ("not a url?token=x", "not a url?token=x"),
+        ];
+        for (input, want) in cases {
+            let got = strip_credential_query_params(input);
+            assert_eq!(got, want, "{input}");
+            assert_eq!(strip_credential_query_params(&got), got, "idempotent");
+        }
+        assert!(matches!(
+            strip_credential_query_params("https://host/t?ref=main"),
+            Cow::Borrowed(_)
+        ));
+        assert_eq!(
+            url_query_param_names("https://h/t?api%5Fkey=1&b"),
+            ["api_key", "b"]
+        );
+    }
 
     #[test]
     fn test_strip_url_credentials() {

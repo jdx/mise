@@ -5530,45 +5530,10 @@ pub(crate) fn strip_lock_options_credentials(
 /// `X-Amz-Signature`, ...). Names alone decide, so a templated value is caught
 /// whatever it rendered to.
 pub(crate) fn credential_query_param(text: &str) -> Option<String> {
-    regex!(r#"://[^\s?#'"]*\?([^\s#'"]*)"#)
-        .captures_iter(text)
-        .flat_map(|captures| {
-            let query = captures.get(1).map_or("", |query| query.as_str());
-            // Names are compared decoded: `api%5Fkey` is `api_key`.
-            url::form_urlencoded::parse(query.as_bytes())
-                .map(|(name, _)| name.into_owned())
-                .collect::<Vec<_>>()
-        })
-        .find(|name| is_credential_query_param(name))
-}
-
-fn is_credential_query_param(name: &str) -> bool {
-    const NAMES: &[&str] = &[
-        "token",
-        "access_token",
-        "private_token",
-        "auth",
-        "api_key",
-        "apikey",
-        "key",
-        "sig",
-        "signature",
-        "password",
-        "passwd",
-        "pwd",
-        "secret",
-        "credential",
-        "credentials",
-        "x-amz-credential",
-        "x-goog-credential",
-    ];
-    const SUFFIXES: &[&str] = &["token", "key", "secret", "password", "signature"];
-    let name = name.to_ascii_lowercase();
-    NAMES.contains(&name.as_str())
-        || SUFFIXES.iter().any(|suffix| {
-            name.strip_suffix(suffix)
-                .is_some_and(|rest| rest.ends_with('_') || rest.ends_with('-'))
-        })
+    // Names are compared decoded: `api%5Fkey` is `api_key`.
+    mise_util::redactions::url_query_param_names(text)
+        .into_iter()
+        .find(|name| mise_util::redactions::is_credential_query_param(name))
 }
 
 fn strip_lock_option_credentials(value: &str) -> String {

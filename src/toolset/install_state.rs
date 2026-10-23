@@ -87,12 +87,20 @@ fn default_true() -> bool {
 }
 
 /// The spelling install state records a tool under: `short` without the
-/// credentials of a URL in it (`cargo:https://user:token@host/repo` is recorded
-/// as `cargo:https://host/repo`). Lookups take the configured spelling and go
+/// credentials of a URL in it, its userinfo and the query parameters named
+/// like a credential (`cargo:https://user:token@host/repo?token=x` is recorded
+/// as `cargo:https://host/repo`). Other query parameters are kept, so two
+/// tools that differ in what they select stay apart. Lookups take the configured spelling and go
 /// through this too, so both meet. The credential is read from config when an
 /// install needs it, never from install state.
 pub fn state_short(short: &str) -> std::borrow::Cow<'_, str> {
-    mise_util::redactions::strip_url_credentials_in_arg(short)
+    use mise_util::redactions::{strip_credential_query_params, strip_url_credentials_in_arg};
+    match strip_url_credentials_in_arg(short) {
+        std::borrow::Cow::Borrowed(short) => strip_credential_query_params(short),
+        std::borrow::Cow::Owned(stripped) => {
+            std::borrow::Cow::Owned(strip_credential_query_params(&stripped).into_owned())
+        }
+    }
 }
 
 impl ManifestTool {
@@ -1207,7 +1215,7 @@ pub(crate) fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> 
 fn credential_named_dir(short: &str) -> Option<String> {
     use heck::ToKebabCase;
     // Cheap test first: this runs for every tool lookup.
-    if !(short.contains("://") && short.contains('@')) {
+    if !(short.contains("://") && (short.contains('@') || short.contains('?'))) {
         return None;
     }
     let named = short.to_kebab_case();
@@ -2210,6 +2218,14 @@ mod credential_tests {
             Some("cargo-https-bot-t0ken-host-r-git")
         );
         assert_eq!(credential_named_dir("cargo:https://host/r.git"), None);
+        assert_eq!(
+            credential_named_dir("cargo:https://host/r.git?token=t0ken").as_deref(),
+            Some("cargo-https-host-r-git-token-t0ken")
+        );
+        assert_eq!(
+            credential_named_dir("cargo:https://host/r.git?ref=main"),
+            None
+        );
         assert_eq!(credential_named_dir("cargo:ssh://git@host/r.git"), None);
         assert_eq!(credential_named_dir("npm:@antfu/ni"), None);
     }
