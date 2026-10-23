@@ -4453,10 +4453,11 @@ They override trust prompts you declined and `mise trust --ignore`, but
 loading. Paranoid mode still trusts these paths, without tying trust to file
 contents. See [Trust by path](/security.html#trust-by-path).
 
-mise resolves each entry on disk when it checks a config that isn't already
-trusted, so entries on autofs or network mounts (such as `/home/...` on macOS,
-which is an autofs mount) add a filesystem lookup each. Use `~/...` or a path
-that exists locally instead.
+mise first compares each entry as written with the config's canonical path,
+which needs no filesystem lookup. Only if none match does it resolve the
+entries, once per process. Entries on autofs or network mounts (such as
+`/home/...` on macOS, an autofs mount that holds no user homes) cost a lookup
+each, so use `~/...` or a path that exists locally instead.
 """
 env = "MISE_TRUSTED_CONFIG_PATHS"
 global_only = true
