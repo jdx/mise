@@ -160,8 +160,11 @@ trusted_config_paths = ["~/src/work"]
 
 In normal mode, trusting a config with `monorepo_root = true` also trusts every
 config file below its directory, so review the subprojects' config as part of
-the repository. See [Monorepo tasks](/tasks/monorepo.html). In paranoid mode,
-trusting the root trusts only that file.
+the repository. They stay trusted only while the root is: after
+`mise trust --ignore` on the root, or once a `trusted_config_paths` entry that
+covered it is gone, they need trust of their own again. See
+[Monorepo tasks](/tasks/monorepo.html). In paranoid mode, trusting the root
+trusts only that file.
 
 ### Git worktrees
 

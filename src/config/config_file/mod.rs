@@ -862,13 +862,17 @@ fn is_trusted_without_config_paths(
 
     // Check if this path is within a trusted monorepo root
     // Monorepo roots are marked with a special marker file when trusted.
+    // The marker only extends the root's own trust to its descendants, so it
+    // counts for nothing unless the root is still trusted itself: trust that
+    // ended (`mise trust --ignore`, a `trusted_config_paths` entry removed, a CI
+    // run) must not live on in a marker.
     // The marker trusts descendants by path, so paranoid mode, which binds
     // trust to file contents, ignores it and checks each file's hash below.
     if !content_bound && let Some(parent) = canonicalized_path.parent() {
         let mut current = parent;
         while let Some(dir) = current.parent() {
             let monorepo_marker = with_appended_extension(&trust_path(dir), "monorepo");
-            if monorepo_marker.exists() {
+            if monorepo_marker.exists() && is_trusted_with(dir, content_bound) {
                 add_trusted(canonicalized_path.to_path_buf());
                 return true;
             }
@@ -1149,8 +1153,17 @@ pub fn trust(path: &Path) -> Result<()> {
 }
 
 /// Synchronizes the derived monorepo marker used to trust descendant configs.
+///
+/// The marker outlives the run, so it is only written for a root that is
+/// trusted: a root that merely loaded is not, since safe mode loads config
+/// nobody trusted. CI trusts everything and records nothing, so it leaves the
+/// marker alone.
 pub(crate) fn set_monorepo_root_marker(path: &Path, enabled: bool) -> Result<()> {
+    if ci_info::is_ci() {
+        return Ok(());
+    }
     let config_root = config_trust_root(path);
+    let enabled = enabled && is_trusted(&config_root);
     let hashed_path = trust_path(&config_root);
     let monorepo_marker = with_appended_extension(&hashed_path, "monorepo");
     if enabled && !monorepo_marker.exists() {
