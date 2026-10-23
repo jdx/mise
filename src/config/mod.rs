@@ -7402,6 +7402,12 @@ async fn load_task_sources_from_configs(
     // a config can only vouch for task include files when it was actually
     // trusted — safe configs load without trust and cannot vouch for anything
     let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
+    // Paranoid mode binds a project config's trust to its own content, which
+    // covers the remote includes it pins but not task files on disk that change
+    // without it, so each of those needs trust of its own there. Global config
+    // is trusted by path, and so are the task files it includes.
+    let require_local_task_include_trust = require_task_include_trust
+        || (!is_global && Settings::try_get().is_ok_and(|settings| settings.paranoid.config()));
     let (includes, resolve_dir, include_config_precedence) = configs
         .iter()
         .enumerate()
@@ -7530,6 +7536,11 @@ async fn load_task_sources_from_configs(
                 .collect()
         };
         let remote = is_remote_task_include(include).then(|| include.clone());
+        let require_trust = if remote.is_some() {
+            require_task_include_trust
+        } else {
+            require_local_task_include_trust
+        };
         for artifact in artifacts {
             let p = artifact.path;
             let mut loaded = load_tasks_includes(
@@ -7540,7 +7551,7 @@ async fn load_task_sources_from_configs(
                 templates,
                 LoadTaskIncludesOptions {
                     monorepo_cf,
-                    require_trust: require_task_include_trust,
+                    require_trust,
                     rendered_file_tasks: rendered_file_tasks.as_deref_mut(),
                     excludes: &excludes,
                 },

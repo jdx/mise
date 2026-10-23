@@ -76,8 +76,9 @@ Loading a task file can run code when the file contains Tera template syntax,
 because mise renders templates while it loads tasks. In a directory with no
 trusted config file, such a file, or one that lists `secrets`, must be trusted
 before mise loads it, the same way an untrusted config file must be. In
-[paranoid mode](/paranoid.html), every task file in such a directory needs
-trust. See [configuration trust](/security.html#configuration-trust).
+[paranoid mode](/paranoid.html), every task file outside global and system
+config needs trust of its own, bound to its content, also beside a trusted
+config: run `mise trust <file>` for each one. See [configuration trust](/security.html#configuration-trust).
 
 ## Which definition wins
 
