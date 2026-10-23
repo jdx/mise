@@ -6469,8 +6469,22 @@ pub(crate) fn is_task_path_excluded(path: &Path, excludes: &[PathBuf]) -> bool {
         .any(|exclude| file::path_starts_with_resolved(path, exclude))
 }
 
+/// Most entries one task directory walk may visit. Links are followed, and links
+/// that keep leading forward into the same directories (or one into `/sys`)
+/// give a small checkout an exponential number of paths, which walkdir's loop
+/// check never sees because no link leads back to its own parent.
+const TASK_DIR_ENTRY_LIMIT: usize = 100_000;
+
 fn collect_task_files(root: &Path, excludes: &[PathBuf]) -> Result<Vec<PathBuf>> {
-    WalkDir::new(root)
+    collect_task_files_with_limit(root, excludes, TASK_DIR_ENTRY_LIMIT)
+}
+
+fn collect_task_files_with_limit(
+    root: &Path,
+    excludes: &[PathBuf],
+    limit: usize,
+) -> Result<Vec<PathBuf>> {
+    let walk = WalkDir::new(root)
         .follow_links(true)
         .into_iter()
         // skip hidden directories (if the root is hidden that's ok)
@@ -6480,17 +6494,24 @@ fn collect_task_files(root: &Path, excludes: &[PathBuf]) -> Result<Vec<PathBuf>>
                     && !excludes
                         .iter()
                         .any(|exclude| file::path_starts_with_resolved(entry.path(), exclude)))
-        })
-        .filter_map(|entry| match entry {
-            Ok(entry) if entry.file_type().is_file() => Some(Ok(entry.path().to_path_buf())),
-            Ok(_) => None,
+        });
+    let mut files = vec![];
+    for (visited, entry) in walk.enumerate() {
+        if visited >= limit {
+            bail!(
+                "task directory {} has more than {limit} entries; check it for symlinks that reach the same directories many times",
+                display_path(root)
+            );
+        }
+        match entry {
+            Ok(entry) if entry.file_type().is_file() => files.push(entry.path().to_path_buf()),
+            Ok(_) => {}
             Err(err)
                 if err
                     .io_error()
                     .is_some_and(|err| err.kind() == std::io::ErrorKind::NotFound) =>
             {
                 debug!("skipping missing task entry: {err}");
-                None
             }
             // Losing nothing by skipping: walkdir reports this only when a link resolves to a
             // directory already on the walk stack, so everything under it has been visited
@@ -6500,12 +6521,11 @@ fn collect_task_files(root: &Path, excludes: &[PathBuf]) -> Result<Vec<PathBuf>>
             // involve no file at all.
             Err(err) if err.loop_ancestor().is_some() => {
                 debug!("skipping task path that links back into itself: {err}");
-                None
             }
-            Err(err) => Some(Err(err)),
-        })
-        .try_collect::<_, Vec<PathBuf>, _>()
-        .map_err(Into::into)
+            Err(err) => return Err(err.into()),
+        }
+    }
+    Ok(files)
 }
 
 async fn load_tasks_includes(

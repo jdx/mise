@@ -166,6 +166,43 @@ fn test_collect_task_files_skips_links_back_into_the_walk() -> Result<()> {
     Ok(())
 }
 
+/// Links that only ever lead forward are not loops to walkdir, but each level of
+/// four links to the next one multiplies the paths to the last level by four.
+/// The walk stops at its entry limit instead of following every route.
+#[test]
+fn test_collect_task_files_stops_at_the_entry_limit() -> Result<()> {
+    fn maze(base: &Path, links_per_level: usize) -> Result<PathBuf> {
+        let root = base.join("mise-tasks");
+        fs::create_dir_all(&root)?;
+        let levels = 8;
+        for n in 0..=levels {
+            fs::create_dir_all(base.join(format!("maze/{n}")))?;
+        }
+        std::os::unix::fs::symlink(base.join("maze/0"), root.join("all"))?;
+        for n in 0..levels {
+            for l in 0..links_per_level {
+                std::os::unix::fs::symlink(
+                    base.join(format!("maze/{}", n + 1)),
+                    base.join(format!("maze/{n}/{l}")),
+                )?;
+            }
+        }
+        fs::write(base.join(format!("maze/{levels}/task")), "echo ok")?;
+        Ok(root)
+    }
+
+    let control = TempDir::new()?;
+    let root = maze(control.path(), 1)?;
+    assert_eq!(collect_task_files_with_limit(&root, &[], 1_000)?.len(), 1);
+
+    let hostile = TempDir::new()?;
+    let root = maze(hostile.path(), 4)?;
+    let err = collect_task_files_with_limit(&root, &[], 1_000).unwrap_err();
+    assert!(err.to_string().contains("more than 1000 entries"), "{err}");
+
+    Ok(())
+}
+
 #[test]
 fn test_collect_task_files_preserves_unresolvable_symlink_errors() -> Result<()> {
     // Renamed from `..._preserves_symlink_loop_errors`: what it pins is a link that cannot be

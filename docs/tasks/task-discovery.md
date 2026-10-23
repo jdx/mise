@@ -56,6 +56,10 @@ name, as described in [file task grouping](/tasks/file-tasks.html#task-grouping)
 When two of these directories define the same task, the one later in the list
 wins.
 
+The search follows symlinks. It stops with an error after 100,000 entries in one
+task directory, which a real task directory never reaches but symlinks that
+lead into the same directories by many routes can.
+
 On Windows there is no execute permission; see
 [Windows](/tasks/file-tasks.html#windows) for how mise decides that a file is a
 task there.
