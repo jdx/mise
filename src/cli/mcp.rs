@@ -696,7 +696,11 @@ fn validate_task_name(task: &str) -> std::result::Result<(), ErrorData> {
         "invalid task name '': a task name is required".to_string()
     } else if task.starts_with('-') {
         format!("invalid task name '{task}': task names cannot start with '-'")
-    } else if crate::task::task_list::script_path_arg(task).is_some() {
+    } else if (cfg!(windows) && task.starts_with(r"\\"))
+        || crate::task::task_list::script_path_arg(task).is_some()
+    {
+        // A UNC name (`\\server\share\x`) is a script path to `mise run` whenever it exists.
+        // Refuse it before looking: checking it would reach out to the host it names.
         format!("invalid task name '{task}': only the project's tasks can be run, not a file path")
     } else {
         return Ok(());
@@ -747,6 +751,13 @@ mod tests {
             assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{task:?}");
             assert!(err.message.contains("not a file path"), "{task:?}");
         }
+    }
+
+    #[test]
+    fn validate_task_name_rejects_unc_paths_on_windows() {
+        let unc = r"\\server\share\build.cmd";
+        assert_eq!(validate_task_name(unc).is_err(), cfg!(windows));
+        validate_task_name("//sub:build").unwrap();
     }
 
     #[test]
