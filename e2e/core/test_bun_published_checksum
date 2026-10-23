@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+# A bun install with no lockfile entry checks the archive against the checksum
+# Bun publishes in SHASUMS256.txt, not only against one mise.lock already holds.
+
+RELEASE="$(mktemp -d "${TMPDIR:-/tmp}/bun-release.XXXXXX")"
+
+# SHASUMS256.txt lists the archive's real checksum unless "$RELEASE/tampered"
+# exists, in which case it lists another one
+start_http_server --dir "$RELEASE" --handler - <<'PY'
+import hashlib
+import io
+import zipfile
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+state_file = Path("last-requested-zip.txt").absolute()
+tampered = Path("tampered").absolute()
+script = b"""#!/usr/bin/env bash
+echo 1.3.10
+"""
+
+class Handler(BaseHTTPRequestHandler):
+    def reply(self, data):
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        if path.endswith(".zip"):
+            zip_name = Path(path).name
+            body = io.BytesIO()
+            with zipfile.ZipFile(body, "w") as zf:
+                info = zipfile.ZipInfo(f"{zip_name.removesuffix('.zip')}/bun")
+                info.create_system = 3
+                info.external_attr = 0o755 << 16
+                zf.writestr(info, script)
+            data = body.getvalue()
+            state_file.write_text(f"{zip_name}\n{hashlib.sha256(data).hexdigest()}\n")
+            return self.reply(data)
+        if path.endswith("SHASUMS256.txt") and state_file.exists():
+            zip_name, sha = state_file.read_text().splitlines()[:2]
+            if tampered.exists():
+                sha = "0" * 64
+            return self.reply(f"{sha}  {zip_name}\n".encode())
+        self.send_error(404)
+
+
+SERVER_CLASS = HTTPServer
+PY
+
+MISE_URL_REPLACEMENTS="$(printf '{\"https://github.com/oven-sh/bun/releases/download\":\"http://127.0.0.1:%s\"}' "$HTTP_PORT")"
+export MISE_URL_REPLACEMENTS
+
+touch "$RELEASE/tampered"
+assert_fail "mise install bun@1.3.10" "Checksum mismatch"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/bun/1.3.10/bin"
+
+rm "$RELEASE/tampered"
+assert_succeed "mise install bun@1.3.10"
+assert_contains "mise x bun@1.3.10 -- bun -v" "1.3.10"
