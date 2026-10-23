@@ -2817,6 +2817,12 @@ fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
                 {
                     existing.uv = tool.uv;
                 }
+                if existing.aube.is_none()
+                    && existing.backend.is_some()
+                    && existing.backend == tool.backend
+                {
+                    existing.aube = tool.aube;
+                }
             } else if keys.insert(key) {
                 root_tools.push(tool);
             }
