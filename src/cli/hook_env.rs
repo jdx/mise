@@ -115,7 +115,9 @@ impl HookEnv {
                 _ => None,
             })
             .collect();
-        miseprint!("{}", hook_env::build_env_commands(&*shell, &old_patches))?;
+        // Printed together with the new environment once it is known to fit, so
+        // a refused update leaves the shell as it was rather than half undone.
+        let old_output = hook_env::build_env_commands(&*shell, &old_patches);
 
         // Use env_with_path_and_split which handles caching internally
         let (mut mise_env, env_remove, user_paths, tool_paths, env_watch_files) =
@@ -225,7 +227,7 @@ impl HookEnv {
 
         hook_env::ensure_env_fits(&patches)?;
         let output = hook_env::build_env_commands(&*shell, &patches);
-        miseprint!("{output}")?;
+        miseprint!("{old_output}{output}")?;
         if !untrusted_configs.is_empty()
             && hook_env::should_show_untrusted_config_warning(&untrusted_configs)
         {

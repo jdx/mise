@@ -11,4 +11,7 @@ head -c 90000 /dev/urandom | base64 | tr -d '\n' | tr '+/' 'ab' | fold -w 240 |
   while read -r name; do : >"project/.config/mise/conf.d/$name.toml"; done
 
 assert_fail "cd project && mise hook-env -s bash" "__MISE_SESSION would be"
+# Nothing reaches the shell, not even the commands that undo the previous
+# directory's environment, so it is left as it was rather than half updated.
+assert_empty "cd project && mise hook-env -s bash 2>/dev/null || true"
 assert_succeed "mise hook-env -s bash --force"
