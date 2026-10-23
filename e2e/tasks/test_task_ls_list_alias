@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+cat <<EOF >mise.toml
+[tasks.hello]
+description = "Say hello"
+run = 'echo hello'
+EOF
+
+assert_contains "mise tasks list" "hello"
+assert_contains "mise task list" "hello"
+assert_contains "mise tasks list --name-only" "hello"
+
+# a task named "list" wins over the alias
+cat <<EOF >mise.toml
+[tasks.hello]
+run = 'echo hello'
+[tasks.list]
+description = "My list task"
+run = 'echo mylist'
+EOF
+
+assert_contains "mise tasks list" "My list task"
+assert_not_contains "mise tasks list" "hello"
+assert_contains "mise tasks ls" "hello"

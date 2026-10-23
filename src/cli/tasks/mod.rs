@@ -1,6 +1,7 @@
 use eyre::{Result, bail};
 
 use crate::cli::run;
+use crate::config::Config;
 
 mod add;
 mod deps;
@@ -81,6 +82,9 @@ impl Tasks {
                 cmd
             }
             None => match task {
+                // `mise tasks list` reads like `mise tasks ls`, but a task named
+                // `list` still wins so it stays reachable.
+                Some(task) if task == "list" && !task_exists(&task).await? => Commands::Ls(ls),
                 Some(task) => {
                     if ls.has_non_json_options() {
                         bail!("task list options cannot be used with task info");
@@ -96,4 +100,12 @@ impl Tasks {
 
         cmd.run().await
     }
+}
+
+async fn task_exists(name: &str) -> Result<bool> {
+    use crate::task::GetMatchingExt;
+    let config = Config::get().await?;
+    let tasks = config.tasks().await?;
+    let refs = crate::task::build_task_ref_map(tasks.iter());
+    Ok(refs.get_matching(name).is_ok_and(|m| !m.is_empty()))
 }
