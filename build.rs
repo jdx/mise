@@ -375,8 +375,8 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                                 .as_str()
                                 .expect("backend attestations_since must be a string");
                             assert!(
-                                full.starts_with("github:"),
-                                "[{short}] backend attestations_since is only supported for github: backends"
+                                full.starts_with("github:") || full.starts_with("aqua:"),
+                                "[{short}] backend attestations_since is only supported for github: and aqua: backends"
                             );
                             semver::Version::parse(value)
                                 .expect("backend attestations_since must be a semantic version");
