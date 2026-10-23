@@ -2616,6 +2616,10 @@ fn remove_migrated_sidecars(source: &Path, target: &Path) -> Result<()> {
     }
     let published = Lockfile::read(target)?;
     let mut cleanup = graph::SidecarWrites::new(source);
+    // A legacy root reached through a symlink is not part of this project.
+    if cleanup.root_is_linked() {
+        return Ok(());
+    }
     for entry in published.tools.values().flatten() {
         if let Some(graph) = &entry.uv {
             cleanup.reserve(graph);
