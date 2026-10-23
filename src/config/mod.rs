@@ -1527,7 +1527,7 @@ impl Config {
             // config loading (e.g., during `mise upgrade`) never prompts.
             // Plain .tool-versions and idiomatic version files are safe to
             // parse without trust and must still protect their tool versions.
-            if config_file::detection_requires_trust(&path, &detection)
+            if config_file::detection_requires_trust(&path, &detection).await
                 && !is_global_config(&path)
                 && !config_file::is_trusted(&trust_root)
             {
@@ -4257,20 +4257,107 @@ fn matching_idiomatic_tools(
 fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
     let mut aliases: AliasMap = AliasMap::new();
 
+    // In safe mode a project (non-global) config cannot alias a version to a
+    // `path:`, for the same reason its `path:` tool versions are ignored (see
+    // `ToolRequest::ignored_in_safe_mode`). The request an alias rewrites can
+    // come from global config, so this is checked here rather than per request.
+    let safe_mode = Settings::safe_mode();
+    // Nor can a project alias a tool that global config declares: that would
+    // redirect the operator's tool to a backend, options or versions the project
+    // chose.
+    let declared_tools = |global: bool| -> BTreeSet<String> {
+        if !safe_mode {
+            return BTreeSet::new();
+        }
+        // `tool_backends` reads the tool keys without rendering any version,
+        // which could fail this early and drop every tool of the file.
+        config_files
+            .values()
+            .filter(|cf| is_global_config(cf.get_path()) == global)
+            .flat_map(|cf| cf.tool_backends())
+            .collect()
+    };
+    let global_tools = declared_tools(true);
+    let mut project_tools = declared_tools(false);
+
     for config_file in config_files.values() {
+        let project = safe_mode && !is_global_config(config_file.get_path());
+        let ignore_path_versions = project;
         for (plugin, plugin_aliases) in config_file.aliases()? {
+            if project && global_tools.contains(&plugin) {
+                debug!(
+                    "ignoring tool alias {plugin} in {}: global config declares the tool and safe mode (MISE_SAFE=1) is on",
+                    display_path(config_file.get_path())
+                );
+                continue;
+            }
+            if project {
+                project_tools.insert(plugin.clone());
+            }
+            if safe_mode
+                && let Some(backend) = &plugin_aliases.backend
+                && let Some((_, opts)) = crate::args::split_bracketed_opts(backend)
+            {
+                crate::toolset::record_safe_mode_credential_hosts(
+                    &crate::toolset::parse_tool_options(opts).opts,
+                    project,
+                );
+            }
             let alias = aliases.entry(plugin).or_default();
             if let Some(full) = plugin_aliases.backend {
                 alias.backend = Some(full);
             }
             for (from, to) in plugin_aliases.versions {
+                if ignore_path_versions && config_file::version_requires_trust(&to) {
+                    debug!(
+                        "ignoring tool alias version {from} = {to} in {}: safe mode (MISE_SAFE=1)",
+                        display_path(config_file.get_path())
+                    );
+                    continue;
+                }
                 alias.versions.insert(from, to);
             }
         }
     }
     trace!("load_aliases: {}", aliases.len());
+    record_safe_mode_project_tools(project_tools);
 
     Ok(aliases)
+}
+
+/// Adds to the tools recorded for [`is_safe_mode_project_tool`], never replaces
+/// them: a later load of global config alone (such as the global runtime's) must
+/// not drop the project tools of the main one.
+fn record_safe_mode_project_tools(tools: BTreeSet<String>) {
+    SAFE_MODE_PROJECT_TOOLS.lock().unwrap().extend(tools);
+}
+
+#[cfg(test)]
+mod safe_mode_project_tools_tests {
+    use super::*;
+
+    #[test]
+    fn a_global_only_load_keeps_the_project_tools() {
+        record_safe_mode_project_tools(BTreeSet::from(["http:project-only-tool".to_string()]));
+        record_safe_mode_project_tools(BTreeSet::new());
+        assert!(is_safe_mode_project_tool(&BackendArg::from(
+            "http:project-only-tool"
+        )));
+    }
+}
+
+/// The tools that project config declares or aliases, recorded in safe mode by
+/// [`load_aliases`]; see [`is_safe_mode_project_tool`].
+static SAFE_MODE_PROJECT_TOOLS: std::sync::Mutex<BTreeSet<String>> =
+    std::sync::Mutex::new(BTreeSet::new());
+
+/// Whether, in safe mode, project config declares or aliases `ba`, so that its
+/// options (and the hosts they name) come from config nobody reviewed. A tool
+/// that a project and global config both declare counts, since the project's
+/// entry takes precedence.
+pub(crate) fn is_safe_mode_project_tool(ba: &BackendArg) -> bool {
+    let tools = SAFE_MODE_PROJECT_TOOLS.lock().unwrap();
+    tools.contains(&ba.short) || tools.contains(&ba.full())
 }
 
 fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {

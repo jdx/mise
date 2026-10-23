@@ -28,7 +28,8 @@ use crate::config::config_file::{
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvValue};
 use crate::config::settings::SettingsPartial;
 use crate::config::{
-    Alias, AliasMap, CommandWrapper, Config, Settings, safe_mode_ignores_bootstrap,
+    Alias, AliasMap, CommandWrapper, Config, Settings, SettingsExt, is_global_config,
+    safe_mode_ignores_bootstrap,
 };
 use crate::deps::{DepsConfig, DepsTemplateContext};
 use crate::env_diff::EnvMap;
@@ -38,7 +39,7 @@ use crate::oci::OciConfig;
 use crate::redactions::Redactions;
 use crate::registry::REGISTRY;
 use crate::task::{Task, TaskTemplate};
-use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
+use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_config_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionOptions};
 use crate::watch_files::WatchFile;
 use crate::{env, file};
@@ -1448,10 +1449,11 @@ impl MiseToml {
         }
         let dir = self.path.parent();
         let mut tera = get_tera(dir);
-        let output = render_str(&mut tera, input, context).wrap_err_with(|| {
-            let p = display_path(&self.path);
-            eyre!("failed to parse template {input} in {p}")
-        })?;
+        let output =
+            render_config_str(&mut tera, input, context, &self.path).wrap_err_with(|| {
+                let p = display_path(&self.path);
+                eyre!("failed to parse template {input} in {p}")
+            })?;
         Ok(output)
     }
 
@@ -1494,10 +1496,11 @@ impl MiseToml {
         }
         let dir = self.path.parent();
         let mut tera = crate::tera::get_tera_preserving_os_arch(dir);
-        let output = render_str(&mut tera, input, context).wrap_err_with(|| {
-            let p = display_path(&self.path);
-            eyre!("failed to parse template {input} in {p}")
-        })?;
+        let output =
+            render_config_str(&mut tera, input, context, &self.path).wrap_err_with(|| {
+                let p = display_path(&self.path);
+                eyre!("failed to parse template {input} in {p}")
+            })?;
         Ok(output)
     }
 
@@ -2091,6 +2094,17 @@ impl ConfigFile for MiseToml {
         let Some(decl) = self.deps.clone() else {
             return Ok(None);
         };
+        // A provider is a command line that `mise deps`, `mise exec` and
+        // `mise deps add` run. Safe mode loads project config without trust,
+        // so like project `[env]` and `[wrappers]` only global and system
+        // config may declare providers there.
+        if Settings::safe_mode() && !is_global_config(&self.path) {
+            debug!(
+                "ignoring [deps] in {}: safe mode (MISE_SAFE=1)",
+                display_path(&self.path)
+            );
+            return Ok(None);
+        }
         let mut deps = DepsConfig::from_decl(decl);
         let context = self.template_context();
         for (provider_id, provider) in &mut deps.providers {

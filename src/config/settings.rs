@@ -776,7 +776,7 @@ fn settings_path_resolver<'a>(
             return Ok(());
         };
         let rendered = if crate::tera::contains_template_syntax(value) {
-            crate::tera::render_str(&mut tera, value, &context).map_err(|err| {
+            crate::tera::render_config_str(&mut tera, value, &context, path).map_err(|err| {
                 eyre!(
                     "failed to render {label} in {}: {err}",
                     file::display_path(path)

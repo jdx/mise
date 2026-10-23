@@ -3428,7 +3428,11 @@ pub trait Backend: Debug + Send + Sync {
                 "Calling backend to list remote versions for {}",
                 ba.to_string()
             );
-            let (listed, listing_degraded) = self._list_remote_versions_checked(config).await?;
+            let (listed, listing_degraded) = crate::toolset::with_safe_mode_tool_scope(
+                self.ba(),
+                self._list_remote_versions_checked(config),
+            )
+            .await?;
             degraded.store(listing_degraded, std::sync::atomic::Ordering::Relaxed);
             let versions = listed
                 .into_iter()
@@ -4685,7 +4689,12 @@ pub trait Backend: Debug + Send + Sync {
                 );
                 return false;
             }
-            None => match self._list_remote_versions(config).await {
+            None => match crate::toolset::with_safe_mode_tool_scope(
+                self.ba(),
+                self._list_remote_versions(config),
+            )
+            .await
+            {
                 Ok(versions) => match versions
                     .into_iter()
                     .find(|info| info.version == version && info.rolling)
@@ -5218,9 +5227,9 @@ pub trait Backend: Debug + Send + Sync {
             return Err(e);
         }
         let install_env = tv.install_env();
-        let tv = match crate::env::with_install_env(install_env, self.install_version_(&ctx, tv))
-            .await
-        {
+        let install =
+            crate::toolset::with_safe_mode_tool_scope(self.ba(), self.install_version_(&ctx, tv));
+        let tv = match crate::env::with_install_env(install_env, install).await {
             Ok(tv) => tv,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);

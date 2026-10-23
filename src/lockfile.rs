@@ -4292,7 +4292,10 @@ pub async fn resolve_tool_lock_info(
         };
         match crate::env::with_install_env(
             tv.install_env(),
-            backend.resolve_lock_info(&tv, &target),
+            crate::toolset::with_safe_mode_tool_scope(
+                backend.ba(),
+                backend.resolve_lock_info(&tv, &target),
+            ),
         )
         .await
         {

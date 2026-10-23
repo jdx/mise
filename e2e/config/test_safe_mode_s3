@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# S3 requests are signed with the AWS credentials of the process that runs
+# mise, while the bucket, key and endpoint come from tool options. Safe mode
+# loads those from config nobody reviewed, so it refuses every S3 request.
+
+refused="accessing S3 with your AWS credentials is disabled in safe mode (MISE_SAFE=1)"
+for discovery in 'version_list_url = "s3://bucket/versions.txt"' 'version_prefix = "tools/"'; do
+  cat <<EOF >mise.toml
+[tools."s3:safe-s3"]
+version = "latest"
+url = "s3://bucket/tools/safe-s3-{{ version }}"
+endpoint = "http://127.0.0.1:1"
+$discovery
+EOF
+  assert_fail "MISE_SAFE=1 mise ls-remote s3:safe-s3" "$refused"
+  assert_fail "MISE_SAFE=1 mise lock --bump --dry-run --json" "$refused"
+done
+
+# a pinned version locks without a request, but installing it needs one
+cat <<'EOF' >mise.toml
+[tools."s3:safe-s3"]
+version = "1.0.0"
+url = "s3://bucket/tools/safe-s3-{{ version }}"
+endpoint = "http://127.0.0.1:1"
+EOF
+assert_contains "MISE_SAFE=1 mise lock --bump --dry-run --json" '"1.0.0"'
+assert_fail "MISE_SAFE=1 mise install" "$refused"

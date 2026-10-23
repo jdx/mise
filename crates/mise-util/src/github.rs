@@ -2016,6 +2016,11 @@ fn resolve_token_inner(host: &str, use_git_credentials: bool) -> Option<(String,
         return None;
     }
 
+    // A host that project config named in safe mode; see `untrusted_hosts`.
+    if crate::untrusted_hosts::forge_token_denied(host) {
+        return None;
+    }
+
     if crate::testing::in_tests()
         && let Some(token) = test_support::lookup_tokens_file_override(&token_lookup_hosts(host))
     {

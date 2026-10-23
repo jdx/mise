@@ -53,6 +53,11 @@ impl ToolRequestSet {
     }
 
     pub fn add_version(&mut self, tr: ToolRequest, source: &ToolSource) {
+        if tr.ignored_in_safe_mode() {
+            debug!("ignoring {tr} in {source}: safe mode (MISE_SAFE=1)");
+            return;
+        }
+        tr.record_safe_mode_credential_hosts();
         let fa = tr.ba();
         if !self.tools.contains_key(fa) {
             self.sources.insert(fa.clone(), source.clone());

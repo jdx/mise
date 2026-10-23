@@ -11,6 +11,7 @@ pub(crate) fn add_rust_wrapper<'a>(
 ) -> eyre::Result<()> {
     use crate::args::BackendArg;
     use crate::backend::options::BackendOptions;
+    use crate::toolset::ToolOptionSource;
 
     if wrappers
         .keys()
@@ -27,11 +28,18 @@ pub(crate) fn add_rust_wrapper<'a>(
         .find(|tool| tool.ba().full() == "core:rust")
         .is_some_and(|rust| {
             // Match explicit wrappers: safe mode cannot activate project commands.
+            // The source only says who picked the version. Options are also layered
+            // on from elsewhere (a project's tool alias, the project entry a runtime
+            // argument inherits), so the entry itself has to set this one.
             let safe = !crate::config::Settings::safe_mode()
-                || rust
+                || (rust
                     .source()
                     .path()
-                    .is_none_or(crate::config::is_global_config);
+                    .is_none_or(crate::config::is_global_config)
+                    && matches!(
+                        rust.option_source("mr_boxington"),
+                        Some(ToolOptionSource::Request | ToolOptionSource::InlineBackendArg)
+                    ));
             safe && BackendOptions::new(&rust.options()).bool("mr_boxington")
         });
     if !enabled {

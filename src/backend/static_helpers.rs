@@ -908,6 +908,9 @@ pub(crate) fn install_artifact(
     if let Some(name) = lookup_with_fallback(opts, "rename_exe") {
         ensure_plain_bin_name("rename_exe", &name)?;
     }
+    let bin_path = lookup_with_fallback(opts, "bin_path")
+        .map(|template| render_bin_path(&template, tv))
+        .transpose()?;
 
     file::remove_all(&install_path)?;
     file::create_dir_all(&install_path)?;
@@ -936,9 +939,8 @@ pub(crate) fn install_artifact(
 
         // Determine the destination path with support for bin_path
         let rename_exe = lookup_with_fallback(opts, "rename_exe");
-        let dest = if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
-            let bin_path = template_string(&bin_path_template, tv);
-            let bin_dir = install_path.join(&bin_path);
+        let dest = if let Some(bin_path) = &bin_path {
+            let bin_dir = install_path.join(bin_path);
             file::create_dir_all(&bin_dir)?;
             if let Some(rename_to) = rename_exe {
                 bin_dir.join(rename_binary_name(decompressed_name, &rename_to))
@@ -960,9 +962,8 @@ pub(crate) fn install_artifact(
         file::make_executable(&dest)?;
     } else if format == file::ExtractionFormat::Raw {
         // Copy the file directly to the bin_path directory or install_path
-        if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
-            let bin_path = template_string(&bin_path_template, tv);
-            let bin_dir = install_path.join(&bin_path);
+        if let Some(bin_path) = &bin_path {
+            let bin_dir = install_path.join(bin_path);
             file::create_dir_all(&bin_dir)?;
             let original_name = file_path.file_name().unwrap().to_string_lossy();
             let dest_name = lookup_with_fallback(opts, "rename_exe")
@@ -995,7 +996,7 @@ pub(crate) fn install_artifact(
         // Auto-detect if we need strip_components=1 before extracting
         // Only do this if strip_components was not explicitly set by the user AND bin_path is not configured
         if strip_components.is_none()
-            && lookup_with_fallback(opts, "bin_path").is_none()
+            && bin_path.is_none()
             && let Ok(should_strip) = file::should_strip_components(file_path, format)
             && should_strip
         {
@@ -1019,8 +1020,7 @@ pub(crate) fn install_artifact(
         let tool_name = full_tool_name.rsplit('/').next().unwrap_or(full_tool_name);
 
         // Determine search directory based on bin_path option
-        let explicit_bin_path = lookup_with_fallback(opts, "bin_path")
-            .map(|t| install_path.join(template_string(&t, tv)));
+        let explicit_bin_path = bin_path.as_ref().map(|p| install_path.join(p));
 
         // Handle bin= option for archives (renames executable to specified name)
         // bin= values are relative to install_path, so always use install_path or explicit bin_path
@@ -1524,6 +1524,31 @@ pub(crate) fn ensure_safe_relative_bin_path(option: &str, path: &str) -> eyre::R
         );
     }
     Ok(())
+}
+
+/// Rejects a configured `bin_path` that is absolute or contains parent
+/// components. It is joined onto the install directory and the result goes on
+/// PATH, so `/abs/dir` or `../dir` would otherwise put any directory there.
+/// Unlike `bin` it names a directory, so `.` (the install directory itself) and
+/// a leading `./` are allowed.
+pub(crate) fn ensure_safe_relative_bin_dir(option: &str, path: &str) -> eyre::Result<()> {
+    let normalized = path.replace('\\', "/");
+    let rest = normalized.trim_start_matches("./");
+    if !rest.is_empty() && rest != "." && !file::is_safe_relative_path(rest) {
+        bail!(
+            "{option}: '{path}' must be a directory inside the install directory \
+             (no absolute paths or parent directories)"
+        );
+    }
+    Ok(())
+}
+
+/// Renders the `bin_path` option, checking what it rendered to rather than the
+/// template. See [`ensure_safe_relative_bin_dir`].
+pub(crate) fn render_bin_path(template: &str, tv: &ToolVersion) -> eyre::Result<String> {
+    let bin_path = template_string(template, tv);
+    ensure_safe_relative_bin_dir("bin_path", &bin_path)?;
+    Ok(bin_path)
 }
 
 /// Renames `path` (named `file_name`) to `target` within `dir`, preserving any
@@ -3867,6 +3892,35 @@ bin = "tool.exe"
         );
         // Another tool's files are not rewritten as python's.
         assert_eq!(tool_link_path(&installs, &python, "ruby"), None);
+    }
+
+    #[test]
+    fn test_ensure_safe_relative_bin_dir() {
+        for ok in ["bin", "a/bin", "bin/", ".", "./", "./bin", ".\\bin", ""] {
+            assert!(
+                ensure_safe_relative_bin_dir("bin_path", ok).is_ok(),
+                "should accept {ok:?}"
+            );
+        }
+        for bad in [
+            "/abs/dir",
+            "/proc/self/cwd/evil",
+            "..",
+            "../evil",
+            "bin/../../evil",
+            "./../evil",
+            ".//abs/dir",
+            "..\\evil",
+            "\\abs\\dir",
+            "C:\\evil",
+            "C:evil",
+        ] {
+            let err = ensure_safe_relative_bin_dir("bin_path", bad).unwrap_err();
+            assert!(
+                err.to_string().contains("inside the install directory"),
+                "unexpected error for {bad:?}: {err}"
+            );
+        }
     }
 
     #[cfg(unix)]

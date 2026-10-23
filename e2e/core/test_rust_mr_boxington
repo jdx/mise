@@ -91,6 +91,8 @@ assert "mise run unwrapped 2>/dev/null" "cargo:1.81.0:check"
 
 # Safe mode ignores project-provided wrapping.
 assert "MISE_CARGO_HOME='$CONFIG_CARGO_HOME' MISE_RUSTUP_HOME='$CONFIG_RUSTUP_HOME' MISE_SAFE=1 mise exec -- cargo check" "cargo:1.81.0:check"
+# A runtime argument inherits the project entry's options, but not the opt-in.
+assert "MISE_CARGO_HOME='$CONFIG_CARGO_HOME' MISE_RUSTUP_HOME='$CONFIG_RUSTUP_HOME' MISE_SAFE=1 mise exec rust@1.81.0 -- cargo check" "cargo:1.81.0:check"
 
 # Project overrides turn off a global/parent default.
 mkdir child
@@ -157,3 +159,25 @@ assert "mise exec -- cargo check" "custom check"
 : >mise.toml
 mise reshim
 assert_fail "test -e '$MISE_DATA_DIR/command-wrappers/bin/cargo'"
+
+# In safe mode a project's tool alias cannot layer the option onto the global
+# Rust entry. That entry can still opt in itself.
+export MISE_CARGO_HOME="$CONFIG_CARGO_HOME" MISE_RUSTUP_HOME="$CONFIG_RUSTUP_HOME" MISE_SAFE=1
+cat >mise.toml <<'EOF'
+[tool_alias]
+rust = "rust[mr_boxington=true]"
+EOF
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+rust = "1.81.0"
+mr-boxington = "path:$PWD/mbx"
+EOF
+assert "mise exec -- cargo check" "cargo:1.81.0:check"
+assert_not_contains "mise hook-env -s bash --force" "$MISE_DATA_DIR/command-wrappers/bin"
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+rust = { version = "1.81.0", mr_boxington = true }
+mr-boxington = "path:$PWD/mbx"
+EOF
+assert "mise exec -- cargo check" "mbx:1
+cargo:1.81.0:check"
