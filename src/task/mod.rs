@@ -424,6 +424,14 @@ pub struct Task {
 
     // file type
     pub file: Option<PathBuf>,
+    /// `file` is the path of a script found in a task directory, not a `file = "..."` string
+    /// from TOML.
+    ///
+    /// Only the latter is a template. A discovered path is used as it is on disk: a file name
+    /// that happens to contain `{{ ... }}` is still just a file name, and rendering it would
+    /// run `exec()` from a task directory that loaded without trust on the strength of its
+    /// template-free contents.
+    pub(crate) file_from_discovery: bool,
 
     /// This task was loaded from a TOML file in `task_config.includes`.
     ///
@@ -1270,6 +1278,7 @@ impl Task {
         task.hide = hidden;
         task.record_late_secret_env(path)?;
         task.file = Some(path.to_path_buf());
+        task.file_from_discovery = true;
         Ok(task)
     }
 
@@ -2222,7 +2231,7 @@ impl Task {
     pub(crate) async fn file_path(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
         if let Some(file) = &self.file {
             let file_str = file.to_string_lossy().to_string();
-            let rendered = if contains_template_syntax(&file_str) {
+            let rendered = if !self.file_from_discovery && contains_template_syntax(&file_str) {
                 let config_root = self.config_root.clone().unwrap_or_default();
                 let mut tera = get_tera(Some(&config_root));
                 let tera_ctx = self.tera_ctx(config).await?;
@@ -3560,6 +3569,7 @@ impl Default for Task {
             run_windows_declared: false,
             args: vec![],
             file: None,
+            file_from_discovery: false,
             is_toml_include: false,
             name_from_file: false,
             config_precedence: usize::MAX,
@@ -6180,6 +6190,22 @@ echo "hello world"
         let result = task.file_path(&config).await;
         // Should succeed (not error on template rendering)
         assert!(result.is_ok());
+    }
+
+    /// A script found in a task directory loads without trust when its contents are
+    /// template-free, so its name must not be rendered: a name holding `{{ exec(...) }}` would
+    /// otherwise run the command whenever the path is resolved, as completing `mise run` does.
+    #[tokio::test]
+    async fn test_file_path_of_a_discovered_script_is_not_a_template() {
+        let config = Config::get().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tasks_dir = dir.path().join("mise-tasks");
+        std::fs::create_dir(&tasks_dir).unwrap();
+        let path = tasks_dir.join("{{ exec(command='echo rendered') }}");
+        std::fs::write(&path, "#!/bin/sh\necho hi\n").unwrap();
+
+        let task = Task::from_path_unrendered_with_cf(&path, &tasks_dir, dir.path(), None).unwrap();
+        assert_eq!(task.file_path(&config).await.unwrap(), Some(path));
     }
 
     #[test]
