@@ -13,12 +13,71 @@ use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
 use heck::ToShoutySnakeCase;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::{LazyLock as Lazy, Mutex};
+
+/// Longest tool name searched for "did you mean" candidates. No registry name
+/// comes near it, so a longer name cannot be a typo of one.
+const SUGGEST_MAX_NAME_LEN: usize = 100;
+/// Distinct unknown names searched per process; later ones get no suggestions.
+const SUGGEST_MAX_SEARCHES: usize = 20;
+
+/// "Did you mean?" candidates for a tool name that is in no registry.
+///
+/// Each search scores the name against every mise and aqua registry entry. The
+/// name can come from a config file that loads without trust, and
+/// `BackendArg::backend()` runs many times per tool for callers that drop the
+/// error, so each name is searched once per process, and both its length and
+/// the number of names searched are bounded.
+fn similar_tool_names(short: &str) -> Vec<String> {
+    static SEARCHED: Lazy<Mutex<HashMap<String, Vec<String>>>> = Lazy::new(Default::default);
+    let mut searched = SEARCHED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    bounded_suggestions(&mut searched, short, search_similar_tool_names)
+}
+
+fn bounded_suggestions(
+    searched: &mut HashMap<String, Vec<String>>,
+    short: &str,
+    search: impl FnOnce(&str) -> Vec<String>,
+) -> Vec<String> {
+    if short.len() > SUGGEST_MAX_NAME_LEN {
+        return vec![];
+    }
+    if let Some(suggestions) = searched.get(short) {
+        return suggestions.clone();
+    }
+    if searched.len() >= SUGGEST_MAX_SEARCHES {
+        return vec![];
+    }
+    let suggestions = search(short);
+    searched.insert(short.to_string(), suggestions.clone());
+    suggestions
+}
+
+fn search_similar_tool_names(short: &str) -> Vec<String> {
+    let registry_shorts: Vec<&str> = REGISTRY.keys().collect();
+    let mut suggestions: Vec<String> =
+        xx::suggest::similar_n_with_threshold(short, &registry_shorts, 3, 0.8)
+            .into_iter()
+            .filter(|s| *s != short)
+            .map(|s| s.to_string())
+            .collect();
+
+    let mise_names: HashSet<String> = suggestions.iter().cloned().collect();
+    for aqua in crate::aqua::aqua_registry_wrapper::aqua_suggest(short) {
+        if !mise_names.contains(&aqua.name) {
+            suggestions.push(aqua.backend);
+        }
+    }
+    suggestions
+}
 
 /// Metadata about how a backend was resolved.
 /// This struct is designed for extensibility - additional fields can be added
@@ -391,21 +450,7 @@ impl BackendArg {
                 );
             }
 
-            let registry_shorts: Vec<&str> = REGISTRY.keys().collect();
-            let mut suggestions: Vec<String> =
-                xx::suggest::similar_n_with_threshold(&self.short, &registry_shorts, 3, 0.8)
-                    .into_iter()
-                    .filter(|s| *s != self.short)
-                    .map(|s| s.to_string())
-                    .collect();
-
-            let mise_names: HashSet<String> = suggestions.iter().cloned().collect();
-            for aqua in crate::aqua::aqua_registry_wrapper::aqua_suggest(&self.short) {
-                if !mise_names.contains(&aqua.name) {
-                    suggestions.push(aqua.backend);
-                }
-            }
-
+            let suggestions = similar_tool_names(&self.short);
             let mut msg = format!("{self} not found in mise tool registry");
             if !suggestions.is_empty() {
                 msg.push_str("\n\nDid you mean?");
@@ -1055,6 +1100,30 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use pretty_assertions::{assert_eq, assert_str_eq};
+
+    /// Tool names from a config that loads without trust reach the registry
+    /// search, so a long name is not searched, each name is searched once,
+    /// and only a bounded number of names are searched at all.
+    #[test]
+    fn suggestion_search_is_bounded() {
+        let mut searched = HashMap::new();
+        let searches = std::cell::Cell::new(0);
+        let mut suggest = |short: &str| {
+            bounded_suggestions(&mut searched, short, |s| {
+                searches.set(searches.get() + 1);
+                vec![format!("{s}-hint")]
+            })
+        };
+
+        assert!(suggest(&"x".repeat(SUGGEST_MAX_NAME_LEN + 1)).is_empty());
+        assert_eq!(searches.get(), 0);
+        for i in 0..SUGGEST_MAX_SEARCHES {
+            assert_eq!(suggest(&format!("nod{i}")), vec![format!("nod{i}-hint")]);
+        }
+        assert_eq!(suggest("nod0"), vec!["nod0-hint".to_string()]);
+        assert!(suggest("pythn").is_empty());
+        assert_eq!(searches.get(), SUGGEST_MAX_SEARCHES);
+    }
 
     #[tokio::test]
     async fn registry_min_version_keeps_backend_instances_separate() {
