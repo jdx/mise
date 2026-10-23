@@ -2413,10 +2413,30 @@ fn reset_dir_mtime_to_now(dir: &Path) -> Result<()> {
     for entry in WalkDir::new(dir) {
         let entry = entry?;
         if entry.file_type().is_file() {
-            set_file_times(entry.path(), now, now)?;
+            set_times_through_readonly(entry.path(), now)?;
         }
     }
     Ok(())
+}
+
+/// Sets a file's times, even when it is read-only. `set_file_times` opens a write handle on
+/// Windows, which a read-only file (git's `.git/objects` files in a zipped checkout, for one)
+/// refuses with "Access is denied". Setting times only needs the right to write attributes.
+#[cfg(windows)]
+fn set_times_through_readonly(path: &Path, time: FileTime) -> Result<()> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_WRITE_ATTRIBUTES: u32 = 0x100;
+    let time = std::time::SystemTime::from(time);
+    let file = fs::OpenOptions::new()
+        .access_mode(FILE_WRITE_ATTRIBUTES)
+        .open(path)?;
+    file.set_times(fs::FileTimes::new().set_accessed(time).set_modified(time))?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn set_times_through_readonly(path: &Path, time: FileTime) -> Result<()> {
+    Ok(set_file_times(path, time, time)?)
 }
 
 fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
