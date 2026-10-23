@@ -65,6 +65,11 @@ idea:
   cannot call `exec()`, `read_file()`, `read_json()`, `read_yaml()`, or
   `read_toml()`.
 
+Tasks that load without trust run nothing until you run one. Shell completion
+of their arguments leaves out the commands a
+[usage spec](/tasks/task-arguments.html) can name, `complete run=`,
+`complete delegate=`, `choices run=` and `mount`, until the project is trusted.
+
 [Paranoid mode](/paranoid.html) removes these exemptions apart from
 `.miserc.toml`: every other config file outside global and system config needs
 trust.
@@ -230,6 +235,7 @@ These are skipped without an error, so resolution commands keep working:
   `_.file`.
 - `_.source` in every config, including global config.
 - Project `[shell_alias]`.
+- The commands in a project task's usage spec that shell completion would run.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
 - Project `[settings]`, so a repository cannot turn off verification or redirect
   a backend.
