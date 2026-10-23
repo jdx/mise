@@ -1818,7 +1818,8 @@ resolve from the directory that holds it, and relative paths in
 Commands that act on every tracked config (`mise prune`, `mise ls --prunable`
 and the stale-version check in `mise upgrade`) honor only the environment
 variable and the global and system `miserc.toml` files, so a project's
-`.miserc.toml` cannot hide other projects' configs from them.
+`.miserc.toml` cannot hide other projects' configs from them. The same applies
+to global and system config: a project's `.miserc.toml` cannot ignore it.
 
 `mise settings` and `mise settings add` refuse this setting, because mise
 reads it before config files load; put it in a `.miserc.toml` file or the
@@ -3284,12 +3285,17 @@ Use it for bots and CI jobs that process config you did not write, such as a bot
 that runs `mise lock --bump` on pull request branches. Project config then loads
 without a trust prompt.
 
-Safe mode refuses template `exec()` and `read_file()`, tasks, the `postinstall`
-and `install_env` tool options, asdf plugin scripts, plugin installs, mise
-secrets and `mise daemons`, with an error. It skips hooks, as `--no-hooks`
-does, and ignores project `[env]`, `[shell_alias]`, `[settings]`, remote
-includes, `[bootstrap]` and `[dotfiles]`, so a repository cannot turn off
-verification, redirect a backend or write files into your home directory.
+Safe mode refuses template `exec()`, `read_file()` and `get_env()`, tasks, the
+`postinstall`, `install_env` and spm `install_command` tool options, asdf
+plugin scripts, S3 requests, plugin installs, mise secrets and `mise daemons`,
+with an error. It skips hooks, as `--no-hooks` does, and ignores project
+`[env]`, `[shell_alias]`, `[settings]`, `[deps]`, lazy tools, `path:` versions,
+remote includes, `[bootstrap]` and `[dotfiles]`, so a repository cannot turn off
+verification, redirect a backend, run its dependency providers or write files
+into your home directory. Project templates see an empty `env`, the hosts a
+project `api_url` or download URL names get none of your forge tokens or netrc
+credentials, and a project `[tool_alias]` cannot redirect a tool global config
+declares.
 Global and system config still apply. Version resolution and `mise.lock`
 updates keep working for backends that query HTTP APIs, such as core tools,
 `aqua:`, `github:`, `pypi:` and `npm:`.

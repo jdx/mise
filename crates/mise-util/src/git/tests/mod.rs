@@ -178,6 +178,16 @@ fn update_resolves_short_branches_and_tags() {
         .update_tag("refs/tags/annotated-v1".to_string())
         .unwrap_or_else(|err| panic!("update_tag with full ref failed: {err:#}"));
     assert_eq!(git_in(&clone, &["rev-parse", "HEAD"]), release_sha);
+
+    // 64 hex digits look like a commit SHA, but here they can only name a ref.
+    let sha256_like = "0123456789abcdef".repeat(4);
+    git_in(&origin, &["branch", &sha256_like]);
+    let clone = tmp.path().join("clone-sha256-like");
+    git_in(tmp.path(), &["clone", "-q", &url, clone.to_str().unwrap()]);
+    let err = Git::new(&clone)
+        .update(Some(sha256_like))
+        .expect_err("a branch must not pass for a commit SHA");
+    assert!(format!("{err:#}").contains("is not a commit in"));
 }
 
 #[test]
@@ -240,6 +250,47 @@ fn works_when_the_remote_is_not_named_origin() {
         git_in(&clone, &["rev-parse", "--abbrev-ref", "HEAD"]),
         "other"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn git_errors_that_are_not_utf8_are_reported() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let git_in = |dir: &std::path::Path, args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("spawn git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git_in(&repo, &["-c", "init.defaultBranch=main", "init", "-q"]);
+
+    // git repeats the URL of a remote or submodule it cannot reach byte for
+    // byte in its error message, and nothing requires that URL to be UTF-8.
+    let mut url = tmp.path().to_str().unwrap().as_bytes().to_vec();
+    url.extend(b"/\xff\xfe\xfd.git\n");
+    let mut config = std::fs::read(repo.join(".git/config")).unwrap();
+    config.extend(b"[remote \"origin\"]\n\turl = ");
+    config.extend(&url);
+    std::fs::write(repo.join(".git/config"), config).unwrap();
+    let mut gitmodules = b"[submodule \"dep\"]\n\tpath = dep\n\turl = ".to_vec();
+    gitmodules.extend(&url);
+    std::fs::write(repo.join(".gitmodules"), gitmodules).unwrap();
+    let gitlink = format!("160000,{},dep", "1".repeat(40));
+    git_in(&repo, &["update-index", "--add", "--cacheinfo", &gitlink]);
+
+    let git = Git::new(&repo);
+    let err = git.update_tag("v1".to_string()).unwrap_err();
+    assert!(format!("{err:#}").contains("\u{fffd}.git"), "{err:#}");
+    let err = git.update_submodules().unwrap_err();
+    assert!(format!("{err:#}").contains("\u{fffd}.git"), "{err:#}");
 }
 
 #[test]

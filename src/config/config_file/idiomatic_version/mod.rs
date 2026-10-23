@@ -4,7 +4,8 @@ use eyre::{Result, eyre};
 
 use crate::args::{BackendArg, BackendResolution};
 use crate::backend::BackendList;
-use crate::config::config_file::ConfigFile;
+use crate::config::config_file::{ConfigFile, trust_check, version_requires_trust};
+use crate::config::is_global_config;
 use crate::file;
 use crate::plugins;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
@@ -28,6 +29,25 @@ impl IdiomaticVersionFile {
         }
     }
 
+    /// Whether the file needs trust before it is parsed. These files only pick
+    /// versions, so nothing but a `path:` one does (see
+    /// [`version_requires_trust`]).
+    pub(crate) async fn path_requires_trust(path: &Path, plugins: &BackendList) -> bool {
+        if is_global_config(path) {
+            return false;
+        }
+        for plugin in plugins {
+            if let Ok(versions) = plugin.parse_idiomatic_file_with_options(path).await
+                && versions
+                    .iter()
+                    .any(|(version, _)| version_requires_trust(version))
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     pub(crate) async fn parse(path: PathBuf, plugins: BackendList) -> Result<Self> {
         let source = ToolSource::IdiomaticVersionFile(path.clone());
         let mut tools = ToolRequestSet::new();
@@ -41,6 +61,9 @@ impl IdiomaticVersionFile {
             match plugin.parse_idiomatic_file_with_options(&path).await {
                 Ok(versions) => {
                     for (version, mut options) in versions {
+                        if version_requires_trust(&version) && !is_global_config(&path) {
+                            trust_check(&path)?;
+                        }
                         let backend = package_manager_checksum_backend(
                             plugin.ba(),
                             &version,

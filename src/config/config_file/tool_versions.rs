@@ -14,7 +14,7 @@ use crate::args::BackendArg;
 use crate::config::config_file::{ConfigFile, ensure_versions_are_not_templates, trust_check};
 use crate::file;
 use crate::file::display_path;
-use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
+use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_config_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 // python 3.11.0 3.10.0
@@ -86,7 +86,7 @@ impl ToolVersions {
         }
         let s = if contains_template_syntax(s) {
             let mut tera = get_tera(dir);
-            render_str(&mut tera, s, &cf.context)?
+            render_config_str(&mut tera, s, &cf.context, &path)?
         } else {
             s.to_string()
         };

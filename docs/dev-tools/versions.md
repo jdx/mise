@@ -68,7 +68,9 @@ double-quoted string, so write a Windows path as a literal string
 `"C:\tools\node"` is not rejected: TOML reads `\t` as a tab, so the path
 silently changes. On Windows, mise rejects a path that contains a `cmd.exe`
 metacharacter (`& | < > ^ %`), because the path is passed to plugins that build
-shell commands with it.
+shell commands with it. The directory is used without an install, so a project
+config that names one [needs trust](/security.html#what-needs-trust), and
+[safe mode](/security.html#safe-mode) ignores it.
 
 `sub-<PARTIAL>:<REQUEST>` resolves `REQUEST`, subtracts `PARTIAL` from the
 matching components of the result, and resolves what remains as a prefix.

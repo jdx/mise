@@ -3,10 +3,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::config::config_file::config_trust_root;
-use crate::config::{
-    ALL_CONFIG_FILES, DEFAULT_CONFIG_FILENAMES, Settings, config_file, config_files_in_dir,
-    is_global_config,
-};
+use crate::config::{Settings, config_file, config_files_in_dir, is_global_config};
 use crate::file::{display_path, remove_file};
 use crate::toolset::{ResolveOptions, ToolsetBuilder};
 use crate::{config, dirs, env, file};
@@ -80,15 +77,25 @@ pub(crate) struct Trust {
     /// Remove explicit trust for this config
     #[usage(long)]
     untrust: bool,
+
+    /// The config filenames to look for, which in paranoid mode include the
+    /// idiomatic version files that need trust there.
+    #[usage(skip)]
+    config_filenames: Vec<String>,
 }
 
 impl Trust {
     pub(crate) async fn run(mut self) -> Result<()> {
+        // Only a command that looks for config itself needs the filenames, and
+        // finding them loads the tool backends.
+        if self.show || self.all || self.config_file.is_none() {
+            self.config_filenames = config::trust_config_filenames().await;
+        }
         if self.show {
             return self.show();
         }
         if self.untrust {
-            untrust_config_file(self.config_file()?)
+            untrust_config_file(self.config_file()?, &self.config_filenames)
         } else if self.ignore {
             self.ignore()
         } else if self.all {
@@ -187,10 +194,25 @@ fn is_trust_metadata(path: &Path) -> bool {
         })
 }
 
-pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
+/// The config `--ignore` and `--untrust` act on when no path is given: the nearest project
+/// config among `filenames`, never global or system config. Trust does not apply to those, and
+/// once no project config is left in the load list its first entry is the global one; ignoring
+/// it would stop mise loading it, dropping every setting held there, including the global-only
+/// `paranoid`. `filenames` comes from [`config::trust_config_filenames`], so in paranoid mode
+/// this also finds the idiomatic version files `mise trust` trusts there.
+fn nearest_local_config_file(filenames: &[String]) -> Option<PathBuf> {
+    config::load_config_paths(filenames, false)
+        .into_iter()
+        .find(|p| !is_global_config(p))
+}
+
+pub(super) fn untrust_config_file(
+    config_file: Option<PathBuf>,
+    filenames: &[String],
+) -> Result<()> {
     let path = match config_file {
         Some(filename) => filename,
-        None => match ALL_CONFIG_FILES.first().cloned() {
+        None => match nearest_local_config_file(filenames) {
             Some(path) => path,
             None => {
                 warn!("No trusted config files found.");
@@ -272,7 +294,7 @@ impl Trust {
     fn ignore(&self) -> Result<()> {
         let path = match self.config_file()? {
             Some(filename) => filename,
-            None => match self.get_next() {
+            None => match nearest_local_config_file(&self.config_filenames) {
                 Some(path) => path,
                 None => {
                     warn!("No trusted config files found.");
@@ -280,6 +302,15 @@ impl Trust {
                 }
             },
         };
+        // Also when the user named the path: a symlink inside a project can resolve to the
+        // global config, and outside paranoid mode its trust root is the home directory.
+        if is_global_config(&path) {
+            bail!(
+                "{} is global config, which cannot be ignored with `mise trust --ignore`. \
+                 Use the `ignored_config_paths` setting instead.",
+                display_path(&path)
+            );
+        }
         let cfr = config_file::trust_root_for_cli(&path);
         config_file::add_ignored(cfr.clone())?;
         // `mise trust` also approved the file itself when only `env_files` is on.
@@ -443,11 +474,8 @@ impl Trust {
         resolve_config_file(self.config_file.as_ref())
     }
 
-    fn get_next(&self) -> Option<PathBuf> {
-        ALL_CONFIG_FILES.first().cloned()
-    }
     fn get_next_untrusted(&self) -> Option<PathBuf> {
-        config::load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
+        config::load_config_paths(&self.config_filenames, true)
             .into_iter()
             .filter(|p| !is_global_config(p))
             .map(|p| config_trust_root(&p))
@@ -523,7 +551,7 @@ impl Trust {
             if dir == cwd {
                 continue; // already covered by the parent walk
             }
-            for p in config::config_paths_in_dir(dir) {
+            for p in config::config_paths_in_dir_with_filenames(dir, &self.config_filenames) {
                 if !is_global_config(&p) {
                     config_files.push(p);
                 }
@@ -538,7 +566,7 @@ impl Trust {
     }
 
     fn show(&self) -> Result<()> {
-        let trusted = config::load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
+        let trusted = config::load_config_paths(&self.config_filenames, true)
             .into_iter()
             .filter(|p| !is_global_config(p))
             .map(|p| config_trust_root(&p))

@@ -417,10 +417,12 @@ impl GoBackend {
         for (idx, path) in candidates.iter().enumerate() {
             let encoded = encode_module_path(path);
             let proxies = proxies.clone();
-            join_set.spawn(async move {
-                let result = query_proxy_list(&proxies, &encoded).await;
-                (idx, result)
-            });
+            join_set.spawn(mise_util::untrusted_hosts::inherit_trusted_scope(
+                async move {
+                    let result = query_proxy_list(&proxies, &encoded).await;
+                    (idx, result)
+                },
+            ));
         }
 
         let mut list_results: Vec<(usize, ProxyListResult)> = Vec::new();
@@ -957,12 +959,14 @@ async fn fetch_proxy_version_infos(
         let encoded = encoded.clone();
         let sem = sem.clone();
         let version = version.clone();
-        join_set.spawn(async move {
-            let _permit = sem.acquire_owned().await.expect("semaphore closed");
-            let endpoint = format!("{encoded}/@v/{version}.info");
-            let info = query_proxy_version_metadata(proxies.as_slice(), &endpoint).await;
-            (version, info)
-        });
+        join_set.spawn(mise_util::untrusted_hosts::inherit_trusted_scope(
+            async move {
+                let _permit = sem.acquire_owned().await.expect("semaphore closed");
+                let endpoint = format!("{encoded}/@v/{version}.info");
+                let info = query_proxy_version_metadata(proxies.as_slice(), &endpoint).await;
+                (version, info)
+            },
+        ));
     }
 
     let mut times = BTreeMap::new();

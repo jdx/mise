@@ -2969,6 +2969,11 @@ pub fn ensure_secure_url_replacement(
 /// Get HTTP Basic authentication headers from netrc file for the given URL
 pub fn netrc_headers(url: &Url) -> HeaderMap {
     let mut headers = HeaderMap::new();
+    // A host that a project `version_list_url` named in safe mode; see
+    // `untrusted_hosts`.
+    if crate::untrusted_hosts::netrc_denied(url) {
+        return headers;
+    }
     if let Some(host) = url.host_str()
         && let Some((login, password)) = netrc::get_credentials(host)
     {

@@ -199,7 +199,7 @@ pub async fn run_phase(
                 }
             } else {
                 let mut tera = mise_util::tera::get_tera(hook.config_path.parent());
-                mise_util::tera::render_str(&mut tera, &hook.run, &context)
+                crate::host::render_config_str(&mut tera, &hook.run, &context, &hook.config_path)
             };
             rendered.map_err(|err| {
                 eyre::eyre!(

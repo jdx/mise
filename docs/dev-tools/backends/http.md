@@ -507,7 +507,8 @@ ripgrep's archives do (`ripgrep-14.1.1-x86_64-unknown-linux-musl/rg`).
 
 The directory, relative to the install directory, that holds the executables,
 or where mise places a single downloaded file. It is a template, and setting it
-turns off the automatic stripping.
+turns off the automatic stripping. An absolute path, or one that contains `..`,
+is rejected.
 
 ::: v-pre
 For an archive laid out as `my-tool-1.0.0/bin/my-tool`, remove the outer

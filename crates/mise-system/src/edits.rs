@@ -689,10 +689,11 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
     };
     let content = if *template {
         let mut tera = mise_util::tera::get_tera(Some(&req.base));
-        mise_util::tera::render_str(
+        crate::host::render_config_str(
             &mut tera,
             &raw,
             config.bootstrap_tera_ctx(&req.origin.config),
+            &req.origin.config,
         )
         .map_err(|err| {
             eyre::eyre!(

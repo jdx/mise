@@ -140,4 +140,62 @@ mod tests {
         let head = git_in(&dst_cli, &["rev-parse", "HEAD"]);
         assert_eq!(String::from_utf8(head.stdout).unwrap().trim(), sha);
     }
+
+    /// The remote picks its ref names, so a branch or tag spelled like a
+    /// commit SHA must never be checked out in place of that commit.
+    #[test]
+    fn clone_by_sha_ignores_refs_named_like_a_sha() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(&src).unwrap();
+
+        let git_in = |dir: &std::path::Path, args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .output()
+                .expect("spawn git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            String::from_utf8(out.stdout).unwrap().trim().to_string()
+        };
+        git_in(&src, &["-c", "init.defaultBranch=main", "init", "-q"]);
+        git_in(&src, &["config", "user.email", "t@t"]);
+        git_in(&src, &["config", "user.name", "t"]);
+        git_in(&src, &["config", "commit.gpgsign", "false"]);
+        git_in(&src, &["commit", "-q", "--allow-empty", "-m", "pinned"]);
+        let sha = git_in(&src, &["rev-parse", "HEAD"]);
+        git_in(&src, &["commit", "-q", "--allow-empty", "-m", "other"]);
+
+        // The default branch, which the clone starts on, is named after the pin.
+        let branch = format!("refs/heads/{sha}");
+        git_in(&src, &["update-ref", &branch, "main"]);
+        git_in(&src, &["symbolic-ref", "HEAD", &branch]);
+        // 64 hex digits can only name a ref in a SHA-1 repository.
+        let sha256_like = "0123456789abcdef".repeat(4);
+        git_in(&src, &["tag", &sha256_like, "main"]);
+
+        let url = format!("file://{}", src.display());
+        for gix in [true, false] {
+            Settings::override_with(|s| {
+                s.gix = Some(gix);
+                s.libgit2 = Some(false);
+            })
+            .unwrap();
+            let dst = tmp.path().join(format!("dst-{gix}"));
+            Git::new(&dst)
+                .clone(&url, CloneOptions::default().branch(&sha))
+                .expect("clone with SHA must succeed");
+            assert_eq!(git_in(&dst, &["rev-parse", "HEAD"]), sha);
+
+            let err = Git::new(tmp.path().join(format!("dst-sha256-like-{gix}")))
+                .clone(&url, CloneOptions::default().branch(&sha256_like))
+                .expect_err("a tag must not pass for a commit SHA");
+            assert!(format!("{err:#}").contains("is not a commit in"));
+        }
+    }
 }

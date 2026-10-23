@@ -202,6 +202,23 @@ pub fn safe_mode_ignores_bootstrap(path: &Path) -> bool {
     (host().safe_mode_ignores_bootstrap)(path)
 }
 
+/// Renders a template from the config file at `config_path`. Safe mode empties
+/// `env` for project templates, but drops project `[bootstrap]` and `[dotfiles]`
+/// before they get here (see [`safe_mode_ignores_bootstrap`]), so the files that
+/// do are the operator's and keep it.
+pub fn render_config_str(
+    tera: &mut mise_util::tera::TeraEngine,
+    input: &str,
+    context: &tera::Context,
+    config_path: &Path,
+) -> tera::TeraResult<String> {
+    if safe_mode_ignores_bootstrap(config_path) {
+        mise_util::tera::render_str(tera, input, context)
+    } else {
+        mise_util::tera::render_str_with_env(tera, input, context)
+    }
+}
+
 pub fn describe_command_setting(path: &Path) -> Result<Option<String>> {
     (host().describe_command_setting)(path)
 }

@@ -1043,7 +1043,12 @@ fn render_repo_str(config: &Config, config_path: &Path, path_raw: &str) -> Resul
         ctx.insert("config_root", &config_root.to_string_lossy());
     }
     let mut tera = mise_util::tera::get_tera_without_exec(config_path.parent());
-    Ok(mise_util::tera::render_str(&mut tera, path_raw, &ctx)?)
+    Ok(crate::host::render_config_str(
+        &mut tera,
+        path_raw,
+        &ctx,
+        config_path,
+    )?)
 }
 
 /// Aggregate `[bootstrap.repos]` across all loaded config files.

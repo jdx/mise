@@ -348,7 +348,8 @@ ripgrep's archives do (`ripgrep-14.1.1-x86_64-unknown-linux-musl/rg`).
 
 The directory, relative to the install directory, that holds the executables.
 Set it when mise does not find them. mise applies it after `strip_components`,
-and setting it turns off the automatic stripping.
+and setting it turns off the automatic stripping. An absolute path, or one that
+contains `..`, is rejected.
 
 ::: v-pre
 For an archive laid out as `tool-1.0.0/bin/tool`, set `strip_components = 1`
