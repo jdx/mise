@@ -24,8 +24,9 @@ pub(crate) struct Untrust {
 }
 
 impl Untrust {
-    pub(crate) fn run(self) -> Result<()> {
-        trust::untrust_config_file(self.config_file()?)
+    pub(crate) async fn run(self) -> Result<()> {
+        let filenames = crate::config::trust_config_filenames().await?;
+        trust::untrust_config_file(self.config_file()?, &filenames)
     }
 
     fn config_file(&self) -> Result<Option<PathBuf>> {

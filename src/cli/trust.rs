@@ -3,9 +3,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::config::config_file::config_trust_root;
-use crate::config::{
-    ALL_CONFIG_FILES, Settings, config_file, config_files_in_dir, is_global_config,
-};
+use crate::config::{Settings, config_file, config_files_in_dir, is_global_config};
 use crate::file::{display_path, remove_file};
 use crate::toolset::{ResolveOptions, ToolsetBuilder};
 use crate::{config, dirs, env, file};
@@ -93,7 +91,7 @@ impl Trust {
             return self.show();
         }
         if self.untrust {
-            untrust_config_file(self.config_file()?)
+            untrust_config_file(self.config_file()?, &self.config_filenames)
         } else if self.ignore {
             self.ignore()
         } else if self.all {
@@ -193,20 +191,24 @@ fn is_trust_metadata(path: &Path) -> bool {
 }
 
 /// The config `--ignore` and `--untrust` act on when no path is given: the nearest project
-/// config, never global or system config. Trust does not apply to those, and once no project
-/// config is left in `ALL_CONFIG_FILES` its first entry is the global one; ignoring it would stop
-/// mise loading it, dropping every setting held there, including the global-only `paranoid`.
-fn nearest_local_config_file() -> Option<PathBuf> {
-    ALL_CONFIG_FILES
-        .iter()
+/// config among `filenames`, never global or system config. Trust does not apply to those, and
+/// once no project config is left in the load list its first entry is the global one; ignoring
+/// it would stop mise loading it, dropping every setting held there, including the global-only
+/// `paranoid`. `filenames` comes from [`config::trust_config_filenames`], so in paranoid mode
+/// this also finds the idiomatic version files `mise trust` trusts there.
+fn nearest_local_config_file(filenames: &[String]) -> Option<PathBuf> {
+    config::load_config_paths(filenames, false)
+        .into_iter()
         .find(|p| !is_global_config(p))
-        .cloned()
 }
 
-pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
+pub(super) fn untrust_config_file(
+    config_file: Option<PathBuf>,
+    filenames: &[String],
+) -> Result<()> {
     let path = match config_file {
         Some(filename) => filename,
-        None => match nearest_local_config_file() {
+        None => match nearest_local_config_file(filenames) {
             Some(path) => path,
             None => {
                 warn!("No trusted config files found.");
@@ -288,7 +290,7 @@ impl Trust {
     fn ignore(&self) -> Result<()> {
         let path = match self.config_file()? {
             Some(filename) => filename,
-            None => match nearest_local_config_file() {
+            None => match nearest_local_config_file(&self.config_filenames) {
                 Some(path) => path,
                 None => {
                     warn!("No trusted config files found.");
