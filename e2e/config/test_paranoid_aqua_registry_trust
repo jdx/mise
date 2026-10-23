@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# With the paranoid `config` category, a local aqua registry file that a project
+# config names needs trust of its own, bound to its content: the hash of the
+# config does not cover it. One that global config names stays trusted by path.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+write_registry() {
+  cat <<EOF >"$1"
+packages:
+  - type: http
+    name: example/tool
+    description: $2
+    url: https://example.com/tool-{{.Version}}.tar.gz
+EOF
+}
+
+write_registry registry.yaml "from the project registry"
+cat <<EOF >mise.toml
+[settings]
+aqua.registries = ["registry.yaml"]
+EOF
+
+# Outside paranoid mode the trusted config vouches for the file it names.
+mise trust mise.toml
+assert_contains "mise tool aqua:example/tool --description" "from the project registry"
+
+export MISE_PARANOID=config
+mise trust mise.toml
+assert_not_contains "mise tool aqua:example/tool --description" "from the project registry"
+assert_contains "mise ls-remote aqua:example/tool 2>&1 || true" "registry.yaml is not trusted"
+
+mise trust registry.yaml
+assert_contains "mise tool aqua:example/tool --description" "from the project registry"
+
+# an edit makes it untrusted again
+write_registry registry.yaml "edited after approval"
+assert_not_contains "mise tool aqua:example/tool --description" "edited after approval"
+assert_contains "mise ls-remote aqua:example/tool 2>&1 || true" "registry.yaml is not trusted"
+
+# a registry file that global config names is trusted by path
+rm mise.toml
+write_registry global-registry.yaml "from the global registry"
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+aqua.registries = ["$PWD/global-registry.yaml"]
+EOF
+assert_contains "mise tool aqua:example/tool --description" "from the global registry"

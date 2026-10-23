@@ -657,13 +657,49 @@ fn resolve_aqua_registry_paths(settings: &mut toml::Table, path: &Path) {
         return;
     };
     let config_root = crate::config::config_file::config_root::config_root(path);
+    let declared_by_global = crate::config::is_global_config(path);
     for entry in registries.iter_mut() {
         if let Some(value) = entry.as_str()
             && let Some(resolved) = resolve_registry_source(value, &config_root)
         {
             *entry = toml::Value::String(resolved);
         }
+        if let Some(file) = entry
+            .as_str()
+            .and_then(|value| Url::parse(value).ok())
+            .filter(|url| url.scheme() == "file")
+            .and_then(|url| url.to_file_path().ok())
+        {
+            record_local_aqua_registry(file, declared_by_global);
+        }
     }
+}
+
+/// Local `aqua.registries` files, by whether a project config names them
+/// (`true`) or only global or system config does (`false`).
+static LOCAL_AQUA_REGISTRIES: Lazy<Mutex<std::collections::HashMap<PathBuf, bool>>> =
+    Lazy::new(Default::default);
+
+fn record_local_aqua_registry(file: PathBuf, declared_by_global: bool) {
+    let mut registries = LOCAL_AQUA_REGISTRIES.lock().unwrap();
+    let by_project = registries.entry(file).or_insert(!declared_by_global);
+    // Global config trusts what it names by path, as it is itself.
+    if declared_by_global {
+        *by_project = false;
+    }
+}
+
+/// Whether a local aqua registry file was named by a project config rather
+/// than by global or system config. Paranoid mode binds a project config's
+/// trust to its own content, which does not cover a registry file that can
+/// change without it, so such a file needs trust of its own there.
+pub(crate) fn local_aqua_registry_needs_trust(file: &Path) -> bool {
+    LOCAL_AQUA_REGISTRIES
+        .lock()
+        .unwrap()
+        .get(file)
+        .copied()
+        .unwrap_or(false)
 }
 
 /// Resolve task discovery exclusions while the settings file that declared them is still known.
