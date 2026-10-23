@@ -240,6 +240,9 @@ pub fn get_git_credential_token(provider: &str, host: &str) -> Option<String> {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null());
+    // A `credential.helper` from the repository mise happens to run in is a
+    // shell command chosen by that project; use only the user's own helpers.
+    crate::git::detach_git_command(&mut command);
     prepare_noninteractive_child(&mut command);
     let result = command.spawn().ok().and_then(|mut child| {
         let _running_pid = RunningPidGuard::new(Some(child.id()));

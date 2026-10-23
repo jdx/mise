@@ -154,8 +154,8 @@ fn redact_git_stderr(stderr: &str, remote: &str, display_remote: &str) -> String
     redact_credentials(&redacted)
 }
 
-fn git_ls_remote_args(remote: &str) -> [&str; 3] {
-    ["ls-remote", remote, "HEAD"]
+fn git_ls_remote_args(remote: &str) -> Vec<&str> {
+    crate::git::ls_remote_args(&[], remote, &["HEAD"])
 }
 
 /// Resolve a git remote's default-branch HEAD to a concrete commit.
@@ -166,7 +166,9 @@ async fn git_head(remote: &str) -> eyre::Result<String> {
             // Keep the actual remote intact for Git, but never let userinfo or
             // query tokens reach the command trace or command-derived errors.
             debug!("$ git ls-remote {display_remote} HEAD");
-            let output = tokio::process::Command::new("git")
+            let mut command = tokio::process::Command::new("git");
+            crate::git::detach_git_command(command.as_std_mut());
+            let output = command
                 .args(git_ls_remote_args(remote))
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::piped())
@@ -3238,7 +3240,7 @@ mod tests {
             assert_eq!(remote, expected_remote);
             assert_eq!(
                 git_ls_remote_args(&remote),
-                ["ls-remote", remote.as_str(), "HEAD"]
+                ["ls-remote", "--", remote.as_str(), "HEAD"]
             );
 
             let display_remote = display_git_remote(&remote);
