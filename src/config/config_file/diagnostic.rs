@@ -209,8 +209,8 @@ fn position(source: &str, offset: usize) -> (usize, usize) {
 }
 
 /// For callers that report a `toml::de::Error` as is. Its `Display` quotes the
-/// failing line, so only the message and its position are kept unless
-/// [`may_quote`] allows `path` to be quoted.
+/// failing line and its message can quote a value, so only the position is kept
+/// unless [`may_quote`] allows `path` to be quoted.
 pub(crate) fn hide_linked_source(err: toml::de::Error, source: &str, path: &Path) -> eyre::Report {
     hide_linked_source_below(err, source, path, path.parent().unwrap_or(path))
 }
@@ -226,11 +226,15 @@ pub(crate) fn hide_linked_source_below(
         return err.into();
     }
     let (line, column) = position(source, err.span().map_or(0, |r| r.start));
-    eyre::eyre!(
-        "TOML parse error at line {line}, column {column}: {}",
-        err.message()
-    )
+    // Not the parser's message either: a value error quotes the value
+    // (`invalid type: string "…"`).
+    eyre::eyre!("TOML parse error at line {line}, column {column}: {LINKED_DETAILS_HIDDEN}")
 }
+
+/// What a parse error about a linked file says in place of the parser's
+/// message, which can quote the file's text.
+const LINKED_DETAILS_HIDDEN: &str =
+    "details hidden because the file is reached through a link out of the project";
 
 /// Create an eyre error from a toml::de::Error with rich source context.
 pub(crate) fn toml_parse_error(err: &toml::de::Error, source: &str, path: &Path) -> eyre::Report {
@@ -245,7 +249,7 @@ pub(crate) fn toml_parse_error(err: &toml::de::Error, source: &str, path: &Path)
     if !may_quote(path) {
         let (line, column) = position(source, span.offset());
         return eyre::eyre!(
-            "Invalid TOML in config file {}:{line}:{column}: {message}",
+            "Invalid TOML in config file {}:{line}:{column}: {LINKED_DETAILS_HIDDEN}",
             display_path(path)
         );
     }
@@ -278,6 +282,30 @@ mod tests {
             None => format!("{rich:?}"),
         };
         format!("{rich}\n{:?}", hide_linked_source(err, BODY, path))
+    }
+
+    /// A value error quotes the value, so a linked file's parser message is
+    /// withheld too, not only its source excerpt.
+    #[test]
+    fn hides_the_value_a_linked_file_s_error_would_quote() {
+        const VALUE: &str = "silent = \"s3cr3t\"\n";
+        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tmp.path().canonicalize().unwrap();
+        let (home, project) = (tmp.join("home"), tmp.join("project"));
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(home.join("private.toml"), VALUE).unwrap();
+        symlink(home.join("private.toml"), project.join("mise.toml")).unwrap();
+        let path = project.join("mise.toml");
+
+        let err = toml::from_str::<std::collections::HashMap<String, bool>>(VALUE).unwrap_err();
+        assert!(err.message().contains("s3cr3t"), "{}", err.message());
+        let rich = format!("{:?}", toml_parse_error(&err, VALUE, &path));
+        let plain = format!("{:?}", hide_linked_source(err, VALUE, &path));
+        for report in [rich, plain] {
+            assert!(!report.contains("s3cr3t"), "{report}");
+            assert!(report.contains(LINKED_DETAILS_HIDDEN), "{report}");
+        }
     }
 
     #[test]
