@@ -86,6 +86,33 @@ fn default_true() -> bool {
     true
 }
 
+/// The spelling install state records a tool under: `short` without the
+/// credentials of a URL in it (`cargo:https://user:token@host/repo` is recorded
+/// as `cargo:https://host/repo`). Lookups take the configured spelling and go
+/// through this too, so both meet. The credential is read from config when an
+/// install needs it, never from install state.
+pub(crate) fn state_short(short: &str) -> std::borrow::Cow<'_, str> {
+    mise_util::redactions::strip_url_credentials_in_arg(short)
+}
+
+impl ManifestTool {
+    /// This entry as install state records it: `short` and `full` without URL
+    /// credentials, and options without credentials.
+    fn without_credentials(&self) -> ManifestTool {
+        ManifestTool {
+            short: state_short(&self.short).into_owned(),
+            full: self.full.as_deref().map(|f| state_short(f).into_owned()),
+            explicit_backend: self.explicit_backend,
+            opts: strip_options_credentials(&self.opts).collect(),
+        }
+    }
+
+    fn has_credentials(&self) -> bool {
+        let stripped = self.without_credentials();
+        stripped.short != self.short || stripped.full != self.full || stripped.opts != self.opts
+    }
+}
+
 /// In-memory representation of the manifest keyed by short name.
 type Manifest = BTreeMap<String, ManifestTool>;
 
@@ -118,12 +145,47 @@ fn tool_manifest_path(installs_dir: &Path, short: &str) -> PathBuf {
         .join(".mise.backend.toml")
 }
 
-/// Read the consolidated manifest file. Returns empty map if it doesn't exist.
-fn read_manifest() -> Manifest {
-    read_manifest_from(&manifest_path())
+/// The consolidated manifest at `path` as install state uses it: every entry
+/// without credentials (see [`ManifestTool::without_credentials`]).
+fn read_manifest_from(path: &Path) -> Manifest {
+    read_raw_manifest_from(path)
+        .iter()
+        .map(|(dir, mt)| (dir.clone(), mt.without_credentials()))
+        .collect()
 }
 
-fn read_manifest_from(path: &Path) -> Manifest {
+/// The root manifest, with the files it describes brought in line with it:
+/// credential-named install directories whose versions are installed under
+/// the tool's own directory are removed, and when the file holds credentials
+/// it is rewritten without them.
+fn load_root_manifest() -> Manifest {
+    let path = manifest_path();
+    let raw = read_raw_manifest_from(&path);
+    let mut changed = false;
+    let mut manifest = Manifest::new();
+    for (dir, mt) in &raw {
+        if credential_named_dir(&mt.short).as_deref() == Some(dir.as_str()) {
+            remove_credential_named_installs(&mt.short);
+            if dirs::INSTALLS.join(dir).symlink_metadata().is_err() {
+                changed = true;
+                continue;
+            }
+        }
+        changed |= mt.has_credentials();
+        manifest.insert(dir.clone(), mt.without_credentials());
+    }
+    // Best effort, and never waiting on a writer that is mid-update: the next
+    // write of this file leaves it without credentials anyway.
+    if changed
+        && let std::result::Result::Ok(_lock) = MANIFEST_LOCK.try_lock()
+        && let Err(err) = write_manifest_to(&path, &manifest)
+    {
+        debug!("could not rewrite {}: {err:#}", display_path(&path));
+    }
+    manifest
+}
+
+fn read_raw_manifest_from(path: &Path) -> Manifest {
     match file::read_to_string(path) {
         std::result::Result::Ok(body) => match toml::from_str(&body) {
             std::result::Result::Ok(m) => m,
@@ -145,30 +207,32 @@ fn write_manifest(manifest: &Manifest) -> Result<()> {
 }
 
 fn write_manifest_to(path: &Path, manifest: &Manifest) -> Result<()> {
-    // Entries written by an older mise may still hold credentials; any write
-    // of the consolidated manifest leaves it without them.
+    // Every entry is written without credentials, whatever it was read with.
     let manifest: Manifest = manifest
         .iter()
-        .map(|(dir, mt)| {
-            let mt = ManifestTool {
-                opts: strip_options_credentials(&mt.opts).collect(),
-                ..mt.clone()
-            };
-            (dir.clone(), mt)
-        })
+        .map(|(dir, mt)| (dir.clone(), mt.without_credentials()))
         .collect();
     let body = toml::to_string_pretty(&manifest)?;
     file::write_atomic(path, body.trim())?;
     Ok(())
 }
 
+/// A tool's own manifest, without credentials. A file that holds them is
+/// rewritten without them (best effort).
 fn read_tool_manifest_from(path: &Path) -> Option<ManifestTool> {
     if !path.exists() {
         return None;
     }
     match file::read_to_string(path) {
         std::result::Result::Ok(body) if body.trim().is_empty() => None,
-        std::result::Result::Ok(body) => match toml::from_str(&body) {
+        std::result::Result::Ok(body) => match toml::from_str::<ManifestTool>(&body) {
+            std::result::Result::Ok(m) if m.has_credentials() => {
+                let m = m.without_credentials();
+                if let Err(err) = write_tool_manifest_to(path, &m) {
+                    debug!("could not rewrite {}: {err:#}", display_path(path));
+                }
+                Some(m)
+            }
             std::result::Result::Ok(m) => Some(m),
             Err(err) => {
                 warn!(
@@ -183,7 +247,7 @@ fn read_tool_manifest_from(path: &Path) -> Option<ManifestTool> {
 }
 
 fn write_tool_manifest_to(path: &Path, tool: &ManifestTool) -> Result<()> {
-    let body = toml::to_string_pretty(tool)?;
+    let body = toml::to_string_pretty(&tool.without_credentials())?;
     file::write_atomic(path, body.trim())?;
     Ok(())
 }
@@ -431,14 +495,14 @@ fn scan_tool_dir(
     };
 
     let tool = InstallStateTool {
-        short,
-        full,
+        short: state_short(&short).into_owned(),
+        full: full.map(|f| state_short(&f).into_owned()),
         versions,
         explicit_backend,
         opts,
         installs_path: Some(dir.to_path_buf()),
     };
-    Ok(Some((tool, migrate)))
+    Ok(Some((tool, migrate.map(|mt| mt.without_credentials()))))
 }
 
 /// Merge the versions (and missing identity) of a shared-dir install into an
@@ -512,11 +576,6 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
     measure!("install_state full_scan_tools", {
         // Shared with the per-tool path so the manifest is parsed once.
         let manifest = root_manifest();
-        for (dir_name, mt) in manifest.iter() {
-            if credential_named_dir(&mt.short).as_ref() == Some(dir_name) {
-                remove_credential_named_installs(&mt.short);
-            }
-        }
         let subdirs = file::dir_subdirs(&dirs::INSTALLS)?;
 
         // Only clone the manifest for mutation if we actually need to migrate
@@ -625,7 +684,7 @@ fn root_manifest() -> Arc<Manifest> {
     let mut memo = ROOT_MANIFEST_MEMO
         .lock()
         .expect("ROOT_MANIFEST_MEMO lock failed");
-    memo.get_or_insert_with(|| Arc::new(read_manifest()))
+    memo.get_or_insert_with(|| Arc::new(load_root_manifest()))
         .clone()
 }
 
@@ -639,6 +698,10 @@ fn root_manifest() -> Arc<Manifest> {
 /// that requires enumeration, which mise itself never produces, and full-scan
 /// callers still see such dirs.
 pub(crate) fn get_tool(short: &str) -> Option<InstallStateTool> {
+    // Looked up by the spelling install state records; `raw` keeps the
+    // configured one, which names any credential-named directory to clean up.
+    let raw = short;
+    let short = &*state_short(raw);
     // A completed full scan is authoritative (it includes plugin identities and
     // shared dirs), so serve from it when available.
     if let Some(tools) = INSTALL_STATE_TOOLS
@@ -658,7 +721,7 @@ pub(crate) fn get_tool(short: &str) -> Option<InstallStateTool> {
             return hit.clone();
         }
     }
-    let tool = load_tool(short);
+    let tool = load_tool(raw);
     // The disk read above runs without the memo lock, so add_tool_version may
     // have landed meanwhile. Neither side is authoritative: this one scanned
     // every version on disk, that one knows about an install that may have
@@ -706,6 +769,7 @@ fn merge_scanned_into(recorded: &mut InstallStateTool, scanned: InstallStateTool
 
 fn load_tool(short: &str) -> Option<InstallStateTool> {
     remove_credential_named_installs(short);
+    let short = &*state_short(short);
     let manifest = root_manifest();
     let dir_name = crate::backend::tool_directory_name(short);
     let scan_named = |dir_name: &str| {
@@ -822,6 +886,8 @@ fn is_banned_plugin(path: &Path) -> bool {
 /// it. Backend resolution and `list_installed_versions` do that per backend, so
 /// the copies add up on enumerating commands.
 fn with_tool<T>(short: &str, f: impl FnOnce(&InstallStateTool) -> T) -> Option<T> {
+    let raw = short;
+    let short = &*state_short(raw);
     if let Some(tools) = INSTALL_STATE_TOOLS
         .lock()
         .expect("INSTALL_STATE_TOOLS lock failed")
@@ -837,7 +903,7 @@ fn with_tool<T>(short: &str, f: impl FnOnce(&InstallStateTool) -> T) -> Option<T
             return hit.as_ref().map(f);
         }
     }
-    get_tool(short).as_ref().map(f)
+    get_tool(raw).as_ref().map(f)
 }
 
 pub(crate) fn get_tool_full(short: &str) -> Option<String> {
@@ -959,7 +1025,8 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
     } else {
         install_path.parent().map(Path::to_path_buf)
     };
-    let full = ba.full_without_opts();
+    let short = state_short(&ba.short).into_owned();
+    let full = state_short(&ba.full_without_opts()).into_owned();
     let explicit_backend = ba.has_explicit_backend();
     let opts = persistent_opts(ba);
 
@@ -983,7 +1050,7 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
     };
     let new_tool = || {
         let mut tool = InstallStateTool {
-            short: ba.short.clone(),
+            short: short.clone(),
             full: Some(full.clone()),
             versions: Vec::new(),
             explicit_backend,
@@ -1002,7 +1069,7 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
             .expect("INSTALL_STATE_TOOLS lock failed");
         if let Some(existing_tools) = tools.as_ref() {
             let mut next_tools = existing_tools.deref().clone();
-            update(next_tools.entry(ba.short.clone()).or_insert_with(new_tool));
+            update(next_tools.entry(short.clone()).or_insert_with(new_tool));
             *tools = Some(Arc::new(next_tools));
         }
     }
@@ -1011,7 +1078,7 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
         .expect("INSTALL_STATE_TOOL_MEMO lock failed");
     let entry = memo
         .get_or_insert_with(Default::default)
-        .entry(ba.short.clone())
+        .entry(short.clone())
         .or_insert(None);
     match entry {
         Some(tool) => update(tool),
@@ -1057,14 +1124,14 @@ pub(crate) fn write_backend_meta(ba: &BackendArg) -> Result<()> {
 
 /// Writes backend metadata to a manifest at a specific install path.
 pub(crate) fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
-    let full = ba.full_without_opts();
+    let full = state_short(&ba.full_without_opts()).into_owned();
     let explicit = ba.has_explicit_backend();
     let opts_map = persistent_opts(ba);
 
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
     let mut manifest = read_manifest_from(path);
     let manifest_tool = ManifestTool {
-        short: ba.short.clone(),
+        short: state_short(&ba.short).into_owned(),
         full: Some(full),
         explicit_backend: explicit,
         opts: opts_map,
@@ -2110,6 +2177,52 @@ mod credential_tests {
         remove_credential_named_installs_in(&installs, "named", "clean", &[shims.clone()]);
         assert!(named.symlink_metadata().is_err());
         assert!(installs.join("clean/2.0.0").is_dir());
+    }
+
+    /// A manifest that records a tool's URL with its credentials is read
+    /// without them, so the configured spelling still finds the tool, and the
+    /// files are rewritten without them.
+    #[test]
+    fn manifests_with_credentials_are_read_and_rewritten_without_them() {
+        use super::{
+            ManifestTool, read_manifest_from, read_tool_manifest_from, state_short,
+            write_manifest_to,
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let short = "cargo:https://bot:t0ken@host/acme/tool.git";
+        let raw =
+            format!("[cargo-https-host-acme-tool-git]\nshort = \"{short}\"\nfull = \"{short}\"\n");
+        let root = tmp.path().join(".mise-installs.toml");
+        std::fs::write(&root, &raw).unwrap();
+        let manifest = read_manifest_from(&root);
+        let mt = &manifest["cargo-https-host-acme-tool-git"];
+        assert_eq!(mt.short, "cargo:https://host/acme/tool.git");
+        assert_eq!(mt.full.as_deref(), Some("cargo:https://host/acme/tool.git"));
+        assert_eq!(mt.short, state_short(short));
+        write_manifest_to(&root, &manifest).unwrap();
+        assert!(!std::fs::read_to_string(&root).unwrap().contains("t0ken"));
+
+        let sidecar = tmp.path().join(".mise.backend.toml");
+        std::fs::write(
+            &sidecar,
+            format!("short = \"{short}\"\nfull = \"{short}\"\n"),
+        )
+        .unwrap();
+        let mt: ManifestTool = read_tool_manifest_from(&sidecar).unwrap();
+        assert_eq!(mt.short, "cargo:https://host/acme/tool.git");
+        assert!(!std::fs::read_to_string(&sidecar).unwrap().contains("t0ken"));
+    }
+
+    #[test]
+    fn written_identity_has_no_credentials() {
+        let mut ba = BackendArg::from("cargo:https://bot:t0ken@host/acme/tool.git");
+        ba.set_opts(None);
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join(".mise-installs.toml");
+        super::write_backend_meta_to(&ba, &root).unwrap();
+        let body = std::fs::read_to_string(&root).unwrap();
+        assert!(!body.contains("t0ken"), "{body}");
+        assert!(body.contains("cargo:https://host/acme/tool.git"), "{body}");
     }
 
     /// A credential-named entry that is a symlink is not followed.
