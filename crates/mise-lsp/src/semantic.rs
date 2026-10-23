@@ -88,6 +88,7 @@ fn tokens(text: &str, parsed: &Parsed, schema: &Schema) -> Vec<Token> {
         // `[[env]]` is a list of env tables: its keys read as the keys of `[env]`.
         if let ["env", index, ..] = path.as_slice()
             && index.parse::<usize>().is_ok()
+            && parsed.json["env"].is_array()
         {
             path.remove(1);
         }
@@ -226,6 +227,14 @@ mod tests {
                 ("a".into(), "function", vec!["declaration"]),
                 ("v".into(), "variable", vec!["readonly"]),
             ]
+        );
+    }
+
+    #[test]
+    fn a_numeric_env_name_keeps_its_color() {
+        assert_eq!(
+            spans("[env]\n\"123\" = \"x\"\n"),
+            [("\"123\"".into(), "variable", vec![])]
         );
     }
 
