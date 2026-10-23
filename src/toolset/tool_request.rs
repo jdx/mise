@@ -508,11 +508,9 @@ impl ToolRequest {
             }
     }
 
-    /// In safe mode, records the hosts this request's options send requests to, so that the
-    /// operator's credentials stay away from hosts project config chose: a project `api_url`
-    /// gets no forge token, and a project `url`, `checksum_url`, `version_list_url` or
-    /// `version_date_url` no netrc credentials. The same options in global or system config
-    /// are the operator's and keep theirs.
+    /// In safe mode, records the host of this request's `api_url`, so that a project one gets
+    /// no forge token. An `api_url` in global or system config is the operator's and keeps
+    /// its token. netrc is scoped per tool instead; see [`with_safe_mode_netrc_scope`].
     pub(crate) fn record_safe_mode_credential_hosts(&self) {
         if !Settings::safe_mode() {
             return;
@@ -954,37 +952,72 @@ fn is_forbidden_cmd_char(_c: char) -> bool {
     false
 }
 
-/// Records, in safe mode, the hosts that tool options from one config file send requests to.
-/// `project` is false for global and system config. Platform tables are searched too, since
-/// backends read these options per platform. See [`ToolRequest::record_safe_mode_credential_hosts`].
-pub(crate) fn record_safe_mode_credential_hosts(
+/// Calls `f` with each string value under one of `keys` in tool options, platform tables
+/// included, since backends read options per platform.
+fn visit_option_strings(
     opts: &indexmap::IndexMap<String, toml::Value>,
-    project: bool,
+    keys: &[&str],
+    f: &mut dyn FnMut(&str, &str),
 ) {
-    fn visit(key: &str, value: &toml::Value, project: bool) {
+    fn visit(key: &str, value: &toml::Value, keys: &[&str], f: &mut dyn FnMut(&str, &str)) {
         match value {
-            toml::Value::String(url) => match key {
-                "api_url" if project => mise_util::untrusted_hosts::deny_forge_token_for_url(url),
-                "api_url" => mise_util::untrusted_hosts::allow_forge_token_for_url(url),
-                "url" | "checksum_url" | "version_list_url" | "version_date_url" if project => {
-                    mise_util::untrusted_hosts::deny_netrc_for_url(url)
-                }
-                "url" | "checksum_url" | "version_list_url" | "version_date_url" => {
-                    mise_util::untrusted_hosts::allow_netrc_for_url(url)
-                }
-                _ => {}
-            },
+            toml::Value::String(s) if keys.contains(&key) => f(key, s),
             toml::Value::Table(table) => {
                 for (key, value) in table {
-                    visit(key, value, project);
+                    visit(key, value, keys, f);
                 }
             }
             _ => {}
         }
     }
     for (key, value) in opts {
-        visit(key, value, project);
+        visit(key, value, keys, f);
     }
+}
+
+/// Records, in safe mode, the host of the `api_url`s in tool options from one config file.
+/// `project` is false for global and system config. See
+/// [`ToolRequest::record_safe_mode_credential_hosts`].
+pub(crate) fn record_safe_mode_credential_hosts(
+    opts: &indexmap::IndexMap<String, toml::Value>,
+    project: bool,
+) {
+    visit_option_strings(opts, &["api_url"], &mut |_, url| {
+        if project {
+            mise_util::untrusted_hosts::deny_forge_token_for_url(url)
+        } else {
+            mise_util::untrusted_hosts::allow_forge_token_for_url(url)
+        }
+    });
+}
+
+/// The tool options that name a host a tool downloads from or lists versions from.
+const NETRC_SCOPED_URL_OPTIONS: [&str; 4] = [
+    "url",
+    "checksum_url",
+    "version_list_url",
+    "version_date_url",
+];
+
+/// Runs `future`, work done for the tool `ba` with options `opts`. In safe mode, when project
+/// config declares the tool, its requests to a host one of its URL options names get no netrc
+/// credentials: the project chose those hosts, and a netrc login (or `default` entry) would
+/// otherwise go to them or read the operator's own server. The decision comes from who asks,
+/// so tools from global or system config are unaffected even on the same host.
+pub(crate) async fn with_safe_mode_netrc_scope<T>(
+    ba: &BackendArg,
+    opts: &indexmap::IndexMap<String, toml::Value>,
+    future: impl std::future::Future<Output = T>,
+) -> T {
+    if !Settings::safe_mode() || !crate::config::is_safe_mode_project_tool(ba) {
+        return future.await;
+    }
+    let mut urls = vec![];
+    visit_option_strings(opts, &NETRC_SCOPED_URL_OPTIONS, &mut |_, url| {
+        urls.push(url.to_string());
+    });
+    mise_util::untrusted_hosts::with_project_netrc_scope(urls.iter().map(String::as_str), future)
+        .await
 }
 
 /// Resolve a `path:` tool version request value against the config file's directory.

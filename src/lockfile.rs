@@ -4142,9 +4142,14 @@ pub async fn resolve_tool_lock_info(
                 );
             }
         };
+        let request_opts = tv.request.options().opts;
         match crate::env::with_install_env(
             tv.install_env(),
-            backend.resolve_lock_info(&tv, &target),
+            crate::toolset::with_safe_mode_netrc_scope(
+                backend.ba(),
+                &request_opts,
+                backend.resolve_lock_info(&tv, &target),
+            ),
         )
         .await
         {

@@ -4189,10 +4189,13 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
     // Nor can a project alias a tool that global config declares: that would
     // redirect the operator's tool to a backend, options or versions the project
     // chose.
-    let global_tools: BTreeSet<String> = if safe_mode {
+    let declared_tools = |global: bool| -> BTreeSet<String> {
+        if !safe_mode {
+            return BTreeSet::new();
+        }
         config_files
             .values()
-            .filter(|cf| is_global_config(cf.get_path()))
+            .filter(|cf| is_global_config(cf.get_path()) == global)
             .filter_map(|cf| cf.to_tool_request_set().ok())
             .flat_map(|trs| {
                 trs.tools
@@ -4201,9 +4204,9 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
                     .collect::<Vec<_>>()
             })
             .collect()
-    } else {
-        BTreeSet::new()
     };
+    let global_tools = declared_tools(true);
+    let mut project_tools = declared_tools(false);
 
     for config_file in config_files.values() {
         let project = safe_mode && !is_global_config(config_file.get_path());
@@ -4215,6 +4218,9 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
                     display_path(config_file.get_path())
                 );
                 continue;
+            }
+            if project {
+                project_tools.insert(plugin.clone());
             }
             if safe_mode
                 && let Some(backend) = &plugin_aliases.backend
@@ -4242,8 +4248,23 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
         }
     }
     trace!("load_aliases: {}", aliases.len());
+    *SAFE_MODE_PROJECT_TOOLS.lock().unwrap() = project_tools;
 
     Ok(aliases)
+}
+
+/// The tools that project config declares or aliases, recorded in safe mode by
+/// [`load_aliases`]; see [`is_safe_mode_project_tool`].
+static SAFE_MODE_PROJECT_TOOLS: std::sync::Mutex<BTreeSet<String>> =
+    std::sync::Mutex::new(BTreeSet::new());
+
+/// Whether, in safe mode, project config declares or aliases `ba`, so that its
+/// options (and the hosts they name) come from config nobody reviewed. A tool
+/// that a project and global config both declare counts, since the project's
+/// entry takes precedence.
+pub(crate) fn is_safe_mode_project_tool(ba: &BackendArg) -> bool {
+    let tools = SAFE_MODE_PROJECT_TOOLS.lock().unwrap();
+    tools.contains(&ba.short) || tools.contains(&ba.full())
 }
 
 fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {
