@@ -799,18 +799,7 @@ impl SelfUpdate {
     }
 
     fn request_headers(source: &SelfUpdateSource, url: &str) -> Result<reqwest::header::HeaderMap> {
-        let mut headers = crate::github::get_headers(url, &source.api_url)?;
-        // A configured API may use any HTTPS host/path. Resolve its token
-        // explicitly, but never send it to an asset on another origin.
-        if url::Url::parse(url)?.origin() == url::Url::parse(&source.api_url)?.origin()
-            && let Some(token) = crate::github::resolve_token_for_api_url(&source.api_url)
-        {
-            headers.insert(
-                reqwest::header::AUTHORIZATION,
-                crate::tokens::bearer_header("GitHub", &token)?,
-            );
-        }
-        Ok(headers)
+        source.request_headers(url)
     }
 
     async fn release_packslip(
@@ -963,7 +952,7 @@ impl SelfUpdate {
         let temp_dir = tempfile::tempdir()?;
         // Use the real archive name so zipsign context matches the release signature
         let zip_path = temp_dir.path().join(&archive_name);
-        let headers = crate::github::get_headers(&url, &source.api_url)?;
+        let headers = source.request_headers(&url)?;
         let settings = Settings::get();
         let request_timeout = settings.http_timeout();
         let archive = mise_tls::build_client(|| {
