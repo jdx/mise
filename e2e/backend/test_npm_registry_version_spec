@@ -10,6 +10,12 @@ EOF
 printf '#!/bin/sh\necho payload\n' >payload/cli.sh
 chmod +x payload/cli.sh
 
-assert_fail "mise install 'npm:left-pad@$PWD/payload'" "is not a version, range or dist-tag"
+# An absolute path is refused when the version is parsed, before the backend
+# sees it; either layer may report it.
+assert_fail_matches "mise install 'npm:left-pad@$PWD/payload'" "must not start with '/'|is not a version, range or dist-tag"
+# These pass the generic version rules, so the npm backend's own check refuses them.
+assert_fail "mise install npm:left-pad@./payload" "is not a version, range or dist-tag"
 assert_fail "mise install npm:left-pad@stevemao/left-pad" "is not a version, range or dist-tag"
-assert_fail "test -d '$MISE_DATA_DIR/installs/npm-left-pad/$(echo "$PWD/payload" | tr / -)/node_modules'"
+# None of them installed anything.
+mkdir -p "$MISE_DATA_DIR/installs"
+assert_empty "find '$MISE_DATA_DIR/installs' -path '*npm-left-pad*' -name node_modules"

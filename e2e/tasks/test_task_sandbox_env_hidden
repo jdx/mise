@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# deny_env filters the task's own environment, but `mise run` keeps the full
+# one. The task must not read the withheld variables back from the
+# /proc/<pid>/environ of mise or of anything else mise started.
+
+if [[ "$(uname)" != "Linux" ]]; then
+  echo "skipping: /proc/<pid>/environ is Linux-only"
+  exit 0
+fi
+if [[ "$(id -u)" == 0 ]]; then
+  echo "skipping: root reads every process's environ"
+  exit 0
+fi
+
+# Walk up from the task to init and report every ancestor that still holds the
+# variable.
+cat >leak.sh <<'SH'
+echo "own=${DEPLOY_KEY:-unset}"
+pid=$PPID
+while [ "$pid" -gt 1 ]; do
+  if tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | grep -q '^DEPLOY_KEY='; then
+    echo "leaked from $(cat "/proc/$pid/comm")"
+  fi
+  pid=$(sed 's/.*) //' "/proc/$pid/stat" | cut -d' ' -f2)
+done
+SH
+
+cat >mise.toml <<'TOML'
+[tasks.leak]
+run = "sh leak.sh"
+deny_env = true
+
+[tasks.open]
+run = "sh leak.sh"
+TOML
+
+# The variable is given to mise only, not to the shell of this test, which an
+# env sandbox cannot cover (see docs/sandboxing.md).
+assert "DEPLOY_KEY=withheld mise run leak" "own=unset"
+# Without the env sandbox the task sees the variable, and the walk finds it.
+assert_contains "DEPLOY_KEY=withheld mise run open" "own=withheld"
+assert_contains "DEPLOY_KEY=withheld mise run open" "leaked from mise"

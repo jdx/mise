@@ -467,7 +467,9 @@ impl Exec {
                 symlinked_allow_paths: vec![],
             },
         );
-        sandbox.resolve_paths();
+        let project_roots: Vec<&std::path::Path> =
+            config.project_root.as_deref().into_iter().collect();
+        sandbox.resolve_paths(&project_roots)?;
 
         // Only when asked: `mise x` hands the command nothing by default, and fnox never
         // runs. This sees the unfiltered env, which G11 compares against; G13 and the
@@ -521,7 +523,7 @@ impl Exec {
                 }
                 cmd.push(format!(
                     "set -gx {} \"${tmp}\"; set -e {tmp}",
-                    shell_escape::escape(k.as_str().into()),
+                    crate::shell::fish_escape(k.as_str().into()),
                 ));
                 env.insert(tmp, v);
             }
@@ -537,9 +539,11 @@ impl Exec {
                 // each call prepends, so sequential calls reversed the order
                 // `list_final_paths` returns, pushing `env._.path` entries and
                 // command wrappers behind every tool directory.
+                // fish's own quoting, not POSIX: in fish `\'` inside single quotes is an
+                // escaped quote, so a directory name holding one ended the string early.
                 let paths = paths
                     .iter()
-                    .map(|p| shell_escape::escape(p.to_string_lossy()))
+                    .map(|p| crate::shell::fish_escape(p.to_string_lossy()))
                     .join(" ");
                 cmd.push(format!("fish_add_path -gm {paths}"));
             }

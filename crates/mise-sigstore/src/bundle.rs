@@ -4,25 +4,37 @@ use crate::github::{log_attestation_method_failure, warn_if_trust_root_unreachab
 pub(crate) async fn verify_attestation_bundles(
     attestations: &[Attestation],
     artifact: &[u8],
+    repository: &str,
     signer_workflow: Option<&str>,
     trust_roots: &mut TrustRoots,
 ) -> Result<bool> {
     verify_attestation_bundles_for_artifact(
         Artifact::from(artifact),
         attestations,
+        repository,
         signer_workflow,
         trust_roots,
     )
     .await
 }
 
+/// Passes when one attestation verifies and `repository` (`owner/repo`)
+/// made it.
+///
+/// A valid signature only says that someone attested these bytes, and any
+/// repository can attest any digest. GitHub's API lists only the requested
+/// repository's attestations, but whatever answered the request picked them
+/// (`url_replacements` may put a mirror in GitHub's place, and `bundle_url`
+/// may point anywhere), so the signature itself has to name the repository.
 pub(crate) async fn verify_attestation_bundles_for_artifact(
     artifact: Artifact<'_>,
     attestations: &[Attestation],
+    repository: &str,
     signer_workflow: Option<&str>,
     trust_roots: &mut TrustRoots,
 ) -> Result<bool> {
     let mut errors = Vec::new();
+    let mut other_repositories = Vec::new();
     let mut trust_root_failures = 0;
     for attestation in attestations {
         let Some(bundle_value) = &attestation.bundle else {
@@ -45,10 +57,25 @@ pub(crate) async fn verify_attestation_bundles_for_artifact(
         )
         .await
         {
-            Ok(()) => {
-                warn_if_trust_root_unreachable(trust_root_failures);
-                return Ok(true);
-            }
+            Ok(()) => match bundle_source_repository(&bundle) {
+                Some(source) if source.eq_ignore_ascii_case(repository) => {
+                    warn_if_trust_root_unreachable(trust_root_failures);
+                    return Ok(true);
+                }
+                Some(source) => {
+                    log::debug!(
+                        "GitHub attestation verification method failed; continuing with other attestations: made by {source}, not {repository}"
+                    );
+                    other_repositories.push(source);
+                }
+                None => {
+                    const ERROR: &str = "verified attestation names no source repository";
+                    log::debug!(
+                        "GitHub attestation verification method failed; continuing with other attestations: {ERROR}"
+                    );
+                    errors.push(ERROR.to_string());
+                }
+            },
             Err(e) => {
                 log_attestation_method_failure(&e);
                 if matches!(e, AttestationError::TrustRoot(_)) {
@@ -57,6 +84,15 @@ pub(crate) async fn verify_attestation_bundles_for_artifact(
                 errors.push(e.to_string());
             }
         }
+    }
+
+    if !other_repositories.is_empty() {
+        other_repositories.sort();
+        other_repositories.dedup();
+        return Err(AttestationError::RepositoryMismatch {
+            expected: repository.to_string(),
+            found: other_repositories,
+        });
     }
 
     Err(AttestationError::Verification(join_error_strings(
@@ -80,21 +116,21 @@ pub(crate) fn verify_bundle<'a>(
     trusted_root: &TrustedRoot,
 ) -> Result<()> {
     let mut policy = VerificationPolicy::any_identity();
-    // sigstore-verify's default policy *requires* an inclusion proof when
-    // `verify_tlog` is on. GitHub artifact attestations and TSA-only bundles
-    // never carry one, so we'd reject them outright. Skip tlog only when the
-    // bundle has no inclusion proof — public-Sigstore cosign bundles, which do
-    // ship a Rekor inclusion proof, still get full tlog verification (Rekor
-    // checkpoint signature, SET, inclusion-proof Merkle path).
-    if !bundle.has_inclusion_proof() {
-        policy = policy.skip_tlog_unsafe();
-    }
-    // GitHub-internal leaf certs don't carry an SCT extension (GitHub's CA
-    // doesn't log to public CT). `skip_sct` keeps full certificate-chain
+    // GitHub's own Sigstore instance has no transparency log: its bundles
+    // carry a GitHub TSA timestamp instead of a Rekor entry, and
+    // sigstore-verify's default policy would reject them outright. Key the
+    // relaxation on the trust domain, not on what the bundle carries:
+    // `tlogEntries` isn't covered by any signature, so whoever serves a
+    // public-Sigstore bundle could otherwise drop its Rekor entry to turn off
+    // tlog verification (Rekor checkpoint signature, SET, inclusion-proof
+    // Merkle path).
+    //
+    // GitHub-internal leaf certs don't carry an SCT extension either (GitHub's
+    // CA doesn't log to public CT). `skip_sct` keeps full certificate-chain
     // validation against the GitHub trust root's Fulcio certs but turns off
     // the SCT check, which is exactly what GitHub artifact attestations need.
     if is_github_internal_certificate(bundle) {
-        policy = policy.skip_sct();
+        policy = policy.skip_tlog_unsafe().skip_sct();
     }
     let result = sigstore_verify::verify(artifact, bundle, &policy, trusted_root)?;
 

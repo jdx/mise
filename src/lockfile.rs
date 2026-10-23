@@ -1480,7 +1480,26 @@ impl Lockfile {
                     }
                     Ok(entry)
                 })
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .filter(|entry| {
+                    let Some(full) = entry.backend.as_deref() else {
+                        return true;
+                    };
+                    if !backend_names_no_tool(full) {
+                        return true;
+                    }
+                    warn_once!(
+                        "{} locks {short}@{} to the backend {full:?}, which names no tool; ignoring the entry",
+                        display_path(path),
+                        entry.version,
+                    );
+                    false
+                })
+                .collect_vec();
+            if versions.is_empty() {
+                continue;
+            }
             lockfile.tools.entry(short).or_default().extend(versions);
         }
 
@@ -1552,7 +1571,15 @@ impl Lockfile {
 
             match fs::canonicalize(path) {
                 Ok(link_target) => {
-                    source_symlink = Some(graph::absolute(path));
+                    let link = graph::absolute(path);
+                    if !may_write_through_symlink(&link, &link_target) {
+                        bail!(
+                            "refusing to write lockfile {} through its symlink to {}: a link out of the lockfile's directory is only followed for global config, or for trusted config outside safe mode",
+                            display_path(path),
+                            display_path(&link_target)
+                        );
+                    }
+                    source_symlink = Some(link);
                     trace!(
                         "resolved lockfile symlink {} to {}",
                         display_path(path),
@@ -1853,13 +1880,18 @@ impl Lockfile {
         Ok(())
     }
 
-    /// Drop references to stubs that were deleted, or that now find a
-    /// different lockfile. Returns whether any reference was dropped.
+    /// Drop references to stubs that were deleted, that now find a different
+    /// lockfile, or that lead out of the checkout holding the lockfile.
+    /// Returns whether any reference was dropped.
     pub fn retain_live_tool_stubs(&mut self, lockfile_path: &Path) -> bool {
         let before = self.tool_stubs.len();
+        let checkout = checkout_root(lockfile_path);
         self.tool_stubs.retain(|reference| {
             let stub = tool_stub_path(lockfile_path, reference);
             stub.is_file()
+                && checkout.as_ref().is_none_or(|root| {
+                    dunce::canonicalize(&stub).is_ok_and(|stub| stub.starts_with(root))
+                })
                 && lockfile_path_for_tool_stub(&stub)
                     .is_some_and(|(path, _)| same_file_path(&path, lockfile_path))
         });
@@ -2358,14 +2390,23 @@ fn lockfile_path_for_tool_source_with_root(
 }
 
 /// The mise.lock a tool stub reads from: the lockfile of the nearest project
-/// config above where the stub lives. The stub file's symlink is resolved
+/// config above where the stub lives. Symlinks in the stub's path are resolved
 /// first, so a stub linked onto PATH still finds its project's lockfile, and
 /// the directory it is invoked from never matters. Local and environment
 /// configs are skipped: a committed stub resolves the same way everywhere.
 pub fn lockfile_path_for_tool_stub(stub: &Path) -> Option<(PathBuf, bool)> {
+    let (config_path, monorepo_root) = tool_stub_config(stub)?;
+    Some(lockfile_path_for_config(
+        &config_path,
+        monorepo_root.as_deref(),
+    ))
+}
+
+/// The project config whose lockfile a tool stub reads from (see
+/// [`lockfile_path_for_tool_stub`]), with its monorepo lockfile root.
+fn tool_stub_config(stub: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
     let stub = resolve_tool_stub_path(stub)?;
     let monorepo_root = crate::config::monorepo_lockfile_root_from_dir(stub.parent()?);
-    let monorepo_root = monorepo_root.as_deref();
     let dirs = file::all_dirs(stub.parent()?, &env::MISE_CEILING_PATHS).ok()?;
     dirs.iter().find_map(|dir| {
         crate::config::config_paths_in_dir(dir)
@@ -2377,17 +2418,30 @@ pub fn lockfile_path_for_tool_stub(stub: &Path) -> Option<(PathBuf, bool)> {
                     && !crate::config::is_global_config(path)
                     && !crate::config::is_system_config(path)
             })
-            .map(|config_path| lockfile_path_for_config(&config_path, monorepo_root))
+            .map(|config_path| (config_path, monorepo_root.clone()))
     })
 }
 
 fn resolve_tool_stub_path(stub: &Path) -> Option<PathBuf> {
-    if stub.is_symlink() {
-        fs::canonicalize(stub).ok()
-    } else {
-        use path_absolutize::Absolutize;
-        stub.absolutize().ok().map(|p| p.to_path_buf())
-    }
+    // The whole path, not only its last component: a stub reached through a
+    // symlinked directory lives where that directory leads. Otherwise a
+    // `tool-stubs` reference through a committed link such as
+    // `proc -> /proc/self` would count as a stub of this project and be read.
+    dunce::canonicalize(stub).ok()
+}
+
+/// The git checkout that holds the lockfile at `lockfile_path`, if any.
+///
+/// A config in a `mise/` or `.config/` directory covers the directory above
+/// it, so `tool-stubs` references may climb out of the lockfile's directory
+/// with `..`. When that directory is itself a checkout (a repository cloned
+/// as `mise`), the directory above is not part of it, and a reference there
+/// would name a file next to the checkout.
+fn checkout_root(lockfile_path: &Path) -> Option<PathBuf> {
+    let dir = dunce::canonicalize(lockfile_path.parent()?).ok()?;
+    dir.ancestors()
+        .find(|dir| dir.join(".git").exists())
+        .map(Path::to_path_buf)
 }
 
 /// A stub's path relative to its lockfile's directory, with `/` separators so
@@ -2432,6 +2486,66 @@ pub(crate) fn same_file_path(a: &Path, b: &Path) -> bool {
     a.file_name() == b.file_name()
         && canonical_dir(a).is_some()
         && canonical_dir(a) == canonical_dir(b)
+}
+
+/// Whether `lockfile` is where global or system config keeps its lockfile.
+/// Matched by where the file sits, not by what it resolves to: a project's
+/// lockfile or config linked to the global one is still project content.
+fn is_global_lockfile(lockfile: &Path) -> bool {
+    crate::config::global_config_files()
+        .iter()
+        .chain(&crate::config::override_config_files())
+        .chain(&crate::config::system_config_files())
+        .any(|config| same_file_path(&lockfile_path_for_config(config, None).0, lockfile))
+}
+
+/// Whether the user vouches for the lockfile at `lockfile`: it is the global
+/// or system lockfile, or a config in `config` that keeps its lock entries
+/// there is trusted.
+///
+/// A lockfile comes with its project's working tree, and a `mise.toml` that
+/// only lists plain tool versions loads without trust, so until the project
+/// is trusted its lockfile is no more trusted than it is.
+pub(crate) fn lockfile_is_trusted(config: &Config, lockfile: &Path) -> bool {
+    if is_global_lockfile(lockfile) {
+        return true;
+    }
+    let monorepo_root = config.monorepo_lockfile_root();
+    config.config_files.keys().any(|path| {
+        // `is_global_config` resolves symlinks, so it also holds for a
+        // project config linked to the global one; the global lockfile
+        // itself was matched by location above.
+        !crate::config::is_global_config(path)
+            // A legacy monorepo lockfile still belongs to the config beside it.
+            && [monorepo_root.as_deref(), None]
+                .into_iter()
+                .any(|root| same_file_path(&lockfile_path_for_config(path, root).0, lockfile))
+            && crate::config::config_file::is_path_trusted(path)
+    })
+}
+
+/// Whether writing the lockfile symlink `link` may replace `target`, the
+/// file it resolves to.
+///
+/// The link comes with the working tree, so in a checkout nobody trusted its
+/// author would choose which of the user's files the lockfile replaces. A
+/// link that stays in its own directory is followed regardless. One that
+/// leaves it, as a dotfiles deployment does, is followed only for the global
+/// or system lockfile, or for a trusted project outside safe mode, which
+/// keeps project config inert whether or not it is trusted.
+fn may_write_through_symlink(link: &Path, target: &Path) -> bool {
+    if link
+        .parent()
+        .and_then(|dir| fs::canonicalize(dir).ok())
+        .is_some_and(|dir| target.starts_with(dir))
+    {
+        return true;
+    }
+    if is_global_lockfile(link) {
+        return true;
+    }
+    !Settings::safe_mode()
+        && Config::maybe_get().is_some_and(|config| lockfile_is_trusted(&config, link))
 }
 
 /// Checks if a config path is a "local" config (should go to mise.local.lock)
@@ -2616,6 +2730,10 @@ fn remove_migrated_sidecars(source: &Path, target: &Path) -> Result<()> {
     }
     let published = Lockfile::read(target)?;
     let mut cleanup = graph::SidecarWrites::new(source);
+    // A legacy root reached through a symlink is not part of this project.
+    if cleanup.root_is_linked() {
+        return Ok(());
+    }
     for entry in published.tools.values().flatten() {
         if let Some(graph) = &entry.uv {
             cleanup.reserve(graph);
@@ -2690,6 +2808,7 @@ fn discover_monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf>
             warn_once!(
                 "[monorepo] lockfile = true is set, but [monorepo].config_roots could not be resolved: {err:#}; using root lockfiles without migration"
             );
+            retain_sources_inside_monorepo(&mut source_lockfiles, &monorepo_root);
             return source_lockfiles;
         }
     };
@@ -2710,7 +2829,36 @@ fn discover_monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf>
         }
     }
 
+    retain_sources_inside_monorepo(&mut source_lockfiles, &monorepo_root);
     source_lockfiles
+}
+
+/// Migration reads, merges and deletes its sources, so keep only those that
+/// resolve inside the monorepo, the same test `config_roots` pass. The roots
+/// themselves are contained, but a directory below one, such as `mise` or
+/// `.config/mise`, or the lockfile itself can be a symlink that leads out of
+/// the checkout.
+fn retain_sources_inside_monorepo(sources: &mut IndexSet<PathBuf>, monorepo_root: &Path) {
+    let canonical_root = monorepo_root.canonicalize().ok();
+    sources.retain(|source| {
+        // A source that is there is judged by the file it resolves to; one
+        // that is not yet (or a dangling link) by its directory.
+        let resolved = if fs::symlink_metadata(source).is_ok() {
+            source.canonicalize().ok()
+        } else {
+            source.parent().and_then(|dir| dir.canonicalize().ok())
+        };
+        let contained = resolved
+            .zip(canonical_root.as_ref())
+            .is_some_and(|(path, root)| path.starts_with(root));
+        if !contained {
+            debug!(
+                "skipping lockfile migration source outside the monorepo: {}",
+                display_path(source)
+            );
+        }
+        contained
+    });
 }
 
 pub(crate) fn lockfile_variant_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
@@ -4632,12 +4780,12 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
         // AUTO_ENV_NAMES is ordered least to most specific, so reverse it here
         // to read the most specific (e.g. macos-arm64) first.
         for path in active_lockfile_paths_in_dir(&root) {
-            push_existing_lockfile(&mut all, &path);
+            push_existing_lockfile(config, &mut all, &path);
         }
     }
     let roots_end = all.len();
     for legacy_path in legacy_lockfiles {
-        push_existing_lockfile(&mut all, legacy_path);
+        push_existing_lockfile(config, &mut all, legacy_path);
     }
     // Highest precedence first: the innermost root's lockfiles, each root in
     // its own order, then the legacy lockfiles.
@@ -4696,15 +4844,104 @@ fn read_lockfiles_by_precedence(config: &Config) -> Arc<Vec<Lockfile>> {
     cached(&key).unwrap_or_default()
 }
 
-fn push_existing_lockfile(lockfiles: &mut Vec<Lockfile>, path: &Path) {
+fn push_existing_lockfile(config: &Config, lockfiles: &mut Vec<Lockfile>, path: &Path) {
     if !path.exists() {
         return;
     }
     match Lockfile::read(path) {
-        Ok(lockfile) => lockfiles.push(lockfile),
+        Ok(mut lockfile) => {
+            if !lockfile_is_trusted(config, path) {
+                lockfile.drop_what_needs_trust(path);
+            }
+            lockfiles.push(lockfile)
+        }
         Err(err) => {
             handle_lockfile_read_error(err, path);
         }
+    }
+}
+
+/// Whether a recorded backend designates no tool at all: `""`, `"asdf:"`,
+/// `":"` or an options suffix alone. Building a backend from such a string
+/// trips the assertions that a backend has a name, so an entry that records
+/// one is ignored when the lockfile is read, trusted or not.
+fn backend_names_no_tool(full: &str) -> bool {
+    let id = crate::args::split_bracketed_opts(full).map_or(full, |(id, _)| id);
+    let name = id.split_once(':').map_or(id, |(_, name)| name);
+    name.trim().is_empty() || backend::tool_directory_name(id).is_empty()
+}
+
+/// Whether a lock entry that binds `short` to the backend `full` may only
+/// apply once the lockfile's config is trusted.
+///
+/// A tool key in a config that loads without trust may not carry inline
+/// options, and a lock entry must not add what the key could not: `api_url`
+/// sends the user's token to the host it names, `postinstall` and `bin_path`
+/// run commands or change PATH. Nor may it choose the backend: until the
+/// project is trusted its lock may confirm the backend the tool key or the
+/// registry selects, or that the user installed the tool with, but not
+/// replace it.
+fn locked_backend_needs_trust(short: &str, full: &str) -> bool {
+    if crate::args::split_bracketed_opts(full).is_some() {
+        return true;
+    }
+    let short = backend::unalias_backend(short);
+    if short.contains(':') {
+        return short != full;
+    }
+    let without_opts =
+        |full: &'static str| crate::args::split_bracketed_opts(full).map_or(full, |(full, _)| full);
+    let registry = crate::registry::REGISTRY
+        .get(short.as_ref())
+        .is_some_and(|tool| tool.backends.iter().any(|b| without_opts(b.full) == full));
+    !registry && crate::toolset::install_state::get_tool_full(&short).as_deref() != Some(full)
+}
+
+impl Lockfile {
+    /// Reduce a lockfile whose config is not trusted to what it may decide
+    /// without that trust: which version each tool is pinned to, and the
+    /// checksums that version is verified against.
+    ///
+    /// An entry that chooses the backend or adds options goes whole (see
+    /// [`locked_backend_needs_trust`]); its artifacts belong to the backend it
+    /// names. The rest keep their pins but lose what says where to download
+    /// from: artifact URLs, conda packages and dependency graphs, which carry
+    /// the URLs of every dependency. The backend then downloads from where it
+    /// normally would.
+    fn drop_what_needs_trust(&mut self, path: &Path) {
+        for (short, entries) in &mut self.tools {
+            entries.retain_mut(|entry| {
+                if let Some(full) = &entry.backend
+                    && locked_backend_needs_trust(short, full)
+                {
+                    // The same file is read for each config and for the
+                    // merged view, so warn once per entry.
+                    warn_once!(
+                        "{} locks {short}@{} to {full}, which needs its config to be trusted; ignoring the entry. Run `mise trust` to use it",
+                        display_path(path),
+                        entry.version,
+                    );
+                    return false;
+                }
+                entry.uv = None;
+                entry.aube = None;
+                for info in entry.platforms.values_mut() {
+                    info.url = None;
+                    info.url_api = None;
+                    info.conda_deps = None;
+                    // Extra archives are matched to the backend's patterns by
+                    // position, so each keeps its checksum. Without a URL the
+                    // backend resolves the asset itself.
+                    for artifact in &mut info.additional_artifacts {
+                        artifact.url.clear();
+                        artifact.url_api = None;
+                    }
+                }
+                true
+            });
+        }
+        self.tools.retain(|_, entries| !entries.is_empty());
+        self.conda_packages.clear();
     }
 }
 
@@ -4716,10 +4953,18 @@ fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
         .as_deref()
         .and_then(|root| legacy_lockfile_path_for_config(path, root));
 
-    read_lockfile_at(lockfile_path, legacy_path)
+    let trusted = lockfile_is_trusted(config, &lockfile_path);
+    read_lockfile_at(lockfile_path, legacy_path, trusted)
 }
 
-fn read_lockfile_at(lockfile_path: PathBuf, legacy_path: Option<PathBuf>) -> Arc<Lockfile> {
+/// Read the lockfile at `lockfile_path`, merged with a legacy monorepo
+/// lockfile. Unless `trusted`, it is reduced to what a lockfile may decide
+/// before its config is trusted ([`Lockfile::drop_what_needs_trust`]).
+fn read_lockfile_at(
+    lockfile_path: PathBuf,
+    legacy_path: Option<PathBuf>,
+    trusted: bool,
+) -> Arc<Lockfile> {
     let cache_key: Vec<PathBuf> = std::iter::once(lockfile_path.clone())
         .chain(legacy_path.iter().cloned())
         .collect();
@@ -4747,6 +4992,9 @@ fn read_lockfile_at(lockfile_path: PathBuf, legacy_path: Option<PathBuf>) -> Arc
             "failed to read legacy monorepo lockfile {} (possible corruption): {err:?}",
             display_path(legacy_path)
         );
+    }
+    if !trusted {
+        lockfile.drop_what_needs_trust(&lockfile_path);
     }
 
     let lockfile = Arc::new(lockfile);
@@ -4792,7 +5040,13 @@ pub(crate) fn read_lockfile_for_tool_source(
         .map(|(path, _)| path)
         .filter(|path| path != &lockfile_path);
 
-    Ok(read_lockfile_at(lockfile_path, legacy_path)
+    // A stub run from elsewhere reads the lockfile of a config that is not
+    // loaded, so that config's trust decides.
+    let trusted = lockfile_is_trusted(config, &lockfile_path)
+        || matches!(source, ToolSource::ToolStub(stub)
+            if tool_stub_config(stub)
+                .is_some_and(|(config_path, _)| crate::config::config_file::is_path_trusted(&config_path)));
+    Ok(read_lockfile_at(lockfile_path, legacy_path, trusted)
         .as_ref()
         .clone())
 }

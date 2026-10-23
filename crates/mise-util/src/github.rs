@@ -1236,7 +1236,19 @@ pub async fn repository_identity(repo: &str) -> Result<RepositoryIdentity> {
 
 /// Resolve a repository name through GitHub so callers can follow repository
 /// transfers without weakening identity checks to the former owner/name.
+///
+/// Callers accept signatures made under the name returned here, so it has to
+/// be GitHub's word: a host that `url_replacements` puts in GitHub's place
+/// may also have picked the attestations, and could name whoever made them.
 pub async fn canonical_repo(repo: &str) -> Result<String> {
+    let url = format!("{API_URL}/repos/{repo}");
+    let original = url::Url::parse(&url)?;
+    let mut replaced = original.clone();
+    crate::http::apply_url_replacements(&mut replaced);
+    eyre::ensure!(
+        replaced == original,
+        "url_replacements reroutes {API_URL}; only GitHub can confirm a repository rename or transfer"
+    );
     Ok(fetch_repository(repo).await?.full_name)
 }
 

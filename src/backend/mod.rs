@@ -3165,6 +3165,30 @@ pub trait Backend: Debug + Send + Sync {
         opts: &ToolVersionOptions,
         optional: bool,
     ) -> Result<IndexSet<BackendArg>> {
+        let mut deps = self.get_direct_dependencies_for(opts, optional)?;
+        // A lockfile or a tool alias decides which backend a dependency such as `pipx` or
+        // `uv` resolves to, so two tools can end up depending on each other. Expanding each
+        // tool once from a worklist, instead of recursing into it, ends the walk on a cycle.
+        let mut next = 0;
+        while let Some(ba) = deps.get_index(next).cloned() {
+            next += 1;
+            if let Ok(backend) = ba.backend() {
+                let opts = backend.ba().opts();
+                deps.extend(backend.get_direct_dependencies_for(&opts, optional)?);
+            }
+        }
+        // A cycle leads back to this tool, which does not depend on itself.
+        let all_fulls = self.ba().all_fulls();
+        deps.retain(|ba| &**self.ba() != ba);
+        deps.retain(|ba| !all_fulls.contains(&ba.full()));
+        Ok(deps)
+    }
+    /// The dependencies this tool names itself, without those of its dependencies.
+    fn get_direct_dependencies_for(
+        &self,
+        opts: &ToolVersionOptions,
+        optional: bool,
+    ) -> Result<IndexSet<BackendArg>> {
         let all_fulls = self.ba().all_fulls();
         if all_fulls.is_empty() {
             // this can happen on windows where we won't be able to install this os/arch so
@@ -3178,11 +3202,6 @@ pub trait Backend: Debug + Send + Sync {
         let mut deps: IndexSet<_> = deps.into_iter().map(BackendArg::from).collect();
         deps.retain(|ba| &**self.ba() != ba);
         deps.retain(|ba| !all_fulls.contains(&ba.full()));
-        for ba in deps.clone() {
-            if let Ok(backend) = ba.backend() {
-                deps.extend(backend.get_all_dependencies(optional)?);
-            }
-        }
         Ok(deps)
     }
 
@@ -5765,10 +5784,21 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     async fn dependency_toolset(&self, config: &Arc<Config>) -> eyre::Result<Toolset> {
+        self.dependency_toolset_of(config, None).await
+    }
+
+    /// [`Backend::dependency_toolset`] resolving only the dependency named `only`, when
+    /// one is given, and none of the others.
+    async fn dependency_toolset_of(
+        &self,
+        config: &Arc<Config>,
+        only: Option<&str>,
+    ) -> eyre::Result<Toolset> {
         let dependencies = self
             .get_all_dependencies(true)?
             .into_iter()
             .map(|ba| ba.short)
+            .filter(|short| only.is_none_or(|only| short == only))
             .collect();
         let mut ts: Toolset = config
             .get_tool_request_set()

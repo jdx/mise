@@ -118,6 +118,14 @@ It provides:
 - **Quick fixes** that replace an unknown key or task name with the suggested
   one, and rewrite a deprecated key to its replacement.
 - **Formatting**, the same as [`mise fmt`](/cli/fmt.html).
+- **Semantic tokens** that color what a key is, which a TOML grammar cannot
+  tell: task and template names (`function`, `declaration` where defined,
+  including the names in `depends`, `depends_post`, `wait_for`, `extends` and
+  `run = [{ task = "..." }]`), tools (`type`), env vars (`variable`), vars
+  (`variable`, `readonly`), the `_` of env directives (`keyword`), the
+  `{{ }}`, `{% %}` and `{# #}` of templates (`macro`), and deprecated keys (the
+  `deprecated` modifier). Sent for the whole file and for a range. A file that
+  does not parse gets none, so the client keeps the colors it has.
 - **Tasks**: completion of task names in `depends`, `depends_post`, `wait_for`
   and `run = [{ task = "..." }]`, and of template names in `extends`; hover on
   such a name showing the task's description and command; go to definition and

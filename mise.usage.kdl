@@ -204,28 +204,28 @@ example "mise watch build" help="Rerun the build task when its sources change"
 example "mise upgrade --interactive" help="Choose tools to upgrade from a menu"
 example "mise settings color=0" help="Turn off color in the global config"
 complete dir type=dir
-complete alias run="mise alias ls {{words[PREV]}} | awk '{print $2}'"
+complete alias run="mise alias ls -- {{words[PREV] | shell_quote}} | awk '{print $2}'"
 complete config_file type=file
 complete new_plugin run="mise plugins --all"
 complete installed_tool run="mise ls -i | awk '{print $1}' | uniq"
 complete plugin run="mise plugins --core --user"
-complete prefix run="mise ls-remote {{words[PREV]}}"
+complete prefix run="mise ls-remote -- {{words[PREV] | shell_quote}}"
 complete setting run="mise settings --complete" descriptions=#true
 complete task run="mise tasks ls --complete" descriptions=#true
-complete tool run="mise search --complete {{words[CURRENT]}}" descriptions=#true
+complete tool run="mise search --complete -- {{words[CURRENT] | shell_quote}}" descriptions=#true
 complete env_var run="mise set --complete | awk '{print $1\"=\"}'"
 complete env_key run="mise set --complete"
 complete secret run="mise secrets ls --complete"
 complete backend run="mise backends"
 complete bin_name run="mise which --complete"
 complete tool@version run=#"""
-cur="{{words[CURRENT]}}"
+cur={{words[CURRENT] | shell_quote}}
 case $cur in
   *@*)
     tool="$(echo "$cur" | cut -d'@' -f1)"
     prefix="$(echo "$cur" | cut -d'@' -f2)"
 
-    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+    versions=$(mise ls-remote -- "$tool" ${prefix:+"$prefix"} | sed '1!G;h;$!d')
 
     for version in $versions; do
       echo "$tool@$version"
@@ -240,16 +240,13 @@ case $cur in
 esac
 """#
 complete installed_tool@version run=#"""
-cur="{{words[CURRENT]}}"
+cur={{words[CURRENT] | shell_quote}}
 case $cur in
   *@*)
     tool="$(echo "$cur" | cut -d'@' -f1)"
     prefix="$(echo "$cur" | cut -d'@' -f2)"
 
-    if [ ! -z "$prefix" ]; then
-      prefix="--prefix $prefix"
-    fi
-    versions=$(mise ls --installed $tool $prefix | awk '{print $2}' | sed '1!G;h;$!d')
+    versions=$(mise ls --installed ${prefix:+--prefix "$prefix"} -- "$tool" | awk '{print $2}' | sed '1!G;h;$!d')
 
     for version in $versions; do
       echo "$tool@$version"
@@ -4965,11 +4962,12 @@ It offers:
 - for tools: completion of tool names under `[tools]` from the registry, and hover with the tool's description and backends
 - quick fixes that replace an unknown key or task name with the suggested one, and rewrite a deprecated key to its replacement when the schema names one
 - formatting, as `mise fmt` does
+- semantic tokens, which color task, tool and env var names, env directives, deprecated keys and the `{{ }}` and `{% %}` of templates
 - for tasks: completion of task names in `depends`, `depends_post`, `wait_for` and `run = [{ task = "..." }]` (and of templates in `extends`), hover with the task's description and command, go to definition, find references, and rename together with every reference in the file
 
 Tasks come from the open file, the configs in the directories above it and the TOML files their `[task_config] includes` name.
 
-A client that runs another TOML server beside this one can switch features off with `initializationOptions`: `{"formatting": false, "hover": false, "completion": false, "definition": false, "references": false, "rename": false}`.
+A client that runs another TOML server beside this one can switch features off with `initializationOptions`: `{"formatting": false, "hover": false, "completion": false, "definition": false, "references": false, "rename": false, "semanticTokens": false}`.
 
 The server only parses a config. It never renders templates or runs anything, so opening an untrusted file is safe.
 

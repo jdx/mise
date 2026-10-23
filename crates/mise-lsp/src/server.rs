@@ -16,14 +16,14 @@ use crate::rpc::{read_message, write_message};
 use crate::schema::Schema;
 use crate::tasks::{self, Index, Origin, Roots};
 use crate::text::LineIndex;
-use crate::{Formatter, Options, doc, hover, includes, keypath};
+use crate::{Formatter, Options, doc, hover, includes, keypath, semantic};
 
 const METHOD_NOT_FOUND: i64 = -32601;
 const REQUEST_FAILED: i64 = -32803;
 
 /// What an editor can switch off in `initializationOptions`, for use next to another TOML
 /// server that already offers it: `{"formatting": false, "hover": false, "completion": false,
-/// "definition": false, "references": false, "rename": false}`.
+/// "definition": false, "references": false, "rename": false, "semanticTokens": false}`.
 struct Features {
     formatting: bool,
     hover: bool,
@@ -31,6 +31,7 @@ struct Features {
     definition: bool,
     references: bool,
     rename: bool,
+    semantic_tokens: bool,
 }
 
 impl Features {
@@ -47,6 +48,7 @@ impl Features {
             definition: option("definition"),
             references: option("references"),
             rename: option("rename"),
+            semantic_tokens: option("semanticTokens"),
         }
     }
 }
@@ -177,6 +179,12 @@ impl Server {
             "textDocument/references" if self.features.references => Ok(self.references(params)),
             "textDocument/prepareRename" if self.features.rename => Ok(self.prepare_rename(params)),
             "textDocument/rename" if self.features.rename => self.rename(params),
+            "textDocument/semanticTokens/full" if self.features.semantic_tokens => {
+                Ok(self.semantic_tokens(params, false))
+            }
+            "textDocument/semanticTokens/range" if self.features.semantic_tokens => {
+                Ok(self.semantic_tokens(params, true))
+            }
             _ => Err((METHOD_NOT_FOUND, format!("method not supported: {method}"))),
         }
     }
@@ -251,6 +259,13 @@ impl Server {
         }
         if self.features.rename {
             capabilities["renameProvider"] = json!({"prepareProvider": true});
+        }
+        if self.features.semantic_tokens {
+            capabilities["semanticTokensProvider"] = json!({
+                "legend": {"tokenTypes": semantic::TYPES, "tokenModifiers": semantic::MODIFIERS},
+                "full": true,
+                "range": true,
+            });
         }
         json!({
             "capabilities": capabilities,
@@ -371,6 +386,32 @@ impl Server {
             .and_then(|old| hover::hover(&good.text, old, &self.schema, &self.registry));
         match hovered {
             Some(h) => json!({"contents": {"kind": "markdown", "value": h.markdown}}),
+            None => Value::Null,
+        }
+    }
+
+    /// The semantic tokens of the whole document, or of the lines the request names. A document
+    /// that does not parse has none to offer, and the client keeps the ones it has.
+    fn semantic_tokens(&self, params: &Value, ranged: bool) -> Value {
+        let Some(document) = params["textDocument"]["uri"]
+            .as_str()
+            .and_then(|uri| self.config(uri))
+        else {
+            return Value::Null;
+        };
+        let text = document.text.as_str();
+        let within = ranged.then(|| {
+            let index = LineIndex::new(text);
+            let at = |position: &Value| {
+                index.offset(
+                    position["line"].as_u64().unwrap_or_default() as usize,
+                    position["character"].as_u64().unwrap_or_default() as usize,
+                )
+            };
+            at(&params["range"]["start"])..at(&params["range"]["end"])
+        });
+        match semantic::encode(text, &self.schema, within) {
+            Some(data) => json!({"data": data}),
             None => Value::Null,
         }
     }
@@ -1306,6 +1347,41 @@ mod tests {
             assert!(off.get(key).is_none(), "{key}");
         }
         assert_eq!(replies[2]["error"]["code"], METHOD_NOT_FOUND);
+    }
+
+    #[test]
+    fn semantic_tokens_can_be_switched_off() {
+        let uri = "file:///p/mise.toml";
+        let request = |id, method| {
+            json!({"jsonrpc": "2.0", "id": id, "method": method, "params": {
+                "textDocument": {"uri": uri},
+                "range": {"start": {"line": 1, "character": 0}, "end": {"line": 2, "character": 0}},
+            }})
+        };
+        let replies = session(&[
+            json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+            open(uri, "[tools]\nnode = \"24\"\n[env]\nA = \"1\"\n"),
+            request(2, "textDocument/semanticTokens/full"),
+            request(3, "textDocument/semanticTokens/range"),
+            json!({"jsonrpc": "2.0", "id": 4, "method": "initialize", "params": {
+                "initializationOptions": {"semanticTokens": false}
+            }}),
+            request(5, "textDocument/semanticTokens/full"),
+        ]);
+        let legend = &replies[0]["result"]["capabilities"]["semanticTokensProvider"];
+        assert_eq!(legend["legend"]["tokenTypes"][0], "function");
+        // `node` (type) and `A` (variable), the second relative to the first
+        assert_eq!(
+            replies[2]["result"]["data"],
+            json!([1, 0, 4, 1, 0, 2, 0, 1, 2, 0])
+        );
+        assert_eq!(replies[3]["result"]["data"], json!([1, 0, 4, 1, 0]));
+        assert!(
+            replies[4]["result"]["capabilities"]
+                .get("semanticTokensProvider")
+                .is_none()
+        );
+        assert_eq!(replies[5]["error"]["code"], METHOD_NOT_FOUND);
     }
 
     #[test]
