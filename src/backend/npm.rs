@@ -1803,11 +1803,17 @@ impl NPMBackend {
         let npm = npm_view_program(&env)?;
         CmdLineRunner::new(npm)
             .arg("view")
-            .arg(package)
-            .args(fields)
             .arg(format!("--json={json}"))
             .arg("--prefix")
-            .arg(prefix)
+            .arg(&prefix)
+            // The package comes from config that need not be trusted, and npm
+            // reads an argument with a leading dash as an option wherever it
+            // stands (`--userconfig=.npmrc`).
+            .arg("--")
+            .arg(package)
+            .args(fields)
+            // Nor should a relative path npm resolves find the project's files.
+            .current_dir(&prefix)
             .env_clear()
             .envs(env)
             .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
