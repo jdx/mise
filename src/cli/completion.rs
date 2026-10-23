@@ -552,22 +552,75 @@ mod shell_name_tests {
         // rendered into goes to `sh -c`. A mounted task can offer such a word as a choice and
         // then name its next argument after one of these completers. One line per completer
         // that reads the words.
+        //
+        // The completers call `mise`, which here is a stub that records its arguments: the real
+        // one would load config and reach for the network on every line, and whichever `mise`
+        // happens to be on PATH is not what is under test. The record also shows the completer
+        // ran, so the test cannot pass by never reaching it.
+        use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let marker = dir.path().join("evaluated");
-        let word = format!("'$(touch {})'", marker.display());
-        for line in [
-            format!("mise tool-alias unset {word} "),
-            format!("mise ls-remote {word} "),
-            format!("mise lock {word}"),
-            format!("mise use {word}"),
-            format!("mise uninstall {word}"),
+        let calls = dir.path().join("calls");
+        let bin = dir.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        let stub = bin.join("mise");
+        std::fs::write(
+            &stub,
+            format!(
+                "#!/bin/sh\nprintf '[%s]' \"$@\" >>'{}'\necho >>'{}'\n",
+                calls.display(),
+                calls.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut env = mise_util::testing::EnvVarGuard::new();
+        env.set("PATH", format!("{}:/usr/bin:/bin", bin.display()));
+
+        // Built once: the runtime spec is what `completion_request` answers these lines from,
+        // and building it costs far more than answering a line.
+        let spec = super::super::usage::completion_spec();
+        let literal = format!("$(touch {})", marker.display());
+        let word = format!("'{literal}'");
+        for (line, expected) in [
+            (
+                format!("mise tool-alias unset {word} "),
+                Some(format!("[alias][ls][--][{literal}]")),
+            ),
+            (
+                format!("mise ls-remote {word} "),
+                Some(format!("[ls-remote][--][{literal}]")),
+            ),
+            (
+                format!("mise lock {word}"),
+                Some(format!("[search][--complete][--][{literal}]")),
+            ),
+            (
+                format!("mise use {word}"),
+                Some(format!("[search][--complete-ids][{literal}]")),
+            ),
+            // `installed_tool@version` only passes the word on once it holds an `@`
+            (format!("mise uninstall {word}"), None),
         ] {
+            let _ = std::fs::remove_file(&calls);
             let argv: Vec<OsString> = ["__complete_word__", "--shell", "fish", "--line", &line]
                 .into_iter()
                 .map(OsString::from)
                 .collect();
-            completion_request(&argv);
+            let request = usage_rs::complete::CompletionRequest::parse(&argv).unwrap();
+            complete_spec(&spec, &request).unwrap();
             assert!(!marker.exists(), "{line}");
+            let recorded = std::fs::read_to_string(&calls).unwrap_or_default();
+            assert!(
+                !recorded.is_empty(),
+                "the completer for {line:?} did not run"
+            );
+            if let Some(expected) = expected {
+                assert!(
+                    recorded.lines().any(|l| l == expected),
+                    "{line:?} passed {recorded:?}, not {expected:?}"
+                );
+            }
         }
     }
 
