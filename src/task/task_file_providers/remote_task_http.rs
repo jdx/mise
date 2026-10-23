@@ -114,6 +114,9 @@ impl TaskFileProvider for RemoteTaskHttp {
 mod tests {
 
     use super::*;
+    use crate::config::SettingsExt;
+    use crate::config::settings::{Settings, SettingsPartial};
+    use confique::Layer;
 
     #[tokio::test]
     async fn test_is_match() {
@@ -134,6 +137,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_remote_task_get_local_path_without_cache() {
+        // Generate mode shares one download per URL within an invocation; this
+        // test counts the requests of a plain download.
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut partial = SettingsPartial::empty();
+        partial.lockfile_mode = Some("merge".into());
+        Settings::reset(Some(partial));
         let paths = vec![
             "/myfile.py",
             "/subpath/myfile.sh",

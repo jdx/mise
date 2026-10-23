@@ -2047,12 +2047,12 @@ mod tests {
 
     #[test]
     fn lockfile_mode_defaults_and_explicit_choices() {
-        let mut settings = Settings::default();
-        assert!(!settings.generate_lockfiles());
-        settings.lockfile_mode = Some("generate".into());
+        let mut settings = Settings::builder().load().unwrap();
         assert!(settings.generate_lockfiles());
-        settings.lockfile_mode = Some("merge".into());
+        settings.lockfile_mode = "merge".into();
         assert!(!settings.generate_lockfiles());
+        settings.lockfile_mode = "generate".into();
+        assert!(settings.generate_lockfiles());
         assert!(validate_setting_choice("lockfile_mode", "merge").is_ok());
         assert_eq!(
             validate_setting_choice("lockfile_mode", "invalid")
