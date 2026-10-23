@@ -173,7 +173,13 @@ impl PIPXBackend {
     }
 
     async fn configured_python_identity(&self, config: &Arc<Config>) -> Option<String> {
-        let ts = self.dependency_toolset(config).await.ok()?;
+        // Resolving a version that has a uv graph ends up here, and `pipx` and `uv` can be
+        // such versions too: resolving them as well would never end once they depend on
+        // each other. Only python is needed.
+        let ts = self
+            .dependency_toolset_of(config, Some("python"))
+            .await
+            .ok()?;
         let (_, python) = ts
             .list_current_versions()
             .into_iter()

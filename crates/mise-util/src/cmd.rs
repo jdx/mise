@@ -2124,6 +2124,15 @@ impl<'a> CmdLineRunner<'a> {
             if sandbox.effective_deny_read() || sandbox.effective_deny_write() {
                 sandbox.warn_missing_allow_paths();
             }
+            // Likewise a kernel that cannot enforce the rules: an error from
+            // pre_exec reaches the parent as a bare errno, so refuse it here
+            // where the message survives.
+            crate::sandbox::landlock_check(&sandbox)?;
+            // The child gets a filtered environment, but this process keeps the
+            // full one; do not let the child read it back through /proc.
+            if sandbox.effective_deny_env() {
+                crate::sandbox::hide_environment_from_children()?;
+            }
             // Use pre_exec to apply Landlock/seccomp in the child process
             // before it execs the target program. This avoids restricting the mise process.
             let sandbox = sandbox.clone();
@@ -2163,7 +2172,7 @@ impl<'a> CmdLineRunner<'a> {
             let profile =
                 crate::sandbox::macos_generate_profile(&sandbox, std::path::Path::new(&program));
 
-            let mut new_cmd = Command::new("sandbox-exec");
+            let mut new_cmd = Command::new(crate::sandbox::SANDBOX_EXEC);
             new_cmd.arg("-p").arg(&profile).arg("--").arg(&program);
             for arg in &args {
                 new_cmd.arg(arg);

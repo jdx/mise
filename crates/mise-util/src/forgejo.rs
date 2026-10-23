@@ -163,12 +163,22 @@ pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result
         .clone())
 }
 
-async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRelease> {
-    let url = if tag == "latest" {
+fn release_url(api_url: &str, repo: &str, tag: &str) -> String {
+    if tag == "latest" {
         format!("{api_url}/repos/{repo}/releases/latest")
     } else {
-        format!("{api_url}/repos/{repo}/releases/tags/{tag}")
-    };
+        // As one path segment, like the GitHub and GitLab lookups: the tag comes from the
+        // requested version, and a `/`, `#` or `%2e%2e` in it would otherwise reach another
+        // repository's release.
+        format!(
+            "{api_url}/repos/{repo}/releases/tags/{}",
+            urlencoding::encode(tag)
+        )
+    }
+}
+
+async fn get_release_(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRelease> {
+    let url = release_url(api_url, repo, tag);
     let headers = get_headers(&url, api_url)?;
     crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
@@ -406,6 +416,32 @@ fn parse_fj_keys(contents: &str) -> Option<HashMap<String, String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn release_url_keeps_the_tag_in_one_segment() {
+        let api = "https://codeberg.org/api/v1";
+        assert_eq!(
+            release_url(api, "acme/tool", "v1.2.3"),
+            "https://codeberg.org/api/v1/repos/acme/tool/releases/tags/v1.2.3"
+        );
+        assert_eq!(
+            release_url(api, "acme/tool", "latest"),
+            "https://codeberg.org/api/v1/repos/acme/tool/releases/latest"
+        );
+        let url = release_url(
+            api,
+            "acme/tool",
+            "1/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/attacker/evil/releases/tags/v1.0.0",
+        );
+        let parsed = url::Url::parse(&url).unwrap();
+        assert!(
+            parsed
+                .path()
+                .starts_with("/api/v1/repos/acme/tool/releases/tags/"),
+            "{parsed}"
+        );
+        assert_eq!(parsed.path_segments().unwrap().count(), 8, "{parsed}");
+    }
 
     fn release(tag_name: &str, draft: bool, prerelease: bool) -> ForgejoRelease {
         ForgejoRelease {

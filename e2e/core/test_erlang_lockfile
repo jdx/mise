@@ -54,6 +54,8 @@ awk '
 ' mise.lock >mise.lock.tmp && mv mise.lock.tmp mise.lock
 
 assert_fail "mise install --locked" "Checksum mismatch"
+# The pin holds without --locked too: the checksum builds.hex.pm publishes must not replace it
+assert_fail "mise install" "Checksum mismatch"
 
 echo "=== default fallback records the source artifact ==="
 rm -f mise.lock

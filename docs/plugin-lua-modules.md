@@ -342,7 +342,8 @@ permission string such as `"644"` on Unix and `nil` elsewhere.
 `archiver.decompress(archive, destination[, options])` extracts an archive. It
 picks the format from the file name: `.tar.gz`, `.tar.xz`, `.tar.bz2` or
 `.zip`. Any other name, including `.tgz`, raises an error. It does not download
-or verify the archive.
+or verify the archive. It raises an error if a symlink below the destination
+then leads out of it.
 
 ```lua
 local archiver = require("archiver")

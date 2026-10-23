@@ -57,13 +57,30 @@ idea:
 - `.tool-versions` needs trust only when it contains template syntax or inline
   tool options such as `node[postinstall=...] 24`.
 - Idiomatic version files such as `.nvmrc` never need trust.
+- A project's [`mise.lock`](/dev-tools/mise-lock.html) is read with its config.
+  Until that config is trusted, the lockfile only pins versions and checksums:
+  mise ignores an entry that locks a tool to a backend other than the one its
+  tool key or the registry selects, or that adds options, and downloads from
+  where the backend normally would instead of the lockfile's URLs and
+  dependency graphs.
 - Task files, including TOML files from
   [`task_config.includes`](/tasks/task-discovery.html), need trust only when they
   contain template syntax or list `secrets`.
+  `mise lock` still asks for trust before it resolves a task's tools that carry
+  options, as it would for a tool option table.
+- A [tool stub](/dev-tools/tool-stubs.html) needs no trust to run, since running
+  it is your approval. `mise lock` also reads the stubs that `mise.lock` lists
+  under `tool-stubs`, and for that the project's config needs trust. In safe
+  mode it does not apply the options of those stubs.
 - A [`.miserc.toml`](/configuration.html#miserc) never needs trust. It only
   holds early settings that choose which config files load, and its templates
   cannot call `exec()`, `read_file()`, `read_json()`, `read_yaml()`, or
   `read_toml()`.
+
+Tasks that load without trust run nothing until you run one. Shell completion
+of their arguments leaves out the commands a
+[usage spec](/tasks/task-arguments.html) can name, `complete run=`,
+`complete delegate=`, `choices run=` and `mount`, until the project is trusted.
 
 [Paranoid mode](/paranoid.html) removes these exemptions apart from
 `.miserc.toml`: every other config file outside global and system config needs
@@ -221,6 +238,7 @@ These are skipped without an error, so resolution commands keep working:
   `_.file`.
 - `_.source` in every config, including global config.
 - Project `[shell_alias]`.
+- The commands in a project task's usage spec that shell completion would run.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
 - Project `[settings]`, so a repository cannot turn off verification or redirect
   a backend.
@@ -244,7 +262,9 @@ Version resolution keeps working for backends that query HTTP APIs, such as core
 tools, `aqua:`, `github:`, `gitlab:`, `http:`, `cargo:`, `pypi:`, `gem:`,
 `dotnet:` and `npm:`. The `go:` backend runs `go list` with
 `GOTOOLCHAIN=local`, so a project's `go.mod` cannot make Go download another
-toolchain. Listing installed tools and refreshing `mise.lock` work as usual.
+toolchain. Listing installed tools and refreshing `mise.lock` work as usual,
+except that a project's `mise.lock` is not written through a symlink that leaves
+its directory.
 
 Safe mode loads untrusted config without a prompt or an error, in paranoid mode
 too. It does not mark the config trusted for later runs without safe mode. Syntax
@@ -276,7 +296,7 @@ mise tool jq
 | `aqua:`                     | Checksums, Cosign and Minisign signatures, SLSA provenance and GitHub artifact attestations, as the aqua registry declares them for the tool | [`aqua.cosign`](/configuration/settings.html#aqua.cosign), [`aqua.minisign`](/configuration/settings.html#aqua.minisign), [`aqua.slsa`](/configuration/settings.html#aqua.slsa), [`aqua.github_attestations`](/configuration/settings.html#aqua.github_attestations)                                                                                            |
 | `github:`                   | GitHub artifact attestations when a github.com release publishes them; SLSA provenance when the tool names its signer                        | [`github.github_attestations`](/configuration/settings.html#github.github_attestations), [`github.slsa`](/configuration/settings.html#github.slsa), and the [`github_attestations`](/dev-tools/backends/github.html#github-attestations) and [`slsa_signer_identity`](/dev-tools/backends/github.html#slsa-signer-identity-and-slsa-signer-issuer) tool options |
 | `packslip:`                 | A signed release manifest, artifact digests and a pinned signer; see [verification and policy](/dev-tools/packslip-verification.html)        | [Tool options](/dev-tools/backends/packslip.html#tool-options)                                                                                                                                                                                                                                                                                                  |
-| Node.js                     | Checksums from `SHASUMS256.txt`, and its OpenPGP signature when the release publishes one                                                    | [`node.verify`](/configuration/settings.html#node.verify), [`node.gpg_verify`](/configuration/settings.html#node.gpg_verify)                                                                                                                                                                                                                                    |
+| Node.js                     | Checksums from `SHASUMS256.txt` and its OpenPGP signature, which must be present except on unofficial-builds                                 | [`node.verify`](/configuration/settings.html#node.verify), [`node.gpg_verify`](/configuration/settings.html#node.gpg_verify)                                                                                                                                                                                                                                    |
 | Swift on Linux              | OpenPGP signatures                                                                                                                           | [`swift.gpg_verify`](/configuration/settings.html#swift.gpg_verify)                                                                                                                                                                                                                                                                                             |
 | Zig                         | Minisign signatures, always                                                                                                                  | None                                                                                                                                                                                                                                                                                                                                                            |
 | Precompiled Ruby and Python | GitHub artifact attestations                                                                                                                 | [`ruby.github_attestations`](/configuration/settings.html#ruby.github_attestations), [`python.github_attestations`](/configuration/settings.html#python.github_attestations)                                                                                                                                                                                    |

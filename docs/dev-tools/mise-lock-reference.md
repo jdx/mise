@@ -240,6 +240,13 @@ symlink's target and writes new sidecars beside it. A dotfiles repository that
 links each file individually therefore keeps new sidecars in the repository
 without extra symlinks.
 
+Below the lockfile's directory, mise does not follow symlinks to sidecars. A
+sidecar file that is a link, or that sits in a linked directory, counts as
+unreadable, writing a sidecar through such a link fails, and a linked `.mise`
+or `.mise/locks` directory is never cleaned up. A checkout therefore cannot make
+`mise lock` copy one of your files into the repository or delete directories
+outside it.
+
 ### Listing sidecars
 
 `mise lock --sidecars` prints each existing lockfile's sidecar directory and the

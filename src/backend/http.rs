@@ -876,6 +876,9 @@ impl HttpBackend {
         };
 
         file::extract_archive(file_path, dest, cache_plan.file_info.format, &extract_opts)?;
+        // rename_exe below renames by name, which would follow a link the
+        // archive shipped out of the extraction directory.
+        file::ensure_symlinks_stay_within(dest)?;
 
         // Handle rename_exe option for archives
         if let Some(rename_value) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
@@ -1588,6 +1591,14 @@ impl Backend for HttpBackend {
         }
         verify_artifact(&tv, &file_path, opts.raw(), Some(ctx.pr.as_ref()))?;
 
+        // Verify/generate lockfile checksum (before extraction for security). A rejected
+        // download must never reach `install_path_for`, which is not always the
+        // `tv.install_path()` the caller removes when this returns an error.
+        if lockfile_enabled || has_lockfile_checksum {
+            ctx.pr.next_operation();
+        }
+        self.verify_checksum(ctx, &mut tv, &file_path)?;
+
         // Generate cache key
         let cache_plan =
             self.cache_plan(&file_path, download.effective_filename.as_deref(), &opts)?;
@@ -1632,12 +1643,6 @@ impl Backend for HttpBackend {
         }
         self.create_version_alias_symlink(&tv, &cache_plan.key)?;
         tv.install_path = Some(Self::install_path_for(&tv, &cache_plan.key));
-
-        // Verify checksum for lockfile
-        if lockfile_enabled || has_lockfile_checksum {
-            ctx.pr.next_operation();
-        }
-        self.verify_checksum(ctx, &mut tv, &file_path)?;
 
         Ok(tv)
     }

@@ -1270,6 +1270,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let graph = super::super::GraphRef::Sidecar {
             dir: temp.path().join("missing"),
+            base: temp.path().to_path_buf(),
             digest: "sha256:recorded".into(),
             cell: std::sync::OnceLock::new(),
         };
@@ -1474,6 +1475,7 @@ mod tests {
         let mut retained = old.tools["fixture"][0].clone();
         retained.aube = Some(super::super::GraphRef::Sidecar {
             dir: PathBuf::from(".mise/locks/npm-retained/1.0.0"),
+            base: PathBuf::new(),
             digest: "sha256:recorded".into(),
             cell: std::sync::OnceLock::new(),
         });

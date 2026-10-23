@@ -185,6 +185,12 @@ impl ToolVersion {
         let mut tv =
             crate::env::with_install_env(install_env, Self::resolve_(config, request, opts))
                 .await?;
+        // Only the request has been validated so far. The version it resolved to came from a
+        // version list, a release tag or the lockfile, and for these requests it is what
+        // `logical_pathname` names the install, download and cache directories by.
+        if tv.request.uses_resolved_version_as_pathname() {
+            tool_request::validate_resolved_version(&tv.version)?;
+        }
         if tv.uv_lock.is_some() || crate::backend::pipx::has_selected_python(&tv).unwrap_or(false) {
             Box::pin(
                 crate::backend::pipx::PIPXBackend::from_arg(tv.ba().clone())

@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# The version a request resolves to names the install directory, so it has to be as safe as a
+# version the user writes. `latest` resolving to `..` made the install path `installs/<tool>/..`,
+# which is `installs/`: every installed tool was removed and the release archive unpacked over them.
+#
+# git refuses such a tag, so only the host answering the API can send it. It is served from a local
+# stand-in for the Forgejo API, which also keeps the test offline.
+
+start_http_server --handler - <<'PY'
+import http.server
+import json
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        # /repos/acme/<repo>/releases[/...]: the repo name picks the tag to report
+        parts = self.path.split("?")[0].split("/")
+        if len(parts) < 4 or parts[1] != "repos":
+            self.send_error(404)
+            return
+        release = {
+            "id": 1,
+            "tag_name": {"dotdot": "..", "vdotdot": "v..", "dot": ".", "empty": "v"}[parts[3]],
+            "draft": False,
+            "prerelease": False,
+            "created_at": "2020-01-01T00:00:00Z",
+            "assets": [
+                {
+                    "id": 1,
+                    "name": "tool-linux-x64.tar.gz",
+                    "uuid": "0c0ffee0-0000-4000-8000-000000000000",
+                    "browser_download_url": f"http://{self.headers['Host']}/tool.tar.gz",
+                }
+            ],
+        }
+        body = json.dumps([release] if parts[-1] == "releases" else release).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+PY
+
+export MISE_USE_VERSIONS_HOST=0
+
+mise install dummy@1.0.0
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+for repo in dotdot vdotdot dot empty; do
+  assert_fail "mise install 'forgejo:acme/${repo}[api_url=http://127.0.0.1:$HTTP_PORT]@latest'" "invalid tool version"
+  assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+done
+
+# The lockfile is the other source of resolved versions.
+cat >mise.toml <<EOF
+[tools]
+dummy = "latest"
+EOF
+cat >mise.lock <<EOF
+[[tools.dummy]]
+version = ".."
+backend = "asdf:dummy"
+EOF
+assert_fail "mise install" "invalid tool version"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+rm mise.lock
+
+# A request may hold `;` and spaces because it may be a range, but a version taken as written
+# becomes the install directory, which plugin hooks put into shell commands.
+cat >mise.toml <<EOF
+[tools]
+dummy = "2.0.0; touch pwned-by-version #"
+EOF
+assert_fail "mise install" "invalid tool version"
+assert_fail "test -e pwned-by-version"
+assert_fail "test -e '$HOME/pwned-by-version'"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
