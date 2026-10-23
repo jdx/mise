@@ -13,6 +13,7 @@ use crate::toolset::{ToolVersion, Toolset};
 use crate::{backend, dirs, env, fake_asdf, file};
 use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
+use heck::ToKebabCase;
 use indexmap::IndexMap;
 #[cfg(windows)]
 use indoc::formatdoc;
@@ -545,7 +546,10 @@ async fn add_plugin_shims(shims_dir: &Path, scope: ShimScope) -> Result<()> {
         let shims_dir = shims_dir.to_path_buf();
         let excluded = excluded.clone();
         jset.spawn(async move {
-            if let Ok(files) = dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {
+            let Some(plugin_shims) = plugin_shims_dir(&dirs::PLUGINS, plugin.id()) else {
+                return Ok(());
+            };
+            if let Ok(files) = plugin_shims.read_dir() {
                 for bin in files {
                     let bin = bin?;
                     let bin_name = bin.file_name().into_string().unwrap();
@@ -566,6 +570,17 @@ async fn add_plugin_shims(shims_dir: &Path, scope: ShimScope) -> Result<()> {
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
     Ok(())
+}
+
+/// The `shims/` directory an asdf plugin ships for the tool `id`.
+///
+/// `id` is the tool name as a config file spells it, which may be path-shaped (`/abs/dir`,
+/// `../x`); joined raw, an absolute one would replace the plugins directory. It gets the same
+/// encoding as the plugin's own directory (see `AsdfBackend::from_arg`), and a name that encodes
+/// to nothing has no plugin directory at all.
+fn plugin_shims_dir(plugins_dir: &Path, id: &str) -> Option<PathBuf> {
+    let name = id.to_kebab_case();
+    file::is_plain_file_name(&name).then(|| plugins_dir.join(name).join("shims"))
 }
 
 fn publish_staged_shim_farm(
@@ -1879,19 +1894,25 @@ async fn list_tool_bins(
         .collect())
 }
 
+/// The `sh` script that runs a plugin's own shim through `mise x`. The target is quoted: it is a
+/// path, and a directory name may hold shell syntax. Like the Windows shims, it names itself in
+/// `__MISE_SHIM_PATH`, so `mise x` knows the user did not type `mise x` and does not trust the
+/// active config on their behalf.
+fn plugin_shim_contents(data_dir: &Path, fake_asdf_dir: &Path, target: &Path) -> String {
+    format!(
+        "{GENERATED_SHELL_SHIM_HEADER}export ASDF_DATA_DIR={data_dir}\nexport PATH=\"{fake_asdf_dir}:$PATH\"\nexport {shim_env}=\"$0\"\nmise x -- {target} \"$@\"\n",
+        shim_env = env::MISE_SHIM_PATH_ENV,
+        data_dir = data_dir.display(),
+        fake_asdf_dir = fake_asdf_dir.display(),
+        target = shell_escape::unix::escape(target.to_string_lossy()),
+    )
+}
+
 async fn make_shim(target: &Path, shim: &Path) -> Result<()> {
     file::remove_file_async_if_exists(shim).await?;
-    // Like the Windows shims, name the shim so `mise x` knows the user did not type `mise x`
-    // and does not trust the active config on their behalf.
     file::write_async(
         shim,
-        format!(
-            "{GENERATED_SHELL_SHIM_HEADER}export ASDF_DATA_DIR={data_dir}\nexport PATH=\"{fake_asdf_dir}:$PATH\"\nexport {shim_env}=\"$0\"\nmise x -- {target} \"$@\"\n",
-        shim_env = env::MISE_SHIM_PATH_ENV,
-        data_dir = dirs::DATA.display(),
-        fake_asdf_dir = fake_asdf::setup()?.display(),
-        target = target.display()
-        ),
+        plugin_shim_contents(&dirs::DATA, &fake_asdf::setup()?, target),
     )
     .await?;
     file::make_executable_async(shim).await?;
@@ -2097,6 +2118,43 @@ mod tests {
     use super::*;
     use crate::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+
+    #[test]
+    fn plugin_shims_stay_inside_the_plugins_dir() {
+        let plugins = Path::new("/data/plugins");
+        assert_eq!(
+            plugin_shims_dir(plugins, "node"),
+            Some(PathBuf::from("/data/plugins/node/shims"))
+        );
+        // A path-shaped tool key from a config file must not pick the directory.
+        for id in ["/proc/self/cwd/;id>x;#", "/abs/dir", "../x", "..", ""] {
+            let dir = plugin_shims_dir(plugins, id);
+            assert!(
+                dir.as_ref()
+                    .is_none_or(|d| d.parent().and_then(Path::parent) == Some(plugins)),
+                "{id:?} resolved to {dir:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn plugin_shim_quotes_its_target() {
+        let contents = plugin_shim_contents(
+            Path::new("/data"),
+            Path::new("/data/.fake-asdf"),
+            Path::new("/data/plugins/a;id>x;#/shims/ls"),
+        );
+        assert!(
+            contents.contains("mise x -- '/data/plugins/a;id>x;#/shims/ls' \"$@\"\n"),
+            "{contents}"
+        );
+        // names itself, so `mise x` does not take the dispatch for a typed command
+        assert!(
+            contents.contains("export __MISE_SHIM_PATH=\"$0\"\n"),
+            "{contents}"
+        );
+        assert!(is_generated_shell_shim(contents.as_bytes()));
+    }
 
     #[cfg(windows)]
     #[test]
