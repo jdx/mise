@@ -82,6 +82,11 @@ async fn test_xdg_config_home() {
     assert!(s.ends_with("/.config")); // test dir is not deterministic
 }
 #[tokio::test]
+async fn test_mise_config_dir() {
+    let s = render("{{mise_config_dir}}");
+    assert_eq!(s, env::MISE_CONFIG_DIR.to_string_lossy());
+}
+#[tokio::test]
 #[cfg(unix)]
 async fn test_xdg_data_home() {
     let s = render("{{xdg_data_home}}");
