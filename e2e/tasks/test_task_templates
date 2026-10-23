@@ -260,3 +260,20 @@ cat <<'EOT' >.mise-tasks/file_task
 echo "profile=$usage_profile"
 EOT
 assert "mise run file_task" "profile=dev"
+
+# The inherited usage renders in the task's directory
+echo v9 >VERSION
+cat <<'EOT' >mise.toml
+[task_templates.tmpl]
+usage = '''
+flag "--ver <v>" default="{{ read_file(path='VERSION') | trim }}"
+'''
+EOT
+cat <<'EOT' >.mise-tasks/file_task
+#!/usr/bin/env bash
+#MISE extends="tmpl"
+echo "ver=$usage_ver"
+EOT
+mkdir -p sub
+assert "cd sub && mise run file_task" "ver=v9"
+assert_contains "cd sub && mise run file_task -h" "--ver"
