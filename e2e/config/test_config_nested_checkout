@@ -52,11 +52,13 @@ rm -rf .mise
 mkdir .config
 cat <<EOF >.config/mise.toml
 [env]
-CHECKOUT_ENV = "1"
+CHECKOUT_ENV = "{{ 1 + 1 }}"
 EOF
 git init -q .config
 assert_not_contains "mise env -s bash 2>&1" "CHECKOUT_ENV"
 cd .config || exit 1
+# trust in the directory above does not cover it
+assert_fail_contains "MISE_YES=0 mise env -s bash 2>&1" ".config/mise.toml are not trusted"
 mise trust
 assert_contains "mise env -s bash" "CHECKOUT_ENV"
 assert_contains "mise trust --show" ".config: trusted"

@@ -3536,12 +3536,12 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
     }
     // A `mise/`, `.mise/` or `.config/` directory that is a git checkout of
     // its own is a project, not the config folder of the directory above it.
-    // Run inside that checkout, its own project config (such as
-    // `.config/mise.toml` read as the `mise.toml` of a checkout named
-    // `.config`) still loads, with the checkout as its trust root.
+    // Run inside that checkout, its config (such as `.config/mise.toml`, the
+    // `mise.toml` of a checkout named `.config`) still loads, with the
+    // checkout as its trust root, so trust in the directory above never
+    // covers it.
     if let Some(checkout) = config_file::config_root::nested_checkout(path)
-        && !(std::env::current_dir().is_ok_and(|cwd| cwd.starts_with(&checkout))
-            && config_paths_in_dir(&checkout).iter().any(|p| p == path))
+        && !std::env::current_dir().is_ok_and(|cwd| cwd.starts_with(&checkout))
     {
         return true;
     }
