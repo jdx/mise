@@ -9,6 +9,17 @@ graph() {
   echo "uv = { path = \".mise/locks/$1\", digest = \"sha256:$(printf '0%.0s' {1..64})\" }"
 }
 
+# Runs a command with a time limit, in this shell so the portable timeout from
+# assert.sh applies, and fails the test unless it exits 0. Output goes to out.log.
+bounded() {
+  local status=0
+  run_with_timeout 60 "$@" >out.log || status=$?
+  if [[ $status -ne 0 ]]; then
+    cat out.log >&2
+    fail "[$*] exited with status $status"
+  fi
+}
+
 echo "=== collecting the dependencies of a tool ends on a cycle ==="
 cat <<'EOF' >mise.toml
 [tools]
@@ -30,8 +41,9 @@ backend = "pipx:a"
 version = "1.0"
 backend = "pipx:b"
 EOF
-assert_contains "timeout 60 mise ls" "pipx:foo"
-assert_succeed "timeout 60 mise hook-env -s bash >/dev/null"
+bounded mise ls
+assert_contains "cat out.log" "pipx:foo"
+bounded mise hook-env -s bash
 
 echo "=== resolving the tools of a cycle ends too ==="
 cat <<'EOF' >mise.toml
@@ -52,8 +64,9 @@ version = "1.0"
 backend = "pipx:b"
 $(graph b)
 EOF
-assert_contains "timeout 60 mise ls" "pipx"
-assert_succeed "timeout 60 mise hook-env -s bash >/dev/null"
+bounded mise ls
+assert_contains "cat out.log" "pipx"
+bounded mise hook-env -s bash
 
 echo "=== aliases form the same cycle ==="
 rm mise.lock
@@ -62,4 +75,5 @@ cat <<'EOF' >mise.toml
 pipx = "pipx:a"
 uv = "pipx:b"
 EOF
-assert_contains "timeout 60 mise install --dry-run pipx:foo@1.0 2>&1" "pipx:foo"
+bounded mise install --dry-run pipx:foo@1.0
+assert_contains "cat out.log" "pipx:foo"
