@@ -44,6 +44,28 @@ fn test_archive_content_files_tar_rejects_symlink() {
 }
 
 #[test]
+fn test_archive_content_files_zip_rejects_symlink() {
+    // A trailing slash makes the entry look like a directory, but extraction
+    // still creates it as a symlink.
+    for name in ["tool-link", "tool-link/", "tool-link\\"] {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("tool.zip");
+        let options = zip::write::SimpleFileOptions::default();
+        let mut zip = zip::ZipWriter::new(File::create(&archive_path).unwrap());
+        zip.start_file("tool", options).unwrap();
+        zip.write_all(b"tool").unwrap();
+        zip.add_symlink(name, "tool", options).unwrap();
+        zip.finish().unwrap();
+
+        let err = archive_content_files(&archive_path, ExtractionFormat::Zip, 0).unwrap_err();
+        assert!(
+            err.to_string().contains("symlink archive entry"),
+            "{name}: {err}"
+        );
+    }
+}
+
+#[test]
 fn test_archive_content_files_tar_zst_decodes_a_long_window() {
     let dir = tempfile::tempdir().unwrap();
     let archive_path = dir.path().join("tool.tar.zst");

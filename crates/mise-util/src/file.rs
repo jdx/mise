@@ -3072,14 +3072,17 @@ fn archive_content_files_zip(
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
-        if file.is_dir() {
-            continue;
-        }
+        // `is_dir` only looks at the name and `is_symlink` only at the mode, so one
+        // entry can be both. `ZipArchive::extract` creates such an entry as a symlink,
+        // so ask in the same order.
         if file.is_symlink() {
             bail!(
                 "content-level SLSA verification does not support symlink archive entry: {}",
                 file.name().as_deref().unwrap_or("<unreadable name>")
             );
+        }
+        if file.is_dir() {
+            continue;
         }
         let enclosed_name = file.enclosed_name().ok_or_else(|| {
             eyre::eyre!(
