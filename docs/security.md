@@ -172,7 +172,9 @@ loading. Paranoid mode does not share trust between worktrees.
 
 The repository has to list the worktree at its current location: a `.git` file
 that only names one of the repository's worktrees shares nothing. After moving a
-worktree by hand, run `git worktree repair`.
+worktree by hand, run `git worktree repair`. A path in the main checkout that is
+a symlink, or sits below one, shares nothing either; trust the worktree's config
+directly instead.
 
 ## Safe mode
 

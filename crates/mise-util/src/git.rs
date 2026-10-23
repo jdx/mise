@@ -791,7 +791,8 @@ fn looks_like_abbreviated_sha(s: &str) -> bool {
 /// If `path` is inside a linked git worktree, returns the equivalent path in
 /// the repository's main checkout, e.g. `/repo-wt/sub/mise.toml` →
 /// `/repo/sub/mise.toml`. Returns None for paths in a main checkout, outside
-/// any git repository, or in worktrees of a bare repository.
+/// any git repository, or in worktrees of a bare repository, and when the
+/// equivalent leads out of the main checkout through a symlink.
 ///
 /// Detection is filesystem-only (no git subprocess): a linked worktree root
 /// contains a `.git` *file* pointing at `<main>/.git/worktrees/<name>`, whose
@@ -822,6 +823,17 @@ pub fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
                 .clone();
             if let Some(main_root) = main_root {
                 let equiv = main_root.join(path.strip_prefix(wt_root).ok()?);
+                // Callers stand `equiv` in for `path`, so it must be the main
+                // checkout's own file. `main_root` is canonical, so an
+                // existing `equiv` that canonicalizes to something else goes
+                // through a symlink below it, which would let a hand-made
+                // checkout borrow the trust of whatever the link names, such
+                // as the global config or a project trusted earlier. A path
+                // that does not exist in the main checkout still maps; the
+                // caller refuses it on its own.
+                if equiv.canonicalize().is_ok_and(|real| real != equiv) {
+                    return None;
+                }
                 return (equiv != path).then_some(equiv);
             }
         }
