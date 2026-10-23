@@ -5,9 +5,9 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    ArchiveLayout, VerifiableError, get_filename_from_url, install_artifact, lookup_platform_key,
-    lookup_with_fallback, pinned_checksum, tag_candidates, template_string, try_release_tags,
-    try_with_v_prefix, verify_artifact,
+    ArchiveLayout, VerifiableError, ensure_plain_asset_name, get_filename_from_url,
+    install_artifact, lookup_platform_key, lookup_with_fallback, pinned_checksum, tag_candidates,
+    template_string, try_release_tags, try_with_v_prefix, verify_artifact,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::config::{Config, Settings, SettingsExt};
@@ -1588,6 +1588,7 @@ impl UnifiedGitBackend {
                     .find(|a| a.name == provenance_name)
                     .expect("provenance asset should exist since we found its name");
 
+                ensure_plain_asset_name(&provenance_asset.name)?;
                 let provenance_path = tmp_dir.path().join(&provenance_asset.name);
                 HTTP.download_file(
                     &provenance_asset.browser_download_url,
@@ -1757,6 +1758,7 @@ impl UnifiedGitBackend {
         opts: &GitBackendOptions<'_>,
     ) -> Result<()> {
         let filename = asset.name.clone();
+        ensure_plain_asset_name(&filename)?;
         let file_path = tv.download_path().join(&filename);
 
         // Store the asset URL and digest (if available) in the tool version
@@ -1890,6 +1892,7 @@ impl UnifiedGitBackend {
         index: usize,
     ) -> Result<()> {
         let filename = asset.name.clone();
+        ensure_plain_asset_name(&filename)?;
         let file_path = tv.download_path().join(&filename);
         let platform_key = self.get_platform_key();
         let mut artifact_info = tv
@@ -3089,6 +3092,8 @@ impl UnifiedGitBackend {
             .expect("provenance asset should exist since we found its name");
 
         // Download the provenance file
+        ensure_plain_asset_name(&provenance_asset.name)
+            .map_err(|e| VerificationStatus::Error(e.to_string()))?;
         let download_dir = tv.download_path();
         let provenance_path = download_dir.join(&provenance_asset.name);
 

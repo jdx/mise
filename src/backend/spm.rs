@@ -4,6 +4,7 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, is_falsey, is_truthy};
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::ensure_plain_asset_name;
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::git::{CloneOptions, Git};
@@ -577,6 +578,7 @@ impl SPMBackend {
             return Ok(false);
         };
 
+        ensure_plain_asset_name(&asset.name)?;
         let bundle_dir = tv.cache_path().join("artifactbundle");
         file::remove_all(&bundle_dir)?;
         file::create_dir_all(&bundle_dir)?;

@@ -1431,6 +1431,20 @@ pub(crate) fn ensure_plain_bin_name(option: &str, name: &str) -> eyre::Result<()
     Ok(())
 }
 
+/// Rejects a release asset name that is not a plain file name. The name comes
+/// from the forge's release JSON (a GitLab link label is free text) and is
+/// joined onto a download directory, so `../tool` or `/abs/tool` would
+/// otherwise write the download outside it.
+pub(crate) fn ensure_plain_asset_name(name: &str) -> eyre::Result<()> {
+    if !file::is_plain_file_name(name) {
+        bail!(
+            "release asset name {name:?} must be a plain file name \
+             (no path separators or parent directories)"
+        );
+    }
+    Ok(())
+}
+
 /// Rejects a configured binary path that is absolute or contains parent
 /// components, while preserving the established `bin = "bin/tool"` form.
 pub(crate) fn ensure_safe_relative_bin_path(option: &str, path: &str) -> eyre::Result<()> {
@@ -2147,6 +2161,25 @@ mod tests {
                 ("custom".to_string(), "x".to_string()),
             ])
         );
+    }
+
+    #[test]
+    fn test_ensure_plain_asset_name() {
+        for ok in ["tool-linux-x64", "tool-1.0.0.tar.gz", "my tool.zip"] {
+            assert!(ensure_plain_asset_name(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../../.config/mise/conf.d/tool-linux-x64.toml",
+            "/abs/tool-linux-x64",
+            "sub/tool-linux-x64",
+            "..\\tool-linux-x64",
+        ] {
+            let err = ensure_plain_asset_name(bad).unwrap_err();
+            assert!(err.to_string().contains("plain file name"), "{bad}: {err}");
+        }
     }
 
     #[test]
