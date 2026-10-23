@@ -220,9 +220,19 @@ impl TasksLs {
     fn complete(&self, config: &Config, tasks: Vec<Task>) -> Result<()> {
         let current_root = current_root_prefix(config);
         for t in tasks {
-            let description = t.description.replace(":", "\\:");
+            // One line per task: a line break in a description would start a candidate of
+            // its own, and a name with a control character cannot be completed anyway.
+            let description: String = t
+                .description
+                .chars()
+                .map(|c| if c.is_control() { ' ' } else { c })
+                .collect();
+            let description = description.replace(":", "\\:");
             let shorthand = shorthand_name(current_root.as_deref(), &t);
             for name in std::iter::once(t.display_name.clone()).chain(shorthand) {
+                if name.chars().any(char::is_control) {
+                    continue;
+                }
                 let name = name.replace(":", "\\:");
                 calm_io::stdoutln!("{name}:{description}")?;
             }
