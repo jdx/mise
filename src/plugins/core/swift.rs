@@ -135,9 +135,9 @@ impl SwiftPlugin {
 
     async fn verify_gpg(&self, ctx: &InstallContext, url: &str, tarball_path: &Path) -> Result<()> {
         let sig_path = PathBuf::from(format!("{}.sig", tarball_path.to_string_lossy()));
-        // Unlike Node (which skips a missing .sig), this path only runs on Linux, where swift.org
-        // publishes a detached signature for every release tarball. A missing .sig is therefore
-        // unexpected, so surface the download error rather than silently skipping verification.
+        // This path only runs on Linux, where swift.org publishes a detached signature for every
+        // release tarball. A missing .sig is therefore unexpected, so surface the download error
+        // rather than silently skipping verification (Node does the same).
         HTTP.download_file(format!("{url}.sig"), &sig_path, Some(ctx.pr.as_ref()))
             .await?;
         let signature = file::read(&sig_path)?;

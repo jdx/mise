@@ -16,7 +16,10 @@ use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
-use crate::{backend::static_helpers::fetch_checksum_from_shasums, platform::detect_libc};
+use crate::{
+    backend::static_helpers::{fetch_checksum_from_shasums, fetch_published_checksum_from_shasums},
+    platform::detect_libc,
+};
 use crate::{
     backend::{Backend, GitHubReleaseInfo, VersionInfo, platform_target::PlatformTarget},
     config::{Config, Settings},
@@ -54,7 +57,7 @@ impl BunPlugin {
             .execute()
     }
 
-    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    async fn download(&self, tv: &mut ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let url = format!(
             "https://github.com/oven-sh/bun/releases/download/bun-v{}/bun-{}-{}.zip",
             tv.version,
@@ -72,6 +75,30 @@ impl BunPlugin {
             Some(pr),
         )
         .await?;
+
+        // Without a checksum in the lockfile, take the one Bun publishes in
+        // SHASUMS256.txt so verify_checksum compares the zip against it instead
+        // of only recording what was downloaded.
+        let shasums_url = format!(
+            "https://github.com/oven-sh/bun/releases/download/bun-v{}/SHASUMS256.txt",
+            tv.version
+        );
+        let platform_info = tv
+            .lock_platforms
+            .entry(self.get_platform_key())
+            .or_default();
+        if platform_info.checksum.is_none() {
+            match fetch_published_checksum_from_shasums(&shasums_url, filename).await? {
+                Some(checksum) => {
+                    platform_info.url = Some(url.clone());
+                    platform_info.checksum = Some(checksum);
+                }
+                // A release that never published SHASUMS256.txt. It would come from the
+                // same host as the zip and is unsigned, so failing here would protect
+                // nothing that host could not also forge.
+                None => warn!("bun: {shasums_url} not found, skipping checksum verification"),
+            }
+        }
 
         Ok(tarball_path)
     }
@@ -208,7 +235,7 @@ impl Backend for BunPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
+        let tarball_path = self.download(&mut tv, ctx.pr.as_ref()).await?;
         ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.next_operation();

@@ -642,7 +642,8 @@ fn unpack_skill(archive: &Path, dir: &Path, pr: &dyn SingleReport) -> Result<()>
             pr: Some(pr),
             ..Default::default()
         },
-    );
+    )
+    .and_then(|()| file::ensure_symlinks_stay_within(&staging));
     into_place(&staging, dir, unpacked)
 }
 

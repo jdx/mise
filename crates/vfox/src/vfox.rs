@@ -354,6 +354,8 @@ mod backend;
 mod hooks;
 mod install;
 
+pub(crate) use install::ensure_symlinks_stay_within;
+
 /// Convert a `PreInstallAttestation` to the highest-priority `VerifiedAttestation` variant
 /// declared by the plugin. Priority: GitHub > SLSA > Cosign.
 ///

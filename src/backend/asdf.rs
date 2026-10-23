@@ -514,6 +514,12 @@ impl Backend for AsdfBackend {
             // the second is to prevent infinite loops
             return Ok(BTreeMap::new());
         }
+        // exec-env is sourced by EnvDiff::from_bash_script, which spawns bash
+        // itself and so passes none of ScriptManager's own safe mode checks.
+        // Its environment also carries the request's install_env (BASH_ENV).
+        // Checked before the cache, whose key is the version alone: a result
+        // computed with another config's install_env must not be served either.
+        Settings::ensure_not_safe("executing asdf plugin scripts")?;
         let res = self
             .cache
             .exec_env(config, self, tv, async || {

@@ -2796,6 +2796,109 @@ pub fn is_safe_relative_path(path: &str) -> bool {
         && components.all(|component| matches!(component, std::path::Component::Normal(_)))
 }
 
+/// Fails if a symlink under `root` points outside of it.
+///
+/// Archive extraction keeps symlink entries whatever their target, and the steps
+/// that run after it (renaming or chmodding the binary, creating `.mise-bins`,
+/// writing state files) open paths below the install directory by name, which
+/// follows those links. Call this on an extracted tree before any such step.
+///
+/// Each target is resolved component by component, following every link on the
+/// way, so chains and links through linked directories are checked; components
+/// that do not exist are taken as written.
+pub fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
+    if fs::symlink_metadata(root)?.file_type().is_symlink() {
+        bail!("{} is a symlink", display_path(root));
+    }
+    let real_root = root.canonicalize()?;
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in fs::read_dir(&dir)? {
+            let path = entry?.path();
+            let kind = fs::symlink_metadata(&path)?.file_type();
+            if kind.is_dir() {
+                dirs.push(path);
+            } else if kind.is_symlink() {
+                let target = fs::read_link(&path)?;
+                let base = path.parent().unwrap_or(root).canonicalize()?;
+                if !link_target_stays_within(&real_root, root, &base, &target) {
+                    bail!(
+                        "symlink {} points outside of {}: {}",
+                        display_path(&path),
+                        display_path(root),
+                        target.display()
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Resolves `target` as seen from the directory `base` (already real), following
+/// every link on the way, and reports whether each step stays under `root` (the
+/// real path of the tree, which is `given_root` as the caller spelled it).
+/// Components that do not exist are taken as written. A chain of links that loops
+/// without leaving `root` is harmless, so the walk stops after `MAX_LINKS` links
+/// and accepts it.
+fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target: &Path) -> bool {
+    use std::collections::VecDeque;
+    use std::path::Component;
+    const MAX_LINKS: usize = 40;
+    let parts = |path: &Path| -> VecDeque<PathBuf> {
+        path.components()
+            .map(|part| PathBuf::from(part.as_os_str()))
+            .collect()
+    };
+    let mut current = base.to_path_buf();
+    let mut pending = parts(target);
+    let mut followed = 0;
+    while let Some(part) = pending.pop_front() {
+        let Some(component) = part.components().next() else {
+            continue;
+        };
+        match component {
+            Component::Prefix(_) | Component::RootDir => {
+                // An absolute path stays inside only if it names the tree's
+                // root, by either spelling; walk the rest from the root rather
+                // than through the root's ancestors.
+                let absolute: PathBuf = std::iter::once(part).chain(pending.drain(..)).collect();
+                let Some(rest) = [root, given_root]
+                    .into_iter()
+                    .find_map(|root| absolute.strip_prefix(root).ok())
+                else {
+                    return false;
+                };
+                pending = parts(rest);
+                current = root.to_path_buf();
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                current.pop();
+            }
+            Component::Normal(name) => {
+                let candidate = current.join(name);
+                match fs::read_link(&candidate) {
+                    Ok(link) => {
+                        followed += 1;
+                        if followed > MAX_LINKS {
+                            return true;
+                        }
+                        for part in link.components().rev() {
+                            pending.push_front(PathBuf::from(part.as_os_str()));
+                        }
+                    }
+                    Err(_) => current = candidate,
+                }
+            }
+        }
+        if !current.starts_with(root) {
+            return false;
+        }
+    }
+    true
+}
+
 fn sanitize_7z_entry_path(path: &str) -> Result<PathBuf> {
     let normalized = PathBuf::from(path.replace('\\', "/"));
     let mut safe_path = PathBuf::new();
@@ -3192,14 +3295,17 @@ fn archive_content_files_zip(
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
-        if file.is_dir() {
-            continue;
-        }
+        // `is_dir` only looks at the name and `is_symlink` only at the mode, so one
+        // entry can be both. `ZipArchive::extract` creates such an entry as a symlink,
+        // so ask in the same order.
         if file.is_symlink() {
             bail!(
                 "content-level SLSA verification does not support symlink archive entry: {}",
                 file.name().as_deref().unwrap_or("<unreadable name>")
             );
+        }
+        if file.is_dir() {
+            continue;
         }
         let enclosed_name = file.enclosed_name().ok_or_else(|| {
             eyre::eyre!(

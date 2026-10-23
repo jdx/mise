@@ -2337,9 +2337,12 @@ default_docs = "true"
 description = "Check the OpenPGP signature of the `SHASUMS256.txt` file that `node.verify` checks downloads against."
 docs = """
 mise checks the signature itself, so `gpg` does not need to be installed. It
-runs only when [`node.verify`](#node.verify) is on, and skips releases that
-never published a signature (the `.sig` download returns 404).
-Set to `false` to skip the check. The global
+runs only when [`node.verify`](#node.verify) is on, for installs and for the
+checksums [`mise lock`](/cli/lock.html) records. A missing `.sig` fails the
+check, except on unofficial-builds, which signs nothing. Set to `false` to skip
+the check, for example for a mirror that does not copy the signatures or for
+one of the few early releases (such as 4.0.0 and 5.12.0) that never published
+one. The global
 [`gpg_verify`](/configuration/settings.html#gpg_verify) setting sets the
 default.
 """

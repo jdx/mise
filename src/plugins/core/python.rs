@@ -668,9 +668,13 @@ impl PythonPlugin {
             return Err(eyre!("Ref versions not supported for python"));
         }
         ctx.pr.set_message("python-build".into());
+        file::create_dir_all(tv.install_path())?;
         let mut cmd = CmdLineRunner::new(self.python_build_bin())
+            // python-build looks for its definition argument as a file first,
+            // so it must not start in the project's directory.
+            .current_dir(tv.install_path())
             .with_pr(ctx.pr.as_ref())
-            .arg(tv.version.as_str())
+            .arg(plugins::core::build_definition_name(&tv.version)?)
             .arg(tv.install_path())
             .envs(ctx.config.env().await?)
             .env_values(tv.install_env())
