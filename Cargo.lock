@@ -7136,6 +7136,7 @@ dependencies = [
  "hex",
  "log",
  "mise-tls",
+ "percent-encoding",
  "regex",
  "reqwest",
  "rustls-pki-types",
