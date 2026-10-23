@@ -1166,6 +1166,39 @@ impl Task {
             .collect()
     }
 
+    /// Whether the user vouches for every file this task is defined in, so commands its
+    /// definition names may run before `mise run`, as shell completion runs a usage spec's
+    /// `complete run=` and `mount`. A `[tasks]`-only config and a template-free task file load
+    /// without trust because they are inert until run; this is what tells the two apart.
+    ///
+    /// Global and system config and the global task directories are the user's own. A
+    /// project's files count once the project is trusted: the file itself, its config root, or
+    /// one of the root's own config files, which is what lets the root's task includes load
+    /// without a check of their own. Safe mode keeps project config inert, trusted or not.
+    /// The `global` field is not consulted because a task definition can set it.
+    pub fn is_trusted(&self, config: &Config) -> bool {
+        use crate::config::config_file::{is_path_trusted, is_trusted};
+        let safe_mode = config::Settings::safe_mode();
+        let trusted = |path: &Path| {
+            config::is_global_config(path)
+                || config::is_global_task_include_path(path)
+                || (!safe_mode && is_path_trusted(path))
+        };
+        let root_trusted = || {
+            !safe_mode
+                && self.config_root.as_deref().is_some_and(|root| {
+                    is_trusted(root)
+                        || config.config_files.values().chain(&self.cf).any(|cf| {
+                            cf.config_root() == root
+                                && !config::is_global_config(cf.get_path())
+                                && is_path_trusted(cf.get_path())
+                        })
+                })
+        };
+        (trusted(&self.config_source) || root_trusted())
+            && self.additional_config_sources.iter().all(|p| trusted(p))
+    }
+
     pub fn tool_args(&self) -> Result<Vec<ToolArg>> {
         self.tools
             .iter()

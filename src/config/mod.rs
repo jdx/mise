@@ -5032,7 +5032,7 @@ fn user_global_task_includes(has_config: bool) -> Vec<String> {
     includes
 }
 
-fn is_global_task_include_path(path: &Path) -> bool {
+pub(crate) fn is_global_task_include_path(path: &Path) -> bool {
     [
         dirs::CONFIG.join("tasks"),
         dirs::SYSTEM_CONFIG.join("tasks"),
