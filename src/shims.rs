@@ -1881,10 +1881,13 @@ async fn list_tool_bins(
 
 async fn make_shim(target: &Path, shim: &Path) -> Result<()> {
     file::remove_file_async_if_exists(shim).await?;
+    // Like the Windows shims, name the shim so `mise x` knows the user did not type `mise x`
+    // and does not trust the active config on their behalf.
     file::write_async(
         shim,
         format!(
-            "{GENERATED_SHELL_SHIM_HEADER}export ASDF_DATA_DIR={data_dir}\nexport PATH=\"{fake_asdf_dir}:$PATH\"\nmise x -- {target} \"$@\"\n",
+            "{GENERATED_SHELL_SHIM_HEADER}export ASDF_DATA_DIR={data_dir}\nexport PATH=\"{fake_asdf_dir}:$PATH\"\nexport {shim_env}=\"$0\"\nmise x -- {target} \"$@\"\n",
+        shim_env = env::MISE_SHIM_PATH_ENV,
         data_dir = dirs::DATA.display(),
         fake_asdf_dir = fake_asdf::setup()?.display(),
         target = target.display()

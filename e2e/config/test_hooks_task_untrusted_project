@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+# A `mise` that mise starts on the user's behalf is not the user typing it, so
+# it must not trust the config it loads: the `mise x` of a shim that is not mise
+# itself, and the `mise run` of a task hook that fires on `cd`.
+export MISE_TRUSTED_CONFIG_PATHS="" MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+marker="$PWD/payload-ran"
+mkdir -p clone
+cat <<EOF >clone/mise.toml
+[env]
+PAYLOAD = "{{ exec(command='touch $marker') }}"
+EOF
+
+echo "=== a shim's mise x does not trust the project ==="
+assert_fail_contains "cd clone && __MISE_SHIM_PATH='$MISE_DATA_DIR/shims/sh' mise x -- sh -c 'echo ran' 2>&1" "not trusted"
+assert_fail "test -e '$marker'"
+assert_contains "mise -C clone trust --show" "untrusted"
+
+echo "=== a global task hook does not trust the project ==="
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tasks.greet]
+run = 'echo GLOBAL-GREET'
+
+[hooks]
+enter = { task = "greet" }
+EOF
+# loads without trust and makes the clone the active project
+touch clone/.tool-versions
+output="$(cd clone && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "GLOBAL-GREET"
+assert_fail "test -e '$marker'"
+assert_contains "mise -C clone trust --show" "untrusted"
+
+echo "=== an untrusted project cannot replace the global task ==="
+mkdir -p shadow
+cat <<'EOF' >shadow/mise.toml
+[tasks.greet]
+run = 'echo PROJECT-GREET'
+EOF
+output="$(cd shadow && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "GLOBAL-GREET"
+assert_not_contains_text "$output" "PROJECT-GREET"
+
+echo "=== a trusted project runs the hook in the project ==="
+mise trust shadow >/dev/null
+output="$(cd shadow && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "PROJECT-GREET"
+
+echo "=== a project task hook does not trust an untrusted parent ==="
+mkdir -p clone/proj
+cat <<'EOF' >clone/proj/mise.toml
+[tasks.setup]
+run = 'echo PROJECT-SETUP'
+
+[hooks]
+enter = { task = "setup" }
+EOF
+mise trust clone/proj >/dev/null
+rm clone/.tool-versions
+output="$(cd clone/proj && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "not trusted"
+assert_fail "test -e '$marker'"
+assert_contains "mise -C clone trust --show" "untrusted"

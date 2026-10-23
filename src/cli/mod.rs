@@ -493,6 +493,13 @@ impl Commands {
     /// command for its own help is not: the parser leaves `--help` to the task for `run` and
     /// `watch`, so those see it here.
     fn implicitly_trusts_active_config(&self) -> bool {
+        // A shim that is not mise itself (the Windows `exe` and `file` modes, the scripts
+        // `reshim` writes for an asdf plugin's shims) runs `mise x -- <tool>` in place of
+        // `handle_shim` and names itself in `__MISE_SHIM_PATH`. The user typed the tool's name,
+        // not `mise exec`, so that dispatch trusts no more than `handle_shim` does.
+        if matches!(self, Self::Exec(_)) && crate::env::MISE_SHIM_PATH.read().unwrap().is_some() {
+            return false;
+        }
         matches!(self, Self::Daemons(cmd) if cmd.starts())
             || matches!(self, Self::Run(cmd) if !cmd.only_prints_help())
             || matches!(self, Self::Watch(cmd) if !cmd.only_prints_help())

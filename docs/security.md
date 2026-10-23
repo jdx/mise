@@ -99,7 +99,8 @@ these are `mise run`, task shorthand such as `mise build`, `mise install`,
 They record trust for every non-global config they load, including configs in
 parent directories, as if you had run `mise trust`. A config on the ignore list
 stays ignored. Asking one of these commands for its own help, as in
-`mise run --help`, records nothing.
+`mise run --help`, records nothing. Neither does a command mise starts on your
+behalf: the `mise x` a shim runs for a tool, or the `mise run` of a task hook.
 
 mise also trusts a config file when it writes one, for example with
 [`mise use`](/cli/use.html) or [`mise set`](/cli/set.html). That trust covers
