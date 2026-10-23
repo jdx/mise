@@ -4550,3 +4550,32 @@ fn test_set_platform_info_does_not_carry_provenance_to_changed_checksum() {
     assert_eq!(relock("sha256:old", "sha256:OLD", None).1, attested);
     assert_eq!(relock("blake3:old", "sha256:new", None).1, attested);
 }
+
+/// A pipe at the lockfile's path must not hang the write that compares the
+/// new content with what is there.
+#[cfg(unix)]
+#[test]
+fn test_prepare_write_does_not_block_on_a_pipe() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("mise.lock");
+    nix::unistd::mkfifo(
+        &path,
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(
+            Lockfile::default()
+                .prepare_write(&path)
+                .map(|w| w.is_some()),
+        );
+    });
+    let prepared = rx
+        .recv_timeout(std::time::Duration::from_millis(500))
+        .expect("preparing the lockfile write blocked on a pipe");
+    assert!(
+        prepared.unwrap(),
+        "a pipe was taken for an up-to-date lockfile"
+    );
+}

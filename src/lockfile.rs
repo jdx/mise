@@ -1761,7 +1761,9 @@ impl Lockfile {
             .unwrap_or_else(|| DEFAULT_LOCKFILE_DOC_URL.to_string());
         let content = format!("{LOCKFILE_HEADER_PREFIX}{doc_url}\n\n{content}");
         sidecars.collect_garbage();
-        if fs::read(path).ok().as_deref() == Some(content.as_bytes()) {
+        // Bounded and non-blocking: a pipe or oversized file at the lockfile's
+        // path reads as different, so it is replaced rather than read.
+        if file::read_config_to_string(path).ok().as_deref() == Some(content.as_str()) {
             if !sidecars.has_changes() {
                 return Ok(None);
             }
