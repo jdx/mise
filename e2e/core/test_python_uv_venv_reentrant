@@ -54,7 +54,7 @@ venv = {path = "my_venv", create = true}
 python.uv_venv_create_args = ["--python", "$PWD/probe"]
 EOF2
 rm uv.lock
-# the portable timeout is a shell function, so it wraps the outer call; a hang ends it with 124
-assert_succeed "timeout 120 mise env >/dev/null"
+# the portable timeout is a shell function, so it runs in the test shell; a hang ends it with 124 and errexit fails the test
+timeout 120 mise env >/dev/null
 assert "test -d my_venv && echo created" "created"
 assert_fail "test -e probe.log"
