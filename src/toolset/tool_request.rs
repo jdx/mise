@@ -1086,11 +1086,13 @@ pub(crate) async fn with_safe_mode_tool_scope<T>(
     // and holding one inline here (twice over, in the scopes) overflows the stack
     // of a debug build.
     let future = Box::pin(future);
-    if !Settings::safe_mode() || crate::config::is_safe_mode_project_tool(ba) {
+    if !Settings::safe_mode() {
         return future.await;
     }
-    let trusted = Box::pin(mise_util::untrusted_hosts::with_trusted_tool_scope(future));
-    mise_util::tera::with_trusted_templates(trusted).await
+    // Set either way: a project tool reached from a global tool's work (a dependency, say)
+    // must not run in that tool's trusted scope.
+    let trusted = !crate::config::is_safe_mode_project_tool(ba);
+    mise_util::untrusted_hosts::with_tool_scope(trusted, future).await
 }
 
 /// Resolve a `path:` tool version request value against the config file's directory.

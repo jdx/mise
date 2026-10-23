@@ -125,6 +125,15 @@ pub async fn with_trusted_templates<T>(future: impl std::future::Future<Output =
     TRUSTED_TEMPLATES.scope(true, future).await
 }
 
+/// Runs `future` with `env` kept ([`with_trusted_templates`]) or explicitly
+/// emptied in safe mode, whatever an outer scope said.
+pub async fn with_templates_trusted<T>(
+    trusted: bool,
+    future: impl std::future::Future<Output = T>,
+) -> T {
+    TRUSTED_TEMPLATES.scope(trusted, future).await
+}
+
 /// Whether the current task runs inside [`with_trusted_templates`].
 pub fn in_trusted_templates() -> bool {
     TRUSTED_TEMPLATES

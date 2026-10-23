@@ -105,6 +105,16 @@ pub async fn with_trusted_tool_scope<T>(future: impl Future<Output = T>) -> T {
     TRUSTED_TOOL.scope(true, future).await
 }
 
+/// Runs `future`, the work for one tool in safe mode, in that tool's scope:
+/// trusted for a tool from global or system config (netrc on hosts a project
+/// names, `env` in the templates its backend renders), and explicitly untrusted
+/// for a tool that project config declares, even when it is reached from a
+/// trusted tool's work, such as one tool's dependency pulling in another.
+pub async fn with_tool_scope<T>(trusted: bool, future: impl Future<Output = T>) -> T {
+    let tool = Box::pin(TRUSTED_TOOL.scope(trusted, future));
+    crate::tera::with_templates_trusted(trusted, tool).await
+}
+
 /// Wraps `future`, about to be spawned as a task of its own (`tokio::spawn`, a
 /// `JoinSet`, [`crate::parallel::parallel`]), so that it runs in the trusted
 /// scopes of the task spawning it: task-locals do not pass to a spawned task, so
@@ -116,9 +126,7 @@ pub fn inherit_trusted_scope<F: Future>(future: F) -> impl Future<Output = F::Ou
     let templates = crate::tera::in_trusted_templates();
     async move {
         match (tool, templates) {
-            (true, true) => {
-                crate::tera::with_trusted_templates(Box::pin(with_trusted_tool_scope(future))).await
-            }
+            (true, true) => with_tool_scope(true, future).await,
             (true, false) => with_trusted_tool_scope(future).await,
             (false, true) => crate::tera::with_trusted_templates(future).await,
             (false, false) => future.await,
@@ -219,6 +227,22 @@ mod tests {
         assert!(plain);
         assert_eq!(parallel, [false]);
         assert!(outside);
+
+        // a project tool reached from a trusted tool's work is untrusted again
+        let (nested, nested_templates, back) = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(with_tool_scope(true, async {
+                let target = url("https://files.example/private.env");
+                let (nested, templates) = with_tool_scope(false, async {
+                    (netrc_denied(&target), crate::tera::in_trusted_templates())
+                })
+                .await;
+                (nested, templates, netrc_denied(&target))
+            }));
+        assert!(nested);
+        assert!(!nested_templates);
+        assert!(!back);
         deny_netrc_for_url("https://{{ os() }}.evil.example/tool");
         assert!(netrc_denied(&url("https://linux.evil.example/tool")));
         assert!(netrc_denied(&url("https://mirror.example/x")));
