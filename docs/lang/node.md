@@ -197,13 +197,20 @@ To keep a CLI across Node.js versions, install it as its own tool with the
 mise downloads the official binary archive for your platform from
 [`node.mirror_url`](/lang/node.html#node.mirror_url) (`https://nodejs.org/dist/` by default),
 checks it against the release's `SHASUMS256.txt`, and verifies the OpenPGP
-signature on that file when the release publishes one
-([`node.gpg_verify`](/lang/node.html#node.gpg_verify)). It then runs `node -v` and `npm -v`.
+signature on that file ([`node.gpg_verify`](/lang/node.html#node.gpg_verify)).
+A missing signature fails the install, except for musl builds from
+unofficial-builds, which publishes none. It then runs `node -v` and `npm -v`.
 mise sets no Node.js-specific environment variables; the version's `bin`
 directory goes on `PATH`.
 
+`mise lock` takes its checksums from the same `SHASUMS256.txt` and verifies the
+same signature before it records them.
+
 When no binary exists for your platform, mise compiles Node.js from source,
-unless [`node.compile`](/lang/node.html#node.compile) is `false`.
+unless [`node.compile`](/lang/node.html#node.compile) is `false`. If
+[`mise.lock`](/dev-tools/mise-lock.html) pins a checksum for the binary and the
+download answers 404, the install fails instead; run `mise lock node` to lock
+another artifact.
 
 On Alpine and NixOS, mise currently compiles from source by default, because
 [`all_compile`](/configuration/settings.html#all_compile) defaults to `true`
