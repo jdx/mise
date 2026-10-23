@@ -21,8 +21,8 @@ use crate::args::BackendArg;
 use crate::backend::unalias_backend;
 use crate::config::config_file::config_root;
 use crate::config::config_file::{
-    ConfigFile, TaskConfig, ToolConfig, config_trust_root, is_config_ignored_via_setting,
-    is_persisted_ignored, trust, trust_check,
+    ConfigFile, TaskConfig, ToolConfig, config_trust_root, ensure_versions_are_not_templates,
+    is_config_ignored_via_setting, is_persisted_ignored, trust, trust_check,
 };
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvValue};
 use crate::config::settings::SettingsPartial;
@@ -1562,6 +1562,7 @@ impl ConfigFile for MiseToml {
 
     fn replace_versions(&self, ba: &BackendArg, versions: Vec<ToolRequest>) -> eyre::Result<()> {
         trace!("replacing versions {ba:?} {versions:?}");
+        ensure_versions_are_not_templates(&self.path, ba, &versions)?;
         let mut tools = self.tools.lock().unwrap();
         let is_tools_sorted = is_tools_sorted(&tools); // was it previously sorted (if so we'll keep it sorted)
         let existing = tools.entry(ba.clone()).or_default();
@@ -3928,6 +3929,30 @@ run = "cargo build"
         assert_snapshot!(cf);
         assert_debug_snapshot!(cf);
         file::remove_all(&p).unwrap();
+    }
+
+    /// Versions are rendered as templates when the file is loaded, and `--pin` and `--bump`
+    /// write versions that came from a version list or release API.
+    #[tokio::test]
+    async fn test_replace_versions_rejects_template_syntax() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".template-version.mise.toml");
+        let input = "[tools]\ndummy = \"1.0.0\"\n";
+        file::write(&p, input).unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let ba: Arc<BackendArg> = Arc::new("dummy".into());
+        for version in [
+            "2.0.0{{exec(command='id')}}",
+            "2.0.0-{{env.GITHUB_TOKEN}}",
+            "2.0.0{%if x%}",
+            "2.0.0{#x#}",
+        ] {
+            let tr = ToolRequest::new_version_for_test(ba.clone(), version, ToolSource::Unknown);
+            let err = cf.replace_versions(&ba, vec![tr]).unwrap_err();
+            assert!(err.to_string().contains("template syntax"), "{err}");
+        }
+        assert_eq!(cf.dump().unwrap(), input);
+        file::remove_file(&p).unwrap();
     }
 
     #[tokio::test]

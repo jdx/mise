@@ -84,6 +84,29 @@ fn detection_error(path: &Path, detection: ConfigFileDetection) -> eyre::Report 
     }
 }
 
+/// Refuse to write a version that the config file would render as a template when it is loaded.
+///
+/// `mise use --pin` and `mise upgrade --bump` write the version a version list or release API
+/// reported, so the text is not the user's, and a template in a trusted config can run commands
+/// with exec() and read the environment.
+fn ensure_versions_are_not_templates(
+    path: &Path,
+    ba: &BackendArg,
+    versions: &[ToolRequest],
+) -> Result<()> {
+    for tr in versions {
+        let version = tr.version();
+        if crate::tera::contains_template_syntax(&version) {
+            return Err(eyre!(
+                "refusing to write {}@{version} to {}: the version contains template syntax",
+                ba.short,
+                display_path(path)
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub trait ConfigFile: Debug + Send + Sync {
     fn get_path(&self) -> &Path;
     fn provenance(&self) -> ConfigProvenance {
