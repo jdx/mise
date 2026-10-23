@@ -307,7 +307,16 @@ fn replace_with(
     }
     #[cfg(not(unix))]
     let _ = dir;
-    temp.persist(path).map(|_| ()).map_err(|err| err.error)
+    // `std::fs::rename`, not `NamedTempFile::persist`: on Windows persist does
+    // not get the extended-length path handling `std::fs` applies, and fails
+    // well before `MAX_PATH` (mise measured it breaking at a 253-character
+    // target where `fs::rename` succeeded at 415). Closing the file first lets
+    // the rename replace an existing target there. Until the rename succeeds,
+    // dropping the `TempPath` removes the temporary file.
+    let temp = temp.into_temp_path();
+    std::fs::rename(&temp, path)?;
+    let _ = temp.keep();
+    Ok(())
 }
 
 /// The permissions a file created in `dir` gets: mode 0666 masked by the
