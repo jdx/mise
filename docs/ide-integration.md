@@ -94,6 +94,48 @@ These community plugins integrate with mise:
 | Neovim         | [miser.nvim](https://github.com/carldaws/miser.nvim)                                   | Starts language servers and formatters for the tools in `mise.toml`, and runs mise tasks from Neovim.                               |
 | Emacs          | [mise.el](https://github.com/eki3z/mise.el)                                            | Loads the mise environment for each buffer.                                                                                         |
 
+### Keep a plugin's environment up to date {#hook-env-json}
+
+A plugin that manages its own process environment can follow directory and
+config changes the way an activated shell does. `mise hook-env` normally prints
+shell script; `--json` prints the same changes as data:
+
+```shell
+mise hook-env --json
+```
+
+```json
+{
+  "env": {
+    "FOO": "bar",
+    "PATH": "/home/user/.local/share/mise/installs/node/24.0.0/bin:/usr/bin:/bin",
+    "STALE_VAR": null,
+    "__MISE_DIFF": "...",
+    "__MISE_SESSION": "..."
+  },
+  "aliases": {
+    "ll": "ls -la"
+  },
+  "untrusted_configs": []
+}
+```
+
+Run it in the project directory with the environment the changes should apply
+to. `env` and `aliases` are [JSON merge patches](https://www.rfc-editor.org/rfc/rfc7396):
+set each name that has a string value, and remove each name whose value is
+`null`. In a typed language, declare the values as nullable strings. `env`
+includes mise's own `__MISE_*` variables. Keep them and pass them back on the
+next run: they record what this run changed, so the next run can undo it,
+including variables removed from the config since. Only names whose value
+changes appear. When nothing has changed, mise exits early with empty `env` and
+`aliases` objects, so it is cheap to run often; a run that rechecks the config
+may still update `__MISE_SESSION`. `--force` recomputes everything regardless.
+
+`aliases` lists only [shell aliases](./shell-aliases.md) that were added,
+changed or removed. `untrusted_configs` lists config files mise skipped because
+they are not [trusted](/cli/trust.html). Hooks declared with a `shell` key and
+the `[daemons]` auto lifecycle need a shell, so they do not run in this mode.
+
 ## Language server {#language-server}
 
 `mise lsp` runs a [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
