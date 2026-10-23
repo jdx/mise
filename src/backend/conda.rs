@@ -429,6 +429,11 @@ impl CondaBackend {
         tv.request.read_lockfile(&ctx.config)
     }
 
+    /// The `<name>==<version>` spec the solver is asked for.
+    fn exact_match_spec(&self, version: &str) -> Result<MatchSpec> {
+        exact_match_spec(&self.tool_name(), version)
+    }
+
     /// Install from a fresh solve (no lockfile deps).
     async fn install_fresh(
         &self,
@@ -437,9 +442,7 @@ impl CondaBackend {
         platform_key: &str,
     ) -> Result<()> {
         let tool_name = self.tool_name();
-        let spec_str = format!("{}=={}", tool_name, tv.version);
-        let match_spec = MatchSpec::from_str(&spec_str, ParseStrictness::Lenient)
-            .map_err(|e| eyre::eyre!("invalid conda spec '{}': {}", spec_str, e))?;
+        let match_spec = self.exact_match_spec(&tv.version)?;
 
         ctx.pr.set_message("fetching repodata".to_string());
         let raw_opts = tv.request.options();
@@ -1011,9 +1014,7 @@ impl CondaBackend {
     ) -> Result<BTreeMap<String, CondaPackageInfo>> {
         let platform = Self::target_to_conda_platform(target);
         let tool_name = self.tool_name();
-        let spec_str = format!("{}=={}", tool_name, tv.version);
-        let match_spec = MatchSpec::from_str(&spec_str, ParseStrictness::Lenient)
-            .map_err(|e| eyre::eyre!("invalid conda spec '{}': {}", spec_str, e))?;
+        let match_spec = self.exact_match_spec(&tv.version)?;
 
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
@@ -1111,8 +1112,7 @@ impl Backend for CondaBackend {
         let tool_name = self.tool_name();
 
         let gateway = Self::create_gateway()?;
-        let match_spec = MatchSpec::from_str(&tool_name, ParseStrictness::Lenient)
-            .map_err(|e| eyre::eyre!("invalid match spec for '{}': {}", tool_name, e))?;
+        let match_spec = MatchSpec::from(conda_package_name(&tool_name)?);
 
         let repodata: Vec<RepoData> = gateway
             .query(
@@ -1181,10 +1181,7 @@ impl Backend for CondaBackend {
     ) -> Result<PlatformInfo> {
         let platform = Self::target_to_conda_platform(target);
         let tool_name = self.tool_name();
-        let spec_str = format!("{}=={}", tool_name, tv.version);
-
-        let match_spec = MatchSpec::from_str(&spec_str, ParseStrictness::Lenient)
-            .map_err(|e| eyre::eyre!("invalid conda spec '{spec_str}': {e}"))?;
+        let match_spec = self.exact_match_spec(&tv.version)?;
 
         let raw_opts = tv.request.options();
         let opts = CondaOptions::new(&raw_opts);
@@ -1268,6 +1265,33 @@ fn cmd_escape_value(value: &str) -> String {
         .replace('"', "^\"")
 }
 
+/// The conda package name of a tool.
+fn conda_package_name(tool_name: &str) -> Result<rattler_conda_types::PackageName> {
+    use std::str::FromStr;
+    rattler_conda_types::PackageName::from_str(tool_name)
+        .map_err(|e| eyre::eyre!("invalid conda package name '{tool_name}': {e}"))
+}
+
+/// Build the `<name>==<version>` match spec from its parts.
+///
+/// Formatting the version into a match spec string and parsing that would
+/// honour the match spec grammar inside the version (`[url=...]`, `channel::`,
+/// a build string), and the version can come from a plain tool list that loads
+/// without trust. Only the version spec grammar applies to the version here.
+fn exact_match_spec(tool_name: &str, version: &str) -> Result<MatchSpec> {
+    let name = conda_package_name(tool_name)?;
+    let version = rattler_conda_types::VersionSpec::from_str(
+        &format!("=={version}"),
+        ParseStrictness::Lenient,
+    )
+    .map_err(|e| eyre::eyre!("invalid conda version '{version}' for {tool_name}: {e}"))?;
+    Ok(MatchSpec {
+        name: rattler_conda_types::PackageNameMatcher::Exact(name),
+        version: Some(version),
+        ..Default::default()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{CondaBackend, CondaOptions, MISE_BINS_DIR, rewrite_request_url};
@@ -1286,6 +1310,29 @@ mod tests {
     use std::process::Command;
     use std::str::FromStr;
     use url::Url;
+
+    /// The version can come from a plain tool list that loads without trust,
+    /// so the match spec grammar must not apply to it.
+    #[test]
+    fn exact_match_spec_reads_the_version_as_a_version_only() {
+        let spec = super::exact_match_spec("sqlite", "3.46.0").unwrap();
+        assert_eq!(spec.to_string(), "sqlite ==3.46.0");
+        assert!(spec.url.is_none());
+        assert!(super::exact_match_spec("sqlite", "3.12.*").is_ok());
+        for version in [
+            "ref:sqlite[url=http://127.0.0.1:20319/sqlite-3.46.0-h0.tar.bz2]",
+            "3.46.0[url=/proc/self/cwd/sqlite-3.46.0-h0.tar.bz2]",
+            "3.46.0[url=http://example.invalid/x.tar.bz2]",
+            "3.46.0 h0",
+            "conda-forge::3.46.0",
+        ] {
+            assert!(
+                super::exact_match_spec("sqlite", version).is_err(),
+                "{version}"
+            );
+        }
+        assert!(super::exact_match_spec("sqlite[url=http://example.invalid/x]", "1").is_err());
+    }
 
     fn make_record(name: &str, version: &str, build: &str, url: &str) -> RepoDataRecord {
         let archive_id = ArchiveIdentifier {
