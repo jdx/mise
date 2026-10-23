@@ -2102,8 +2102,8 @@ fn monorepo_lockfile_root_for(config_files: &ConfigMap) -> Option<PathBuf> {
 static MONOREPO_LOCKFILE_DIRS: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> = Lazy::new(Default::default);
 
 /// The directory holding the shared lockfile of the monorepo rooted at `root`:
-/// where the root's own base config keeps its lockfile without monorepo mode
-/// (`.config/mise.toml` -> `.config/`). It depends only on the files in `root`,
+/// the `.config/` directory when the root's own base config lives in
+/// `.config/mise.toml`, otherwise the root itself. It depends only on the files in `root`,
 /// not on which config views are loaded, so every lookup agrees.
 pub fn monorepo_lockfile_dir(root: &Path) -> PathBuf {
     if let Some(dir) = MONOREPO_LOCKFILE_DIRS.lock().unwrap().get(root) {
@@ -2130,6 +2130,9 @@ pub fn monorepo_lockfile_dir(root: &Path) -> PathBuf {
         .iter()
         .find(|path| declares_root(path))
         .or(base_configs.first())
+        // Only `.config/` moves the shared lockfile; `mise/` and `.mise/` roots
+        // keep it at the root as before.
+        .filter(|path| path.parent().is_some_and(|dir| dir.ends_with(".config")))
         .and_then(|path| {
             let (lockfile, _) = lockfile::lockfile_path_for_config(path, None);
             lockfile.parent().map(Path::to_path_buf)
