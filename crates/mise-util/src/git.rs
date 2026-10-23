@@ -794,7 +794,8 @@ fn looks_like_abbreviated_sha(s: &str) -> bool {
 /// any git repository, or in worktrees of a bare repository.
 ///
 /// Detection is filesystem-only (no git subprocess): a linked worktree root
-/// contains a `.git` *file* pointing at `<main>/.git/worktrees/<name>`.
+/// contains a `.git` *file* pointing at `<main>/.git/worktrees/<name>`, whose
+/// `gitdir` file points back at it.
 pub fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
     static CACHE: LazyLock<Mutex<HashMap<PathBuf, Option<PathBuf>>>> =
         LazyLock::new(Default::default);
@@ -817,7 +818,7 @@ pub fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
                 .lock()
                 .unwrap()
                 .entry(wt_root.to_path_buf())
-                .or_insert_with(|| main_checkout_root(&dotgit))
+                .or_insert_with(|| registered_main_checkout_root(&dotgit))
                 .clone();
             if let Some(main_root) = main_root {
                 let equiv = main_root.join(path.strip_prefix(wt_root).ok()?);
@@ -1060,7 +1061,9 @@ pub fn has_sibling_worktrees(worktree_root: &Path) -> bool {
 ///
 /// Two questions share this answer: which working copy may share trust
 /// records, and which checkout names the project for [`Checkout`]. Both refuse
-/// a bare repository, having no working copy to point at.
+/// a bare repository, having no working copy to point at. Trust asks through
+/// [`registered_main_checkout_root`]: everything checked here is reached from
+/// a `.git` file that whoever wrote the directory controls.
 fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     let common = worktree_common_dir(&worktree_gitdir(dotgit_file)?)?;
     if common.file_name() == Some(OsStr::new(".git")) {
@@ -1068,6 +1071,34 @@ fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     } else {
         None // bare repository — no main checkout to share trust with
     }
+}
+
+/// [`main_checkout_root`], but None unless the repository registered this very
+/// directory as the worktree, which is what sharing trust records requires.
+///
+/// Anyone can write a `.git` file naming an existing `worktrees/<name>` entry
+/// of somebody else's repository; only that repository can make the entry name
+/// the directory back. git records the worktree's `.git` file in the entry's
+/// `gitdir`, so a directory the entry does not point at is not that worktree,
+/// whatever its `.git` file says.
+fn registered_main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
+    let gitdir = worktree_gitdir(dotgit_file)?;
+    let pointer = PathBuf::from(std::fs::read_to_string(gitdir.join("gitdir")).ok()?.trim());
+    // `worktree.useRelativePaths` writes the pointer relative to the entry
+    // holding it, as `commondir` is written.
+    let pointer = if pointer.is_relative() {
+        gitdir.join(pointer)
+    } else {
+        pointer
+    };
+    // The directories are compared rather than the files, so that a `.git`
+    // symlinked to a real worktree's `.git` file does not pass for it.
+    if pointer.file_name() != Some(OsStr::new(".git"))
+        || pointer.parent()?.canonicalize().ok()? != dotgit_file.parent()?.canonicalize().ok()?
+    {
+        return None;
+    }
+    main_checkout_root(dotgit_file)
 }
 
 /// A git binary mise can run unattended for its own plumbing, or None.

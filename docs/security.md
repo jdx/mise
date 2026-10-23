@@ -170,6 +170,10 @@ checkout is trusted. `mise trust --untrust` in the worktree warns that the file
 stays trusted for that reason; use `mise trust --ignore` there to stop it
 loading. Paranoid mode does not share trust between worktrees.
 
+The repository has to list the worktree at its current location: a `.git` file
+that only names one of the repository's worktrees shares nothing. After moving a
+worktree by hand, run `git worktree repair`.
+
 ## Safe mode
 
 Set `MISE_SAFE=1` when automation has to read config it does not control, such
