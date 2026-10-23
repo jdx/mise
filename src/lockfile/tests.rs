@@ -436,6 +436,41 @@ fn tool_stub_finds_nearest_base_config_lockfile_from_where_it_lives() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn tool_stub_references_through_a_symlinked_directory_are_dropped() {
+    // `tool-stubs` references come with the checkout. One that passes through
+    // a linked directory names a file elsewhere, which must not be read.
+    let temp = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(temp.path()).unwrap();
+    let outside = root.join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    file::write(outside.join("tool"), "version = \"1\"\n").unwrap();
+
+    let project = root.join("project");
+    fs::create_dir_all(project.join("bin")).unwrap();
+    file::write(project.join(".test.mise.toml"), "").unwrap();
+    file::write(project.join("bin/tool"), "version = \"1\"\n").unwrap();
+    std::os::unix::fs::symlink(&outside, project.join("dir")).unwrap();
+    std::os::unix::fs::symlink(outside.join("tool"), project.join("file")).unwrap();
+    let path = project.join("mise.lock");
+    // A stub behind a symlinked directory lives where the link leads.
+    assert_ne!(
+        lockfile_path_for_tool_stub(&project.join("dir/tool")),
+        Some((path.clone(), false))
+    );
+
+    let mut lockfile = Lockfile {
+        tool_stubs: ["bin/tool", "dir/tool", "file"].map(String::from).into(),
+        ..Default::default()
+    };
+    assert!(lockfile.retain_live_tool_stubs(&path));
+    assert_eq!(
+        lockfile.tool_stubs(),
+        &BTreeSet::from(["bin/tool".to_string()])
+    );
+}
+
 #[test]
 fn tool_stub_references_round_trip_and_drop_deleted_stubs() {
     let temp = tempfile::tempdir().unwrap();

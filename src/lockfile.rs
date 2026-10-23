@@ -2366,7 +2366,7 @@ fn lockfile_path_for_tool_source_with_root(
 }
 
 /// The mise.lock a tool stub reads from: the lockfile of the nearest project
-/// config above where the stub lives. The stub file's symlink is resolved
+/// config above where the stub lives. Symlinks in the stub's path are resolved
 /// first, so a stub linked onto PATH still finds its project's lockfile, and
 /// the directory it is invoked from never matters. Local and environment
 /// configs are skipped: a committed stub resolves the same way everywhere.
@@ -2399,12 +2399,11 @@ fn tool_stub_config(stub: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
 }
 
 fn resolve_tool_stub_path(stub: &Path) -> Option<PathBuf> {
-    if stub.is_symlink() {
-        fs::canonicalize(stub).ok()
-    } else {
-        use path_absolutize::Absolutize;
-        stub.absolutize().ok().map(|p| p.to_path_buf())
-    }
+    // The whole path, not only its last component: a stub reached through a
+    // symlinked directory lives where that directory leads. Otherwise a
+    // `tool-stubs` reference through a committed link such as
+    // `proc -> /proc/self` would count as a stub of this project and be read.
+    dunce::canonicalize(stub).ok()
 }
 
 /// A stub's path relative to its lockfile's directory, with `/` separators so
