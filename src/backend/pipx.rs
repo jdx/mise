@@ -1127,11 +1127,31 @@ impl PIPXBackend {
             return Some(fields[1].to_string());
         }
 
+        // The name ends at the first `-` whose prefix normalizes to the package.
+        // Normalizing the prefix anew at every `-` is quadratic in the filename,
+        // which the index controls, so normalize the stem in one pass (mirroring
+        // `normalize_package_name`) and stop as soon as it diverges from the
+        // package: normalization only appends, so no longer prefix can match.
         let stem = filename.strip_suffix(".tar.gz")?;
-        stem.match_indices('-').find_map(|(index, _)| {
-            (Self::normalize_package_name(&stem[..index]) == normalized_package)
-                .then(|| stem[index + 1..].to_string())
-        })
+        let mut rest = normalized_package.as_str();
+        let mut separator = false;
+        for (index, c) in stem.char_indices() {
+            if c == '-' && rest.is_empty() {
+                return Some(stem[index + 1..].to_string());
+            }
+            if matches!(c, '-' | '_' | '.') {
+                if !separator {
+                    rest = rest.strip_prefix('-')?;
+                    separator = true;
+                }
+            } else {
+                for c in c.to_lowercase() {
+                    rest = rest.strip_prefix(c)?;
+                }
+                separator = false;
+            }
+        }
+        None
     }
 
     fn normalize_package_name(package: &str) -> String {
@@ -2255,6 +2275,41 @@ mod tests {
             PIPXBackend::versions_from_simple_index("Demo_Pkg", html),
             vec!["1.0+cpu", "2.0+cpu"]
         );
+    }
+
+    #[test]
+    fn splits_sdist_filenames_at_the_end_of_the_package_name() {
+        for (package, filename, version) in [
+            ("demo", "demo-1.0.tar.gz", Some("1.0")),
+            ("demo-pkg", "demo-pkg-1.0.tar.gz", Some("1.0")),
+            ("demo-pkg", "Demo._-PKG-1.0.tar.gz", Some("1.0")),
+            ("demo", "demo-pkg-1.0.tar.gz", Some("pkg-1.0")),
+            ("demo", "demo--1.0.tar.gz", Some("-1.0")),
+            ("demo", "demo_1.0.tar.gz", None),
+            ("demo", "demos-1.0.tar.gz", None),
+            ("demo-pkg", "demo-1.0.tar.gz", None),
+            ("demo", "demo.tar.gz", None),
+        ] {
+            assert_eq!(
+                PIPXBackend::version_from_distribution_filename(package, filename).as_deref(),
+                version,
+                "{package} {filename}"
+            );
+        }
+    }
+
+    #[test]
+    fn sdist_filename_parsing_is_linear_in_the_filename() {
+        // Quadratic work on names this long does not finish in a test run.
+        for (package, stem) in [
+            ("demo", "x-".repeat(2_000_000)),
+            ("demo-pkg", format!("demo{}", "-".repeat(4_000_000))),
+        ] {
+            assert_eq!(
+                PIPXBackend::version_from_distribution_filename(package, &format!("{stem}.tar.gz")),
+                None
+            );
+        }
     }
 
     #[test]
