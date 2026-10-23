@@ -3457,8 +3457,9 @@ fn log_url(url: &Url) -> std::borrow::Cow<'_, str> {
 ///
 /// Signed URLs and API keys travel in the query (`?private_token=`,
 /// `?X-Amz-Signature=`), and mise cannot tell those from harmless parameters by
-/// name. Names are kept, and so are short numbers (`page=2`, `per_page=100`),
-/// which keep paged requests readable and are no credential.
+/// name. Names are kept, and so are the short numbers of the paging parameters
+/// mise sends (`page=2`, `per_page=100`, `limit=100`), which keep paged requests
+/// readable; a short number under any other name (`token=123456`) is hidden.
 fn redact_query(query: &str) -> String {
     query
         .split('&')
@@ -3467,8 +3468,11 @@ fn redact_query(query: &str) -> String {
                 Some((name, value)) => (Some(name), value),
                 None => (None, pair),
             };
-            let harmless =
-                value.is_empty() || (value.len() <= 6 && value.bytes().all(|b| b.is_ascii_digit()));
+            // Only the paging parameters mise sends keep a short number, so a
+            // numeric token (`token=123456`) is hidden like any other value.
+            let paging = name.is_some_and(|name| matches!(name, "page" | "per_page" | "limit"));
+            let harmless = value.is_empty()
+                || (paging && value.len() <= 6 && value.bytes().all(|b| b.is_ascii_digit()));
             match (name, harmless) {
                 (_, true) => pair.to_string(),
                 (Some(name), false) => format!("{name}=[redacted]"),

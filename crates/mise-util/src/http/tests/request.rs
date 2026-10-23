@@ -441,6 +441,15 @@ fn log_url_hides_query_values() {
         log_url(&url),
         "https://dl.example.com/a.tar.gz?private_token=[redacted]&page=2&[redacted]"
     );
+    // A short number is kept only for a paging parameter: a numeric token is
+    // a credential like any other.
+    let url =
+        Url::parse("https://h.example/x?token=123456&access_token=42&per_page=100&limit=50&empty=")
+            .unwrap();
+    assert_eq!(
+        log_url(&url),
+        "https://h.example/x?token=[redacted]&access_token=[redacted]&per_page=100&limit=50&empty="
+    );
 }
 
 /// A status error names the URL it was for. The query there can hold a
