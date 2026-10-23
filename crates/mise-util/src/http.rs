@@ -780,7 +780,11 @@ pub async fn download_file_checksum_pinned<U: IntoUrl>(
     sha256: &str,
     pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
-    HTTP_CHECKSUM_PINNED.download_file(url, path, pr).await?;
+    // Pinned, so a download that fails the check below is not kept.
+    let pin = format!("sha256:{sha256}");
+    HTTP_CHECKSUM_PINNED
+        .download_file_pinned(url, path, Some(&pin), pr)
+        .await?;
     verify_sha256_or_remove(path, sha256, pr)
 }
 
@@ -1598,8 +1602,8 @@ impl Client {
             }
         };
         let dest = dest.to_path_buf();
-        // With nothing to index it by (no validator, no pin) the staged file is
-        // the download itself.
+        // With nothing to index it by (no validator, no pin), or a pin it
+        // doesn't match, the staged file is the download itself.
         let (source, link) = match &blob {
             Some(blob) => (blob.clone(), true),
             None => (staging.clone(), false),
@@ -1666,7 +1670,7 @@ impl Client {
         let attempt = Arc::new(AtomicUsize::new(0));
         let progress = Arc::new(DownloadProgress::default());
         let cached = if use_cache {
-            cas::lookup_url(&request_hash)
+            cas::lookup_url(&request_hash, pin)
         } else {
             None
         };

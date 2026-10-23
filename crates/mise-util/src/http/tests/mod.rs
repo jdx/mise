@@ -772,6 +772,75 @@ async fn test_download_replaces_a_damaged_stored_file() {
     *cas::TEST_ROOT.lock().unwrap() = None;
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_that_fails_its_pin_is_not_kept() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    // The wrong bytes, sent with the validator the right file has.
+    let wrong = concat!(
+        "HTTP/1.1 200 OK\r\n",
+        "Content-Length: 5\r\n",
+        "ETag: \"artifact-v1\"\r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        "wrong"
+    );
+    let (port, count, requests) = spawn_recording_server(vec![
+        wrong,
+        wrong,
+        wrong,
+        not_modified_response(),
+        cacheable_download_response(),
+    ])
+    .await;
+    let url = format!("http://127.0.0.1:{port}/artifact.bin");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("artifact.bin");
+    let hello = dir.path().join("hello");
+    std::fs::write(&hello, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&hello, None).unwrap()
+    );
+
+    // The caller gets the file to reject, and nothing of it is kept: the next
+    // download is not conditional, so the server is not asked to confirm it.
+    client
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"wrong");
+    assert!(!cache.path().join("blobs").exists());
+    assert!(!cache.path().join("urls").exists());
+    client
+        .download_file_pinned(&url, &dest, Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"wrong");
+    assert!(!cache.path().join("blobs").exists());
+    assert!(
+        !requests.lock().unwrap()[1]
+            .to_lowercase()
+            .contains("if-none-match")
+    );
+
+    // A file kept by an unpinned download of the same URL is not what a 304
+    // answers a pinned one with when it doesn't match the pin.
+    client.download_file(&url, &dest, None).await.unwrap();
+    assert!(cache.path().join("urls").exists());
+    std::fs::remove_file(&dest).unwrap();
+    client
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 5);
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
 fn set_test_cache_settings(
     configure: impl FnOnce(&mut mise_settings::SettingsPartial),
 ) -> SettingsGuard {

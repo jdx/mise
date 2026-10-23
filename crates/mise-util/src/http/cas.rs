@@ -117,6 +117,14 @@ fn parse_pin(pin: &str) -> Option<(&str, String)> {
     (PIN_ALGOS.contains(&algo) && is_hex(hex)).then(|| (algo, hex.to_lowercase()))
 }
 
+/// Whether `path` hashes to `pin`, whichever algorithm it names. The caller
+/// checks the same pin after the download, so one it can't check fails here
+/// too.
+fn matches_pin(path: &Path, pin: &str) -> bool {
+    pin.split_once(':')
+        .is_some_and(|(algo, hex)| crate::hash::ensure_checksum(path, hex, None, algo).is_ok())
+}
+
 fn pin_path(root: &Path, algo: &str, hex: &str) -> PathBuf {
     root.join("pins").join(algo).join(format!("{hex}.json"))
 }
@@ -131,8 +139,9 @@ pub(super) struct Hit {
 }
 
 enum Verify {
-    /// The blob must hash to its own name.
-    Blake3(String),
+    /// The blob must hash to its own name, and to the tool's pinned checksum
+    /// when there is one.
+    Blake3 { name: String, pin: Option<String> },
     /// The blob must hash to the tool's pinned checksum.
     Pin { algo: String, hex: String },
 }
@@ -153,7 +162,10 @@ impl Cached {
     }
 }
 
-pub(super) fn lookup_url(request_hash: &str) -> Option<Cached> {
+/// The download last kept for `request_hash`. With a `pin` it is only handed
+/// back once it hashes to the pin too: an entry written by an unpinned
+/// download of the same URL may hold bytes the pin would reject.
+pub(super) fn lookup_url(request_hash: &str, pin: Option<&str>) -> Option<Cached> {
     let root = root()?;
     let entry = url_path(&root, request_hash);
     let url: UrlEntry = serde_json::from_slice(&std::fs::read(&entry).ok()?).ok()?;
@@ -167,7 +179,10 @@ pub(super) fn lookup_url(request_hash: &str) -> Option<Cached> {
             blob,
             effective_filename: url.effective_filename,
             entry,
-            verify: Verify::Blake3(url.blake3),
+            verify: Verify::Blake3 {
+                name: url.blake3,
+                pin: pin.map(str::to_string),
+            },
         },
     })
 }
@@ -197,8 +212,11 @@ impl Hit {
     /// drop what pointed at it and return `None`.
     pub(super) fn verified(&self) -> Option<PathBuf> {
         let intact = match &self.verify {
-            Verify::Blake3(expected) => {
-                crate::hash::file_hash_blake3(&self.blob, None).is_ok_and(|hash| hash == *expected)
+            Verify::Blake3 { name, pin } => {
+                crate::hash::file_hash_blake3(&self.blob, None).is_ok_and(|hash| hash == *name)
+                    && pin
+                        .as_deref()
+                        .is_none_or(|pin| matches_pin(&self.blob, pin))
             }
             Verify::Pin { algo, hex } => {
                 crate::hash::ensure_checksum(&self.blob, hex, None, algo).is_ok()
@@ -289,13 +307,15 @@ pub(super) struct Keep<'a> {
 }
 
 /// Keep `path`, just downloaded, by copying it into the store. Returns the
-/// stored file, or `None` when there is nothing to index it by.
+/// stored file, or `None` when there is nothing to index it by or it doesn't
+/// match its pin.
 pub(super) fn store(path: &Path, keep: Keep<'_>) -> Result<Option<PathBuf>> {
     keep_file(path, keep, false)
 }
 
 /// Keep `path`, which sits in the store's staging area, by moving it into the
-/// store. Returns the stored file.
+/// store. Returns the stored file, or `None` as [`store`] does, with `path`
+/// left where it was.
 pub(super) fn ingest(path: &Path, keep: Keep<'_>) -> Result<Option<PathBuf>> {
     keep_file(path, keep, true)
 }
@@ -304,15 +324,15 @@ fn keep_file(path: &Path, keep: Keep<'_>, move_in: bool) -> Result<Option<PathBu
     let Some(root) = root() else {
         return Ok(None);
     };
-    // The caller checks the pin after the download. Checking here too keeps a
-    // wrong file from ever being indexed under it.
-    let pin = keep.pin.and_then(parse_pin).filter(|(algo, hex)| {
-        let ok = crate::hash::ensure_checksum(path, hex, None, algo).is_ok();
-        if !ok {
-            debug!("not indexing a download that doesn't match its pin");
-        }
-        ok
-    });
+    // The caller checks the pin after the download and rejects the file.
+    // Checking here too keeps a wrong file out of the store: indexed under its
+    // URL, a `304 Not Modified` would hand it back to be rejected again, and
+    // the right file would never be fetched.
+    if keep.pin.is_some_and(|pin| !matches_pin(path, pin)) {
+        debug!("not keeping a download that doesn't match its pin");
+        return Ok(None);
+    }
+    let pin = keep.pin.and_then(parse_pin);
     if keep.validator.is_none() && pin.is_none() {
         return Ok(None);
     }
