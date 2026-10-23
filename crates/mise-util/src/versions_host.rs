@@ -936,8 +936,9 @@ fn pin_github_release_assets(
 /// API asset URLs whose asset ID mise-versions chose. Only these need their
 /// identity confirmed before use (see `github::checked_api_asset_url`);
 /// GitHub's own release data, such as for private repos, is taken as given.
-/// Filled when mise-versions data is pinned, and again from each
-/// `GithubAsset::from_versions_host` when a release comes out of a cache.
+/// Filled when mise-versions data is pinned, again from each
+/// `GithubAsset::from_versions_host` when a release comes out of a cache, and
+/// from every lockfile that is read (see `remember_locked_asset_api_url`).
 static MIRRORED_ASSET_API_URLS: LazyLock<std::sync::Mutex<HashSet<String>>> =
     LazyLock::new(Default::default);
 
@@ -946,6 +947,24 @@ pub fn remember_mirrored_asset_api_url(url: &str) {
         .lock()
         .unwrap()
         .insert(url.to_string());
+}
+
+/// Have a lockfile's `url_api` confirmed before use like a mirrored one. A
+/// lockfile records the asset ID as it was resolved, not who chose it, so an
+/// ID mise-versions supplied at `mise lock` time would otherwise pass as
+/// GitHub's own in every later install from that lockfile. Only GitHub release
+/// assets are registered: the other API URLs a lockfile can hold (other
+/// forges, GitHub Enterprise, repository contents) name no asset ID GitHub
+/// could be asked about.
+pub fn remember_locked_asset_api_url(url: &str) {
+    let is_asset = url::Url::parse(url).is_ok_and(|parsed| {
+        let segments: Vec<_> = parsed.path_segments().into_iter().flatten().collect();
+        parsed.host_str() == Some("api.github.com")
+            && matches!(segments[..], ["repos", _, _, "releases", "assets", _])
+    });
+    if is_asset {
+        remember_mirrored_asset_api_url(url);
+    }
 }
 
 pub fn is_mirrored_asset_api_url(url: &str) -> bool {
@@ -1368,6 +1387,24 @@ mod tests {
             "https://api.github.com:443/repos/jdx/mise-test-fixtures/releases/assets/1?a=b#c",
         ] {
             assert_eq!(pin(odd).as_deref(), Some(fixture), "{odd:?}");
+        }
+    }
+
+    #[test]
+    fn test_remember_locked_asset_api_url() {
+        let asset = "https://api.github.com/repos/jdx/locked/releases/assets/1";
+        assert!(!is_mirrored_asset_api_url(asset));
+        remember_locked_asset_api_url(asset);
+        assert!(is_mirrored_asset_api_url(asset));
+        // Nothing GitHub could be asked about as a release asset.
+        for other in [
+            "https://api.github.com/repos/jdx/locked/contents/releases/assets/1?ref=v1.0.0",
+            "https://api.github.com/repos/jdx/locked/tarball/v1.0.0",
+            "https://github.example.com/api/v3/repos/jdx/locked/releases/assets/1",
+            "https://gitlab.com/api/v4/projects/jdx%2Flocked/releases/assets/1",
+        ] {
+            remember_locked_asset_api_url(other);
+            assert!(!is_mirrored_asset_api_url(other), "{other}");
         }
     }
 

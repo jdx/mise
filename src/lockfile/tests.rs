@@ -4206,3 +4206,33 @@ fn tool_stub_reference_climbs_out_of_the_lockfile_dir() {
         fs::canonicalize(&stub).unwrap()
     );
 }
+
+#[test]
+fn locked_github_asset_ids_are_confirmed_before_use() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    file::write(
+        &path,
+        r#"
+[[tools."github:acme/locked"]]
+version = "1.0.0"
+backend = "github:acme/locked"
+[tools."github:acme/locked"."platforms.linux-x64"]
+url = "https://github.com/acme/locked/releases/download/v1.0.0/tool.tar.gz"
+url_api = "https://api.github.com/repos/acme/locked/releases/assets/1"
+[[tools."github:acme/locked"."platforms.linux-x64".additional_artifacts]]
+url = "https://github.com/acme/locked/releases/download/v1.0.0/extra.tar.gz"
+url_api = "https://api.github.com/repos/acme/locked/releases/assets/2"
+"#,
+    )
+    .unwrap();
+
+    Lockfile::read(&path).unwrap();
+    for id in [1, 2] {
+        let url_api = format!("https://api.github.com/repos/acme/locked/releases/assets/{id}");
+        assert!(
+            crate::versions_host::is_mirrored_asset_api_url(&url_api),
+            "{url_api}"
+        );
+    }
+}

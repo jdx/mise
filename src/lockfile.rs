@@ -1484,6 +1484,20 @@ impl Lockfile {
             lockfile.tools.entry(short).or_default().extend(versions);
         }
 
+        // A lockfile does not record whether GitHub or mise-versions chose a
+        // locked asset ID, so have each one confirmed before it is downloaded.
+        for info in lockfile
+            .tools
+            .values()
+            .flatten()
+            .flat_map(|tool| tool.platforms.values())
+        {
+            let additional = info.additional_artifacts.iter().map(|a| &a.url_api);
+            for url_api in std::iter::once(&info.url_api).chain(additional).flatten() {
+                crate::versions_host::remember_locked_asset_api_url(url_api);
+            }
+        }
+
         if lockfile_version < FORGE_IDS_LOCKFILE_VERSION
             && lockfile.tools.values().flatten().any(|tool| {
                 tool.platforms

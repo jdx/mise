@@ -4057,7 +4057,9 @@ async fn select_github_download_url(
     api_url: Option<&str>,
 ) -> String {
     match api_url {
-        Some(api_url) if private => api_url.to_string(),
+        // No probe for private repos, but an asset ID that mise-versions or a
+        // lockfile supplied still has to be confirmed before it is used.
+        Some(api_url) if private => github::checked_api_asset_url(browser_url, api_url).await,
         Some(api_url) => github::pick_reachable_asset_url(browser_url, api_url).await,
         None => browser_url.to_string(),
     }

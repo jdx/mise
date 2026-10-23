@@ -1738,9 +1738,10 @@ pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> Strin
 /// mise-versions can pair a correct browser URL with any asset ID in the
 /// repository, and the ID is only used here, when the browser URL can't be.
 /// One metadata request settles it: GitHub reports which tag and file the ID
-/// is. Only IDs mise-versions supplied are checked, so GitHub's own release
-/// data (private repos, where this fallback is routine) costs nothing extra.
-async fn checked_api_asset_url(browser_url: &str, api_url: &str) -> String {
+/// is. Only IDs mise-versions supplied, or may have supplied to a lockfile they
+/// were read from, are checked, so GitHub's own release data (private repos,
+/// where this fallback is routine) costs nothing extra.
+pub async fn checked_api_asset_url(browser_url: &str, api_url: &str) -> String {
     if !crate::versions_host::is_mirrored_asset_api_url(api_url) {
         return api_url.to_string();
     }
