@@ -696,11 +696,7 @@ fn validate_task_name(task: &str) -> std::result::Result<(), ErrorData> {
         "invalid task name '': a task name is required".to_string()
     } else if task.starts_with('-') {
         format!("invalid task name '{task}': task names cannot start with '-'")
-    } else if (cfg!(windows) && task.starts_with(r"\\"))
-        || crate::task::task_list::script_path_arg(task).is_some()
-    {
-        // A UNC name (`\\server\share\x`) is a script path to `mise run` whenever it exists.
-        // Refuse it before looking: checking it would reach out to the host it names.
+    } else if is_path_like(task) {
         format!("invalid task name '{task}': only the project's tasks can be run, not a file path")
     } else {
         return Ok(());
@@ -710,6 +706,22 @@ fn validate_task_name(task: &str) -> std::result::Result<(), ErrorData> {
         message: message.into(),
         data: None,
     })
+}
+
+/// Whether `mise run` could take `task` for the path of a script rather than a task name.
+///
+/// Decided by its shape, not by whether the file exists: the child looks again when it starts,
+/// and a file that appears in between must not turn a refused name into a script. Relative
+/// (`./`, `../`, `~/`, `.\`), absolute (`/x`, `\x`, UNC `\\host\share`) and drive (`C:\`,
+/// `C:/`) paths all count, and none of them is a task name. A leading `//` is the monorepo
+/// spelling (`//packages/app:build`), which names a task by its `:`; without one there is no
+/// task in it, only the path `mise run` makes of it by dropping a `/`. A monorepo name is still
+/// refused when it is the path of an existing file.
+fn is_path_like(task: &str) -> bool {
+    if task.starts_with("//") {
+        return !task.contains(':') || crate::task::task_list::script_path_arg(task).is_some();
+    }
+    xx::regex!(r"^((\.*|~)[/\\]|\w:[/\\])").is_match(task)
 }
 
 #[cfg(test)]
@@ -754,15 +766,40 @@ mod tests {
     }
 
     #[test]
-    fn validate_task_name_rejects_unc_paths_on_windows() {
-        let unc = r"\\server\share\build.cmd";
-        assert_eq!(validate_task_name(unc).is_err(), cfg!(windows));
-        validate_task_name("//sub:build").unwrap();
+    fn validate_task_name_rejects_path_shapes_whether_or_not_they_exist() {
+        for task in [
+            "./build.sh",
+            "../clone/build.sh",
+            "~/build.sh",
+            "/does/not/exist/build.sh",
+            "//does/not/exist/build.sh",
+            r".\build.cmd",
+            r"..\clone\build.cmd",
+            r"\does\not\exist.cmd",
+            r"\\server\share\build.cmd",
+            r"C:\build.cmd",
+            "C:/build.cmd",
+        ] {
+            let err = validate_task_name(task).unwrap_err();
+            assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{task:?}");
+            assert!(err.message.contains("not a file path"), "{task:?}");
+        }
     }
 
     #[test]
     fn validate_task_name_accepts_task_names() {
-        for task in ["build", "//sub:build", "lint:fix", "a-b", "test:e2e"] {
+        for task in [
+            "build",
+            "//sub:build",
+            "//packages/app:build",
+            "lint:fix",
+            "a-b",
+            "test:e2e",
+            "test/e2e",
+            "a/b:c",
+            "docs:build/site",
+            ".hidden",
+        ] {
             validate_task_name(task).unwrap_or_else(|_| panic!("{task:?} should be accepted"));
         }
     }
