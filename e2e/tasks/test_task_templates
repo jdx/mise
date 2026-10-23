@@ -277,3 +277,18 @@ EOT
 mkdir -p sub
 assert "cd sub && mise run file_task" "ver=v9"
 assert_contains "cd sub && mise run file_task -h" "--ver"
+
+# The inherited usage sees the task's env
+cat <<'EOT' >mise.toml
+[task_templates.tmpl]
+env = { PROFILE = "prod" }
+usage = '''
+flag "--profile <p>" default="{{ env.PROFILE }}"
+'''
+EOT
+cat <<'EOS' >.mise-tasks/file_task
+#!/usr/bin/env bash
+#MISE extends="tmpl"
+echo "profile=$usage_profile"
+EOS
+assert "mise run file_task" "profile=prod"

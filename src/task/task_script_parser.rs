@@ -385,6 +385,7 @@ impl TaskScriptParser {
         config: &Arc<Config>,
         task: &Task,
         preflight: bool,
+        env: Option<&EnvMap>,
     ) -> Result<String> {
         // A workspace default also fills `usage`, but it only fills what a task leaves unset,
         // and a file task's `#USAGE` lines already set it.
@@ -395,11 +396,14 @@ impl TaskScriptParser {
             return Ok(task.usage.clone());
         }
         let (mut tera, _, _, _) = self.setup_tera_for_spec_parsing(task);
-        let tera_ctx = if preflight {
+        let mut tera_ctx = if preflight {
             task.tera_ctx_for_usage_preflight(config)
         } else {
             task.tera_ctx_for_usage(config).await?
         };
+        if let Some(env) = env {
+            tera_ctx.insert("env", env);
+        }
         Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)
     }
 
