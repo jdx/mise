@@ -2870,7 +2870,6 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Inspects the top-level contents of a tar archive without extracting it
 /// Skips leading CurDir (".") components from a path's components iterator.
 /// Archives often have paths like "./foo/bar" where the leading "." should be ignored.
 fn skip_curdir_components(path: &Path) -> impl Iterator<Item = std::path::Component<'_>> {
@@ -2878,6 +2877,12 @@ fn skip_curdir_components(path: &Path) -> impl Iterator<Item = std::path::Compon
         .skip_while(|c| matches!(c, std::path::Component::CurDir))
 }
 
+/// Inspects the top-level contents of a tar archive without extracting it.
+///
+/// Stops at the second distinct top-level entry, which already settles
+/// [`should_strip_components`]. A tar entry name can be up to 1 MiB and
+/// compresses to a few bytes, so collecting every name would let a tiny
+/// archive hold gigabytes of memory.
 pub fn inspect_tar_contents(
     archive: &Path,
     format: ExtractionFormat,
@@ -2903,15 +2908,20 @@ pub fn inspect_tar_contents(
 
             // Update the component's directory status
             // A component is a directory if ANY entry indicates it's a directory
-            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            let existing = top_level_components.entry(name).or_insert(false);
             *existing = *existing || is_directory;
+            if top_level_components.len() > 1 {
+                break;
+            }
         }
     }
 
     Ok(top_level_components.into_iter().collect())
 }
 
-/// Inspects the top-level contents of a zip archive without extracting it
+/// Inspects the top-level contents of a zip archive without extracting it.
+///
+/// Like [`inspect_tar_contents`], stops at the second distinct top-level entry.
 pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     let f = File::open(archive)?;
     let mut archive = ZipArchive::new(f)
@@ -2931,8 +2941,11 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
                 // It's a directory if the entry type is dir OR if there are more components after the first
                 let is_directory = file.is_dir() || components.next().is_some();
 
-                let existing = top_level_components.entry(name.clone()).or_insert(false);
+                let existing = top_level_components.entry(name).or_insert(false);
                 *existing = *existing || is_directory;
+                if top_level_components.len() > 1 {
+                    break;
+                }
             }
         }
     }
@@ -2940,7 +2953,8 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     Ok(top_level_components.into_iter().collect())
 }
 
-/// Adapted from inspect_tar_contents for 7z archives
+/// Adapted from inspect_tar_contents for 7z archives, and like it stops at the
+/// second distinct top-level entry.
 pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     let sevenz = sevenz_rust2::Archive::open(archive)?;
     let mut top_level_components = std::collections::HashMap::new();
@@ -2956,8 +2970,11 @@ pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
             // It's a directory if the entry type is dir OR if there are more components after the first
             let is_directory = file.is_directory() || components.next().is_some();
 
-            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            let existing = top_level_components.entry(name).or_insert(false);
             *existing = *existing || is_directory;
+            if top_level_components.len() > 1 {
+                break;
+            }
         }
     }
 

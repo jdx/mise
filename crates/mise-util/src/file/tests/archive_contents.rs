@@ -399,28 +399,23 @@ fn test_inspect_tar_contents_curdir_prefix() {
     // Now test inspect_tar_contents
     let result = inspect_tar_contents(temp_file.path(), ExtractionFormat::TarGz).unwrap();
 
-    // Should have 3 top-level entries: dir1, dir2, standalone
-    // NOT a single "." entry
+    // Should have the first 2 top-level entries, where inspection stops: dir1
+    // and dir2, NOT a single "." entry
     assert_eq!(
         result.len(),
-        3,
-        "Expected 3 top-level entries, got: {:?}",
+        2,
+        "Expected 2 top-level entries, got: {:?}",
         result
     );
 
     let names: std::collections::HashSet<_> = result.iter().map(|(n, _)| n.as_str()).collect();
     assert!(names.contains("dir1"), "Should contain dir1");
     assert!(names.contains("dir2"), "Should contain dir2");
-    assert!(names.contains("standalone"), "Should contain standalone");
     assert!(!names.contains("."), "Should NOT contain '.' (CurDir)");
 
     // dir1 and dir2 should be marked as directories (have nested content)
     for (name, is_dir) in &result {
-        if name == "dir1" || name == "dir2" {
-            assert!(*is_dir, "{} should be marked as directory", name);
-        } else if name == "standalone" {
-            assert!(!*is_dir, "standalone should NOT be marked as directory");
-        }
+        assert!(*is_dir, "{} should be marked as directory", name);
     }
 
     // Verify should_strip_components returns false (multiple top-level entries)
@@ -429,4 +424,43 @@ fn test_inspect_tar_contents_curdir_prefix() {
         !should_strip,
         "Should NOT strip components for multi-entry archive"
     );
+}
+
+#[test]
+fn test_inspect_tar_contents_stops_at_second_top_level_entry() {
+    // A second top-level entry settles should_strip_components, so inspection
+    // must not keep reading (and collecting names) past it: a name can be
+    // 1 MiB and compress to a few bytes, so reading every entry of a small
+    // archive could hold gigabytes of names.
+    let dir = tempfile::tempdir().unwrap();
+    let archive_path = dir.path().join("tool.tar");
+    let mut builder = jdx_tar::Builder::new(Vec::new());
+    let mut header = jdx_tar::Header::new_gnu(EntryType::File);
+    header.set_size(0);
+    header.set_mode(0o755);
+    for name in ["pkg/a", "pkg/b", "other"] {
+        builder
+            .append_data(&mut header.clone(), name, std::io::empty())
+            .unwrap();
+    }
+    let mut archive = builder.into_inner().unwrap();
+    // Replace the end-of-archive marker with a header that does not parse, so
+    // reading past the third entry fails.
+    archive.truncate(3 * 512);
+    archive.extend([b'x'; 512]);
+    fs::write(&archive_path, &archive).unwrap();
+
+    let mut contents = inspect_tar_contents(&archive_path, ExtractionFormat::Tar).unwrap();
+    contents.sort();
+    assert_eq!(
+        contents,
+        vec![("other".to_string(), false), ("pkg".to_string(), true)]
+    );
+    assert!(!should_strip_components(&archive_path, ExtractionFormat::Tar).unwrap());
+
+    // With a single top-level entry so far the answer is still open, so the
+    // rest of the archive is read and the broken header is an error.
+    archive.drain(2 * 512..3 * 512);
+    fs::write(&archive_path, &archive).unwrap();
+    assert!(inspect_tar_contents(&archive_path, ExtractionFormat::Tar).is_err());
 }
