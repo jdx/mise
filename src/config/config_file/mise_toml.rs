@@ -779,7 +779,22 @@ impl MiseToml {
             .lock()
             .unwrap()
             .get_or_try_init(|| {
-                let body = file::read_config_to_string(&self.path).unwrap_or_default();
+                // A missing file is a new config. Any other failure, such as the
+                // file having grown past the size limit, must not turn into an
+                // empty document that a later `save` would write over the file.
+                let body = match file::read_config_to_string(&self.path) {
+                    Ok(body) => body,
+                    Err(err)
+                        if err.chain().any(|cause| {
+                            cause
+                                .downcast_ref::<std::io::Error>()
+                                .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+                        }) =>
+                    {
+                        String::new()
+                    }
+                    Err(err) => return Err(err),
+                };
                 Ok(body.parse()?)
             })
             .cloned()
@@ -2902,6 +2917,38 @@ mod tests {
             assert_snapshot!(cf);
             assert_debug_snapshot!(cf);
         });
+    }
+
+    /// The editable document is read lazily. If the file can no longer be read
+    /// by then (here it has grown past the size limit), an edit must fail
+    /// rather than start from an empty document that `save` writes back.
+    #[tokio::test]
+    async fn test_edit_fails_when_the_file_can_no_longer_be_read() {
+        let _config = Config::get().await.unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join("mise.toml");
+        file::write(&p, "[tools]\nnode = \"22\"\n").unwrap();
+        let mut cf = MiseToml::from_file(&p).unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&p)
+            .unwrap()
+            .set_len(file::CONFIG_FILE_LIMIT + 1)
+            .unwrap();
+
+        let err = cf
+            .set_backend_alias(&"node".into(), "npm:node")
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("larger than 16 MiB"), "{err:#}");
+        assert!(cf.save().is_err());
+        assert_eq!(
+            std::fs::metadata(&p).unwrap().len(),
+            file::CONFIG_FILE_LIMIT + 1
+        );
+
+        // A config that does not exist yet still starts from an empty document.
+        let missing = MiseToml::init(&tmp.path().join("new.toml"));
+        assert_eq!(missing.dump().unwrap(), "");
     }
 
     #[tokio::test]
