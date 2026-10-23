@@ -3004,6 +3004,17 @@ pub struct ArchiveContent {
     pub sha256: String,
 }
 
+/// How many bytes [`archive_content_files`] hashes per byte of archive before it
+/// gives up.
+///
+/// Nothing has vouched for the archive yet, and hashing writes nothing, so no
+/// full disk ends it. Zip entries that share one member, sparse tar members and
+/// plain decompression bombs would otherwise turn a few kilobytes of download
+/// into hours of hashing, or no end at all.
+const ARCHIVE_CONTENT_MAX_RATIO: u64 = 100;
+/// An archive may always unpack to this much, whatever its ratio.
+const ARCHIVE_CONTENT_MIN_BUDGET: u64 = 256 * 1024 * 1024;
+
 /// Return the regular files in an archive after applying strip-components.
 ///
 /// This is intentionally stricter than extraction: content-level provenance is
@@ -3018,6 +3029,10 @@ pub fn archive_content_files(
     if strip_components > 1 {
         bail!("content-level SLSA verification only supports strip_components values of 0 or 1");
     }
+    let budget = fs::metadata(archive_path)?
+        .len()
+        .saturating_mul(ARCHIVE_CONTENT_MAX_RATIO)
+        .max(ARCHIVE_CONTENT_MIN_BUDGET);
 
     match format {
         ExtractionFormat::TarGz
@@ -3028,9 +3043,9 @@ pub fn archive_content_files(
         | ExtractionFormat::TarBr
         | ExtractionFormat::TarLz4
         | ExtractionFormat::TarSz => {
-            archive_content_files_tar(archive_path, format, strip_components)
+            archive_content_files_tar(archive_path, format, strip_components, budget)
         }
-        ExtractionFormat::Zip => archive_content_files_zip(archive_path, strip_components),
+        ExtractionFormat::Zip => archive_content_files_zip(archive_path, strip_components, budget),
         ExtractionFormat::SevenZip => {
             bail!("content-level SLSA verification does not support 7z archives")
         }
@@ -3052,6 +3067,7 @@ fn archive_content_files_tar(
     archive_path: &Path,
     format: ExtractionFormat,
     strip_components: usize,
+    mut budget: u64,
 ) -> Result<Vec<ArchiveContent>> {
     let tar = open_tar(format, archive_path)?;
     let mut archive = Archive::new(tar);
@@ -3071,7 +3087,10 @@ fn archive_content_files_tar(
             );
         }
         let name = normalize_archive_content_path(&path, strip_components)?;
-        let sha256 = sha256_reader(&mut entry)?;
+        // For a sparse member this is the size including its holes, which
+        // jdx-tar reads back as zeroes.
+        let size = entry.size();
+        let sha256 = sha256_reader(&mut entry, size, &mut budget)?;
         files.push(ArchiveContent { name, sha256 });
     }
 
@@ -3081,6 +3100,7 @@ fn archive_content_files_tar(
 fn archive_content_files_zip(
     archive_path: &Path,
     strip_components: usize,
+    mut budget: u64,
 ) -> Result<Vec<ArchiveContent>> {
     let f = File::open(archive_path)?;
     let mut archive = ZipArchive::new(f)
@@ -3105,14 +3125,28 @@ fn archive_content_files_zip(
             )
         })?;
         let name = normalize_archive_content_path(&enclosed_name, strip_components)?;
-        let sha256 = sha256_reader(&mut file)?;
+        let size = file.size();
+        let sha256 = sha256_reader(&mut file, size, &mut budget)?;
         files.push(ArchiveContent { name, sha256 });
     }
 
     validate_archive_content_files(files)
 }
 
-fn sha256_reader(reader: &mut impl Read) -> Result<String> {
+/// Hash an archive entry and deduct what was read from `budget`.
+///
+/// The declared `size` refuses an oversized entry before any work is done. What
+/// is deducted is what was read, because a zip entry can inflate to more than it
+/// declares.
+fn sha256_reader(reader: &mut impl Read, size: u64, budget: &mut u64) -> Result<String> {
+    let over_budget = || {
+        eyre::eyre!(
+            "content-level SLSA verification rejected an archive that unpacks to more than {ARCHIVE_CONTENT_MAX_RATIO} times its size"
+        )
+    };
+    if size > *budget {
+        return Err(over_budget());
+    }
     let mut hasher = Sha256::new();
     let mut buf = [0; 8192];
     loop {
@@ -3120,6 +3154,7 @@ fn sha256_reader(reader: &mut impl Read) -> Result<String> {
         if n == 0 {
             break;
         }
+        *budget = budget.checked_sub(n as u64).ok_or_else(over_budget)?;
         hasher.update(&buf[..n]);
     }
     Ok(hex::encode(hasher.finalize()))
