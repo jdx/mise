@@ -481,6 +481,12 @@ declares GitHub artifact attestations and also Cosign, Minisign or SLSA, a
 release without an attestation has to pass the other check, as it does at
 install, before `mise lock` records it.
 
+Recorded provenance belongs to the recorded checksum. If the artifact for a
+locked version has changed and mise cannot establish the same provenance for
+the new bytes, `mise lock` fails and the entry stays as it is. After checking
+that the release is authentic, remove the entry from `mise.lock` to lock the new
+artifact.
+
 When an entry has both a checksum and provenance, `mise install` can skip
 repeating the provenance check. That makes the lockfile a trust input: review
 changes to it, and take it only from a trusted project source. Checksums are
