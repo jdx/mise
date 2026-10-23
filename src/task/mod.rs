@@ -856,6 +856,11 @@ fn parse_task_script_usage_with_env(
     file: &Path,
     env: Option<&EnvMap>,
 ) -> usage::Result<usage::Spec> {
+    // `file` comes from config that may not be trusted yet, and a pipe or a
+    // device would be read without end.
+    if !std::fs::metadata(file)?.is_file() {
+        return Err(std::io::Error::other("not a regular file").into());
+    }
     let script = std::fs::read_to_string(file)?;
     // Same reason as the `#MISE` header scan: `#USAGE` on line 1 is invisible behind a mark.
     let raw = extract_usage_from_comments(crate::file::strip_utf8_bom(&script));
@@ -4798,6 +4803,15 @@ exec shapeme "$@"
             assert_eq!(spec.cmd.flags.len(), 1, "{label}");
             assert_eq!(&spec.cmd.flags[0].name, "force", "{label}");
         }
+    }
+
+    /// A task `file` from config may name a device or a pipe, which would be
+    /// read without end, so only regular files are read for a usage spec.
+    #[cfg(unix)]
+    #[test]
+    fn test_parse_task_script_usage_rejects_a_device() {
+        let err = super::parse_task_script_usage(Path::new("/dev/null")).unwrap_err();
+        assert!(err.to_string().contains("not a regular file"), "{err}");
     }
 
     #[test]

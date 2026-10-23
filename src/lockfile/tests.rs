@@ -3,6 +3,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+/// Only a regular file is read as a lockfile: a pipe or a link to a device
+/// under that name would be read without end.
+#[test]
+fn test_read_ignores_a_lockfile_that_is_not_a_regular_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("mise.lock");
+    std::fs::create_dir(&path).unwrap();
+    let lockfile = Lockfile::read(&path).unwrap();
+    assert!(lockfile.tools.is_empty());
+}
+
 #[test]
 fn test_retain_unsuperseded_unbound_entries() {
     let tool = |version: &str, backend: &str, specifiers: &[&str]| LockfileTool {

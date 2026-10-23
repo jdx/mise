@@ -334,3 +334,31 @@ fn git_commands_ignore_inherited_work_tree() {
     assert!(clone_cache.join("file.txt").exists());
     assert!(!work_tree.join("file.txt").exists());
 }
+
+/// A `.git` pointer file in an unpacked archive can lead to a `commondir`
+/// that is a pipe, which an unbounded read would wait on forever.
+#[cfg(unix)]
+#[test]
+fn worktree_detection_skips_a_commondir_that_is_a_pipe() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path().canonicalize().unwrap();
+    let checkout = base.join("proj");
+    let private = checkout.join("g/worktrees/x");
+    std::fs::create_dir_all(&private).unwrap();
+    std::fs::write(checkout.join(".git"), "gitdir: g/worktrees/x\n").unwrap();
+    nix::unistd::mkfifo(
+        &private.join("commondir"),
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .unwrap();
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let probe = checkout.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(super::in_linked_worktree(&probe));
+    });
+    let linked = rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("worktree detection blocked on a commondir pipe");
+    assert!(!linked);
+}

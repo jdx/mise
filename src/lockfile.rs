@@ -1417,7 +1417,9 @@ impl Lockfile {
 
     pub fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
-        if !path.exists() {
+        // A lockfile name that is a pipe or links to a device is not a
+        // lockfile, and reading one whole would never end.
+        if !path.is_file() {
             return Ok(Lockfile::default());
         }
         trace!("reading lockfile {}", path.display_user());

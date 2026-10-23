@@ -2690,6 +2690,11 @@ fn config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
     glob(dir, pattern)
         .unwrap_or_default()
         .into_iter()
+        // Only regular files are config. A checkout can ship a config name
+        // that links to a device or is a pipe, and reading one of those whole
+        // never ends. `is_file` follows symlinks, so a link to a real file
+        // still loads.
+        .filter(|path| path.is_file())
         .filter(|path| {
             if path.parent().is_some_and(is_conf_d_file) {
                 return is_conf_d_folder_file(path);
@@ -2811,7 +2816,8 @@ fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> Vec<P
                 load_config_glob(dir, f).into_iter().rev().collect()
             } else {
                 let path = dir.join(f);
-                if path.exists() { vec![path] } else { vec![] }
+                // Same regular-file rule as `config_glob`.
+                if path.is_file() { vec![path] } else { vec![] }
             }
         })
         .collect();
@@ -5706,7 +5712,7 @@ fn has_config_file_with_filenames(dir: &Path, filenames: &[String]) -> bool {
         if is_glob_pattern(f) {
             !load_config_glob(dir, f).is_empty()
         } else {
-            dir.join(f).exists()
+            dir.join(f).is_file()
         }
     })
 }
