@@ -127,6 +127,126 @@ fn dedup_key(path: &std::path::Path) -> PathBuf {
     out
 }
 
+/// The directories [`check_symlinks_stay_in_roots`] guards: the cwd and the
+/// given project roots, canonical so a comparison is not fooled by a symlink
+/// above them.
+///
+/// The home directory and its ancestors are left out. They are not a checkout
+/// whose contents the confined code chose, and links there, such as `~/.npm`
+/// on another disk, are the user's own.
+#[cfg(unix)]
+fn symlink_check_roots(cwd: &std::path::Path, project_roots: &[&std::path::Path]) -> Vec<PathBuf> {
+    let home: &std::path::Path = &crate::dirs::HOME;
+    let mut roots: Vec<PathBuf> = std::iter::once(cwd)
+        .chain(project_roots.iter().copied())
+        .filter_map(|root| root.canonicalize().ok())
+        .filter(|root| {
+            !file_identity(root).is_some_and(|root| is_within(home, &root, file_identity))
+        })
+        .collect();
+    roots.sort();
+    roots.dedup();
+    roots
+}
+
+/// Which file a path names, independent of how it is spelled: a
+/// case-insensitive volume (the macOS default) accepts `PROJECT` for
+/// `project`, so comparing spellings would miss that both are one directory.
+#[cfg(unix)]
+fn file_identity(path: &std::path::Path) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path)
+        .ok()
+        .map(|meta| (meta.dev(), meta.ino()))
+}
+
+/// Whether `path` or one of its ancestors is the directory identified by `dir`.
+#[cfg(unix)]
+fn is_within<I: PartialEq>(
+    path: &std::path::Path,
+    dir: &I,
+    identity: impl Fn(&std::path::Path) -> Option<I>,
+) -> bool {
+    path.ancestors()
+        .any(|ancestor| identity(ancestor).as_ref() == Some(dir))
+}
+
+/// Refuse an allow-list path when a symlink inside one of `roots` leads out of
+/// that root on the way to it.
+///
+/// The roots hold the code being confined, so its author decides what the
+/// names in them are. Symlinks outside the roots are followed as before
+/// (`/var` -> `/private/var` on macOS), and so is a link that stays in its
+/// root. This walks the path the way the kernel will, so the check does not
+/// depend on how the path was spelled: relative, absolute, through `..`, or
+/// from a template. Containment is decided by file identity, not by comparing
+/// spellings, which a case-insensitive volume would defeat.
+#[cfg(unix)]
+fn check_symlinks_stay_in_roots(path: &std::path::Path, roots: &[PathBuf]) -> eyre::Result<()> {
+    check_symlinks_stay_in_roots_by(path, roots, file_identity)
+}
+
+/// [`check_symlinks_stay_in_roots`] with the notion of "same directory"
+/// passed in, so tests can model a case-insensitive volume.
+#[cfg(unix)]
+fn check_symlinks_stay_in_roots_by<I: PartialEq>(
+    path: &std::path::Path,
+    roots: &[PathBuf],
+    identity: impl Fn(&std::path::Path) -> Option<I> + Copy,
+) -> eyre::Result<()> {
+    use std::path::Component;
+    let roots: Vec<(&PathBuf, I)> = roots
+        .iter()
+        .filter_map(|root| identity(root).map(|id| (root, id)))
+        .collect();
+    let mut resolved = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => resolved.push(component),
+            Component::CurDir => {}
+            // `resolved` holds no symlinks, so `..` is its parent.
+            Component::ParentDir => {
+                resolved.pop();
+            }
+            Component::Normal(name) => {
+                let candidate = resolved.join(name);
+                match std::fs::symlink_metadata(&candidate) {
+                    Ok(meta) if meta.file_type().is_symlink() => {
+                        // A dangling link grants nothing: like a missing path,
+                        // its Landlock rule is dropped.
+                        let Ok(target) = candidate.canonicalize() else {
+                            return Ok(());
+                        };
+                        // The link sits in a root when its directory is the
+                        // root or below it; it stays there when its target does.
+                        let link_dir = candidate.parent().unwrap_or(&candidate);
+                        if let Some((root, _)) = roots.iter().find(|(_, root)| {
+                            is_within(link_dir, root, identity)
+                                && !is_within(&target, root, identity)
+                        }) {
+                            eyre::bail!(
+                                "sandbox: {} leads out of {} through the symlink {} -> {}.\n\
+                                 A project can ship such a link to widen what the sandbox allows. \
+                                 To allow the target anyway, name it directly: {}",
+                                crate::file::display_path(path),
+                                crate::file::display_path(root),
+                                crate::file::display_path(&candidate),
+                                crate::file::display_path(&target),
+                                crate::file::display_path(&target),
+                            );
+                        }
+                        resolved = target;
+                    }
+                    Ok(_) => resolved = candidate,
+                    // Nothing below a missing entry to follow.
+                    Err(_) => return Ok(()),
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Check if an env var name matches an allow_env pattern.
 /// Patterns can contain `*` as a wildcard (e.g., `MYAPP_*` matches `MYAPP_FOO`).
 /// Patterns without `*` require an exact match. On Windows, where names are case-insensitive,
@@ -191,30 +311,54 @@ impl SandboxConfig {
     }
 
     /// Resolve allow_* paths to absolute paths relative to cwd.
-    pub fn resolve_paths(&mut self) {
+    ///
+    /// `project_roots` are directories whose contents the code being confined
+    /// may have written, such as the project and task directories; the cwd is
+    /// always one. An allowed path that a symlink inside one of them leads out
+    /// of it is refused: a checkout that ships `dist -> /` would otherwise turn
+    /// `--allow-write=./dist` into write access to everything.
+    pub fn resolve_paths(&mut self, project_roots: &[&std::path::Path]) -> eyre::Result<()> {
         let cwd = std::env::current_dir().unwrap_or_default();
+        #[cfg(unix)]
+        let roots = symlink_check_roots(&cwd, project_roots);
+        #[cfg(not(unix))]
+        let _ = project_roots;
+        // An allow list implies its deny. Record that before empty entries are
+        // dropped, or a list holding nothing else (`--allow-write="$UNSET"`)
+        // would lift the restriction instead of allowing nothing.
+        self.deny_read |= !self.allow_read.is_empty();
+        self.deny_write |= !self.allow_write.is_empty();
         // Keep the spelling a canonicalization replaces. It is the one a caller
         // inside the sandbox will use, and macOS has to let a walk take that
         // route — see `symlinked_allow_paths`.
         let mut symlinked = Vec::new();
-        let mut resolve = |paths: &mut Vec<PathBuf>| {
+        let mut resolve = |paths: &mut Vec<PathBuf>| -> eyre::Result<()> {
             paths.retain(|p| !p.as_os_str().is_empty());
             for p in paths.iter_mut() {
                 *p = replace_path(&*p);
                 if p.is_relative() {
                     *p = cwd.join(&*p);
                 }
+                #[cfg(unix)]
+                check_symlinks_stay_in_roots(p, &roots)?;
                 // Canonicalize to resolve symlinks (e.g., /var -> /private/var on macOS)
                 if let Ok(canonical) = p.canonicalize()
                     && canonical != *p
                 {
+                    debug!(
+                        "sandbox: {} resolves to {}",
+                        crate::file::display_path(&*p),
+                        crate::file::display_path(&canonical)
+                    );
                     symlinked.push(std::mem::replace(p, canonical));
                 }
             }
+            Ok(())
         };
-        resolve(&mut self.allow_read);
-        resolve(&mut self.allow_write);
+        resolve(&mut self.allow_read)?;
+        resolve(&mut self.allow_write)?;
         self.symlinked_allow_paths = symlinked;
+        Ok(())
     }
 
     /// Compute effective deny flags, accounting for allow_* implying deny_*.
@@ -448,7 +592,7 @@ impl SandboxConfig {
         ];
         sandbox_args.extend(args.iter().cloned());
         Ok(Some(SandboxedCommand {
-            program: "sandbox-exec".to_string(),
+            program: SANDBOX_EXEC.to_string(),
             args: sandbox_args,
         }))
     }
@@ -461,7 +605,43 @@ pub struct SandboxedCommand {
     pub args: Vec<String>,
 }
 
+/// The system Seatbelt wrapper (macOS).
+///
+/// Absolute because the wrapper is started with the `PATH` built for the
+/// command being sandboxed, where tool bin directories and `_.path` entries
+/// come before `/usr/bin`: a bare name would let that command ship its own
+/// `sandbox-exec` and run unconfined.
+pub const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
+
 // Public functions for use by cmd.rs (which can't access private submodules)
+
+/// Keep the variables an env sandbox withholds out of reach through mise's own
+/// process (Linux only).
+///
+/// The filter only shapes the child's environment. mise itself still holds the
+/// full one, and a child running as the same user can read it from
+/// `/proc/<mise pid>/environ` or attach to mise with ptrace. A non-dumpable
+/// process's `/proc` entries belong to root and it cannot be attached to
+/// without `CAP_SYS_PTRACE`, which closes both routes for an unprivileged
+/// child. The flag stays for the rest of this mise process; `execve` resets
+/// it, so the commands mise starts are unaffected.
+#[cfg(target_os = "linux")]
+pub fn hide_environment_from_children() -> eyre::Result<()> {
+    let ret = unsafe { nix::libc::prctl(nix::libc::PR_SET_DUMPABLE, 0, 0, 0, 0) };
+    if ret != 0 {
+        eyre::bail!(
+            "sandbox: failed to hide mise's environment from the sandboxed command: {}",
+            std::io::Error::last_os_error()
+        );
+    }
+    Ok(())
+}
+
+/// Check that the running kernel's Landlock can enforce `config` (Linux only).
+#[cfg(target_os = "linux")]
+pub fn landlock_check(config: &SandboxConfig) -> eyre::Result<()> {
+    landlock::check_kernel_support(config)
+}
 
 /// Apply Landlock filesystem restrictions (Linux only).
 #[cfg(target_os = "linux")]
@@ -693,11 +873,104 @@ mod tests {
             allow_write: vec![plain.clone()],
             ..Default::default()
         };
-        config.resolve_paths();
+        config.resolve_paths(&[]).unwrap();
 
         assert_eq!(config.allow_read, vec![target]);
         assert_eq!(config.allow_write, vec![plain]);
         assert_eq!(config.symlinked_allow_paths, vec![through_link]);
+    }
+
+    /// The project holds the code being confined, so whoever wrote that code
+    /// also chose what `dist` is. A link in it must not carry an allowed path
+    /// out of it, however the path reaches the link.
+    #[cfg(unix)]
+    #[test]
+    fn test_check_symlinks_stay_in_roots() {
+        use std::os::unix::fs::symlink;
+        let root_dir = tempfile::tempdir().unwrap();
+        let tmp = root_dir.path().canonicalize().unwrap();
+        let project = tmp.join("project");
+        let outside = tmp.join("outside");
+        std::fs::create_dir_all(project.join("real").join("deep")).unwrap();
+        std::fs::create_dir_all(project.join("sub")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        symlink("/", project.join("dist")).unwrap();
+        symlink("real", project.join("inside")).unwrap();
+        symlink(project.join("dist"), project.join("chain")).unwrap();
+        symlink(&outside, tmp.join("out")).unwrap();
+        symlink(project.join("real"), tmp.join("into")).unwrap();
+        let roots = vec![project.clone()];
+
+        for escaping in [
+            project.join("dist"),
+            project.join("dist").join("etc"),
+            project.join("real").join("..").join("dist"),
+            project.join("sub").join("..").join("dist"),
+            project.join("chain"),
+        ] {
+            let err = check_symlinks_stay_in_roots(&escaping, &roots).unwrap_err();
+            assert!(err.to_string().contains("leads out of"), "{err}");
+        }
+        for staying in [
+            project.clone(),
+            project.join("real"),
+            project.join("inside").join("deep"),
+            project.join("missing").join("file"),
+            // Links outside the roots are the caller's own and stay followed,
+            // also when they lead into a root.
+            tmp.join("out"),
+            tmp.join("into").join("deep"),
+            // The target named outright.
+            PathBuf::from("/"),
+        ] {
+            check_symlinks_stay_in_roots(&staying, &roots).unwrap();
+        }
+        // Without the project as a root, the same link is followed.
+        check_symlinks_stay_in_roots(&project.join("dist"), &[]).unwrap();
+    }
+
+    /// On a case-insensitive volume `PROJECT/dist` is the project's `dist`, so
+    /// the guard must recognize the root by identity, not by spelling. Linux
+    /// has no such volume here: model one with an identity that ignores case,
+    /// and a second directory standing in for the other spelling.
+    #[cfg(unix)]
+    #[test]
+    fn test_check_symlinks_stay_in_roots_ignores_spelling() {
+        let root_dir = tempfile::tempdir().unwrap();
+        let tmp = root_dir.path().canonicalize().unwrap();
+        let project = tmp.join("project");
+        let other_spelling = tmp.join("PROJECT");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&other_spelling).unwrap();
+        std::os::unix::fs::symlink("/", other_spelling.join("dist")).unwrap();
+        let case_insensitive =
+            |path: &std::path::Path| path.exists().then(|| path.to_string_lossy().to_lowercase());
+
+        let err = check_symlinks_stay_in_roots_by(
+            &other_spelling.join("dist"),
+            std::slice::from_ref(&project),
+            case_insensitive,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("leads out of"), "{err}");
+    }
+
+    /// `resolve_paths` refuses the escaping path itself rather than dropping
+    /// it, which would lift the restriction the list implies.
+    #[cfg(unix)]
+    #[test]
+    fn test_resolve_paths_refuses_a_symlink_out_of_a_project_root() {
+        let root_dir = tempfile::tempdir().unwrap();
+        let project = root_dir.path().canonicalize().unwrap().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        std::os::unix::fs::symlink("/", project.join("dist")).unwrap();
+
+        let mut config = SandboxConfig {
+            allow_write: vec![project.join("dist")],
+            ..Default::default()
+        };
+        let err = config.resolve_paths(&[&project]).unwrap_err();
+        assert!(err.to_string().contains("leads out of"), "{err}");
     }
 
     #[test]
@@ -846,10 +1119,26 @@ mod tests {
             ..Default::default()
         };
 
-        config.resolve_paths();
+        config.resolve_paths(&[]).unwrap();
 
         assert!(config.allow_read.is_empty());
         assert!(config.allow_write.is_empty());
+        // `--allow-write="$UNSET"` allows nothing; dropping the only entry must
+        // not drop the restriction it implied.
+        assert!(config.effective_deny_read());
+        assert!(config.effective_deny_write());
+        assert!(config.is_active());
+    }
+
+    #[test]
+    fn test_resolve_paths_without_allow_paths_denies_nothing() {
+        let mut config = SandboxConfig::default();
+
+        config.resolve_paths(&[]).unwrap();
+
+        assert!(!config.effective_deny_read());
+        assert!(!config.effective_deny_write());
+        assert!(!config.is_active());
     }
 
     #[test]
@@ -933,5 +1222,19 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.to_string().contains("--allow-net=<host>"), "{err}");
+    }
+
+    /// `mise x` execs the wrapper after setting the command's `PATH` on the
+    /// mise process, so a bare name would resolve to a `sandbox-exec` in a
+    /// tool's bin directory.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_apply_uses_system_sandbox_exec() {
+        let config = SandboxConfig {
+            deny_net: true,
+            ..Default::default()
+        };
+        let sandboxed = config.apply("true", &[]).await.unwrap().unwrap();
+        assert_eq!(sandboxed.program, "/usr/bin/sandbox-exec");
     }
 }

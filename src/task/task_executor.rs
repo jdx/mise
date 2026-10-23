@@ -591,7 +591,18 @@ impl TaskExecutor {
             // Filled in by `resolve_paths` below.
             symlinked_allow_paths: vec![],
         };
-        sandbox.resolve_paths();
+        // The task's directory, its config root and the project root hold what
+        // the task may have written, so a symlink there must not lead an
+        // allowed path out of them.
+        let project_roots: Vec<&Path> = [
+            task_base.as_deref(),
+            task.config_root.as_deref(),
+            config.project_root.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        sandbox.resolve_paths(&project_roots)?;
         Ok(sandbox)
     }
 

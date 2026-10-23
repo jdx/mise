@@ -35,6 +35,7 @@ mod trust;
 /// The Sigstore public-good TUF repository URL.
 pub const DEFAULT_TUF_URL: &str = "https://tuf-repo-cdn.sigstore.dev";
 
+pub use certificate::normalize_github_repository;
 pub use client::{
     Attestation, AttestationClient, AttestationClientBuilder, FetchParams, GitHubSource, sources,
 };
@@ -51,7 +52,8 @@ pub use model::{
 };
 pub use retry::RetryConfig;
 pub use slsa::{
-    is_slsa_subject_mismatch, verify_slsa_provenance, verify_slsa_provenance_artifacts,
+    is_slsa_subject_mismatch, slsa_provenance_unaccepted_source_repositories,
+    verify_slsa_provenance, verify_slsa_provenance_artifacts,
 };
 pub use trust::set_tuf_url;
 

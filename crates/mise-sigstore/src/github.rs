@@ -60,9 +60,13 @@ pub async fn verify_github_attestation_with_base_url_and_digest(
     verify_github_attestation_inner(request).await
 }
 
+/// Verify attestations fetched for `owner/repo`; one of them must verify and
+/// name that repository (see [`AttestationError::RepositoryMismatch`]).
 pub async fn verify_github_attestation_with_attestations(
     artifact_path: &Path,
     attestations: &[Attestation],
+    owner: &str,
+    repo: &str,
     signer_workflow: Option<&str>,
 ) -> Result<bool> {
     if attestations.is_empty() {
@@ -71,7 +75,14 @@ pub async fn verify_github_attestation_with_attestations(
 
     let artifact = tokio::fs::read(artifact_path).await?;
     let mut trust_roots = TrustRoots::default();
-    verify_attestation_bundles(attestations, &artifact, signer_workflow, &mut trust_roots).await
+    verify_attestation_bundles(
+        attestations,
+        &artifact,
+        &format!("{owner}/{repo}"),
+        signer_workflow,
+        &mut trust_roots,
+    )
+    .await
 }
 
 /// Verify attestations that did not come from GitHub's attestations API for
@@ -222,6 +233,7 @@ pub(crate) async fn verify_github_attestation_inner(
     verify_attestation_bundles(
         &attestations,
         &artifact,
+        &format!("{}/{}", request.owner, request.repo),
         request.signer_workflow,
         &mut trust_roots,
     )

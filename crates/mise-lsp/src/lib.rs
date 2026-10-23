@@ -16,6 +16,7 @@ mod keypath;
 mod registry;
 mod rpc;
 mod schema;
+mod semantic;
 mod server;
 mod tasks;
 mod text;
