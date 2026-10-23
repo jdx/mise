@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+
+# The lockfile's checksum for an spm tool is that of its artifact bundle. A source
+# build cannot be checked against it, so a bundle that was replaced or removed
+# after locking must fail the install instead of falling back to one.
+
+export MISE_LOCKFILE=1
+export MISE_USE_VERSIONS_HOST=0
+
+# Stands in for the Swift toolchain: it only reports the target triple (read
+# from $HOME/swift-triple), so an attempted source build fails.
+echo test-triple >"$HOME/swift-triple"
+cat <<'EOF' >"$HOME/bin/swift"
+#!/usr/bin/env bash
+[[ $* == "-print-target-info" ]] || exit 1
+triple=$(cat "$(dirname "$0")/../swift-triple")
+echo "{\"target\": {\"triple\": \"$triple\", \"unversionedTriple\": \"$triple\", \"moduleTriple\": \"$triple\"}}"
+EOF
+chmod +x "$HOME/bin/swift"
+
+mkdir -p server/api/v3/repos/acme/tool
+start_http_server --dir server
+
+# publish_release [OUTPUT]: release 1.0.0 with a bundle whose tool prints OUTPUT,
+# or without assets when OUTPUT is omitted
+publish_release() {
+  python3 - "$HTTP_PORT" "$@" <<'EOF'
+import hashlib, json, sys, zipfile
+
+port, output = sys.argv[1], sys.argv[2:]
+assets = []
+if output:
+    info = {
+        "schemaVersion": "1.0",
+        "artifacts": {
+            "tool": {
+                "type": "executable",
+                "version": "1.0.0",
+                "variants": [{"path": "bin/tool", "supportedTriples": ["test-triple"]}],
+            }
+        },
+    }
+    with zipfile.ZipFile("server/tool.artifactbundle.zip", "w") as bundle:
+        # ZipInfo pins the timestamp, so the same OUTPUT gives the same checksum
+        bundle.writestr(zipfile.ZipInfo("tool.artifactbundle/info.json"), json.dumps(info))
+        bundle.writestr(zipfile.ZipInfo("tool.artifactbundle/bin/tool"), f"#!/bin/sh\necho {output[0]}\n")
+    data = open("server/tool.artifactbundle.zip", "rb").read()
+    assets.append({
+        "name": "tool.artifactbundle.zip",
+        "id": 1,
+        "size": len(data),
+        "digest": "sha256:" + hashlib.sha256(data).hexdigest(),
+        "url": f"http://127.0.0.1:{port}/api/v3/repos/acme/tool/releases/assets/1",
+        "browser_download_url": f"http://127.0.0.1:{port}/tool.artifactbundle.zip",
+    })
+release = {
+    "tag_name": "1.0.0",
+    "draft": False,
+    "prerelease": False,
+    "created_at": "2024-01-01T00:00:00Z",
+    "assets": assets,
+}
+json.dump([release], open("server/api/v3/repos/acme/tool/releases", "w"))
+EOF
+  mise cache clear
+}
+
+cat <<EOF >mise.toml
+[tools]
+"spm:acme/tool" = { version = "1.0.0", api_url = "http://127.0.0.1:$HTTP_PORT/api/v3" }
+EOF
+touch mise.lock
+
+publish_release genuine
+mise install
+assert "mise x -- tool" "genuine"
+assert_contains "cat mise.lock" 'checksum = "sha256:'
+mise uninstall spm:acme/tool@1.0.0
+
+publish_release replaced
+assert_fail_contains "mise install" "Checksum mismatch"
+assert_fail_contains "mise install --locked" "Checksum mismatch"
+
+publish_release
+assert_fail_contains "mise install" "locks a SwiftPM artifact bundle"
+
+publish_release genuine
+mise install --locked
+assert "mise x -- tool" "genuine"
+
+# A pinned bundle with no binary for this Swift target must not turn into a
+# source build either
+mise uninstall spm:acme/tool@1.0.0
+echo other-triple >"$HOME/swift-triple"
+assert_fail_contains "mise install" "has no binary for this Swift target"

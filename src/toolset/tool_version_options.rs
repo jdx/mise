@@ -199,6 +199,10 @@ impl ResolvedToolOptions {
         &self.options
     }
 
+    pub(crate) fn effective_mut(&mut self) -> &mut ToolVersionOptions {
+        &mut self.options
+    }
+
     pub(crate) fn into_effective(self) -> ToolVersionOptions {
         self.options
     }

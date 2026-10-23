@@ -123,6 +123,72 @@ pub(crate) async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> 
     fetch_checksum_from_file_with_headers(checksum_url, algo, &HeaderMap::new()).await
 }
 
+/// The checksum a publisher lists for `filename` in the SHASUMS-style file at `shasums_url`,
+/// for an install that has no checksum pinned. See [`fetch_published_checksum`].
+pub(crate) async fn fetch_published_checksum_from_shasums(
+    shasums_url: &str,
+    filename: &str,
+) -> Result<Option<String>> {
+    let algo = crate::backend::asset_matcher::detect_checksum_algorithm(&get_filename_from_url(
+        shasums_url,
+    ));
+    fetch_published_checksum(shasums_url, |content| {
+        hash::parse_shasums(content)
+            .get(filename)
+            .map(|h| format!("{algo}:{h}"))
+    })
+    .await
+}
+
+/// The checksum a publisher lists in the individual checksum file at `checksum_url`, for an
+/// install that has no checksum pinned. See [`fetch_published_checksum`].
+pub(crate) async fn fetch_published_checksum_from_file(
+    checksum_url: &str,
+    algo: &str,
+) -> Result<Option<String>> {
+    fetch_published_checksum(checksum_url, |content| {
+        parse_checksum_file_content(content, algo)
+    })
+    .await
+}
+
+/// Unlike the `fetch_checksum_from_*` helpers, which treat every failure as "no checksum",
+/// this fails unless the answer is clear: a checksum file that exists must list the artifact,
+/// and a failed request other than a 404 is an error, so a flaky or interfered-with request
+/// cannot turn the check off. Only a 404, a release that never published the file, gives
+/// `Ok(None)`.
+///
+/// This uses the uncached `get_text`: the in-process cache keeps only the message of a failed
+/// request, and recognizing a 404 by its message would also match a URL or version that
+/// happens to contain "404".
+async fn fetch_published_checksum(
+    checksum_url: &str,
+    parse: impl FnOnce(&str) -> Option<String>,
+) -> Result<Option<String>> {
+    let content = match HTTP.get_text(checksum_url).await {
+        Ok(content) => content,
+        Err(e) if is_not_found(&e) => return Ok(None),
+        Err(e) => {
+            return Err(e)
+                .wrap_err_with(|| format!("failed to fetch checksum from {checksum_url}"));
+        }
+    };
+    match parse(&content) {
+        Some(checksum) => Ok(Some(checksum)),
+        None => bail!("{checksum_url} does not list a checksum for this archive"),
+    }
+}
+
+/// Whether `e` is an HTTP 404 response, by its status rather than its message.
+fn is_not_found(e: &eyre::Report) -> bool {
+    e.chain().any(|cause| {
+        cause
+            .downcast_ref::<reqwest::Error>()
+            .and_then(reqwest::Error::status)
+            == Some(reqwest::StatusCode::NOT_FOUND)
+    })
+}
+
 fn parse_checksum_file_content(content: &str, algo: &str) -> Option<String> {
     // PowerShell Get-FileHash output:
     // Hash      : 7FDD...
@@ -944,6 +1010,9 @@ pub(crate) fn install_artifact(
 
         // Extract with determined strip_components
         file::extract_archive(file_path, &install_path, format, &extract_opts)?;
+        // The steps below rename, chmod and link paths under the install
+        // directory by name, so a link the archive shipped must not lead out.
+        file::ensure_symlinks_stay_within(&install_path)?;
 
         // Extract just the repo name from tool_name (e.g., "opsgenie/opsgenie-lamp" -> "opsgenie-lamp")
         let full_tool_name = tv.ba().tool_name.as_str();
@@ -1426,6 +1495,20 @@ pub(crate) fn ensure_plain_bin_name(option: &str, name: &str) -> eyre::Result<()
     if !file::is_plain_file_name(name) {
         bail!(
             "{option}: '{name}' must be a plain file name \
+             (no path separators or parent directories)"
+        );
+    }
+    Ok(())
+}
+
+/// Rejects a release asset name that is not a plain file name. The name comes
+/// from the forge's release JSON (a GitLab link label is free text) and is
+/// joined onto a download directory, so `../tool` or `/abs/tool` would
+/// otherwise write the download outside it.
+pub(crate) fn ensure_plain_asset_name(name: &str) -> eyre::Result<()> {
+    if !file::is_plain_file_name(name) {
+        bail!(
+            "release asset name {name:?} must be a plain file name \
              (no path separators or parent directories)"
         );
     }
@@ -2148,6 +2231,25 @@ mod tests {
                 ("custom".to_string(), "x".to_string()),
             ])
         );
+    }
+
+    #[test]
+    fn test_ensure_plain_asset_name() {
+        for ok in ["tool-linux-x64", "tool-1.0.0.tar.gz", "my tool.zip"] {
+            assert!(ensure_plain_asset_name(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../../.config/mise/conf.d/tool-linux-x64.toml",
+            "/abs/tool-linux-x64",
+            "sub/tool-linux-x64",
+            "..\\tool-linux-x64",
+        ] {
+            let err = ensure_plain_asset_name(bad).unwrap_err();
+            assert!(err.to_string().contains("plain file name"), "{bad}: {err}");
+        }
     }
 
     #[test]

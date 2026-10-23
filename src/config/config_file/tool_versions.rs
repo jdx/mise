@@ -11,7 +11,7 @@ use itertools::Itertools;
 use tera::Context;
 
 use crate::args::BackendArg;
-use crate::config::config_file::{ConfigFile, trust_check};
+use crate::config::config_file::{ConfigFile, ensure_versions_are_not_templates, trust_check};
 use crate::file;
 use crate::file::display_path;
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
@@ -178,6 +178,7 @@ impl ConfigFile for ToolVersions {
     }
 
     fn replace_versions(&self, fa: &BackendArg, versions: Vec<ToolRequest>) -> eyre::Result<()> {
+        ensure_versions_are_not_templates(&self.path, fa, &versions)?;
         let mut plugins = self.plugins.lock().unwrap();
         get_or_create_plugin(&mut plugins, fa).versions.clear();
         for tr in versions {
@@ -292,6 +293,22 @@ mod tests {
         assert!(body_requires_trust("node path:./local\n"));
         assert!(body_requires_trust("node 20 path:./local # x\n"));
         assert!(!body_requires_trust("node 20 # path:./local\n"));
+    }
+
+    /// The whole file is rendered as a template when it is loaded, so a version
+    /// from a version list must not be written into it as one.
+    #[test]
+    fn replace_versions_rejects_template_syntax() {
+        let tv = ToolVersions::init(Path::new("/tmp/.tool-versions"));
+        let ba: Arc<BackendArg> = Arc::new("node".into());
+        let tr = ToolRequest::new_version_for_test(
+            ba.clone(),
+            "20-{{env.GITHUB_TOKEN}}",
+            ToolSource::Unknown,
+        );
+        let err = tv.replace_versions(&ba, vec![tr]).unwrap_err();
+        assert!(err.to_string().contains("template syntax"), "{err}");
+        assert!(!tv.dump().unwrap().contains("{{"));
     }
 
     /// `dump` relies on `post` to terminate each line, and `trim_end` only ever

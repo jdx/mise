@@ -33,3 +33,44 @@ assert_fail "mise install node@18.20.8" "signature does not match any trusted pu
 # node.gpg_verify=false still skips the signature, so the install reaches the
 # SHASUMS256.txt lookup instead
 assert_fail "MISE_NODE_GPG_VERIFY=false mise install node@18.20.8" "not found in SHASUMS256.txt"
+
+# A mirror that withholds the signature must not get an unverified
+# SHASUMS256.txt accepted either
+mv "$MIRROR/v18.20.8/SHASUMS256.txt.sig" "$MIRROR/v18.20.8/SHASUMS256.txt.sig.bak"
+assert_fail "mise install node@18.20.8" "SHASUMS256.txt.sig not found"
+mv "$MIRROR/v18.20.8/SHASUMS256.txt.sig.bak" "$MIRROR/v18.20.8/SHASUMS256.txt.sig"
+
+# `mise lock` takes its checksums from the same file, and an install that finds
+# a checksum in the lockfile does not look one up, so mise lock only records a
+# checksum once the signature matches
+printf '%s  node-v18.20.8-linux-x64.tar.gz\n' "$(printf '0%.0s' {1..64})" >>"$MIRROR/v18.20.8/SHASUMS256.txt"
+cat <<EOF_TOML >mise.toml
+[tools]
+node = "18.20.8"
+EOF_TOML
+assert_contains "mise lock --platform linux-x64 2>&1" "signature does not match any trusted public key"
+assert_contains "cat mise.lock" "v18.20.8/node-v18.20.8-linux-x64.tar.gz"
+assert_not_contains "cat mise.lock" "checksum"
+
+rm -f mise.lock
+mv "$MIRROR/v18.20.8/SHASUMS256.txt.sig" "$MIRROR/v18.20.8/SHASUMS256.txt.sig.bak"
+assert_contains "mise lock --platform linux-x64 2>&1" "SHASUMS256.txt.sig not found"
+assert_not_contains "cat mise.lock" "checksum"
+mv "$MIRROR/v18.20.8/SHASUMS256.txt.sig.bak" "$MIRROR/v18.20.8/SHASUMS256.txt.sig"
+
+rm -f mise.lock
+MISE_NODE_GPG_VERIFY=false mise lock --platform linux-x64
+assert_contains "cat mise.lock" 'checksum = "sha256:0000'
+
+# A SHASUMS256.txt whose signature matches is locked
+mkdir -p "$MIRROR/v20.11.0"
+echo '[{"version":"v20.11.0","files":[]}]' >"$MIRROR/index.json"
+cp "$ROOT/crates/mise-util/src/gpg_testdata/node_v20.11.0_SHASUMS256.txt" "$MIRROR/v20.11.0/SHASUMS256.txt"
+cp "$ROOT/crates/mise-util/src/gpg_testdata/node_v20.11.0_SHASUMS256.txt.sig" "$MIRROR/v20.11.0/SHASUMS256.txt.sig"
+cat <<EOF_TOML >mise.toml
+[tools]
+node = "20.11.0"
+EOF_TOML
+rm -f mise.lock
+mise lock --platform linux-x64
+assert_contains "cat mise.lock" "checksum = \"sha256:$(awk '$2 == "node-v20.11.0-linux-x64.tar.gz" {print $1}' "$MIRROR/v20.11.0/SHASUMS256.txt")\""

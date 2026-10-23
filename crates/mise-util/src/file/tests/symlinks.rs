@@ -138,6 +138,63 @@ fn test_desymlink_path_preserves_absolute_target() {
     assert_eq!(desymlink_path(&link), target.canonicalize().unwrap());
 }
 
+#[cfg(unix)]
+#[test]
+fn test_ensure_symlinks_stay_within_accepts_links_inside_the_tree() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    fs::create_dir_all(root.join("libexec/bin")).unwrap();
+    fs::write(root.join("libexec/bin/tool"), "tool").unwrap();
+    symlink("libexec/bin", root.join("bin")).unwrap();
+    symlink("../bin/tool", root.join("libexec/alias")).unwrap();
+    symlink("missing", root.join("dangling")).unwrap();
+    // Absolute targets inside the tree, spelled from the root as given and
+    // from its real path.
+    symlink(root.join("libexec/bin/tool"), root.join("abs")).unwrap();
+    symlink(
+        root.canonicalize().unwrap().join("libexec/bin"),
+        root.join("libexec/abs-dir"),
+    )
+    .unwrap();
+    symlink(&root, root.join("libexec/to-root")).unwrap();
+
+    ensure_symlinks_stay_within(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn test_ensure_symlinks_stay_within_refuses_links_out_of_the_tree() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = tmp.path().join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    for (name, target) in [
+        ("bin", PathBuf::from("../outside")),
+        ("nested/deep/bin", PathBuf::from("../../../outside")),
+        ("abs", outside.clone()),
+        // Starts with the root's path but climbs out of it.
+        ("abs-climb", tmp.path().join("install-abs-climb/../outside")),
+        // The root's parent, and a sibling sharing the root's name as a prefix.
+        ("abs-parent", tmp.path().to_path_buf()),
+        ("abs-sibling", tmp.path().join("install-abs-sibling-2")),
+    ] {
+        let root = tmp
+            .path()
+            .join(format!("install-{}", name.replace('/', "-")));
+        let link = root.join(name);
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+        symlink(&target, &link).unwrap();
+        let err = ensure_symlinks_stay_within(&root).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("points outside of"),
+            "{name}: {err:#}"
+        );
+    }
+}
+
 #[test]
 fn test_retry_remove_all_retries_directory_not_empty() {
     let mut attempts = 0;

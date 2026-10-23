@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+# Tool versions in mise.toml are rendered as templates when it is loaded, so a
+# version that a version list reports must not be written there as a template.
+
+FIXTURES="$TMPDIR/upgrade-bump-template-version"
+mkdir -p "$FIXTURES"
+cat >"$FIXTURES/tool" <<'EOF'
+#!/usr/bin/env bash
+echo tool-ok
+EOF
+chmod +x "$FIXTURES/tool"
+cat >"$FIXTURES/versions" <<'EOF'
+1.0.0
+2.0.0{{exec(command='touch rendered-from-version-list')}}
+EOF
+
+start_http_server --dir "$FIXTURES"
+
+cat >mise.toml <<EOF
+[tools."http:tool"]
+version = "1.0.0"
+url = "http://127.0.0.1:$HTTP_PORT/tool"
+version_list_url = "http://127.0.0.1:$HTTP_PORT/versions"
+EOF
+
+mise install
+assert_fail_contains "mise upgrade --bump" "contains template syntax"
+assert_contains "cat mise.toml" 'version = "1.0.0"'
+assert_not_contains "cat mise.toml" "rendered-from-version-list"
+assert "test ! -e rendered-from-version-list"
+
+# mise use --pin writes the resolved version too
+assert_fail_contains "mise use --pin http:tool@latest" "contains template syntax"
+assert_not_contains "cat mise.toml" "rendered-from-version-list"
+assert "test ! -e rendered-from-version-list"

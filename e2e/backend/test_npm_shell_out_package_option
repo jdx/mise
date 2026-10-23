@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# With npm.shell_out, the package name reaches `npm view`. It comes from config
+# that need not be trusted, so a name with a leading dash must stay a package
+# and never become an npm option such as `--userconfig=.npmrc`.
+export MISE_NPM_SHELL_OUT=1
+mkdir -p "$HOME/fake-npm"
+cat >"$HOME/fake-npm/npm" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$PWD" "$@" >"$HOME/npm-args"
+exit 1
+EOF
+chmod +x "$HOME/fake-npm/npm"
+export PATH="$HOME/fake-npm:$PATH"
+
+cat >mise.toml <<'EOF'
+[tools]
+"npm:--userconfig=.npmrc" = "latest"
+EOF
+
+mise ls || true
+# the package follows the end of npm's options
+assert "sed -n '/^--\$/,\$p' '$HOME/npm-args' | sed -n 2p" "--userconfig=.npmrc"
+# and npm does not run in the project
+assert_not_contains "sed -n 1p '$HOME/npm-args'" "$PWD"

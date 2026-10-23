@@ -215,6 +215,10 @@ impl Backend for GemBackend {
         cmd.with_pr(ctx.pr.as_ref())
             .envs(self.dependency_env(&ctx.config).await?)
             .env_values(tv.install_env())
+            // `gem install` also installs `*.gem` files from its working
+            // directory, and a shim can start this install inside an untrusted
+            // project.
+            .current_dir(tv.install_path())
             .execute()?;
 
         // We install the gem to {install_path}/libexec and create a wrapper script for each executable

@@ -1721,6 +1721,36 @@ fn test_srcs_support_hard_file_link() {
 }
 
 #[test]
+fn test_srcs_reject_paths_outside_install_dir() {
+    let srcs = |name: &str, src: Option<&str>, link: Option<&str>| {
+        let mut pkg = AquaPackage::default();
+        pkg.files = vec![AquaFile {
+            name: name.to_string(),
+            src: src.map(str::to_string),
+            link: link.map(str::to_string),
+            ..Default::default()
+        }];
+        AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "linux", "amd64")
+    };
+
+    assert!(srcs("tool", Some("./bin/tool"), Some("t")).is_ok());
+    assert!(srcs("tool", None, None).is_ok());
+    for bad in ["../tool", "bin/../../tool", "/abs/tool", ".", ""] {
+        assert!(srcs("tool", Some(bad), None).is_err(), "src {bad:?}");
+        assert!(srcs(bad, None, None).is_err(), "name {bad:?}");
+        assert!(srcs(bad, Some("bin/tool"), None).is_err(), "name {bad:?}");
+        assert!(srcs("t", Some("bin/t"), Some(bad)).is_err(), "link {bad:?}");
+    }
+
+    let mut pkg = AquaPackage::default();
+    pkg.repo_name = "../tool".to_string();
+    assert!(
+        AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "linux", "amd64")
+            .is_err()
+    );
+}
+
+#[test]
 fn test_srcs_include_prefixed_v_version_paths() {
     let mut pkg = AquaPackage::default();
     pkg.asset = "tool-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz".to_string();
@@ -1924,4 +1954,56 @@ fn test_attestation_transfer_retry_result_handling() {
 #[test]
 fn test_unescape_regex_literal_only_backslash() {
     assert_eq!(unescape_regex_literal("\\"), "\\");
+}
+
+#[test]
+fn github_archive_and_content_urls_keep_the_version_in_the_repo() {
+    let backend = AquaBackend::from_arg(BackendArg::new(
+        "adr-tools".to_string(),
+        Some("aqua:npryce/adr-tools".to_string()),
+    ));
+    let mut pkg = AquaPackage::default();
+    pkg.repo_owner = "npryce".to_string();
+    pkg.repo_name = "adr-tools".to_string();
+    pkg.path = Some("src/adr".to_string());
+    assert_eq!(
+        backend.github_archive_url(&pkg, "cli/v1.2.3"),
+        "https://github.com/npryce/adr-tools/archive/refs/tags/cli/v1.2.3.tar.gz"
+    );
+    assert_eq!(
+        backend.github_content_url(&pkg, "3.0.0"),
+        "https://raw.githubusercontent.com/npryce/adr-tools/3.0.0/src/adr"
+    );
+    let hostile =
+        "1/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/evil/payload/releases/download/v1/adr.tar.gz#";
+    for url in [
+        backend.github_archive_url(&pkg, hostile),
+        backend.github_content_url(&pkg, hostile),
+        backend.github_archive_url(&pkg, "1/../../../evil/payload"),
+    ] {
+        let parsed = Url::parse(&url).unwrap();
+        assert!(
+            parsed.path().starts_with("/npryce/adr-tools/"),
+            "{url} left the repository"
+        );
+        assert_eq!(parsed.fragment(), None, "{url}");
+        assert_eq!(parsed.query(), None, "{url}");
+    }
+}
+
+#[test]
+fn url_unsafe_versions_are_refused() {
+    for ok in ["1.2.3", "v1.2.3", "cli/v1.2.3", "jq-1.7.1", "2024.01.15"] {
+        assert!(ensure_url_safe_version(ok).is_ok(), "{ok:?}");
+    }
+    for bad in [
+        "1/%2e%2e/%2e%2e/attacker-bucket/x",
+        "1.0#",
+        "1.0?x",
+        "1/../x",
+        "./1",
+        "1.0.0\\E|.\\Q",
+    ] {
+        assert!(ensure_url_safe_version(bad).is_err(), "{bad:?}");
+    }
 }
