@@ -444,6 +444,11 @@ The `--minimum-release-age` flag on commands such as `mise install`, `mise use`,
 `mise upgrade` and `mise lock` overrides both. The order is: the flag, then the
 tool option, then the setting or the built-in default.
 
+To take one newer release before it passes the cutoff, run the command with
+`0s` for just that tool, for example `mise upgrade --minimum-release-age 0s gh`.
+The flag applies to that command only. A version you install this way is not
+downgraded by a later `mise upgrade` that resolves to an older release.
+
 To exempt tools from the setting and the default, list them in
 [`minimum_release_age_excludes`](/configuration/settings.html#minimum_release_age_excludes):
 
