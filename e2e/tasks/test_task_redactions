@@ -130,3 +130,17 @@ LONG = "xxabcSECRETPART"
 run = 'echo "long:$LONG"'
 TOML
 assert "mise run a" "long:[redacted]"
+
+# A shebang script runs from a temporary file holding the rendered value, so
+# only the user may enter its directory, whatever the umask
+cat <<'TOML' >mise.toml
+[env]
+TOKEN = { value = "my_token", redact = true }
+[tasks.a]
+run = """
+#!/usr/bin/env bash
+: {{ env.TOKEN }}
+ls -ld "$(dirname "$0")" | cut -c1-10
+"""
+TOML
+assert "umask 022 && mise run a" "drwx------"
