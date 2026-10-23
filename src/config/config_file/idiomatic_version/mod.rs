@@ -36,6 +36,11 @@ impl IdiomaticVersionFile {
         if is_global_config(path) {
             return false;
         }
+        // Before any plugin reads it whole: each reads the file unbounded.
+        // `parse` refuses the oversized file once trust is settled.
+        if file::ensure_config_file_size(path).is_err() {
+            return true;
+        }
         for plugin in plugins {
             if let Ok(versions) = plugin.parse_idiomatic_file_with_options(path).await
                 && versions
@@ -218,6 +223,7 @@ mod tests {
         ba: Arc<BackendArg>,
         fail: bool,
         version: Option<String>,
+        read: std::sync::atomic::AtomicBool,
     }
 
     impl MockBackend {
@@ -233,6 +239,7 @@ mod tests {
                 ba: Arc::new(ba),
                 fail,
                 version,
+                read: Default::default(),
             }
         }
     }
@@ -256,6 +263,7 @@ mod tests {
         }
 
         async fn parse_idiomatic_file(&self, _path: &Path) -> Result<Vec<String>> {
+            self.read.store(true, std::sync::atomic::Ordering::SeqCst);
             if self.fail {
                 eyre::bail!("mock error");
             }
@@ -265,6 +273,26 @@ mod tests {
                 Ok(vec![])
             }
         }
+    }
+
+    /// The trust check runs before `parse`, and plugins read the whole file,
+    /// so an oversized one must not reach them there either.
+    #[tokio::test]
+    async fn test_trust_check_does_not_read_an_oversized_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join(".node-version");
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(file::CONFIG_FILE_LIMIT + 1)
+            .unwrap();
+        let backend = Arc::new(MockBackend::new("node", false, Some("20".to_string())));
+        let plugins: BackendList = vec![backend.clone()];
+
+        assert!(IdiomaticVersionFile::path_requires_trust(&path, &plugins).await);
+        assert!(
+            !backend.read.load(std::sync::atomic::Ordering::SeqCst),
+            "a plugin read the oversized file"
+        );
     }
 
     #[tokio::test]
