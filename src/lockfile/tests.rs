@@ -417,6 +417,12 @@ fn untrusted_lockfile_keeps_pins_but_not_download_locations() {
             checksum: Some("sha256:abc".to_string()),
             url: Some("http://example.com/shfmt".to_string()),
             url_api: Some("http://example.com/api/v3/assets/1".to_string()),
+            additional_artifacts: vec![ArtifactInfo {
+                checksum: Some("sha256:def".to_string()),
+                url: "http://example.com/shfmt-extra.tar.gz".to_string(),
+                url_api: Some("http://example.com/api/v3/assets/2".to_string()),
+                ..Default::default()
+            }],
             ..Default::default()
         },
     );
@@ -449,6 +455,12 @@ fn untrusted_lockfile_keeps_pins_but_not_download_locations() {
     assert_eq!(info.checksum.as_deref(), Some("sha256:abc"));
     assert!(info.url.is_none());
     assert!(info.url_api.is_none());
+    let [extra] = info.additional_artifacts.as_slice() else {
+        panic!("expected one additional artifact");
+    };
+    assert_eq!(extra.checksum.as_deref(), Some("sha256:def"));
+    assert!(extra.url.is_empty());
+    assert!(extra.url_api.is_none());
 }
 
 #[test]

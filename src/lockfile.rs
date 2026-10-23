@@ -4923,6 +4923,13 @@ impl Lockfile {
                     info.url = None;
                     info.url_api = None;
                     info.conda_deps = None;
+                    // Extra archives are matched to the backend's patterns by
+                    // position, so each keeps its checksum. Without a URL the
+                    // backend resolves the asset itself.
+                    for artifact in &mut info.additional_artifacts {
+                        artifact.url.clear();
+                        artifact.url_api = None;
+                    }
                 }
                 true
             });
