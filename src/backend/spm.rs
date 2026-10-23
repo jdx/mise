@@ -277,6 +277,8 @@ impl Backend for SPMBackend {
             &tv.version,
         )? {
             let artifactbundle_required = opts.requires_artifactbundle(artifactbundle_mode);
+            // Read before the attempt, which records the release's own digest in `tv`.
+            let artifactbundle_locked = self.locked_artifactbundle_checksum(&tv).is_some();
             match self
                 .try_install_artifactbundle(
                     ctx,
@@ -302,7 +304,9 @@ impl Backend for SPMBackend {
                     );
                 }
                 Ok(false) => {}
-                Err(err) if artifactbundle_required => return Err(err),
+                // A source build has nothing to check the lockfile's checksum against,
+                // so it must not stand in for a locked bundle that cannot be installed.
+                Err(err) if artifactbundle_required || artifactbundle_locked => return Err(err),
                 Err(err) if Settings::get().spm.artifactbundle_only => return Err(err),
                 Err(err) => {
                     debug!(
@@ -333,6 +337,14 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
 impl SPMBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
+    }
+
+    /// The checksum the lockfile holds for this platform. It is that of the
+    /// release's artifact bundle; nothing is recorded about the source.
+    fn locked_artifactbundle_checksum<'a>(&self, tv: &'a ToolVersion) -> Option<&'a str> {
+        tv.lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|platform| platform.checksum.as_deref())
     }
 
     async fn install_from_source(
@@ -574,6 +586,13 @@ impl SPMBackend {
     ) -> eyre::Result<bool> {
         let Some(asset) = resolve_artifactbundle_asset(provider, repo, revision, opts).await?
         else {
+            if let Some(checksum) = self.locked_artifactbundle_checksum(tv) {
+                bail!(
+                    "{} locks a SwiftPM artifact bundle ({checksum}), but the {revision} release of {} has none",
+                    self.describe_lock_entry(tv, &self.get_platform_key()),
+                    repo.shorthand
+                );
+            }
             return Ok(false);
         };
 

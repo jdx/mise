@@ -129,6 +129,11 @@ no bundle matches the current Swift target triple. Set `artifactbundle = false`
 to always build from source; it conflicts with the
 [`spm.artifactbundle_only`](/configuration/settings.html#spm.artifactbundle_only) setting.
 
+Installing from a bundle records its checksum in `mise.lock`. While the lockfile
+has a checksum for the current platform, a bundle that is missing from the
+release or does not match the checksum fails the install instead of falling back
+to a source build.
+
 ```toml
 [tools]
 "spm:giginet/swift-testing-revolutionary" = { version = "0.4.0", artifactbundle = true }

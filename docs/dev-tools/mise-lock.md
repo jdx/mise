@@ -410,7 +410,7 @@ for the tool and platform you care about.
 | cargo, dotnet, gem, go, spinel, core:dotnet, core:rust                                             | The top-level version only; the language's installer resolves dependencies and build inputs               |
 | vfox tool plugins                                                                                  | URLs that the plugin's hooks return, which locked mode requires                                           |
 | asdf and vfox backend plugins                                                                      | The version only; the plugin performs the installation                                                    |
-| spm                                                                                                | The version only                                                                                          |
+| spm                                                                                                | The version, and the bundle's URL and checksum when installed from an artifact bundle                     |
 
 Locked mode does not require a URL for `asdf`, `cargo`, `dotnet`, `gem`, `go`,
 `npm`, `pypi` (`pipx`), `spinel`, `spm`, `ubi`, `core:dotnet`, `core:rust`,
