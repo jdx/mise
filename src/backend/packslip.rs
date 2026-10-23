@@ -736,6 +736,29 @@ pub(crate) enum Pin {
     Key(packslip::minisign::PublicKey),
 }
 
+/// The text of the `.pub` file a pinned key names, or none when the value
+/// is the key line itself. A minisign key line is also a valid relative
+/// path, so it is read as a key first: a file of that name in the working
+/// directory, which may be anybody's, must not take the place of the key
+/// that was pinned.
+pub(crate) fn pubkey_file_text(value: &str) -> Result<Option<String>> {
+    pubkey_file_text_with(value, Path::is_file)
+}
+
+fn pubkey_file_text_with(value: &str, is_file: impl Fn(&Path) -> bool) -> Result<Option<String>> {
+    if packslip::minisign::PublicKey::parse(value).is_ok() || !is_file(Path::new(value)) {
+        return Ok(None);
+    }
+    Ok(Some(file::read_to_string(value)?))
+}
+
+/// The key a pin gives as a minisign public key line or as the path of a
+/// `.pub` file; see [`pubkey_file_text`].
+pub(crate) fn pinned_key(value: &str) -> Result<packslip::minisign::PublicKey> {
+    let text = pubkey_file_text(value)?;
+    packslip::minisign::PublicKey::parse(text.as_deref().unwrap_or(value)).map_err(|e| eyre!("{e}"))
+}
+
 fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
     // Verified under the workflow policies, not the forge's: forge
     // verification derives its own repository-wide policy from the bundle
@@ -746,13 +769,7 @@ fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
         )?));
     }
     if let Some(pubkey) = opts.pubkey() {
-        let text = if Path::new(&pubkey).is_file() {
-            file::read_to_string(&pubkey)?
-        } else {
-            pubkey
-        };
-        let key = packslip::minisign::PublicKey::parse(&text)
-            .map_err(|e| eyre!("packslip:{project}: pubkey: {e}"))?;
+        let key = pinned_key(&pubkey).map_err(|e| eyre!("packslip:{project}: pubkey: {e}"))?;
         return Ok(Pin::Key(key));
     }
     let explicit = Policy {
@@ -1302,9 +1319,9 @@ fn resolution_verification_key(
         }
     }
     if let Some(pubkey) = opts.pubkey()
-        && Path::new(&pubkey).is_file()
+        && let Some(text) = pubkey_file_text(&pubkey)?
     {
-        signer.insert("pubkey_file", file::read_to_string(&pubkey)?);
+        signer.insert("pubkey_file", text);
     }
     let key = ResolutionVerificationKey {
         project,
@@ -3476,6 +3493,32 @@ mod tests {
             .unwrap();
         assert_eq!(backend.payload_installs.load(Ordering::SeqCst), 1);
         assert_eq!(backend.repairs.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_pubkey_line_is_never_looked_up_as_a_file() {
+        let key = |seed| packslip::minisign::SecretKey::from_seed([seed; 32]).public_key();
+        let (pinned, other) = (key(7), key(8));
+        let line = pinned.to_file().lines().nth(1).unwrap().to_string();
+        // A key line is a valid relative path: whatever a file of that name
+        // in the working directory holds, the line is the key.
+        assert_eq!(pubkey_file_text_with(&line, |_| true).unwrap(), None);
+        assert_eq!(pinned_key(&line).unwrap(), pinned);
+
+        // A path is still read, and something that is neither is an error.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vendor.pub");
+        file::write(&path, other.to_file()).unwrap();
+        let raw: ToolVersionOptions =
+            toml::from_str(&format!("pubkey = {:?}", path.to_str().unwrap())).unwrap();
+        let Pin::Key(read) = pin("tool.example.com", &PackslipOptions::new(&raw)).unwrap() else {
+            panic!("expected a key");
+        };
+        assert_eq!(read, other);
+        let raw: ToolVersionOptions = toml::from_str(r#"pubkey = "not a key""#).unwrap();
+        let err = pin("tool.example.com", &PackslipOptions::new(&raw))
+            .expect_err("not a key, not a file");
+        assert!(err.to_string().contains("pubkey"), "{err}");
     }
 
     #[test]

@@ -254,7 +254,9 @@ provide the variant you request.
 
 For a key-signed project, get the publisher's public key through a channel you
 trust. Set `pubkey` to the minisign-format public-key line or the path of its
-`.pub` file. The release list and bundles must verify against that key.
+`.pub` file. A value that parses as a key is the key, whatever files exist; a
+path is looked up only otherwise, and a relative one from the directory mise
+runs in. The release list and bundles must verify against that key.
 
 ```toml
 [tools]
