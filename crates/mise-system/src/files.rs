@@ -359,6 +359,19 @@ fn validate_file_variants(
     }
     for variant in variants {
         let destination = variant.target.as_deref().unwrap_or(target);
+        // a template is checked once it is rendered, when a variant is selected;
+        // its syntax can be checked now without evaluating it
+        if variant.target.is_some() && mise_util::tera::contains_template_syntax(destination) {
+            mise_util::tera::get_tera_without_exec(None)
+                .validate_template_syntax("variant target", destination)
+                .map_err(|err| {
+                    eyre::eyre!(
+                        "variant target {destination:?}: {}",
+                        mise_util::tera::error_chain(&err)
+                    )
+                })?;
+            continue;
+        }
         if !variant_target_is_absolute(destination) {
             bail!("variant target must be absolute or start with ~/");
         }
@@ -390,6 +403,44 @@ fn logical_source_path(key: &str) -> Result<PathBuf> {
         bail!("an implied source entry key must not be empty");
     }
     Ok(relative)
+}
+
+/// The text of a destination outside its `{{ }}` and `{# #}` blocks, which
+/// must appear in the rendered path. A `{% %}` block can drop text, so a
+/// template with one has nothing certain to check before it is rendered.
+fn template_literal(target: &str) -> String {
+    if target.contains("{%") {
+        return String::new();
+    }
+    static BLOCKS: std::sync::LazyLock<Regex> =
+        std::sync::LazyLock::new(|| Regex::new(r"(?s)\{\{.*?\}\}|\{#.*?#\}").unwrap());
+    BLOCKS.replace_all(target, "").into_owned()
+}
+
+/// Render a selected variant `target` with the template context every config
+/// file gets (`env`, `xdg_config_home`, `config_root`, ...), without `exec()`
+/// so a preview cannot run commands, then check the result is a destination.
+fn render_variant_target(target: &str, origin: &ResourceOrigin) -> Result<String> {
+    let rendered = if mise_util::tera::contains_template_syntax(target) {
+        let mut ctx = mise_util::tera::BASE_CONTEXT.clone();
+        ctx.insert("config_root", &origin.config_root);
+        let config_source =
+            std::path::absolute(&origin.config).unwrap_or_else(|_| origin.config.clone());
+        ctx.insert("config_source", &config_source.to_string_lossy());
+        let mut tera = mise_util::tera::get_tera_without_exec(origin.config.parent());
+        mise_util::tera::render_str(&mut tera, target, &ctx).map_err(|err| {
+            eyre::eyre!(
+                "variant target {target:?}: {}",
+                mise_util::tera::error_chain(&err)
+            )
+        })?
+    } else {
+        target.to_string()
+    };
+    if !variant_target_is_absolute(&rendered) {
+        bail!("variant target must be absolute or start with ~/ (rendered {rendered:?})");
+    }
+    Ok(rendered)
 }
 
 /// Inactive variants can contain another platform's absolute path syntax.
@@ -1117,7 +1168,8 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     );
                 }
                 // composition checks whichever destination a variant selects,
-                // so every one of them must be a single path
+                // so every one of them must be a single path; a template's
+                // literal text is checked now and its rendering when selected
                 if mode == FileMode::Absent
                     && std::iter::once(target.as_str())
                         .chain(
@@ -1126,7 +1178,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                                 .flatten()
                                 .filter_map(|variant| variant.target.as_deref()),
                         )
-                        .any(|path| is_glob_pattern(&resolve_target_arg(path)))
+                        .any(|path| is_glob_pattern(&resolve_target_arg(&template_literal(path))))
                 {
                     bail!("dotfile {target}: an absent target cannot use wildcards");
                 }
@@ -1780,11 +1832,22 @@ fn merge_file_entry(
     use crate::history::select::{self, Selection};
     let target_raw = match select::select(&selectors, &select::active_environments()) {
         Selection::Single => target_raw,
-        Selection::Variant(selected) => variants
-            .iter()
-            .find(|v| v.selector == selected)
-            .and_then(|v| v.target.clone())
-            .unwrap_or(target_raw),
+        Selection::Variant(selected) => {
+            match variants
+                .iter()
+                .find(|v| v.selector == selected)
+                .and_then(|v| v.target.as_deref())
+                .map(|target| render_variant_target(target, origin))
+                .transpose()
+            {
+                Ok(Some(rendered)) => rendered,
+                Ok(None) => target_raw,
+                Err(err) => {
+                    record_invalid(&target_raw, &origin.config, err.to_string(), local);
+                    return;
+                }
+            }
+        }
         Selection::NoMatch => return,
         Selection::Ambiguous(_) => {
             record_invalid(
@@ -6509,6 +6572,28 @@ variants = [
             crate::host::parse_config_body(&invalid, &path)?,
         );
         assert!(validate_incoming_files(&configs).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn variant_target_templates_are_checked_in_incoming_config_preflight() -> Result<()> {
+        let path = dirs::HOME.join(".config/mise/config.toml");
+        let check = |target: &str, mode: &str| -> Result<()> {
+            let body = format!(
+                "[dotfiles.example]\nmode = \"{mode}\"\nvariants = [{{ default = true, target = '{target}' }}]\n"
+            );
+            let mut configs = ConfigMap::new();
+            configs.insert(path.clone(), crate::host::parse_config_body(&body, &path)?);
+            validate_incoming_files(&configs)
+        };
+        check("{{ xdg_config_home }}/example", "absent")?;
+        // a control block may drop the wildcard, so only the render can tell
+        check(
+            "{% if false %}*{% endif %}{{ xdg_config_home }}/example",
+            "absent",
+        )?;
+        assert!(check("{{", "absent").is_err());
+        assert!(check("{{ xdg_config_home }}/*", "absent").is_err());
         Ok(())
     }
 
