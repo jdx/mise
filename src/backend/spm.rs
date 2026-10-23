@@ -4,7 +4,7 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, is_falsey, is_truthy};
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::ensure_plain_asset_name;
+use crate::backend::static_helpers::{ensure_plain_asset_name, ensure_plain_bin_name};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::git::{CloneOptions, Git};
@@ -1075,6 +1075,7 @@ fn artifactbundle_binaries(
     target_triples: &[String],
 ) -> eyre::Result<Vec<ArtifactBundleBinary>> {
     let mut binaries = vec![];
+    let root = extract_dir.canonicalize()?;
     for bundle in artifactbundle_dirs(extract_dir)? {
         let info = file::read_to_string(bundle.join("info.json"))?;
         let manifest = serde_json::from_str::<ArtifactBundleInfo>(&info)
@@ -1083,6 +1084,8 @@ fn artifactbundle_binaries(
             if artifact.r#type != "executable" {
                 continue;
             }
+            // The name becomes the installed file's name under bin/.
+            ensure_plain_bin_name("artifact bundle executable name", &name)?;
             for variant in artifact.variants {
                 if variant
                     .supported_triples
@@ -1094,6 +1097,15 @@ fn artifactbundle_binaries(
                         bail!(
                             "artifact bundle executable does not exist: {}",
                             path.display()
+                        );
+                    }
+                    // The executable is copied into the install, so it must be
+                    // part of the bundle, not reached through `..`, an absolute
+                    // path or a symlink the bundle shipped.
+                    if !path.canonicalize()?.starts_with(&root) {
+                        bail!(
+                            "artifact bundle executable {:?} is outside the bundle",
+                            variant.path
                         );
                     }
                     binaries.push(ArtifactBundleBinary {
@@ -2035,6 +2047,86 @@ mod tests {
         let binaries =
             artifactbundle_binaries(tmp.path(), &["x86_64-unknown-linux-gnu".to_string()]).unwrap();
         assert!(binaries.is_empty());
+    }
+
+    fn executable_bundle_info(name: &str, path: &str) -> String {
+        serde_json::json!({
+            "schemaVersion": "1.0",
+            "artifacts": {
+                name: {
+                    "version": "1.0.0",
+                    "type": "executable",
+                    "variants": [
+                        { "path": path, "supportedTriples": ["x86_64-unknown-linux-gnu"] }
+                    ]
+                }
+            }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn test_artifactbundle_binaries_rejects_names_and_paths_outside_the_bundle() {
+        let triples = ["x86_64-unknown-linux-gnu".to_string()];
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("secret");
+        file::write(&outside, "secret").unwrap();
+        let extract = tmp.path().join("extract");
+        let bundle = extract.join("tool.artifactbundle");
+        file::create_dir_all(bundle.join("bin")).unwrap();
+        file::write(bundle.join("bin/tool"), "").unwrap();
+
+        // The executable's name becomes a file under the install's bin/.
+        for name in [
+            "../../../../.bashrc",
+            "/tmp/tool",
+            "sub/tool",
+            "..",
+            "..\\tool",
+        ] {
+            file::write(
+                bundle.join("info.json"),
+                executable_bundle_info(name, "bin/tool"),
+            )
+            .unwrap();
+            let err = artifactbundle_binaries(&extract, &triples).unwrap_err();
+            assert!(err.to_string().contains("plain file name"), "{name}: {err}");
+        }
+
+        // The variant path is the copy's source and must stay in the bundle.
+        for path in ["../../secret", outside.to_str().unwrap()] {
+            file::write(
+                bundle.join("info.json"),
+                executable_bundle_info("tool", path),
+            )
+            .unwrap();
+            let err = artifactbundle_binaries(&extract, &triples).unwrap_err();
+            assert!(
+                err.to_string().contains("outside the bundle"),
+                "{path}: {err}"
+            );
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&outside, bundle.join("bin/linked")).unwrap();
+            file::write(
+                bundle.join("info.json"),
+                executable_bundle_info("tool", "bin/linked"),
+            )
+            .unwrap();
+            let err = artifactbundle_binaries(&extract, &triples).unwrap_err();
+            assert!(err.to_string().contains("outside the bundle"), "{err}");
+        }
+
+        // A path spelled with `./` still names a file in the bundle.
+        file::write(
+            bundle.join("info.json"),
+            executable_bundle_info("tool", "./bin/tool"),
+        )
+        .unwrap();
+        let binaries = artifactbundle_binaries(&extract, &triples).unwrap();
+        assert_eq!(binaries.len(), 1);
+        assert_eq!(binaries[0].name, "tool");
     }
 
     #[test]
