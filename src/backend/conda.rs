@@ -302,7 +302,8 @@ impl CondaBackend {
 
         file::create_dir_all(Self::conda_data_dir())?;
         let temp = Self::temp_download_path(dest);
-        HTTP.download_file(url, &temp, None).await?;
+        HTTP.download_file_pinned(url, &temp, checksum, None)
+            .await?;
 
         if !Self::verify_checksum(&temp, checksum)? {
             let _ = file::remove_all(&temp);
