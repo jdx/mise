@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config::config_file::config_trust_root;
 use crate::config::{
-    ALL_CONFIG_FILES, DEFAULT_CONFIG_FILENAMES, Settings, config_file, config_files_in_dir,
-    is_global_config,
+    ALL_CONFIG_FILES, Settings, config_file, config_files_in_dir, is_global_config,
 };
 use crate::file::{display_path, remove_file};
 use crate::toolset::{ResolveOptions, ToolsetBuilder};
@@ -80,10 +79,16 @@ pub(crate) struct Trust {
     /// Remove explicit trust for this config
     #[usage(long)]
     untrust: bool,
+
+    /// The config filenames to look for, which in paranoid mode include the
+    /// idiomatic version files that need trust there.
+    #[usage(skip)]
+    config_filenames: Vec<String>,
 }
 
 impl Trust {
     pub(crate) async fn run(mut self) -> Result<()> {
+        self.config_filenames = config::trust_config_filenames().await?;
         if self.show {
             return self.show();
         }
@@ -464,7 +469,7 @@ impl Trust {
     }
 
     fn get_next_untrusted(&self) -> Option<PathBuf> {
-        config::load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
+        config::load_config_paths(&self.config_filenames, true)
             .into_iter()
             .filter(|p| !is_global_config(p))
             .map(|p| config_trust_root(&p))
@@ -540,7 +545,7 @@ impl Trust {
             if dir == cwd {
                 continue; // already covered by the parent walk
             }
-            for p in config::config_paths_in_dir(dir) {
+            for p in config::config_paths_in_dir_with_filenames(dir, &self.config_filenames) {
                 if !is_global_config(&p) {
                     config_files.push(p);
                 }
@@ -555,7 +560,7 @@ impl Trust {
     }
 
     fn show(&self) -> Result<()> {
-        let trusted = config::load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
+        let trusted = config::load_config_paths(&self.config_filenames, true)
             .into_iter()
             .filter(|p| !is_global_config(p))
             .map(|p| config_trust_root(&p))

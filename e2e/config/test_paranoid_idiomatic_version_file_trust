@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+# Paranoid mode requires trust for every project config file, including idiomatic version files.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=dummy
+
+echo "1.0.0" >.dummy-version
+
+# Without paranoid mode the file loads without trust.
+assert "mise current dummy" "1.0.0"
+
+export MISE_PARANOID=1
+
+assert_fail_contains "mise current dummy 2>&1" ".dummy-version are not trusted"
+assert_contains "mise hook-env -s bash 2>&1" ".dummy-version is not trusted"
+assert_contains "mise trust --show" ".dummy-version: untrusted"
+
+assert "mise trust"
+assert_contains "mise trust --show" ".dummy-version: trusted"
+assert "mise current dummy" "1.0.0"
+
+# Trust is bound to the content.
+echo "2.0.0" >.dummy-version
+assert_fail_contains "mise current dummy 2>&1" ".dummy-version are not trusted"
+assert "mise trust .dummy-version"
+assert "mise current dummy" "2.0.0"
+
+# Safe mode takes precedence and loads the file without trust.
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node
+echo "20.0.0" >.nvmrc
+assert_fail_contains "mise current node 2>&1" ".nvmrc are not trusted"
+assert "MISE_SAFE=1 mise current node" "20.0.0"

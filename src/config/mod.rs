@@ -2361,6 +2361,21 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
     Ok(maps)
 }
 
+/// The filenames `mise trust` looks for. Idiomatic version files need trust
+/// only in paranoid mode, so only then are they listed.
+pub async fn trust_config_filenames() -> Result<Vec<String>> {
+    if !Settings::get().paranoid.config() {
+        return Ok(DEFAULT_CONFIG_FILENAMES.clone());
+    }
+    backend::load_tools().await?;
+    Ok(load_idiomatic_filenames()
+        .await
+        .into_keys()
+        .chain(DEFAULT_CONFIG_FILENAMES.iter().cloned())
+        .unique()
+        .collect())
+}
+
 async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {
     let settings = Settings::get();
     let enable_tools = settings.idiomatic_version_file_enable_tools.clone();
@@ -2802,7 +2817,7 @@ pub fn environments_for_config_path(path: &Path) -> Vec<String> {
         .collect()
 }
 
-fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> Vec<PathBuf> {
+pub fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> Vec<PathBuf> {
     let config_paths: Vec<PathBuf> = filenames
         .iter()
         .rev()
@@ -4187,6 +4202,10 @@ async fn parse_config_file(
         remote_include::apply(config_file::parse(f).await?).await
     } else {
         trace!("idiomatic version file: {}", display_path(f));
+        // `config_file::parse` does this for every other kind of config file.
+        if Settings::try_get().is_ok_and(|settings| settings.paranoid.config()) {
+            trust_check(f)?;
+        }
         let tools = backend::list()
             .into_iter()
             .filter(|backend| plugins.contains(&backend.to_string()))
