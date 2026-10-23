@@ -559,8 +559,17 @@ fn dry_run_cases() {
 #[test]
 fn test_safe_mode_hides_env_and_files() {
     let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    // restore the default settings even if an assertion fails, before the lock is released
+    struct ResetSettings;
+    impl Drop for ResetSettings {
+        fn drop(&mut self) {
+            crate::testing::reset_settings(None);
+        }
+    }
+    let _reset = ResetSettings;
     let mut ctx = Context::new();
     ctx.insert("env", &json!({ "SECRET": "hunter2" }));
+    ctx.insert("p", "/etc");
     let refused = [
         ("{{ get_env(name='PATH', default='') }}", "get_env() is"),
         ("{{ 'Cargo.toml' | hash_file }}", "the hash_file filter is"),
@@ -569,6 +578,13 @@ fn test_safe_mode_hides_env_and_files() {
             "{{ 'Cargo.toml' | last_modified }}",
             "the last_modified filter is",
         ),
+        (
+            "{{ 'Cargo.toml' | canonicalize }}",
+            "the canonicalize filter is",
+        ),
+        ("{% if p is dir %}x{% endif %}", "the dir test is"),
+        ("{% if p is file %}x{% endif %}", "the file test is"),
+        ("{% if p is exists %}x{% endif %}", "the exists test is"),
     ];
     for v1 in [false, true] {
         let mut settings = mise_settings::SettingsPartial::empty();

@@ -1354,7 +1354,11 @@ fn get_tera_v1(dir: Option<&Path>) -> tera1::Tera {
 /// reveal a file's digest, size or age, but that is enough to confirm a guess
 /// about a file outside the project, and reading `/dev/zero` never ends.
 const SAFE_DISABLED_FUNCTIONS: [&str; 3] = ["exec", "read_file", "get_env"];
-const SAFE_DISABLED_FILTERS: [&str; 3] = ["hash_file", "file_size", "last_modified"];
+const SAFE_DISABLED_FILTERS: [&str; 4] =
+    ["hash_file", "file_size", "last_modified", "canonicalize"];
+/// The tests that ask whether a path exists, which would let a template probe
+/// files outside the project.
+const SAFE_DISABLED_TESTS: [&str; 3] = ["dir", "file", "exists"];
 
 fn disable_in_safe_mode(tera: &mut Tera) {
     let structured = STRUCTURED_FORMATS.iter().map(|(name, _)| *name);
@@ -1363,6 +1367,9 @@ fn disable_in_safe_mode(tera: &mut Tera) {
     }
     for name in SAFE_DISABLED_FILTERS {
         tera.register_filter(name, safe_disabled_filter(name));
+    }
+    for name in SAFE_DISABLED_TESTS {
+        tera.register_test(name, safe_disabled_test(name));
     }
 }
 
@@ -1373,6 +1380,27 @@ fn disable_in_safe_mode_v1(tera: &mut tera1::Tera) {
     }
     for name in SAFE_DISABLED_FILTERS {
         tera.register_filter(name, safe_disabled_filter_v1(name));
+    }
+    for name in SAFE_DISABLED_TESTS {
+        tera.register_tester(name, safe_disabled_test_v1(name));
+    }
+}
+
+fn safe_disabled_test(name: &'static str) -> impl Fn(Value, Kwargs, &State) -> TeraResult<bool> {
+    move |_: Value, _: Kwargs, _: &State| -> TeraResult<bool> {
+        Err(tera_err(format!(
+            "the {name} test is disabled in safe mode (MISE_SAFE=1)"
+        )))
+    }
+}
+
+fn safe_disabled_test_v1(
+    name: &'static str,
+) -> impl Fn(Option<&JsonValue>, &[JsonValue]) -> tera1::Result<bool> {
+    move |_: Option<&JsonValue>, _: &[JsonValue]| -> tera1::Result<bool> {
+        Err(tera1_err(format!(
+            "the {name} test is disabled in safe mode (MISE_SAFE=1)"
+        )))
     }
 }
 
