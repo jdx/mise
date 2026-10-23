@@ -2070,11 +2070,11 @@ env = "MISE_LOCKFILE_AUTO_PRUNE"
 type = "Bool"
 
 [lockfile_mode]
-default_docs = "merge"
-description = "How lockfiles are written: entry by entry, or rebuilt from the current requests."
+default = "generate"
+description = "How lockfiles are written: rebuilt from the current requests, or entry by entry."
 docs = """
 Neither mode creates lockfiles; set [`lockfile = true`](#lockfile) or run
-`mise lock`. `generate` is a trial, and the default may change. See
+`mise lock`. See
 [Complete lockfile generation](/dev-tools/mise-lock-reference.html#complete-lockfile-generation).
 """
 enum = [
@@ -2082,7 +2082,6 @@ enum = [
   { value = "generate", description = "rebuild the whole lockfile from the current requests, reusing unchanged entries, and lock other platforms during installs" },
 ]
 env = "MISE_LOCKFILE_MODE"
-optional = true
 type = "String"
 
 [lockfile_platforms]

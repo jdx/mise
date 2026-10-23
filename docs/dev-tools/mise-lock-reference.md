@@ -285,29 +285,26 @@ sidecar is missing.
 
 ## Complete lockfile generation
 
-The default `merge` mode updates entries as tools are installed. The `generate`
-mode of [`lockfile_mode`](/configuration/settings.html#lockfile_mode) instead
-rebuilds the whole lockfile from the current requests and reuses unchanged
-artifacts:
+By default, mise rebuilds the whole lockfile from the current requests and
+reuses unchanged artifacts. The older `merge` mode of
+[`lockfile_mode`](/configuration/settings.html#lockfile_mode) only updates
+entries as tools are installed:
 
 ```toml [mise.toml]
 [settings]
-lockfile_mode = "generate"
+lockfile_mode = "merge"
 ```
 
 `lockfile_mode` does not turn on lockfile creation: run `mise lock` first, or
-also set `lockfile = true`.
+set `lockfile = true`.
 
 During installation, a `lock` progress bar tracks background metadata
 downloads, hashing and verification. The first run can download artifacts for
 other platforms; later runs reuse unchanged entries, which reduces lockfile
 churn between platforms.
 
-Set `MISE_LOCKFILE_MODE=generate` to try it for one command, and
-`lockfile_mode = "merge"` to switch back; no format migration is needed.
-`generate` is a trial: share feedback in
-[Discussions](https://github.com/jdx/mise/discussions), since the default may
-change in a later release.
+Set `MISE_LOCKFILE_MODE=merge` to switch back for one command; no format
+migration is needed in either direction.
 
 ### Shared lockfiles
 
