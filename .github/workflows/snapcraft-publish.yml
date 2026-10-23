@@ -96,9 +96,22 @@ jobs:
           fi
           echo "path=${snaps[0]}" >> "$GITHUB_OUTPUT"
 
-      - uses: snapcore/action-publish@214b86e5ca036ead1668c79afb81e550e6c54d40 # v1.2.0
+      # Not snapcore/action-publish: it cannot retry, and the Snap Store
+      # occasionally drops the connection mid-upload.
+      - name: Publish snap
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        with:
-          snap: ${{ steps.snap.outputs.path }}
-          release: stable
+          SNAP_PATH: ${{ steps.snap.outputs.path }}
+        run: |
+          sudo snap install --classic snapcraft
+          for attempt in 1 2 3; do
+            if snapcraft upload "$SNAP_PATH" --release stable; then
+              exit 0
+            fi
+            if [[ "$attempt" != 3 ]]; then
+              echo "::warning::snapcraft upload failed (attempt $attempt); retrying"
+              sleep "$((attempt * 10))"
+            fi
+          done
+          echo "::error::snapcraft upload failed after 3 attempts"
+          exit 1
