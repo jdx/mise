@@ -586,3 +586,31 @@ async fn test_get_html_body_is_bounded_by_http_download_timeout() {
         "{err}"
     );
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_buffer_body_is_bounded_by_http_download_timeout() {
+    let _settings = {
+        let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.http_download_timeout = Some("500ms".to_string());
+        crate::testing::reset_settings(Some(settings));
+        SettingsGuard { _lock: lock }
+    };
+    // A caller that sends the request itself, as the OCI registry client does,
+    // and reads the body through `buffer_body`. The server sends a byte every
+    // 10ms, so the 100ms idle read timeout never fires.
+    let port = spawn_trickling_server().await;
+    let client = Client::new(Duration::from_millis(100), ClientKind::Http).unwrap();
+    let resp = client
+        .get_async(format!("http://127.0.0.1:{port}/manifest"))
+        .await
+        .unwrap();
+    let err = tokio::time::timeout(Duration::from_secs(5), buffer_body(resp))
+        .await
+        .expect("the body deadline did not end the read")
+        .unwrap_err();
+    assert!(
+        err.to_string().contains("HTTP response body timed out"),
+        "{err}"
+    );
+}

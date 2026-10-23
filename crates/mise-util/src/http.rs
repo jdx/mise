@@ -2788,7 +2788,8 @@ pub async fn buffer_body(resp: Response) -> Result<Response> {
 /// Reads the decoded body chunk by chunk, failing once it passes `limit`, and
 /// returns the response with the body buffered, ready for `json()`, `text()`
 /// or `bytes()`. Those collect whatever the server sends, so call this first.
-/// The failure is not a transport error, so it is not retried.
+/// The read is also bounded by `http_download_timeout`. Neither failure is a
+/// transport error, so neither is retried.
 pub async fn buffer_body_with_limit(mut resp: Response, limit: usize) -> Result<Response> {
     let too_large = |url: &Url| {
         eyre!(
@@ -2803,13 +2804,26 @@ pub async fn buffer_body_with_limit(mut resp: Response, limit: usize) -> Result<
     {
         return Err(too_large(resp.url()));
     }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = resp.chunk().await? {
-        if bytes.len() + chunk.len() > limit {
-            return Err(too_large(resp.url()));
+    // Bounded in time as well as size: a caller may hold a response from a
+    // client with only an idle read timeout, which a body that trickles in a
+    // byte at a time never trips.
+    let url = resp.url().clone();
+    let read = async {
+        let mut bytes = Vec::new();
+        while let Some(chunk) = resp.chunk().await? {
+            if bytes.len() + chunk.len() > limit {
+                return Err(too_large(resp.url()));
+            }
+            bytes.extend_from_slice(&chunk);
         }
-        bytes.extend_from_slice(&chunk);
-    }
+        Ok(bytes)
+    };
+    let bytes = read_body_within(
+        crate::network::http_download_timeout(&Settings::get()),
+        &url,
+        read,
+    )
+    .await?;
     let mut buffered = ::http::Response::builder()
         .status(resp.status())
         .version(resp.version())

@@ -678,17 +678,29 @@ async fn download_blob_once(
         return Err(too_large());
     }
     let mut resp = resp;
-    let mut bytes = Vec::new();
-    while let Some(chunk) = resp.chunk().await? {
-        if (bytes.len() + chunk.len()) as u64 > size {
-            return Err(too_large());
+    let read = async {
+        let mut bytes = Vec::new();
+        while let Some(chunk) = resp.chunk().await? {
+            if (bytes.len() + chunk.len()) as u64 > size {
+                return Err(too_large());
+            }
+            bytes.extend_from_slice(&chunk);
+            if let Some(pr) = pr {
+                pr.inc(chunk.len() as u64);
+            }
         }
-        bytes.extend_from_slice(&chunk);
-        if let Some(pr) = pr {
-            pr.inc(chunk.len() as u64);
-        }
+        Ok(bytes)
+    };
+    // The raw client has only an idle read timeout, which a body that trickles
+    // in never trips, so the whole read gets the download budget.
+    let timeout = network::http_download_timeout(&mise_settings::Settings::get());
+    match tokio::time::timeout(timeout, read).await {
+        Ok(result) => result,
+        Err(_) => bail!(
+            "blob {url} timed out after {} (change with `http_download_timeout` or env `MISE_HTTP_DOWNLOAD_TIMEOUT`)",
+            mise_util::time::format_duration(timeout)
+        ),
     }
-    Ok(bytes)
 }
 
 /// The result of pulling a base image — the config blob and an ordered list
