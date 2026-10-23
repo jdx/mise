@@ -1277,17 +1277,26 @@ fn conda_package_name(tool_name: &str) -> Result<rattler_conda_types::PackageNam
 /// Formatting the version into a match spec string and parsing that would
 /// honour the match spec grammar inside the version (`[url=...]`, `channel::`,
 /// a build string), and the version can come from a plain tool list that loads
-/// without trust. Only the version spec grammar applies to the version here.
+/// without trust. Only the version spec grammar applies to the version here,
+/// and only to name one version or a `.*` prefix of one: a group such as
+/// `3.46.0|>=0` would widen the request to other versions.
 fn exact_match_spec(tool_name: &str, version: &str) -> Result<MatchSpec> {
+    use rattler_conda_types::{EqualityOperator, StrictRangeOperator, VersionSpec};
     let name = conda_package_name(tool_name)?;
-    let version = rattler_conda_types::VersionSpec::from_str(
-        &format!("=={version}"),
-        ParseStrictness::Lenient,
-    )
-    .map_err(|e| eyre::eyre!("invalid conda version '{version}' for {tool_name}: {e}"))?;
+    let invalid =
+        |reason: String| eyre::eyre!("invalid conda version '{version}' for {tool_name}: {reason}");
+    let spec = VersionSpec::from_str(&format!("=={version}"), ParseStrictness::Lenient)
+        .map_err(|e| invalid(e.to_string()))?;
+    if !matches!(
+        spec,
+        VersionSpec::Exact(EqualityOperator::Equals, _)
+            | VersionSpec::StrictRange(StrictRangeOperator::StartsWith, _)
+    ) {
+        return Err(invalid("not a single version".to_string()));
+    }
     Ok(MatchSpec {
         name: rattler_conda_types::PackageNameMatcher::Exact(name),
-        version: Some(version),
+        version: Some(spec),
         ..Default::default()
     })
 }
@@ -1325,6 +1334,9 @@ mod tests {
             "3.46.0[url=http://example.invalid/x.tar.bz2]",
             "3.46.0 h0",
             "conda-forge::3.46.0",
+            "3.46.0|>=0",
+            "3.46.0,>=0",
+            "*",
         ] {
             assert!(
                 super::exact_match_spec("sqlite", version).is_err(),
