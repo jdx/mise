@@ -1010,6 +1010,9 @@ pub(crate) fn install_artifact(
 
         // Extract with determined strip_components
         file::extract_archive(file_path, &install_path, format, &extract_opts)?;
+        // The steps below rename, chmod and link paths under the install
+        // directory by name, so a link the archive shipped must not lead out.
+        file::ensure_symlinks_stay_within(&install_path)?;
 
         // Extract just the repo name from tool_name (e.g., "opsgenie/opsgenie-lamp" -> "opsgenie-lamp")
         let full_tool_name = tv.ba().tool_name.as_str();
@@ -1491,6 +1494,20 @@ pub(crate) fn ensure_plain_bin_name(option: &str, name: &str) -> eyre::Result<()
     if !file::is_plain_file_name(name) {
         bail!(
             "{option}: '{name}' must be a plain file name \
+             (no path separators or parent directories)"
+        );
+    }
+    Ok(())
+}
+
+/// Rejects a release asset name that is not a plain file name. The name comes
+/// from the forge's release JSON (a GitLab link label is free text) and is
+/// joined onto a download directory, so `../tool` or `/abs/tool` would
+/// otherwise write the download outside it.
+pub(crate) fn ensure_plain_asset_name(name: &str) -> eyre::Result<()> {
+    if !file::is_plain_file_name(name) {
+        bail!(
+            "release asset name {name:?} must be a plain file name \
              (no path separators or parent directories)"
         );
     }
@@ -2213,6 +2230,25 @@ mod tests {
                 ("custom".to_string(), "x".to_string()),
             ])
         );
+    }
+
+    #[test]
+    fn test_ensure_plain_asset_name() {
+        for ok in ["tool-linux-x64", "tool-1.0.0.tar.gz", "my tool.zip"] {
+            assert!(ensure_plain_asset_name(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../../.config/mise/conf.d/tool-linux-x64.toml",
+            "/abs/tool-linux-x64",
+            "sub/tool-linux-x64",
+            "..\\tool-linux-x64",
+        ] {
+            let err = ensure_plain_asset_name(bad).unwrap_err();
+            assert!(err.to_string().contains("plain file name"), "{bad}: {err}");
+        }
     }
 
     #[test]
