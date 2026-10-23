@@ -4,25 +4,37 @@ use crate::github::{log_attestation_method_failure, warn_if_trust_root_unreachab
 pub(crate) async fn verify_attestation_bundles(
     attestations: &[Attestation],
     artifact: &[u8],
+    repository: &str,
     signer_workflow: Option<&str>,
     trust_roots: &mut TrustRoots,
 ) -> Result<bool> {
     verify_attestation_bundles_for_artifact(
         Artifact::from(artifact),
         attestations,
+        repository,
         signer_workflow,
         trust_roots,
     )
     .await
 }
 
+/// Passes when one attestation verifies and `repository` (`owner/repo`)
+/// made it.
+///
+/// A valid signature only says that someone attested these bytes, and any
+/// repository can attest any digest. GitHub's API lists only the requested
+/// repository's attestations, but whatever answered the request picked them
+/// (`url_replacements` may put a mirror in GitHub's place, and `bundle_url`
+/// may point anywhere), so the signature itself has to name the repository.
 pub(crate) async fn verify_attestation_bundles_for_artifact(
     artifact: Artifact<'_>,
     attestations: &[Attestation],
+    repository: &str,
     signer_workflow: Option<&str>,
     trust_roots: &mut TrustRoots,
 ) -> Result<bool> {
     let mut errors = Vec::new();
+    let mut other_repositories = Vec::new();
     let mut trust_root_failures = 0;
     for attestation in attestations {
         let Some(bundle_value) = &attestation.bundle else {
@@ -45,10 +57,25 @@ pub(crate) async fn verify_attestation_bundles_for_artifact(
         )
         .await
         {
-            Ok(()) => {
-                warn_if_trust_root_unreachable(trust_root_failures);
-                return Ok(true);
-            }
+            Ok(()) => match bundle_source_repository(&bundle) {
+                Some(source) if source.eq_ignore_ascii_case(repository) => {
+                    warn_if_trust_root_unreachable(trust_root_failures);
+                    return Ok(true);
+                }
+                Some(source) => {
+                    log::debug!(
+                        "GitHub attestation verification method failed; continuing with other attestations: made by {source}, not {repository}"
+                    );
+                    other_repositories.push(source);
+                }
+                None => {
+                    const ERROR: &str = "verified attestation names no source repository";
+                    log::debug!(
+                        "GitHub attestation verification method failed; continuing with other attestations: {ERROR}"
+                    );
+                    errors.push(ERROR.to_string());
+                }
+            },
             Err(e) => {
                 log_attestation_method_failure(&e);
                 if matches!(e, AttestationError::TrustRoot(_)) {
@@ -57,6 +84,15 @@ pub(crate) async fn verify_attestation_bundles_for_artifact(
                 errors.push(e.to_string());
             }
         }
+    }
+
+    if !other_repositories.is_empty() {
+        other_repositories.sort();
+        other_repositories.dedup();
+        return Err(AttestationError::RepositoryMismatch {
+            expected: repository.to_string(),
+            found: other_repositories,
+        });
     }
 
     Err(AttestationError::Verification(join_error_strings(

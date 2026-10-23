@@ -243,7 +243,32 @@ async fn verify_attestation_uncached(
         )
         .await
     };
-    result.map_err(|err| after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+    accept_renamed_repository(owner, repo, api_url, result)
+        .await
+        .map_err(|err| after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+}
+
+/// Attestations name the repository as it was when they were made, so after
+/// a rename or transfer GitHub lists some under a name that was not
+/// requested. Accept those when GitHub confirms both names are one
+/// repository. [`crate::github::canonical_repo`] refuses to answer when
+/// `url_replacements` reroutes the API: the host that picked the
+/// attestations must not also vouch for the rename.
+async fn accept_renamed_repository(
+    owner: &str,
+    repo: &str,
+    api_url: Option<&str>,
+    result: AttestationResult<bool>,
+) -> AttestationResult<bool> {
+    let on_github = api_url.is_none_or(|url| url.trim_end_matches('/') == crate::github::API_URL);
+    match result {
+        Err(AttestationError::RepositoryMismatch { found, .. })
+            if on_github && crate::github::attested_by_repository(owner, repo, &found).await =>
+        {
+            Ok(true)
+        }
+        result => result,
+    }
 }
 
 /// Verify a GitHub artifact attestation filtered by predicate type.
@@ -301,12 +326,15 @@ pub async fn verify_attestation_with_predicate_type(
         })
         .await
         .map_err(|err| after_mirror_failure(err, owner, repo, mirror_err.as_ref()))?;
-    mise_sigstore::verify_github_attestation_with_attestations(
+    let result = mise_sigstore::verify_github_attestation_with_attestations(
         artifact_path,
         &attestations,
+        owner,
+        repo,
         expected_workflow,
     )
-    .await
+    .await;
+    accept_renamed_repository(owner, repo, api_url, result).await
 }
 
 /// Reason the pre-download attestation probe could not complete.
@@ -1355,6 +1383,43 @@ mod tests {
             outcome,
             CachedAttestationVerification::Retry(Some(AttestationError::WorkflowMismatch(_)))
         ));
+    }
+
+    #[test]
+    fn test_rerouted_api_cannot_confirm_a_rename() {
+        // The host that stands in for api.github.com also picked the
+        // attestations, so it must not get to say that the repository that
+        // made them is the requested one under an older name.
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => "https://github-proxy.invalid".to_string(),
+        }));
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let err = runtime
+            .block_on(crate::github::canonical_repo("erlang/rebar3"))
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("only GitHub can confirm a repository rename"),
+            "{err}"
+        );
+
+        let result = runtime.block_on(accept_renamed_repository(
+            "erlang",
+            "rebar3",
+            None,
+            Err(AttestationError::RepositoryMismatch {
+                expected: "erlang/rebar3".to_string(),
+                found: vec!["jdx/mise".to_string()],
+            }),
+        ));
+        assert!(
+            matches!(result, Err(AttestationError::RepositoryMismatch { .. })),
+            "{result:?}"
+        );
     }
 
     #[test]
