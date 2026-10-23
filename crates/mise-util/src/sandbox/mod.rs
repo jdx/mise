@@ -193,6 +193,11 @@ impl SandboxConfig {
     /// Resolve allow_* paths to absolute paths relative to cwd.
     pub fn resolve_paths(&mut self) {
         let cwd = std::env::current_dir().unwrap_or_default();
+        // An allow list implies its deny. Record that before empty entries are
+        // dropped, or a list holding nothing else (`--allow-write="$UNSET"`)
+        // would lift the restriction instead of allowing nothing.
+        self.deny_read |= !self.allow_read.is_empty();
+        self.deny_write |= !self.allow_write.is_empty();
         // Keep the spelling a canonicalization replaces. It is the one a caller
         // inside the sandbox will use, and macOS has to let a walk take that
         // route — see `symlinked_allow_paths`.
@@ -864,6 +869,22 @@ mod tests {
 
         assert!(config.allow_read.is_empty());
         assert!(config.allow_write.is_empty());
+        // `--allow-write="$UNSET"` allows nothing; dropping the only entry must
+        // not drop the restriction it implied.
+        assert!(config.effective_deny_read());
+        assert!(config.effective_deny_write());
+        assert!(config.is_active());
+    }
+
+    #[test]
+    fn test_resolve_paths_without_allow_paths_denies_nothing() {
+        let mut config = SandboxConfig::default();
+
+        config.resolve_paths();
+
+        assert!(!config.effective_deny_read());
+        assert!(!config.effective_deny_write());
+        assert!(!config.is_active());
     }
 
     #[test]

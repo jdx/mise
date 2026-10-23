@@ -121,9 +121,10 @@ every task that command runs, including dependencies.
 
 Relative paths in a task resolve from the task's working directory, and relative
 paths in flags from the directory where you run mise. Paths can start with `~`,
-and task paths can use templates such as <code v-pre>{{config_root}}</code>. See
-the [task configuration reference](/tasks/task-configuration.html) for each
-property.
+and task paths can use templates such as <code v-pre>{{config_root}}</code>. An
+empty path, or a template that renders to nothing, allows no path but still
+blocks the other reads or writes. See the
+[task configuration reference](/tasks/task-configuration.html) for each property.
 
 ## Implicit access
 
