@@ -205,6 +205,8 @@ These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
   `install_command`.
 - asdf plugin scripts, so tools from the `asdf:` backend cannot list or install
   versions.
+- Requests to S3, which are signed with your AWS credentials, so tools from the
+  `s3:` backend cannot list or install versions.
 - Installing plugins. vfox plugins that are already installed or built in still
   run, because the operator chose them.
 - mise secrets: `[secrets]` sources, `mise secrets ls`, tasks that list

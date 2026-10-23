@@ -44,7 +44,7 @@ use crate::backend::static_helpers::{
 };
 use crate::backend::version_list;
 use crate::backend::{Backend, VersionInfo, runtime_path_for_install_path};
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::hash;
 use crate::install_context::InstallContext;
@@ -180,7 +180,12 @@ impl S3Backend {
     }
 
     /// Get or create the S3 client
+    ///
+    /// Every request it sends is signed with the AWS credentials of the process that runs mise,
+    /// while the bucket, key and endpoint come from tool options. Safe mode loads those from
+    /// config nobody reviewed, so it refuses the client and with it every S3 request.
     async fn get_client(&self, opts: &S3Options<'_>) -> Result<&S3Client> {
+        Settings::ensure_not_safe("accessing S3 with your AWS credentials")?;
         self.client
             .get_or_try_init(|| async {
                 let region = opts.region();
