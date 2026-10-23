@@ -759,7 +759,10 @@ pub mod unix {
     }
 
     /// Git only speaks TCP HTTP. A loopback bridge with a per-session capability
-    /// adapts it to the private socket; the broker remains the authority.
+    /// adapts it to the private socket; the broker remains the authority. Any
+    /// local account can connect to the bridge and can read the URL Git is given
+    /// (helper arguments, `FETCH_HEAD`, error messages), so the capability is a
+    /// request header, which Git takes from the session's private environment.
     pub async fn session(socket: &Path, command: Vec<String>) -> Result<()> {
         let (client, request_timeout) = adapter_client(socket).await?;
         let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
@@ -768,24 +771,36 @@ pub mod unix {
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect::<String>();
-        let prefix = format!("/{capability}/");
+        let authorization = format!("Bearer {capability}");
+        let header = format!("Authorization: {authorization}");
         let permits = Arc::new(Semaphore::new(8));
         let service = Router::new().fallback(move |request: Request| {
             let client = client.clone();
-            let prefix = prefix.clone();
+            let authorization = authorization.clone();
             let permits = permits.clone();
             async move {
                 let result: Result<Response> = async {
                     let permit = permits.try_acquire_owned()?;
+                    // The user's own Git configuration may add a header of this name.
+                    if !request
+                        .headers()
+                        .get_all("authorization")
+                        .iter()
+                        .any(|value| value.as_bytes() == authorization.as_bytes())
+                    {
+                        bail!("invalid capability");
+                    }
+                    // The client below resolves dot segments, which could leave `git/`.
+                    validate_path(request.uri().path().trim_start_matches('/'))?;
                     let path = request
                         .uri()
                         .path_and_query()
                         .ok_or_else(|| eyre::eyre!("missing path"))?
                         .as_str();
                     let path = path
-                        .strip_prefix(&prefix)
+                        .strip_prefix('/')
                         .filter(|p| p.starts_with("git/"))
-                        .ok_or_else(|| eyre::eyre!("invalid capability"))?;
+                        .ok_or_else(|| eyre::eyre!("unsupported path"))?;
                     let url = format!("http://localhost/{path}");
                     let (parts, body) = request.into_parts();
                     let body =
@@ -858,7 +873,7 @@ pub mod unix {
         if count > 1000 {
             bail!("too many inherited Git configuration entries");
         }
-        let base = format!("http://{address}/{capability}/git/");
+        let base = format!("http://{address}/git/");
         for (index, source) in [
             "https://github.com/",
             "git@github.com:",
@@ -874,7 +889,12 @@ pub mod unix {
             child.env(format!("GIT_CONFIG_VALUE_{}", count + index), source);
         }
         child
-            .env("GIT_CONFIG_COUNT", (count + 3).to_string())
+            .env(
+                format!("GIT_CONFIG_KEY_{}", count + 3),
+                format!("http.http://{address}/.extraHeader"),
+            )
+            .env(format!("GIT_CONFIG_VALUE_{}", count + 3), header)
+            .env("GIT_CONFIG_COUNT", (count + 4).to_string())
             .env("MISE_GITHUB_RELAY_SOCKET", socket)
             .kill_on_drop(true);
         let status = wait_command(&mut child, Some(socket)).await?;

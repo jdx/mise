@@ -112,6 +112,18 @@ assert_fail "mise ssh --relay-session '$relay_socket' -- git -C clone push origi
 assert_fail "mise ssh --relay-session '$relay_socket' -- git clone https://github.com/other/private.git denied"
 mise ssh --relay-session "$relay_socket" -- git -C clone fetch
 assert_fail "git -C clone config --get-regexp '^url\.'"
+# Other accounts on the host can read the URL Git is given (helper arguments,
+# FETCH_HEAD, error messages), so it must not be enough to use the adapter.
+assert_matches "mise ssh --relay-session '$relay_socket' -- git ls-remote --get-url https://github.com/owner/repo.git" '^http://127\.0\.0\.1:[0-9]+/git/owner/repo\.git$'
+assert_matches "cat clone/.git/FETCH_HEAD" ' of http://127\.0\.0\.1:[0-9]+/git/owner/repo$'
+cat >adapter-url <<'EOF'
+#!/bin/sh
+url=$(git ls-remote --get-url https://github.com/owner/repo.git)
+"$@" git ls-remote "$url"
+EOF
+chmod +x adapter-url
+mise ssh --relay-session "$relay_socket" -- ./adapter-url env
+assert_fail "mise ssh --relay-session '$relay_socket' -- ./adapter-url env GIT_CONFIG_COUNT=0"
 kill "$relay_pid"
 wait "$relay_pid" || true
 assert_fail "mise ssh --relay-session '$relay_socket' -- git -C clone fetch"
