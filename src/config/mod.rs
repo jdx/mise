@@ -3036,12 +3036,18 @@ fn load_config_paths_from_dirs(
     config_files
         .into_iter()
         .filter(|p| !config_path_is_ignored(p, include_ignored))
-        // A project path that resolves to global or system config is that
+        // A project path that is a symlink to global or system config is that
         // config, which the entries above already list where discovery found
         // it. Dropping the project spelling keeps everything derived from a
         // config's location (its root, task roots, lockfile) with the global
-        // entry rather than inside a directory the user may not control.
-        .filter(|p| discovered_global_config(p).is_none_or(|global| global == *p))
+        // entry rather than inside a directory the user may not control. The
+        // reverse, a global config the user linked to a real file in their own
+        // project (a dotfiles layout), keeps the project spelling, so its
+        // lockfile stays beside the file.
+        .filter(|p| {
+            discovered_global_config(p)
+                .is_none_or(|global| global == *p || p.canonicalize().is_ok_and(|real| real == *p))
+        })
         .unique_by(|p| file::desymlink_path(p))
         .collect()
 }
