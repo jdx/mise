@@ -691,8 +691,8 @@ async fn execute(
             }
             c.env_clear();
             c.envs(env.iter());
-            if matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall) {
-                c.current_dir(project_root);
+            if let Some(cwd) = hook_cwd(hook, project_root) {
+                c.current_dir(cwd);
             }
             // Send the hook's stdout to mise's stderr (matching the duct
             // `stdout_to_stderr()` the non-cmd path uses) by handing the child a
@@ -709,7 +709,7 @@ async fn execute(
         }
     }
 
-    let cwd = matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall).then_some(project_root);
+    let cwd = hook_cwd(hook, project_root);
     let mut command = cmd(&shell[0], args).full_env(&env);
     if let Some(cwd) = cwd {
         command = command.dir(cwd);
@@ -718,6 +718,19 @@ async fn execute(
         .stdout_to_stderr()
         .run()?;
     Ok(())
+}
+
+/// The working directory of a spawned hook. Install hooks and a project's `enter` and `leave`
+/// hooks run in the project root, so a relative path in the command names the project's own
+/// file, not one in whichever directory the shell entered the project through or left it for.
+/// `cd` hooks, which act on the directory just entered, and global hooks, which have no
+/// project, keep the shell's directory.
+fn hook_cwd<'a>(hook: &Hook, project_root: &'a Path) -> Option<&'a Path> {
+    match hook.hook {
+        Hooks::Preinstall | Hooks::Postinstall => Some(project_root),
+        Hooks::Enter | Hooks::Leave if !hook.global => Some(project_root),
+        _ => None,
+    }
 }
 
 async fn execute_task(
