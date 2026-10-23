@@ -549,8 +549,10 @@ impl HttpBackend {
             parts.push(format!("rename_{}", rename_cache_token(rename)));
             // When rename_exe is used, bin_path affects where the rename happens,
             // so different bin_path values result in different cached content
+            // Hashed like rename_exe, so no path text reaches the cache
+            // directory name.
             if let Some(bin_path) = opts.bin_path() {
-                parts.push(format!("binpath_{bin_path}"));
+                parts.push(format!("binpath_{}", hash::hash_blake3_to_str(&bin_path)));
             }
         }
 
@@ -1512,6 +1514,10 @@ impl Backend for HttpBackend {
 
         // Get URL template
         let url_template = opts.url().ok_or_else(|| self.missing_url_error(&opts))?;
+        // Check bin_path before anything is downloaded, extracted or keyed on it.
+        if let Some(bin_path) = opts.bin_path() {
+            render_bin_path(&bin_path, &tv)?;
+        }
 
         let url = template_string(&url_template, &tv);
 
@@ -2320,5 +2326,23 @@ mod tests {
         // Windows would otherwise collapse to the same path component.
         assert_ne!(key_for("rename_exe=tool"), key_for(r#"rename_exe="tool.""#));
         assert_ne!(key_for("rename_exe=tool"), key_for(r#"rename_exe="tool ""#));
+
+        // bin_path joins the key next to rename_exe, so it is hashed too.
+        for bin_path in ["../../evil", "/abs/dir", "a/b"] {
+            let key = key_for(&format!(r#"rename_exe=plz,bin_path="{bin_path}""#));
+            assert!(key.contains("binpath_"), "key: {key}");
+            assert!(
+                !key.contains(illegal),
+                "unsafe cache key for {bin_path}: {key}"
+            );
+            assert!(
+                !key.contains(".."),
+                "unsafe cache key for {bin_path}: {key}"
+            );
+        }
+        assert_ne!(
+            key_for(r#"rename_exe=plz,bin_path="a""#),
+            key_for(r#"rename_exe=plz,bin_path="b""#)
+        );
     }
 }

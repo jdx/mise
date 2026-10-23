@@ -26,3 +26,13 @@ EOF
   assert_not_contains "MISE_SAFE=1 mise env 2>/dev/null" "evil"
   assert_contains "MISE_SAFE=1 mise env 2>&1" "must be a directory inside the install directory"
 done
+
+# An install checks bin_path before it downloads, extracts or keys a shared
+# extraction on it, with or without rename_exe.
+for extra in "" ', rename_exe = "renamed", shared_extraction = true'; do
+  cat <<EOF >mise.toml
+[tools]
+"http:bad-bin" = { version = "1.0.0", url = "$url", bin_path = "../../../escaped"$extra }
+EOF
+  assert_fail "mise install http:bad-bin" "must be a directory inside the install directory"
+done
