@@ -156,8 +156,16 @@ fn reached_through_link(path: &Path, root: &Path) -> bool {
 /// version file, while a link to `~/.netrc` or a token file would put that
 /// file's text into tool names and versions, which mise prints in warnings,
 /// `mise ls` and install errors, and puts into download URLs.
+///
+/// The user's own files are exempt: global config such as `~/.tool-versions`,
+/// and any version file directly in the home directory, which a dotfiles
+/// manager may well link to a file of another name. Unlike [`may_quote`], this
+/// runs after settings load, so it can ask which files are global.
 pub(crate) fn links_to_another_name(path: &Path) -> bool {
-    if may_quote(path) {
+    if may_quote(path)
+        || path.parent() == Some(&**dirs::HOME)
+        || crate::config::is_global_config(path)
+    {
         return false;
     }
     let target = path.canonicalize().ok();

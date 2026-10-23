@@ -32,3 +32,13 @@ mkdir shared
 echo "dummy 1.0.0" >shared/.tool-versions
 ln -s shared/.tool-versions .tool-versions
 assert_contains "mise ls dummy" "1.0.0"
+
+rm .tool-versions
+
+# The user's own global `~/.tool-versions` may link to a file of any name, as
+# a dotfiles manager sets it up.
+mkdir -p "$HOME/dotfiles"
+echo "dummy 2.0.0" >"$HOME/dotfiles/tool-versions"
+ln -s "$HOME/dotfiles/tool-versions" "$HOME/.tool-versions"
+assert_contains "mise ls dummy 2>&1" "2.0.0"
+assert_not_contains "mise ls dummy 2>&1" "not reading"

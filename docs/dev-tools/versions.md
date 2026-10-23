@@ -218,7 +218,9 @@ of the same name elsewhere, such as one shared across a monorepo. mise does not
 read one that links to a file of another name and warns
 `not reading <path>: it is a symlink to a file of another name`: a project could
 otherwise point it at a file such as `~/.netrc` and have its text shown as tool
-names and versions.
+names and versions. Your own files are exempt: global config such as
+`~/.tool-versions`, and version files directly in your home directory, may link
+to a file of any name.
 
 ### Enable idiomatic version files {#enabling-idiomatic-version-files}
 
