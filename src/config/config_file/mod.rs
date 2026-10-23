@@ -519,12 +519,12 @@ pub(super) async fn parse_detected(
 /// A `path:<dir>` version names a directory that is already on disk, so it needs
 /// no install step: its `bin` is put on PATH as soon as the config loads, which
 /// would let an untrusted repository shadow any command.
-fn version_requires_trust(version: &str) -> bool {
+pub(crate) fn version_requires_trust(version: &str) -> bool {
     version.starts_with("path:")
 }
 
 /// Whether a detected config requires trust before tracked loading may parse it.
-pub(super) fn detection_requires_trust(path: &Path, detection: &ConfigFileDetection) -> bool {
+pub(super) async fn detection_requires_trust(path: &Path, detection: &ConfigFileDetection) -> bool {
     if Settings::safe_mode() {
         return false;
     }
@@ -538,8 +538,10 @@ pub(super) fn detection_requires_trust(path: &Path, detection: &ConfigFileDetect
         ConfigFileDetection::Recognized(ConfigFileType::ToolVersions) => {
             ToolVersions::path_requires_trust(path)
         }
-        ConfigFileDetection::Recognized(ConfigFileType::IdiomaticVersion(_))
-        | ConfigFileDetection::DisabledIdiomatic
+        ConfigFileDetection::Recognized(ConfigFileType::IdiomaticVersion(backends)) => {
+            IdiomaticVersionFile::path_requires_trust(path, backends).await
+        }
+        ConfigFileDetection::DisabledIdiomatic
         | ConfigFileDetection::Unknown
         | ConfigFileDetection::DiscoveryFailed(_) => false,
     }

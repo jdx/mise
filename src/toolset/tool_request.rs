@@ -492,6 +492,22 @@ impl ToolRequest {
         self.resolved_options().source_for_key(key)
     }
 
+    /// Whether safe mode ignores this request. A `path:` version needs no install, so one
+    /// from project config would put a directory the project names on PATH, which is why
+    /// safe mode ignores the project's `_.path` too. Global config is the operator's, and a
+    /// tool stub or CLI argument is run by the user.
+    pub(crate) fn ignored_in_safe_mode(&self) -> bool {
+        matches!(self, Self::Path { .. })
+            && Settings::safe_mode()
+            && match self.source() {
+                ToolSource::MiseToml(path)
+                | ToolSource::MiseTomlDaemon(path)
+                | ToolSource::ToolVersions(path)
+                | ToolSource::IdiomaticVersionFile(path) => !crate::config::is_global_config(path),
+                _ => false,
+            }
+    }
+
     /// Rejects install options that can execute configuration-provided code in safe mode.
     pub(crate) fn ensure_safe_install_options(&self) -> Result<()> {
         if !Settings::safe_mode() {

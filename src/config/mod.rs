@@ -1527,7 +1527,7 @@ impl Config {
             // config loading (e.g., during `mise upgrade`) never prompts.
             // Plain .tool-versions and idiomatic version files are safe to
             // parse without trust and must still protect their tool versions.
-            if config_file::detection_requires_trust(&path, &detection)
+            if config_file::detection_requires_trust(&path, &detection).await
                 && !is_global_config(&path)
                 && !config_file::is_trusted(&trust_root)
             {
@@ -4181,13 +4181,27 @@ fn matching_idiomatic_tools(
 fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
     let mut aliases: AliasMap = AliasMap::new();
 
+    // In safe mode a project (non-global) config cannot alias a version to a
+    // `path:`, for the same reason its `path:` tool versions are ignored (see
+    // `ToolRequest::ignored_in_safe_mode`). The request an alias rewrites can
+    // come from global config, so this is checked here rather than per request.
+    let safe_mode = Settings::safe_mode();
+
     for config_file in config_files.values() {
+        let ignore_path_versions = safe_mode && !is_global_config(config_file.get_path());
         for (plugin, plugin_aliases) in config_file.aliases()? {
             let alias = aliases.entry(plugin).or_default();
             if let Some(full) = plugin_aliases.backend {
                 alias.backend = Some(full);
             }
             for (from, to) in plugin_aliases.versions {
+                if ignore_path_versions && config_file::version_requires_trust(&to) {
+                    debug!(
+                        "ignoring tool alias version {from} = {to} in {}: safe mode (MISE_SAFE=1)",
+                        display_path(config_file.get_path())
+                    );
+                    continue;
+                }
                 alias.versions.insert(from, to);
             }
         }

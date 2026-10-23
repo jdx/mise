@@ -45,7 +45,9 @@ A `mise.toml` loads without trust when it has no template syntax
 
 - `min_version`
 - `[tools]` entries whose values are version strings or arrays of version
-  strings, with no options in the tool name (`"tool[opt=value]"`)
+  strings, with no options in the tool name (`"tool[opt=value]"`) and no
+  [`path:`](/dev-tools/versions.html) version, which puts a directory on `PATH`
+  without an install
 - `[tasks]`, as long as no task lists `secrets`
 
 Anything else needs trust, including tool option tables, `[env]`, `[hooks]`,
@@ -54,9 +56,10 @@ config that is not trusted, so a repository cannot change mirrors, build
 commands or other settings before you trust it. Other files follow the same
 idea:
 
-- `.tool-versions` needs trust only when it contains template syntax or inline
-  tool options such as `node[postinstall=...] 24`.
-- Idiomatic version files such as `.nvmrc` never need trust.
+- `.tool-versions` needs trust only when it contains template syntax, inline
+  tool options such as `node[postinstall=...] 24`, or a `path:` version.
+- Idiomatic version files such as `.nvmrc` need trust only when they contain a
+  `path:` version.
 - Task files, including TOML files from
   [`task_config.includes`](/tasks/task-discovery.html), need trust only when they
   contain template syntax or list `secrets`.
@@ -222,6 +225,8 @@ These are skipped without an error, so resolution commands keep working:
   config, and bootstrap hooks, as with `--no-hooks`.
 - Project `[env]`, `[vars]` and environment directives such as `_.path` and
   `_.file`.
+- Project `path:` tool versions, and project `[tool_alias]` versions that point
+  to one.
 - `_.source` in every config, including global config.
 - Project `[shell_alias]`.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
