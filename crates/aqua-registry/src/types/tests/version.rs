@@ -108,6 +108,31 @@ fn test_semver_constraint_without_an_operator_is_not_satisfied() {
 }
 
 #[test]
+fn test_version_constraint_with_a_non_bool_result_is_not_satisfied() {
+    assert!(!constraint_holds("Version", "1.0.0"));
+    assert!(!constraint_holds("1", "1.0.0"));
+    assert!(!constraint_holds("nil", "1.0.0"));
+
+    let pkg = AquaPackage {
+        version_constraint: "Version".to_string(),
+        ..Default::default()
+    };
+    assert!(!pkg.version_constraint_ok(&["1.0.0"]));
+}
+
+#[test]
+fn test_semver_with_a_non_string_argument_is_an_error() {
+    assert!(!constraint_holds("semver(1)", "1.0.0"));
+
+    let mut pkg = AquaPackage {
+        version_filter: Some("semver(1)".to_string()),
+        ..Default::default()
+    };
+    pkg.setup_version_filter().unwrap();
+    assert!(pkg.version_filter_ok("1.0.0").is_err());
+}
+
+#[test]
 fn test_version_override_matches_version_prefix() {
     let pkg = AquaPackage {
         version_constraint: "false".to_string(),

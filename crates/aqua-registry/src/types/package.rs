@@ -170,13 +170,20 @@ impl AquaPackage {
                     if vo.version_constraint.is_empty() {
                         true
                     } else {
-                        expr.eval(&vo.version_constraint, ctx)
-                            .map_err(|e| {
-                                log::debug!("error parsing {}: {e}", vo.version_constraint)
-                            })
-                            .unwrap_or(false.into())
-                            .as_bool()
-                            .unwrap()
+                        match expr.eval(&vo.version_constraint, ctx) {
+                            Ok(Value::Bool(matched)) => matched,
+                            Ok(_) => {
+                                log::warn!(
+                                    "invalid response from version constraint: {}",
+                                    vo.version_constraint
+                                );
+                                false
+                            }
+                            Err(e) => {
+                                log::debug!("error parsing {}: {e}", vo.version_constraint);
+                                false
+                            }
+                        }
                     }
                 })
             })
