@@ -635,6 +635,14 @@ fn test_safe_mode_hides_env_and_files() {
             }
         }
         assert!(render_str_v2(&mut get_tera_v2(None), "{{ env.SECRET }}", &ctx).is_err());
+        // work for a tool from global config renders that config's options with env
+        let trusted = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(with_trusted_templates(async {
+                render_str(&mut get_tera(None), "{{ env.SECRET }}", &ctx)
+            }));
+        assert_eq!(trusted.unwrap(), "hunter2");
     }
     // outside safe mode nothing changes
     crate::testing::reset_settings(None);

@@ -507,13 +507,15 @@ impl HttpBackend {
     // Cache key generation
     // -------------------------------------------------------------------------
 
-    /// Generate a cache key based on file content and extraction options
+    /// Generate a cache key based on file content and extraction options.
+    /// `bin_path` is the rendered, checked `bin_path` option.
     fn cache_key(
         &self,
         file_path: &Path,
         opts: &HttpOptions<'_>,
         file_info: &FileInfo,
         strip_components: usize,
+        bin_path: Option<&str>,
     ) -> Result<String> {
         let checksum = hash::file_hash_blake3(file_path, None)?;
 
@@ -548,11 +550,12 @@ impl HttpBackend {
         if let Some(rename) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
             parts.push(format!("rename_{}", rename_cache_token(rename)));
             // When rename_exe is used, bin_path affects where the rename happens,
-            // so different bin_path values result in different cached content
-            // Hashed like rename_exe, so no path text reaches the cache
-            // directory name.
-            if let Some(bin_path) = opts.bin_path() {
-                parts.push(format!("binpath_{}", hash::hash_blake3_to_str(&bin_path)));
+            // so different bin_path values result in different cached content.
+            // The rendered path is what counts (`{{ version }}/bin` differs per
+            // version), and it is hashed like rename_exe, so no path text reaches
+            // the cache directory name.
+            if let Some(bin_path) = bin_path {
+                parts.push(format!("binpath_{}", hash::hash_blake3_to_str(bin_path)));
             }
         }
 
@@ -573,10 +576,11 @@ impl HttpBackend {
         file_path: &Path,
         effective_filename: Option<&str>,
         opts: &HttpOptions<'_>,
+        bin_path: Option<&str>,
     ) -> Result<CachePlan> {
         let file_info = FileInfo::new(file_path, effective_filename, opts);
         let strip_components = self.effective_strip_components(file_path, &file_info, opts)?;
-        let key = self.cache_key(file_path, opts, &file_info, strip_components)?;
+        let key = self.cache_key(file_path, opts, &file_info, strip_components, bin_path)?;
 
         Ok(CachePlan {
             key,
@@ -1518,9 +1522,10 @@ impl Backend for HttpBackend {
         // Get URL template
         let url_template = opts.url().ok_or_else(|| self.missing_url_error(&opts))?;
         // Check bin_path before anything is downloaded, extracted or keyed on it.
-        if let Some(bin_path) = opts.bin_path() {
-            render_bin_path(&bin_path, &tv)?;
-        }
+        let bin_path = opts
+            .bin_path()
+            .map(|bin_path| render_bin_path(&bin_path, &tv))
+            .transpose()?;
 
         let url = template_string(&url_template, &tv);
 
@@ -1598,8 +1603,12 @@ impl Backend for HttpBackend {
         self.verify_checksum(ctx, &mut tv, &file_path)?;
 
         // Generate cache key
-        let cache_plan =
-            self.cache_plan(&file_path, download.effective_filename.as_deref(), &opts)?;
+        let cache_plan = self.cache_plan(
+            &file_path,
+            download.effective_filename.as_deref(),
+            &opts,
+            bin_path.as_deref(),
+        )?;
         ctx.pr.next_operation();
         // Explicit destinations must remain independent of the user's data dir,
         // even when the tool opts into sharing normal user installations.
@@ -2123,9 +2132,11 @@ mod tests {
         let raw = FileInfo::new(artifact.path(), None, &opts);
         let redirected = FileInfo::new(artifact.path(), Some("tool.tar.gz"), &opts);
 
-        let raw_key = backend.cache_key(artifact.path(), &opts, &raw, 0).unwrap();
+        let raw_key = backend
+            .cache_key(artifact.path(), &opts, &raw, 0, None)
+            .unwrap();
         let redirected_key = backend
-            .cache_key(artifact.path(), &opts, &redirected, 0)
+            .cache_key(artifact.path(), &opts, &redirected, 0, None)
             .unwrap();
 
         assert_ne!(raw_key, redirected_key);
@@ -2151,9 +2162,11 @@ mod tests {
         let beta = FileInfo::new(artifact.path(), Some("beta.gz"), &opts);
 
         let alpha_key = backend
-            .cache_key(artifact.path(), &opts, &alpha, 0)
+            .cache_key(artifact.path(), &opts, &alpha, 0, None)
             .unwrap();
-        let beta_key = backend.cache_key(artifact.path(), &opts, &beta, 0).unwrap();
+        let beta_key = backend
+            .cache_key(artifact.path(), &opts, &beta, 0, None)
+            .unwrap();
 
         assert_ne!(alpha_key, beta_key);
     }
@@ -2171,7 +2184,7 @@ mod tests {
             let key = |options: &str| {
                 let raw_opts = crate::toolset::parse_tool_options(options);
                 backend
-                    .cache_plan(&artifact, None, &HttpOptions::new(&raw_opts))
+                    .cache_plan(&artifact, None, &HttpOptions::new(&raw_opts), None)
                     .unwrap()
                     .key
             };
@@ -2306,7 +2319,10 @@ mod tests {
             let opts = crate::toolset::parse_tool_options(opt);
             let opts = HttpOptions::new(&opts);
             let file_info = FileInfo::new(tmp.path(), None, &opts);
-            backend.cache_key(tmp.path(), &opts, &file_info, 0).unwrap()
+            let bin_path = opts.bin_path();
+            backend
+                .cache_key(tmp.path(), &opts, &file_info, 0, bin_path.as_deref())
+                .unwrap()
         };
 
         // Scalar, table, and adversarial values all yield path-safe keys.
@@ -2349,5 +2365,18 @@ mod tests {
             key_for(r#"rename_exe=plz,bin_path="a""#),
             key_for(r#"rename_exe=plz,bin_path="b""#)
         );
+
+        // The key follows the rendered bin_path: the same archive installed for
+        // two versions with `bin_path = "{{ version }}/bin"` renames in two
+        // different directories, so it must not share an extraction.
+        let opts = crate::toolset::parse_tool_options(r#"rename_exe=plz"#);
+        let opts = HttpOptions::new(&opts);
+        let file_info = FileInfo::new(tmp.path(), None, &opts);
+        let rendered = |bin_path| {
+            backend
+                .cache_key(tmp.path(), &opts, &file_info, 0, Some(bin_path))
+                .unwrap()
+        };
+        assert_ne!(rendered("1.0.0/bin"), rendered("2.0.0/bin"));
     }
 }

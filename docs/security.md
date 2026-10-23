@@ -253,7 +253,8 @@ These are skipped without an error, so resolution commands keep working:
   put your credentials into a URL mise requests, into `mise.lock` or into
   command output. A template that reads a variable without a `default` fails, as
   it does when the variable is unset. This covers a project's `.miserc.toml`
-  too.
+  too. The options of a tool from global or system config, including a global
+  `[tool_alias]`, keep `env` when a backend renders them later.
 - `_.source` in every config, including global config.
 - Project `[shell_alias]`.
 - The commands in a project task's usage spec that shell completion would run.
@@ -261,10 +262,10 @@ These are skipped without an error, so resolution commands keep working:
 - Your credentials, for hosts project config chooses: a project `api_url` gets
   no GitHub, GitLab or Forgejo token (unless global config names the same host),
   and a tool that project config declares gets no `~/.netrc` credentials for
-  the hosts its `url`, `checksum_url`, `version_list_url` or `version_date_url`
-  names. Tools from global and system config keep theirs. A project that points
-  at a private forge or file server therefore cannot list or download versions
-  there.
+  the hosts its `url`, `checksum_url`, `version_list_url`, `version_date_url`
+  or `api_url` names. Tools from global and system config keep theirs. A
+  project that points at a private forge or file server therefore cannot list
+  or download versions there.
 - A project `[tool_alias]` for a tool that global config declares, so a
   repository cannot point your tool at another backend, options or versions.
 - Project [lazy tools](/dev-tools/shims.html#lazy-tools): mise writes no shims

@@ -112,13 +112,31 @@ fn safe_mode() -> bool {
     }
 }
 
+tokio::task_local! {
+    static TRUSTED_TEMPLATES: bool;
+}
+
+/// Runs `future` so that [`render_str`] keeps `env` in safe mode. It is for
+/// work done for a tool that global or system config declares, whose backends
+/// render that config's options (a global `[tool_alias]` such as
+/// `http:tool[url=https://files.example/{{ env.CHANNEL }}/tool]`) only when
+/// they need them, long after the file was read.
+pub async fn with_trusted_templates<T>(future: impl std::future::Future<Output = T>) -> T {
+    TRUSTED_TEMPLATES.scope(true, future).await
+}
+
 /// Empties `env` in safe mode. Project config loads without trust there, and
 /// what its templates render reaches the URLs mise requests, the lockfile and
 /// command output, so they must not see the credentials in the operator's
 /// environment. This is done on every render rather than where a context is
 /// built because backends and tasks render with contexts of their own.
 fn safe_context(context: &Context) -> std::borrow::Cow<'_, Context> {
-    if !context.contains_key("env") || !safe_mode() {
+    if !context.contains_key("env")
+        || !safe_mode()
+        || TRUSTED_TEMPLATES
+            .try_with(|trusted| *trusted)
+            .unwrap_or(false)
+    {
         return std::borrow::Cow::Borrowed(context);
     }
     let mut context = context.clone();

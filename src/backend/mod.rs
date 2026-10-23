@@ -3437,7 +3437,7 @@ pub trait Backend: Debug + Send + Sync {
             } else {
                 Default::default()
             };
-            let (listed, listing_degraded) = crate::toolset::with_safe_mode_netrc_scope(
+            let (listed, listing_degraded) = crate::toolset::with_safe_mode_tool_scope(
                 self.ba(),
                 &opts,
                 self._list_remote_versions_checked(config),
@@ -4670,7 +4670,7 @@ pub trait Backend: Debug + Send + Sync {
                 );
                 return false;
             }
-            None => match crate::toolset::with_safe_mode_netrc_scope(
+            None => match crate::toolset::with_safe_mode_tool_scope(
                 self.ba(),
                 &if Settings::safe_mode() {
                     config
@@ -5218,7 +5218,7 @@ pub trait Backend: Debug + Send + Sync {
         }
         let install_env = tv.install_env();
         let request_opts = tv.request.options().opts;
-        let install = crate::toolset::with_safe_mode_netrc_scope(
+        let install = crate::toolset::with_safe_mode_tool_scope(
             self.ba(),
             &request_opts,
             self.install_version_(&ctx, tv),

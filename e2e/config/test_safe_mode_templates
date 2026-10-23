@@ -55,3 +55,29 @@ cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
 EOF
 assert_succeed "SAFE_TEMPLATE=from-env MISE_SAFE=1 mise dotfiles apply ~/.safe-dot --yes"
 assert "cat ~/.safe-dot" "value=from-env"
+
+# and so do the options of a global [tool_alias], which the backend renders
+# only when it downloads
+mkdir -p stable
+printf '#!/bin/sh\necho alias-tool\n' >stable/galias-1.0.0
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[tool_alias]
+galias = "http:galias[url=file://$PWD/{{env.SAFE_CHANNEL}}/galias-{{version}}]"
+
+[tools]
+galias = "1.0.0"
+EOF
+assert_succeed "SAFE_CHANNEL=stable MISE_SAFE=1 mise install galias"
+assert_succeed "test -d '$MISE_DATA_DIR/installs/galias/1.0.0'"
+# a project alias does not get the environment
+rm "$MISE_CONFIG_DIR/config.toml"
+cat <<EOF >mise.toml
+[tool_alias]
+palias = "http:palias[url=file://$PWD/{{env.SAFE_CHANNEL}}/galias-{{version}}]"
+
+[tools]
+palias = "1.0.0"
+EOF
+assert_fail "SAFE_CHANNEL=stable MISE_SAFE=1 mise install palias"
+assert_succeed "SAFE_CHANNEL=stable mise install palias"
+rm mise.toml

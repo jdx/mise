@@ -36,3 +36,20 @@ for extra in "" ', rename_exe = "renamed", shared_extraction = true'; do
 EOF
   assert_fail "mise install http:bad-bin" "must be a directory inside the install directory"
 done
+
+# A shared extraction is keyed on the rendered bin_path: the same archive
+# installed for two versions renames in two different directories.
+mkdir -p shared/1.0.0/bin shared/2.0.0/bin
+printf '#!/bin/sh\necho shared\n' >shared/1.0.0/bin/tool
+cp shared/1.0.0/bin/tool shared/2.0.0/bin/tool
+chmod +x shared/1.0.0/bin/tool shared/2.0.0/bin/tool
+tar -czf shared.tar.gz -C shared 1.0.0 2.0.0
+rm -rf shared
+for version in 1.0.0 2.0.0; do
+  cat <<EOF >mise.toml
+[tools]
+"http:shared-bin" = { version = "$version", url = "file://$PWD/shared.tar.gz", bin_path = "{{ version }}/bin", rename_exe = "renamed", shared_extraction = true }
+EOF
+  assert_succeed "mise install http:shared-bin"
+  assert_contains "mise which renamed" "$version/bin/renamed"
+done

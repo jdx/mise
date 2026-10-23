@@ -523,7 +523,7 @@ impl ToolRequest {
 
     /// In safe mode, records the host of this request's `api_url`, so that a project one gets
     /// no forge token. An `api_url` in global or system config is the operator's and keeps
-    /// its token. netrc is scoped per tool instead; see [`with_safe_mode_netrc_scope`].
+    /// its token. netrc is scoped per tool instead; see [`with_safe_mode_tool_scope`].
     pub(crate) fn record_safe_mode_credential_hosts(&self) {
         if !Settings::safe_mode() {
             return;
@@ -1011,16 +1011,22 @@ fn is_forbidden_cmd_char(_c: char) -> bool {
     false
 }
 
-/// Calls `f` with each string value under one of `keys` in tool options, platform tables
-/// included, since backends read options per platform.
+/// Calls `f` with each string value under one of `keys` in tool options. Backends read options
+/// per platform, from a platform table (`platforms.linux-x64.url`) or a flat key
+/// (`platforms_linux_x64_url`), so both count.
 fn visit_option_strings(
     opts: &indexmap::IndexMap<String, toml::Value>,
     keys: &[&str],
     f: &mut dyn FnMut(&str, &str),
 ) {
+    fn matches(key: &str, keys: &[&str]) -> bool {
+        keys.contains(&key)
+            || (key.starts_with("platforms_") || key.starts_with("platform_"))
+                && keys.iter().any(|k| key.ends_with(&format!("_{k}")))
+    }
     fn visit(key: &str, value: &toml::Value, keys: &[&str], f: &mut dyn FnMut(&str, &str)) {
         match value {
-            toml::Value::String(s) if keys.contains(&key) => f(key, s),
+            toml::Value::String(s) if matches(key, keys) => f(key, s),
             toml::Value::Table(table) => {
                 for (key, value) in table {
                     visit(key, value, keys, f);
@@ -1050,26 +1056,33 @@ pub(crate) fn record_safe_mode_credential_hosts(
     });
 }
 
-/// The tool options that name a host a tool downloads from or lists versions from.
-const NETRC_SCOPED_URL_OPTIONS: [&str; 4] = [
+/// The tool options that name a host a tool sends requests to: where it downloads from,
+/// lists versions from, or (for a forge, which falls back to netrc without a token) its API.
+const NETRC_SCOPED_URL_OPTIONS: [&str; 5] = [
     "url",
     "checksum_url",
     "version_list_url",
     "version_date_url",
+    "api_url",
 ];
 
-/// Runs `future`, work done for the tool `ba` with options `opts`. In safe mode, when project
-/// config declares the tool, its requests to a host one of its URL options names get no netrc
-/// credentials: the project chose those hosts, and a netrc login (or `default` entry) would
-/// otherwise go to them or read the operator's own server. The decision comes from who asks,
-/// so tools from global or system config are unaffected even on the same host.
-pub(crate) async fn with_safe_mode_netrc_scope<T>(
+/// Runs `future`, work done for the tool `ba` with options `opts`, in safe mode by who asks:
+///
+/// - When project config declares the tool, its requests to a host one of its URL options
+///   names get no netrc credentials: the project chose those hosts, and a netrc login (or
+///   `default` entry) would otherwise go to them or read the operator's own server.
+/// - Otherwise the tool comes from global or system config, and the templates its backend
+///   renders from that config's options keep `env`, as the file's own templates do.
+pub(crate) async fn with_safe_mode_tool_scope<T>(
     ba: &BackendArg,
     opts: &indexmap::IndexMap<String, toml::Value>,
     future: impl std::future::Future<Output = T>,
 ) -> T {
-    if !Settings::safe_mode() || !crate::config::is_safe_mode_project_tool(ba) {
+    if !Settings::safe_mode() {
         return future.await;
+    }
+    if !crate::config::is_safe_mode_project_tool(ba) {
+        return mise_util::tera::with_trusted_templates(future).await;
     }
     let mut urls = vec![];
     visit_option_strings(opts, &NETRC_SCOPED_URL_OPTIONS, &mut |_, url| {
@@ -1180,6 +1193,36 @@ mod tests {
     use pretty_assertions::assert_str_eq;
     use std::sync::Arc;
     use test_log::test;
+
+    #[test]
+    fn netrc_scope_reads_platform_url_options() {
+        let opts = crate::toolset::parse_tool_options(
+            r#"url="https://top.example/t",platforms_linux_x64_url="https://flat.example/t",platform_macos_arm64_api_url="https://flat-api.example",bin="t""#,
+        );
+        let mut opts = opts.opts.into_map();
+        opts.insert(
+            "platforms".into(),
+            toml::from_str::<toml::Value>(
+                r#"linux-arm64 = { url = "https://nested.example/t", checksum_url = "https://nested-sum.example/s" }"#,
+            )
+            .unwrap(),
+        );
+        let mut urls = vec![];
+        super::visit_option_strings(&opts, &super::NETRC_SCOPED_URL_OPTIONS, &mut |_, url| {
+            urls.push(url.to_string());
+        });
+        urls.sort();
+        assert_eq!(
+            urls,
+            [
+                "https://flat-api.example",
+                "https://flat.example/t",
+                "https://nested-sum.example/s",
+                "https://nested.example/t",
+                "https://top.example/t",
+            ]
+        );
+    }
 
     fn test_ba() -> Arc<BackendArg> {
         let short = "lockfile-query-test";

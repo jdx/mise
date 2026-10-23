@@ -4193,16 +4193,12 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
         if !safe_mode {
             return BTreeSet::new();
         }
+        // `tool_backends` reads the tool keys without rendering any version,
+        // which could fail this early and drop every tool of the file.
         config_files
             .values()
             .filter(|cf| is_global_config(cf.get_path()) == global)
-            .filter_map(|cf| cf.to_tool_request_set().ok())
-            .flat_map(|trs| {
-                trs.tools
-                    .keys()
-                    .map(|ba| ba.short.clone())
-                    .collect::<Vec<_>>()
-            })
+            .flat_map(|cf| cf.tool_backends())
             .collect()
     };
     let global_tools = declared_tools(true);
@@ -4248,9 +4244,30 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
         }
     }
     trace!("load_aliases: {}", aliases.len());
-    *SAFE_MODE_PROJECT_TOOLS.lock().unwrap() = project_tools;
+    record_safe_mode_project_tools(project_tools);
 
     Ok(aliases)
+}
+
+/// Adds to the tools recorded for [`is_safe_mode_project_tool`], never replaces
+/// them: a later load of global config alone (such as the global runtime's) must
+/// not drop the project tools of the main one.
+fn record_safe_mode_project_tools(tools: BTreeSet<String>) {
+    SAFE_MODE_PROJECT_TOOLS.lock().unwrap().extend(tools);
+}
+
+#[cfg(test)]
+mod safe_mode_project_tools_tests {
+    use super::*;
+
+    #[test]
+    fn a_global_only_load_keeps_the_project_tools() {
+        record_safe_mode_project_tools(BTreeSet::from(["http:project-only-tool".to_string()]));
+        record_safe_mode_project_tools(BTreeSet::new());
+        assert!(is_safe_mode_project_tool(&BackendArg::from(
+            "http:project-only-tool"
+        )));
+    }
 }
 
 /// The tools that project config declares or aliases, recorded in safe mode by
