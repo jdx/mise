@@ -19,6 +19,61 @@ pub const EPHEMERAL_OPT_KEYS: &[&str] = &[
     "auto_update",
 ];
 
+/// Options that hold nothing but credentials: the http backend's `headers`
+/// (`Authorization = "Bearer ..."`), and `headers_forward`, which is an error
+/// without them.
+const CREDENTIAL_OPT_KEYS: &[&str] = &["headers", "headers_forward"];
+
+/// Whether `key` names one of [`CREDENTIAL_OPT_KEYS`], under its own name or as
+/// a flat per-platform key (`platforms_linux_x64_headers`).
+fn is_credential_opt(key: &str) -> bool {
+    CREDENTIAL_OPT_KEYS
+        .iter()
+        .any(|name| key == *name || is_flat_platform_opt(key, name))
+}
+
+fn is_flat_platform_opt(key: &str, name: &str) -> bool {
+    key.starts_with("platform")
+        && key
+            .strip_suffix(name)
+            .is_some_and(|rest| rest.ends_with('_'))
+}
+
+/// An option value as it may be stored in a file: the credentials of every URL
+/// in it are removed at any depth (`platforms.<platform>` tables hold the same
+/// options one level down), and [`CREDENTIAL_OPT_KEYS`] are dropped.
+///
+/// Options are rendered before they are stored, so a token templated in from
+/// the environment is in the value by then. A consumer that needs the
+/// credential reads it from config, which is where it was configured.
+pub(crate) fn strip_option_credentials(value: &toml::Value) -> toml::Value {
+    match value {
+        toml::Value::String(raw) => {
+            toml::Value::String(mise_util::redactions::strip_url_credentials(raw).into_owned())
+        }
+        toml::Value::Array(values) => {
+            toml::Value::Array(values.iter().map(strip_option_credentials).collect())
+        }
+        toml::Value::Table(table) => toml::Value::Table(
+            table
+                .iter()
+                .filter(|(k, _)| !is_credential_opt(k))
+                .map(|(k, v)| (k.clone(), strip_option_credentials(v)))
+                .collect(),
+        ),
+        _ => value.clone(),
+    }
+}
+
+/// Options as they may be stored in a file; see [`strip_option_credentials`].
+pub(crate) fn strip_options_credentials<'a>(
+    opts: impl IntoIterator<Item = (&'a String, &'a toml::Value)>,
+) -> impl Iterator<Item = (String, toml::Value)> {
+    opts.into_iter()
+        .filter(|(k, _)| !is_credential_opt(k))
+        .map(|(k, v)| (k.clone(), strip_option_credentials(v)))
+}
+
 const AUTO_UPDATE_ERROR: &str = "auto_update must be true, false, or a duration such as \"12h\"";
 
 pub use mise_config::tools::CoreToolOptions;

@@ -93,7 +93,62 @@ pub fn redact_url_userinfo_in_arg(arg: &str) -> Cow<'_, str> {
     redact_userinfo(arg, false)
 }
 
+/// Remove the credentials of every `scheme://` URL in `text`.
+///
+/// Unlike [`redact_url_userinfo`], which marks where a credential was for a
+/// reader, this is for values that are stored, compared or used as names
+/// (lockfiles, install manifests, directory names), where `[redacted]` would be
+/// recorded as if it were part of the URL. `https://user:token@host/path`
+/// becomes `https://host/path`. The user of an `ssh` URL is an account name
+/// rather than a secret, so `ssh://git@host/repo` is kept as it is and only a
+/// password is removed from it. Everything else is kept byte for byte, so the
+/// text need not parse as a URL.
+///
+/// Whitespace ends a URL, as in [`redact_url_userinfo`]; for a single argument
+/// or name that may hold a raw space use [`strip_url_credentials_in_arg`].
+pub fn strip_url_credentials(text: &str) -> Cow<'_, str> {
+    rewrite_userinfo(text, true, Userinfo::Strip)
+}
+
+/// [`strip_url_credentials`] for one command-line argument or tool name, where
+/// only `/`, `?` or `#` ends the authority.
+pub fn strip_url_credentials_in_arg(arg: &str) -> Cow<'_, str> {
+    rewrite_userinfo(arg, false, Userinfo::Strip)
+}
+
+/// Text that mise writes to the terminal or a file without going through the
+/// logger, redacted the way the logger redacts every record: registered secrets,
+/// then the userinfo of every URL.
+pub fn redact_output(text: &str) -> String {
+    let text = redact_global(text);
+    match redact_url_userinfo(&text) {
+        Cow::Borrowed(_) => text,
+        Cow::Owned(redacted) => redacted,
+    }
+}
+
 fn redact_userinfo(text: &str, whitespace_ends_url: bool) -> Cow<'_, str> {
+    rewrite_userinfo(text, whitespace_ends_url, Userinfo::Redact)
+}
+
+#[derive(Clone, Copy)]
+enum Userinfo {
+    /// Replace it with `[redacted]`.
+    Redact,
+    /// Remove it and its `@`, keeping the user of an `ssh` URL.
+    Strip,
+}
+
+/// The scheme of the URL whose `://` ends `head`.
+fn trailing_scheme(head: &str) -> &str {
+    let head = head.strip_suffix("://").unwrap_or(head);
+    let start = head
+        .rfind(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')))
+        .map_or(0, |i| i + 1);
+    &head[start..]
+}
+
+fn rewrite_userinfo(text: &str, whitespace_ends_url: bool, mode: Userinfo) -> Cow<'_, str> {
     if !text.contains("://") {
         return Cow::Borrowed(text);
     }
@@ -111,10 +166,26 @@ fn redact_userinfo(text: &str, whitespace_ends_url: bool) -> Cow<'_, str> {
                 matches!(c, '/' | '?' | '#') || (whitespace_ends_url && c.is_whitespace())
             })
             .unwrap_or(tail.len());
-        if let Some(at) = tail[..end].rfind('@').filter(|&at| at > 0) {
-            out.push_str("[redacted]");
-            rest = &tail[at..];
-            redacted = true;
+        let Some(at) = tail[..end].rfind('@').filter(|&at| at > 0) else {
+            continue;
+        };
+        match mode {
+            Userinfo::Redact => {
+                out.push_str("[redacted]");
+                rest = &tail[at..];
+                redacted = true;
+            }
+            Userinfo::Strip if trailing_scheme(head).to_ascii_lowercase().ends_with("ssh") => {
+                if let Some((user, _password)) = tail[..at].split_once(':') {
+                    out.push_str(user);
+                    rest = &tail[at..];
+                    redacted = true;
+                }
+            }
+            Userinfo::Strip => {
+                rest = &tail[at + 1..];
+                redacted = true;
+            }
         }
     }
     if !redacted {
@@ -246,6 +317,52 @@ fn replace_spans(input: &str, mut spans: Vec<(usize, usize)>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_strip_url_credentials() {
+        let cases = [
+            ("https://user:tok@host/a?b=1", "https://host/a?b=1"),
+            ("https://tok@host", "https://host"),
+            ("https://u:p@ss@host/x", "https://host/x"),
+            (
+                "cargo:https://bot:t0ken@host/acme/tool.git",
+                "cargo:https://host/acme/tool.git",
+            ),
+            (
+                "ssh://git@github.com/o/r.git",
+                "ssh://git@github.com/o/r.git",
+            ),
+            (
+                "git+ssh://git:pw@github.com/o/r",
+                "git+ssh://git@github.com/o/r",
+            ),
+            (
+                "--index-url https://u:p@h.example/x --other https://h2/y",
+                "--index-url https://h.example/x --other https://h2/y",
+            ),
+            ("https://host/a@b", "https://host/a@b"),
+            ("plain value", "plain value"),
+        ];
+        for (input, want) in cases {
+            assert_eq!(strip_url_credentials(input), want, "{input}");
+        }
+        assert!(matches!(
+            strip_url_credentials("https://host/x"),
+            Cow::Borrowed(_)
+        ));
+        assert_eq!(
+            strip_url_credentials_in_arg("cargo:https://bot:my t0ken@host/r"),
+            "cargo:https://host/r"
+        );
+    }
+
+    #[test]
+    fn test_redact_output_hides_url_userinfo() {
+        assert_eq!(
+            redact_output("GET https://u:p@host/x failed"),
+            "GET https://[redacted]@host/x failed"
+        );
+    }
 
     #[test]
     fn test_secret_patterns_single_line() {

@@ -4,6 +4,7 @@ use crate::file::display_path;
 use crate::git::Git;
 use crate::lock_file::LockFile;
 use crate::plugins::PluginType;
+use crate::toolset::tool_version_options::strip_options_credentials;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, parse_tool_options};
 use crate::{dirs, env, file, runtime_symlinks};
 use eyre::{Ok, Result, WrapErr};
@@ -144,7 +145,19 @@ fn write_manifest(manifest: &Manifest) -> Result<()> {
 }
 
 fn write_manifest_to(path: &Path, manifest: &Manifest) -> Result<()> {
-    let body = toml::to_string_pretty(manifest)?;
+    // Entries written by an older mise may still hold credentials; any write
+    // of the consolidated manifest leaves it without them.
+    let manifest: Manifest = manifest
+        .iter()
+        .map(|(dir, mt)| {
+            let mt = ManifestTool {
+                opts: strip_options_credentials(&mt.opts).collect(),
+                ..mt.clone()
+            };
+            (dir.clone(), mt)
+        })
+        .collect();
+    let body = toml::to_string_pretty(&manifest)?;
     file::write_atomic(path, body.trim())?;
     Ok(())
 }
@@ -390,12 +403,12 @@ fn scan_tool_dir(
         {
             let stripped = stripped_str.to_string();
             let parsed = parse_tool_options(opts_str);
-            for (k, v) in &parsed.opts {
-                if EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
-                    continue;
-                }
-                opts.insert(k.clone(), v.clone());
-            }
+            opts.extend(strip_options_credentials(
+                parsed
+                    .opts
+                    .iter()
+                    .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str())),
+            ));
             full = Some(stripped);
             migrate = Some(ManifestTool {
                 short: mt.short.clone(),
@@ -1066,45 +1079,24 @@ pub(crate) fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> 
 
 fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
     // Store opts as native TOML values, filtering out ephemeral keys.
-    let mut opts_map: BTreeMap<String, toml::Value> = BTreeMap::new();
-    if let Some(o) = ba.opts.as_ref() {
-        for (k, v) in &o.opts {
-            if !EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
-                opts_map.insert(k.clone(), strip_url_credentials(v));
-            }
-        }
+    //
+    // These manifests are written under the data directory, which gets backed
+    // up, synced between machines and left group-readable, so a live credential
+    // must not reach them. It can: a registry URL authenticates as basic-auth
+    // userinfo (mise's gem `source` option, for one), the http backend's
+    // `headers` carry a bearer token, and templating the token in from the
+    // environment does not help, because rendering happens before the value is
+    // stored. The rest of a URL is kept, since it is genuine identity: which
+    // registry a tool came from is worth recording.
+    match ba.opts.as_ref() {
+        Some(o) => strip_options_credentials(
+            o.opts
+                .iter()
+                .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str())),
+        )
+        .collect(),
+        None => BTreeMap::new(),
     }
-    opts_map
-}
-
-/// Remove userinfo from an option that is a URL carrying credentials.
-///
-/// These manifests are written under the data directory, which gets backed up,
-/// synced between machines and left group-readable, so a live credential must
-/// not reach them. It can: a registry URL authenticates as basic-auth userinfo
-/// (mise's gem `source` option, for one), and templating the token in from the
-/// environment does not help, because rendering happens before the value is
-/// stored.
-///
-/// The rest of the URL is kept, since it is genuine identity: which registry a
-/// tool came from is worth recording. A consumer that needs the credential
-/// reads it from config, which is where it was configured.
-fn strip_url_credentials(value: &toml::Value) -> toml::Value {
-    let Some(raw) = value.as_str() else {
-        return value.clone();
-    };
-    // `.ok()` rather than `let Ok(..)`: `Ok` is shadowed by eyre's in this module.
-    let Some(mut url) = raw.parse::<url::Url>().ok() else {
-        return value.clone();
-    };
-    if url.username().is_empty() && url.password().is_none() {
-        return value.clone();
-    }
-    // Both calls fail only for a URL that cannot have credentials at all, which
-    // is precisely the case already returned above.
-    let _ = url.set_username("");
-    let _ = url.set_password(None);
-    toml::Value::String(url.to_string())
 }
 
 /// Marks `v` of the tool whose directory is `tool_dir_name` as mid-install.
@@ -1927,7 +1919,10 @@ explicit_backend = true
 
 #[cfg(test)]
 mod credential_tests {
-    use super::strip_url_credentials;
+    use super::persistent_opts;
+    use crate::args::BackendArg;
+    use crate::toolset::ToolVersionOptions;
+    use crate::toolset::tool_version_options::strip_option_credentials as strip_url_credentials;
 
     /// These manifests live under the data directory, which is backed up and
     /// synced, so a registry URL must not carry its token onto disk. Templating
@@ -1960,5 +1955,44 @@ mod credential_tests {
             strip_url_credentials(&toml::Value::Integer(7)),
             toml::Value::Integer(7)
         );
+    }
+
+    /// Options are TOML values, and the ones that are tables carry credentials
+    /// too: `platforms.<platform>` holds the same options one level down, and
+    /// `headers` holds nothing else.
+    #[test]
+    fn credentials_in_table_options_are_stripped() {
+        let mut ba = BackendArg::from("http:hello");
+        ba.set_opts(Some(ToolVersionOptions {
+            opts: toml::from_str(
+                r#"
+                url = "https://ci:s3cret@example.com/hello.tar.gz"
+                mirrors = ["https://ci:s3cret@mirror.example.com/hello.tar.gz"]
+                headers = { Authorization = "Bearer s3cret" }
+                headers_forward = { Authorization = "cdn.example.com" }
+                platforms_macos_arm64_headers = { X-Api-Key = "s3cret" }
+
+                [platforms.linux-x64]
+                url = "https://ci:s3cret@example.com/hello-linux.tar.gz"
+                headers = { Authorization = "Bearer s3cret" }
+                bin_path = "bin"
+                "#,
+            )
+            .unwrap(),
+            ..Default::default()
+        }));
+
+        let expected: toml::Table = toml::from_str(
+            r#"
+            url = "https://example.com/hello.tar.gz"
+            mirrors = ["https://mirror.example.com/hello.tar.gz"]
+
+            [platforms.linux-x64]
+            url = "https://example.com/hello-linux.tar.gz"
+            bin_path = "bin"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(toml::Table::from_iter(persistent_opts(&ba)), expected);
     }
 }

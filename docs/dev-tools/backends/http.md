@@ -434,9 +434,9 @@ linux-x64 = { url = "https://ghcr.io/v2/acme/polaris/blobs/sha256:...", format =
 macos-arm64 = { url = "https://ghcr.io/v2/acme/polaris/blobs/sha256:...", format = "tar.gz" }
 ```
 
-mise redacts header values from debug output, and headers do not change where a
-tool is installed. A `headers` entry replaces any token mise would otherwise
-send to the same host.
+mise redacts header values from debug output and does not record them with the
+installation, and headers do not change where a tool is installed. A `headers`
+entry replaces any token mise would otherwise send to the same host.
 
 mise sends headers only to the host in `url`. When the server redirects to a
 different host, port or scheme, mise drops every header for the rest of the

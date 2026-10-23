@@ -74,6 +74,8 @@ EOT
 mise install
 assert_contains "mise x -- headers-tool" "headers ok"
 assert_not_contains "mise ls --json" "s3cret"
+# Nor is the rendered value left on disk with the installation.
+assert_not_contains "cat $MISE_DATA_DIR/installs/.mise-installs.toml $MISE_DATA_DIR/installs/http-headers-tool/.mise.backend.toml" "s3cret"
 
 # version_list_url sends them too.
 cat >mise.toml <<EOT
