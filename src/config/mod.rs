@@ -5051,6 +5051,26 @@ fn user_global_task_includes(has_config: bool) -> Vec<String> {
     includes
 }
 
+/// Whether a loaded task comes from config the user trusts, by the rules the task loader uses:
+/// global and system config are the user's own, a task from a remote include was named by a
+/// config that had to be trusted, a trusted project config vouches for the task files of its
+/// config root, and a task file can be trusted on its own. A task from a tasks-only
+/// `mise.toml` or a bare `mise-tasks` directory nobody trusted is none of these: it loads
+/// because it is inert until someone names it, as `mise run <task>` does.
+pub fn task_is_trusted(config: &Config, task: &Task) -> bool {
+    task.remote_include.is_some()
+        || task.config_sources().into_iter().all(|path| {
+            is_global_config(path) || is_global_task_include_path(path) || is_path_trusted(path)
+        })
+        || config.config_files.iter().any(|(path, cf)| {
+            // the global config root is also the root of a project config placed directly in
+            // `$HOME`, which it does not vouch for
+            !is_global_config(path)
+                && task.config_root.as_deref() == Some(cf.config_root().as_path())
+                && is_path_trusted(path)
+        })
+}
+
 fn is_global_task_include_path(path: &Path) -> bool {
     [
         dirs::CONFIG.join("tasks"),

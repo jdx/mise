@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+# `mise bootstrap` runs the `bootstrap` task nobody named. A safe project
+# config (plain [tasks]) and a template-free task file load without trust, and
+# a project task replaces a global one by name, so the task phase must refuse
+# tasks from config the user has not trusted instead of running them.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[tasks.bootstrap]
+run = "touch $HOME/global_task_ran"
+EOF
+
+# the global task runs from a directory with no project config
+mkdir -p empty project file-task
+assert_succeed "cd empty && MISE_YES=0 mise bootstrap --skip tools"
+assert "test -f $HOME/global_task_ran"
+rm -f "$HOME/global_task_ran"
+
+# an untrusted project task must neither run nor replace the global one
+cat <<'EOF' >project/mise.toml
+[tasks.bootstrap]
+run = "touch $HOME/project_task_ran"
+EOF
+assert_fail "cd project && MISE_YES=0 mise bootstrap --skip tools" "is not trusted"
+assert_fail "test -f $HOME/project_task_ran"
+assert_fail "test -f $HOME/global_task_ran"
+assert_contains "cd project && mise trust --show" "untrusted"
+
+# the same for a bare task file
+mkdir -p file-task/mise-tasks
+cat <<'EOF' >file-task/mise-tasks/bootstrap
+#!/usr/bin/env bash
+touch "$HOME/project_task_ran"
+EOF
+chmod +x file-task/mise-tasks/bootstrap
+assert_fail "cd file-task && MISE_YES=0 mise bootstrap --skip tools" "is not trusted"
+assert_fail "test -f $HOME/project_task_ran"
+
+# a project task cannot claim to be global
+mkdir -p claims-global
+# schema: invalid
+cat <<'EOF' >claims-global/mise.toml
+[tasks.bootstrap]
+global = true
+run = "touch $HOME/project_task_ran"
+EOF
+assert_fail "cd claims-global && MISE_YES=0 mise bootstrap --skip tools" "is not trusted"
+assert_fail "test -f $HOME/project_task_ran"
+
+# --skip task still applies the rest
+assert_succeed "cd project && MISE_YES=0 mise bootstrap --skip tools,task"
+assert_fail "test -f $HOME/project_task_ran"
+
+# once trusted, the project task runs in place of the global one
+assert_succeed "cd project && mise trust"
+assert_succeed "cd project && MISE_YES=0 mise bootstrap --skip tools"
+assert "test -f $HOME/project_task_ran"
+assert_fail "test -f $HOME/global_task_ran"

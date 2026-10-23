@@ -2470,6 +2470,22 @@ impl Bootstrap {
                 t.aliases.iter().any(|a| a == "bootstrap")
                     || (!t.name.contains(':') && t.is_match("bootstrap"))
             }) {
+                // Tasks-only config and template-free task files load without trust because
+                // their tasks are inert until `mise run` names one. Nobody named this one, and a
+                // project task replaces a global one of the same name (`bootstrap` or one it
+                // depends on), so every loaded task has to come from config the user trusts.
+                // Safe mode refuses to run tasks below.
+                if !Settings::safe_mode()
+                    && let Some(task) = tasks
+                        .values()
+                        .find(|t| !config::task_is_trusted(&config, t))
+                {
+                    bail!(
+                        "bootstrap: not running the `bootstrap` task: {} is not trusted; review it and run `mise trust {}`, or pass `--skip task`",
+                        task.config_source.display_user(),
+                        config::config_file::config_trust_root(&task.config_source).display_user()
+                    );
+                }
                 info!("bootstrap: running `bootstrap` task");
                 self.run_task("bootstrap", skip.contains(&BootstrapPart::Tools))
                     .await?;
