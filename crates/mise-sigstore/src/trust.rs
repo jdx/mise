@@ -118,6 +118,16 @@ pub(crate) struct TrustRoots {
 }
 
 impl TrustRoots {
+    /// Roots with the public Sigstore root already loaded, so a test verifies
+    /// against the embedded copy instead of fetching it over TUF.
+    #[cfg(test)]
+    pub(crate) fn with_sigstore_root(root: TrustedRoot) -> Self {
+        Self {
+            sigstore: Some(root),
+            ..Default::default()
+        }
+    }
+
     pub(crate) async fn sigstore_root(&mut self) -> Result<&TrustedRoot> {
         if self.sigstore.is_none() {
             self.sigstore = Some(production_trusted_root().await?);
