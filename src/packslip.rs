@@ -678,6 +678,10 @@ fn into_place(staging: &Path, dir: &Path, built: Result<()>) -> Result<()> {
 /// raw.githubusercontent.com, neither of which spends the GitHub API's rate
 /// limit. A private repository, which only the user's token can read, is
 /// listed and fetched through the contents API instead.
+///
+/// The listings decide how deep the tree goes, so it is walked from a list
+/// of directories still to fetch rather than by recursion, whose nested
+/// futures would all be polled on one stack.
 async fn fetch_repo_dir(
     repo: &str,
     commit: &str,
@@ -685,15 +689,30 @@ async fn fetch_repo_dir(
     dest: &Path,
     pr: &dyn SingleReport,
 ) -> Result<()> {
+    let mut dirs = vec![(rel.to_string(), dest.to_path_buf())];
+    while let Some((rel, dest)) = dirs.pop() {
+        fetch_repo_dir_entries(repo, commit, &rel, &dest, pr, &mut dirs).await?;
+    }
+    Ok(())
+}
+
+/// One directory of [`fetch_repo_dir`]: its files are downloaded into
+/// `dest`, and its subdirectories added to `dirs`.
+async fn fetch_repo_dir_entries(
+    repo: &str,
+    commit: &str,
+    rel: &str,
+    dest: &Path,
+    pr: &dyn SingleReport,
+    dirs: &mut Vec<(String, PathBuf)>,
+) -> Result<()> {
     let listing = github::list_repo_dir(repo, commit, rel).await?;
     file::create_dir_all(dest)?;
     for entry in listing.entries {
         let name = entry.name;
         let path = format!("{rel}/{name}");
         match repo_entry_action(&name, &entry.kind) {
-            RepoEntryAction::Recurse => {
-                Box::pin(fetch_repo_dir(repo, commit, &path, &dest.join(&name), pr)).await?;
-            }
+            RepoEntryAction::Recurse => dirs.push((path, dest.join(&name))),
             RepoEntryAction::Download => {
                 let contents_url = format!(
                     "https://api.github.com/repos/{repo}/contents/{}?ref={commit}",
@@ -2011,6 +2030,52 @@ mod tests {
             "expected a 404, got {err:#}"
         );
         mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_fetch_repo_dir_does_not_nest_a_call_per_directory() {
+        use crate::config::SettingsExt;
+        use crate::config::settings::SettingsPartial;
+        use confique::Layer;
+        // Deeper than a call per directory gets on a test thread's stack.
+        const DEPTH: usize = 64;
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut settings = SettingsPartial::empty();
+        settings.url_replacements = Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => server.url(),
+        });
+        Settings::reset(Some(settings));
+        let mut rel = "skill".to_string();
+        for _ in 0..DEPTH {
+            server
+                .mock("GET", format!("/repos/o/r/contents/{rel}?ref=c").as_str())
+                .with_body(r#"[{"name":"a","type":"dir"}]"#)
+                .create_async()
+                .await;
+            rel.push_str("/a");
+        }
+        server
+            .mock("GET", format!("/repos/o/r/contents/{rel}?ref=c").as_str())
+            .with_body(r#"[{"name":"notes.md","type":"file"}]"#)
+            .create_async()
+            .await;
+        server
+            .mock(
+                "GET",
+                format!("/repos/o/r/contents/{rel}/notes.md?ref=c").as_str(),
+            )
+            .with_body("notes")
+            .create_async()
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let pr = crate::ui::progress_report::QuietReport::new();
+        fetch_repo_dir("o/r", "c", "skill", &dir.path().join("skill"), &pr)
+            .await
+            .unwrap();
+        let notes = dir.path().join(rel).join("notes.md");
+        assert_eq!(file::read_to_string(notes).unwrap(), "notes");
     }
 
     #[test]
