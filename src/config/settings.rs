@@ -1212,6 +1212,10 @@ impl SettingsExt for Settings {
         static RESOLVED: Lazy<Mutex<std::collections::HashMap<PathBuf, Option<PathBuf>>>> =
             Lazy::new(Default::default);
         self.trusted_config_paths_as_written().filter_map(|p| {
+            // A relative entry resolves against the current directory, which can change.
+            if !p.is_absolute() {
+                return file::canonicalize_cached(&p);
+            }
             if let Some(resolved) = RESOLVED.lock().unwrap().get(&p) {
                 return resolved.clone();
             }
