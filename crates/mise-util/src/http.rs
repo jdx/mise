@@ -2700,13 +2700,13 @@ pub fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
     // files are a 404 without the token, so it is routed here too. `get_headers`
     // decides what each host actually gets.
     if crate::github::is_github_api_url(url) || crate::github::is_github_raw_content_url(url) {
-        return crate::github::get_headers(url.as_str());
+        return crate::github::get_headers(url.as_str(), crate::github::API_URL);
     }
 
-    // A generic URL does not carry the configured GitLab or Forgejo API origin,
-    // so it cannot establish a safe trust boundary for those tokens. Their
-    // backend-specific callers must pass the request and API URLs directly to
-    // the corresponding `get_headers` function.
+    // A generic URL does not carry the configured GitHub Enterprise, GitLab or
+    // Forgejo API origin, so it cannot establish a safe trust boundary for those
+    // tokens. Their backend-specific callers must pass the request and API URLs
+    // directly to the corresponding `get_headers` function.
     Ok(HeaderMap::new())
 }
 

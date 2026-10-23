@@ -450,7 +450,7 @@ async fn fetch_release_index(source: &SelfUpdateSource) -> Result<String> {
                 "{}/repos/{}/releases?per_page=100&page={page}",
                 source.api_url, source.repository
             );
-            let headers = crate::github::get_headers(&url)?;
+            let headers = crate::github::get_headers(&url, &source.api_url)?;
             let (releases, _): (Vec<crate::github::GithubRelease>, _) = crate::http::HTTP
                 .json_headers_with_headers(&url, &headers)
                 .await?;

@@ -117,10 +117,8 @@ async fn test_github_rate_limited_403_is_retried() {
 
     assert_eq!(seen, 4, "exhausted limit should be retried: {err:?}");
     assert!(is_transient(&err), "{err:?}");
-    // The marker must not change what the user reads. The auth line is
-    // deliberately not asserted on: whether a token is attached depends on
-    // the environment the test runs in, and `is_github_api_url` matches the
-    // `/api/v3/` path used here. `github_forbidden_report` covers it.
+    // The marker must not change what the user reads. The auth line is not
+    // asserted on here: `github_forbidden_report` covers it.
     let msg = format!("{err:?}");
     assert!(
         msg.contains("github rate limit: 0/5000 (core), resets at 1789456621"),

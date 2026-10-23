@@ -1493,7 +1493,7 @@ impl UnifiedGitBackend {
         } else if self.is_forgejo() {
             forgejo::get_headers(&download_url, &api_url)?
         } else {
-            github::get_headers(&download_url)?
+            github::get_headers(&download_url, &api_url)?
         };
         HTTP.download_file_with_headers(&download_url, &artifact_path, &headers, None)
             .await?;
@@ -1782,7 +1782,7 @@ impl UnifiedGitBackend {
         } else if self.is_forgejo() {
             forgejo::get_headers(&url, &opts.api_url())?
         } else {
-            github::get_headers(&url)?
+            github::get_headers(&url, &opts.api_url())?
         };
 
         ctx.pr.set_message(format!("download {filename}"));
@@ -1916,7 +1916,7 @@ impl UnifiedGitBackend {
         } else if self.is_forgejo() {
             forgejo::get_headers(&url, &opts.api_url())?
         } else {
-            github::get_headers(&url)?
+            github::get_headers(&url, &opts.api_url())?
         };
 
         ctx.pr.set_message(format!("download {filename}"));

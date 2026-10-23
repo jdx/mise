@@ -141,7 +141,7 @@ pub(crate) fn repo_file_request(
     let rel = url_path(rel);
     if let Some(path) = repo.strip_prefix("https://github.com/") {
         let url = format!("https://raw.githubusercontent.com/{path}/{commit}/{rel}");
-        let headers = github::get_headers(&url)?;
+        let headers = github::get_headers(&url, github::API_URL)?;
         Ok(Some((url, headers)))
     } else {
         Ok(repo.strip_prefix("https://gitlab.com/").map(|path| {
@@ -168,7 +168,7 @@ fn headers_for(url: &str) -> Result<HeaderMap> {
         || url.starts_with("https://api.github.com/")
         || url.starts_with("https://raw.githubusercontent.com/")
     {
-        github::get_headers(url)
+        github::get_headers(url, github::API_URL)
     } else {
         Ok(HeaderMap::new())
     }
@@ -716,7 +716,7 @@ async fn fetch_repo_dir(
                 HTTP.download_file_with_headers(
                     &file_url,
                     &dest.join(&name),
-                    &github::get_headers(&file_url)?,
+                    &github::get_headers(&file_url, github::API_URL)?,
                     Some(pr),
                 )
                 .await?;

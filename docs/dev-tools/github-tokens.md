@@ -358,7 +358,7 @@ because mise stops at the first token it finds.
 Tokens are looked up by host. `api.github.com` and `raw.githubusercontent.com`
 use the token for `github.com`, so key token files and CLI logins by
 `github.com`. GitLab and Forgejo tokens go only to the origin of the tool's
-`api_url`.
+`api_url`, and so do GitHub tokens on a GitHub Enterprise Server.
 
 ## GitHub Enterprise and self-managed hosts {#github-enterprise}
 
