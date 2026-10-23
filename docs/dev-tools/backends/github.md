@@ -527,9 +527,12 @@ The identity must match the workflow ref in the certificate exactly. It is a
 [template](#templates), so `{{ version }}` is the resolved version.
 :::
 
-Without both options, mise skips SLSA provenance and uses the other checks. A
-lockfile entry that records a checksum and SLSA provenance installs without
-verifying again, unless
+With both options set, a release that has no SLSA provenance mise can verify
+for the asset, because it publishes none or the file is empty or unreadable,
+fails to install and to lock, unless GitHub artifact attestations verify it
+first. Without both options, mise skips SLSA provenance and uses the other
+checks. A lockfile entry that records a checksum and SLSA provenance installs
+without verifying again, unless
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
 is set; that setting also makes missing signer options an error. These options
 are GitHub only.

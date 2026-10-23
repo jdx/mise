@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+
+# A github: tool that names its SLSA signer asked for that check, so a release whose
+# provenance was deleted or emptied (the binary replaced by someone who cannot run the
+# pinned workflow) must be refused by both `mise install` and `mise lock`, not installed
+# or locked on its checksum alone.
+#
+# The provenance file is also never written under the name the release gives it: a name
+# like `provenance/../../../../escaped-provenance` must not land outside the download
+# directory.
+#
+# Served from a local stand-in for the GitHub API so the test needs no network.
+
+unset GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN GITHUB_API_TOKEN
+export MISE_USE_VERSIONS_HOST=0
+export MISE_DOWNLOADS_DIR="$PWD/dl"
+
+start_http_server --handler - <<'PY'
+import hashlib
+import http.server
+import json
+
+TOOL = b"#!/bin/sh\necho replaced\n"
+
+# repo -> {asset name: bytes}
+RELEASES = {
+    "removed": {"tool-linux-x64": TOOL},
+    "emptied": {"tool-linux-x64": TOOL, "tool-linux-x64.intoto.jsonl": b""},
+    "escape": {
+        "tool-linux-x64": TOOL,
+        "provenance/../../../../escaped-provenance": b"written outside\n",
+    },
+}
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def reply(self, status, content_type, body):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def release(self, repo):
+        port = self.server.server_address[1]
+        assets = []
+        for i, (name, body) in enumerate(RELEASES[repo].items()):
+            assets.append(
+                {
+                    "name": name,
+                    "browser_download_url": f"http://127.0.0.1:{port}/download/{repo}/{i}",
+                    "url": f"http://127.0.0.1:{port}/api/assets/{repo}/{i}",
+                    "digest": "sha256:" + hashlib.sha256(body).hexdigest(),
+                }
+            )
+        return {
+            "tag_name": "v1.0.0",
+            "draft": False,
+            "prerelease": False,
+            "created_at": "2026-01-01T00:00:00Z",
+            "published_at": "2026-01-01T00:00:00Z",
+            "assets": assets,
+        }
+
+    def do_GET(self):
+        parts = self.path.split("?")[0].strip("/").split("/")
+        if parts[0] == "download" or parts[:2] == ["api", "assets"]:
+            repo, index = parts[-2], int(parts[-1])
+            body = list(RELEASES[repo].values())[index]
+            self.reply(200, "application/octet-stream", body)
+        elif len(parts) >= 4 and parts[0] == "repos" and parts[2] in RELEASES:
+            repo = parts[2]
+            if parts[-1] == "releases":
+                self.reply(200, "application/json", json.dumps([self.release(repo)]).encode())
+            else:
+                self.reply(200, "application/json", json.dumps(self.release(repo)).encode())
+        else:
+            self.reply(404, "text/plain", b"not found")
+PY
+
+tool_config() {
+  cat <<EOF
+[tools."github:acme/$1"]
+version = "1.0.0"
+api_url = "http://127.0.0.1:$HTTP_PORT"
+asset_pattern = "tool-linux-x64"
+slsa_signer_identity = "https://github.com/acme/$1/.github/workflows/release.yml@refs/tags/v{{ version }}"
+slsa_signer_issuer = "https://token.actions.githubusercontent.com"
+EOF
+}
+
+for repo in removed emptied; do
+  tool_config "$repo" >mise.toml
+  assert_fail "mise install" "no verifiable SLSA provenance"
+  if [[ -e "$MISE_DATA_DIR/installs/github-acme-$repo/1.0.0/tool-linux-x64" ]]; then
+    fail "github:acme/$repo was installed without its SLSA provenance"
+  fi
+
+  rm -f mise.lock
+  mise lock --platform linux-x64 >lock.log 2>&1 || true
+  if [[ -f mise.lock ]]; then
+    assert_not_contains "cat mise.lock" "/download/$repo/"
+  fi
+done
+
+tool_config escape >mise.toml
+mise install >install.log 2>&1 || true
+if [[ -e "$PWD/escaped-provenance" ]]; then
+  fail "the provenance download was written outside the download directory"
+fi
+ok "the provenance download stayed inside the download directory"

@@ -415,6 +415,18 @@ fn slsa_signer_missing_error(tv: &ToolVersion) -> eyre::Report {
     )
 }
 
+/// A tool that names its SLSA signer has asked for that check, so a release
+/// without provenance it can verify is refused rather than installed unchecked:
+/// replacing the binary and deleting (or emptying) its provenance is exactly
+/// what the signer is there to catch.
+fn slsa_provenance_missing_error(tv: &ToolVersion, asset_name: &str) -> eyre::Report {
+    eyre::eyre!(
+        "slsa_signer_identity is set for {tv} but the release has no verifiable SLSA \
+         provenance for {asset_name}. Remove the slsa_signer options if the tool does \
+         not publish SLSA provenance."
+    )
+}
+
 /// Status returned from verification attempts
 enum VerificationStatus {
     /// No attestations or provenance found (not an error, tool may not have them)
@@ -1460,6 +1472,11 @@ impl UnifiedGitBackend {
                     .map(|a| a.browser_download_url.clone());
                 return Ok(Some(ProvenanceType::Slsa { url }));
             }
+            // The tool names its signer, so a release without provenance must not be
+            // locked on its checksum alone (a later install would trust that entry).
+            // Let lock-time verification decide: it still accepts GitHub attestations
+            // the digest lookup above could not see, and refuses everything else.
+            return Ok(Some(ProvenanceType::Slsa { url: None }));
         }
 
         Ok(None)
@@ -1663,6 +1680,9 @@ impl UnifiedGitBackend {
             }
         }
 
+        if settings.slsa && settings.github.slsa && opts.slsa_signer().is_some() {
+            return Err(slsa_provenance_missing_error(tv, &asset.name));
+        }
         Err(eyre::eyre!(
             "provenance was detected but could not be verified at lock time"
         ))
@@ -2874,8 +2894,10 @@ impl UnifiedGitBackend {
                     return Err(eyre::eyre!("SLSA provenance verification failed for {tv}"));
                 }
                 Err(VerificationStatus::NoAttestations) => {
-                    // No provenance found - this is fine
-                    debug!("No SLSA provenance found for {tv}");
+                    // The signer is only set by a tool that publishes SLSA provenance,
+                    // so a missing or unverifiable provenance file is a failure, not a
+                    // release that has none.
+                    return Err(slsa_provenance_missing_error(tv, &asset.name));
                 }
                 Err(VerificationStatus::ApiError(e)) => {
                     if expected_provenance.is_some() || settings.provenance_api_failures_fatal {
