@@ -508,6 +508,21 @@ impl ToolRequest {
             }
     }
 
+    /// In safe mode, records the hosts this request's options send requests to, so that the
+    /// operator's credentials stay away from hosts project config chose: a project `api_url`
+    /// gets no forge token and a project `version_list_url` no netrc credentials. An `api_url`
+    /// in global or system config is the operator's and keeps its token.
+    pub(crate) fn record_safe_mode_credential_hosts(&self) {
+        if !Settings::safe_mode() {
+            return;
+        }
+        let Some(path) = self.source().path() else {
+            return;
+        };
+        let project = !crate::config::is_global_config(path);
+        record_safe_mode_credential_hosts(&self.options().opts, project);
+    }
+
     /// Rejects install options that can execute configuration-provided code in safe mode.
     pub(crate) fn ensure_safe_install_options(&self) -> Result<()> {
         if !Settings::safe_mode() {
@@ -936,6 +951,36 @@ fn is_forbidden_cmd_char(c: char) -> bool {
 #[cfg(not(windows))]
 fn is_forbidden_cmd_char(_c: char) -> bool {
     false
+}
+
+/// Records, in safe mode, the hosts that tool options from one config file send requests to.
+/// `project` is false for global and system config. Platform tables are searched too, since
+/// backends read these options per platform. See [`ToolRequest::record_safe_mode_credential_hosts`].
+pub(crate) fn record_safe_mode_credential_hosts(
+    opts: &indexmap::IndexMap<String, toml::Value>,
+    project: bool,
+) {
+    fn visit(key: &str, value: &toml::Value, project: bool) {
+        match value {
+            toml::Value::String(url) => match key {
+                "api_url" if project => mise_util::untrusted_hosts::deny_forge_token_for_url(url),
+                "api_url" => mise_util::untrusted_hosts::allow_forge_token_for_url(url),
+                "version_list_url" if project => {
+                    mise_util::untrusted_hosts::deny_netrc_for_url(url)
+                }
+                _ => {}
+            },
+            toml::Value::Table(table) => {
+                for (key, value) in table {
+                    visit(key, value, project);
+                }
+            }
+            _ => {}
+        }
+    }
+    for (key, value) in opts {
+        visit(key, value, project);
+    }
 }
 
 /// Resolve a `path:` tool version request value against the config file's directory.

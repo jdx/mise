@@ -4186,10 +4186,45 @@ fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
     // `ToolRequest::ignored_in_safe_mode`). The request an alias rewrites can
     // come from global config, so this is checked here rather than per request.
     let safe_mode = Settings::safe_mode();
+    // Nor can a project alias a tool that global config declares: that would
+    // redirect the operator's tool to a backend, options or versions the project
+    // chose.
+    let global_tools: BTreeSet<String> = if safe_mode {
+        config_files
+            .values()
+            .filter(|cf| is_global_config(cf.get_path()))
+            .filter_map(|cf| cf.to_tool_request_set().ok())
+            .flat_map(|trs| {
+                trs.tools
+                    .keys()
+                    .map(|ba| ba.short.clone())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
 
     for config_file in config_files.values() {
-        let ignore_path_versions = safe_mode && !is_global_config(config_file.get_path());
+        let project = safe_mode && !is_global_config(config_file.get_path());
+        let ignore_path_versions = project;
         for (plugin, plugin_aliases) in config_file.aliases()? {
+            if project && global_tools.contains(&plugin) {
+                debug!(
+                    "ignoring tool alias {plugin} in {}: global config declares the tool and safe mode (MISE_SAFE=1) is on",
+                    display_path(config_file.get_path())
+                );
+                continue;
+            }
+            if safe_mode
+                && let Some(backend) = &plugin_aliases.backend
+                && let Some((_, opts)) = crate::args::split_bracketed_opts(backend)
+            {
+                crate::toolset::record_safe_mode_credential_hosts(
+                    &crate::toolset::parse_tool_options(opts).opts,
+                    project,
+                );
+            }
             let alias = aliases.entry(plugin).or_default();
             if let Some(full) = plugin_aliases.backend {
                 alias.backend = Some(full);

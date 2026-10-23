@@ -204,8 +204,9 @@ build scripts, such as a `cargo:` crate's `build.rs`.
 These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
 
 - `exec()`, `read_file()`, `read_json()`, `read_yaml()`, `read_toml()` and
-  `get_env()` in templates, and the `hash_file`, `file_size` and
-  `last_modified` filters, in any config.
+  `get_env()` in templates, the `hash_file`, `file_size`, `last_modified` and
+  `canonicalize` filters, and the `dir`, `file` and `exists` tests, in any
+  config.
 - Running tasks.
 - The tool options `postinstall` and `install_env`, and the `spm:` backend's
   `install_command`.
@@ -239,6 +240,12 @@ These are skipped without an error, so resolution commands keep working:
 - `_.source` in every config, including global config.
 - Project `[shell_alias]`.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
+- Your credentials, for hosts project config chooses: a project `api_url` gets
+  no GitHub, GitLab or Forgejo token (unless global config names the same host),
+  and a project `version_list_url` no `~/.netrc` credentials. A project that
+  points at a private forge or file server therefore cannot list versions there.
+- A project `[tool_alias]` for a tool that global config declares, so a
+  repository cannot point your tool at another backend, options or versions.
 - Project [lazy tools](/dev-tools/shims.html#lazy-tools): mise writes no shims
   for their commands and does not install them on first use.
 - Project `[settings]`, so a repository cannot turn off verification or redirect

@@ -80,6 +80,11 @@ fn netrc_path() -> PathBuf {
 ///
 /// Returns `Some((login, password))` if credentials are found, `None` otherwise
 pub fn get_credentials(host: &str) -> Option<(String, String)> {
+    // A host that a project `version_list_url` named in safe mode; see
+    // `untrusted_hosts`.
+    if crate::untrusted_hosts::netrc_denied(host) {
+        return None;
+    }
     let netrc = NETRC.as_ref()?;
 
     // First try exact host match

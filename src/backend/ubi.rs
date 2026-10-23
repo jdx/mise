@@ -576,14 +576,25 @@ async fn install(
 
     let forge = opts.provider()?;
     builder = builder.forge(forge.clone());
-    builder = set_token(builder, &forge);
+    // An `api_url` that project config named in safe mode gets no token; see
+    // `mise_util::untrusted_hosts`.
+    let token_denied = opts
+        .api_url_override()
+        .and_then(|api_url| url::Url::parse(api_url).ok())
+        .and_then(|url| url.host_str().map(str::to_string))
+        .is_some_and(|host| mise_util::untrusted_hosts::forge_token_denied(&host));
+    if !token_denied {
+        builder = set_token(builder, &forge);
+    }
 
     if let Some(api_url) = opts.api_url_override()
         && !api_url.contains("github.com")
         && !api_url.contains("gitlab.com")
     {
         builder = builder.api_base_url(api_url.strip_suffix("/").unwrap_or(api_url));
-        builder = set_enterprise_token(builder, &forge);
+        if !token_denied {
+            builder = set_enterprise_token(builder, &forge);
+        }
     }
 
     let mut ubi = builder.build().map_err(|e| eyre::eyre!("{e:#}"))?;
