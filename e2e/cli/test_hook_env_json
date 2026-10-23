@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+
+# `mise hook-env --json` emits the env/alias changes as data instead of shell
+# script so non-shell consumers (IDE plugins) can apply them themselves.
+
+# The early exits recheck when any ancestor directory changes, and the host's
+# temp dir above the test changes whenever other processes use it. Stop the
+# search at $HOME so the "nothing changed" checks below are deterministic.
+export MISE_CEILING_PATHS="$HOME"
+
+# Applies a --json result to this shell the way a consumer would
+apply_json() {
+  eval "$(jq -r '.env | to_entries[] |
+    if .value == null then "unset \(.key)" else "export \(.key)=\(.value | @sh)" end' "$1")"
+}
+
+cat >mise.toml <<'EOF'
+[env]
+FOO = "bar"
+
+[shell_alias]
+ll = "ls -la"
+EOF
+# for --env and --cd below; written now so that the directory is unchanged
+# by the time they run
+cat >mise.prod.toml <<'EOF'
+[env]
+FOO = "prod"
+EOF
+mkdir other
+cat >other/mise.toml <<'EOF'
+[env]
+FOO = "other"
+EOF
+
+unset __MISE_SESSION
+unset __MISE_DIFF
+
+mise hook-env --json >out.json
+
+assert "jq -e . >/dev/null <out.json && echo valid" "valid"
+assert "jq -r '.env.FOO' out.json" "bar"
+assert "jq -c '.aliases' out.json" '{"ll":"ls -la"}'
+assert "jq -r '.untrusted_configs | length' out.json" "0"
+
+# PATH and mise's bookkeeping vars are part of the diff so a consumer can feed
+# them back in on the next call
+assert "jq -r '.env | has(\"PATH\")' out.json" "true"
+assert "jq -r '.env | has(\"__MISE_DIFF\")' out.json" "true"
+assert "jq -r '.env | has(\"__MISE_SESSION\")' out.json" "true"
+
+# no shell script leaked into stdout
+assert_not_contains "mise hook-env --json --force" "export FOO="
+
+# --json works without a shell type being given or detectable
+assert_contains "MISE_SHELL= mise hook-env --json --force" '"FOO": "bar"'
+
+# once the result is applied and nothing has changed, the early exits still
+# print parseable JSON with nothing to apply
+apply_json out.json
+assert "printenv FOO" "bar"
+mise hook-env --json >out.json
+assert "jq -c '.env' out.json" '{}'
+assert "jq -c '.aliases' out.json" '{}'
+
+# --json and --shell conflict in either order, even when nothing has changed
+# and the run would otherwise exit early
+assert_fail_contains "mise hook-env --json --shell bash" "cannot be used with"
+assert_fail_contains "mise hook-env --shell bash --json" "cannot be used with"
+assert_fail_contains "mise hook-env -Js bash" "cannot be used with"
+
+# --env and --cd change what hook-env computes in ways the early exit cannot
+# see, so they always get a full run
+assert "mise hook-env --json -E prod | jq -r .env.FOO" "prod"
+assert "mise hook-env --json -C other | jq -r .env.FOO" "other"
+assert "mise hook-env --json | jq -c .env" '{}'
+
+# --force and --json are seen when combined into one short flag group: only a
+# forced full run notices FOO was changed behind mise's back
+assert "FOO=other mise hook-env -J | jq -c .env" '{}'
+assert "FOO=other mise hook-env -fJ | jq -r .env.FOO" "bar"
+
+# removing an env var or alias, or unsetting one with `false`, shows up as a
+# null
+cat >mise.toml <<'EOF'
+[env]
+BAZ = "qux"
+FOO = false
+EOF
+export INHERITED=1
+cat >>mise.toml <<'EOF'
+INHERITED = false
+EOF
+
+mise hook-env --json >out.json
+
+assert "jq -r '.env.BAZ' out.json" "qux"
+assert "jq -r '.env | has(\"FOO\") and .FOO == null' out.json" "true"
+assert "jq -r '.env | has(\"INHERITED\") and .INHERITED == null' out.json" "true"
+assert "jq -c '.aliases' out.json" '{"ll":null}'
+
+# a full run reports only what changes, not every var mise manages
+apply_json out.json
+cat >>mise.toml <<'EOF'
+QUX = "1"
+EOF
+mise hook-env --json >out.json
+assert "jq -r '.env.QUX' out.json" "1"
+assert "jq -r '.env | has(\"BAZ\")' out.json" "false"
+
+apply_json out.json
+assert_fail "printenv FOO"
+assert_fail "printenv INHERITED"
+assert "printenv BAZ" "qux"
+
+# shell output is unaffected by the new flag
+assert_contains "mise hook-env -s bash --force" "export BAZ=qux"
+
+# a tool directory that was on PATH before the plugin's first run stays there
+# after leaving a project that uses the tool: the first run records the
+# starting PATH, as `mise activate` does for a shell
+mise install dummy@1.0.0
+DUMMY_BIN="$(mise where dummy@1.0.0)/bin"
+export DUMMY_BIN
+# assert runs its command in a new bash, which sees only exported variables
+dummy_on_path="tr : '\n' <<<\"\$PATH\" | grep -cxF \"\$DUMMY_BIN\""
+root="$PWD"
+mkdir -p uses-dummy no-dummy
+cat >uses-dummy/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+unset __MISE_SESSION __MISE_DIFF __MISE_ORIG_PATH
+export PATH="$DUMMY_BIN:$PATH"
+
+cd "$root/uses-dummy"
+mise hook-env --json >out.json
+assert "jq -r .env.__MISE_ORIG_PATH out.json | tr : '\n' | grep -cxF \"\$DUMMY_BIN\"" "1"
+apply_json out.json
+assert "$dummy_on_path" "1"
+
+cd "$root/no-dummy"
+mise hook-env --json >out.json
+assert "jq -r '.env | has(\"__MISE_ORIG_PATH\")' out.json" "false"
+apply_json out.json
+assert "$dummy_on_path" "1"
+cd "$root"
+
+# an untrusted config is reported, and the warning is recorded in env.set so it
+# is not repeated while the consumer passes it back
+unset MISE_TRUSTED_CONFIG_PATHS CI GITHUB_ACTIONS GITHUB_ACTION
+mkdir -p untrusted
+cat >untrusted/mise.toml <<'EOF'
+[env]
+UNTRUSTED = "1"
+EOF
+cd untrusted
+mise hook-env --json >out.json 2>stderr.txt
+assert_contains "cat stderr.txt" "not trusted"
+assert_contains "jq -r '.untrusted_configs[]' out.json" "untrusted/mise.toml"
+assert "jq -r '.env | has(\"UNTRUSTED\")' out.json" "false"
+apply_json out.json
+mise hook-env --json >out.json 2>stderr.txt
+assert_not_contains "cat stderr.txt" "not trusted"
+assert "jq -e . >/dev/null <out.json && echo valid" "valid"
