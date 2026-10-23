@@ -84,7 +84,13 @@ pub(crate) fn encode(
 fn tokens(text: &str, parsed: &Parsed, schema: &Schema) -> Vec<Token> {
     let mut out = vec![];
     for entry in &parsed.entries {
-        let path: Vec<&str> = entry.path.iter().map(String::as_str).collect();
+        let mut path: Vec<&str> = entry.path.iter().map(String::as_str).collect();
+        // `[[env]]` is a list of env tables: its keys read as the keys of `[env]`.
+        if let ["env", index, ..] = path.as_slice()
+            && index.parse::<usize>().is_ok()
+        {
+            path.remove(1);
+        }
         if let Some(range) = entry.key.clone() {
             let nodes = schema.at(&entry.path);
             let deprecated = if schema.is_deprecated(&nodes) {
@@ -97,7 +103,9 @@ fn tokens(text: &str, parsed: &Parsed, schema: &Schema) -> Vec<Token> {
                 ["tools", _] | ["tasks" | "task_templates", _, "tools", _] => Some((TYPE, 0)),
                 ["env", "_"] | ["tasks" | "task_templates", _, "env", "_"] => Some((KEYWORD, 0)),
                 ["env", _] | ["tasks" | "task_templates", _, "env", _] => Some((VARIABLE, 0)),
-                ["vars", _] => Some((VARIABLE, READONLY)),
+                ["vars", _] | ["tasks" | "task_templates", _, "vars", _] => {
+                    Some((VARIABLE, READONLY))
+                }
                 _ => None,
             };
             match known {
@@ -203,6 +211,20 @@ mod tests {
                 ("test".into(), "function", vec!["declaration"]),
                 ("build".into(), "function", vec![]),
                 ("A".into(), "variable", vec![]),
+            ]
+        );
+    }
+
+    #[test]
+    fn env_lists_and_task_vars_are_colored_too() {
+        let text = "[[env]]\nFOO = \"1\"\n_.path = [\"bin\"]\n[tasks.a.vars]\nv = \"x\"\n";
+        assert_eq!(
+            spans(text),
+            [
+                ("FOO".into(), "variable", vec![]),
+                ("_".into(), "keyword", vec![]),
+                ("a".into(), "function", vec!["declaration"]),
+                ("v".into(), "variable", vec!["readonly"]),
             ]
         );
     }
