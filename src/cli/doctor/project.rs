@@ -84,7 +84,7 @@ impl Project {
             Ok(report) => report,
             Err(err) => Report {
                 checks: vec![],
-                errors: vec![format!("{err:#}")],
+                errors: vec![mise_util::redactions::redact_output(&format!("{err:#}"))],
             },
         };
         if self.json || parent_json {

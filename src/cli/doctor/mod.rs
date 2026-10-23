@@ -2,6 +2,7 @@ mod path;
 mod project;
 
 use crate::plugins::PluginEnum;
+use mise_util::redactions::redact_output;
 use std::collections::HashSet;
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -390,7 +391,8 @@ impl Doctor {
             );
         }
 
-        let out = serde_json::to_string_pretty(&data)?;
+        // Printed to stdout, outside the logger, and meant to be shared.
+        let out = redact_output(&serde_json::to_string_pretty(&data)?);
         let written = miseprint!("{out}\n");
 
         // Diagnosed problems decide the exit status even when the reader has gone away.
@@ -466,6 +468,7 @@ impl Doctor {
             miseprintln!("{}\n", style(warning_summary).yellow().bold());
             for (i, check) in self.warnings.iter().enumerate() {
                 let num = style::nyellow(format!("{}.", i + 1));
+                let check = redact_output(check);
                 miseprintln!("{num} {}\n", info::indent_by(check, "   ").trim_start());
             }
         }
@@ -478,6 +481,7 @@ impl Doctor {
             miseprintln!("{}\n", style(error_summary).red().bold());
             for (i, check) in self.errors.iter().enumerate() {
                 let num = style::nred(format!("{}.", i + 1));
+                let check = redact_output(check);
                 miseprintln!("{num} {}\n", info::indent_by(check, "   ").trim_start());
             }
             return Err(crate::request_exit(1));

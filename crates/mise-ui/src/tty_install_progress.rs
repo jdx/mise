@@ -166,7 +166,7 @@ impl TtyInstallProgress {
         let job = self.header.add(
             ProgressJobBuilder::new()
                 .body("{{ prefix }} {{ left | flex_fill }} {{ right }} {{ spinner(name=\"arc\") }}")
-                .prop("prefix", &tool.prefix)
+                .prop("prefix", &redact(&tool.prefix))
                 .prop("left", "")
                 .prop("right", "")
                 .status(status)
@@ -180,6 +180,15 @@ impl TtyInstallProgress {
 
 fn columns() -> usize {
     console::Term::stderr().size().1 as usize
+}
+
+/// This renderer hands its text to clx rather than to the logger, so it
+/// redacts what it shows the way the logger redacts every record: tool names
+/// can be URLs with credentials, and failure reasons can quote secrets.
+/// Redacted where it is shown, not in the state, so secrets registered after a
+/// row was created are covered too.
+fn redact(text: &str) -> String {
+    mise_util::redactions::redact_output(text)
 }
 
 /// The version with its separating space, or nothing: the header body has no
@@ -236,7 +245,8 @@ fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) 
         };
         job.prop(
             "prefix",
-            &console::pad_str(&tool.prefix, width, console::Alignment::Left, None).to_string(),
+            &console::pad_str(&redact(&tool.prefix), width, console::Alignment::Left, None)
+                .to_string(),
         );
         let Some(started) = tool.started else {
             // A held tool names what it is behind; once that drains it is only
@@ -244,7 +254,7 @@ fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) 
             let waiting = tool
                 .waiting_message()
                 .unwrap_or_else(|| "queued".to_string());
-            job.prop("left", &style::edim(waiting).to_string());
+            job.prop("left", &style::edim(redact(&waiting)).to_string());
             job.prop("right", "");
             continue;
         };
@@ -255,7 +265,7 @@ fn refresh(state: &State, header: &Arc<ProgressJob>, rows: &Rows, now: Instant) 
         {
             left.push_str(&format!("  {bytes}"));
         }
-        job.prop("left", &left);
+        job.prop("left", &redact(&left));
         job.prop("right", &row_right(tool, &layout, started, now));
     }
 }
@@ -340,7 +350,7 @@ impl InstallProgress for TtyInstallProgress {
             }
         }
         for line in lines {
-            self.header.println(&line);
+            self.header.println(&redact(&line));
         }
         // One last repaint so the header the summary lands under reads 3/3
         // with a full bar, not whatever the last tick happened to catch.
@@ -351,7 +361,7 @@ impl InstallProgress for TtyInstallProgress {
             ProgressIcon::Success
         };
         if let Some(summary) = final_summary(&state, now, self.hide_success_summary) {
-            self.header.println(&format!("{icon} {summary}"));
+            self.header.println(&redact(&format!("{icon} {summary}")));
         }
         self.header.progress_current(OSC_SCALE);
         self.header.set_status(ProgressStatus::Done);
@@ -424,14 +434,14 @@ impl TtyToolProgress {
         let detail = self.state.lock().unwrap().tools[self.index].child_detail(Instant::now());
         let mut rows = self.rows.lock().unwrap();
         match (detail, rows.children[self.index].clone()) {
-            (Some(detail), Some(child)) => child.prop("detail", &detail),
+            (Some(detail), Some(child)) => child.prop("detail", &redact(&detail)),
             (Some(detail), None) => {
                 if let Some(parent) = rows.jobs[self.index].clone() {
                     let child = parent.add(
                         ProgressJobBuilder::new()
                             .body("  {{ arrow }} {{ detail }}")
                             .prop("arrow", &style::edim("↳").to_string())
-                            .prop("detail", &detail)
+                            .prop("detail", &redact(&detail))
                             .on_done(ProgressJobDoneBehavior::Hide)
                             .build(),
                     );
@@ -451,7 +461,7 @@ impl ToolProgress for TtyToolProgress {
     fn set_prefix(&self, prefix: String) {
         self.with_tool(|tool| tool.prefix = prefix.clone());
         if let Some(job) = self.job() {
-            job.prop("prefix", &prefix);
+            job.prop("prefix", &redact(&prefix));
         }
     }
 
@@ -480,7 +490,7 @@ impl ToolProgress for TtyToolProgress {
         }
         drop(rows);
         if failed {
-            self.header.println(&line);
+            self.header.println(&redact(&line));
         }
     }
 
@@ -507,7 +517,7 @@ impl SingleReport for TtyToolProgress {
     fn println(&self, message: String) {
         let prefix = self.state.lock().unwrap().tools[self.index].prefix.clone();
         for line in message.lines() {
-            self.header.println(&format!("{prefix} {line}"));
+            self.header.println(&redact(&format!("{prefix} {line}")));
         }
     }
 
