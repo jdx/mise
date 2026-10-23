@@ -30,6 +30,9 @@ RELEASES = {
         "tool-linux-x64": TOOL,
         "provenance/../../../../escaped-provenance": b"written outside\n",
     },
+    # Listed, but its release can't be looked up by tag: the tool downloads from a
+    # direct url, which skips the lookup during asset selection.
+    "direct": {"tool-linux-x64": TOOL},
 }
 
 
@@ -72,6 +75,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             repo = parts[2]
             if parts[-1] == "releases":
                 self.reply(200, "application/json", json.dumps([self.release(repo)]).encode())
+            elif repo == "direct":
+                self.reply(404, "text/plain", b"not found")
             else:
                 self.reply(200, "application/json", json.dumps(self.release(repo)).encode())
         else:
@@ -102,6 +107,25 @@ for repo in removed emptied; do
     assert_not_contains "cat mise.lock" "/download/$repo/"
   fi
 done
+
+# A failed release lookup must not drop the signer requirement either: a direct
+# url skips the lookup when the asset is chosen, so lock-time detection is the
+# first to fail at it, and a checksum-only entry would be trusted later.
+cat <<EOF >mise.toml
+[tools."github:acme/direct"]
+version = "1.0.0"
+api_url = "http://127.0.0.1:$HTTP_PORT"
+slsa_signer_identity = "https://github.com/acme/direct/.github/workflows/release.yml@refs/tags/v{{ version }}"
+slsa_signer_issuer = "https://token.actions.githubusercontent.com"
+
+[tools."github:acme/direct".platforms.linux-x64]
+url = "http://127.0.0.1:$HTTP_PORT/download/direct/0"
+EOF
+rm -f mise.lock
+mise lock --platform linux-x64 >lock.log 2>&1 || true
+if [[ -f mise.lock ]]; then
+  assert_not_contains "cat mise.lock" "/download/direct/"
+fi
 
 tool_config escape >mise.toml
 mise install >install.log 2>&1 || true

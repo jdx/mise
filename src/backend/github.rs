@@ -1390,12 +1390,21 @@ impl UnifiedGitBackend {
         let version = &tv.version;
         let version_prefix = opts.version_prefix();
 
-        let release = self
+        let signer_pinned = settings.slsa && settings.github.slsa && opts.slsa_signer().is_some();
+        let release = match self
             .release_for_asset(&api_url, &repo, version, version_prefix, asset)
             .await
-            .ok();
-        let Some(release) = release else {
-            return Ok(None);
+        {
+            Ok(release) => release,
+            // A tool that names its SLSA signer keeps that requirement when the
+            // release can't be looked up (a direct `url` skips the lookup during
+            // asset selection): lock-time verification then has to succeed, instead
+            // of a checksum-only entry that later installs would trust.
+            Err(e) if signer_pinned => {
+                debug!("release lookup failed for {tv}, still requiring SLSA provenance: {e}");
+                return Ok(Some(ProvenanceType::Slsa { url: None }));
+            }
+            Err(_) => return Ok(None),
         };
 
         // Check github-attestations first (higher priority, matching install verification order)
@@ -1449,7 +1458,7 @@ impl UnifiedGitBackend {
         // Check for SLSA provenance from release assets using the same platform-aware
         // picker as install-time verification. This ensures we only record SLSA provenance
         // when a matching provenance file exists for the target platform.
-        if settings.slsa && settings.github.slsa && opts.slsa_signer().is_some() {
+        if signer_pinned {
             let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
             // Narrow provenance the same way the binary is narrowed, so a
             // multi-binary release's per-binary provenance files don't
