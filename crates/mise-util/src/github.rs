@@ -1747,6 +1747,23 @@ pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> Strin
     }
 }
 
+/// The record that GitHub confirmed the release asset `api_url` is the file
+/// `browser_url` downloads. GitHub does not reuse asset IDs, so the answer
+/// stays true.
+fn confirmed_asset_path(browser_url: &str, api_url: &str) -> PathBuf {
+    cache_dir()
+        .join("confirmed-assets")
+        .join(crate::hash::hash_to_str(&(api_url, browser_url)))
+}
+
+fn remember_confirmed_asset(path: &Path, browser_url: &str, api_url: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        crate::file::create_dir_all(parent)?;
+    }
+    crate::file::write(path, format!("{api_url}\n{browser_url}\n"))?;
+    Ok(())
+}
+
 /// `api_url` if the GitHub release asset it names is the file `browser_url`
 /// downloads; otherwise `browser_url`, which then fails on its own.
 ///
@@ -1755,9 +1772,15 @@ pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> Strin
 /// One metadata request settles it: GitHub reports which tag and file the ID
 /// is. Only IDs mise-versions supplied, or may have supplied to a lockfile they
 /// were read from, are checked, so GitHub's own release data (private repos,
-/// where this fallback is routine) costs nothing extra.
+/// where this fallback is routine) costs nothing extra. GitHub's answer is
+/// recorded, so an ID it confirmed is not asked about again, and an offline
+/// install still finds the download kept under the API URL.
 pub async fn checked_api_asset_url(browser_url: &str, api_url: &str) -> String {
     if !crate::versions_host::is_mirrored_asset_api_url(api_url) {
+        return api_url.to_string();
+    }
+    let confirmed = confirmed_asset_path(browser_url, api_url);
+    if confirmed.is_file() {
         return api_url.to_string();
     }
     let asset = async {
@@ -1772,6 +1795,9 @@ pub async fn checked_api_asset_url(browser_url: &str, api_url: &str) -> String {
     };
     match asset.await {
         Ok(asset) if same_release_download(browser_url, &asset.browser_download_url) => {
+            if let Err(err) = remember_confirmed_asset(&confirmed, browser_url, api_url) {
+                debug!("could not record the confirmed GitHub release asset {api_url}: {err:#}");
+            }
             api_url.to_string()
         }
         Ok(asset) => {

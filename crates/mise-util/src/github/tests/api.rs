@@ -131,3 +131,41 @@ async fn test_release_lookup_encodes_the_tag_as_one_path_segment() {
     assert_eq!(release.tag_name, tag);
     mock.assert_async().await;
 }
+
+/// An asset ID mise-versions supplied is asked about once. GitHub's answer is
+/// recorded, so a later install, offline included, still uses the API URL its
+/// download was kept under instead of falling back to the browser URL.
+#[tokio::test]
+async fn test_confirmed_asset_id_is_remembered() {
+    let mut server = mockito::Server::new_async().await;
+    let browser_url = "https://github.com/acme/private/releases/download/v1/tool.tar.gz";
+    let api_url = format!("{}/repos/acme/private/releases/assets/7101", server.url());
+    crate::versions_host::remember_mirrored_asset_api_url(&api_url);
+    let mock = server
+        .mock("GET", "/repos/acme/private/releases/assets/7101")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            serde_json::json!({
+                "name": "tool.tar.gz",
+                "browser_download_url": browser_url,
+                "url": api_url,
+            })
+            .to_string(),
+        )
+        .expect(1)
+        .create_async()
+        .await;
+
+    assert_eq!(checked_api_asset_url(browser_url, &api_url).await, api_url);
+    mock.assert_async().await;
+    // GitHub is gone now, as when offline.
+    drop(server);
+    assert_eq!(checked_api_asset_url(browser_url, &api_url).await, api_url);
+
+    // Another file of the release is still asked about, and not confirmed.
+    let other = "https://github.com/acme/private/releases/download/v1/other.tar.gz";
+    assert_eq!(checked_api_asset_url(other, &api_url).await, other);
+
+    let _ = std::fs::remove_file(confirmed_asset_path(browser_url, &api_url));
+}
