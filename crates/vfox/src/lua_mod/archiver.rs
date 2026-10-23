@@ -45,7 +45,8 @@ fn decompress(_lua: &Lua, input: MultiValue) -> mlua::Result<()> {
     }
 
     if strip_components == 0 {
-        return decompress_archive(&archive, &destination);
+        decompress_archive(&archive, &destination)?;
+        return ensure_links_stay_within(&destination);
     }
 
     let parent = destination
@@ -59,7 +60,14 @@ fn decompress(_lua: &Lua, input: MultiValue) -> mlua::Result<()> {
         .into_lua_err()?;
     decompress_archive(&archive, temp_dir.path())?;
     xx::file::mkdirp(&destination).into_lua_err()?;
-    strip_archive_path_components(temp_dir.path(), &destination)
+    strip_archive_path_components(temp_dir.path(), &destination)?;
+    ensure_links_stay_within(&destination)
+}
+
+/// Plugins go on to write and chmod fixed names below the destination, which
+/// would follow a link the archive shipped out of it.
+fn ensure_links_stay_within(destination: &Path) -> mlua::Result<()> {
+    crate::vfox::ensure_symlinks_stay_within(destination).map_err(mlua::Error::external)
 }
 
 /// Match mise's built-in archive extraction behavior: promote the contents of
@@ -231,6 +239,43 @@ mod tests {
         assert!(!destination.join("tool").exists());
         assert!(extracted.join("tool").exists());
         assert!(extracted.join("pkg/tool").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_decompress_rejects_symlinks_leaving_the_destination() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let source = temp_dir.path().join("pkg");
+        std::fs::create_dir_all(source.join("bin")).unwrap();
+        std::os::unix::fs::symlink("/etc/passwd", source.join("bin/tool")).unwrap();
+        let archive = temp_dir.path().join("pkg.tar.gz");
+        let packed = std::process::Command::new("tar")
+            .arg("-czf")
+            .arg(&archive)
+            .arg("-C")
+            .arg(temp_dir.path())
+            .arg("pkg")
+            .status()
+            .is_ok_and(|status| status.success());
+        if !packed {
+            return; // no tar to build the fixture with
+        }
+        let archive = archive.to_string_lossy().to_string();
+        for strip in [0, 1] {
+            let dst_path = temp_dir.path().join(format!("out-{strip}"));
+            let dst_path_str = dst_path.to_string_lossy().to_string();
+            let archive = archive.clone();
+            let lua = Lua::new();
+            mod_archiver(&lua).unwrap();
+            let err = lua
+                .load(mlua::chunk! {
+                    local archiver = require("archiver")
+                    archiver.decompress($archive, $dst_path_str, {strip_components = $strip})
+                })
+                .exec()
+                .unwrap_err();
+            assert!(err.to_string().contains("points outside of"), "{err}");
+        }
     }
 
     #[test]

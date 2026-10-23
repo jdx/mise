@@ -381,6 +381,16 @@ impl Vfox {
             } else {
                 file::mv(tmp.path(), install_dir)?;
             }
+            // PostInstall hooks copy, write and chmod fixed names below the install
+            // directory, which follows any link the archive shipped. `untar` keeps links
+            // whatever their target, and `ZipArchive::extract` only checks them against
+            // the temporary directory, which stripping a top-level directory moves them
+            // out of, so check them against the install directory. This also refuses a
+            // lone top-level link promoted to be the install directory itself.
+            if let Err(err) = ensure_symlinks_stay_within(install_dir) {
+                let _ = file::remove_dir_all(install_dir);
+                return Err(err);
+            }
             Result::Ok(())
         };
         if filename.ends_with(".tar.gz") || filename.ends_with(".tgz") {
@@ -402,12 +412,6 @@ impl Vfox {
                 .and_then(|mut archive| archive.extract(tmp.path()))
                 .map_err(|err| format!("failed to extract {file:?}: {err}"))?;
             move_to_install()?;
-            // `extract` only checks links against the temporary directory; stripping a
-            // top-level directory moves them, so check them against the install directory.
-            if let Err(err) = ensure_symlinks_stay_within(install_dir) {
-                let _ = file::remove_dir_all(install_dir);
-                return Err(err);
-            }
         } else {
             file::mv(file, install_dir.join(&filename))?;
             #[cfg(unix)]
@@ -420,7 +424,7 @@ impl Vfox {
 /// Fails if a symlink under `root` points outside of it. Each target is resolved component
 /// by component, following every link on the way, so chains and links through linked
 /// directories are checked; components that do not exist are taken as written.
-fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
+pub(crate) fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
     if std::fs::symlink_metadata(root)?.file_type().is_symlink() {
         return Err(format!("the archive's top-level entry is a symlink: {root:?}").into());
     }
@@ -541,6 +545,88 @@ mod tests {
             .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
             .collect();
         assert_eq!(entries, vec!["tool-abcd1234".to_string()]);
+    }
+
+    /// Packs `tree` (a directory under `temp`) into `archive` with the system `tar`.
+    /// Returns false when there is no `tar` to build the fixture with.
+    #[cfg(unix)]
+    fn tar_gz(temp: &Path, archive: &Path, tree: &str) -> bool {
+        std::process::Command::new("tar")
+            .arg("-czf")
+            .arg(archive)
+            .arg("-C")
+            .arg(temp)
+            .arg(tree)
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_tarball_rejects_symlinks_that_leave_the_install_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let victim = temp.path().join("victim");
+        std::fs::write(&victim, "keep").unwrap();
+        for (name, target) in [
+            ("relative", PathBuf::from("../../../victim")),
+            ("absolute", victim.clone()),
+        ] {
+            let tree = format!("tool-{name}");
+            let source = temp.path().join(&tree);
+            std::fs::create_dir_all(source.join("bin")).unwrap();
+            std::fs::write(source.join("README"), "readme").unwrap();
+            std::os::unix::fs::symlink(&target, source.join("bin/tool")).unwrap();
+            let archive = temp.path().join(format!("{tree}.tar.gz"));
+            if !tar_gz(temp.path(), &archive, &tree) {
+                return;
+            }
+            let installs = temp.path().join(format!("installs-{name}"));
+            let install_dir = installs.join("tool-abcd1234");
+            let err = Vfox::test().extract(&archive, &install_dir).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("points outside of the install directory"),
+                "{name}: {err}"
+            );
+            assert!(!install_dir.exists(), "{name}");
+        }
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_tarball_keeps_symlinks_inside_the_install_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("tool-1.0");
+        std::fs::create_dir_all(source.join("libexec")).unwrap();
+        std::fs::write(source.join("libexec/tool"), "#!/bin/sh\n").unwrap();
+        std::os::unix::fs::symlink("libexec", source.join("bin")).unwrap();
+        let archive = temp.path().join("tool-1.0.tar.gz");
+        if !tar_gz(temp.path(), &archive, "tool-1.0") {
+            return;
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        Vfox::test().extract(&archive, &install_dir).unwrap();
+        assert!(install_dir.join("bin").is_symlink());
+        assert!(install_dir.join("bin/tool").is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extracting_a_tarball_does_not_promote_a_lone_top_level_link() {
+        let temp = tempfile::tempdir().unwrap();
+        let outside = temp.path().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        let source = temp.path().join("tree");
+        std::fs::create_dir_all(&source).unwrap();
+        std::os::unix::fs::symlink(&outside, source.join("tool")).unwrap();
+        let archive = temp.path().join("tool-1.0.tar.gz");
+        if !tar_gz(&source, &archive, "tool") {
+            return;
+        }
+        let install_dir = temp.path().join("installs/tool-abcd1234");
+        assert!(Vfox::test().extract(&archive, &install_dir).is_err());
+        assert!(!install_dir.exists());
     }
 
     #[cfg(unix)]
