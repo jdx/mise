@@ -28,6 +28,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, hash};
 use async_trait::async_trait;
 use eyre::{Result, WrapErr, bail};
+use mise_util::redactions::strip_url_credentials;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -909,7 +910,7 @@ impl HttpBackend {
         opts: &HttpOptions<'_>,
     ) -> Result<()> {
         let metadata = CacheMetadata {
-            url: url.to_string(),
+            url: strip_url_credentials(url).into_owned(),
             checksum: opts.checksum(),
             size: file_path.metadata()?.len(),
             extracted_at: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
@@ -1456,7 +1457,7 @@ impl Backend for HttpBackend {
             .into());
         };
 
-        let checksum = self.resolve_lock_checksum(&opts, tv, target, &url).await;
+        let mut checksum = self.resolve_lock_checksum(&opts, tv, target, &url).await;
 
         // A checksum source was configured but produced nothing for this target
         // (manifest miss, SHASUMS naming mismatch, unreachable file, ...). The
@@ -1477,8 +1478,17 @@ impl Backend for HttpBackend {
             );
         }
 
+        // The lockfile is committed, so it names the artifact without the
+        // credentials that fetch it. Installs take the URL from config.
+        let lock_url = strip_url_credentials(&url).into_owned();
+        if checksum.is_none() && lock_url != url && Settings::get().generate_lockfiles() {
+            // `generate` would otherwise hash what the recorded URL serves,
+            // which without the credentials is an authentication error.
+            crate::lockfile::generate::download_for_verification(&url, &mut checksum).await?;
+        }
+
         Ok(PlatformInfo {
-            url: Some(url),
+            url: Some(lock_url),
             checksum,
             ..Default::default()
         })
@@ -1517,12 +1527,12 @@ impl Backend for HttpBackend {
         let filename = get_filename_from_url(&url);
         let file_path = tv.download_path().join(&filename);
 
-        // Record URL in lock platforms
+        // Record URL in lock platforms, without the credentials that fetch it
         let platform_key = self.platform_key_for(Some(&raw_opts));
         tv.lock_platforms
             .entry(platform_key.clone())
             .or_default()
-            .url = Some(url.clone());
+            .url = Some(strip_url_credentials(&url).into_owned());
 
         // For lockfile checksum verification
         let settings = Settings::get();
