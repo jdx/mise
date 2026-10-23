@@ -34,10 +34,15 @@ pub enum BootstrapHook {
 
 // Extra keys are tolerated, so a hook from a newer mise still loads.
 #[derive(JsonSchema)]
-#[schemars(extend("additionalProperties" = true))]
+#[schemars(extend(
+    "additionalProperties" = true,
+    "anyOf" = [{"required": ["run"]}, {"required": ["run_windows"]}]
+))]
 pub struct BootstrapHookTable {
     /// shell command or commands to run in order, with the default inline shell; Tera templates are rendered first
-    pub run: BootstrapHookRun,
+    pub run: Option<BootstrapHookRun>,
+    /// shell command or commands to run instead of `run` on Windows; set alone, the hook does nothing on other platforms
+    pub run_windows: Option<BootstrapHookRun>,
 }
 
 #[derive(JsonSchema)]

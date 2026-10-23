@@ -287,6 +287,15 @@ run = [
 run = "mise exec -- gh auth status"
 ```
 
+On Windows, `run_windows` replaces `run`. A table with only `run_windows` does
+nothing on other platforms:
+
+```toml
+[bootstrap.hooks.post-tools]
+run = "mise exec -- node --version"
+run_windows = "mise exec -- node.exe --version"
+```
+
 The phases are `pre-packages`, `post-packages`, `pre-repos`, `post-repos`,
 `pre-dotfiles`, `post-dotfiles`, `pre-defaults`, `post-defaults`, `pre-user`,
 `post-user`, `pre-tools`, `post-tools`, and `final`. The

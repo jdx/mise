@@ -77,6 +77,16 @@ impl BootstrapHook {
         value: toml::Value,
         config_path: PathBuf,
     ) -> Result<Vec<Self>> {
+        Self::from_toml_for(phase_raw, value, config_path, cfg!(windows))
+    }
+
+    /// `windows` picks `run_windows` over `run` when a table sets it.
+    fn from_toml_for(
+        phase_raw: &str,
+        value: toml::Value,
+        config_path: PathBuf,
+        windows: bool,
+    ) -> Result<Vec<Self>> {
         let Some(phase) = BootstrapHookPhase::parse(phase_raw) else {
             let valid = BootstrapHookPhase::iter()
                 .map(|phase| phase.as_str())
@@ -89,14 +99,28 @@ impl BootstrapHook {
         let runs = match value {
             toml::Value::String(run) => vec![run],
             toml::Value::Array(values) => string_array(values, "expected string commands")?,
-            toml::Value::Table(mut table) => match table.remove("run") {
-                Some(toml::Value::String(run)) => vec![run],
-                Some(toml::Value::Array(values)) => {
-                    string_array(values, "expected `run` to contain string commands")?
+            toml::Value::Table(mut table) => {
+                let run = table.remove("run");
+                let run_windows = table.remove("run_windows");
+                if run.is_none() && run_windows.is_none() {
+                    bail!("expected a `run` or `run_windows` command");
                 }
-                Some(_) => bail!("expected `run` to be a string or array of strings"),
-                None => bail!("expected a `run` command"),
-            },
+                // `run_windows` replaces `run` on Windows; a hook with only
+                // `run_windows` does nothing elsewhere.
+                let (field, selected) = match (windows, run_windows) {
+                    (true, Some(run_windows)) => ("run_windows", Some(run_windows)),
+                    _ => ("run", run),
+                };
+                match selected {
+                    Some(toml::Value::String(run)) => vec![run],
+                    Some(toml::Value::Array(values)) => string_array(
+                        values,
+                        &format!("expected `{field}` to contain string commands"),
+                    )?,
+                    Some(_) => bail!("expected `{field}` to be a string or array of strings"),
+                    None => vec![],
+                }
+            }
             _ => bail!("expected a string, array of strings, or table with `run`"),
         };
         let hooks = runs
@@ -272,5 +296,50 @@ mod tests {
                 .unwrap();
         assert_eq!(hooks.len(), 2);
         assert_eq!(hooks[1].run, "echo two");
+    }
+
+    #[test]
+    fn run_windows_replaces_run_on_windows_only() {
+        let table = || {
+            let mut table = toml::map::Map::new();
+            table.insert("run".into(), toml::Value::String("echo unix".into()));
+            table.insert(
+                "run_windows".into(),
+                toml::Value::String("echo windows".into()),
+            );
+            toml::Value::Table(table)
+        };
+        let unix = BootstrapHook::from_toml_for("final", table(), "mise.toml".into(), false);
+        assert_eq!(unix.unwrap()[0].run, "echo unix");
+        let windows = BootstrapHook::from_toml_for("final", table(), "mise.toml".into(), true);
+        assert_eq!(windows.unwrap()[0].run, "echo windows");
+
+        let only_windows = || {
+            let mut table = toml::map::Map::new();
+            table.insert(
+                "run_windows".into(),
+                toml::Value::String("echo windows".into()),
+            );
+            toml::Value::Table(table)
+        };
+        let unix = BootstrapHook::from_toml_for("final", only_windows(), "mise.toml".into(), false);
+        assert!(unix.unwrap().is_empty());
+        let windows =
+            BootstrapHook::from_toml_for("final", only_windows(), "mise.toml".into(), true);
+        assert_eq!(windows.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn type_errors_name_the_selected_field() {
+        let table = || {
+            let mut table = toml::map::Map::new();
+            table.insert("run".into(), toml::Value::String("echo unix".into()));
+            table.insert("run_windows".into(), toml::Value::Integer(1));
+            toml::Value::Table(table)
+        };
+        let err =
+            BootstrapHook::from_toml_for("final", table(), "mise.toml".into(), true).unwrap_err();
+        assert!(err.to_string().contains("`run_windows`"), "{err}");
+        assert!(BootstrapHook::from_toml_for("final", table(), "mise.toml".into(), false).is_ok());
     }
 }

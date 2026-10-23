@@ -582,6 +582,7 @@ export const values: Record<string, string> = {
     "brew.taps.<key>": '"https://github.com/my-org/homebrew-tools.git"',
     "hooks.<phase>": '"mise run setup"',
     "hooks.<phase>.run": '["apt-get update", "apt-get upgrade -y"]',
+    "hooks.<phase>.run_windows": '"winget upgrade --all"',
     "mise_shell_activate.<shell>": "true",
     "mise_shell_activate.<shell>.enabled": "true",
     "mise_shell_activate.<shell>.mode": '"auto"',
