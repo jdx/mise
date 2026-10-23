@@ -74,11 +74,18 @@ impl PackageJsonData {
             .map(str::to_string)
     }
 
-    /// Extract a package manager version and checksum from the same declaration.
+    /// Extract a package manager version and the checksum declared for it.
     /// Checks devEngines.packageManager first, then falls back to the packageManager field.
+    /// The checksum may come from either declaration as long as it names the selected version,
+    /// so a `packageManager` checksum is not dropped when `devEngines` repeats the version
+    /// without one. A checksum for a different version never applies.
     fn package_manager_spec(&self, tool_name: &str) -> Option<(String, Option<String>)> {
-        self.dev_engine_package_manager_spec(tool_name)
-            .or_else(|| self.top_level_package_manager_spec(tool_name))
+        let (version, checksum) = self
+            .dev_engine_package_manager_spec(tool_name)
+            .or_else(|| self.top_level_package_manager_spec(tool_name))?;
+        let checksum =
+            checksum.or_else(|| self.package_manager_checksum_for_version(tool_name, &version));
+        Some((version, checksum))
     }
 
     fn dev_engine_package_manager_spec(&self, tool_name: &str) -> Option<(String, Option<String>)> {
@@ -122,19 +129,31 @@ impl PackageJsonData {
 }
 
 fn parse_package_manager_version(raw: &str) -> Option<(String, Option<String>)> {
-    let version = raw.split('+').next().unwrap_or(raw).trim();
+    let (version, checksum) = match raw.split_once('+') {
+        // A declaration whose suffix is not a checksum is ignored as a whole:
+        // dropping only the suffix would install the version unverified.
+        Some((version, suffix)) => (version, Some(checksum_from_suffix(suffix)?)),
+        None => (raw, None),
+    };
+    let version = version.trim();
     if version.is_empty() {
         return None;
     }
-    Some((version.to_string(), checksum_from_version(raw)))
+    Some((version.to_string(), checksum))
 }
 
-fn checksum_from_version(raw: &str) -> Option<String> {
-    let (_, checksum) = raw.split_once('+')?;
-    if let Some((algorithm, digest)) = checksum.split_once('.') {
-        return Some(format!("{algorithm}:{digest}"));
-    }
-    Some(checksum.to_string())
+/// Converts Corepack's `<algorithm>.<hex digest>` to `<algorithm>:<hex digest>`.
+///
+/// package.json is read without trust and the result becomes a tool option,
+/// which `mise use` can write into a mise.toml, so nothing but a checksum may
+/// pass. The algorithms are the ones Corepack writes.
+fn checksum_from_suffix(suffix: &str) -> Option<String> {
+    const ALGORITHMS: &[&str] = &["sha1", "sha224", "sha256", "sha384", "sha512"];
+    let (algorithm, digest) = suffix.split_once('.')?;
+    let valid = ALGORITHMS.contains(&algorithm)
+        && !digest.is_empty()
+        && digest.bytes().all(|b| b.is_ascii_hexdigit());
+    valid.then(|| format!("{algorithm}:{digest}"))
 }
 
 pub(crate) fn parse_with_options(
@@ -296,13 +315,73 @@ mod tests {
                         "version": "10.0.0"
                     }
                 },
-                "packageManager": "pnpm@9.0.0+sha224.unrelated"
+                "packageManager": "pnpm@9.0.0+sha224.fedcba"
             }"#,
         )
         .unwrap();
 
         let parsed = parse_with_options(&path, "pnpm").unwrap();
         assert_eq!(parsed, vec![("10.0.0".to_string(), None)]);
+    }
+
+    #[test]
+    fn test_dev_engines_version_uses_matching_package_manager_checksum() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(
+            &path,
+            r#"{
+                "devEngines": {
+                    "packageManager": { "name": "npm", "version": "11.0.0" }
+                },
+                "packageManager": "npm@11.0.0+sha512.abcdef"
+            }"#,
+        )
+        .unwrap();
+
+        let parsed = parse_with_options(&path, "npm").unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].0, "11.0.0");
+        assert_eq!(
+            parsed[0]
+                .1
+                .as_ref()
+                .and_then(|options| options.opts.get("package_manager_checksum"))
+                .and_then(|value| value.as_str()),
+            Some("sha512:abcdef")
+        );
+    }
+
+    /// package.json is read without trust, and `mise use` can write the
+    /// checksum into a mise.toml whose option values are templates.
+    #[test]
+    fn test_package_manager_suffix_must_be_a_checksum() {
+        for suffix in [
+            "sha512.{{ exec(command='id') }}",
+            "{{ exec(command='id') }}.abcdef",
+            "sha512.abcdef{% raw %}",
+            "sha512.abcdef\n",
+            "sha512.nothex",
+            "sha999.abcdef",
+            "SHA512.abcdef",
+            "md5.abcdef",
+            "sha512.",
+            ".abcdef",
+            "sha512",
+            "",
+        ] {
+            let raw = format!("9.1.0+{suffix}");
+            assert_eq!(parse_package_manager_version(&raw), None, "{raw}");
+        }
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(
+            &path,
+            r#"{"packageManager":"pnpm@9.1.0+sha512.{{ exec(command='id') }}"}"#,
+        )
+        .unwrap();
+        assert!(parse_with_options(&path, "pnpm").unwrap().is_empty());
     }
 
     #[test]
@@ -348,7 +427,7 @@ mod tests {
                         "version": "1.3.14"
                     }
                 },
-                "packageManager": "bun@1.3.13+sha224.unrelated"
+                "packageManager": "bun@1.3.13+sha224.fedcba"
             }"#,
         )
         .unwrap();
@@ -373,7 +452,7 @@ mod tests {
                     },
                     "packageManager": {
                         "name": "bun",
-                        "version": "1.3.13+sha224.unrelated"
+                        "version": "1.3.13+sha224.fedcba"
                     }
                 },
                 "packageManager": "bun@1.3.14+sha224.abcdef"

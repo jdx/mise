@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# The version of a registry package reaches the package manager as
+# `<name>@<version>`, which it parses as a full package spec. A version that
+# is a path must not install that directory in place of the registry package.
+mkdir -p payload
+cat >payload/package.json <<'EOF'
+{"name": "left-pad", "version": "1.3.0", "bin": {"left-pad": "cli.sh"}}
+EOF
+printf '#!/bin/sh\necho payload\n' >payload/cli.sh
+chmod +x payload/cli.sh
+
+assert_fail "mise install 'npm:left-pad@$PWD/payload'" "is not a version, range or dist-tag"
+assert_fail "mise install npm:left-pad@stevemao/left-pad" "is not a version, range or dist-tag"
+assert_fail "test -d '$MISE_DATA_DIR/installs/npm-left-pad/$(echo "$PWD/payload" | tr / -)/node_modules'"
