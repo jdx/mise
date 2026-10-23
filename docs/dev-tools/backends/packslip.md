@@ -295,7 +295,10 @@ cannot be combined with `pubkey`, `identity`, `identity_prefix`, or `issuer`;
 use those to pin another ref or forge. When the registry supplies a `workflow`
 default and you set one of those options on the shorthand, yours replaces the
 default. Like those options, it pins the signer by name, so a renamed repository
-needs the new name here.
+needs the new name here. Unlike them, the release is still held to the
+[repository ID](/dev-tools/packslip-verification.html#renamed-transferred-and-re-created-repositories)
+mise pinned for the project, so a repository re-created under the name is
+refused.
 
 A project whose signing workflow changed across the releases you install can
 name several; a release signed by any one of them is accepted:

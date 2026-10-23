@@ -267,6 +267,30 @@ impl ForgeExpect {
             .map_err(|err| self.error(err))
     }
 
+    /// Check who signed a bundle or release list already verified under a
+    /// policy of the consumer's, such as the workflows a `workflow` option
+    /// names: what [`ForgeExpect::verify`] does once the bundle verifies.
+    /// `signed_project`, `identity` and `issuer` are what that verification
+    /// established. The signer must be a workflow of the signed project, as
+    /// the narrowed policy already requires.
+    pub(crate) fn check(
+        &self,
+        bundle: &str,
+        signed_project: &str,
+        identity: &str,
+        issuer: Option<&str>,
+    ) -> eyre::Result<Check> {
+        let source = packslip::sigstore::source_repository(bundle).map_err(|e| eyre!("{e}"))?;
+        packslip::forge::check(
+            &self.expected(),
+            signed_project,
+            identity,
+            issuer,
+            source.as_ref(),
+        )
+        .map_err(|err| self.identity_error(err))
+    }
+
     fn error(&self, err: ForgeError) -> Report {
         match err {
             ForgeError::Identity(err) => self.identity_error(err),
@@ -565,6 +589,58 @@ mod tests {
                 .contains("comes from a different repository than the one the name belongs to"),
             "{err}"
         );
+    }
+
+    #[test]
+    fn a_release_verified_under_a_workflow_policy_is_still_held_to_the_pin() {
+        // What a `workflow = "release.yml"` option verifies under.
+        let policy = packslip::Policy {
+            issuer: Some(packslip::sigstore::GITHUB_ISSUER.to_string()),
+            identity: None,
+            identity_prefix: Some(
+                "https://github.com/jdx/hk/.github/workflows/release.yml@refs/tags/".into(),
+            ),
+        };
+        let root = packslip::sigstore::trusted_root(None).unwrap();
+        let options = Options {
+            require_log: true,
+            trusted_root: &root,
+        };
+        let verified =
+            packslip::verify(HK, &packslip::Trust::Identity(&policy), options, &[]).unwrap();
+        let check = |expect: &ForgeExpect| {
+            expect.check(
+                HK,
+                &verified.project,
+                &verified.key_id,
+                verified.issuer.as_deref(),
+            )
+        };
+        let ok = check(&expect(
+            "github.com/jdx/hk",
+            vec![local(hk_pin("github.com/jdx/hk"))],
+            None,
+        ))
+        .unwrap();
+        assert_eq!(ok.continuity, Continuity::Same);
+        assert_eq!(ok.pin, Some(hk_pin("github.com/jdx/hk")));
+        // The same name and workflow path from another repository is refused.
+        for (pins, cited) in [
+            (
+                vec![local(ForgePin::of("github.com/jdx/hk", "1"))],
+                "mise pinned GitHub repository ID 1 for it",
+            ),
+            (
+                vec![locked(ForgePin::of("github.com/jdx/hk", "1"))],
+                "mise.lock pins GitHub repository ID 1 for it",
+            ),
+        ] {
+            let msg = check(&expect("github.com/jdx/hk", pins, None))
+                .unwrap_err()
+                .to_string();
+            assert!(msg.contains(cited), "{msg}");
+            assert!(msg.contains("belongs to a different repository"), "{msg}");
+        }
     }
 
     #[test]

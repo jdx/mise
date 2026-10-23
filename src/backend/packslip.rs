@@ -727,21 +727,23 @@ pub(crate) enum Pin {
     /// this policy for the name it is requested under.
     Forge(Policy),
     Identity(Policy),
-    /// Several identities, any one of which may have signed: a project whose
-    /// signing workflow changed across the releases the registry covers.
-    Identities(Vec<Policy>),
+    /// The workflows a `workflow` option names, any one of which may have
+    /// signed: the forge policy narrowed to each, several for a project
+    /// whose signing workflow changed across the releases the registry
+    /// covers. The release is still held to the repository ID, as under
+    /// [`Pin::Forge`].
+    Workflows(Vec<Policy>),
     Key(packslip::minisign::PublicKey),
 }
 
 fn pin(project: &str, opts: &PackslipOptions<'_>) -> Result<Pin> {
-    // An identity pin, not a forge one: forge verification derives its own
-    // repository-wide policy from the bundle and would ignore the workflow.
+    // Verified under the workflow policies, not the forge's: forge
+    // verification derives its own repository-wide policy from the bundle
+    // and would ignore the workflow. The repository ID is checked after.
     if let Some(workflows) = opts.workflows(project)? {
-        let mut policies = workflow_policies(project, opts, &workflows)?;
-        return Ok(match policies.len() {
-            1 => Pin::Identity(policies.remove(0)),
-            _ => Pin::Identities(policies),
-        });
+        return Ok(Pin::Workflows(workflow_policies(
+            project, opts, &workflows,
+        )?));
     }
     if let Some(pubkey) = opts.pubkey() {
         let text = if Path::new(&pubkey).is_file() {
@@ -854,7 +856,7 @@ impl Pin {
     fn first_policy(&self) -> Option<&Policy> {
         match self {
             Pin::Forge(policy) | Pin::Identity(policy) => Some(policy),
-            Pin::Identities(policies) => policies.first(),
+            Pin::Workflows(policies) => policies.first(),
             Pin::Key(_) => None,
         }
     }
@@ -862,9 +864,12 @@ impl Pin {
     /// The signers a `workflow` list names together, as the signer pin records
     /// them: listing several says a release may move from one to another.
     fn listed_signers(&self) -> Vec<String> {
-        let Pin::Identities(policies) = self else {
+        let Pin::Workflows(policies) = self else {
             return Vec::new();
         };
+        if policies.len() < 2 {
+            return Vec::new();
+        }
         policies
             .iter()
             .filter_map(|policy| policy.identity.as_ref().or(policy.identity_prefix.as_ref()))
@@ -876,7 +881,7 @@ impl Pin {
     fn trusts(&self) -> Vec<Trust<'_>> {
         match self {
             Pin::Forge(policy) | Pin::Identity(policy) => vec![Trust::Identity(policy)],
-            Pin::Identities(policies) => policies.iter().map(Trust::Identity).collect(),
+            Pin::Workflows(policies) => policies.iter().map(Trust::Identity).collect(),
             Pin::Key(key) => vec![Trust::Key(key)],
         }
     }
@@ -898,8 +903,11 @@ impl Pin {
     }
 
     /// What a forge project's `bundle` must be signed by, given the lock
-    /// entries its install or lock resolution already has; none for a pin
-    /// the tool options give, which the options alone decide.
+    /// entries its install or lock resolution already has; none for an
+    /// identity or a key the tool options give, which the options alone
+    /// decide. A `workflow` option only narrows the forge's policy to named
+    /// workflow files, so it is held to the repository ID like the forge pin
+    /// it narrows.
     async fn forge<'a>(
         &self,
         project: &str,
@@ -907,8 +915,10 @@ impl Pin {
         bundle: &str,
     ) -> Result<Option<ForgeExpect>> {
         match self {
-            Pin::Forge(_) => Ok(Some(ForgeExpect::new(project, lock, bundle).await?)),
-            Pin::Identity(_) | Pin::Identities(_) | Pin::Key(_) => Ok(None),
+            Pin::Forge(_) | Pin::Workflows(_) => {
+                Ok(Some(ForgeExpect::new(project, lock, bundle).await?))
+            }
+            Pin::Identity(_) | Pin::Key(_) => Ok(None),
         }
     }
 }
@@ -950,7 +960,9 @@ fn verify_bundle(
             require_log,
             trusted_root: &root,
         };
-        if let Some(forge) = forge {
+        if let Some(forge) = forge
+            && !matches!(pin, Pin::Workflows(_))
+        {
             let verified = forge.verify(bundle, options, artifacts)?;
             return Ok(Accepted {
                 verified: verified.verified,
@@ -960,10 +972,18 @@ fn verify_bundle(
         let verified = pin.verify_any(|trust| {
             packslip::verify(bundle, trust, options, artifacts).map_err(|e| eyre!("{e}"))
         })?;
-        Ok(Accepted {
-            verified,
-            check: None,
-        })
+        // A workflow pin, verified under its own policies, is held to the
+        // repository ID as one verified under the forge's is.
+        let check = match forge {
+            Some(forge) => Some(forge.check(
+                bundle,
+                &verified.project,
+                &verified.key_id,
+                verified.issuer.as_deref(),
+            )?),
+            None => None,
+        };
+        Ok(Accepted { verified, check })
     })
 }
 
@@ -1046,9 +1066,25 @@ async fn verify_project_release_list_uncached(
             require_log,
             trusted_root: &root,
         };
-        let verified = forge.verify_list(bundle, options)?;
-        check_list_current(&verified.verified.list)?;
-        Ok((verified.verified.list, verified.check.pin))
+        // A workflow pin's list is verified under its policies, as its
+        // bundles are, and then held to the repository ID.
+        let (list, check) = if matches!(pin, Pin::Workflows(_)) {
+            let verified = pin.verify_any(|trust| {
+                packslip::verify_release_list(bundle, trust, options).map_err(|e| eyre!("{e}"))
+            })?;
+            let check = forge.check(
+                bundle,
+                &verified.list.predicate.project,
+                &verified.key_id,
+                verified.issuer.as_deref(),
+            )?;
+            (verified.list, check)
+        } else {
+            let verified = forge.verify_list(bundle, options)?;
+            (verified.verified.list, verified.check)
+        };
+        check_list_current(&list)?;
+        Ok((list, check.pin))
     })
 }
 
@@ -3448,13 +3484,13 @@ mod tests {
             let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
             pin(project, &PackslipOptions::new(&raw))
         };
-        let Pin::Identity(policy) = policy(
-            "github.com/max-sixty/worktrunk",
-            r#"workflow = "release.yaml""#,
-        )
-        .unwrap() else {
-            panic!("expected an identity policy");
-        };
+        let policy = one_workflow(
+            policy(
+                "github.com/max-sixty/worktrunk",
+                r#"workflow = "release.yaml""#,
+            )
+            .unwrap(),
+        );
         assert_eq!(policy.issuer.as_deref(), Some(GITHUB_ISSUER));
         assert_eq!(policy.identity, None);
         assert_eq!(
@@ -3464,9 +3500,7 @@ mod tests {
             )
         );
         // A monorepo tool is pinned by its repository's workflow.
-        let Pin::Identity(policy) = policy_for("github.com/o/r/tool") else {
-            panic!("expected an identity policy");
-        };
+        let policy = one_workflow(policy_for("github.com/o/r/tool"));
         assert_eq!(
             policy.identity_prefix.as_deref(),
             Some("https://github.com/o/r/.github/workflows/release.yml@refs/tags/")
@@ -3509,16 +3543,60 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn a_workflow_pin_is_held_to_the_repository_id() {
+        // jdx/hk's v2.3.0 packslip, signed by its release.yml as GitHub
+        // repository 922514152.
+        const HK: &str = include_str!("../../test/fixtures/packslip-forge/hk-v2.3.0.sigstore.json");
+        let raw: ToolVersionOptions = toml::from_str(r#"workflow = "release.yml""#).unwrap();
+        let project = "github.com/jdx/hk";
+        let pin = pin(project, &PackslipOptions::new(&raw)).unwrap();
+        let recreated = PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml".into(),
+            ),
+            repository_id: Some("1".into()),
+            ..Default::default()
+        };
+        let forge = pin.forge(project, [&recreated], HK).await.unwrap();
+        let err = verify_bundle(HK, &pin, forge.as_ref(), true, &[])
+            .err()
+            .expect("a release from another repository under the pinned name");
+        assert!(
+            err.to_string()
+                .contains("mise.lock pins GitHub repository ID 1 for it"),
+            "{err}"
+        );
+
+        // With no ID pinned yet, the release is accepted and its ID is what
+        // the signer pin and lock entries record.
+        let forge = pin.forge(project, [], HK).await.unwrap();
+        let accepted = verify_bundle(HK, &pin, forge.as_ref(), true, &[]).unwrap();
+        let recorded = accepted.check.and_then(|check| check.pin);
+        assert_eq!(
+            recorded.map(|pin| pin.repository_id),
+            Some("922514152".into())
+        );
+    }
+
+    /// The one workflow policy a `workflow` option gives.
+    fn one_workflow(pin: Pin) -> Policy {
+        match pin {
+            Pin::Workflows(mut policies) if policies.len() == 1 => policies.remove(0),
+            pin => panic!("expected one workflow, got {pin:?}"),
+        }
+    }
+
     #[test]
     fn workflow_list_accepts_each_named_workflow_on_tags() {
         let pin_for = |toml: &str| {
             let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
             pin("github.com/o/r", &PackslipOptions::new(&raw))
         };
-        let Pin::Identities(policies) =
+        let Pin::Workflows(policies) =
             pin_for(r#"workflow = ["release-plz.yml", "release.yml", "release.yml"]"#).unwrap()
         else {
-            panic!("expected several identities");
+            panic!("expected several workflows");
         };
         let prefixes: Vec<_> = policies
             .iter()
@@ -3537,10 +3615,10 @@ mod tests {
                 .all(|p| p.issuer.as_deref() == Some(GITHUB_ISSUER))
         );
         // A one-item list is the same pin as the bare name.
-        assert!(matches!(
-            pin_for(r#"workflow = ["release.yml"]"#).unwrap(),
-            Pin::Identity(_)
-        ));
+        assert_eq!(
+            one_workflow(pin_for(r#"workflow = ["release.yml"]"#).unwrap()),
+            one_workflow(pin_for(r#"workflow = "release.yml""#).unwrap())
+        );
         for bad in [
             "workflow = []",
             r#"workflow = [1]"#,
@@ -3557,27 +3635,21 @@ mod tests {
             let raw: ToolVersionOptions = toml::from_str(toml).unwrap();
             pin("github.com/o/r", &PackslipOptions::new(&raw))
         };
-        let Pin::Identity(policy) = pin_for(r#"workflow = "release.yml@refs/heads/main""#).unwrap()
-        else {
-            panic!("expected an identity policy");
-        };
+        let policy = one_workflow(pin_for(r#"workflow = "release.yml@refs/heads/main""#).unwrap());
         assert_eq!(
             policy.identity.as_deref(),
             Some("https://github.com/o/r/.github/workflows/release.yml@refs/heads/main")
         );
         assert_eq!(policy.identity_prefix, None);
-        let Pin::Identity(policy) = pin_for(r#"workflow = "release.yml@refs/tags/""#).unwrap()
-        else {
-            panic!("expected an identity policy");
-        };
+        let policy = one_workflow(pin_for(r#"workflow = "release.yml@refs/tags/""#).unwrap());
         assert_eq!(
             policy.identity_prefix.as_deref(),
             Some("https://github.com/o/r/.github/workflows/release.yml@refs/tags/")
         );
-        let Pin::Identities(policies) =
+        let Pin::Workflows(policies) =
             pin_for(r#"workflow = ["a.yml@refs/heads/main", "b.yml"]"#).unwrap()
         else {
-            panic!("expected several identities");
+            panic!("expected several workflows");
         };
         assert_eq!(policies.len(), 2);
         for bad in [
@@ -3597,7 +3669,7 @@ mod tests {
             identity: None,
             identity_prefix: Some(name.to_string()),
         };
-        let pin = Pin::Identities(vec![policy("a"), policy("b")]);
+        let pin = Pin::Workflows(vec![policy("a"), policy("b")]);
         let accepted = pin
             .verify_any(|trust| match trust {
                 Trust::Identity(p) if p.identity_prefix.as_deref() == Some("b") => Ok("b"),
