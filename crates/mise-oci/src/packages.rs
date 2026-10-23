@@ -576,9 +576,12 @@ fn run_apt_get(args: Vec<String>) -> Result<()> {
 fn clean_apt_transients(rootfs: &Path) -> Result<()> {
     // The base image is untrusted: as in clean_apk_transients, refuse to
     // delete or truncate through a symlink it planted on the way to these
-    // trees. The machine-id files themselves may be symlinks, which
-    // truncate_file_if_regular leaves alone.
+    // trees. Each entry is a directory read or emptied below, or the parent of
+    // a file removed or truncated, checked down to that directory itself. The
+    // files themselves may be symlinks: remove_path and
+    // truncate_file_if_regular do not follow them.
     for dir in [
+        "var/cache/apt/archives",
         "var/cache/apt",
         "var/lib/apt/lists",
         "var/cache/ldconfig",
@@ -1125,6 +1128,7 @@ mod tests {
 
     /// A layer can create `esc -> /home/user` and then whiteout `esc/.ssh`:
     /// the deletion must not follow the link out of the rootfs.
+    #[cfg(unix)]
     #[test]
     fn apply_oci_whiteout_rejects_symlinked_parent() {
         let td = TempDir::with_prefix("mise-oci-whiteout-symlink-").unwrap();
@@ -1148,6 +1152,25 @@ mod tests {
         assert!(outside.join(".ssh/id_ed25519").is_file());
     }
 
+    /// `archives` itself is what cleanup empties, so a symlink there is as
+    /// dangerous as one above it.
+    #[cfg(unix)]
+    #[test]
+    fn clean_apt_transients_rejects_symlinked_archives() {
+        let td = TempDir::with_prefix("mise-oci-apt-clean-symlink-archives-").unwrap();
+        let rootfs = td.path().join("rootfs");
+        let outside = td.path().join("outside");
+        write_file(&outside.join("keep"), "outside");
+        file::create_dir_all(rootfs.join("var/cache/apt")).unwrap();
+        symlink(&outside, rootfs.join("var/cache/apt/archives")).unwrap();
+
+        let err = clean_apt_transients(&rootfs).unwrap_err();
+
+        assert!(err.to_string().contains("symlink component"), "{err}");
+        assert_eq!(fs::read_to_string(outside.join("keep")).unwrap(), "outside");
+    }
+
+    #[cfg(unix)]
     #[test]
     fn clean_apt_transients_rejects_symlinked_parent() {
         let td = TempDir::with_prefix("mise-oci-apt-clean-symlink-parent-").unwrap();
