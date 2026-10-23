@@ -3021,6 +3021,12 @@ fn load_config_paths_from_dirs(
     config_files
         .into_iter()
         .filter(|p| !config_path_is_ignored(p, include_ignored))
+        // A project path that resolves to global or system config is that
+        // config, which the entries above already list where discovery found
+        // it. Dropping the project spelling keeps everything derived from a
+        // config's location (its root, task roots, lockfile) with the global
+        // entry rather than inside a directory the user may not control.
+        .filter(|p| discovered_global_config(p).is_none_or(|global| global == *p))
         .unique_by(|p| file::desymlink_path(p))
         .collect()
 }
@@ -3363,6 +3369,16 @@ pub fn is_override_config(path: &Path) -> bool {
         })
 }
 
+/// The path global or system config discovery found `path` at, if `path` is
+/// global config. The two differ when `path` only resolves to that file, which
+/// also holds for a symlink to it from a directory the user does not control,
+/// so whatever global config derives from its location has to come from here.
+pub(crate) fn discovered_global_config(path: &Path) -> Option<PathBuf> {
+    config_set_get(&global_config_files(), path)
+        .cloned()
+        .or_else(|| config_set_get(&system_config_files(), path).cloned())
+}
+
 /// Whether `path` was loaded from a `[bootstrap].config_roots` root that global
 /// or system config selected. The operator chose those roots, so safe mode
 /// treats their bootstrap and dotfiles sections like global config even though
@@ -3393,13 +3409,19 @@ pub fn is_system_config(path: &Path) -> bool {
 /// PWD prefix is not byte-equal to its `$HOME`-derived entry and is wrongly
 /// treated as a local config (stripping global-only settings).
 fn config_set_contains(set: &IndexSet<PathBuf>, path: &Path) -> bool {
-    if set.contains(path) {
-        return true;
+    config_set_get(set, path).is_some()
+}
+
+/// The member of `set` that [`config_set_contains`] matches `path` to.
+fn config_set_get<'a>(set: &'a IndexSet<PathBuf>, path: &Path) -> Option<&'a PathBuf> {
+    if let Some(p) = set.get(path) {
+        return Some(p);
     }
     // This runs for every config file each time a tool resolves, so resolving
     // the same paths again would dominate short commands.
     let target = file::desymlink_path_cached(path);
-    set.iter().any(|p| file::desymlink_path_cached(p) == target)
+    set.iter()
+        .find(|p| file::desymlink_path_cached(p) == target)
 }
 
 fn resolved_task_file(task: &Task) -> Option<PathBuf> {

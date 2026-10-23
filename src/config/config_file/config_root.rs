@@ -5,7 +5,7 @@ use std::sync::{LazyLock as Lazy, Mutex};
 use path_absolutize::Absolutize;
 use xx::regex;
 
-use crate::config::{is_conf_d_folder_file, is_global_config};
+use crate::config::{discovered_global_config, is_conf_d_folder_file, is_global_config};
 use crate::env;
 
 static CONFIG_ROOT_CACHE: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> =
@@ -60,14 +60,19 @@ pub fn config_root(path: &Path) -> PathBuf {
     if let Some(cached) = CONFIG_ROOT_CACHE.lock().unwrap().get(&path).cloned() {
         return cached;
     }
+    // Global config is trusted for what `path` resolves to, so where it was
+    // discovered decides its root: a project's symlink to it must not make the
+    // project's directory the root.
+    let global = discovered_global_config(&path);
     // A folder fragment is its own root even in global config, so relative
     // paths and `{{ config_root }}` keep pointing inside the folder.
-    if is_conf_d_folder_file(&path) {
-        let root = path.parent().unwrap().to_path_buf();
+    let fragment = global.as_ref().unwrap_or(&path);
+    if is_conf_d_folder_file(fragment) {
+        let root = fragment.parent().unwrap().to_path_buf();
         CONFIG_ROOT_CACHE.lock().unwrap().insert(path, root.clone());
         return root;
     }
-    if is_global_config(&path) {
+    if global.is_some() {
         let root = env::MISE_GLOBAL_CONFIG_ROOT.to_path_buf();
         CONFIG_ROOT_CACHE.lock().unwrap().insert(path, root.clone());
         return root;
@@ -294,6 +299,20 @@ mod tests {
         assert!(!crate::config::is_conf_d_folder_file(Path::new(
             "/etc/nginx/conf.d/site/mise.toml"
         )));
+    }
+
+    /// Global config is trusted through any path that resolves to it, so a
+    /// project's link to it must not move its root into the project.
+    #[test]
+    fn test_config_root_conf_d_folder_link_to_global_config() {
+        let temp = tempfile::tempdir().unwrap();
+        let folder = temp.path().join("mise").join("conf.d").join("git");
+        std::fs::create_dir_all(&folder).unwrap();
+        let link = folder.join("mise.toml");
+        std::os::unix::fs::symlink(crate::config::global_config_path(), &link).unwrap();
+
+        assert!(is_conf_d_folder_file(&link));
+        assert_eq!(config_root(&link), *env::MISE_GLOBAL_CONFIG_ROOT);
     }
 
     #[test]
