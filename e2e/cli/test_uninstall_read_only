@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# `mise uninstall` removes an installation whose directories deny their owner writes, as a sealed
+# archive or Go's read-only module cache installs them.
+
+assert "mise install dummy@1.0.0"
+dir="$(mise where dummy@1.0.0)"
+mkdir -p "$dir/lib/sealed"
+touch "$dir/lib/sealed/module.py"
+chmod -R a-w "$dir"
+
+assert "mise uninstall dummy@1.0.0"
+assert_fail "test -e '$dir'"

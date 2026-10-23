@@ -167,7 +167,7 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
             trace!("rm -rf {}", display_path(path));
             // `map_err` rather than `wrap_err_with`: the hint depends on the error, and
             // `wrap_err_with`'s closure is not given it.
-            fs::remove_dir_all(path).map_err(|e| {
+            remove_dir_all_restoring_owner_access(path).map_err(|e| {
                 let msg = with_io_hint(
                     // Not "rm -rf": mise calls `remove_dir_all`, and on Windows it is naming a
                     // command the reader does not have.
@@ -180,6 +180,39 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
         }
         _ => {}
     };
+    Ok(())
+}
+
+/// [`fs::remove_dir_all`], retried once after the owner regains full access to every
+/// directory in the tree. An archive can install directories without the owner's write bit (a
+/// sealed `0555` runtime, or Go's read-only module cache), and nothing can be unlinked from such
+/// a directory, so `mise uninstall` failed with "Permission denied" on what mise had installed.
+fn remove_dir_all_restoring_owner_access(path: &Path) -> std::io::Result<()> {
+    let result = fs::remove_dir_all(path);
+    #[cfg(unix)]
+    if let Err(err) = &result
+        && err.kind() == std::io::ErrorKind::PermissionDenied
+        && restore_owner_access(path).is_ok()
+    {
+        return fs::remove_dir_all(path);
+    }
+    result
+}
+
+/// Give the owner read, write and search access to `dir` and every directory below it, never
+/// following a symlink, so a link into a tree mise does not own keeps its permissions.
+#[cfg(unix)]
+fn restore_owner_access(dir: &Path) -> std::io::Result<()> {
+    let mode = fs::symlink_metadata(dir)?.permissions().mode();
+    if mode & 0o700 != 0o700 {
+        fs::set_permissions(dir, fs::Permissions::from_mode(mode | 0o700))?;
+    }
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            restore_owner_access(&entry.path())?;
+        }
+    }
     Ok(())
 }
 
