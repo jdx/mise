@@ -401,30 +401,58 @@ fn keep_file(path: &Path, keep: Keep<'_>, move_in: bool) -> Result<Option<PathBu
             &serde_json::to_vec(&entry)?,
         )?;
     }
-    if let Some((algo, hex)) = pin {
-        let path = pin_path(&root, algo, &hex);
-        // Add this URL to the ones the same blob was kept from. Held across the
-        // read and the write, or two downloads of the same file from different
-        // URLs would each write their own list and one URL would be lost.
-        let _lock = crate::lock_file::LockFile::at(&root.join("pins.lock")).lock()?;
-        let mut urls = std::fs::read(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<PinEntry>(&bytes).ok())
-            .filter(|existing| existing.blake3 == blake3)
-            .map(|existing| existing.urls)
-            .unwrap_or_default();
-        if !urls.iter().any(|kept| kept == keep.url) {
-            urls.push(keep.url.to_string());
-        }
-        let entry = PinEntry {
-            blake3,
-            effective_filename: keep.effective_filename,
-            urls,
-        };
-        write_atomic(&path, &serde_json::to_vec(&entry)?)?;
+    // The blob is in place, and possibly moved out of staging, so a pin that
+    // can't be recorded costs only its reuse, never the download.
+    if let Some((algo, hex)) = pin
+        && let Err(err) = record_pin(&root, algo, &hex, blake3, &keep)
+    {
+        debug!("not recording the pin of a kept download: {err:#}");
     }
     evict(&root, blob.parent());
     Ok(Some(blob))
+}
+
+/// How long recording a pin waits for another process recording one. Each
+/// holds the lock for one small read and write, so this is only exceeded by a
+/// lock that is stuck.
+const PIN_LOCK_WAIT: std::time::Duration = if cfg!(test) {
+    std::time::Duration::from_millis(200)
+} else {
+    std::time::Duration::from_secs(5)
+};
+
+/// Add `keep.url` to the URLs the pin `algo:hex` was kept from. Locked across
+/// the read and the write, or two downloads of the same file from different
+/// URLs would each write their own list and one URL would be lost.
+fn record_pin(root: &Path, algo: &str, hex: &str, blake3: String, keep: &Keep<'_>) -> Result<()> {
+    let lock_path = root.join("pins.lock");
+    let started = std::time::Instant::now();
+    let _lock = loop {
+        if let Some(lock) = crate::lock_file::LockFile::at(&lock_path).try_lock()? {
+            break lock;
+        }
+        eyre::ensure!(
+            started.elapsed() < PIN_LOCK_WAIT,
+            "the pin index stayed locked for {PIN_LOCK_WAIT:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let path = pin_path(root, algo, hex);
+    let mut urls = std::fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<PinEntry>(&bytes).ok())
+        .filter(|existing| existing.blake3 == blake3)
+        .map(|existing| existing.urls)
+        .unwrap_or_default();
+    if !urls.iter().any(|kept| kept == keep.url) {
+        urls.push(keep.url.to_string());
+    }
+    let entry = PinEntry {
+        blake3,
+        effective_filename: keep.effective_filename.clone(),
+        urls,
+    };
+    write_atomic(&path, &serde_json::to_vec(&entry)?)
 }
 
 /// Past `download_cache_max_size` the least recently used blobs go first, except

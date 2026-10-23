@@ -719,6 +719,50 @@ fn test_concurrent_pinned_keeps_record_every_url() {
     *cas::TEST_ROOT.lock().unwrap() = None;
 }
 
+/// A pin index lock that stays held (a stuck process, say) costs the URL
+/// record, not the download: the blob is still kept and handed back.
+#[test]
+fn test_a_stuck_pin_lock_keeps_the_download() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let held = crate::lock_file::LockFile::at(&cache.path().join("pins.lock"))
+        .lock()
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("artifact");
+    std::fs::write(&path, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&path, None).unwrap()
+    );
+    let url = "https://example.com/artifact";
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (path, thread_pin) = (path.clone(), pin.clone());
+    std::thread::spawn(move || {
+        let kept = cas::store(
+            &path,
+            cas::Keep {
+                request_hash: "stuck-lock",
+                url,
+                pin: Some(&thread_pin),
+                validator: None,
+                effective_filename: None,
+            },
+        );
+        let _ = tx.send(kept.map(|blob| blob.is_some()));
+    });
+    let kept = rx
+        .recv_timeout(Duration::from_secs(30))
+        .expect("keeping the download waited on the pin lock")
+        .unwrap();
+    assert!(kept, "the download was not kept");
+    assert!(cas::lookup_pin(&pin, url).is_none());
+    drop(held);
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
 fn stored_blob(cache: &std::path::Path) -> PathBuf {
     let dir = std::fs::read_dir(cache.join("blobs"))
         .unwrap()
