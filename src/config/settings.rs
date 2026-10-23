@@ -1120,7 +1120,9 @@ impl SettingsExt for Settings {
 
     fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {
         let raw = file::read_to_string(path)?;
-        let mut raw: toml::Value = toml::from_str(&raw)?;
+        let mut raw: toml::Value = toml::from_str(&raw).map_err(|err| {
+            crate::config::config_file::diagnostic::hide_linked_source(err, &raw, path)
+        })?;
         let tera_v1_from_env = tera_v1_from_env_config(&raw);
         if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
             strip_local_only_settings(settings, path, crate::config::is_global_config(path));

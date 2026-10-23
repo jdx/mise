@@ -1134,7 +1134,9 @@ fn toolchain_str_array(toolchain: &toml::Value, key: &str) -> Result<Option<Vec<
 
 fn parse_idiomatic_file(path: &Path) -> Result<RustToolchain> {
     let content = file::read_to_string(path)?;
-    let toml: toml::Value = toml::de::from_str(&content)?;
+    let toml: toml::Value = toml::de::from_str(&content).map_err(|err| {
+        crate::config::config_file::diagnostic::hide_linked_source(err, &content, path)
+    })?;
     let mut rt = RustToolchain::default();
     if let Some(toolchain) = toml.get("toolchain") {
         if let Some(channel) = toolchain_str(toolchain, "channel")? {

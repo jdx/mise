@@ -7630,6 +7630,7 @@ async fn load_task_file(
         crate::secrets::check_toml_locations(crate::secrets::TomlShape::TaskInclude, &table, path)?;
     }
     let mut tasks = toml::from_str::<Tasks>(&raw)
+        .map_err(|err| config_file::diagnostic::hide_linked_source(err, &raw, path))
         .wrap_err_with(|| format!("Error parsing task file: {}", display_path(path)))?
         .0;
     for (name, task) in &mut tasks {

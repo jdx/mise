@@ -1429,10 +1429,14 @@ impl Lockfile {
             .is_symlink()
             .then(|| fs::canonicalize(path))
             .transpose()?;
+        let link = path;
         let path = target.as_deref().unwrap_or(path);
         let content = file::read_to_string(path)?;
         let generated_header_url = existing_lockfile_doc_url(&content);
-        let mut table: toml::Table = toml::from_str(&content)?;
+        // Named by the link, not its target: the link decides whether to quote.
+        let mut table: toml::Table = toml::from_str(&content).map_err(|err| {
+            crate::config::config_file::diagnostic::hide_linked_source(err, &content, link)
+        })?;
         if table.is_empty() {
             return Ok(Lockfile {
                 generated_header_url,
