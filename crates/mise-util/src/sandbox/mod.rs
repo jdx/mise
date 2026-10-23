@@ -448,7 +448,7 @@ impl SandboxConfig {
         ];
         sandbox_args.extend(args.iter().cloned());
         Ok(Some(SandboxedCommand {
-            program: "sandbox-exec".to_string(),
+            program: SANDBOX_EXEC.to_string(),
             args: sandbox_args,
         }))
     }
@@ -460,6 +460,14 @@ pub struct SandboxedCommand {
     pub program: String,
     pub args: Vec<String>,
 }
+
+/// The system Seatbelt wrapper (macOS).
+///
+/// Absolute because the wrapper is started with the `PATH` built for the
+/// command being sandboxed, where tool bin directories and `_.path` entries
+/// come before `/usr/bin`: a bare name would let that command ship its own
+/// `sandbox-exec` and run unconfined.
+pub const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
 // Public functions for use by cmd.rs (which can't access private submodules)
 
@@ -933,5 +941,19 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.to_string().contains("--allow-net=<host>"), "{err}");
+    }
+
+    /// `mise x` execs the wrapper after setting the command's `PATH` on the
+    /// mise process, so a bare name would resolve to a `sandbox-exec` in a
+    /// tool's bin directory.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_apply_uses_system_sandbox_exec() {
+        let config = SandboxConfig {
+            deny_net: true,
+            ..Default::default()
+        };
+        let sandboxed = config.apply("true", &[]).await.unwrap().unwrap();
+        assert_eq!(sandboxed.program, "/usr/bin/sandbox-exec");
     }
 }

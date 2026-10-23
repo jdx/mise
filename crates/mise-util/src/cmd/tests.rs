@@ -685,6 +685,23 @@ async fn test_macos_sandbox_preserves_env_removals() {
     );
 }
 
+/// The wrapper is looked up with the task's `PATH`, so a bare name would resolve to a
+/// `sandbox-exec` in a tool's bin directory or a `_.path` entry.
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn test_macos_sandbox_uses_system_sandbox_exec() {
+    let mut runner = super::CmdLineRunner::new("true")
+        .env("PATH", "/planted/bin:/usr/bin:/bin")
+        .with_sandbox(crate::sandbox::SandboxConfig {
+            deny_net: true,
+            ..Default::default()
+        });
+
+    runner.apply_sandbox().await.unwrap();
+
+    assert_eq!(runner.cmd.as_std().get_program(), "/usr/bin/sandbox-exec");
+}
+
 #[cfg(target_os = "macos")]
 #[tokio::test]
 async fn test_macos_sandbox_preserves_piped_stdin() {

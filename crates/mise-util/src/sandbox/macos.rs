@@ -201,6 +201,7 @@ pub fn generate_seatbelt_profile(
 mod tests {
     // `Path` and `PathBuf` come from the parent module.
     use super::*;
+    use crate::sandbox::SANDBOX_EXEC;
     use std::{fs, process::Command};
 
     #[tokio::test]
@@ -284,7 +285,7 @@ mod tests {
         config.resolve_paths();
         let profile = generate_seatbelt_profile(&config, Some(Path::new("/bin/sh")));
         let read = |path: &std::path::Path| {
-            Command::new("sandbox-exec")
+            Command::new(SANDBOX_EXEC)
                 .current_dir("/")
                 .args(["-p", &profile, "--", "/bin/sh", "-c", "cat \"$1\"", "sh"])
                 .arg(path)
@@ -470,7 +471,7 @@ path = ARGV[0]
 puts "realpath #{File.realpath(path)}"
 puts "read #{File.read(path)}"
 "#;
-        let output = Command::new("sandbox-exec")
+        let output = Command::new(SANDBOX_EXEC)
             .args([
                 "-p",
                 &profile,
@@ -524,7 +525,7 @@ path = ARGV[0]
 puts "realpath #{File.realpath(path)}"
 puts "read #{File.read(path)}"
 "#;
-        let output = Command::new("sandbox-exec")
+        let output = Command::new(SANDBOX_EXEC)
             .args([
                 "-p",
                 &profile,
@@ -560,7 +561,7 @@ puts "read #{File.read(path)}"
         };
         let profile = generate_seatbelt_profile(&config, None);
         let run = |program: &str, args: &[&str]| {
-            Command::new("sandbox-exec")
+            Command::new(SANDBOX_EXEC)
                 .args(["-p", &profile, "--", program])
                 .args(args)
                 .output()
@@ -638,7 +639,7 @@ rescue SystemCallError
 end
 puts "child processes blocked"
 "#;
-        let output = Command::new("sandbox-exec")
+        let output = Command::new(SANDBOX_EXEC)
             .args([
                 "-p",
                 &profile,

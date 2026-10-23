@@ -2163,7 +2163,7 @@ impl<'a> CmdLineRunner<'a> {
             let profile =
                 crate::sandbox::macos_generate_profile(&sandbox, std::path::Path::new(&program));
 
-            let mut new_cmd = Command::new("sandbox-exec");
+            let mut new_cmd = Command::new(crate::sandbox::SANDBOX_EXEC);
             new_cmd.arg("-p").arg(&profile).arg("--").arg(&program);
             for arg in &args {
                 new_cmd.arg(arg);
