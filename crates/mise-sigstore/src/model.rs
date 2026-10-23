@@ -104,6 +104,10 @@ pub struct SlsaArtifact {
 /// workflow such as slsa-github-generator signs with the same identity for
 /// every repository that calls it, so a tool built with one passes its own
 /// repository here.
+///
+/// That identity names the generator's ref, not the release's, so one
+/// genuine provenance would pass for every version of the tool. When
+/// `source_tag` is set, the certificate's source ref must be that tag.
 #[derive(Debug, Clone, Copy)]
 pub struct SlsaSignerIdentity<'a> {
     pub identity: &'a str,
@@ -111,6 +115,10 @@ pub struct SlsaSignerIdentity<'a> {
     /// The tool's repository: `owner/repo`, `github.com/owner/repo` or
     /// `https://github.com/owner/repo`.
     pub source_repository: Option<&'a str>,
+    /// The git tag the release being verified was built from, as the backend
+    /// resolved it for this version (`v1.2.3`, not `refs/tags/v1.2.3`).
+    /// `None` skips the check.
+    pub source_tag: Option<&'a str>,
 }
 
 impl SlsaArtifact {

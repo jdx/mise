@@ -259,6 +259,10 @@ renamed or transferred passes when api.github.com, not a
 [`url_replacements`](/url-replacements.html) mirror, confirms the two names
 are the same repository.
 
+The workflow run must also have built the release's tag: the recipe's
+`slsa_provenance.source_tag`, or else the version's tag. A `source_tag` of `-`
+turns this check off for packages built from a branch.
+
 ## Settings
 
 <script setup>

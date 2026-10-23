@@ -14,6 +14,12 @@ pub(crate) const FULCIO_SOURCE_REPOSITORY_URI_OID: &str = "1.3.6.1.4.1.57264.1.1
 /// Fulcio's deprecated GitHub Workflow Repository (`owner/repo`), found on
 /// certificates issued before the one above existed. Raw bytes, not DER.
 pub(crate) const FULCIO_GITHUB_WORKFLOW_REPOSITORY_OID: &str = "1.3.6.1.4.1.57264.1.5";
+/// Fulcio's Source Repository Ref: the git ref the signed workflow run
+/// built, such as `refs/tags/v1.2.3`. A DER UTF8String.
+pub(crate) const FULCIO_SOURCE_REPOSITORY_REF_OID: &str = "1.3.6.1.4.1.57264.1.14";
+/// Fulcio's deprecated GitHub Workflow Ref, found on certificates issued
+/// before the one above existed. Raw bytes, not DER.
+pub(crate) const FULCIO_GITHUB_WORKFLOW_REF_OID: &str = "1.3.6.1.4.1.57264.1.6";
 /// The identity GitHub signs its own release attestations with.
 pub(crate) const GITHUB_RELEASE_ATTESTER_IDENTITY: &str = "https://dotcom.releases.github.com";
 pub(crate) const IN_TOTO_RELEASE_PREDICATE_PREFIX: &str = "https://in-toto.io/attestation/release/";
@@ -49,23 +55,36 @@ pub(crate) fn bundle_source_repository(bundle: &Bundle) -> Option<String> {
     release_statement_repository(envelope.payload.as_bytes())
 }
 
+fn certificate_extension<'c>(cert: &'c x509_cert::Certificate, oid: &str) -> Option<&'c [u8]> {
+    cert.tbs_certificate()
+        .extensions()?
+        .iter()
+        .find(|ext| ext.extn_id.to_string() == oid)
+        .map(|ext| ext.extn_value.as_bytes())
+}
+
 pub(crate) fn certificate_source_repository(cert: &x509_cert::Certificate) -> Option<String> {
     use x509_cert::der::Decode;
     use x509_cert::der::asn1::Utf8StringRef;
-    let extensions = cert.tbs_certificate().extensions()?;
-    let extension = |oid: &str| {
-        extensions
-            .iter()
-            .find(|ext| ext.extn_id.to_string() == oid)
-            .map(|ext| ext.extn_value.as_bytes())
-    };
-    if let Some(value) = extension(FULCIO_SOURCE_REPOSITORY_URI_OID) {
+    if let Some(value) = certificate_extension(cert, FULCIO_SOURCE_REPOSITORY_URI_OID) {
         let uri = Utf8StringRef::from_der(value).ok()?;
         return github_repository_from_uri(uri.as_str());
     }
-    let value = extension(FULCIO_GITHUB_WORKFLOW_REPOSITORY_OID)?;
+    let value = certificate_extension(cert, FULCIO_GITHUB_WORKFLOW_REPOSITORY_OID)?;
     let repository = std::str::from_utf8(value).ok()?;
     valid_github_repository(repository).then(|| repository.to_string())
+}
+
+/// The git ref, such as `refs/tags/v1.2.3`, that a certificate's workflow
+/// run built.
+pub(crate) fn certificate_source_ref(cert: &x509_cert::Certificate) -> Option<String> {
+    use x509_cert::der::Decode;
+    use x509_cert::der::asn1::Utf8StringRef;
+    if let Some(value) = certificate_extension(cert, FULCIO_SOURCE_REPOSITORY_REF_OID) {
+        return Some(Utf8StringRef::from_der(value).ok()?.as_str().to_string());
+    }
+    let value = certificate_extension(cert, FULCIO_GITHUB_WORKFLOW_REF_OID)?;
+    std::str::from_utf8(value).ok().map(str::to_string)
 }
 
 pub(crate) fn certificate_uri_sans(cert: &x509_cert::Certificate) -> Vec<String> {
@@ -120,6 +139,20 @@ pub(crate) fn verify_slsa_signer_certificate(
             return Err(AttestationError::WorkflowMismatch(format!(
                 "SLSA provenance was built in {}, expected {expected}",
                 source.as_deref().unwrap_or("an unknown repository"),
+            )));
+        }
+    }
+
+    // Each release of a tool built with a reusable workflow carries that
+    // workflow's identity, so without this an older release's genuine
+    // provenance and artifact would pass as a newer version's.
+    if let Some(tag) = expected.source_tag {
+        let expected_ref = format!("refs/tags/{tag}");
+        let source_ref = certificate_source_ref(&cert);
+        if source_ref.as_deref() != Some(expected_ref.as_str()) {
+            return Err(AttestationError::WorkflowMismatch(format!(
+                "SLSA provenance was built from {}, expected {expected_ref}",
+                source_ref.as_deref().unwrap_or("an unknown ref"),
             )));
         }
     }

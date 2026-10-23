@@ -333,7 +333,7 @@ return {
 | `github_owner`, `github_repo`, optional `github_signer_workflow`                                                                              | A GitHub artifact attestation. Users need `MISE_GITHUB_TOKEN` or `GITHUB_TOKEN` in the environment; without one the install fails.                    |
 | `cosign_sig_or_bundle_path`, `cosign_public_key_path`                                                                                         | A cosign signature made with a key.                                                                                                                   |
 | `cosign_sig_or_bundle_path`, `cosign_certificate_identity` or `cosign_certificate_identity_regexp`, optional `cosign_certificate_oidc_issuer` | A keyless cosign signature. The identity is required, because any GitHub Actions workflow can get a valid Fulcio certificate.                         |
-| `slsa_provenance_path`, `slsa_signer_identity`, `slsa_signer_issuer`, optional `slsa_min_level`, `slsa_source_repository`                     | SLSA provenance. `slsa_signer_identity` is the exact certificate subject URI, including the workflow ref. mise skips SLSA without both signer fields. |
+| `slsa_provenance_path`, `slsa_signer_identity`, `slsa_signer_issuer`, optional `slsa_min_level`, `slsa_source_repository`, `slsa_source_tag`  | SLSA provenance. `slsa_signer_identity` is the exact certificate subject URI, including the workflow ref. mise skips SLSA without both signer fields. |
 
 The workflow run that made SLSA provenance must belong to the repository that
 holds the `slsa_signer_identity` workflow. When the publisher signs with a
@@ -341,6 +341,11 @@ reusable workflow from another repository, such as
 `slsa-framework/slsa-github-generator`, set `slsa_source_repository` to the
 publisher's `owner/repo`: that workflow has the same identity in every
 repository that calls it.
+
+Set `slsa_source_tag` to the git tag this version's release was built from,
+such as `v1.2.3`. mise then rejects provenance built from any other ref, so an
+older release's provenance cannot pass for this one. Without it, mise does not
+check the ref.
 
 ### EnvKeys {#envkeys-hook}
 

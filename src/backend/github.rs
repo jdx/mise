@@ -117,6 +117,7 @@ impl<'a> GitBackendOptions<'a> {
             identity,
             issuer,
             source_repository: None,
+            source_tag: None,
         })
     }
 
@@ -1587,16 +1588,17 @@ impl UnifiedGitBackend {
             && settings.github.slsa
             && let Some((identity, issuer)) = opts.slsa_signer_for(tv)
         {
-            let signer = crate::github::sigstore::SlsaSignerIdentity {
-                identity: &identity,
-                issuer: &issuer,
-                source_repository: Some(&repo),
-            };
             let version = &tv.version;
             let version_prefix = opts.version_prefix();
             let release = self
                 .release_for_asset(&api_url, &repo, version, version_prefix, asset)
                 .await?;
+            let signer = crate::github::sigstore::SlsaSignerIdentity {
+                identity: &identity,
+                issuer: &issuer,
+                source_repository: Some(&repo),
+                source_tag: self.slsa_source_tag(tv, opts, &release),
+            };
 
             let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
             // Keep provenance aligned with the matching-selected binary, unless
@@ -2598,6 +2600,28 @@ impl UnifiedGitBackend {
             })
     }
 
+    /// The tag SLSA provenance for `tv` must have been built from: the tag of
+    /// the release its asset came from, when that tag spells `tv`'s version.
+    /// The release comes from the API, which can't vouch for itself: a tag
+    /// that names another version would let that version's provenance pass.
+    fn slsa_source_tag<'r>(
+        &self,
+        tv: &ToolVersion,
+        opts: &GitBackendOptions<'_>,
+        release: &'r github::GithubRelease,
+    ) -> Option<&'r str> {
+        let tag = release.tag_name.as_str();
+        if self.strip_version_prefix(tag, opts) == tv.version
+            || tag_candidates(&tv.version, opts.version_prefix(), Some(&self.repo()))
+                .iter()
+                .any(|candidate| candidate == tag)
+        {
+            return Some(tag);
+        }
+        debug!("release tag {tag} does not name {tv}; not checking the SLSA provenance's tag");
+        None
+    }
+
     fn strip_version_prefix(&self, tag_name: &str, opts: &GitBackendOptions<'_>) -> String {
         // If a custom version_prefix is configured, strip it first
         if let Some(prefix) = opts.version_prefix()
@@ -3083,11 +3107,6 @@ impl UnifiedGitBackend {
         let (identity, issuer) = opts.slsa_signer_for(tv).ok_or_else(|| {
             VerificationStatus::Error("SLSA signer identity and issuer are missing".to_string())
         })?;
-        let signer = crate::github::sigstore::SlsaSignerIdentity {
-            identity: &identity,
-            issuer: &issuer,
-            source_repository: Some(&repo),
-        };
         let version = &tv.version;
 
         // Try to get the release (with version prefix support)
@@ -3102,6 +3121,12 @@ impl UnifiedGitBackend {
                     "Failed to get release: {e}"
                 )));
             }
+        };
+        let signer = crate::github::sigstore::SlsaSignerIdentity {
+            identity: &identity,
+            issuer: &issuer,
+            source_repository: Some(&repo),
+            source_tag: self.slsa_source_tag(tv, &opts, &release),
         };
 
         // Find the best provenance asset for the current platform
@@ -4381,6 +4406,37 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         assert_eq!(
             backend.strip_version_prefix("release-release-1.0.0", &opts),
             "release-1.0.0"
+        );
+    }
+
+    #[test]
+    fn test_slsa_source_tag_must_name_the_version() {
+        let backend = create_test_backend();
+        let backend_arg = Arc::new(BackendArg::new(
+            "github:test/repo".to_string(),
+            Some("github:test/repo".to_string()),
+        ));
+        let request =
+            ToolRequest::new(backend_arg, "1.0.0", crate::toolset::ToolSource::Unknown).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".to_string());
+        let raw_opts = ToolVersionOptions::default();
+        let opts = backend.options(&raw_opts);
+        let release = |tag: &str| github::GithubRelease {
+            tag_name: tag.into(),
+            ..github_release(vec![])
+        };
+
+        for tag in ["v1.0.0", "1.0.0", "repo@1.0.0"] {
+            assert_eq!(
+                backend.slsa_source_tag(&tv, &opts, &release(tag)),
+                Some(tag)
+            );
+        }
+        // A release tagged for another version names no tag for 1.0.0:
+        // checking against it would let 0.9.0's provenance pass.
+        assert_eq!(
+            backend.slsa_source_tag(&tv, &opts, &release("v0.9.0")),
+            None
         );
     }
 

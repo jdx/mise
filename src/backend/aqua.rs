@@ -2065,10 +2065,15 @@ impl AquaBackend {
             eyre!("SLSA provenance requires signer_identity and signer_issuer in Aqua registry metadata")
         })?;
         let source_repository = slsa_source_repository(pkg);
+        let source_tag = slsa_source_tag(pkg, v);
+        if source_tag.is_none() {
+            debug!("the registry turns off the SLSA source tag check for {v}");
+        }
         let signer = crate::github::sigstore::SlsaSignerIdentity {
             identity: &identity,
             issuer: &issuer,
             source_repository: Some(&source_repository),
+            source_tag,
         };
         let target = self.verification_target();
         let (provenance_url, url_api) = self
@@ -4647,6 +4652,22 @@ fn slsa_source_repository(pkg: &AquaPackage) -> String {
     format!("{owner}/{name}")
 }
 
+/// The tag a package's SLSA provenance must have been built from, as
+/// slsa-verifier's `--source-tag` took it: the recipe's `source_tag`, or else
+/// the version as aqua resolved it, which is the release tag. A `source_tag`
+/// of `-` turns the check off, for tools built from a branch.
+fn slsa_source_tag<'a>(pkg: &'a AquaPackage, v: &'a str) -> Option<&'a str> {
+    match pkg
+        .slsa_provenance
+        .as_ref()
+        .and_then(|s| s.source_tag.as_deref())
+    {
+        Some("-") => None,
+        Some(tag) => Some(tag),
+        None => Some(v),
+    }
+}
+
 fn resolve_repo_info(
     override_owner: Option<&String>,
     override_name: Option<&String>,
@@ -5405,6 +5426,24 @@ slsa_provenance:
         assert_eq!(
             slsa_source_repository(&pkg("  source_uri: github.com/owner/source\n")),
             "github.com/owner/source"
+        );
+    }
+
+    #[test]
+    fn slsa_source_tag_follows_the_recipe() {
+        let pkg = |slsa: &str| {
+            pkg_from_yaml(&format!(
+                "type: github_release\nrepo_owner: owner\nrepo_name: tool\nversion_prefix: tool-\nslsa_provenance:\n  type: github_release\n  asset: tool.intoto.jsonl\n{slsa}"
+            ))
+        };
+        assert_eq!(slsa_source_tag(&pkg(""), "tool-1.2.3"), Some("tool-1.2.3"));
+        assert_eq!(
+            slsa_source_tag(&pkg("  source_tag: release-1.2.3\n"), "tool-1.2.3"),
+            Some("release-1.2.3")
+        );
+        assert_eq!(
+            slsa_source_tag(&pkg("  source_tag: \"-\"\n"), "tool-1.2.3"),
+            None
         );
     }
 
