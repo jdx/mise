@@ -308,9 +308,16 @@ fn apply_oci_whiteout(rootfs: &Path, rel: &Path) -> Result<bool> {
     let Some(name) = rel.file_name().and_then(|n| n.to_str()) else {
         return Ok(false);
     };
-    let parent = rel.parent().unwrap_or_else(|| Path::new(""));
+    let Some(target) = name.strip_prefix(".wh.") else {
+        return Ok(false);
+    };
+    // An earlier entry of the same layer may have made a parent component a
+    // symlink that points out of the rootfs. The unpacker refuses to write
+    // through one, and a whiteout must not delete through one either.
+    let dir = rootfs.join(rel.parent().unwrap_or_else(|| Path::new("")));
+    reject_symlink_components(rootfs, &dir)
+        .wrap_err_with(|| format!("applying OCI whiteout {}", rel.display()))?;
     if name == ".wh..wh..opq" {
-        let dir = rootfs.join(parent);
         if dir.is_dir() {
             for entry in fs::read_dir(&dir)? {
                 remove_path(&entry?.path())?;
@@ -318,10 +325,18 @@ fn apply_oci_whiteout(rootfs: &Path, rel: &Path) -> Result<bool> {
         }
         return Ok(true);
     }
-    let Some(target) = name.strip_prefix(".wh.") else {
-        return Ok(false);
-    };
-    remove_path(&rootfs.join(parent).join(target))?;
+    // A whiteout hides one entry beside it. `.wh...` would name `..` and
+    // delete the directory that holds the rootfs.
+    if !matches!(
+        Path::new(target)
+            .components()
+            .collect::<Vec<_>>()
+            .as_slice(),
+        [Component::Normal(_)]
+    ) {
+        bail!("invalid OCI whiteout entry {}", rel.display());
+    }
+    remove_path(&dir.join(target))?;
     Ok(true)
 }
 
@@ -559,6 +574,21 @@ fn run_apt_get(args: Vec<String>) -> Result<()> {
 /// Everything cleared here is a regenerable cache, a timestamped log, or a
 /// first-boot sentinel, never real package content.
 fn clean_apt_transients(rootfs: &Path) -> Result<()> {
+    // The base image is untrusted: as in clean_apk_transients, refuse to
+    // delete or truncate through a symlink it planted on the way to these
+    // trees. The machine-id files themselves may be symlinks, which
+    // truncate_file_if_regular leaves alone.
+    for dir in [
+        "var/cache/apt",
+        "var/lib/apt/lists",
+        "var/cache/ldconfig",
+        "var/log",
+        "etc",
+        "var/lib/dbus",
+    ] {
+        reject_symlink_components(rootfs, &rootfs.join(dir))?;
+    }
+
     // apt's own download cache and package lists.
     remove_dir_children(&rootfs.join("var/cache/apt/archives"))?;
     remove_path(&rootfs.join("var/cache/apt/pkgcache.bin"))?;
@@ -593,9 +623,9 @@ fn clean_apk_transients(rootfs: &Path) -> Result<()> {
     remove_path(&log)
 }
 
-/// Reject a cleanup target when it or any path component below `rootfs` is a
-/// symlink. OCI package layers are untrusted, so following one during cleanup
-/// could remove files outside the layer root.
+/// Reject a whiteout or cleanup target when it or any path component below
+/// `rootfs` is a symlink. OCI layers are untrusted, so following one while
+/// deleting could remove files outside the layer root.
 fn reject_symlink_components(rootfs: &Path, target: &Path) -> Result<()> {
     let relative = target
         .strip_prefix(rootfs)
@@ -1054,6 +1084,86 @@ mod tests {
 
         assert!(diff.join("usr/bin/example").is_file());
         assert!(!diff.join("etc/apt/sources.list").exists());
+    }
+
+    #[test]
+    fn apply_oci_whiteout_removes_hidden_entries() {
+        let td = TempDir::with_prefix("mise-oci-whiteout-test-").unwrap();
+        let rootfs = td.path().join("rootfs");
+        write_file(&rootfs.join("etc/old.conf"), "old");
+        write_file(&rootfs.join("etc/keep.conf"), "keep");
+        write_file(&rootfs.join("var/cache/stale"), "stale");
+        write_file(&rootfs.join("top"), "top");
+
+        assert!(!apply_oci_whiteout(&rootfs, Path::new("etc/keep.conf")).unwrap());
+        assert!(apply_oci_whiteout(&rootfs, Path::new("etc/.wh.old.conf")).unwrap());
+        assert!(apply_oci_whiteout(&rootfs, Path::new("var/cache/.wh..wh..opq")).unwrap());
+        assert!(apply_oci_whiteout(&rootfs, Path::new(".wh.top")).unwrap());
+        assert!(apply_oci_whiteout(&rootfs, Path::new("missing/.wh.gone")).unwrap());
+
+        assert!(!rootfs.join("etc/old.conf").exists());
+        assert_eq!(
+            fs::read_to_string(rootfs.join("etc/keep.conf")).unwrap(),
+            "keep"
+        );
+        assert!(rootfs.join("var/cache").is_dir());
+        assert!(!rootfs.join("var/cache/stale").exists());
+        assert!(!rootfs.join("top").exists());
+    }
+
+    #[test]
+    fn apply_oci_whiteout_rejects_parent_dir_target() {
+        let td = TempDir::with_prefix("mise-oci-whiteout-dotdot-").unwrap();
+        let rootfs = td.path().join("rootfs");
+        write_file(&rootfs.join("etc/keep.conf"), "keep");
+
+        let err = apply_oci_whiteout(&rootfs, Path::new(".wh...")).unwrap_err();
+
+        assert!(err.to_string().contains("invalid OCI whiteout entry"));
+        assert!(rootfs.join("etc/keep.conf").is_file());
+    }
+
+    /// A layer can create `esc -> /home/user` and then whiteout `esc/.ssh`:
+    /// the deletion must not follow the link out of the rootfs.
+    #[test]
+    fn apply_oci_whiteout_rejects_symlinked_parent() {
+        let td = TempDir::with_prefix("mise-oci-whiteout-symlink-").unwrap();
+        let rootfs = td.path().join("rootfs");
+        let outside = td.path().join("outside");
+        write_file(&outside.join(".ssh/id_ed25519"), "private key");
+        write_file(&outside.join("keep"), "outside");
+        file::create_dir_all(&rootfs).unwrap();
+        symlink(&outside, rootfs.join("esc")).unwrap();
+
+        let err = apply_oci_whiteout(&rootfs, Path::new("esc/.wh..ssh")).unwrap_err();
+        assert!(format!("{err:#}").contains("symlink component"), "{err:#}");
+        let err = apply_oci_whiteout(&rootfs, Path::new("esc/.wh..wh..opq")).unwrap_err();
+        assert!(format!("{err:#}").contains("symlink component"), "{err:#}");
+
+        assert!(outside.join(".ssh/id_ed25519").is_file());
+        assert_eq!(fs::read_to_string(outside.join("keep")).unwrap(), "outside");
+        // A whiteout naming the symlink itself removes only the link.
+        assert!(apply_oci_whiteout(&rootfs, Path::new(".wh.esc")).unwrap());
+        assert!(!rootfs.join("esc").exists());
+        assert!(outside.join(".ssh/id_ed25519").is_file());
+    }
+
+    #[test]
+    fn clean_apt_transients_rejects_symlinked_parent() {
+        let td = TempDir::with_prefix("mise-oci-apt-clean-symlink-parent-").unwrap();
+        let rootfs = td.path().join("rootfs");
+        let outside = td.path().join("outside");
+        write_file(&outside.join("log/dpkg.log"), "outside");
+        file::create_dir_all(&rootfs).unwrap();
+        symlink(&outside, rootfs.join("var")).unwrap();
+
+        let err = clean_apt_transients(&rootfs).unwrap_err();
+
+        assert!(err.to_string().contains("symlink component"), "{err}");
+        assert_eq!(
+            fs::read_to_string(outside.join("log/dpkg.log")).unwrap(),
+            "outside"
+        );
     }
 
     #[test]
