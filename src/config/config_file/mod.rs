@@ -592,10 +592,9 @@ pub fn is_path_trusted(path: &Path) -> bool {
 
 static IMPLICITLY_TRUST_ACTIVE_CONFIG: AtomicBool = AtomicBool::new(false);
 
-/// Set while `mise trust` resolves the env to find files that need trust. `mise trust` normally
-/// loads every config without asking, since trusting is its job, but here that would run an
-/// untrusted config's templates just to look for files. With this set, an untrusted config is
-/// skipped like it is for `hook-env`, and nothing prompts.
+/// Set while `mise trust` resolves the env to find files that need trust. Loading an untrusted
+/// config there would run its templates just to look for files. With this set, an untrusted
+/// config is skipped like it is for `hook-env`, and nothing prompts.
 static STRICT_TRUST: AtomicBool = AtomicBool::new(false);
 
 /// Env files and scripts that paranoid mode skipped as untrusted, with the config that named
@@ -702,9 +701,16 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
     let config_root = config_trust_root(path);
     let default_cmd = String::new();
     let args = env::ARGS.read().unwrap();
-    let cmd = args.get(1).unwrap_or(&default_cmd).as_str();
+    // A shim's arguments belong to the tool it stands for, not to mise.
+    let cmd = if *env::IS_RUNNING_AS_SHIM {
+        default_cmd.as_str()
+    } else {
+        args.get(1).unwrap_or(&default_cmd).as_str()
+    };
     let strict = STRICT_TRUST.load(Ordering::Relaxed);
-    if is_path_trusted(path) || (cmd == "trust" && !strict) || mise_util::testing::in_tests() {
+    // No command is exempt: `mise trust` decides about config without loading it, and the
+    // word `trust` in argv says nothing about who is asking (`docker trust …` through a shim).
+    if is_path_trusted(path) || mise_util::testing::in_tests() {
         return Ok(());
     }
     if *REQUIRE_EXPLICIT_TRUST {

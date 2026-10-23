@@ -470,7 +470,9 @@ impl Commands {
 
     /// Shell integration runs on startup and every prompt, so it must not do
     /// an all-project tracked-config scan or mutate installed tools. Deferred
-    /// cleanup will run on the next ordinary command instead.
+    /// cleanup will run on the next ordinary command instead. The cleanup also
+    /// loads the current directory's config, which `trust` and `untrust` are
+    /// deciding about and so must not load.
     fn allows_tool_purgatory_auto_prune(&self) -> bool {
         !matches!(
             self,
@@ -482,6 +484,8 @@ impl Commands {
                 | Self::PublishSystemInstall(_)
                 | Self::Ssh(_)
                 | Self::ToolUpdate(_)
+                | Self::Trust(_)
+                | Self::Untrust(_)
         )
     }
 
@@ -1977,6 +1981,30 @@ mod tests {
         };
         assert_eq!(tool_stub.file, PathBuf::from("jqstub"));
         assert_eq!(tool_stub.args, ["--version"]);
+    }
+
+    #[test]
+    fn trust_commands_do_not_allow_tool_purgatory_auto_prune() {
+        for args in [
+            vec!["mise", "trust"],
+            vec!["mise", "trust", "--show"],
+            vec!["mise", "trust", "--ignore"],
+            vec!["mise", "untrust"],
+        ] {
+            let cli = parse_cli(&args).unwrap();
+            assert!(
+                !cli.command
+                    .as_ref()
+                    .is_some_and(Commands::allows_tool_purgatory_auto_prune),
+                "expected {args:?} to skip deferred pruning"
+            );
+        }
+        let cli = parse_cli(&["mise", "ls"]).unwrap();
+        assert!(
+            cli.command
+                .as_ref()
+                .is_some_and(Commands::allows_tool_purgatory_auto_prune)
+        );
     }
 
     #[test]
