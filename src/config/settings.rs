@@ -894,6 +894,11 @@ pub trait SettingsExt: Sized {
     /// Errors on invalid platform strings (same validation as `mise lock --platform`).
     fn lockfile_platforms(&self) -> Result<Option<Vec<Platform>>>;
 
+    /// The `trusted_config_paths` entries as written (with `~` expanded), without touching the
+    /// filesystem.
+    fn trusted_config_paths_as_written(&self) -> impl Iterator<Item = PathBuf> + '_;
+
+    /// The `trusted_config_paths` entries that exist, canonicalized.
     fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_;
 
     fn global_tools_file(&self) -> PathBuf;
@@ -1194,12 +1199,26 @@ impl SettingsExt for Settings {
         }
     }
 
-    fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
+    fn trusted_config_paths_as_written(&self) -> impl Iterator<Item = PathBuf> + '_ {
         self.trusted_config_paths
             .iter()
             .filter(|p| !p.to_string_lossy().is_empty())
             .map(file::replace_path)
-            .filter_map(|p| file::canonicalize_cached(&p))
+    }
+
+    fn trusted_config_paths(&self) -> impl Iterator<Item = PathBuf> + '_ {
+        // Unlike `canonicalize_cached`, remember entries that don't exist: each lookup can be a
+        // slow autofs/network call, and every config checked in the process would repeat it.
+        static RESOLVED: Lazy<Mutex<std::collections::HashMap<PathBuf, Option<PathBuf>>>> =
+            Lazy::new(Default::default);
+        self.trusted_config_paths_as_written().filter_map(|p| {
+            if let Some(resolved) = RESOLVED.lock().unwrap().get(&p) {
+                return resolved.clone();
+            }
+            let resolved = file::canonicalize_cached(&p);
+            RESOLVED.lock().unwrap().insert(p, resolved.clone());
+            resolved
+        })
     }
 
     fn global_tools_file(&self) -> PathBuf {
