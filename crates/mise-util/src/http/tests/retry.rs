@@ -177,7 +177,11 @@ async fn test_reqwest_dns_error_is_not_transient_and_opens_circuit() {
             .build()
             .unwrap()),
         manual_redirects: Default::default(),
+        undecoded: Default::default(),
+        undecoded_manual_redirects: Default::default(),
         timeout,
+        read_timeout: Some(timeout),
+        downgrade: Downgrade::Refuse,
         kind: ClientKind::Fetch,
     };
     let url: Url = "https://mise-dns-regression.invalid/?token=secret"

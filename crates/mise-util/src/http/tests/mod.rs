@@ -446,17 +446,6 @@ fn truncated_download_without_validator_response() -> &'static str {
         "hello"
     )
 }
-fn truncated_encoded_download_response() -> &'static str {
-    concat!(
-        "HTTP/1.1 200 OK\r\n",
-        "Content-Length: 10\r\n",
-        "Content-Encoding: gzip\r\n",
-        "ETag: \"artifact-v1\"\r\n",
-        "Connection: close\r\n",
-        "\r\n",
-        "hello"
-    )
-}
 fn range_not_satisfiable_response() -> &'static str {
     concat!(
         "HTTP/1.1 416 Range Not Satisfiable\r\n",
@@ -612,6 +601,38 @@ async fn test_download_reuses_stored_file_on_not_modified() {
     client.download_file(&url, &dest, None).await.unwrap();
     assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 4);
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_limited_download_refuses_a_stored_copy_over_its_limit() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let (port, _count, requests) =
+        spawn_recording_server(vec![cacheable_download_response(), not_modified_response()]).await;
+    let url = format!("http://127.0.0.1:{port}/artifact");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("artifact");
+
+    // An uncapped download of the URL leaves a 5-byte copy in the store.
+    client.download_file(&url, &dest, None).await.unwrap();
+    std::fs::remove_file(&dest).unwrap();
+
+    // A capped one is answered with 304 and must not be handed that copy.
+    let err = client
+        .download_file_limited(&url, &dest, 4, None)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("is larger than 4 B"), "{err}");
+    assert!(!dest.exists());
+    assert!(
+        requests.lock().unwrap()[1]
+            .to_lowercase()
+            .contains("if-none-match: \"artifact-v1\"")
+    );
 
     *cas::TEST_ROOT.lock().unwrap() = None;
 }

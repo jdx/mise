@@ -652,7 +652,11 @@ where
         return Ok(None);
     }
     if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
+        let body = http::read_bounded_error_body(
+            resp,
+            crate::network::fetch_remote_versions_timeout(&Settings::get()),
+        )
+        .await;
         let message = versions_host_error_message(status.as_u16(), &body);
         log_versions_host_trace(
             ctx,
@@ -667,11 +671,23 @@ where
     }
     // The body is read first so that a connection lost while reading it is
     // mise-versions being unavailable, like one lost before the status;
-    // only a body that arrived and doesn't parse is a bad answer.
-    let body = resp.bytes().await.map_err(|err| VersionsHostUnavailable {
-        status: None,
-        message: format!("reading {url}: {err:#}"),
-    })?;
+    // only a body that arrived and doesn't parse, or is too large to hold,
+    // is a bad answer. A body still arriving when the download budget runs out
+    // is a slow host, not a bad answer.
+    let body = match http::buffer_body(resp).await {
+        Ok(resp) => resp.bytes().await?,
+        Err(err)
+            if err.downcast_ref::<reqwest::Error>().is_some()
+                || err.downcast_ref::<http::BodyTimedOut>().is_some() =>
+        {
+            return Err(VersionsHostUnavailable {
+                status: None,
+                message: format!("reading {url}: {err:#}"),
+            }
+            .into());
+        }
+        Err(err) => return Err(err),
+    };
     serde_json::from_slice(&body)
         .map(Some)
         .map_err(|err| eyre::eyre!("invalid response from {url}: {err}"))
@@ -1205,6 +1221,66 @@ mod tests {
         .unwrap();
         assert_eq!(entries[1].name, "refs");
         assert_eq!(entries[1].kind, "dir");
+    }
+
+    /// A versions-host reply whose body never finishes within the download
+    /// budget is a host that is temporarily unavailable, so callers fall back
+    /// to api.github.com or a cached copy. An oversized reply stays a bad
+    /// answer.
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_slow_body_is_temporarily_unavailable() {
+        use confique::Layer;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        /// Holds the settings lock for the test and restores the settings after.
+        struct SettingsGuard {
+            _lock: std::sync::MutexGuard<'static, ()>,
+        }
+        impl Drop for SettingsGuard {
+            fn drop(&mut self) {
+                crate::testing::reset_settings(None);
+            }
+        }
+
+        let _settings = SettingsGuard {
+            _lock: crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK),
+        };
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.http_download_timeout = Some("200ms".to_string());
+        settings.http_retries = Some(0);
+        crate::testing::reset_settings(Some(settings));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let mut request = [0u8; 4096];
+            let _ = socket.read(&mut request).await;
+            let _ = socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 1000000\r\nConnection: close\r\n\r\n",
+                )
+                .await;
+            while socket.write_all(b" ").await.is_ok() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        });
+        let url = format!("http://127.0.0.1:{port}/gh/v1/repos/jdx/mise/releases/v1.0.0");
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            fetch_json_unless_not_found::<serde_json::Value>(
+                &url,
+                VersionsHostLogContext::github_release("jdx/mise", "v1.0.0"),
+            ),
+        )
+        .await
+        .expect("the body deadline did not end the read");
+
+        let err = result.unwrap_err();
+        assert!(is_temporarily_unavailable(&err), "{err:#}");
+        assert!(retries_on_github(&err), "{err:#}");
     }
 
     #[test]

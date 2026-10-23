@@ -101,6 +101,75 @@ fn test_archive_content_files_tar_zst_decodes_a_long_window() {
 }
 
 #[test]
+fn test_archive_content_files_zip_charges_entries_that_share_a_member() {
+    use std::io::Write;
+
+    let dir = tempfile::tempdir().unwrap();
+    let archive_path = dir.path().join("tool.zip");
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for name in ["a", "b", "c"] {
+        zip.start_file(name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        zip.write_all(b"tool").unwrap();
+    }
+    let mut bytes = zip.finish().unwrap().into_inner();
+    // Point every central directory record at the first local header, the way
+    // an overlapping zip bomb stores one member and lists it many times.
+    for i in 0..bytes.len() - 46 {
+        if bytes[i..].starts_with(b"PK\x01\x02") {
+            bytes[i + 42..i + 46].fill(0);
+        }
+    }
+    fs::write(&archive_path, &bytes).unwrap();
+
+    let files = archive_content_files_zip(&archive_path, 0, 12).unwrap();
+    assert_eq!(files.len(), 3);
+    for file in files {
+        assert_eq!(file.sha256, hex::encode(Sha256::digest(b"tool")));
+    }
+    let err = archive_content_files_zip(&archive_path, 0, 11).unwrap_err();
+    assert!(err.to_string().contains("unpacks to more than"), "{err}");
+}
+
+#[test]
+fn test_archive_content_files_tar_rejects_huge_sparse_member() {
+    let dir = tempfile::tempdir().unwrap();
+    let archive_path = dir.path().join("tool.tar");
+    let mut builder = jdx_tar::Builder::new(Vec::new());
+
+    // 4 stored bytes followed by a hole that ends at 1 TiB
+    let pax = b"33 GNU.sparse.size=1099511627776\n\
+                26 GNU.sparse.numblocks=1\n\
+                22 GNU.sparse.map=0,4\n";
+    // jdx-tar's writer rejects raw extension headers, so write the record under
+    // a neutral flag, then rewrite the type byte and checksum.
+    let mut pax_header = jdx_tar::Header::new_gnu(EntryType::Other(b'X'));
+    pax_header.set_size(pax.len() as u64);
+    builder
+        .append_data(&mut pax_header, "pax-sparse", pax.as_slice())
+        .unwrap();
+    let mut header = jdx_tar::Header::new_gnu(EntryType::File);
+    header.set_size(4);
+    header.set_mode(0o755);
+    builder
+        .append_data(&mut header, "tool", &b"tool"[..])
+        .unwrap();
+    let mut archive = builder.into_inner().unwrap();
+    archive[156] = b'x';
+    archive[257..265].copy_from_slice(b"ustar\x0000");
+    archive[148..156].fill(b' ');
+    let checksum = archive[..512]
+        .iter()
+        .map(|byte| u64::from(*byte))
+        .sum::<u64>();
+    archive[148..156].copy_from_slice(format!("{checksum:06o}\0 ").as_bytes());
+    fs::write(&archive_path, archive).unwrap();
+
+    let err = archive_content_files(&archive_path, ExtractionFormat::Tar, 0).unwrap_err();
+    assert!(err.to_string().contains("unpacks to more than"), "{err}");
+}
+
+#[test]
 fn test_extract_archive_tar_strip_preserves_root_files() {
     let dir = tempfile::tempdir().unwrap();
     let archive_path = dir.path().join("tool.tar");
@@ -421,28 +490,23 @@ fn test_inspect_tar_contents_curdir_prefix() {
     // Now test inspect_tar_contents
     let result = inspect_tar_contents(temp_file.path(), ExtractionFormat::TarGz).unwrap();
 
-    // Should have 3 top-level entries: dir1, dir2, standalone
-    // NOT a single "." entry
+    // Should have the first 2 top-level entries, where inspection stops: dir1
+    // and dir2, NOT a single "." entry
     assert_eq!(
         result.len(),
-        3,
-        "Expected 3 top-level entries, got: {:?}",
+        2,
+        "Expected 2 top-level entries, got: {:?}",
         result
     );
 
     let names: std::collections::HashSet<_> = result.iter().map(|(n, _)| n.as_str()).collect();
     assert!(names.contains("dir1"), "Should contain dir1");
     assert!(names.contains("dir2"), "Should contain dir2");
-    assert!(names.contains("standalone"), "Should contain standalone");
     assert!(!names.contains("."), "Should NOT contain '.' (CurDir)");
 
     // dir1 and dir2 should be marked as directories (have nested content)
     for (name, is_dir) in &result {
-        if name == "dir1" || name == "dir2" {
-            assert!(*is_dir, "{} should be marked as directory", name);
-        } else if name == "standalone" {
-            assert!(!*is_dir, "standalone should NOT be marked as directory");
-        }
+        assert!(*is_dir, "{} should be marked as directory", name);
     }
 
     // Verify should_strip_components returns false (multiple top-level entries)
@@ -451,4 +515,43 @@ fn test_inspect_tar_contents_curdir_prefix() {
         !should_strip,
         "Should NOT strip components for multi-entry archive"
     );
+}
+
+#[test]
+fn test_inspect_tar_contents_stops_at_second_top_level_entry() {
+    // A second top-level entry settles should_strip_components, so inspection
+    // must not keep reading (and collecting names) past it: a name can be
+    // 1 MiB and compress to a few bytes, so reading every entry of a small
+    // archive could hold gigabytes of names.
+    let dir = tempfile::tempdir().unwrap();
+    let archive_path = dir.path().join("tool.tar");
+    let mut builder = jdx_tar::Builder::new(Vec::new());
+    let mut header = jdx_tar::Header::new_gnu(EntryType::File);
+    header.set_size(0);
+    header.set_mode(0o755);
+    for name in ["pkg/a", "pkg/b", "other"] {
+        builder
+            .append_data(&mut header.clone(), name, std::io::empty())
+            .unwrap();
+    }
+    let mut archive = builder.into_inner().unwrap();
+    // Replace the end-of-archive marker with a header that does not parse, so
+    // reading past the third entry fails.
+    archive.truncate(3 * 512);
+    archive.extend([b'x'; 512]);
+    fs::write(&archive_path, &archive).unwrap();
+
+    let mut contents = inspect_tar_contents(&archive_path, ExtractionFormat::Tar).unwrap();
+    contents.sort();
+    assert_eq!(
+        contents,
+        vec![("other".to_string(), false), ("pkg".to_string(), true)]
+    );
+    assert!(!should_strip_components(&archive_path, ExtractionFormat::Tar).unwrap());
+
+    // With a single top-level entry so far the answer is still open, so the
+    // rest of the archive is read and the broken header is an error.
+    archive.drain(2 * 512..3 * 512);
+    fs::write(&archive_path, &archive).unwrap();
+    assert!(inspect_tar_contents(&archive_path, ExtractionFormat::Tar).is_err());
 }
