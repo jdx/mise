@@ -414,10 +414,17 @@ impl Backend for PIPXBackend {
                 }
             }
             PipxRequest::Git(source) => match PipxRequest::github_repo(&source.repo) {
-                Some(repo) => {
-                    let data = github::list_releases(&repo).await?;
-                    Self::versions_from_github_releases(data)
-                }
+                Some(repo) => match github::list_releases(&repo).await {
+                    Ok(data) => Self::versions_from_github_releases(data),
+                    // A private repository is invisible to the versions host
+                    // and the API without a token, but an SSH remote already
+                    // shows the user can reach it with their key.
+                    Err(err) if PipxRequest::is_ssh_remote(&source.repo) => {
+                        debug!("{repo} not listed by GitHub ({err}), trying git ls-remote");
+                        Self::versions_from_git_tags(&source.remote()).await?
+                    }
+                    Err(err) => return Err(err),
+                },
                 None => Self::versions_from_git_tags(&source.remote()).await?,
             },
         };
@@ -1588,6 +1595,10 @@ impl PipxRequest {
         }
         let repo = url.path().trim_matches('/').trim_end_matches(".git");
         (!repo.is_empty()).then(|| repo.to_string())
+    }
+
+    fn is_ssh_remote(url: &str) -> bool {
+        url::Url::parse(url).is_ok_and(|url| url.scheme() == "ssh")
     }
 
     fn extras_from_opts(&self, opts: &PipxOptions<'_>) -> String {
@@ -2772,6 +2783,8 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
             PipxRequest::github_repo("ssh://git@github.com/psf/black"),
             Some("psf/black".to_string())
         );
+        assert!(PipxRequest::is_ssh_remote("ssh://git@github.com/psf/black"));
+        assert!(!PipxRequest::is_ssh_remote("https://github.com/psf/black"));
     }
 
     #[tokio::test]
