@@ -4773,16 +4773,29 @@ pub trait Backend: Debug + Send + Sync {
             self._parse_idiomatic_file_with_options(path).await?
         };
         let options = self.ba().opts();
-        Ok(versions
+        versions
             .into_iter()
             .map(|(version, file_options)| {
                 let mut options = options.clone();
                 if let Some(file_options) = file_options {
+                    // Idiomatic version files are read without trust, and
+                    // `mise use` can copy these options into a mise.toml,
+                    // which renders option values as templates once trusted.
+                    if file_options
+                        .opts_as_strings()
+                        .values()
+                        .any(|value| contains_template_syntax(value))
+                    {
+                        bail!(
+                            "tool options from {} contain template syntax",
+                            display_path(path)
+                        );
+                    }
                     options.apply_overrides(&file_options);
                 }
-                (version, options)
+                Ok((version, options))
             })
-            .collect())
+            .collect()
     }
 
     /// Backend-specific implementation for `parse_idiomatic_file_with_options`.

@@ -166,6 +166,9 @@ exact Yarn version. Without a checksum, mise installs the package manager
 through its usual [registry](/registry.html) backend and that backend's
 verification.
 
+The suffix must be `<algorithm>.<hex digest>`; mise ignores a declaration with
+any other suffix.
+
 Unlike Corepack, mise does not pick a known-good package-manager version when a
 project declares none. Set the version in `mise.toml`, `package.json` or your
 global config.

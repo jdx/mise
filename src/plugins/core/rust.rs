@@ -2282,6 +2282,31 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
         Ok(())
     }
 
+    /// rust-toolchain.toml is read without trust, and `mise use` can write its
+    /// options into a mise.toml whose option values are templates.
+    #[tokio::test]
+    async fn rust_idiomatic_options_must_not_be_templates() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("rust-toolchain.toml");
+        for option in [
+            r#"profile = "{{ exec(command='id') }}""#,
+            r#"components = ["clippy", "{{ exec(command='id') }}"]"#,
+            r#"targets = ["{% set x = exec(command='id') %}"]"#,
+        ] {
+            std::fs::write(
+                &path,
+                format!("[toolchain]\nchannel = \"1.85.0\"\n{option}\n"),
+            )?;
+
+            let err = RustPlugin::new()
+                .parse_idiomatic_file_with_options(&path)
+                .await
+                .unwrap_err();
+            assert!(err.to_string().contains("template syntax"), "{err}");
+        }
+        Ok(())
+    }
+
     #[test]
     fn rust_lockfile_options_include_install_args() {
         let mut opts = opts_with("profile", "minimal");
