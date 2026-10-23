@@ -1251,10 +1251,8 @@ fn remove_credential_named_installs_in(
             let _ = file::remove_all(&link);
         }
     }
-    if !kept_versions {
-        if let Err(err) = file::remove_all(&named_dir) {
-            warn!("could not remove {}: {err:#}", display_path(&named_dir));
-        }
+    if !kept_versions && let Err(err) = file::remove_all(&named_dir) {
+        warn!("could not remove {}: {err:#}", display_path(&named_dir));
     }
 }
 
@@ -2163,7 +2161,12 @@ mod credential_tests {
         symlink(named.join("1.0.0/bin/tool"), shims.join("tool")).unwrap();
         symlink(outside.join("keep"), shims.join("other")).unwrap();
 
-        remove_credential_named_installs_in(&installs, "named", "clean", &[shims.clone()]);
+        remove_credential_named_installs_in(
+            &installs,
+            "named",
+            "clean",
+            std::slice::from_ref(&shims),
+        );
 
         assert!(!named.join("1.0.0").exists());
         assert!(named.join("latest").symlink_metadata().is_err());
@@ -2174,7 +2177,12 @@ mod credential_tests {
         assert!(outside.join("keep").exists(), "a symlink was followed");
 
         std::fs::create_dir_all(installs.join("clean/2.0.0")).unwrap();
-        remove_credential_named_installs_in(&installs, "named", "clean", &[shims.clone()]);
+        remove_credential_named_installs_in(
+            &installs,
+            "named",
+            "clean",
+            std::slice::from_ref(&shims),
+        );
         assert!(named.symlink_metadata().is_err());
         assert!(installs.join("clean/2.0.0").is_dir());
     }
