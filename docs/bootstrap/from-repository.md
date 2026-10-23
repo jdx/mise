@@ -92,11 +92,14 @@ mise bootstrap --adopt you/mise-config
 ```
 
 `OWNER/REPO` expands to `https://github.com/OWNER/REPO.git`. HTTPS and SSH URLs
-and local paths work too. mise clones the repository's default branch into
-`$MISE_CONFIG_DIR`, normally `~/.config/mise`, and runs bootstrap from it. The
-files stay in place, so every later mise command reads them as your global
-config. If you set `$MISE_GLOBAL_CONFIG_FILE`, mise clones into that file's
-directory and loads that file.
+and local paths work too. Write a relative path as `./OWNER/REPO`: mise refuses
+a bare `OWNER/REPO` that also exists in the current directory.
+
+mise clones the repository's default branch into `$MISE_CONFIG_DIR`, normally
+`~/.config/mise`, and runs bootstrap from it. The files stay in place, so every
+later mise command reads them as your global config. If you set
+`$MISE_GLOBAL_CONFIG_FILE`, mise clones into that file's directory and loads
+that file.
 
 To adopt another branch, such as one that holds a laptop's variant of your
 config, add `?ref=` to the repository:

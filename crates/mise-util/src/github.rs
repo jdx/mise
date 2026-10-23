@@ -373,7 +373,7 @@ async fn list_releases_from_api(
     require_assets: bool,
 ) -> Result<Vec<GithubRelease>> {
     let mut url = format!("{api_url}/repos/{repo}/releases?per_page=100");
-    let headers = get_headers(&url)?;
+    let headers = get_headers(&url, api_url)?;
     let (mut releases, mut headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<GithubRelease>, _>(&url, &headers)
         .await?;
@@ -392,7 +392,7 @@ async fn list_releases_from_api(
             break;
         }
         url = crate::http::resolve_pagination_url(&url, &next)?;
-        headers = get_headers(&url)?;
+        headers = get_headers(&url, api_url)?;
         let (more, h) = crate::http::HTTP_FETCH
             .json_headers_with_headers::<Vec<GithubRelease>, _>(&url, &headers)
             .await?;
@@ -966,7 +966,7 @@ async fn list_tags_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<Str
 /// [`list_tags_`] from `api_url` itself.
 async fn list_tags_from_api(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<String>> {
     let mut url = format!("{api_url}/repos/{repo}/tags?per_page=100");
-    let headers = get_headers(&url)?;
+    let headers = get_headers(&url, api_url)?;
     let (mut tags, mut headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<GithubTag>, _>(&url, &headers)
         .await?;
@@ -974,7 +974,7 @@ async fn list_tags_from_api(api_url: &str, repo: &str, list_all: bool) -> Result
     if list_all {
         while let Some(next) = next_page(&headers) {
             url = crate::http::resolve_pagination_url(&url, &next)?;
-            headers = get_headers(&url)?;
+            headers = get_headers(&url, api_url)?;
             let (more, h) = crate::http::HTTP_FETCH
                 .json_headers_with_headers::<Vec<GithubTag>, _>(&url, &headers)
                 .await?;
@@ -1069,7 +1069,7 @@ fn tag_commit_url(api_url: &str, repo: &str, tag: &str) -> String {
 /// tag whose date a release-age cutoff needs.
 pub async fn tag_commit_date(repo: &str, tag: &str) -> Result<Option<String>> {
     let url = tag_commit_url(API_URL, repo, tag);
-    let headers = get_headers(&url)?;
+    let headers = get_headers(&url, API_URL)?;
     let commit = crate::http::HTTP_FETCH
         .json_with_headers::<GithubCommit, _>(&url, &headers)
         .await?;
@@ -1131,7 +1131,7 @@ async fn list_tags_with_dates_from_api(
     repo: &str,
 ) -> Result<Vec<GithubTagWithDate>> {
     let mut url = format!("{api_url}/repos/{repo}/tags?per_page=100");
-    let headers = get_headers(&url)?;
+    let headers = get_headers(&url, api_url)?;
     let (mut tags, mut response_headers) = crate::http::HTTP_FETCH
         .json_headers_with_headers::<Vec<GithubTag>, _>(&url, &headers)
         .await?;
@@ -1139,7 +1139,7 @@ async fn list_tags_with_dates_from_api(
     // Fetch all pages when MISE_LIST_ALL_VERSIONS is set
     while let Some(next) = next_page(&response_headers) {
         url = crate::http::resolve_pagination_url(&url, &next)?;
-        response_headers = get_headers(&url)?;
+        response_headers = get_headers(&url, api_url)?;
         let (more, h) = crate::http::HTTP_FETCH
             .json_headers_with_headers::<Vec<GithubTag>, _>(&url, &response_headers)
             .await?;
@@ -1148,9 +1148,15 @@ async fn list_tags_with_dates_from_api(
     }
 
     // Fetch commit dates in parallel using the parallel utility
-    let results = crate::parallel::parallel(tags, |tag| async move {
+    // `commit.url` comes from the response, so it gets a token only at the
+    // origin of `api_url`.
+    let tags = tags
+        .into_iter()
+        .map(|tag| (tag, api_url.to_string()))
+        .collect();
+    let results = crate::parallel::parallel(tags, |(tag, api_url)| async move {
         let date = if let Some(commit) = tag.commit {
-            let headers = get_headers(&commit.url)?;
+            let headers = get_headers(&commit.url, &api_url)?;
             match crate::http::HTTP_FETCH
                 .json_with_headers::<GithubCommit, _>(&commit.url, &headers)
                 .await
@@ -1263,7 +1269,7 @@ pub async fn canonical_repo(repo: &str) -> Result<String> {
 /// this, so it costs little of the API's rate limit.
 async fn fetch_repository(repo: &str) -> Result<GithubRepositoryIds> {
     let url = format!("{API_URL}/repos/{repo}");
-    let headers = get_headers(&url)?;
+    let headers = get_headers(&url, API_URL)?;
     crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
         .await
@@ -1321,7 +1327,7 @@ pub async fn list_repo_dir(repo: &str, commit: &str, path: &str) -> Result<RepoD
 async fn repo_dir_from_api(url: &str, repo: &str, path: &str) -> Result<RepoDir> {
     // `get_headers` asks for the raw media type on contents URLs, which is
     // right for a file body and wrong for a directory listing.
-    let mut headers = get_headers(url)?;
+    let mut headers = get_headers(url, API_URL)?;
     headers.insert(
         reqwest::header::ACCEPT,
         HeaderValue::from_static("application/vnd.github+json"),
@@ -1416,11 +1422,16 @@ fn release_cache_key(api_url: &str, repo: &str, tag: &str, use_versions_host: bo
     } else {
         "direct"
     };
+    let api_url = strip_url_credentials_in_arg(api_url);
+    let api_url = api_url.as_ref();
+    // Kebab-casing alone is lossy (`hasura/graphql-engine` and
+    // `hasura-graphql/engine` come out the same), so the exact tuple is hashed in
+    // too, or one repository's cached release would answer for another's.
     format!(
-        "{}-{repo}-{tag}-{source}",
-        strip_url_credentials_in_arg(api_url)
+        "{}-{}-{source}",
+        format!("{api_url}-{repo}-{tag}").to_kebab_case(),
+        crate::hash::hash_to_str(&(api_url, repo, tag))
     )
-    .to_kebab_case()
 }
 
 #[doc(hidden)]
@@ -1551,7 +1562,7 @@ async fn get_release_from_api(api_url: &str, repo: &str, tag: &str) -> Result<Gi
             urlencoding::encode(tag)
         )
     };
-    let headers = get_headers(&url)?;
+    let headers = get_headers(&url, api_url)?;
     crate::http::HTTP_FETCH
         .json_with_headers(url, &headers)
         .await
@@ -1655,12 +1666,16 @@ fn token_lookup_hosts(host: &str) -> Vec<&str> {
     }
 }
 
-/// Returns true for GitHub REST API URLs.
+/// Returns true for URLs shaped like the GitHub REST API.
 ///
 /// Auth and API-version headers must be scoped to these URLs only. Browser URLs
 /// such as github.com release downloads and content/CDN URLs under
 /// githubusercontent.com are not REST API URLs and can reject or mishandle those
 /// headers.
+///
+/// A GitHub Enterprise Server is recognised by its `/api/v3` path, which any host
+/// can serve, so this alone does not decide whether a token is sent: see
+/// [`may_send_token`].
 pub fn is_github_api_url(url: &url::Url) -> bool {
     let Some(host) = url.host_str() else {
         return false;
@@ -1672,6 +1687,54 @@ pub fn is_github_api_url(url: &url::Url) -> bool {
             && !host.ends_with(".githubusercontent.com")
             && !host.ends_with(".ghe.com")
             && is_ghes_api_path(url.path()))
+}
+
+/// Whether a token may be sent to the GitHub REST API URL `url`.
+///
+/// GitHub's own API hosts are known by name and get one over https only. An
+/// Enterprise Server is known only from configuration, so it has to share the
+/// origin of `api_url`, the API base URL the caller was configured with, and
+/// be reached over https as well. The
+/// environment tokens apply to every host, so nothing further down would keep
+/// them from whoever put `/api/v3` in a task file URL, a release link or a
+/// `Link: rel="next"` header.
+fn may_send_token(url: &url::Url, api_url: &str) -> bool {
+    may_send_token_with(url, api_url, &Settings::get().github.enterprise_hosts)
+}
+
+fn is_loopback(url: &url::Url) -> bool {
+    match url.host() {
+        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    }
+}
+
+/// [`may_send_token`], where `enterprise_hosts` (`github.enterprise_hosts`, a
+/// global-only setting) are Enterprise Servers the user named, whose `/api/v3`
+/// URLs get a token over https whatever `api_url` is.
+fn may_send_token_with(url: &url::Url, api_url: &str, enterprise_hosts: &[String]) -> bool {
+    match url.host_str() {
+        Some(host) if host == "api.github.com" || is_ghe_com_api_host(host) => {
+            url.scheme() == "https"
+        }
+        // An Enterprise Server gets one over https too: a plain-http `api_url`
+        // would send the token across the network in the clear. Loopback never
+        // leaves the machine, such as a local proxy in front of the server.
+        Some(host) => {
+            (url.scheme() == "https" || is_loopback(url))
+                && is_github_api_url(url)
+                && (url::Url::parse(api_url).is_ok_and(|api_url| url.origin() == api_url.origin())
+                    || enterprise_hosts.iter().any(|listed| {
+                        listed
+                            .trim()
+                            .trim_end_matches('.')
+                            .eq_ignore_ascii_case(host)
+                    }))
+        }
+        None => false,
+    }
 }
 
 /// Pick which URL to use for a GitHub download.
@@ -1712,20 +1775,44 @@ pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> Strin
     }
 }
 
+/// The record that GitHub confirmed the release asset `api_url` is the file
+/// `browser_url` downloads. GitHub does not reuse asset IDs, so the answer
+/// stays true.
+fn confirmed_asset_path(browser_url: &str, api_url: &str) -> PathBuf {
+    cache_dir()
+        .join("confirmed-assets")
+        .join(crate::hash::hash_to_str(&(api_url, browser_url)))
+}
+
+fn remember_confirmed_asset(path: &Path, browser_url: &str, api_url: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        crate::file::create_dir_all(parent)?;
+    }
+    crate::file::write(path, format!("{api_url}\n{browser_url}\n"))?;
+    Ok(())
+}
+
 /// `api_url` if the GitHub release asset it names is the file `browser_url`
 /// downloads; otherwise `browser_url`, which then fails on its own.
 ///
 /// mise-versions can pair a correct browser URL with any asset ID in the
 /// repository, and the ID is only used here, when the browser URL can't be.
 /// One metadata request settles it: GitHub reports which tag and file the ID
-/// is. Only IDs mise-versions supplied are checked, so GitHub's own release
-/// data (private repos, where this fallback is routine) costs nothing extra.
-async fn checked_api_asset_url(browser_url: &str, api_url: &str) -> String {
+/// is. Only IDs mise-versions supplied, or may have supplied to a lockfile they
+/// were read from, are checked, so GitHub's own release data (private repos,
+/// where this fallback is routine) costs nothing extra. GitHub's answer is
+/// recorded, so an ID it confirmed is not asked about again, and an offline
+/// install still finds the download kept under the API URL.
+pub async fn checked_api_asset_url(browser_url: &str, api_url: &str) -> String {
     if !crate::versions_host::is_mirrored_asset_api_url(api_url) {
         return api_url.to_string();
     }
+    let confirmed = confirmed_asset_path(browser_url, api_url);
+    if confirmed.is_file() {
+        return api_url.to_string();
+    }
     let asset = async {
-        let mut headers = get_headers(api_url)?;
+        let mut headers = get_headers(api_url, API_URL)?;
         headers.insert(
             "accept",
             HeaderValue::from_static("application/vnd.github+json"),
@@ -1736,6 +1823,9 @@ async fn checked_api_asset_url(browser_url: &str, api_url: &str) -> String {
     };
     match asset.await {
         Ok(asset) if same_release_download(browser_url, &asset.browser_download_url) => {
+            if let Err(err) = remember_confirmed_asset(&confirmed, browser_url, api_url) {
+                debug!("could not record the confirmed GitHub release asset {api_url}: {err:#}");
+            }
             api_url.to_string()
         }
         Ok(asset) => {
@@ -2117,13 +2207,16 @@ pub fn resolve_token_for_api_url(api_url: &str) -> Option<String> {
     resolve_token(host).map(|(t, _)| t)
 }
 
-pub fn get_headers<U: IntoUrl>(url: U) -> Result<HeaderMap> {
+/// Headers for a GitHub request to `url`. `api_url` is the API base URL the
+/// caller is configured with ([`API_URL`] unless a tool option or setting names
+/// another), and the only Enterprise origin that gets a token.
+pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     let url = url
         .into_url()
         .wrap_err("invalid request URL for GitHub auth headers")?;
 
-    if is_github_api_url(&url) {
+    if may_send_token(&url, api_url) {
         let host = url.host_str().unwrap_or("github.com");
         if let Some((token, source)) = resolve_token(host) {
             remember_token_source(host, &token, source);

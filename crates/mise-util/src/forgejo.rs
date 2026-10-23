@@ -153,8 +153,21 @@ fn is_published_release(release: &ForgejoRelease) -> bool {
     !release.draft
 }
 
+/// Key of one release's persisted cache entry. Kebab-casing alone is lossy, so
+/// the exact tuple is hashed in too: `owner/a-b` and `owner-a/b` (or a moved
+/// repo/tag boundary) would otherwise answer for each other.
+fn release_cache_key(api_url: &str, repo: &str, tag: &str) -> String {
+    let api_url = strip_url_credentials_in_arg(api_url);
+    let api_url = api_url.as_ref();
+    format!(
+        "{}-{}",
+        format!("{api_url}-{repo}-{tag}").to_kebab_case(),
+        crate::hash::hash_to_str(&(api_url, repo, tag))
+    )
+}
+
 pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRelease> {
-    let key = format!("{}-{repo}-{tag}", strip_url_credentials_in_arg(api_url)).to_kebab_case();
+    let key = release_cache_key(api_url, repo, tag);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -456,6 +469,29 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".to_string(),
             assets: vec![],
         }
+    }
+
+    #[test]
+    fn release_cache_key_separates_names_kebab_case_collapses() {
+        let api = "https://codeberg.org/api/v1";
+        let key = release_cache_key(api, "hasura/graphql-engine", "v2.40.0");
+        assert_ne!(
+            key,
+            release_cache_key(api, "hasura-graphql/engine", "v2.40.0")
+        );
+        assert_ne!(
+            key,
+            release_cache_key(api, "hasura/graphqlEngine", "v2.40.0")
+        );
+        // the repo/tag boundary moved
+        assert_ne!(
+            release_cache_key(api, "owner/tool", "v1-0"),
+            release_cache_key(api, "owner/tool-v1", "0")
+        );
+        assert_eq!(
+            key,
+            release_cache_key(api, "hasura/graphql-engine", "v2.40.0")
+        );
     }
 
     #[test]

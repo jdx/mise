@@ -563,6 +563,16 @@ pub(crate) fn version_requires_trust(version: &str) -> bool {
     version.starts_with("path:")
 }
 
+/// Whether a `[tools]` key only takes effect once the config is trusted.
+///
+/// Inline options (`tool[postinstall=...]`) can run code or redirect a backend.
+/// An `spm:` package named by the URL of a self-hosted forge makes mise derive
+/// that host's API from the name and send it the user's forge token, as an
+/// `api_url` option would.
+fn tool_key_requires_trust(tool: &str) -> bool {
+    tool.contains('[') || crate::backend::spm::tool_key_selects_api_host(tool)
+}
+
 /// Whether a detected config requires trust before tracked loading may parse it.
 pub(super) async fn detection_requires_trust(path: &Path, detection: &ConfigFileDetection) -> bool {
     if Settings::safe_mode() {

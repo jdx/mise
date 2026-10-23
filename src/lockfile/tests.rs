@@ -4541,6 +4541,140 @@ fn test_set_platform_info_does_not_carry_provenance_to_changed_checksum() {
 }
 
 #[test]
+fn mise_versions_checksum_is_kept_but_never_a_download_pin() {
+    let value: toml::Value = toml::from_str(
+        r#"
+checksum = "sha256:aaaa"
+checksum_source = "mise-versions"
+url = "https://github.com/acme/b/releases/download/v1/b.tar.gz"
+"#,
+    )
+    .unwrap();
+    let marked = PlatformInfo::try_from(value).unwrap();
+    assert_eq!(marked.checksum.as_deref(), Some("sha256:aaaa"));
+    assert_eq!(marked.checksum_source, Some(ChecksumSource::VersionsHost));
+    // Compared after the download, but it names no kept file to reuse.
+    assert_eq!(marked.pin_checksum(), None);
+
+    // Written back as it was read.
+    let written = toml::Value::from(marked.clone());
+    assert_eq!(
+        written.get("checksum_source").and_then(|v| v.as_str()),
+        Some("mise-versions")
+    );
+
+    // The mark follows its checksum through a merge, and a checksum confirmed
+    // by a download is a pin again.
+    let confirmed = PlatformInfo {
+        checksum: Some("sha256:aaaa".to_string()),
+        url: marked.url.clone(),
+        ..Default::default()
+    };
+    assert_eq!(
+        confirmed.pin_checksum().map(String::as_str),
+        Some("sha256:aaaa")
+    );
+    assert_eq!(confirmed.merge_with(&marked).checksum_source, None);
+    // The same checksum, confirmed on either side, stays a pin.
+    let merged = marked.merge_with(&confirmed);
+    assert_eq!(merged.checksum_source, None);
+    assert_eq!(
+        merged.pin_checksum().map(String::as_str),
+        Some("sha256:aaaa")
+    );
+    let artifact = |source| ArtifactInfo {
+        checksum: Some("sha256:bbbb".to_string()),
+        checksum_source: source,
+        url: "https://github.com/acme/b/releases/download/v1/extra.tar.gz".to_string(),
+        ..Default::default()
+    };
+    let merged = PlatformInfo {
+        additional_artifacts: vec![artifact(Some(ChecksumSource::VersionsHost))],
+        ..marked.clone()
+    }
+    .merge_with(&PlatformInfo {
+        additional_artifacts: vec![artifact(None)],
+        ..confirmed.clone()
+    });
+    assert_eq!(merged.additional_artifacts[0].checksum_source, None);
+    let mut relocked = Lockfile::default();
+    relocked.set_platform_info(
+        "tool",
+        "1",
+        None,
+        &Default::default(),
+        "linux-x64",
+        confirmed.clone(),
+    );
+    relocked.set_platform_info(
+        "tool",
+        "1",
+        None,
+        &Default::default(),
+        "linux-x64",
+        marked.clone(),
+    );
+    assert_eq!(
+        relocked.tools["tool"][0].platforms["linux-x64"].checksum_source,
+        None
+    );
+    let unset = PlatformInfo {
+        url: marked.url.clone(),
+        ..Default::default()
+    };
+    assert_eq!(
+        unset.merge_with(&marked).checksum_source,
+        Some(ChecksumSource::VersionsHost)
+    );
+
+    let mut lockfile = Lockfile::default();
+    lockfile.set_platform_info(
+        "tool",
+        "1",
+        None,
+        &Default::default(),
+        "linux-x64",
+        marked.clone(),
+    );
+    lockfile.set_platform_info("tool", "1", None, &Default::default(), "linux-x64", unset);
+    let tool = &lockfile.tools["tool"][0];
+    assert_eq!(
+        tool.platforms["linux-x64"].checksum_source,
+        Some(ChecksumSource::VersionsHost)
+    );
+}
+
+#[test]
+fn locked_github_asset_ids_are_confirmed_before_use() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    file::write(
+        &path,
+        r#"
+[[tools."github:acme/locked"]]
+version = "1.0.0"
+backend = "github:acme/locked"
+[tools."github:acme/locked"."platforms.linux-x64"]
+url = "https://github.com/acme/locked/releases/download/v1.0.0/tool.tar.gz"
+url_api = "https://api.github.com/repos/acme/locked/releases/assets/1"
+[[tools."github:acme/locked"."platforms.linux-x64".additional_artifacts]]
+url = "https://github.com/acme/locked/releases/download/v1.0.0/extra.tar.gz"
+url_api = "https://api.github.com/repos/acme/locked/releases/assets/2"
+"#,
+    )
+    .unwrap();
+
+    Lockfile::read(&path).unwrap();
+    for id in [1, 2] {
+        let url_api = format!("https://api.github.com/repos/acme/locked/releases/assets/{id}");
+        assert!(
+            crate::versions_host::is_mirrored_asset_api_url(&url_api),
+            "{url_api}"
+        );
+    }
+}
+
+#[test]
 fn test_credential_query_params_are_found_by_name() {
     for (text, param) in [
         (
@@ -4718,6 +4852,7 @@ fn test_lockfile_write_refuses_credential_queries() {
         url_api: None,
         provenance: None,
         provenance_verified: None,
+        checksum_source: None,
     }];
     lockfile
         .tools

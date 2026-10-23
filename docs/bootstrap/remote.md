@@ -313,11 +313,15 @@ mise bootstrap remote --host devbox --install-mise --adopt you/mise-config
 ```
 
 `OWNER/REPO` expands to `https://github.com/OWNER/REPO.git`. HTTPS and SSH URLs,
-and local paths on this machine, work too. Other transports and custom Git
-helpers are rejected, and clones do not follow HTTP redirects, so use the
-repository's canonical URL. `--adopt` cannot be combined with `--source`,
-`--copy-link`, `--copy-links`, or `--exclude`. Hosts still come from `--host`
-or the inventory, never from the adopted repository's inventory.
+and local paths on this machine, work too. Write a relative path as
+`./OWNER/REPO`: mise refuses a bare `OWNER/REPO` that also exists in the current
+directory.
+
+Other transports and custom Git helpers are rejected, and clones do not follow
+HTTP redirects, so use the repository's canonical URL. `--adopt` cannot be
+combined with `--source`, `--copy-link`, `--copy-links`, or `--exclude`. Hosts
+still come from `--host` or the inventory, never from the adopted repository's
+inventory.
 
 mise fetches the repository once on this machine, with this machine's Git
 credentials, pins that commit for every selected host, and sends it to each one

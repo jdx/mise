@@ -55,6 +55,23 @@ impl SelfUpdateSource {
             && self.repository == DEFAULT_SELF_UPDATE_REPOSITORY
     }
 
+    /// Headers for a request to `url`: GitHub's usual API auth, plus the token
+    /// for the configured `api_url` on that same origin. A configured API may
+    /// use any HTTPS host and path, so its token is resolved explicitly, but it
+    /// never goes to another origin, such as a download host.
+    pub(crate) fn request_headers(&self, url: &str) -> Result<reqwest::header::HeaderMap> {
+        let mut headers = crate::github::get_headers(url, &self.api_url)?;
+        if url::Url::parse(url)?.origin() == url::Url::parse(&self.api_url)?.origin()
+            && let Some(token) = crate::github::resolve_token_for_api_url(&self.api_url)
+        {
+            headers.insert(
+                reqwest::header::AUTHORIZATION,
+                crate::tokens::bearer_header("GitHub", &token)?,
+            );
+        }
+        Ok(headers)
+    }
+
     /// Whether mise's own releases are read from mise-versions instead of
     /// api.github.com: the default source, unless `use_versions_host` is off.
     pub(crate) fn uses_versions_host(&self) -> bool {
@@ -450,7 +467,7 @@ async fn fetch_release_index(source: &SelfUpdateSource) -> Result<String> {
                 "{}/repos/{}/releases?per_page=100&page={page}",
                 source.api_url, source.repository
             );
-            let headers = crate::github::get_headers(&url)?;
+            let headers = source.request_headers(&url)?;
             let (releases, _): (Vec<crate::github::GithubRelease>, _) = crate::http::HTTP
                 .json_headers_with_headers(&url, &headers)
                 .await?;
@@ -482,6 +499,31 @@ async fn fetch_release_index(source: &SelfUpdateSource) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A configured API on any path (here not `/api/v3`) gets its token on its
+    /// own origin, for the release index and the downloads alike, and never on
+    /// another origin.
+    #[test]
+    fn configured_api_token_follows_its_origin() {
+        let mut env = mise_util::testing::EnvVarGuard::new();
+        env.set("MISE_GITHUB_ENTERPRISE_TOKEN", "ghes-self-update-token");
+        let source = SelfUpdateSource {
+            api_url: "https://releases.example.com/github".to_string(),
+            repository: "acme/mise".to_string(),
+        };
+        let auth = |url: &str| {
+            source
+                .request_headers(url)
+                .unwrap()
+                .get(reqwest::header::AUTHORIZATION)
+                .map(|v| v.to_str().unwrap().to_string())
+        };
+        assert_eq!(
+            auth("https://releases.example.com/github/repos/acme/mise/releases?page=1").as_deref(),
+            Some("Bearer ghes-self-update-token")
+        );
+        assert_eq!(auth("https://downloads.example.com/mise.zip"), None);
+    }
 
     #[test]
     fn self_update_age_precedence() {

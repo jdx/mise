@@ -39,6 +39,30 @@ fn releases_cache_key_separates_the_suffix_collision() {
 }
 
 #[test]
+fn release_cache_key_separates_names_kebab_case_collapses() {
+    let api = "https://api.github.com";
+    let key = release_cache_key(api, "hasura/graphql-engine", "v2.40.0", false);
+    // Kebab-casing turns `/`, `-`, `.`, `_` and a case change into one `-`, so
+    // these would all share the persisted entry of one repository's release.
+    for (repo, tag) in [
+        ("hasura-graphql/engine", "v2.40.0"),
+        ("hasura/graphqlEngine", "v2.40.0"),
+        ("hasura/graphql.engine", "v2.40.0"),
+        ("hasura/graphql-engine-v2", "40.0"),
+    ] {
+        assert_ne!(
+            key,
+            release_cache_key(api, repo, tag, false),
+            "{repo} {tag}"
+        );
+    }
+    assert_eq!(
+        key,
+        release_cache_key(api, "hasura/graphql-engine", "v2.40.0", false)
+    );
+}
+
+#[test]
 fn stopping_stable_release_ignores_assets_unless_asked() {
     let mut assetless = make_release("v1.0.0");
     let mut nightly = make_release("v2.0.0-nightly");

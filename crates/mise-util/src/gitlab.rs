@@ -147,6 +147,18 @@ pub async fn project_identity(path: &str) -> Result<ProjectIdentity> {
 
 pub static API_URL: &str = "https://gitlab.com/api/v4";
 
+/// Key of a persisted release, release-list or tag-list entry. Kebab-casing
+/// alone is lossy (`group/a-b` and `group-a/b` come out the same), so the exact
+/// parts are hashed in too, or one project's cached data would answer for
+/// another's.
+fn cache_key(parts: &[&str]) -> String {
+    format!(
+        "{}-{}",
+        parts.join("-").to_kebab_case(),
+        crate::hash::hash_to_str(&parts)
+    )
+}
+
 pub static API_PATH: &str = "/api/v4";
 
 async fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>>> {
@@ -190,7 +202,7 @@ async fn get_release_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<GitlabRe
 
 #[allow(dead_code)]
 pub async fn list_releases(repo: &str) -> Result<Vec<GitlabRelease>> {
-    let key = repo.to_kebab_case();
+    let key = cache_key(&[repo]);
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -202,7 +214,8 @@ pub async fn list_releases(repo: &str) -> Result<Vec<GitlabRelease>> {
 }
 
 pub async fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<GitlabRelease>> {
-    let key = format!("{}-{repo}", strip_url_credentials_in_arg(api_url)).to_kebab_case();
+    let key_api_url = strip_url_credentials_in_arg(api_url);
+    let key = cache_key(&[&key_api_url, repo]);
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -249,7 +262,7 @@ async fn list_releases_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec
 
 #[allow(dead_code)]
 pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
-    let key = repo.to_kebab_case();
+    let key = cache_key(&[repo]);
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -261,7 +274,8 @@ pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
 }
 
 pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
-    let key = format!("{}-{repo}", strip_url_credentials_in_arg(api_url)).to_kebab_case();
+    let key_api_url = strip_url_credentials_in_arg(api_url);
+    let key = cache_key(&[&key_api_url, repo]);
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -302,7 +316,7 @@ async fn list_tags_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<Str
 
 #[allow(dead_code)]
 pub async fn get_release(repo: &str, tag: &str) -> Result<GitlabRelease> {
-    let key = format!("{repo}-{tag}").to_kebab_case();
+    let key = cache_key(&[repo, tag]);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -312,7 +326,8 @@ pub async fn get_release(repo: &str, tag: &str) -> Result<GitlabRelease> {
 }
 
 pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRelease> {
-    let key = format!("{}-{repo}-{tag}", strip_url_credentials_in_arg(api_url)).to_kebab_case();
+    let key_api_url = strip_url_credentials_in_arg(api_url);
+    let key = cache_key(&[&key_api_url, repo, tag]);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -629,6 +644,29 @@ fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cache_key_separates_names_kebab_case_collapses() {
+        let key = cache_key(&[API_URL, "group/graphql-engine", "v2.40.0"]);
+        assert_ne!(
+            key,
+            cache_key(&[API_URL, "group-graphql/engine", "v2.40.0"])
+        );
+        assert_ne!(key, cache_key(&[API_URL, "group/graphqlEngine", "v2.40.0"]));
+        // the repo/tag boundary moved
+        assert_ne!(
+            cache_key(&[API_URL, "group/tool", "v1-0"]),
+            cache_key(&[API_URL, "group/tool-v1", "0"])
+        );
+        assert_ne!(
+            cache_key(&[API_URL, "group/a-b"]),
+            cache_key(&[API_URL, "group-a/b"])
+        );
+        assert_eq!(
+            key,
+            cache_key(&[API_URL, "group/graphql-engine", "v2.40.0"])
+        );
+    }
 
     #[test]
     fn test_parse_gitlab_tokens() {

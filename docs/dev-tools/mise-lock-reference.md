@@ -111,18 +111,19 @@ to another backend; see
 
 ### Platform fields {#platform-information}
 
-| Field                  | Meaning                                                                                                                                                                                                 |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                  | Download URL of the artifact                                                                                                                                                                            |
-| `url_api`              | API URL of the same asset, for sources that need an authenticated API request to download it                                                                                                            |
-| `checksum`             | `<algorithm>:<hex>`, usually `sha256:`; `blake3:` when mise hashes the download itself, or the algorithm the aqua registry declares, such as `sha512:`                                                  |
-| `provenance`           | The verification mise used: `slsa`, `cosign`, `minisign` or `github-attestations`; SLSA can carry its file URL as `{ slsa = { url = "…" } }`                                                            |
-| `install`              | `"source"` when the entry describes a source build (Node.js, Erlang)                                                                                                                                    |
-| `additional_artifacts` | Further release assets extracted into the same installation, from [`additional_asset_patterns`](/dev-tools/backends/github.html#additional-asset-patterns), each with its own `url` and `checksum`      |
-| `conda_deps`           | File names of the tool's dependency packages in `[conda-packages]`                                                                                                                                      |
-| `signer`               | packslip: the signer the project committed to, as `scheme:identity`                                                                                                                                     |
-| `attested_by`          | packslip: `"repackager"` when a repackager signed the packslip instead of the vendor                                                                                                                    |
-| `repository_ids`       | packslip, version 3: the forge's repository ID from the signing certificate, such as `{ repository = "922514152" }`; see [renamed repositories](/dev-tools/backends/packslip.html#renamed-repositories) |
+| Field                  | Meaning                                                                                                                                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                  | Download URL of the artifact                                                                                                                                                                              |
+| `url_api`              | API URL of the same asset, for sources that need an authenticated API request to download it                                                                                                              |
+| `checksum`             | `<algorithm>:<hex>`, usually `sha256:`; `blake3:` when mise hashes the download itself, or the algorithm the aqua registry declares, such as `sha512:`                                                    |
+| `checksum_source`      | `"mise-versions"` when `mise lock` took the checksum from mise-versions without downloading; it is compared after a download but never reuses a kept one ([details](/dev-tools/mise-lock.html#checksums)) |
+| `provenance`           | The verification mise used: `slsa`, `cosign`, `minisign` or `github-attestations`; SLSA can carry its file URL as `{ slsa = { url = "…" } }`                                                              |
+| `install`              | `"source"` when the entry describes a source build (Node.js, Erlang)                                                                                                                                      |
+| `additional_artifacts` | Further release assets extracted into the same installation, from [`additional_asset_patterns`](/dev-tools/backends/github.html#additional-asset-patterns), each with its own `url` and `checksum`        |
+| `conda_deps`           | File names of the tool's dependency packages in `[conda-packages]`                                                                                                                                        |
+| `signer`               | packslip: the signer the project committed to, as `scheme:identity`                                                                                                                                       |
+| `attested_by`          | packslip: `"repackager"` when a repackager signed the packslip instead of the vendor                                                                                                                      |
+| `repository_ids`       | packslip, version 3: the forge's repository ID from the signing certificate, such as `{ repository = "922514152" }`; see [renamed repositories](/dev-tools/backends/packslip.html#renamed-repositories)   |
 
 mise still reads some fields that it no longer writes. `size` is ignored.
 `provenance_verified` is kept unchanged on unchanged artifacts but no longer

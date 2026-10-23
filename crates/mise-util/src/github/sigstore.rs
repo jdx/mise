@@ -1518,30 +1518,39 @@ mod tests {
         source_repository: Some("mozilla/sops"),
     };
 
-    #[test]
-    fn test_slsa_accepts_a_rename_github_confirms() {
+    /// Verifies the sops provenance against `SOPS_SIGNER_BEFORE_TRANSFER`,
+    /// with `confirm` standing in for api.github.com's answer to whether two
+    /// names are one repository. Each verification is a full Sigstore check,
+    /// so each test runs only one to stay within the per-test time limit.
+    fn verify_sops_rename(
+        confirm: &(dyn Fn(&str, &str, &str) -> bool + Sync),
+    ) -> AttestationResult<bool> {
         let _settings = SettingsGuard::new(None);
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .unwrap();
-        let verify = |confirm: &(dyn Fn(&str, &str, &str) -> bool + Sync)| {
-            runtime.block_on(verify_slsa_provenance_artifacts_with(
+            .unwrap()
+            .block_on(verify_slsa_provenance_artifacts_with(
                 sops_provenance(),
                 &[sops_artifact()],
                 1,
                 SOPS_SIGNER_BEFORE_TRANSFER,
                 Some(confirm),
             ))
-        };
+    }
 
+    #[test]
+    fn test_slsa_refuses_a_rename_github_does_not_confirm() {
         // Without GitHub's word, provenance built in getsops/sops is not
         // mozilla/sops's.
-        let err = verify(&|_, _, _| false).unwrap_err();
+        let err = verify_sops_rename(&|_, _, _| false).unwrap_err();
         assert!(err.to_string().contains("built in getsops/sops"), "{err}");
+    }
 
+    #[test]
+    fn test_slsa_accepts_a_rename_github_confirms() {
         // api.github.com says getsops/sops is mozilla/sops, transferred.
-        let confirmed = verify(&|owner, repo, other| {
+        let confirmed = verify_sops_rename(&|owner, repo, other| {
             (owner, repo, other) == ("mozilla", "sops", "getsops/sops")
         });
         assert!(confirmed.unwrap());

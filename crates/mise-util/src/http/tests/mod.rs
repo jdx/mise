@@ -658,20 +658,20 @@ async fn test_download_reuses_pinned_file_without_a_request() {
         .unwrap();
     assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
 
-    // A different URL with the same pin is served without any request.
+    // The same URL with the same pin is served without any request.
     std::fs::remove_file(&dest).unwrap();
-    let other = "http://127.0.0.1:1/elsewhere";
     client
-        .download_file_pinned(other, &dest, Some(&pin), None)
+        .download_file_pinned(&url, &dest, Some(&pin), None)
         .await
         .unwrap();
     assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
 
-    // A blob that no longer matches the pin is not used.
-    let blob = stored_blob(cache.path());
-    std::fs::write(&blob, b"tampered").unwrap();
+    // Another URL with the same pin is not: a checksum (from a lockfile, say)
+    // must not hand back a file another URL served. It is requested, and
+    // nothing answers there.
     std::fs::remove_file(&dest).unwrap();
+    let other = "http://127.0.0.1:1/elsewhere";
     assert!(
         client
             .download_file_pinned(other, &dest, Some(&pin), None)
@@ -679,6 +679,110 @@ async fn test_download_reuses_pinned_file_without_a_request() {
             .is_err()
     );
 
+    // A blob that no longer matches the pin is not used.
+    let blob = stored_blob(cache.path());
+    std::fs::write(&blob, b"tampered").unwrap();
+    let _ = std::fs::remove_file(&dest);
+    assert!(
+        client
+            .download_file_pinned(&url, &dest, Some(&pin), None)
+            .await
+            .is_err()
+    );
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
+/// Downloads of the same file from different URLs, kept at the same time,
+/// each add their URL to the pin entry; none is lost to another's write.
+#[test]
+fn test_concurrent_pinned_keeps_record_every_url() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let dir = tempfile::tempdir().unwrap();
+    let hello = dir.path().join("hello");
+    std::fs::write(&hello, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&hello, None).unwrap()
+    );
+    let urls: Vec<String> = (0..24)
+        .map(|i| format!("https://mirror-{i}.example.com/artifact"))
+        .collect();
+    let barrier = std::sync::Barrier::new(urls.len());
+    std::thread::scope(|scope| {
+        for (i, url) in urls.iter().enumerate() {
+            let (dir, pin, barrier) = (dir.path(), &pin, &barrier);
+            scope.spawn(move || {
+                let path = dir.join(format!("copy-{i}")).join("artifact");
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(&path, b"hello").unwrap();
+                barrier.wait();
+                cas::store(
+                    &path,
+                    cas::Keep {
+                        request_hash: &format!("request-{i}"),
+                        url,
+                        pin: Some(pin),
+                        validator: None,
+                        effective_filename: None,
+                    },
+                )
+                .unwrap();
+            });
+        }
+    });
+    for url in &urls {
+        assert!(cas::lookup_pin(&pin, url).is_some(), "{url} was lost");
+    }
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
+/// A pin index lock that stays held (a stuck process, say) costs the URL
+/// record, not the download: the blob is still kept and handed back.
+#[test]
+fn test_a_stuck_pin_lock_keeps_the_download() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    *cas::TEST_PIN_LOCK_WAIT.lock().unwrap() = Some(Duration::from_millis(100));
+    let held = crate::lock_file::LockFile::at(&cache.path().join("pins.lock"))
+        .lock()
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("artifact");
+    std::fs::write(&path, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&path, None).unwrap()
+    );
+    let url = "https://example.com/artifact";
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (path, thread_pin) = (path.clone(), pin.clone());
+    std::thread::spawn(move || {
+        let kept = cas::store(
+            &path,
+            cas::Keep {
+                request_hash: "stuck-lock",
+                url,
+                pin: Some(&thread_pin),
+                validator: None,
+                effective_filename: None,
+            },
+        );
+        let _ = tx.send(kept.map(|blob| blob.is_some()));
+    });
+    let kept = rx
+        .recv_timeout(Duration::from_secs(30))
+        .expect("keeping the download waited on the pin lock")
+        .unwrap();
+    assert!(kept, "the download was not kept");
+    assert!(cas::lookup_pin(&pin, url).is_none());
+    drop(held);
+
+    *cas::TEST_PIN_LOCK_WAIT.lock().unwrap() = None;
     *cas::TEST_ROOT.lock().unwrap() = None;
 }
 
@@ -782,13 +886,81 @@ async fn test_download_replaces_a_damaged_stored_file() {
     // stored file itself.
     std::fs::remove_file(&dest).unwrap();
     std::fs::write(&dest, b"stale").unwrap();
-    let (port, _) = spawn_canned_server(vec![]).await;
-    let other = format!("http://127.0.0.1:{port}/artifact.bin");
     client
-        .download_file_linked(&other, &dest, &HeaderMap::new(), Some(&pin), None)
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
         .await
         .unwrap();
     assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_download_that_fails_its_pin_is_not_kept() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    // The wrong bytes, sent with the validator the right file has.
+    let wrong = concat!(
+        "HTTP/1.1 200 OK\r\n",
+        "Content-Length: 5\r\n",
+        "ETag: \"artifact-v1\"\r\n",
+        "Connection: close\r\n",
+        "\r\n",
+        "wrong"
+    );
+    let (port, count, requests) = spawn_recording_server(vec![
+        wrong,
+        wrong,
+        wrong,
+        not_modified_response(),
+        cacheable_download_response(),
+    ])
+    .await;
+    let url = format!("http://127.0.0.1:{port}/artifact.bin");
+    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("artifact.bin");
+    let hello = dir.path().join("hello");
+    std::fs::write(&hello, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&hello, None).unwrap()
+    );
+
+    // The caller gets the file to reject, and nothing of it is kept: the next
+    // download is not conditional, so the server is not asked to confirm it.
+    client
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"wrong");
+    assert!(!cache.path().join("blobs").exists());
+    assert!(!cache.path().join("urls").exists());
+    client
+        .download_file_pinned(&url, &dest, Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"wrong");
+    assert!(!cache.path().join("blobs").exists());
+    assert!(
+        !requests.lock().unwrap()[1]
+            .to_lowercase()
+            .contains("if-none-match")
+    );
+
+    // A file kept by an unpinned download of the same URL is not what a 304
+    // answers a pinned one with when it doesn't match the pin.
+    client.download_file(&url, &dest, None).await.unwrap();
+    assert!(cache.path().join("urls").exists());
+    std::fs::remove_file(&dest).unwrap();
+    client
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 5);
 
     *cas::TEST_ROOT.lock().unwrap() = None;
 }
