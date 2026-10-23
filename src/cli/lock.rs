@@ -4,6 +4,8 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use mise_util::redactions::{redact_json, redact_output};
+
 use crate::config::config_file::trust_check;
 use crate::config::{Config, ConfigMap, SettingsExt};
 use crate::file::display_path;
@@ -724,6 +726,8 @@ impl Lock {
         }
 
         if self.json && installed.is_none() {
+            // Tool names and backends can spell URL credentials.
+            let changes = redact_json(serde_json::to_value(&changes)?);
             miseprintln!("{}", serde_json::to_string_pretty(&changes)?);
         }
 
@@ -1055,7 +1059,7 @@ impl Lock {
             target
                 .tools
                 .iter()
-                .map(|(ba, tv)| format!("{}@{}", ba.short, tv.version))
+                .map(|(ba, tv)| format!("{}@{}", redact_output(&ba.short), tv.version))
                 .collect::<Vec<_>>()
                 .join(", ")
         );
@@ -1353,7 +1357,7 @@ impl Lock {
                     for bump in &bumps {
                         miseprintln!(
                             "Would update {} from {} to {} in {}",
-                            bump.tool_name,
+                            redact_output(&bump.tool_name),
                             bump.old_version,
                             bump.new_version,
                             display_path(&bump.config_path)
@@ -1541,7 +1545,7 @@ impl Lock {
         for (ba, tv) in tools {
             let entry = new_versions
                 .entry(crate::toolset::install_state::state_short(&ba.short).into_owned())
-                .or_insert_with(|| (Some(ba.full()), Vec::new()));
+                .or_insert_with(|| (Some(ba.stored_full()), Vec::new()));
             if !entry.1.contains(&tv.version) {
                 entry.1.push(tv.version.clone());
             }
@@ -2840,7 +2844,7 @@ impl Lock {
                     miseprintln!(
                         "  {} {}@{} for {}",
                         style("✓").green(),
-                        style(&ba.short).bold(),
+                        style(redact_output(&ba.short)).bold(),
                         tv.version,
                         style(variant.to_key()).blue()
                     );
