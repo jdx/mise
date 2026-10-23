@@ -1808,7 +1808,10 @@ impl PackslipBackend {
             Err(err) if err.is::<NoHostArtifact>() => return Ok(Some(err.to_string())),
             Err(err) => return Err(err),
         };
-        let requirements = crate::packslip_requirements::check(artifact, &BTreeMap::new()).await;
+        // A required command can only warn, and a warning is not an
+        // exclusion, so resolving starts none of them: the manifest names
+        // the command, and the config naming the manifest may be untrusted.
+        let requirements = crate::packslip_requirements::check_host(artifact).await;
         if !requirements.failures.is_empty() && opts.raw.get("ignore_requirements") != Some("true")
         {
             return Ok(Some(requirements.failures.join("; ")));

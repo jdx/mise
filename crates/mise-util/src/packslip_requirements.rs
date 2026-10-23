@@ -210,9 +210,11 @@ fn check_min(report: &mut Report, label: &str, actual: Option<&str>, min: &str, 
     }
 }
 
-/// `commands` contains paths resolved from the install's active mise toolset.
-/// Ambient PATH supplies commands not managed by that toolset.
-pub async fn check(artifact: &Artifact, commands: &BTreeMap<String, PathBuf>) -> Report {
+/// Everything that can fail an artifact: the OS, glibc and shared
+/// libraries. It starts only fixed system programs, never one the manifest
+/// names, so resolving a version can call it for a manifest that config
+/// nobody trusted points at.
+pub async fn check_host(artifact: &Artifact) -> Report {
     let mut report = Report::default();
     let Some(req) = &artifact.requires else {
         return report;
@@ -235,6 +237,19 @@ pub async fn check(artifact: &Artifact, commands: &BTreeMap<String, PathBuf>) ->
                 .push(format!("cannot check shared library {lib}")),
         }
     }
+    report
+}
+
+/// [`check_host`], and every command the manifest requires, each started
+/// with `--version` when it names a minimum. A command can only add a
+/// warning, so only an install, about to use the artifact, calls this.
+/// `commands` contains paths resolved from the install's active mise toolset.
+/// Ambient PATH supplies commands not managed by that toolset.
+pub async fn check(artifact: &Artifact, commands: &BTreeMap<String, PathBuf>) -> Report {
+    let mut report = check_host(artifact).await;
+    let Some(req) = &artifact.requires else {
+        return report;
+    };
     for bin in &req.bin {
         let path = commands
             .get(&bin.name)
@@ -255,7 +270,18 @@ pub async fn check(artifact: &Artifact, commands: &BTreeMap<String, PathBuf>) ->
             continue;
         };
         if let Some(min) = &bin.min {
+            // Beside the command, not in the user's project: the manifest
+            // picks the command, and some (rustup's proxies, yarn, mvn) load
+            // code that files in the working directory name even for
+            // `--version`. Whoever can write beside the command could
+            // already replace it.
+            let dir = path
+                .parent()
+                .filter(|dir| dir.is_absolute())
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir);
             let output = CmdLineRunner::new(path)
+                .current_dir(dir)
                 .arg("--version")
                 .env("MISE_AUTO_INSTALL", "0")
                 .read_isolated(64 * 1024)
@@ -320,5 +346,36 @@ mod tests {
         }
         assert_eq!(version_from_output("tool v1.2 built 2026"), None);
         assert_eq!(version_from_output("openjdk 21-ea 2026-09-04"), None);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn required_commands_run_only_for_an_install_and_outside_the_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let dir = dir.path().canonicalize().unwrap();
+        let tool = dir.join("tool");
+        let ran_in = dir.join("ran-in");
+        let script = "#!/bin/sh\npwd -P > \"${0%/*}/ran-in\"\necho tool 1.0\n";
+        file::write(&tool, script).unwrap();
+        file::make_executable(&tool).unwrap();
+        let artifact: Artifact = serde_json::from_value(serde_json::json!({
+            "name": "a.tar.gz", "size": 1, "format": "tar.gz",
+            "requires": {"bin": [{"name": "tool", "min": "2"}]},
+        }))
+        .unwrap();
+
+        // What resolution asks starts nothing the manifest names.
+        let report = check_host(&artifact).await;
+        assert!(report.failures.is_empty() && report.warnings.is_empty());
+        assert!(!ran_in.exists());
+
+        // An install does, beside the command rather than where mise runs.
+        let report = check(&artifact, &BTreeMap::from([("tool".into(), tool)])).await;
+        assert!(report.failures.is_empty());
+        assert_eq!(report.warnings, ["tool 1.0 is below required 2"]);
+        assert_eq!(
+            file::read_to_string(&ran_in).unwrap().trim_end(),
+            dir.to_str().unwrap()
+        );
     }
 }

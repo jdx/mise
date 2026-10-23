@@ -282,7 +282,11 @@ musl fallback above they never select another build.
 
 Command checks prefer active mise tools over the ambient `PATH`. mise looks for
 a path the OS can execute: on Windows, `git.exe` or `node.cmd` counts, but a
-shebang-only script does not.
+shebang-only script does not. Only an install checks commands; resolving a
+version does not start them. mise reads a minimum version from
+`<command> --version`, run in the command's own directory rather than your
+project, so a version manager's shim on the ambient `PATH` reports the version
+it selects there.
 
 Library detection depends on the platform. For example, a macOS library that is
 absent from disk can still exist in the dyld shared cache, so mise reports that
