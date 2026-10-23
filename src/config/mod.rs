@@ -2363,17 +2363,24 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
 
 /// The filenames `mise trust` looks for. Idiomatic version files need trust
 /// only in paranoid mode, so only then are they listed.
-pub async fn trust_config_filenames() -> Result<Vec<String>> {
+///
+/// Finding the idiomatic filenames loads the tool backends. If that fails,
+/// this falls back to the default filenames with a warning rather than failing
+/// the trust command: it only widens what a pathless `mise trust` looks for.
+pub async fn trust_config_filenames() -> Vec<String> {
     if !Settings::get().paranoid.config() {
-        return Ok(DEFAULT_CONFIG_FILENAMES.clone());
+        return DEFAULT_CONFIG_FILENAMES.clone();
     }
-    backend::load_tools().await?;
-    Ok(load_idiomatic_filenames()
+    if let Err(err) = backend::load_tools().await {
+        warn!("could not look for idiomatic version files: {err:#}");
+        return DEFAULT_CONFIG_FILENAMES.clone();
+    }
+    load_idiomatic_filenames()
         .await
         .into_keys()
         .chain(DEFAULT_CONFIG_FILENAMES.iter().cloned())
         .unique()
-        .collect())
+        .collect()
 }
 
 async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {

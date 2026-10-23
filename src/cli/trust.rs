@@ -86,7 +86,11 @@ pub(crate) struct Trust {
 
 impl Trust {
     pub(crate) async fn run(mut self) -> Result<()> {
-        self.config_filenames = config::trust_config_filenames().await?;
+        // Only a command that looks for config itself needs the filenames, and
+        // finding them loads the tool backends.
+        if self.show || self.all || self.config_file.is_none() {
+            self.config_filenames = config::trust_config_filenames().await;
+        }
         if self.show {
             return self.show();
         }
