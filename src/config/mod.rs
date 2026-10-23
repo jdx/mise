@@ -287,6 +287,7 @@ impl Config {
                 file::clear_desymlink_cache();
                 GLOB_RESULTS.lock().unwrap().clear();
                 crate::lockfile::invalidate_caches();
+                MONOREPO_LOCKFILE_DIRS.lock().unwrap().clear();
                 crate::task::reset();
                 for hook in RESET_HOOKS
                     .lock()
