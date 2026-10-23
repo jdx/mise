@@ -381,10 +381,7 @@ fn ensure_registry_provenance(
 async fn asset_download_url(asset: &ReleaseAsset) -> String {
     if asset.url_api.is_empty() {
         asset.url.clone()
-    } else if asset.url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
-        || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
-        || asset.url_api.starts_with(DEFAULT_FORGEJO_API_BASE_URL)
-    {
+    } else if is_public_forge_api_url(&asset.url_api) {
         github::pick_reachable_asset_url(&asset.url, &asset.url_api).await
     } else {
         debug!(
@@ -393,6 +390,25 @@ async fn asset_download_url(asset: &ReleaseAsset) -> String {
         );
         asset.url_api.clone()
     }
+}
+
+/// Whether `url` is under one of the public forges' API base URLs. Compared on
+/// the parsed URL, because the parser also accepts other spellings of the same
+/// host (`HTTPS://`, a leading space, userinfo) that a prefix test would take
+/// for a custom API, downloading the URL as given and skipping the browser URL
+/// and the asset-ID check.
+fn is_public_forge_api_url(url: &str) -> bool {
+    let Ok(url) = url::Url::parse(url) else {
+        return false;
+    };
+    [
+        DEFAULT_GITHUB_API_BASE_URL,
+        DEFAULT_GITLAB_API_BASE_URL,
+        DEFAULT_FORGEJO_API_BASE_URL,
+    ]
+    .iter()
+    .filter_map(|base| url::Url::parse(base).ok())
+    .any(|base| base.origin() == url.origin() && url.path().starts_with(base.path()))
 }
 
 fn attestations_supported(api_url: &str) -> bool {
@@ -3274,6 +3290,30 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_public_forge_api_url_is_compared_parsed() {
+        for url in [
+            "https://api.github.com/repos/o/r/releases/assets/1",
+            "HTTPS://api.github.com/repos/o/r/releases/assets/1",
+            " https://api.github.com/repos/o/r/releases/assets/1",
+            "https://API.github.com/repos/o/r/releases/assets/1",
+            "https://x@api.github.com/repos/o/r/releases/assets/1",
+            "https://gitlab.com/api/v4/projects/1/packages/generic/x",
+            "https://codeberg.org/api/v1/repos/o/r/releases/assets/1",
+        ] {
+            assert!(is_public_forge_api_url(url), "{url:?}");
+        }
+        for url in [
+            "https://github.example.com/api/v3/repos/o/r/releases/assets/1",
+            "https://api.github.com.evil.example/repos/o/r/releases/assets/1",
+            "http://api.github.com/repos/o/r/releases/assets/1",
+            "https://gitlab.com/o/r/-/releases",
+            "not a url",
+        ] {
+            assert!(!is_public_forge_api_url(url), "{url:?}");
+        }
+    }
 
     #[test]
     fn test_registry_required_provenance_overrides_the_lockfile() {

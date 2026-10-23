@@ -982,7 +982,10 @@ fn pinned_browser_download_url(
         return None;
     }
     if github_repo_segment_matches(o, owner) && github_repo_segment_matches(r, repo) {
-        return Some(url.to_string());
+        // Rebuilt from the checked parts. The parser accepts other spellings
+        // (`HTTPS://`, a leading space, userinfo, `API.github.com`) that a
+        // prefix test downstream would not recognize as GitHub's own host.
+        return Some(format!("https://github.com/{}", segments.join("/")));
     }
     Some(format!(
         "https://github.com/{}/{}/{}",
@@ -1007,7 +1010,10 @@ fn pinned_asset_api_url(url: &str, owner: &str, repo: &str) -> Option<String> {
         return None;
     }
     if github_repo_segment_matches(o, owner) && github_repo_segment_matches(r, repo) {
-        return Some(url.to_string());
+        // Rebuilt from the checked parts, as above.
+        return Some(format!(
+            "https://api.github.com/repos/{o}/{r}/releases/assets/{id}"
+        ));
     }
     Some(format!(
         "https://api.github.com/repos/{}/{}/releases/assets/{id}",
@@ -1351,6 +1357,43 @@ mod tests {
             pin("https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/x").is_none()
         );
         assert!(pin("https://api.github.com/repos/jdx/mise-test-fixtures/git/blobs/1").is_none());
+
+        // Spellings the parser accepts leave the pin in one canonical form, so
+        // nothing downstream takes them for a custom API.
+        for odd in [
+            "HTTPS://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1",
+            " https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1",
+            "https://API.github.com/repos/jdx/mise-test-fixtures/releases/assets/1",
+            "https://x@api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1",
+            "https://api.github.com:443/repos/jdx/mise-test-fixtures/releases/assets/1?a=b#c",
+        ] {
+            assert_eq!(pin(odd).as_deref(), Some(fixture), "{odd:?}");
+        }
+    }
+
+    #[test]
+    fn test_pinned_browser_download_url_is_canonical() {
+        let fixture =
+            "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz";
+        for odd in [
+            "HTTPS://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
+            " https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
+            "https://GitHub.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
+            "https://x@github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
+        ] {
+            assert_eq!(
+                pinned_browser_download_url(
+                    odd,
+                    "jdx",
+                    "mise-test-fixtures",
+                    "v1.0.0",
+                    "hello-world.tar.gz"
+                )
+                .as_deref(),
+                Some(fixture),
+                "{odd:?}"
+            );
+        }
     }
 
     #[test]
