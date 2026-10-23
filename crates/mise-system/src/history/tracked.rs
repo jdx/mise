@@ -2744,6 +2744,11 @@ mod tests {
             ..Default::default()
         };
         assert!(manifest.tracking().is_err());
+        // a stale entry is reported, not allowed to fail the whole read
+        let lenient = manifest.tracking_lenient()?;
+        assert!(lenient.entries.is_empty());
+        assert_eq!(lenient.invalid.len(), 1);
+        assert!(lenient.invalid[0].reason.contains("symlinked parent"));
         Ok(())
     }
 

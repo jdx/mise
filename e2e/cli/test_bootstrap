@@ -530,3 +530,33 @@ EOF
 rm -f mise_dir_hook_ran
 assert_contains "mise bootstrap --dry-run" "echo mise-dir > mise_dir_hook_ran"
 assert_fail "cat mise_dir_hook_ran"
+
+# a namespaced `system:bootstrap` task is not the special `bootstrap` task
+cat <<EOF2 >mise.toml
+[tasks."system:bootstrap"]
+run = "touch namespaced_ran"
+EOF2
+assert_succeed "mise bootstrap --dry-run"
+assert_not_contains "mise bootstrap --dry-run 2>&1" "task bootstrap found"
+assert_fail "test -f namespaced_ran"
+
+# a file task named `bootstrap.sh` is the special `bootstrap` task
+rm -f mise.toml
+mkdir -p mise-tasks
+cat <<'EOF2' >mise-tasks/bootstrap.sh
+#!/usr/bin/env bash
+echo file-ran >file_bootstrap_ran
+EOF2
+chmod +x mise-tasks/bootstrap.sh
+assert_succeed "mise bootstrap --yes"
+assert "cat file_bootstrap_ran" "file-ran"
+
+# a task aliased to `bootstrap` is the special `bootstrap` task
+rm -rf mise-tasks
+cat <<EOF2 >mise.toml
+[tasks.setup]
+alias = "bootstrap"
+run = "echo alias-ran > aliased_bootstrap_ran"
+EOF2
+assert_succeed "mise bootstrap --yes"
+assert "cat aliased_bootstrap_ran" "alias-ran"
