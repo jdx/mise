@@ -648,25 +648,6 @@ fn virtual_store_entry_links_dependencies(entry: &Path) -> bool {
     true
 }
 
-/// Whether `path` is the running mise binary: a symlink to it, or a hard link that shares
-/// its file identity (which `file::same_file` does not see, as it compares paths).
-#[cfg(unix)]
-fn is_mise_binary(path: &Path) -> bool {
-    if crate::file::same_file(path, &crate::env::MISE_BIN) {
-        return true;
-    }
-    same_inode(path, &crate::env::MISE_BIN)
-}
-
-#[cfg(unix)]
-fn same_inode(a: &Path, b: &Path) -> bool {
-    use std::os::unix::fs::MetadataExt;
-    match (a.metadata(), b.metadata()) {
-        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
-        _ => false,
-    }
-}
-
 /// The `npm` that `npm view` should run, resolved from the child PATH on unix.
 ///
 /// `dependency_env` already drops this mise's own shims dir, but it recognizes shims by
@@ -704,7 +685,7 @@ fn npm_view_program_in(env: &BTreeMap<String, String>, cwd: &Path) -> eyre::Resu
         if !candidate.is_file() || !crate::file::is_spawnable(&candidate) {
             continue;
         }
-        if is_mise_binary(&candidate) {
+        if super::is_mise_binary(&candidate) {
             skipped_mise_shim.get_or_insert(candidate);
             continue;
         }
@@ -3095,8 +3076,8 @@ mod tests {
         let other = dir.path().join("other");
         std::fs::write(&other, "x").unwrap();
         assert!(!crate::file::same_file(&link, &original));
-        assert!(same_inode(&link, &original));
-        assert!(!same_inode(&other, &original));
+        assert!(crate::backend::same_inode(&link, &original));
+        assert!(!crate::backend::same_inode(&other, &original));
     }
 
     #[cfg(unix)]

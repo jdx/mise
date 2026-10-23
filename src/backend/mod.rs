@@ -1135,11 +1135,44 @@ fn parse_matching_registry_idiomatic_file(
     }
 }
 
-/// Internal commands must not re-enter mise through its dispatch directories.
+/// Whether `path` is the running mise binary, including symlinks and unix hard links.
+fn is_mise_binary(path: &Path) -> bool {
+    if file::same_file(path, &env::MISE_BIN) {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        same_inode(path, &env::MISE_BIN)
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
+#[cfg(unix)]
+fn same_inode(a: &Path, b: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (a.metadata(), b.metadata()) {
+        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+        _ => false,
+    }
+}
+
+/// Internal commands must not re-enter mise through its dispatch directories or binary.
 fn which_non_pristine_executable(bin: &str) -> Option<PathBuf> {
-    file::executable_names(bin)
-        .into_iter()
-        .find_map(file::which_no_shims)
+    which_non_pristine_executable_in(bin, &env::PATH_NON_PRISTINE)
+}
+
+fn which_non_pristine_executable_in(bin: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+    file::executable_names(bin).into_iter().find_map(|name| {
+        dirs.iter()
+            .filter(|dir| !file::is_mise_dispatch_dir(dir))
+            .filter_map(|dir| std::path::absolute(dir.join(&name)).ok())
+            .find(|candidate| {
+                candidate.is_file() && file::is_executable(candidate) && !is_mise_binary(candidate)
+            })
+    })
 }
 
 /// On macOS's default case-insensitive volume `dir/python` also opens `dir/Python`, so a
@@ -1286,6 +1319,33 @@ mod tests {
     use std::fs;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[cfg(unix)]
+    #[test]
+    fn internal_lookup_skips_a_foreign_mise_shim() {
+        let outer_shims = tempfile::tempdir().unwrap();
+        let real_bin = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(&*env::MISE_BIN, outer_shims.path().join("sops")).unwrap();
+        let sops = real_bin.path().join("sops");
+        fs::write(&sops, "#!/bin/sh\n").unwrap();
+        file::make_executable(&sops).unwrap();
+        let dirs = vec![
+            outer_shims.path().to_path_buf(),
+            real_bin.path().to_path_buf(),
+        ];
+        assert_eq!(which_non_pristine_executable_in("sops", &dirs), Some(sops));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn internal_lookup_rejects_a_foreign_mise_shim_without_a_fallback() {
+        let outer_shims = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(&*env::MISE_BIN, outer_shims.path().join("sops")).unwrap();
+        assert_eq!(
+            which_non_pristine_executable_in("sops", &[outer_shims.path().to_path_buf()]),
+            None
+        );
+    }
 
     #[test]
     fn test_release_tag_from_url_reads_the_listed_tag() {
