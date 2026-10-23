@@ -236,6 +236,20 @@ fn check_min(report: &mut Report, label: &str, actual: Option<&str>, min: &str, 
     }
 }
 
+/// The command to start for a `--version` probe, and the directory to start
+/// it in: the command's own. A command found through a relative `PATH` entry
+/// such as `./bin` is relative to mise's working directory, so it is made
+/// absolute first, or it would not be found from its own directory.
+fn probe_location(path: PathBuf) -> (PathBuf, PathBuf) {
+    let path = std::path::absolute(&path).unwrap_or(path);
+    let dir = path
+        .parent()
+        .filter(|dir| dir.is_absolute())
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    (path, dir)
+}
+
 /// Everything that can fail an artifact: the OS, glibc and shared
 /// libraries. It starts only fixed system programs, never one the manifest
 /// names, so resolving a version can call it for a manifest that config
@@ -302,11 +316,7 @@ pub async fn check(artifact: &Artifact, commands: &BTreeMap<String, PathBuf>) ->
             // code that files in the working directory name even for
             // `--version`. Whoever can write beside the command could
             // already replace it.
-            let dir = path
-                .parent()
-                .filter(|dir| dir.is_absolute())
-                .map(PathBuf::from)
-                .unwrap_or_else(std::env::temp_dir);
+            let (path, dir) = probe_location(path);
             let output = CmdLineRunner::new(path)
                 .current_dir(dir)
                 .arg("--version")
@@ -424,8 +434,23 @@ mod tests {
         assert!(!ran_in.exists());
 
         // An install does, beside the command rather than where mise runs.
-        let report = check(&artifact, &BTreeMap::from([("tool".into(), tool)])).await;
+        let report = check(&artifact, &BTreeMap::from([("tool".into(), tool.clone())])).await;
         assert!(report.failures.is_empty());
+        assert_eq!(report.warnings, ["tool 1.0 is below required 2"]);
+        assert_eq!(
+            file::read_to_string(&ran_in).unwrap().trim_end(),
+            dir.to_str().unwrap()
+        );
+
+        // A command found through a relative PATH entry, such as `./bin`, is
+        // relative to where mise runs: it is still found from its own
+        // directory, and its version still read.
+        file::remove_file(&ran_in).unwrap();
+        let cwd = std::env::current_dir().unwrap();
+        let up = "../".repeat(cwd.components().count() - 1);
+        let relative = PathBuf::from(up).join(tool.strip_prefix("/").unwrap());
+        assert!(relative.is_relative() && relative.is_file(), "{relative:?}");
+        let report = check(&artifact, &BTreeMap::from([("tool".into(), relative)])).await;
         assert_eq!(report.warnings, ["tool 1.0 is below required 2"]);
         assert_eq!(
             file::read_to_string(&ran_in).unwrap().trim_end(),
