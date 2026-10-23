@@ -116,21 +116,21 @@ pub(crate) fn verify_bundle<'a>(
     trusted_root: &TrustedRoot,
 ) -> Result<()> {
     let mut policy = VerificationPolicy::any_identity();
-    // sigstore-verify's default policy *requires* an inclusion proof when
-    // `verify_tlog` is on. GitHub artifact attestations and TSA-only bundles
-    // never carry one, so we'd reject them outright. Skip tlog only when the
-    // bundle has no inclusion proof — public-Sigstore cosign bundles, which do
-    // ship a Rekor inclusion proof, still get full tlog verification (Rekor
-    // checkpoint signature, SET, inclusion-proof Merkle path).
-    if !bundle.has_inclusion_proof() {
-        policy = policy.skip_tlog_unsafe();
-    }
-    // GitHub-internal leaf certs don't carry an SCT extension (GitHub's CA
-    // doesn't log to public CT). `skip_sct` keeps full certificate-chain
+    // GitHub's own Sigstore instance has no transparency log: its bundles
+    // carry a GitHub TSA timestamp instead of a Rekor entry, and
+    // sigstore-verify's default policy would reject them outright. Key the
+    // relaxation on the trust domain, not on what the bundle carries:
+    // `tlogEntries` isn't covered by any signature, so whoever serves a
+    // public-Sigstore bundle could otherwise drop its Rekor entry to turn off
+    // tlog verification (Rekor checkpoint signature, SET, inclusion-proof
+    // Merkle path).
+    //
+    // GitHub-internal leaf certs don't carry an SCT extension either (GitHub's
+    // CA doesn't log to public CT). `skip_sct` keeps full certificate-chain
     // validation against the GitHub trust root's Fulcio certs but turns off
     // the SCT check, which is exactly what GitHub artifact attestations need.
     if is_github_internal_certificate(bundle) {
-        policy = policy.skip_sct();
+        policy = policy.skip_tlog_unsafe().skip_sct();
     }
     let result = sigstore_verify::verify(artifact, bundle, &policy, trusted_root)?;
 
