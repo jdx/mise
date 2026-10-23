@@ -131,6 +131,13 @@ cd = "echo 'I changed directories'"
 - `cd` runs on every directory change that ends inside the project, including
   the one that enters it.
 
+A project's spawned `enter` and `leave` hooks run with the project root as the
+working directory, even when the shell enters the project through a
+subdirectory or leaves it for another directory, so `enter = "./bin/setup"`
+always runs the project's `bin/setup`. `cd` hooks run in the directory the
+shell changed to. `MISE_ORIGINAL_CWD` holds the shell's directory in every
+hook.
+
 The project is the root of the config file that defines the hook: the
 directory that holds `mise.toml`, or the parent of `.config/mise/` or `.mise/`.
 When one directory change triggers several of these hooks, `leave` runs first,
@@ -139,7 +146,8 @@ the first time without a directory change, for example after you create or
 trust `mise.toml` in the current directory.
 
 Hooks in the global config (`~/.config/mise/config.toml`) have no project, so
-global `enter`, `leave` and `cd` hooks run on every directory change.
+global `enter`, `leave` and `cd` hooks run on every directory change, in the
+directory the shell changed to.
 
 ## Run in the current shell {#shell-hooks}
 
@@ -154,12 +162,14 @@ different thing in each form:
 
 With `script`, `shell` names a shell, such as `bash`, `zsh` or `fish`. mise adds
 the script to the code the activated shell evaluates at the prompt, and skips
-the hook when the active shell is a different one:
+the hook when the active shell is a different one. The script runs in the
+shell's current directory, which may be a subdirectory of the project, so refer
+to project files through `MISE_PROJECT_ROOT`:
 
 ```toml [mise.toml]
 [hooks.enter]
 shell = "bash"
-script = "source completions.sh"
+script = 'source "$MISE_PROJECT_ROOT/completions.sh"'
 ```
 
 `script` takes a string or an array of lines. `scripts` takes only the array
@@ -169,7 +179,7 @@ form:
 [hooks.enter]
 shell = "bash"
 script = [
-  "source completions.sh",
+  'source "$MISE_PROJECT_ROOT/completions.sh"',
   "export PROJECT_READY=1",
 ]
 
@@ -229,7 +239,8 @@ run = "cargo fmt"
 - Patterns are globs relative to the project root. `*` does not match `/`; use
   `**` to cross directories.
 - `run` uses your default inline shell. Add `shell = "bash -c"` to choose
-  another one; `shell` applies only to `run`.
+  another one; `shell` applies only to `run`. The command runs with the project
+  root as the working directory, even when the shell is in a subdirectory.
 - `task = "sync-deps"` runs a mise task instead. Set either `run` or `task`;
   when both are set, mise warns and runs the task.
 - mise reads `[[watch_files]]` from project config only. Entries in the global

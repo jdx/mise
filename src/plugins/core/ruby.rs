@@ -299,8 +299,11 @@ impl RubyPlugin {
         for package in packages {
             pr.set_message(format!("install default gem: {package}"));
             let gem = self.gem_path(tv);
+            // `gem install` also installs `*.gem` files from its working
+            // directory, so keep it out of the project's.
             let mut cmd = CmdLineRunner::new(gem)
                 .with_pr(pr)
+                .current_dir(tv.install_path())
                 .arg("install")
                 .envs(config.env().await?)
                 .env_values(tv.install_env());
@@ -347,9 +350,13 @@ impl RubyPlugin {
         let cmd = if settings.ruby.ruby_install {
             CmdLineRunner::new(self.ruby_install_bin()).args(self.install_args_ruby_install(tv)?)
         } else {
+            file::create_dir_all(tv.install_path())?;
             CmdLineRunner::new(self.ruby_build_bin())
                 .args(self.install_args_ruby_build(tv)?)
                 .stdin_string(self.fetch_patches().await?)
+                // ruby-build looks for its definition argument as a file
+                // first, so it must not start in the project's directory.
+                .current_dir(tv.install_path())
         };
         // Only with declared `depends`: the dependency env rebuilds PATH without
         // mise install dirs, which would change plain source builds.
@@ -381,7 +388,7 @@ impl RubyPlugin {
         if let Some(opts) = &settings.ruby.ruby_build_cli_opts {
             args.extend(shell_words::split(opts)?);
         }
-        args.push(tv.version.clone());
+        args.push(plugins::core::build_definition_name(&tv.version)?.to_string());
         args.push(tv.install_path().to_string_lossy().to_string());
         if let Some(opts) = &settings.ruby.ruby_build_opts {
             args.push("--".into());

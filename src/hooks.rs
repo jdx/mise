@@ -1,7 +1,6 @@
 use crate::cmd::cmd;
 use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::shell::Shell;
-use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolVersion, Toolset};
 use crate::{dirs, hook_env};
 use eyre::Result;
@@ -643,37 +642,20 @@ async fn execute(
 
     // Preinstall hooks skip `tools=true` env directives since the tools
     // providing those env vars aren't installed yet (fixes #6162)
-    let (tera_ctx, mut env) = if hook.hook == Hooks::Preinstall {
-        let env = ts.full_env_without_tools(config).await?;
-        let ctx = if contains_template_syntax(run) {
-            let mut ctx = config.tera_ctx.clone();
-            ctx.insert("env", &env);
-            Some(ctx)
-        } else {
-            None
-        };
-        (ctx, env)
+    let mut env = if hook.hook == Hooks::Preinstall {
+        ts.full_env_without_tools(config).await?
     } else {
-        let env = ts.full_env(config).await?;
-        let ctx = if contains_template_syntax(run) {
-            Some(ts.tera_ctx(config).await?.clone())
-        } else {
-            None
-        };
-        (ctx, env)
-    };
-    let rendered_script = if let Some(tera_ctx) = tera_ctx {
-        let mut tera = get_tera(Some(project_root));
-        render_str(&mut tera, run, &tera_ctx)?
-    } else {
-        run.to_string()
+        ts.full_env(config).await?
     };
 
+    // `run` was rendered once, when the hook was loaded from its config file.
+    // Do not render it again: what that pass substituted (cwd, env values,
+    // exec() output) is data, and template syntax in it must not be evaluated.
     let args = shell
         .iter()
         .skip(1)
         .map(|s| s.as_str())
-        .chain(once(rendered_script.as_str()))
+        .chain(once(run))
         .collect_vec();
     if let Some(cwd) = dirs::CWD.as_ref() {
         env.insert(
@@ -726,7 +708,7 @@ async fn execute(
         if crate::path::is_cmd_shell_program(Path::new(&shell[0])) && runs_command {
             use std::os::windows::io::AsHandle;
             use std::os::windows::process::CommandExt;
-            let cmd_args = crate::path::cmd_verbatim_args(&shell[1..], &rendered_script, &[]);
+            let cmd_args = crate::path::cmd_verbatim_args(&shell[1..], run, &[]);
             trace!("hook (cmd verbatim): {} {}", shell[0], cmd_args.join(" "));
             let mut c = std::process::Command::new(&shell[0]);
             for a in &cmd_args {
@@ -734,8 +716,8 @@ async fn execute(
             }
             c.env_clear();
             c.envs(env.iter());
-            if matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall) {
-                c.current_dir(project_root);
+            if let Some(cwd) = hook_cwd(hook, project_root) {
+                c.current_dir(cwd);
             }
             // Send the hook's stdout to mise's stderr (matching the duct
             // `stdout_to_stderr()` the non-cmd path uses) by handing the child a
@@ -752,7 +734,7 @@ async fn execute(
         }
     }
 
-    let cwd = matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall).then_some(project_root);
+    let cwd = hook_cwd(hook, project_root);
     let mut command = cmd(&shell[0], args).full_env(&env);
     if let Some(cwd) = cwd {
         command = command.dir(cwd);
@@ -761,6 +743,19 @@ async fn execute(
         .stdout_to_stderr()
         .run()?;
     Ok(())
+}
+
+/// The working directory of a spawned hook. Install hooks and a project's `enter` and `leave`
+/// hooks run in the project root, so a relative path in the command names the project's own
+/// file, not one in whichever directory the shell entered the project through or left it for.
+/// `cd` hooks, which act on the directory just entered, and global hooks, which have no
+/// project, keep the shell's directory.
+fn hook_cwd<'a>(hook: &Hook, project_root: &'a Path) -> Option<&'a Path> {
+    match hook.hook {
+        Hooks::Preinstall | Hooks::Postinstall => Some(project_root),
+        Hooks::Enter | Hooks::Leave if !hook.global => Some(project_root),
+        _ => None,
+    }
 }
 
 async fn execute_task(
