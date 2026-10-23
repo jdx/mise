@@ -730,7 +730,19 @@ mod tests {
         let script = dir.path().join("build.sh");
         std::fs::write(&script, "#!/bin/sh\n").unwrap();
         let script = script.to_string_lossy().to_string();
-        for task in [script.clone(), format!("/{script}")] {
+        let mut tasks = vec![script.clone()];
+        // `mise run` strips one `/` from a leading `//`, so on Unix `//abs/path` runs
+        // `/abs/path`. A Windows absolute path starts with a drive letter, so a `/` in front of
+        // it is no path to `mise run` either.
+        if cfg!(unix) {
+            tasks.push(format!("/{script}"));
+        }
+        for task in tasks {
+            // The validator refuses exactly what `mise run` would run as a script.
+            assert!(
+                crate::task::task_list::script_path_arg(&task).is_some(),
+                "{task:?}"
+            );
             let err = validate_task_name(&task).unwrap_err();
             assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{task:?}");
             assert!(err.message.contains("not a file path"), "{task:?}");
