@@ -103,6 +103,10 @@ impl TaskStubs {
             .map(|task| task.name_to_path())
             .collect::<Vec<_>>();
         let base_paths = stub_base_paths(&tasks, &task_paths);
+        for ((task, legacy_path), base_path) in tasks.iter().zip(&task_paths).zip(&base_paths) {
+            ensure_inside_stub_dir(&task.display_name, legacy_path)?;
+            ensure_inside_stub_dir(&task.display_name, base_path)?;
+        }
         let paths = resolve_stub_paths(&self.dir, &base_paths)?;
         let stubs = tasks
             .into_iter()
@@ -492,6 +496,19 @@ fn stub_base_paths(tasks: &[&Task], task_paths: &[PathBuf]) -> Vec<PathBuf> {
         .collect()
 }
 
+/// A stub path is built from the task's name, which a config file chooses. Joined onto `--dir`,
+/// an absolute name or one with `..` would write (and later migrate away) a file outside it, and
+/// `validate_stub_paths` cannot tell what such a path really points at, so only a plain relative
+/// path is accepted.
+fn ensure_inside_stub_dir(task_name: &str, path: &Path) -> Result<()> {
+    if !file::is_safe_relative_path(&path.to_string_lossy()) {
+        bail!(
+            "cannot write task stub for {task_name} because its name does not stay inside the stub directory"
+        );
+    }
+    Ok(())
+}
+
 fn resolve_stub_paths(dir: &Path, task_paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
     let base_paths = task_paths
         .iter()
@@ -737,6 +754,28 @@ mod tests {
             "#!/bin/sh\nexec mise run yyy \"$@\"\n",
             generated
         ));
+    }
+
+    #[test]
+    fn stub_paths_must_stay_inside_the_stub_dir() {
+        for ok in ["build", "lint/js", "test.unit", "..foo"] {
+            assert!(
+                ensure_inside_stub_dir("t", Path::new(ok)).is_ok(),
+                "{ok:?} should be accepted"
+            );
+        }
+        for bad in [
+            "../.git/hooks/pre-commit",
+            "x/../../y",
+            "/tmp/out/x",
+            "",
+            "..",
+        ] {
+            assert!(
+                ensure_inside_stub_dir("t", Path::new(bad)).is_err(),
+                "{bad:?} should be refused"
+            );
+        }
     }
 
     #[test]

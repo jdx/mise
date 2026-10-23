@@ -23,7 +23,9 @@ use crate::hash::hash_to_str;
 use crate::hooks::Hook;
 use crate::redactions::Redactions;
 use crate::task::{Task, TaskTemplate};
-use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
+use crate::toolset::{
+    ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, ToolVersionOptions, Toolset,
+};
 use crate::ui::prompt::Confirmation;
 use crate::ui::{prompt, style};
 use crate::watch_files::WatchFile;
@@ -84,6 +86,39 @@ fn detection_error(path: &Path, detection: ConfigFileDetection) -> eyre::Report 
     }
 }
 
+/// Refuse to write a version that the config file would render as a template when it is loaded.
+///
+/// `mise use --pin` and `mise upgrade --bump` write the version a version list or release API
+/// reported, so the text is not the user's, and a template in a trusted config can run commands
+/// with exec() and read the environment.
+fn ensure_versions_are_not_templates(
+    path: &Path,
+    ba: &BackendArg,
+    versions: &[ToolRequest],
+) -> Result<()> {
+    for tr in versions {
+        let version = tr.version();
+        if crate::tera::contains_template_syntax(&version) {
+            return Err(eyre!(
+                "refusing to write {}@{version} to {}: the version contains template syntax",
+                ba.short,
+                display_path(path)
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A templated tool entry's options as written and as the config that declares them renders
+/// them, so a rewrite can put the template back in place of the value it rendered to.
+#[derive(Debug, Clone)]
+pub struct ToolOptionTemplate {
+    /// The entry's version, rendered, to tell which entry a request came from.
+    pub version: String,
+    pub written: ToolVersionOptions,
+    pub rendered: ToolVersionOptions,
+}
+
 pub trait ConfigFile: Debug + Send + Sync {
     fn get_path(&self) -> &Path;
     fn provenance(&self) -> ConfigProvenance {
@@ -139,6 +174,11 @@ pub trait ConfigFile: Debug + Send + Sync {
     /// The tools with a template in their version (`node = "{{ vars.node }}"`) or
     /// options that this platform resolves, each once.
     fn templated_tool_backends(&self) -> Vec<String> {
+        vec![]
+    }
+    /// This config's entries for `ba` that have a template in them, each rendered in this
+    /// config's own context.
+    fn tool_option_templates(&self, _ba: &BackendArg) -> Vec<ToolOptionTemplate> {
         vec![]
     }
     /// A hash of the text this config was parsed from, for a config that keeps one,

@@ -68,8 +68,11 @@ impl RubyPlugin {
         for package in packages {
             pr.set_message(format!("install default gem: {}", package));
             let gem = self.gem_path(tv);
+            // `gem install` also installs `*.gem` files from its working
+            // directory, so keep it out of the project's.
             let mut cmd = CmdLineRunner::new(gem)
                 .with_pr(pr)
+                .current_dir(tv.install_path())
                 .arg("install")
                 .envs(config.env().await?)
                 .env_values(tv.install_env());

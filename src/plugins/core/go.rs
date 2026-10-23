@@ -261,12 +261,8 @@ impl Backend for GoPlugin {
             // and the "go1.x" version tags aren't on the first page of API results
             let go_repo = Settings::get().go.repo.clone();
             plugins::core::run_fetch_task_with_timeout_async(async move || {
-                let output = crate::cmd::cmd_read_async_inherited_env(
-                    "git",
-                    &["ls-remote", "--tags", "--refs", &go_repo, "go*"],
-                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
-                )
-                .await?;
+                let output =
+                    crate::git::ls_remote(&["--tags", "--refs"], &go_repo, &["go*"]).await?;
                 let versions: Vec<VersionInfo> = output
                     .lines()
                     .filter_map(|line| line.split("/go").last())

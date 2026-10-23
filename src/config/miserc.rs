@@ -183,6 +183,7 @@ fn render_miserc_template(
     context.insert("xdg_config_home", &env::XDG_CONFIG_HOME.to_string_lossy());
     context.insert("xdg_data_home", &env::XDG_DATA_HOME.to_string_lossy());
     context.insert("xdg_state_home", &env::XDG_STATE_HOME.to_string_lossy());
+    context.insert("mise_config_dir", &env::MISE_CONFIG_DIR.to_string_lossy());
     context.insert("system_brew_prefix", &env::system_brew_prefix());
     match render_str(tera, content, &context) {
         Ok(rendered) => rendered,

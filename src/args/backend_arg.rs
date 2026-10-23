@@ -9,7 +9,7 @@ use crate::toolset::{
     ResolvedToolOptions, ToolOptionSource, ToolVersionOptions, install_state, parse_tool_options,
     try_parse_tool_options,
 };
-use crate::{backend, config, dirs, lockfile, registry};
+use crate::{backend, config, dirs, file, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
 use heck::ToShoutySnakeCase;
@@ -276,6 +276,11 @@ fn parse_backend_components_fallible(
 
 fn plugin_backend_type(identifier: &str) -> Option<BackendType> {
     let (plugin_name, _tool_name) = identifier.split_once(':')?;
+    // A backend plugin is the directory `plugins/<plugin_name>`, and the name comes from a config
+    // key; anything but a plain file name would point somewhere else (`/app:tool` is `/app`).
+    if !file::is_plain_file_name(plugin_name) {
+        return None;
+    }
     if config::is_loaded() {
         let config = Config::get_();
         if let Some(plugin_type) = config.get_configured_plugin_type(plugin_name) {

@@ -4,7 +4,7 @@ use crate::backend::{SecurityFeature, VersionInfo};
 
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::get_filename_from_url;
+use crate::backend::static_helpers::{ensure_safe_relative_bin_path, get_filename_from_url};
 use crate::config::{Settings, SettingsExt};
 use crate::dirs;
 use crate::file::{ExtractOptions, ExtractionFormat};
@@ -859,6 +859,7 @@ impl Backend for AquaBackend {
                 }
             });
         }
+        ensure_url_safe_version(&v)?;
 
         // Check if this platform is supported
         if !is_platform_supported(&pkg.supported_envs, target_os, target_arch) {
@@ -1154,6 +1155,7 @@ impl AquaBackend {
             });
         }
         validate(&pkg, &v)?;
+        ensure_url_safe_version(&v)?;
 
         Ok(ResolvedPackage {
             platform_key,
@@ -2827,9 +2829,21 @@ impl AquaBackend {
         ))
     }
 
+    /// Built from path segments like the API URLs below, so the tag (which may hold `/`, as in
+    /// `cli/v1.2.3`) cannot add `..` segments, a query or a fragment.
     fn github_archive_url(&self, pkg: &AquaPackage, v: &str) -> String {
-        let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        format!("https://github.com/{gh_id}/archive/refs/tags/{v}.tar.gz")
+        let mut url = Url::parse("https://github.com").expect("GitHub URL should be valid");
+        url.path_segments_mut()
+            .expect("GitHub URL should support path segments")
+            .extend([
+                pkg.repo_owner.as_str(),
+                pkg.repo_name.as_str(),
+                "archive",
+                "refs",
+                "tags",
+            ])
+            .extend(format!("{v}.tar.gz").split('/'));
+        url.to_string()
     }
 
     fn github_archive_api_url(&self, pkg: &AquaPackage, v: &str) -> String {
@@ -2847,9 +2861,17 @@ impl AquaBackend {
     }
 
     fn github_content_url(&self, pkg: &AquaPackage, v: &str) -> String {
-        let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let path = pkg.path.as_deref().unwrap();
-        format!("https://raw.githubusercontent.com/{gh_id}/{v}/{path}")
+        let mut url = Url::parse("https://raw.githubusercontent.com")
+            .expect("GitHub content URL should be valid");
+        {
+            let mut segments = url
+                .path_segments_mut()
+                .expect("GitHub content URL should support path segments");
+            segments.extend([pkg.repo_owner.as_str(), pkg.repo_name.as_str()]);
+            segments.extend(v.split('/'));
+            segments.extend(pkg.path.as_deref().unwrap().split('/'));
+        }
+        url.to_string()
     }
 
     fn github_content_api_url(&self, pkg: &AquaPackage, v: &str) -> String {
@@ -3614,12 +3636,9 @@ impl AquaBackend {
         }
         let bin_paths: Vec<_> = bin_names
             .iter()
-            .map(|name| {
-                let name_str: &str = name.as_ref();
-                install_path.join(name_str)
-            })
-            .map(|path| complete_windows_ext(path, pkg, os(), v))
-            .collect();
+            .map(|name| join_registry_path(&install_path, name))
+            .map_ok(|path| complete_windows_ext(path, pkg, os(), v))
+            .collect::<Result<_>>()?;
         let first_bin_path = bin_paths
             .first()
             .expect("at least one bin path should exist");
@@ -3636,6 +3655,7 @@ impl AquaBackend {
                 extraction_format,
                 &extract_opts,
             )?;
+            file::ensure_symlinks_stay_within(&install_path)?;
             make_executable = true;
         } else if let AquaPackageType::GithubContent = pkg.package_type() {
             if let Some(parent) = first_bin_path.parent() {
@@ -3663,6 +3683,9 @@ impl AquaBackend {
                 extraction_format,
                 &extract_opts,
             )?;
+            // The bins are chmodded and linked by name below, which would
+            // follow a link the archive shipped out of the install directory.
+            file::ensure_symlinks_stay_within(&install_path)?;
             make_executable = true;
         }
 
@@ -3794,7 +3817,7 @@ impl AquaBackend {
                 .and_then(|n| n.split('/').next_back())
                 .unwrap_or(&pkg.repo_name);
 
-            let mut path = install_path.join(fallback_name);
+            let mut path = join_registry_path(install_path, fallback_name)?;
             path = complete_windows_ext(path, pkg, os, version);
 
             return Ok(vec![AquaFileLink {
@@ -3848,11 +3871,13 @@ impl AquaBackend {
             .into_iter()
             .map(|src| {
                 let src = src.unwrap_or_else(|| f.name.clone());
-                let mut src = install_path.join(src);
-                let mut dst = src
-                    .parent()
-                    .wrap_err_with(|| format!("file source has no parent: {}", src.display()))?
-                    .join(link.as_deref().unwrap_or(f.name.as_str()));
+                let mut src = join_registry_path(install_path, &src)?;
+                let mut dst = join_registry_path(
+                    src.parent().wrap_err_with(|| {
+                        format!("file source has no parent: {}", src.display())
+                    })?,
+                    link.as_deref().unwrap_or(f.name.as_str()),
+                )?;
                 src = complete_windows_ext(src, pkg, os, version);
                 dst = complete_windows_dst_ext(&src, dst, pkg, os, version);
 
@@ -3911,6 +3936,17 @@ impl AquaBackend {
         }
         Ok(())
     }
+}
+
+/// Joins a path a registry entry names (`files[].src`, `name`, `link`, or the
+/// package name when there are no files) onto a directory of the install. A
+/// downloaded registry is remote data, so an absolute path or `..` must not
+/// place the download, its chmod or its link outside the install directory.
+fn join_registry_path(dir: &Path, path: &str) -> Result<PathBuf> {
+    // The standard registry has `src: ./cmd/topicctl`.
+    let rel = path.strip_prefix("./").unwrap_or(path);
+    ensure_safe_relative_bin_path("aqua registry file", rel)?;
+    Ok(dir.join(path))
 }
 
 fn same_disk_entry(a: &Path, b: &Path) -> bool {
@@ -4413,6 +4449,28 @@ async fn get_tags_with_release_dates(
         .into_iter()
         .map(|r| (r.tag_name, r.released_at, Some(r.prerelease)))
         .collect())
+}
+
+/// The version or tag is rendered into registry URL templates (`{{.Version}}`) and checksum and
+/// signature options, none of which encode it. It can come from a config file or from release
+/// metadata, so refuse anything that would change the URL's structure: a percent escape (`%2e%2e`
+/// resolves like `..`), a query or fragment, a backslash, or a `.`/`..` path segment.
+fn ensure_url_safe_version(version: &str) -> Result<()> {
+    if let Some(c) = version
+        .chars()
+        .find(|c| matches!(c, '%' | '#' | '?' | '\\'))
+    {
+        bail!(
+            "invalid version {version:?}: contains {c:?}, which cannot be used in a download URL"
+        );
+    }
+    if version
+        .split('/')
+        .any(|segment| matches!(segment, "." | ".."))
+    {
+        bail!("invalid version {version:?}: contains a relative path segment");
+    }
+    Ok(())
 }
 
 fn validate(pkg: &AquaPackage, version: &str) -> Result<()> {

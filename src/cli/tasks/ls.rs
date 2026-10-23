@@ -220,9 +220,19 @@ impl TasksLs {
     fn complete(&self, config: &Config, tasks: Vec<Task>) -> Result<()> {
         let current_root = current_root_prefix(config);
         for t in tasks {
-            let description = t.description.replace(":", "\\:");
+            // One line per task: a line break in a description would start a candidate of
+            // its own, and a name with a control character cannot be completed anyway.
+            let description: String = t
+                .description
+                .chars()
+                .map(|c| if c.is_control() { ' ' } else { c })
+                .collect();
+            let description = description.replace(":", "\\:");
             let shorthand = shorthand_name(current_root.as_deref(), &t);
             for name in std::iter::once(t.display_name.clone()).chain(shorthand) {
+                if name.chars().any(char::is_control) {
+                    continue;
+                }
                 let name = name.replace(":", "\\:");
                 calm_io::stdoutln!("{name}:{description}")?;
             }
@@ -257,6 +267,12 @@ impl TasksLs {
             };
             for (name, complete) in task_spec.complete {
                 task_spec.cmd.complete.insert(name, complete);
+            }
+            // Completion runs the commands a spec names (`complete run=`, `mount`, ...) while
+            // it parses the typed words. For a task nobody trusted, that is code from the
+            // repository running before `mise run` was ever entered.
+            if !task.is_trusted(config) {
+                remove_spec_commands(&mut task_spec.cmd);
             }
             // Absorb words the caller forwards to the task beyond what it declares, so
             // `mise run <task> -- --not-a-mise-flag` completes instead of erroring with
@@ -384,6 +400,39 @@ impl TasksLs {
     }
 }
 
+/// Strip from `cmd` everything completing one of its words would execute: `mount`,
+/// `complete run=`, `complete delegate=` and `choices run=`, through every subcommand and
+/// clause. A task that loaded without trust is inert until `mise run`, and pressing Tab is not
+/// that. Names, help, flags and declared choices stay, so the task still completes.
+fn remove_spec_commands(cmd: &mut usage::SpecCommand) {
+    let executes = |c: &usage::SpecComplete| c.run.is_some() || c.delegate.is_some();
+    cmd.mounts.clear();
+    cmd.complete.retain(|_, complete| !executes(complete));
+    let clause = cmd.clause.as_mut().map(|c| (&mut c.args, &mut c.flags));
+    for (args, flags) in std::iter::once((&mut cmd.args, &mut cmd.flags)).chain(clause) {
+        let flag_args = flags.iter_mut().filter_map(|flag| flag.arg.as_mut());
+        for arg in args.iter_mut().chain(flag_args) {
+            arg.complete.take_if(|complete| executes(complete));
+            if let Some(choices) = &mut arg.choices
+                && choices.run.take().is_some()
+            {
+                // Without the command the declared values are no longer the whole set, and
+                // usage rejects a `choices` that declares nothing at all.
+                choices.strict = false;
+                if choices.choices.is_empty()
+                    && choices.details.is_empty()
+                    && choices.env().is_none()
+                {
+                    arg.choices = None;
+                }
+            }
+        }
+    }
+    for subcommand in cmd.subcommands.values_mut() {
+        remove_spec_commands(subcommand);
+    }
+}
+
 /// The name prefix of the current config root's tasks, e.g. `//:` or `//apps/web:`, which
 /// `:task` stands for. `None` outside a monorepo, where `:task` names nothing.
 fn current_root_prefix(config: &Config) -> Option<String> {
@@ -401,3 +450,60 @@ fn shorthand_name(current_root: Option<&str>, task: &Task) -> Option<String> {
 }
 
 // TODO: fill this out
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remove_spec_commands_leaves_nothing_to_execute() {
+        let mut spec: usage::Spec = r#"
+cmd "task" {
+    mount run="touch mount"
+    arg "<named>"
+    complete "named" run="touch named"
+    arg "<delegated>"
+    complete "delegated" delegate="git"
+    arg "<typed>"
+    complete "typed" type="dir"
+    arg "<inline>" {
+        complete run="touch inline"
+    }
+    arg "<only-run>" {
+        choices run="touch only-run"
+    }
+    flag "--flag <value>" {
+        choices "declared" run="touch choices"
+    }
+    cmd "sub" {
+        mount run="touch sub-mount"
+        clause "step" separator="and" {
+            flag "--clause-flag <value>" {
+                complete run="touch clause-flag"
+            }
+            arg "<clause-arg>" {
+                choices run="touch clause-arg"
+            }
+        }
+    }
+}
+"#
+        .parse()
+        .unwrap();
+        remove_spec_commands(&mut spec.cmd);
+        let kdl = spec.to_string();
+        for executed in ["mount", "run=", "delegate=", "touch"] {
+            assert!(!kdl.contains(executed), "{executed} is left in:\n{kdl}");
+        }
+        for kept in [
+            "type=dir",
+            "declared",
+            "--clause-flag",
+            "<clause-arg>",
+            "<only-run>",
+        ] {
+            assert!(kdl.contains(kept), "{kept} is missing from:\n{kdl}");
+        }
+        kdl.parse::<usage::Spec>().unwrap();
+    }
+}

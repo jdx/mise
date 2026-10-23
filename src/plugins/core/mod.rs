@@ -173,9 +173,40 @@ pub(crate) async fn fetch_patch_contents(sources: &[String]) -> Result<Vec<Strin
     Ok(patches)
 }
 
+/// The definition name to hand ruby-build or python-build for a version.
+///
+/// Both tools take their first argument as a build definition and, when it
+/// names an existing file, `source` that file instead of looking the name up in
+/// their own `share/` directory. A version may contain `/` (other tools have
+/// `lts/hydrogen`) and a plain tool list loads without trust, so a version that
+/// is a path would let a project pick the file that gets sourced. Definition
+/// names never contain a path separator.
+pub(crate) fn build_definition_name(version: &str) -> Result<&str> {
+    if version.contains(['/', '\\']) {
+        eyre::bail!("invalid tool version {version:?}: a build definition name cannot be a path");
+    }
+    Ok(version)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn build_definition_name_rejects_paths() {
+        assert_eq!(build_definition_name("3.3.0").unwrap(), "3.3.0");
+        assert_eq!(
+            build_definition_name("jruby-9.4.5.0").unwrap(),
+            "jruby-9.4.5.0"
+        );
+        assert_eq!(
+            build_definition_name("truffleruby+graalvm-24.0.0").unwrap(),
+            "truffleruby+graalvm-24.0.0"
+        );
+        assert!(build_definition_name(".ci/ruby-3.3.0").is_err());
+        assert!(build_definition_name("/tmp/ruby-3.3.0").is_err());
+        assert!(build_definition_name("C:\\defs\\ruby-3.3.0").is_err());
+    }
 
     #[test]
     fn patch_sources_splits_and_drops_blank_lines() {
