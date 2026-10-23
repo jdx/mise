@@ -120,10 +120,16 @@ these are `mise run`, task shorthand such as `mise build`, `mise install`,
 `mise exec`, `mise watch`, and `mise daemons start`, `restart` and `register`.
 They record trust for every non-global config they load, including configs in
 parent directories, as if you had run `mise trust`. A config on the ignore list
-stays ignored.
+stays ignored. Asking one of these commands for its own help, as in
+`mise run --help`, records nothing. Neither does a command mise starts on your
+behalf: the `mise x` a shim runs for a tool, or the `mise run` of a task hook.
 
 mise also trusts a config file when it writes one, for example with
-[`mise use`](/cli/use.html) or [`mise set`](/cli/set.html).
+[`mise use`](/cli/use.html) or [`mise set`](/cli/set.html). That trust covers
+the file's whole config root, so if another config file there is not trusted
+yet, such as a `mise.local.toml` or a `mise.staging.toml`, mise asks about it
+first, the way it does when that file loads. In safe mode a write records no
+trust.
 
 ### CI and `--yes`
 
@@ -186,8 +192,11 @@ trusted_config_paths = ["~/src/work"]
 
 In normal mode, trusting a config with `monorepo_root = true` also trusts every
 config file below its directory, so review the subprojects' config as part of
-the repository. See [Monorepo tasks](/tasks/monorepo.html). In paranoid mode,
-trusting the root trusts only that file.
+the repository. They stay trusted only while the root is: after
+`mise trust --ignore` on the root, or once a `trusted_config_paths` entry that
+covered it is gone, they need trust of their own again. See
+[Monorepo tasks](/tasks/monorepo.html). In paranoid mode, trusting the root
+trusts only that file.
 
 ### Git worktrees
 
@@ -309,8 +318,9 @@ except that a project's `mise.lock` is not written through a symlink that leaves
 its directory.
 
 Safe mode loads untrusted config without a prompt or an error, in paranoid mode
-too. It does not mark the config trusted for later runs without safe mode. Syntax
-errors and refused operations still fail.
+too. It does not mark the config trusted for later runs without safe mode, not
+even when a command such as `mise use` or `mise set` edits it. Syntax errors and
+refused operations still fail.
 
 Safe mode limits what project config can do. It is not an operating-system
 sandbox for mise, its network requests or the plugins the operator installed.

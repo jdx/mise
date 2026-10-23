@@ -154,6 +154,9 @@ impl TasksAdd {
             file::make_executable(&path)?;
         } else {
             let path = config::local_toml_config_path();
+            // The file is edited as text rather than loaded, so nothing has checked it or the
+            // rest of its config root, which the write below trusts.
+            config_file::trust_check_before_write(&path)?;
             let mut doc: toml_edit::DocumentMut =
                 file::read_to_string(&path).unwrap_or_default().parse()?;
             let tasks = doc
@@ -237,7 +240,7 @@ impl TasksAdd {
             }
             tasks.insert(&self.task, Item::Table(task));
             file::write(&path, doc.to_string())?;
-            config_file::trust(&config_file::config_trust_root(&path))?;
+            config_file::trust_after_write(&path)?;
         }
 
         Ok(())

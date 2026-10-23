@@ -22,8 +22,8 @@ use crate::backend::unalias_backend;
 use crate::config::config_file::config_root;
 use crate::config::config_file::{
     ConfigFile, TaskConfig, ToolConfig, ToolOptionTemplate, config_trust_root,
-    ensure_versions_are_not_templates, is_config_ignored_via_setting, is_persisted_ignored, trust,
-    trust_check,
+    ensure_versions_are_not_templates, is_config_ignored_via_setting, is_persisted_ignored,
+    trust_after_write, trust_check, trust_check_before_write,
 };
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvValue};
 use crate::config::settings::SettingsPartial;
@@ -1822,11 +1822,12 @@ impl ConfigFile for MiseToml {
 
     fn save(&self) -> eyre::Result<()> {
         let contents = self.dump()?;
+        trust_check_before_write(&self.path)?;
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
         file::write_atomic(&self.path, contents)?;
-        trust(&config_trust_root(&self.path))?;
+        trust_after_write(&self.path)?;
         Ok(())
     }
 

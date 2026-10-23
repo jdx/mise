@@ -6,7 +6,7 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::{Either, Itertools};
 use path_absolutize::Absolutize;
 pub use settings::{CompilePurpose, Settings, SettingsExt};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
 use std::path::{Component, Path, PathBuf};
@@ -2799,6 +2799,25 @@ pub fn config_files_in_dir(dir: &Path) -> IndexSet<PathBuf> {
         .collect()
 }
 
+/// [`config_files_in_dir`] plus the files of every `MISE_ENV`, not only the selected ones:
+/// trust recorded for `dir` covers `mise.staging.toml` too, and it loads as soon as that
+/// environment is selected.
+pub(crate) fn config_files_in_dir_for_any_env(dir: &Path) -> IndexSet<PathBuf> {
+    let mut files = config_files_in_dir(dir);
+    if env::MISE_OVERRIDE_CONFIG_FILENAMES.is_empty() {
+        for prefix in [".config/mise", "mise", ".mise"] {
+            for pattern in [
+                format!("{prefix}.*.toml"),
+                format!("{prefix}/config.*.toml"),
+                format!("{prefix}/conf.d/*/mise.*.toml"),
+            ] {
+                files.extend(config_glob(dir, &pattern));
+            }
+        }
+    }
+    files
+}
+
 pub fn config_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
     config_paths_in_dir_with_filenames(dir, &DEFAULT_CONFIG_FILENAMES)
 }
@@ -5163,6 +5182,37 @@ async fn apply_task_config_inputs(
     Ok(())
 }
 
+/// Whether a process that requires explicit trust would accept every file task in the default
+/// task directories (`mise-tasks`, `.mise/tasks`, ...) from `start` up, leaving out the global
+/// ones. A trusted config in the same directory vouches for them, as trust of the directory
+/// does; otherwise each file needs trust of its own, which is how paranoid mode records it.
+pub(crate) fn default_task_dirs_trusted_from(start: &Path) -> bool {
+    all_dirs_from(start).unwrap_or_default().iter().all(|dir| {
+        let task_dirs = default_task_includes()
+            .iter()
+            .map(|include| dir.join(include))
+            .filter(|path| path.is_dir() && !is_global_task_include_path(path))
+            .collect::<Vec<_>>();
+        task_dirs.is_empty()
+            || config_file::is_trusted(dir)
+            || config_files_in_dir(dir)
+                .iter()
+                .any(|path| !is_global_config(path) && is_path_trusted(path))
+            || task_dirs.iter().all(|task_dir| {
+                // the files the task loader reads: TOML and executables
+                collect_task_files(task_dir, &[]).is_ok_and(|files| {
+                    files
+                        .iter()
+                        .filter(|file| {
+                            file.extension().is_some_and(|ext| ext == "toml")
+                                || file::is_executable(file)
+                        })
+                        .all(|file| is_path_trusted(file))
+                })
+            })
+    })
+}
+
 fn default_task_includes() -> Vec<String> {
     vec![
         "mise-tasks".to_string(),
@@ -5211,6 +5261,124 @@ fn user_global_task_includes(has_config: bool) -> Vec<String> {
         includes.push(global_include);
     }
     includes
+}
+
+/// Whether a loaded task comes from config the user trusts, by the rules the task loader uses:
+/// global and system config are the user's own, a task from a remote include was named by a
+/// config that had to be trusted, a trusted project config vouches for the task files of its
+/// config root, and a task file can be trusted on its own. A task from a tasks-only
+/// `mise.toml` or a bare `mise-tasks` directory nobody trusted is none of these: it loads
+/// because it is inert until someone names it, as `mise run <task>` does.
+///
+/// Those exemptions are for the file that defines the task. Every other file that added to it
+/// (`additional_config_sources`: a metadata overlay such as `env` or `depends`, a template) has
+/// to be trusted on its own: a config folder fragment is a trust root of its own, so a
+/// tasks-only one nobody trusted could otherwise change a trusted task's environment.
+pub fn task_is_trusted(config: &Config, task: &Task) -> bool {
+    let source_is_trusted = |path: &Path| {
+        is_global_config(path) || is_global_task_include_path(path) || is_path_trusted(path)
+    };
+    let base_is_trusted = task.remote_include.is_some()
+        || source_is_trusted(&task.config_source)
+        || config.config_files.iter().any(|(path, cf)| {
+            // the global config root is also the root of a project config placed directly in
+            // `$HOME`, which it does not vouch for
+            !is_global_config(path)
+                && task.config_root.as_deref() == Some(cf.config_root().as_path())
+                && is_path_trusted(path)
+        });
+    base_is_trusted
+        && task
+            .additional_config_sources
+            .iter()
+            .all(|path| source_is_trusted(path))
+}
+
+static ONLY_TRUSTED_TASKS: AtomicBool = AtomicBool::new(false);
+
+/// Makes the task executor refuse, from now on in this process, any task [`task_is_trusted`]
+/// rejects. For a command that runs a task nobody named, such as `mise bootstrap`.
+pub fn run_only_trusted_tasks() {
+    ONLY_TRUSTED_TASKS.store(true, Ordering::Relaxed);
+}
+
+/// Whether the task executor refuses tasks from untrusted config: after
+/// [`run_only_trusted_tasks`], and in a process that requires explicit trust, which has no typed
+/// `mise run` behind it.
+pub(crate) fn runs_only_trusted_tasks() -> bool {
+    ONLY_TRUSTED_TASKS.load(Ordering::Relaxed) || config_file::requires_explicit_trust()
+}
+
+/// The first task that running `roots` would reach and that [`task_is_trusted`] rejects: a
+/// root itself, a task in its `depends` or `depends_post` graph, or a task a `run` entry
+/// names (`{ task = ... }` or `{ tasks = [...] }`), followed transitively. Names resolve
+/// against every loaded task and a name matches every task it could mean, so an untrusted
+/// task that could stand in for one of them counts as reached. This is the early answer, before
+/// anything runs; a name only the executor can resolve, such as a templated `run` entry, is
+/// checked when the executor schedules it (see [`runs_only_trusted_tasks`]). `skip_deps` is the
+/// run's own: tasks a `run` entry starts are then followed without their dependencies, as the
+/// executor starts them, and so are the roots.
+pub async fn untrusted_task_reached(
+    config: &Arc<Config>,
+    roots: Vec<Task>,
+    skip_deps: bool,
+) -> Result<Option<Task>> {
+    // A task reached with other arguments can depend on other tasks, so it counts again.
+    let mut seen: HashSet<(String, Vec<String>)> = HashSet::new();
+    let mut pending = roots;
+    if skip_deps {
+        for task in &mut pending {
+            task.depends.clear();
+            task.depends_post.clear();
+            task.wait_for.clear();
+        }
+    }
+    while !pending.is_empty() {
+        let deps =
+            crate::task::Deps::new_for_inspection(config, std::mem::take(&mut pending)).await?;
+        for task in deps.all() {
+            if !task_is_trusted(config, task) {
+                return Ok(Some(task.clone()));
+            }
+            if !seen.insert((task.name.clone(), task.args.clone())) {
+                continue;
+            }
+            // Resolved by the executor's own lookup, so the tasks found here are the ones it
+            // would start, with the arguments it would give them.
+            for entry in task.run() {
+                // The executor renders a templated entry with the task's usage values and
+                // environment before it looks the names up. Rendering it here the same way would
+                // need that environment, so such an entry is left to the executor, which checks
+                // the tasks it resolves before it schedules them or installs their tools.
+                if crate::task::RunEntryExt::has_tera_template(entry) {
+                    continue;
+                }
+                let (specs, entry_args) = match entry {
+                    RunEntry::Script(_) => (&[][..], None),
+                    RunEntry::SingleTask { task, args, .. } => (
+                        std::slice::from_ref(task),
+                        (!args.is_empty()).then_some(args.as_slice()),
+                    ),
+                    RunEntry::TaskGroup { tasks } => (tasks.as_slice(), None),
+                };
+                for spec in specs {
+                    let spec = crate::task::resolve_task_pattern(spec, Some(task));
+                    // A name that does not resolve as written is left to the executor too.
+                    if let Ok(tasks) = crate::task::task_executor::resolve_injected_tasks(
+                        config,
+                        &[spec],
+                        entry_args,
+                        skip_deps,
+                    )
+                    .await
+                    {
+                        pending.extend(tasks);
+                    }
+                }
+            }
+        }
+    }
+    Ok(None)
 }
 
 pub(crate) fn is_global_task_include_path(path: &Path) -> bool {
@@ -7740,7 +7908,11 @@ fn remote_task_file_requires_trust(path: &Path) -> bool {
 /// exec() etc. when task fields render), so only files containing template
 /// syntax need trust. Paranoid mode keeps requiring trust for everything.
 fn task_include_requires_trust(path: &Path) -> bool {
-    if Settings::try_get().is_ok_and(|settings| settings.paranoid.config()) {
+    // A process that requires explicit trust has no typed `mise run` behind it,
+    // so nothing has consented to the scripts either.
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid.config())
+        || config_file::requires_explicit_trust()
+    {
         return true;
     }
     let Ok(body) = file::read_to_string(path) else {
