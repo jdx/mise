@@ -3,7 +3,7 @@ use crate::task::Task;
 use crate::{config, file};
 use eyre::Result;
 use std::path::MAIN_SEPARATOR_STR;
-use toml_edit::Item;
+use toml_edit::{Array, Item, Value};
 
 /// Add a task
 ///
@@ -103,27 +103,25 @@ impl TasksAdd {
                 self.shell.clone().unwrap_or("bash".into())
             )];
             if !self.depends.is_empty() {
-                lines.push("#MISE depends=[\"".to_string() + &self.depends.join("\", \"") + "\"]");
+                lines.push(header_line("depends", Array::from_iter(&self.depends)));
             }
             if !self.depends_post.is_empty() {
-                lines.push(
-                    "#MISE depends_post=[\"".to_string()
-                        + &self.depends_post.join("\", \"")
-                        + "\"]",
-                );
+                lines.push(header_line(
+                    "depends_post",
+                    Array::from_iter(&self.depends_post),
+                ));
             }
             if !self.wait_for.is_empty() {
-                lines
-                    .push("#MISE wait_for=[\"".to_string() + &self.wait_for.join("\", \"") + "\"]");
+                lines.push(header_line("wait_for", Array::from_iter(&self.wait_for)));
             }
             if !self.alias.is_empty() {
-                lines.push("#MISE alias=[\"".to_string() + &self.alias.join("\", \"") + "\"]");
+                lines.push(header_line("alias", Array::from_iter(&self.alias)));
             }
             if let Some(description) = &self.description {
-                lines.push("#MISE description=\"".to_string() + description + "\"");
+                lines.push(header_line("description", description));
             }
             if let Some(dir) = &self.dir {
-                lines.push("#MISE dir=".to_string() + dir);
+                lines.push(header_line("dir", dir));
             }
             if self.hide {
                 lines.push("#MISE hide=true".to_string());
@@ -132,10 +130,10 @@ impl TasksAdd {
                 lines.push("#MISE raw=true".to_string());
             }
             if !self.sources.is_empty() {
-                lines.push("#MISE sources=[\"".to_string() + &self.sources.join("\", \"") + "\"]");
+                lines.push(header_line("sources", Array::from_iter(&self.sources)));
             }
             if !self.outputs.is_empty() {
-                lines.push("#MISE outputs=[\"".to_string() + &self.outputs.join("\", \"") + "\"]");
+                lines.push(header_line("outputs", Array::from_iter(&self.outputs)));
             }
             if self.quiet {
                 lines.push("#MISE quiet=true".to_string());
@@ -245,4 +243,10 @@ impl TasksAdd {
 
         Ok(())
     }
+}
+
+/// A `#MISE key=value` header line, with the value written as TOML so that it is
+/// quoted and escaped the way the header parser expects.
+fn header_line(key: &str, value: impl Into<Value>) -> String {
+    format!("#MISE {key}={}", value.into())
 }
