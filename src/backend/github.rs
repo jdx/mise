@@ -14,7 +14,7 @@ use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::{ArtifactInfo, PlatformInfo, ProvenanceType};
+use crate::lockfile::{ArtifactInfo, ChecksumSource, PlatformInfo, ProvenanceType};
 use crate::toolset::ToolVersionOptions;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{backend::Backend, forgejo, github, gitlab};
@@ -390,6 +390,16 @@ async fn asset_download_url(asset: &ReleaseAsset) -> String {
         );
         asset.url_api.clone()
     }
+}
+
+/// How `mise lock` marks `asset`'s digest in the lockfile: one from a release
+/// mise-versions served, not checked against a download at lock time, is only
+/// compared after a real download and never reuses a kept one.
+fn locked_digest_source(asset: &ReleaseAsset, downloaded: bool) -> Option<ChecksumSource> {
+    (asset.digest.is_some()
+        && !downloaded
+        && crate::versions_host::is_mirrored_asset_api_url(&asset.url_api))
+    .then_some(ChecksumSource::VersionsHost)
 }
 
 /// Record `asset` in its lockfile entry, its digest as the checksum when the
@@ -1153,6 +1163,8 @@ impl Backend for UnifiedGitBackend {
                 };
                 // Every recorded provenance claim must be verified, including
                 // artifacts for platforms other than the host running mise lock.
+                // That downloads the artifact and checks its digest.
+                let primary_downloaded = provenance.is_some();
                 if provenance.is_some() {
                     match self
                         .verify_provenance_at_lock_time(
@@ -1193,6 +1205,7 @@ impl Backend for UnifiedGitBackend {
                     } else {
                         None
                     };
+                    let additional_downloaded = additional_provenance.is_some();
                     if additional_provenance.is_some() {
                         additional_provenance = self
                             .verify_provenance_at_lock_time(
@@ -1210,6 +1223,7 @@ impl Backend for UnifiedGitBackend {
                         additional_provenance.as_ref(),
                     )?;
                     additional_artifacts.push(ArtifactInfo {
+                        checksum_source: locked_digest_source(&additional, additional_downloaded),
                         checksum: additional.digest,
                         url: additional.url,
                         url_api: (!additional.url_api.is_empty()).then_some(additional.url_api),
@@ -1219,6 +1233,7 @@ impl Backend for UnifiedGitBackend {
                 }
 
                 Ok(PlatformInfo {
+                    checksum_source: locked_digest_source(&asset, primary_downloaded),
                     url: Some(asset.url),
                     url_api: (!asset.url_api.is_empty()).then_some(asset.url_api),
                     checksum: asset.digest,
@@ -3349,6 +3364,28 @@ mod tests {
             Some("sha256:bbbb")
         );
         assert_eq!(info.checksum.as_deref(), Some("sha256:bbbb"));
+    }
+
+    #[test]
+    fn test_lock_marks_a_mise_versions_digest() {
+        let asset = |url_api: &str| ReleaseAsset {
+            name: "c.tar.gz".to_string(),
+            url: "https://github.com/acme/c/releases/download/v1/c.tar.gz".to_string(),
+            url_api: url_api.to_string(),
+            digest: Some("sha256:cccc".to_string()),
+            release_tag: Some("v1".to_string()),
+        };
+        let mirrored = "https://api.github.com/repos/acme/c/releases/assets/9101";
+        crate::versions_host::remember_mirrored_asset_api_url(mirrored);
+        assert_eq!(
+            locked_digest_source(&asset(mirrored), false),
+            Some(ChecksumSource::VersionsHost)
+        );
+        // Lock-time provenance verification downloaded it and checked it.
+        assert_eq!(locked_digest_source(&asset(mirrored), true), None);
+        // GitHub's own digest.
+        let direct = "https://api.github.com/repos/acme/c/releases/assets/9102";
+        assert_eq!(locked_digest_source(&asset(direct), false), None);
     }
 
     #[test]

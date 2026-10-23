@@ -10,7 +10,7 @@
 //!   request can ask the server whether it changed and take `304 Not Modified`
 //!   as an answer.
 //! - `pins/`: a checksum a tool pinned to a blob, so a download can be reused
-//!   with no request at all.
+//!   with no request at all, for one of the URLs it was downloaded from.
 //!
 //! Nothing in an index is trusted on its own. A blob is hashed again before
 //! it is used, against the pin when there is one, and an entry that no longer
@@ -66,6 +66,13 @@ struct UrlEntry {
 struct PinEntry {
     blake3: String,
     effective_filename: Option<String>,
+    /// The URLs this blob was downloaded from under the pin. A pin is reused
+    /// only for one of them: a checksum from a lockfile or from release
+    /// metadata must not hand back a file another URL served, such as another
+    /// tool's archive or an older release. Entries written before this was
+    /// recorded have none and are fetched once more.
+    #[serde(default)]
+    urls: Vec<String>,
 }
 
 /// Tests that don't ask for a directory never touch the user's cache.
@@ -187,12 +194,13 @@ pub(super) fn lookup_url(request_hash: &str, pin: Option<&str>) -> Option<Cached
     })
 }
 
-pub(super) fn lookup_pin(pin: &str) -> Option<Hit> {
+/// The download kept under `pin`, if it was downloaded from `url`.
+pub(super) fn lookup_pin(pin: &str, url: &str) -> Option<Hit> {
     let root = root()?;
     let (algo, hex) = parse_pin(pin)?;
     let entry = pin_path(&root, algo, &hex);
     let pinned: PinEntry = serde_json::from_slice(&std::fs::read(&entry).ok()?).ok()?;
-    if !is_hex(&pinned.blake3) {
+    if !is_hex(&pinned.blake3) || !pinned.urls.iter().any(|kept| kept == url) {
         return None;
     }
     let blob = blob_file(&blob_dir(&root, &pinned.blake3))?;
@@ -300,6 +308,8 @@ fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
 /// What kept a download: how to find it again.
 pub(super) struct Keep<'a> {
     pub(super) request_hash: &'a str,
+    /// The URL requested.
+    pub(super) url: &'a str,
     /// The checksum the tool pinned.
     pub(super) pin: Option<&'a str>,
     pub(super) validator: Option<&'a DownloadValidator>,
@@ -392,11 +402,23 @@ fn keep_file(path: &Path, keep: Keep<'_>, move_in: bool) -> Result<Option<PathBu
         )?;
     }
     if let Some((algo, hex)) = pin {
+        let path = pin_path(&root, algo, &hex);
+        // Add this URL to the ones the same blob was kept from.
+        let mut urls = std::fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<PinEntry>(&bytes).ok())
+            .filter(|existing| existing.blake3 == blake3)
+            .map(|existing| existing.urls)
+            .unwrap_or_default();
+        if !urls.iter().any(|kept| kept == keep.url) {
+            urls.push(keep.url.to_string());
+        }
         let entry = PinEntry {
             blake3,
             effective_filename: keep.effective_filename,
+            urls,
         };
-        write_atomic(&pin_path(&root, algo, &hex), &serde_json::to_vec(&entry)?)?;
+        write_atomic(&path, &serde_json::to_vec(&entry)?)?;
     }
     evict(&root, blob.parent());
     Ok(Some(blob))

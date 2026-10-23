@@ -637,23 +637,34 @@ async fn test_download_reuses_pinned_file_without_a_request() {
         .unwrap();
     assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
 
-    // A different URL with the same pin is served without any request.
+    // The same URL with the same pin is served without any request.
     std::fs::remove_file(&dest).unwrap();
-    let other = "http://127.0.0.1:1/elsewhere";
     client
-        .download_file_pinned(other, &dest, Some(&pin), None)
+        .download_file_pinned(&url, &dest, Some(&pin), None)
         .await
         .unwrap();
     assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
     assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
 
-    // A blob that no longer matches the pin is not used.
-    let blob = stored_blob(cache.path());
-    std::fs::write(&blob, b"tampered").unwrap();
+    // Another URL with the same pin is not: a checksum (from a lockfile, say)
+    // must not hand back a file another URL served. It is requested, and
+    // nothing answers there.
     std::fs::remove_file(&dest).unwrap();
+    let other = "http://127.0.0.1:1/elsewhere";
     assert!(
         client
             .download_file_pinned(other, &dest, Some(&pin), None)
+            .await
+            .is_err()
+    );
+
+    // A blob that no longer matches the pin is not used.
+    let blob = stored_blob(cache.path());
+    std::fs::write(&blob, b"tampered").unwrap();
+    let _ = std::fs::remove_file(&dest);
+    assert!(
+        client
+            .download_file_pinned(&url, &dest, Some(&pin), None)
             .await
             .is_err()
     );
@@ -761,13 +772,12 @@ async fn test_download_replaces_a_damaged_stored_file() {
     // stored file itself.
     std::fs::remove_file(&dest).unwrap();
     std::fs::write(&dest, b"stale").unwrap();
-    let (port, _) = spawn_canned_server(vec![]).await;
-    let other = format!("http://127.0.0.1:{port}/artifact.bin");
     client
-        .download_file_linked(&other, &dest, &HeaderMap::new(), Some(&pin), None)
+        .download_file_linked(&url, &dest, &HeaderMap::new(), Some(&pin), None)
         .await
         .unwrap();
     assert_eq!(std::fs::read(&dest).unwrap(), b"hello");
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
 
     *cas::TEST_ROOT.lock().unwrap() = None;
 }

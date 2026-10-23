@@ -700,8 +700,11 @@ hash, and uses one again in two cases:
   carries the `ETag` or `Last-Modified` value the server sent, and a
   `304 Not Modified` answer means the kept file is used instead of a new
   download. Servers that send no validator are not cached.
-- **A tool pinned its checksum**, in its options or in `mise.lock`. The kept
-  file is used with no request at all, even if the URL changed.
+- **A tool pinned its checksum**, in its options or in `mise.lock`, and the kept
+  file was downloaded from the same URL. It is used with no request at all. A
+  file another URL served is not, even when it has that checksum, and neither
+  is anything for a checksum `mise lock` took from mise-versions without
+  downloading (see [`mise.lock`](/dev-tools/mise-lock.html#checksums)).
 
 The `http`, `github`, `aqua` and `packslip` backends and the core tools'
 precompiled archives pin and install from the stored file, linked into place

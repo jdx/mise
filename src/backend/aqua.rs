@@ -10,7 +10,7 @@ use crate::dirs;
 use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::{PlatformInfo, ProvenanceType};
+use crate::lockfile::{ChecksumSource, PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::platform::{ARCH, OS};
 use crate::plugins::VERSION_REGEX;
@@ -944,6 +944,13 @@ impl Backend for AquaBackend {
             pkg = Self::apply_selected_asset_libc_replacement(pkg, target_os, filename);
         }
 
+        // A digest from a release mise-versions served is recorded but marked,
+        // unless the lock-time provenance check below downloads the artifact.
+        let mut mirror_digest = checksum.is_some()
+            && url_api
+                .as_deref()
+                .is_some_and(crate::versions_host::is_mirrored_asset_api_url);
+
         // Try to get checksum from checksum file if not available from GitHub API
         let mut checksum = match checksum {
             Some(c) => Some(c),
@@ -1040,6 +1047,8 @@ impl Backend for AquaBackend {
             {
                 Ok(verified) => {
                     provenance = verified;
+                    // The artifact was downloaded and checked against it.
+                    mirror_digest = false;
                 }
                 Err(e) => {
                     return Err(e.wrap_err(format!(
@@ -1050,6 +1059,7 @@ impl Backend for AquaBackend {
             }
         }
         Ok(PlatformInfo {
+            checksum_source: mirror_digest.then_some(ChecksumSource::VersionsHost),
             url,
             url_api,
             checksum,
@@ -3037,7 +3047,7 @@ impl AquaBackend {
         let pinned = tv
             .lock_platforms
             .get(&self.get_platform_key())
-            .and_then(|platform| platform.checksum.clone())
+            .and_then(|platform| platform.pin_checksum().cloned())
             .or_else(|| api_digest.map(str::to_string));
         let headers = crate::http::host_auth_headers(&reqwest::Url::parse(url)?)?;
         HTTP.download_file_linked(

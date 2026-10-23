@@ -4208,6 +4208,67 @@ fn tool_stub_reference_climbs_out_of_the_lockfile_dir() {
 }
 
 #[test]
+fn mise_versions_checksum_is_kept_but_never_a_download_pin() {
+    let value: toml::Value = toml::from_str(
+        r#"
+checksum = "sha256:aaaa"
+checksum_source = "mise-versions"
+url = "https://github.com/acme/b/releases/download/v1/b.tar.gz"
+"#,
+    )
+    .unwrap();
+    let marked = PlatformInfo::try_from(value).unwrap();
+    assert_eq!(marked.checksum.as_deref(), Some("sha256:aaaa"));
+    assert_eq!(marked.checksum_source, Some(ChecksumSource::VersionsHost));
+    // Compared after the download, but it names no kept file to reuse.
+    assert_eq!(marked.pin_checksum(), None);
+
+    // Written back as it was read.
+    let written = toml::Value::from(marked.clone());
+    assert_eq!(
+        written.get("checksum_source").and_then(|v| v.as_str()),
+        Some("mise-versions")
+    );
+
+    // The mark follows its checksum through a merge, and a checksum confirmed
+    // by a download is a pin again.
+    let confirmed = PlatformInfo {
+        checksum: Some("sha256:aaaa".to_string()),
+        url: marked.url.clone(),
+        ..Default::default()
+    };
+    assert_eq!(
+        confirmed.pin_checksum().map(String::as_str),
+        Some("sha256:aaaa")
+    );
+    assert_eq!(confirmed.merge_with(&marked).checksum_source, None);
+    let unset = PlatformInfo {
+        url: marked.url.clone(),
+        ..Default::default()
+    };
+    assert_eq!(
+        unset.merge_with(&marked).checksum_source,
+        Some(ChecksumSource::VersionsHost)
+    );
+
+    let mut lockfile = Lockfile::default();
+    lockfile.set_platform_info(
+        "tool",
+        "1",
+        None,
+        &Default::default(),
+        "linux-x64",
+        marked.clone(),
+    );
+    lockfile.set_platform_info("tool", "1", None, &Default::default(), "linux-x64", unset);
+    let tool = &lockfile.tools["tool"][0];
+    assert_eq!(
+        tool.platforms["linux-x64"].checksum_source,
+        Some(ChecksumSource::VersionsHost)
+    );
+}
+
+#[test]
 fn locked_github_asset_ids_are_confirmed_before_use() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("mise.lock");

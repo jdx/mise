@@ -299,6 +299,8 @@ struct Fetched {
     /// The validator that came with a complete response, for keeping it.
     validator: Option<DownloadValidator>,
     request_hash: String,
+    /// The URL requested, which a kept file is pinned under.
+    url: String,
 }
 
 /// What an attempt learned beyond the bytes it wrote.
@@ -1511,6 +1513,7 @@ impl Client {
                     &path,
                     cas::Keep {
                         request_hash: &fetched.request_hash,
+                        url: &fetched.url,
                         pin: pin.as_deref(),
                         validator: fetched.validator.as_ref(),
                         effective_filename,
@@ -1587,11 +1590,13 @@ impl Client {
                 let effective_filename = fetched.metadata.effective_filename.clone();
                 let validator = fetched.validator.clone();
                 let hash = fetched.request_hash.clone();
+                let fetched_url = fetched.url.clone();
                 tokio::task::spawn_blocking(move || {
                     cas::ingest(
                         &staged,
                         cas::Keep {
                             request_hash: &hash,
+                            url: &fetched_url,
                             pin: pin.as_deref(),
                             validator: validator.as_ref(),
                             effective_filename,
@@ -1636,7 +1641,7 @@ impl Client {
         let request_hash = download_request_hash(&url, headers);
         // A pinned download kept earlier needs no request, so this comes before
         // the offline check.
-        if use_cache && let Some(hit) = pin.and_then(cas::lookup_pin) {
+        if use_cache && let Some(hit) = pin.and_then(|pin| cas::lookup_pin(pin, url.as_str())) {
             let effective_filename = hit.effective_filename.clone();
             if let Some(blob) = tokio::task::spawn_blocking(move || hit.verified()).await? {
                 return Ok(Fetched {
@@ -1644,6 +1649,7 @@ impl Client {
                     stored: Some(blob),
                     validator: None,
                     request_hash,
+                    url: url.to_string(),
                 });
             }
         }
@@ -1742,6 +1748,7 @@ impl Client {
                     stored: Some(blob),
                     validator: None,
                     request_hash,
+                    url: url.to_string(),
                 });
             }
             // The stored file no longer matches what was recorded: fetch it again.
@@ -1772,6 +1779,7 @@ impl Client {
             stored: None,
             validator,
             request_hash,
+            url: url.to_string(),
         })
     }
 
