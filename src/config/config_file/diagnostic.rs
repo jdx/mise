@@ -108,18 +108,25 @@ impl MiseDiagnostic {
 /// system config directories are the user's own; those are told apart by
 /// directory because the trust lookups need settings, which are still loading
 /// while `.miserc.toml` is parsed.
-fn may_quote(path: &Path) -> bool {
-    path.starts_with(*dirs::CONFIG)
-        || path.starts_with(*dirs::SYSTEM_CONFIG)
-        || !reached_through_link(path)
+pub(crate) fn may_quote(path: &Path) -> bool {
+    may_quote_below(path, path.parent().unwrap_or(path))
 }
 
-/// Whether `path`, or a config directory mise descended into to find it
-/// (`.config`, `.mise`, `mise`, `conf.d` and its folders, task directories), is
-/// a symlink. The directory the file was found in and those above it are not
-/// checked: the user chose to be there, and macOS keeps `/tmp` and `/var`
-/// behind links.
-fn reached_through_link(path: &Path) -> bool {
+/// [`may_quote`] for a file found under `root`, such as a task file found in a
+/// task directory of the project at `root`: every directory between `root` and
+/// the file is checked too, whatever its name.
+pub(crate) fn may_quote_below(path: &Path, root: &Path) -> bool {
+    path.starts_with(*dirs::CONFIG)
+        || path.starts_with(*dirs::SYSTEM_CONFIG)
+        || !reached_through_link(path, root)
+}
+
+/// Whether `path`, a directory between `root` and it, or a config directory
+/// mise descended into to find it (`.config`, `.mise`, `mise`, `conf.d` and its
+/// folders, task directories), is a symlink. `root` and the directories above
+/// it are not checked: the user chose to be there, and macOS keeps `/tmp` and
+/// `/var` behind links.
+fn reached_through_link(path: &Path, root: &Path) -> bool {
     let is_layout_dir = |dir: &Path| {
         let name = dir.file_name().and_then(|n| n.to_str());
         matches!(
@@ -130,13 +137,14 @@ fn reached_through_link(path: &Path) -> bool {
             .and_then(Path::file_name)
             .is_some_and(|n| n == "conf.d")
     };
+    let below_root = |dir: &Path| dir != root && dir.starts_with(root);
     let mut current = path;
     loop {
         if current.is_symlink() {
             return true;
         }
         match current.parent() {
-            Some(parent) if is_layout_dir(parent) => current = parent,
+            Some(parent) if below_root(parent) || is_layout_dir(parent) => current = parent,
             _ => return false,
         }
     }
@@ -155,7 +163,17 @@ fn position(source: &str, offset: usize) -> (usize, usize) {
 /// failing line, so only the message and its position are kept unless
 /// [`may_quote`] allows `path` to be quoted.
 pub(crate) fn hide_linked_source(err: toml::de::Error, source: &str, path: &Path) -> eyre::Report {
-    if may_quote(path) {
+    hide_linked_source_below(err, source, path, path.parent().unwrap_or(path))
+}
+
+/// [`hide_linked_source`] for a file found under `root`, see [`may_quote_below`].
+pub(crate) fn hide_linked_source_below(
+    err: toml::de::Error,
+    source: &str,
+    path: &Path,
+    root: &Path,
+) -> eyre::Report {
+    if may_quote_below(path, root) {
         return err.into();
     }
     let (line, column) = position(source, err.span().map_or(0, |r| r.start));
@@ -242,5 +260,13 @@ mod tests {
         let via = tmp.join("via");
         symlink(&home, &via).unwrap();
         assert_eq!(reports(&via.join("mise.toml")).matches("s3cr3t").count(), 2);
+
+        // Below a known root every directory counts, whatever its name, but the
+        // root itself may sit behind a link.
+        let tasks = project.join("mise-tasks");
+        std::fs::create_dir_all(&tasks).unwrap();
+        symlink(&home, tasks.join("group")).unwrap();
+        assert!(!may_quote_below(&tasks.join("group/mise.toml"), &project));
+        assert!(may_quote_below(&via.join("mise.toml"), &via));
     }
 }

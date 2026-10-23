@@ -39,6 +39,13 @@ mkdir mise-tasks
 ln -s "$HOME/private/mise.toml" mise-tasks/x.toml
 assert_not_contains "mise tasks ls 2>&1 || true" "s3cr3t"
 rm -r mise-tasks
+# A linked subdirectory of a task directory, whatever its name.
+cp "$HOME/private/mise.toml" "$HOME/private/x.toml"
+mkdir mise-tasks
+ln -s "$HOME/private" mise-tasks/group
+assert_contains "mise tasks ls 2>&1 || true" "x.toml"
+assert_not_contains "mise tasks ls 2>&1 || true" "s3cr3t"
+rm -r mise-tasks "$HOME/private/x.toml"
 
 # A link in the directory leading to the file is as good as a link to the file.
 ln -s "$HOME/private" .config
