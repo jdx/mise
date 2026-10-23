@@ -4,7 +4,7 @@ use crate::backend::{SecurityFeature, VersionInfo};
 
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::get_filename_from_url;
+use crate::backend::static_helpers::{ensure_safe_relative_bin_path, get_filename_from_url};
 use crate::config::{Settings, SettingsExt};
 use crate::dirs;
 use crate::file::{ExtractOptions, ExtractionFormat};
@@ -3614,12 +3614,9 @@ impl AquaBackend {
         }
         let bin_paths: Vec<_> = bin_names
             .iter()
-            .map(|name| {
-                let name_str: &str = name.as_ref();
-                install_path.join(name_str)
-            })
-            .map(|path| complete_windows_ext(path, pkg, os(), v))
-            .collect();
+            .map(|name| join_registry_path(&install_path, name))
+            .map_ok(|path| complete_windows_ext(path, pkg, os(), v))
+            .collect::<Result<_>>()?;
         let first_bin_path = bin_paths
             .first()
             .expect("at least one bin path should exist");
@@ -3794,7 +3791,7 @@ impl AquaBackend {
                 .and_then(|n| n.split('/').next_back())
                 .unwrap_or(&pkg.repo_name);
 
-            let mut path = install_path.join(fallback_name);
+            let mut path = join_registry_path(install_path, fallback_name)?;
             path = complete_windows_ext(path, pkg, os, version);
 
             return Ok(vec![AquaFileLink {
@@ -3848,11 +3845,13 @@ impl AquaBackend {
             .into_iter()
             .map(|src| {
                 let src = src.unwrap_or_else(|| f.name.clone());
-                let mut src = install_path.join(src);
-                let mut dst = src
-                    .parent()
-                    .wrap_err_with(|| format!("file source has no parent: {}", src.display()))?
-                    .join(link.as_deref().unwrap_or(f.name.as_str()));
+                let mut src = join_registry_path(install_path, &src)?;
+                let mut dst = join_registry_path(
+                    src.parent().wrap_err_with(|| {
+                        format!("file source has no parent: {}", src.display())
+                    })?,
+                    link.as_deref().unwrap_or(f.name.as_str()),
+                )?;
                 src = complete_windows_ext(src, pkg, os, version);
                 dst = complete_windows_dst_ext(&src, dst, pkg, os, version);
 
@@ -3911,6 +3910,17 @@ impl AquaBackend {
         }
         Ok(())
     }
+}
+
+/// Joins a path a registry entry names (`files[].src`, `name`, `link`, or the
+/// package name when there are no files) onto a directory of the install. A
+/// downloaded registry is remote data, so an absolute path or `..` must not
+/// place the download, its chmod or its link outside the install directory.
+fn join_registry_path(dir: &Path, path: &str) -> Result<PathBuf> {
+    // The standard registry has `src: ./cmd/topicctl`.
+    let rel = path.strip_prefix("./").unwrap_or(path);
+    ensure_safe_relative_bin_path("aqua registry file", rel)?;
+    Ok(dir.join(path))
 }
 
 fn same_disk_entry(a: &Path, b: &Path) -> bool {

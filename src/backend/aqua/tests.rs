@@ -1721,6 +1721,36 @@ fn test_srcs_support_hard_file_link() {
 }
 
 #[test]
+fn test_srcs_reject_paths_outside_install_dir() {
+    let srcs = |name: &str, src: Option<&str>, link: Option<&str>| {
+        let mut pkg = AquaPackage::default();
+        pkg.files = vec![AquaFile {
+            name: name.to_string(),
+            src: src.map(str::to_string),
+            link: link.map(str::to_string),
+            ..Default::default()
+        }];
+        AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "linux", "amd64")
+    };
+
+    assert!(srcs("tool", Some("./bin/tool"), Some("t")).is_ok());
+    assert!(srcs("tool", None, None).is_ok());
+    for bad in ["../tool", "bin/../../tool", "/abs/tool", ".", ""] {
+        assert!(srcs("tool", Some(bad), None).is_err(), "src {bad:?}");
+        assert!(srcs(bad, None, None).is_err(), "name {bad:?}");
+        assert!(srcs(bad, Some("bin/tool"), None).is_err(), "name {bad:?}");
+        assert!(srcs("t", Some("bin/t"), Some(bad)).is_err(), "link {bad:?}");
+    }
+
+    let mut pkg = AquaPackage::default();
+    pkg.repo_name = "../tool".to_string();
+    assert!(
+        AquaBackend::srcs_for_platform(&pkg, "1.0.0", Path::new("install"), "linux", "amd64")
+            .is_err()
+    );
+}
+
+#[test]
 fn test_srcs_include_prefixed_v_version_paths() {
     let mut pkg = AquaPackage::default();
     pkg.asset = "tool-{{.Version}}-{{.OS}}-{{.Arch}}.tar.gz".to_string();
