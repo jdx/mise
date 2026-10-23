@@ -263,30 +263,60 @@ where
     })
     .await?;
     Ok(match downloaded {
-        Ok(Some(temp)) => temp
-            .persist(path)
-            .map(|_| Some(()))
-            .map_err(|err| err.error),
+        Ok(Some(temp)) => replace_with(temp, path, dir).map(Some),
         Ok(None) => Ok(None),
         Err(err) => Err(err),
     })
 }
 
-/// A temporary file in `dir`, removed when dropped, with the permissions a
-/// downloaded file normally gets rather than tempfile's owner-only ones.
+/// A temporary file in `dir`, removed when dropped. It stays owner-only, as
+/// tempfile creates it, while the download is written.
 fn temp_file_in(
     dir: &std::path::Path,
 ) -> std::io::Result<(tempfile::NamedTempFile, std::fs::File)> {
     let temp = tempfile::Builder::new()
         .prefix(".vfox-download-")
         .tempfile_in(dir)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(0o644))?;
-    }
     let file = temp.reopen()?;
     Ok((temp, file))
+}
+
+/// Moves the finished download `temp` to `path`, with the permissions `path`
+/// already has, or for a new file the ones a file created in `dir` gets under
+/// the user's umask, as before downloads went through a temporary file.
+fn replace_with(
+    temp: tempfile::NamedTempFile,
+    path: &std::path::Path,
+    dir: &std::path::Path,
+) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let permissions = match std::fs::metadata(path) {
+            Ok(existing) => existing.permissions(),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                default_file_permissions(dir)?
+            }
+            Err(err) => return Err(err),
+        };
+        std::fs::set_permissions(temp.path(), permissions)?;
+    }
+    #[cfg(not(unix))]
+    let _ = dir;
+    temp.persist(path).map(|_| ()).map_err(|err| err.error)
+}
+
+/// The permissions a file created in `dir` gets: mode 0666 masked by the
+/// umask (and any default ACL), read from a probe file because the umask
+/// cannot be read without changing it for every thread.
+#[cfg(unix)]
+fn default_file_permissions(dir: &std::path::Path) -> std::io::Result<std::fs::Permissions> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let probe = tempfile::Builder::new()
+        .prefix(".vfox-mode-")
+        .permissions(std::fs::Permissions::from_mode(0o666))
+        .tempfile_in(dir)?;
+    probe.as_file().metadata().map(|m| m.permissions())
 }
 
 /// Retry an async operation that issues a request AND extracts the body.
@@ -331,6 +361,50 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    fn mode(path: &std::path::Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_download_is_private_until_it_replaces_its_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let (temp, _file) = temp_file_in(dir.path()).unwrap();
+        assert_eq!(mode(temp.path()), 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_new_download_gets_the_mode_a_created_file_gets() {
+        let dir = tempfile::tempdir().unwrap();
+        let created = dir.path().join("created");
+        std::fs::File::create(&created).unwrap();
+        let target = dir.path().join("downloaded");
+        let (temp, _file) = temp_file_in(dir.path()).unwrap();
+        replace_with(temp, &target, dir.path()).unwrap();
+        assert_eq!(mode(&target), mode(&created));
+        // The probe and the temporary file are gone.
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_download_keeps_the_mode_of_the_file_it_replaces() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("downloaded");
+        std::fs::write(&target, "old").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let (temp, _file) = temp_file_in(dir.path()).unwrap();
+        std::fs::write(temp.path(), "new").unwrap();
+        replace_with(temp, &target, dir.path()).unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "new");
+        assert_eq!(mode(&target), 0o640);
+    }
 
     #[test]
     fn a_client_that_failed_to_build_is_an_error() {
