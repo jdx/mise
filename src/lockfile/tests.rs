@@ -4206,3 +4206,42 @@ fn tool_stub_reference_climbs_out_of_the_lockfile_dir() {
         fs::canonicalize(&stub).unwrap()
     );
 }
+
+/// A lockfile is committed, so a token templated into a lock option from the
+/// environment must not reach it, and an entry an older mise wrote with one
+/// must still match the request.
+#[test]
+fn test_lock_options_drop_credentials() {
+    let options = BTreeMap::from([
+        (
+            "pipx_args".to_string(),
+            "--pip-args='--index-url https://deploy:tok3n@packages.example.com/simple'"
+                .to_string(),
+        ),
+        (
+            "npm_args".to_string(),
+            "--//npm.example.com/:_authToken=tok3n --_auth=tok3n --registry=https://ci:tok3n@npm.example.com/"
+                .to_string(),
+        ),
+        (
+            "api_url".to_string(),
+            "https://ghe.example.com/api/v3".to_string(),
+        ),
+    ]);
+    let stripped = strip_lock_options_credentials(options);
+    assert!(
+        stripped.values().all(|v| !v.contains("tok3n")),
+        "{stripped:?}"
+    );
+    assert_eq!(
+        stripped["pipx_args"],
+        "--pip-args='--index-url https://packages.example.com/simple'"
+    );
+    assert_eq!(
+        stripped["npm_args"],
+        "--//npm.example.com/:_authToken=[redacted] --_auth=[redacted] --registry=https://npm.example.com/"
+    );
+    assert_eq!(stripped["api_url"], "https://ghe.example.com/api/v3");
+    // Stripping twice changes nothing, so read and computed options agree.
+    assert_eq!(strip_lock_options_credentials(stripped.clone()), stripped);
+}

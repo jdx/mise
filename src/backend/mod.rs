@@ -2988,6 +2988,24 @@ pub trait Backend: Debug + Send + Sync {
         Ok(BTreeMap::new()) // Default: no options affect artifact identity
     }
 
+    /// [`Self::resolve_lockfile_options`] as a lock entry records them. Everything that
+    /// writes, looks up or describes a lock entry goes through this, and options read from
+    /// a lockfile get the same treatment, so both sides of a comparison agree.
+    ///
+    /// A lockfile is committed, and these values are already rendered: an index URL in
+    /// `pipx_args` or `npm_args`, or an `api_url`, can carry a token that config only
+    /// templates in from the environment. The options only select the lock entry; an
+    /// install reads the request's own, so it still gets the credential.
+    fn lockfile_options(
+        &self,
+        request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> Result<BTreeMap<String, String>> {
+        Ok(crate::lockfile::strip_lock_options_credentials(
+            self.resolve_lockfile_options(request, target)?,
+        ))
+    }
+
     /// Options that are not install-affecting: they only change how versions are
     /// listed or how installed files are used, so two requests that differ in
     /// them still share one installation. Everything else a request sets is part
@@ -6229,7 +6247,7 @@ pub trait Backend: Debug + Send + Sync {
     /// `platform_key`, including the options that distinguish artifact variants.
     fn describe_lock_entry(&self, tv: &ToolVersion, platform_key: &str) -> String {
         let options = self
-            .resolve_lockfile_options(&tv.request, &PlatformTarget::from_current())
+            .lockfile_options(&tv.request, &PlatformTarget::from_current())
             .unwrap_or_default();
         let entry = format!("lockfile entry for {} on {platform_key}", tv.style());
         if options.is_empty() {

@@ -1706,7 +1706,7 @@ impl Lock {
             };
             for platform in platforms {
                 for variant in backend.platform_variants_for(tv, platform) {
-                    let Ok(options) = backend.resolve_lockfile_options(
+                    let Ok(options) = backend.lockfile_options(
                         &tv.request,
                         &crate::backend::platform_target::PlatformTarget::new(variant),
                     ) else {
@@ -1788,7 +1788,7 @@ impl Lock {
                         ba.short.clone(),
                         ba.stored_full(),
                         tv.version.clone(),
-                        tv.backend()?.resolve_lockfile_options(
+                        tv.backend()?.lockfile_options(
                             &tv.request,
                             &crate::backend::platform_target::PlatformTarget::from_current(),
                         )?,

@@ -3134,10 +3134,7 @@ pub(crate) fn update_lockfiles(
                     let options = dependency
                         .backend()
                         .and_then(|backend| {
-                            backend.resolve_lockfile_options(
-                                &dependency,
-                                &PlatformTarget::new(platform),
-                            )
+                            backend.lockfile_options(&dependency, &PlatformTarget::new(platform))
                         })
                         .unwrap_or_default();
                     selected_python_specifiers
@@ -3573,7 +3570,7 @@ where
     for platform in target_platforms {
         for variant in backend.platform_variants_for(tv, platform) {
             let target = PlatformTarget::new(variant.clone());
-            let options = backend.resolve_lockfile_options(&tv.request, &target)?;
+            let options = backend.lockfile_options(&tv.request, &target)?;
             let platform_key = variant.to_key();
             if predicate(tools, &tv.version, &platform_key, &options) {
                 return Ok(true);
@@ -3882,7 +3879,7 @@ pub(crate) async fn auto_lock_new_versions(
                     // Skip complete targets unless a prior provenance-bearing version
                     // means this target still needs authoritative verification.
                     if let Some(ref backend) = backend
-                        && let Ok(options) = backend.resolve_lockfile_options(&tv.request, &target)
+                        && let Ok(options) = backend.lockfile_options(&tv.request, &target)
                         && let Some(tools) = lockfile.tools_for(&ba.short)
                         && !lockfile_target_needs_auto_lock(
                             tools,
@@ -4122,7 +4119,7 @@ pub async fn resolve_tool_lock_info(
     };
 
     let (info, options, conda_packages) = if let Some(backend) = backend {
-        let options = match backend.resolve_lockfile_options(&tv.request, &target) {
+        let options = match backend.lockfile_options(&tv.request, &target) {
             Ok(options) => options,
             Err(e) => {
                 return (
@@ -4328,7 +4325,7 @@ fn build_rekey_decisions(
                     return None;
                 }
                 backend
-                    .resolve_lockfile_options(&tv.request, &PlatformTarget::new(platform))
+                    .lockfile_options(&tv.request, &PlatformTarget::new(platform))
                     .ok()
             });
             record_rekey_decision(
@@ -4878,9 +4875,9 @@ pub(crate) fn get_locked_version(
             // The registry's options are for the backend it chose. Another
             // backend would read them as its own settings and never match.
             let options = if !request.registry_options_are_not_for(full) {
-                backend.resolve_lockfile_options(request, &PlatformTarget::from_current())?
+                backend.lockfile_options(request, &PlatformTarget::from_current())?
             } else {
-                backend.resolve_lockfile_options(
+                backend.lockfile_options(
                     &request.without_registry_options(),
                     &PlatformTarget::from_current(),
                 )?
@@ -5156,6 +5153,33 @@ fn select_unbound_lockfile_tool<'a>(
         .order_by(matching, |tool| tool.version.as_str())
         .last()
         .copied())
+}
+
+/// Lock entry options as a lockfile records them, without credentials.
+///
+/// A lockfile is committed, and the options are rendered config values, so a
+/// token templated in from the environment would otherwise be written in
+/// clear. The userinfo of every URL is removed, as is the value of an npm
+/// credential setting (`--//host/:_authToken=`, `--_auth=`, `--_password=`).
+/// Options read from a lockfile get the same treatment, so an entry an older
+/// mise wrote with credentials still matches, and is rewritten without them.
+pub(crate) fn strip_lock_options_credentials(
+    options: BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    options
+        .into_iter()
+        .map(|(key, value)| {
+            let value = strip_lock_option_credentials(&value);
+            (key, value)
+        })
+        .collect()
+}
+
+fn strip_lock_option_credentials(value: &str) -> String {
+    let value = mise_util::redactions::strip_url_credentials(value);
+    regex!(r"(--(?:\S*:)?_(?:auth|authToken|password)=)\S+")
+        .replace_all(&value, "${1}[redacted]")
+        .into_owned()
 }
 
 fn lockfile_tool_with_request_options(
@@ -5569,7 +5593,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                     let opts_table: toml::Table = opts.try_into()?;
                     for (key, value) in opts_table {
                         if let toml::Value::String(s) = value {
-                            options.insert(key, s);
+                            options.insert(key, strip_lock_option_credentials(&s));
                         }
                     }
                 }
@@ -5657,7 +5681,7 @@ fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> Result<LockfileTool> {
     // Resolve lockfile options from the backend
     let options = if let Ok(backend) = tv.request.backend() {
         let target = PlatformTarget::from_current();
-        backend.resolve_lockfile_options(&tv.request, &target)?
+        backend.lockfile_options(&tv.request, &target)?
     } else {
         BTreeMap::new()
     };

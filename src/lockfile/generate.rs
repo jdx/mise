@@ -287,10 +287,8 @@ pub fn is_current(
         let mut covered: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
         for platform in platforms {
             for platform in backend.platform_variants_for(tv, platform) {
-                let options = backend.resolve_lockfile_options(
-                    &tv.request,
-                    &PlatformTarget::new(platform.clone()),
-                )?;
+                let options = backend
+                    .lockfile_options(&tv.request, &PlatformTarget::new(platform.clone()))?;
                 let Some((index, entry)) = entries.iter().enumerate().find(|(_, entry)| {
                     entry.version == tv.version
                         && entry.backend.as_deref() == Some(stored_backend.as_str())
@@ -405,10 +403,8 @@ pub async fn generate(
         let backend = tv.backend()?;
         for platform in platforms {
             for platform in backend.platform_variants_for(tv, platform) {
-                let options = backend.resolve_lockfile_options(
-                    &tv.request,
-                    &PlatformTarget::new(platform.clone()),
-                )?;
+                let options = backend
+                    .lockfile_options(&tv.request, &PlatformTarget::new(platform.clone()))?;
                 keys.insert((ba.short.clone(), platform.to_key()));
                 targets.push((ba.clone(), tv.clone(), platform, options));
             }
@@ -678,8 +674,7 @@ pub async fn populate_aube_locks(
         if backend.get_type() != BackendType::Npm {
             continue;
         }
-        let options =
-            backend.resolve_lockfile_options(&tv.request, &PlatformTarget::from_current())?;
+        let options = backend.lockfile_options(&tv.request, &PlatformTarget::from_current())?;
         let backend_name = ba.stored_full();
         let npm = crate::backend::npm::NPMBackend::from_arg(ba.clone());
         if !force
@@ -735,8 +730,7 @@ pub async fn populate_uv_locks(
             continue;
         }
         let backend = crate::backend::pipx::PIPXBackend::from_arg(ba.clone());
-        let options =
-            backend.resolve_lockfile_options(&tv.request, &PlatformTarget::from_current())?;
+        let options = backend.lockfile_options(&tv.request, &PlatformTarget::from_current())?;
         let backend_name = ba.stored_full();
         if !backend.uv_lock_allowed(tv) {
             if let Some(entries) = lockfile.tools_for_mut(&ba.short) {
@@ -1558,7 +1552,7 @@ mod tests {
         let mut old = Lockfile::default();
         for platform in &platforms {
             let options = backend
-                .resolve_lockfile_options(&tv.request, &PlatformTarget::new(platform.clone()))
+                .lockfile_options(&tv.request, &PlatformTarget::new(platform.clone()))
                 .unwrap();
             old.set_platform_info(
                 "erlang",

@@ -174,7 +174,8 @@ locking for one tool; its version-only installs also need the index in
 `data-requires-python` metadata on the selected release's wheel links. Keep
 registry credentials in the installer's environment or credential provider: a
 URL containing credentials or a query string cannot be recorded in the
-lockfile.
+lockfile. When `uvx_args` or `pipx_args` do carry credentials in a URL, the
+lockfile records those options with the credentials removed.
 
 When the index authenticates through a keyring, write the URL with a username
 and no password, and set
