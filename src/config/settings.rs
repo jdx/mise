@@ -1224,7 +1224,9 @@ impl SettingsExt for Settings {
             if let Some(resolved) = TRUSTED_PATHS_RESOLVED.lock().unwrap().get(&p) {
                 return resolved.clone();
             }
-            let resolved = file::canonicalize_cached(&p);
+            // Not `canonicalize_cached`: its own process-wide cache would survive a reset and
+            // keep a symlink entry pointing at its old target.
+            let resolved = p.canonicalize().ok();
             TRUSTED_PATHS_RESOLVED
                 .lock()
                 .unwrap()
