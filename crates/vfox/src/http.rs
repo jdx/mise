@@ -221,11 +221,15 @@ pub(crate) async fn write_body(
     Ok(file.sync_all().await)
 }
 
-/// Downloads with `send` (retried as a whole on transient failures) into a
-/// new file at `path`, streaming the body instead of buffering it. `send`
-/// returns `None` when there is nothing to download, which is passed on. The
-/// outer error is the transfer's, the inner one the file's; on either, the
-/// partial file is removed.
+/// Downloads with `send` (retried as a whole on transient failures) to
+/// `path`, streaming the body instead of buffering it. `send` returns `None`
+/// when there is nothing to download, which is passed on. The outer error is
+/// the transfer's, the inner one the file's.
+///
+/// The body goes to a temporary file beside `path`, which replaces `path` only
+/// once the whole body has arrived. A failed or cancelled download leaves an
+/// existing file at `path` as it was, and removes its temporary file, also
+/// when the future is dropped.
 pub(crate) async fn download_to_file<F, Fut>(
     url: &str,
     path: &std::path::Path,
@@ -235,25 +239,54 @@ where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<Option<reqwest::Response>, reqwest::Error>>,
 {
-    let result = retry_async(url, || {
+    let dir = path
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or(std::path::Path::new("."));
+    let downloaded = retry_async(url, || {
         let send = send();
         async move {
             let Some(resp) = send.await? else {
                 return Ok(Ok(None));
             };
             let resp = resp.error_for_status()?;
-            let mut file = match tokio::fs::File::create(path).await {
-                Ok(file) => file,
+            let (temp, file) = match temp_file_in(dir) {
+                Ok(created) => created,
                 Err(err) => return Ok(Err(err)),
             };
-            Ok(write_body(resp, &mut file).await?.map(Some))
+            let mut file = tokio::fs::File::from_std(file);
+            let written = write_body(resp, &mut file).await?;
+            // Closed before the rename, which Windows refuses on an open file.
+            drop(file);
+            Ok(written.map(|()| Some(temp)))
         }
     })
-    .await;
-    if !matches!(result, Ok(Ok(_))) {
-        let _ = tokio::fs::remove_file(path).await;
+    .await?;
+    Ok(match downloaded {
+        Ok(Some(temp)) => temp
+            .persist(path)
+            .map(|_| Some(()))
+            .map_err(|err| err.error),
+        Ok(None) => Ok(None),
+        Err(err) => Err(err),
+    })
+}
+
+/// A temporary file in `dir`, removed when dropped, with the permissions a
+/// downloaded file normally gets rather than tempfile's owner-only ones.
+fn temp_file_in(
+    dir: &std::path::Path,
+) -> std::io::Result<(tempfile::NamedTempFile, std::fs::File)> {
+    let temp = tempfile::Builder::new()
+        .prefix(".vfox-download-")
+        .tempfile_in(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(temp.path(), std::fs::Permissions::from_mode(0o644))?;
     }
-    result
+    let file = temp.reopen()?;
+    Ok((temp, file))
 }
 
 /// Retry an async operation that issues a request AND extracts the body.
