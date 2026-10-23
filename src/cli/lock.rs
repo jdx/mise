@@ -559,6 +559,12 @@ impl SkipWarnings {
     }
 }
 
+fn with_platform(platforms: Vec<Platform>, platform: Platform) -> Vec<Platform> {
+    let mut platforms: BTreeSet<Platform> = platforms.into_iter().collect();
+    platforms.insert(platform);
+    platforms.into_iter().collect()
+}
+
 impl Lock {
     pub(crate) async fn run(self) -> Result<()> {
         self.run_with_installed(None, Config::get().await?).await
@@ -907,7 +913,12 @@ impl Lock {
         }
         outcome.has_lock_targets = true;
 
-        let target_platforms = self.determine_target_platforms(&target.lockfile_path)?;
+        let mut target_platforms = self.determine_target_platforms(&target.lockfile_path)?;
+        // An install records its own artifact, so a lockfile written elsewhere
+        // still gains an entry for this platform.
+        if run.setup.installed.is_some() && self.platform.is_empty() {
+            target_platforms = with_platform(target_platforms, Platform::current());
+        }
         self.announce_target(&target, &target_platforms)?;
 
         if self.dry_run {
@@ -2926,10 +2937,24 @@ impl Lock {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn with_platform_adds_a_platform_the_lockfile_lacks() {
+        let linux = Platform::parse("linux-x64").unwrap();
+        let macos = Platform::parse("macos-arm64").unwrap();
+        assert_eq!(
+            with_platform(vec![linux.clone()], macos.clone()),
+            vec![linux.clone(), macos.clone()]
+        );
+        assert_eq!(
+            with_platform(vec![linux.clone(), macos.clone()], macos.clone()),
+            vec![linux, macos]
+        );
+    }
+
     use super::{
         Lock, LockTaskResult, LockTaskStatus, LockfileSnapshot, SkipWarnings, classify_lock_result,
         distinct_lockfile_targets, prepare_lockfile_rollback, push_unique_lock_tool,
-        restore_lockfile_snapshots,
+        restore_lockfile_snapshots, with_platform,
     };
     use crate::args::{BackendArg, ToolArg};
     use crate::lockfile::{Lockfile, PlatformInfo, apply_lock_result};
