@@ -963,12 +963,7 @@ impl PIPXBackend {
     async fn git_head(remote: &str) -> Result<String> {
         timeout::run_with_timeout_async(
             async || {
-                let output = crate::cmd::cmd_read_async_inherited_env(
-                    "git",
-                    &["ls-remote", remote, "HEAD"],
-                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
-                )
-                .await?;
+                let output = crate::git::ls_remote(&[], remote, &["HEAD"]).await?;
                 Self::git_head_from_ls_remote(&output)
                     .ok_or_else(|| eyre!("no HEAD found for {remote}"))
             },
@@ -989,12 +984,7 @@ impl PIPXBackend {
     async fn versions_from_git_tags(remote: &str) -> Result<Vec<VersionInfo>> {
         timeout::run_with_timeout_async(
             async || {
-                let output = crate::cmd::cmd_read_async_inherited_env(
-                    "git",
-                    &["ls-remote", "--tags", "--refs", remote],
-                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
-                )
-                .await?;
+                let output = crate::git::ls_remote(&["--tags", "--refs"], remote, &[]).await?;
                 Ok(Self::versions_from_git_ls_remote(&output))
             },
             Settings::get().fetch_remote_versions_timeout(),

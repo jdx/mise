@@ -34,6 +34,19 @@ Before adding a **new** tool or shorthand to `registry/`, follow the `registry-s
 
 None of this applies to editing an existing registry entry; do not ask the user about popularity for maintenance or fixes.
 
+## Vendored aqua registry: do not edit
+
+**Never modify `vendor/aqua-registry/`.** That tree is a snapshot of [aquaproj/aqua-registry](https://github.com/aquaproj/aqua-registry). mise refreshes it on release; CI fails pull requests that change it (except for jdx / `mise-en-dev`).
+
+When an `aqua:` install fails because a recipe has the wrong asset name, platform, format, or version rule:
+
+1. **Do not** patch `vendor/aqua-registry/registry.yml` (or anything else under that directory).
+2. Fix the recipe upstream in aquaproj/aqua-registry, or point the user at an existing upstream PR/issue if one already covers it.
+3. For a short-term workaround in chat or on the issue, suggest `github:owner/repo` (or another backend that can install the release), waiting for the next mise release after the upstream fix merges, or [`registry_floating`](https://mise.jdx.dev/configuration/settings.html#registry_floating) once upstream has landed.
+4. To try a recipe locally before it merges, use a custom [`aqua.registries`](https://mise.jdx.dev/dev-tools/backends/aqua.html#custom-registry) entry — still do not commit vendored changes.
+
+The same rule applies to `crates/vfox/embedded-plugins/`: those plugins are vendored from upstream; fix them in their source repos, not here. Details for contributors: [aqua registry recipes](https://mise.jdx.dev/contributing/registry.html#aqua-registry-recipes).
+
 ## Development Commands
 
 ### Building and Testing

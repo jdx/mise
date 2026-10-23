@@ -309,6 +309,24 @@ async fn test_read_file() {
     assert_eq!(s, "test content\nwith multiple lines");
 }
 
+/// A file the filters cannot hash or date is a render error, not a panic: a
+/// `.miserc.toml` is rendered before any trust check and can name any path.
+#[test]
+#[cfg(unix)]
+fn test_file_filters_error_on_bad_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = dir.path().join("old.txt");
+    std::fs::write(&old, "").unwrap();
+    filetime::set_file_mtime(&old, filetime::FileTime::from_unix_time(-1, 0)).unwrap();
+    let mut context = BASE_CONTEXT.clone();
+    context.insert("old", old.to_str().unwrap());
+    context.insert("missing", dir.path().join("missing.txt").to_str().unwrap());
+
+    let mut tera = TeraEngine::V2(Box::new(get_tera_v2(Some(dir.path()))));
+    assert!(render_str(&mut tera, "{{ old | last_modified }}", &context).is_err());
+    assert!(render_str(&mut tera, "{{ missing | hash_file }}", &context).is_err());
+}
+
 #[test]
 fn test_read_structured_files() {
     let dir = tempfile::tempdir().unwrap();
