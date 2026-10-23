@@ -560,6 +560,11 @@ impl ToolRequest {
             Self::Version {
                 backend, version, ..
             } => {
+                // Joined as written, so only a relative path that stays below the installs dir
+                // (`1.2.3`, `lts/hydrogen`) names an install; `/` would name the filesystem root.
+                if !crate::file::is_safe_relative_path(version) {
+                    return None;
+                }
                 let path = backend.installs_path().join(version);
                 Some(env::find_in_shared_installs(
                     path,
@@ -766,6 +771,11 @@ fn validate_version_string(s: &str) -> Result<()> {
     }
     if s.starts_with('-') {
         bail!("invalid tool version {s:?}: must not start with '-'");
+    }
+    // `ToolRequest::install_path` joins the version onto the installs dir, where an absolute one
+    // would replace it.
+    if s.starts_with('/') {
+        bail!("invalid tool version {s:?}: must not start with '/'");
     }
     if contains_dot_dot(s) {
         bail!("invalid tool version {s:?}: contains path-traversal sequence");
@@ -1073,6 +1083,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn install_path_never_leaves_the_installs_dir() {
+        use super::*;
+        let config = Config::get().await.unwrap();
+        let backend = Arc::new(BackendArg::from("dummy"));
+        // Built without validation, as struct literals elsewhere are.
+        for version in ["/", "/usr", "../x", ""] {
+            let request =
+                ToolRequest::new_version_for_test(backend.clone(), version, ToolSource::Argument);
+            assert_eq!(request.install_path(&config), None, "{version:?}");
+        }
+        let request =
+            ToolRequest::new_version_for_test(backend.clone(), "1.0.0", ToolSource::Argument);
+        assert!(
+            request
+                .install_path(&config)
+                .is_some_and(|p| p.ends_with("1.0.0"))
+        );
+    }
+
+    #[tokio::test]
     async fn registry_min_version_replaces_only_registry_defaults() {
         use super::*;
         let _config = Config::get().await.unwrap();
@@ -1194,6 +1224,9 @@ mod tests {
             "1/%2E%2e/x",
             "1/.%2e/x",
             "1/%2e./x",
+            // absolute, which would replace the installs dir it is joined onto
+            "/",
+            "/usr/local",
         ] {
             assert!(
                 validate_version_string(v).is_err(),
@@ -1218,7 +1251,15 @@ mod tests {
         }
         // `installs/<tool>/..` is the directory that holds every tool; `.` and the empty string
         // are the one that holds every version of this tool
-        for v in ["..", ".", "", "v1/%2e%2e", "1.0$(id)", "4.0.0\"; cd; \""] {
+        for v in [
+            "..",
+            ".",
+            "",
+            "/",
+            "v1/%2e%2e",
+            "1.0$(id)",
+            "4.0.0\"; cd; \"",
+        ] {
             assert!(
                 validate_resolved_version(v).is_err(),
                 "expected {v:?} to be rejected"
