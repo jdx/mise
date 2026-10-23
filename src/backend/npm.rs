@@ -21,6 +21,7 @@ use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use async_trait::async_trait;
 use aube::embed::{EmbedderInstallOverrides, EmbedderRuntime};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use bytesize::ByteSize;
 use jiff::Timestamp;
 use serde_json::Value;
@@ -1500,7 +1501,69 @@ impl NPMBackend {
         ctx.pr
             .set_message(format!("verify {}@{}", self.tool_name(), tv.version));
         crate::hash::ensure_checksum(&archive, digest, Some(ctx.pr.as_ref()), algorithm)?;
+        if let Some(lock) = &tv.aube_lock {
+            self.ensure_aube_lock_installs_archive(tv, lock.load()?, &archive)?;
+        }
         Ok(archive.to_string_lossy().into_owned())
+    }
+
+    /// With a dependency graph, the install is a frozen one that fetches whatever the graph
+    /// names for the root package, not `archive`, the download the `checksum` option was
+    /// verified against. aube holds that fetch to the graph's integrity, so require the
+    /// integrity to describe `archive`.
+    fn ensure_aube_lock_installs_archive(
+        &self,
+        tv: &ToolVersion,
+        lock: &crate::lockfile::AubeLock,
+        archive: &Path,
+    ) -> Result<()> {
+        let key = self.package_key();
+        let root_version = lock
+            .graph
+            .get("importers")
+            .and_then(|v| v.get("."))
+            .and_then(|v| v.get("dependencies"))
+            .and_then(|v| v.get(&key))
+            .and_then(|v| v.get("version"))
+            .and_then(toml::Value::as_str)
+            // a `(peer@version)` suffix follows the version when the package has peers
+            .filter(|version| version.split('(').next() == Some(tv.version.as_str()));
+        let packages = lock.graph.get("packages");
+        let integrity = root_version
+            .and_then(|version| {
+                packages
+                    .and_then(|p| p.get(format!("{key}@{version}")))
+                    .or_else(|| packages.and_then(|p| p.get(format!("{key}@{}", tv.version))))
+            })
+            .and_then(|v| v.get("resolution"))
+            .and_then(|v| v.get("integrity"))
+            .and_then(toml::Value::as_str);
+        let verified = integrity.is_some_and(|integrity| {
+            let mut hashes = integrity.split_whitespace().peekable();
+            hashes.peek().is_some()
+                && hashes.all(|hash| {
+                    hash.split_once('-')
+                        .and_then(|(algorithm, digest)| {
+                            Some((algorithm, BASE64_STANDARD.decode(digest).ok()?))
+                        })
+                        .is_some_and(|(algorithm, digest)| {
+                            crate::hash::ensure_checksum(
+                                archive,
+                                &hex::encode(digest),
+                                None,
+                                algorithm,
+                            )
+                            .is_ok()
+                        })
+                })
+        });
+        if !verified {
+            eyre::bail!(
+                "npm:{} dependency graph does not install the archive its checksum was verified against; run `mise lock --bump`",
+                self.display_tool_name()
+            );
+        }
+        Ok(())
     }
 
     /// The dependency name the package is installed under: the registry name,
@@ -3389,6 +3452,49 @@ mod tests {
     }
     use crate::toolset::ToolVersionOptions;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn aube_lock_must_install_the_checksum_verified_archive() {
+        use sha2::{Digest, Sha512};
+
+        let backend = create_npm_backend("pnpm");
+        let request =
+            ToolRequest::new(backend.ba().clone(), "10.15.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "10.15.0".to_string());
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("package.tgz");
+        std::fs::write(&archive, "genuine").unwrap();
+        let check = |version: &str, key: &str, tarball: &str| {
+            let lock = crate::lockfile::AubeLock::from_yaml(&format!(
+                r#"importers:
+  .:
+    dependencies:
+      pnpm:
+        specifier: 10.15.0
+        version: {version}
+packages:
+  {key}:
+    resolution: {{integrity: sha512-{}}}
+"#,
+                BASE64_STANDARD.encode(Sha512::digest(tarball))
+            ))
+            .unwrap();
+            backend.ensure_aube_lock_installs_archive(&tv, &lock, &archive)
+        };
+
+        check("10.15.0", "pnpm@10.15.0", "genuine").unwrap();
+        check("10.15.0(peer@1.0.0)", "pnpm@10.15.0", "genuine").unwrap();
+        check("10.15.0(peer@1.0.0)", "pnpm@10.15.0(peer@1.0.0)", "genuine").unwrap();
+        assert!(check("10.15.0", "pnpm@10.15.0", "altered").is_err());
+        assert!(check("10.16.0", "pnpm@10.16.0", "genuine").is_err());
+        assert!(check("10.15.0", "other@10.15.0", "genuine").is_err());
+        let empty = crate::lockfile::AubeLock::default();
+        assert!(
+            backend
+                .ensure_aube_lock_installs_archive(&tv, &empty, &archive)
+                .is_err()
+        );
+    }
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
         let ba = BackendArg::new_raw(
