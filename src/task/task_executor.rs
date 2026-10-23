@@ -629,6 +629,13 @@ impl TaskExecutor {
             otel_span_cx,
             injected,
         } = ctx;
+        // Every task reaches this point before it runs, whether it was named, a dependency, or
+        // the rendered name of a `run` entry, so this is where a run that must not execute
+        // untrusted tasks checks the task it actually resolved.
+        if crate::config::runs_only_trusted_tasks() && !crate::config::task_is_trusted(config, task)
+        {
+            return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
+        }
         let prefix = task.estyled_prefix();
         let total_start = std::time::Instant::now();
         Self::check_interruption(allow_during_interruption)?;

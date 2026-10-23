@@ -96,3 +96,21 @@ chmod +x scripts-only/mise-tasks/greet
 output="$(cd scripts-only && mise hook-env -s bash 2>&1)"
 assert_contains_text "$output" "GLOBAL-GREET"
 assert_fail "test -e '$marker'"
+
+echo "=== paranoid mode: a project trusted file by file keeps the hook ==="
+# paranoid mode records trust for each file, never for the directory
+mkdir -p paranoid/mise-tasks
+cat <<'EOF' >paranoid/mise.toml
+[tasks.greet]
+run = 'echo PROJECT-GREET'
+EOF
+cat <<'EOF' >paranoid/mise-tasks/other
+#!/bin/sh
+echo other
+EOF
+chmod +x paranoid/mise-tasks/other
+MISE_PARANOID=1 mise trust paranoid/mise.toml >/dev/null
+MISE_PARANOID=1 mise trust paranoid/mise-tasks/other >/dev/null
+output="$(cd paranoid && MISE_PARANOID=1 mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "PROJECT-GREET"
+assert_not_contains_text "$output" "GLOBAL-GREET"

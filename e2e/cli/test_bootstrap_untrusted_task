@@ -108,3 +108,19 @@ EOF
 assert_fail "cd run-shadow && MISE_YES=0 mise bootstrap --skip tools" "is not trusted"
 assert_fail "test -f $HOME/project_task_ran"
 assert_fail "test -f $HOME/global_task_ran"
+
+# a `run` entry whose task name is a template only resolves when the task runs
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[tasks.finish]
+run = "touch $HOME/global_finish_ran"
+
+[tasks.bootstrap]
+run = [{ task = "{{ 'finish' }}" }, "touch $HOME/global_task_ran"]
+EOF
+rm -f "$HOME"/*_ran
+assert_fail "cd run-shadow && MISE_YES=0 mise bootstrap --skip tools" "not trusted"
+assert_fail "test -f $HOME/project_task_ran"
+assert_fail "test -f $HOME/global_task_ran"
+assert_succeed "cd unrelated && MISE_YES=0 mise bootstrap --skip tools"
+assert "test -f $HOME/global_finish_ran"
+assert "test -f $HOME/global_task_ran"

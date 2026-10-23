@@ -467,9 +467,7 @@ fn project_is_trusted(root: &Path) -> bool {
         .all(|path| {
             crate::config::is_tool_versions_file(path) || config_file::is_path_trusted(path)
         })
-        && crate::config::dirs_with_default_task_includes_from(root)
-            .iter()
-            .all(|dir| config_file::is_trusted(dir))
+        && crate::config::default_task_dirs_trusted_from(root)
 }
 
 async fn run_matched_hook(

@@ -5019,20 +5019,35 @@ async fn apply_task_config_inputs(
     Ok(())
 }
 
-/// The directories from `start` up that hold one of the default task directories (`mise-tasks`,
-/// `.mise/tasks`, ...), leaving out the global ones. File tasks load from each whether or not
-/// the directory has a config file.
-pub(crate) fn dirs_with_default_task_includes_from(start: &Path) -> Vec<PathBuf> {
-    all_dirs_from(start)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|dir| {
-            default_task_includes().iter().any(|include| {
-                let path = dir.join(include);
-                path.is_dir() && !is_global_task_include_path(&path)
+/// Whether a process that requires explicit trust would accept every file task in the default
+/// task directories (`mise-tasks`, `.mise/tasks`, ...) from `start` up, leaving out the global
+/// ones. A trusted config in the same directory vouches for them, as trust of the directory
+/// does; otherwise each file needs trust of its own, which is how paranoid mode records it.
+pub(crate) fn default_task_dirs_trusted_from(start: &Path) -> bool {
+    all_dirs_from(start).unwrap_or_default().iter().all(|dir| {
+        let task_dirs = default_task_includes()
+            .iter()
+            .map(|include| dir.join(include))
+            .filter(|path| path.is_dir() && !is_global_task_include_path(path))
+            .collect::<Vec<_>>();
+        task_dirs.is_empty()
+            || config_file::is_trusted(dir)
+            || config_files_in_dir(dir)
+                .iter()
+                .any(|path| !is_global_config(path) && is_path_trusted(path))
+            || task_dirs.iter().all(|task_dir| {
+                // the files the task loader reads: TOML and executables
+                collect_task_files(task_dir, &[]).is_ok_and(|files| {
+                    files
+                        .iter()
+                        .filter(|file| {
+                            file.extension().is_some_and(|ext| ext == "toml")
+                                || file::is_executable(file)
+                        })
+                        .all(|file| is_path_trusted(file))
+                })
             })
-        })
-        .collect()
+    })
 }
 
 fn default_task_includes() -> Vec<String> {
@@ -5087,11 +5102,28 @@ pub fn task_is_trusted(config: &Config, task: &Task) -> bool {
         })
 }
 
+static ONLY_TRUSTED_TASKS: AtomicBool = AtomicBool::new(false);
+
+/// Makes the task executor refuse, from now on in this process, any task [`task_is_trusted`]
+/// rejects. For a command that runs a task nobody named, such as `mise bootstrap`.
+pub fn run_only_trusted_tasks() {
+    ONLY_TRUSTED_TASKS.store(true, Ordering::Relaxed);
+}
+
+/// Whether the task executor refuses tasks from untrusted config: after
+/// [`run_only_trusted_tasks`], and in a process that requires explicit trust, which has no typed
+/// `mise run` behind it.
+pub(crate) fn runs_only_trusted_tasks() -> bool {
+    ONLY_TRUSTED_TASKS.load(Ordering::Relaxed) || config_file::requires_explicit_trust()
+}
+
 /// The first task that running `roots` would reach and that [`task_is_trusted`] rejects: a
 /// root itself, a task in its `depends` or `depends_post` graph, or a task a `run` entry
 /// names (`{ task = ... }` or `{ tasks = [...] }`), followed transitively. Names resolve
 /// against every loaded task and a name matches every task it could mean, so an untrusted
-/// task that could stand in for one of them counts as reached.
+/// task that could stand in for one of them counts as reached. This is the early answer, before
+/// anything runs; a name only the executor can resolve, such as a templated `run` entry, is
+/// checked when the executor schedules it (see [`runs_only_trusted_tasks`]).
 pub async fn untrusted_task_reached(
     config: &Arc<Config>,
     roots: Vec<Task>,

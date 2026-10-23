@@ -2491,6 +2491,9 @@ impl Bootstrap {
                         config::config_file::config_trust_root(&task.config_source).display_user()
                     );
                 }
+                // The check above follows the names as written; the executor checks the
+                // tasks it actually resolves, templated `run` entries included.
+                config::run_only_trusted_tasks();
                 info!("bootstrap: running `bootstrap` task");
                 self.run_task("bootstrap", skip.contains(&BootstrapPart::Tools))
                     .await?;
