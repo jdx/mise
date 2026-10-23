@@ -205,17 +205,24 @@ fn untrusted_project_refusal() -> Option<CallToolResult> {
     ))]))
 }
 
-/// `tool@version` for `mise install`, refusing a tool it would parse as a flag.
+/// `tool@version` for `mise install`, refusing a tool it would parse as a flag
+/// or as `tool[option=value]`: options such as `postinstall` are commands, which
+/// come from config the user trusts and not from a client.
 fn tool_spec(tool: &str, version: Option<&str>) -> std::result::Result<String, ErrorData> {
+    let spec = match version.filter(|v| !v.is_empty()) {
+        Some(version) => format!("{tool}@{version}"),
+        None => tool.to_string(),
+    };
     let message = if tool.is_empty() {
         "invalid tool '': a tool name is required".to_string()
     } else if tool.starts_with('-') {
         format!("invalid tool '{tool}': tool names cannot start with '-'")
+    } else if spec.contains('[') {
+        // The version counts too: `npm:` and `pkg[option=value]` join into a
+        // scoped package name with options.
+        format!("invalid tool '{spec}': tool options are not accepted")
     } else {
-        return Ok(match version.filter(|v| !v.is_empty()) {
-            Some(version) => format!("{tool}@{version}"),
-            None => tool.to_string(),
-        });
+        return Ok(spec);
     };
     Err(ErrorData {
         code: ErrorCode::INVALID_PARAMS,
@@ -746,6 +753,25 @@ mod tests {
             let err = tool_spec(tool, Some("1")).unwrap_err();
             assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{tool:?}");
         }
+    }
+
+    #[test]
+    fn tool_spec_rejects_tool_options() {
+        for (tool, version) in [
+            ("node[postinstall=touch x]", None),
+            ("node[postinstall=touch x]", Some("20")),
+            ("node[postinstall=touch x", Some("]")),
+            ("npm:", Some("pkg[postinstall=touch x]")),
+        ] {
+            let err = tool_spec(tool, version).unwrap_err();
+            assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{tool:?} {version:?}");
+        }
+        assert_eq!(
+            tool_spec("node[postinstall=touch x]", Some("20"))
+                .unwrap_err()
+                .message,
+            "invalid tool 'node[postinstall=touch x]@20': tool options are not accepted"
+        );
     }
 
     /// The text of every command row `list_commands` returns.
