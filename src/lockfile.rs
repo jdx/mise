@@ -2583,12 +2583,7 @@ fn migrate_monorepo_lockfiles_inner(
             );
         }
         // Stub references are relative to their lockfile, so rebase them.
-        let stubs = subproject_lockfile
-            .tool_stubs()
-            .iter()
-            .map(|reference| tool_stub_path(source, reference))
-            .filter(|stub| stub.is_file())
-            .collect_vec();
+        let stubs = live_tool_stub_paths(&subproject_lockfile, source);
         merge_lockfile_preserving_root(&mut root_lockfile, subproject_lockfile);
         for stub in stubs {
             root_lockfile.add_tool_stub(target, &stub)?;
@@ -2743,17 +2738,34 @@ fn legacy_lockfile_path_for_config(config_path: &Path, monorepo_root: &Path) -> 
     (source.parent() != Some(target_dir.as_path())).then_some(source)
 }
 
+/// The stubs a lockfile references that still exist, as paths.
+fn live_tool_stub_paths(lockfile: &Lockfile, lockfile_path: &Path) -> Vec<PathBuf> {
+    lockfile
+        .tool_stubs()
+        .iter()
+        .map(|reference| tool_stub_path(lockfile_path, reference))
+        .filter(|stub| stub.is_file())
+        .collect()
+}
+
 fn merge_legacy_lockfile_if_present(
     lockfile: &mut Lockfile,
+    lockfile_path: &Path,
     legacy_path: &Path,
     primary_exists: bool,
 ) -> Result<()> {
     match Lockfile::read(legacy_path) {
         Ok(legacy) => {
+            // Stub references are relative to their lockfile, so rebase them.
+            let stubs = live_tool_stub_paths(&legacy, legacy_path);
             if primary_exists {
                 merge_lockfile_for_lookup(lockfile, legacy);
             } else {
                 *lockfile = legacy;
+                lockfile.tool_stubs.clear();
+            }
+            for stub in stubs {
+                lockfile.add_tool_stub(lockfile_path, &stub)?;
             }
             Ok(())
         }
@@ -4711,8 +4723,12 @@ fn read_lockfile_at(lockfile_path: PathBuf, legacy_path: Option<PathBuf>) -> Arc
     let mut lockfile = Lockfile::read(&lockfile_path)
         .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
     if let Some(legacy_path) = &legacy_path
-        && let Err(err) =
-            merge_legacy_lockfile_if_present(&mut lockfile, legacy_path, primary_exists)
+        && let Err(err) = merge_legacy_lockfile_if_present(
+            &mut lockfile,
+            &lockfile_path,
+            legacy_path,
+            primary_exists,
+        )
     {
         warn!(
             "failed to read legacy monorepo lockfile {} (possible corruption): {err:?}",
