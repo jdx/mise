@@ -466,7 +466,8 @@ fn untrusted_lockfile_keeps_pins_but_not_download_locations() {
 #[test]
 fn tool_stub_finds_nearest_base_config_lockfile_from_where_it_lives() {
     let temp = tempfile::tempdir().unwrap();
-    let project = fs::canonicalize(temp.path()).unwrap().join("project");
+    // Stub paths are canonicalized without the Windows verbatim (`\\?\`) prefix.
+    let project = dunce::canonicalize(temp.path()).unwrap().join("project");
     fs::create_dir_all(project.join("bin")).unwrap();
     fs::create_dir_all(project.join("elsewhere")).unwrap();
     // The test harness overrides the config filenames.
