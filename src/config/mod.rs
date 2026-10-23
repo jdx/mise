@@ -5088,18 +5088,29 @@ fn user_global_task_includes(has_config: bool) -> Vec<String> {
 /// config root, and a task file can be trusted on its own. A task from a tasks-only
 /// `mise.toml` or a bare `mise-tasks` directory nobody trusted is none of these: it loads
 /// because it is inert until someone names it, as `mise run <task>` does.
+///
+/// Those exemptions are for the file that defines the task. Every other file that added to it
+/// (`additional_config_sources`: a metadata overlay such as `env` or `depends`, a template) has
+/// to be trusted on its own: a config folder fragment is a trust root of its own, so a
+/// tasks-only one nobody trusted could otherwise change a trusted task's environment.
 pub fn task_is_trusted(config: &Config, task: &Task) -> bool {
-    task.remote_include.is_some()
-        || task.config_sources().into_iter().all(|path| {
-            is_global_config(path) || is_global_task_include_path(path) || is_path_trusted(path)
-        })
+    let source_is_trusted = |path: &Path| {
+        is_global_config(path) || is_global_task_include_path(path) || is_path_trusted(path)
+    };
+    let base_is_trusted = task.remote_include.is_some()
+        || source_is_trusted(&task.config_source)
         || config.config_files.iter().any(|(path, cf)| {
             // the global config root is also the root of a project config placed directly in
             // `$HOME`, which it does not vouch for
             !is_global_config(path)
                 && task.config_root.as_deref() == Some(cf.config_root().as_path())
                 && is_path_trusted(path)
-        })
+        });
+    base_is_trusted
+        && task
+            .additional_config_sources
+            .iter()
+            .all(|path| source_is_trusted(path))
 }
 
 static ONLY_TRUSTED_TASKS: AtomicBool = AtomicBool::new(false);

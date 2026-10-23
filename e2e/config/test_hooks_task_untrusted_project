@@ -114,3 +114,25 @@ MISE_PARANOID=1 mise trust paranoid/mise-tasks/other >/dev/null
 output="$(cd paranoid && MISE_PARANOID=1 mise hook-env -s bash 2>&1)"
 assert_contains_text "$output" "PROJECT-GREET"
 assert_not_contains_text "$output" "GLOBAL-GREET"
+
+echo "=== an untrusted config fragment cannot change a trusted task ==="
+# a config folder fragment is a trust root of its own; a tasks-only one loads
+# without trust and its block for `build` overlays the project's file task
+mkdir -p overlay/mise-tasks overlay/.config/mise/conf.d/frag
+cat <<'EOF' >overlay/mise.toml
+[hooks]
+enter = { task = "build" }
+EOF
+cat <<'EOF' >overlay/mise-tasks/build
+#!/bin/sh
+echo "BUILD-$OVERLAY"
+EOF
+chmod +x overlay/mise-tasks/build
+cat <<'EOF' >overlay/.config/mise/conf.d/frag/mise.toml
+[tasks.build]
+env = { OVERLAY = "applied" }
+EOF
+mise trust overlay >/dev/null
+output="$(cd overlay && mise hook-env -s bash 2>&1)"
+assert_not_contains_text "$output" "BUILD-applied"
+assert_contains_text "$output" "not trusted"
