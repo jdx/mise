@@ -243,8 +243,8 @@ impl SecretValues {
         {
             context.insert("vars", &config.vars());
         }
-        context.insert("config_root", base);
-        context.insert("target", target);
+        context.insert("config_root", &base.to_string_lossy());
+        context.insert("target", &target.to_string_lossy());
         let rendered = render_str_v2(&mut tera, input, &context);
         self.finish_render(config.map(|(config, _)| config), used, rendered)
     }

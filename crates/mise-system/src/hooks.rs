@@ -174,7 +174,7 @@ pub async fn run_phase(
             let mut context = config.bootstrap_tera_ctx(&hook.config_path).clone();
             if context.get("config_root").is_none() {
                 let config_root = crate::host::config_root(&hook.config_path);
-                context.insert("config_root", &config_root);
+                context.insert("config_root", &config_root.to_string_lossy());
             }
             let rendered = if dry_run {
                 match mise_util::tera::render_for_dry_run(

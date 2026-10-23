@@ -1040,7 +1040,7 @@ fn render_repo_str(config: &Config, config_path: &Path, path_raw: &str) -> Resul
     let mut ctx = config.bootstrap_tera_ctx(config_path).clone();
     if ctx.get("config_root").is_none() {
         let config_root = crate::host::config_root(config_path);
-        ctx.insert("config_root", &config_root);
+        ctx.insert("config_root", &config_root.to_string_lossy());
     }
     let mut tera = mise_util::tera::get_tera_without_exec(config_path.parent());
     Ok(mise_util::tera::render_str(&mut tera, path_raw, &ctx)?)

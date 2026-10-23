@@ -2241,7 +2241,10 @@ impl Task {
         let mut tera_ctx = config.tera_ctx.clone();
         tera_ctx.insert("env", &EnvMap::new());
         tera_ctx.insert("vars", &IndexMap::<String, String>::new());
-        tera_ctx.insert("config_root", &self.config_root);
+        tera_ctx.insert(
+            "config_root",
+            &self.config_root.as_ref().map(|p| p.to_string_lossy()),
+        );
         tera_ctx
     }
 
@@ -2268,7 +2271,10 @@ impl Task {
         // Re-insert with task-level vars merged in so callers see the final combined map,
         // with task-level values taking precedence over config-level ones.
         tera_ctx.insert("vars", &vars);
-        tera_ctx.insert("config_root", &self.config_root);
+        tera_ctx.insert(
+            "config_root",
+            &self.config_root.as_ref().map(|p| p.to_string_lossy()),
+        );
         Ok(tera_ctx)
     }
 
@@ -2366,7 +2372,7 @@ impl Task {
             .collect();
         let mut env: EnvMap = env::PRISTINE_ENV.clone();
         let mut resolve_ctx = tera_ctx.clone();
-        resolve_ctx.insert("config_root", &task_project_root);
+        resolve_ctx.insert("config_root", &task_project_root.to_string_lossy());
         let results = EnvResults::resolve(
             config,
             resolve_ctx,
@@ -2965,7 +2971,7 @@ impl Task {
         let (mut env, mut env_remove, mut mise_keys) =
             ts.full_env_with_removals_and_keys(config).await?;
         if let Some(root) = &config.project_root {
-            tera_ctx.insert("config_root", &root);
+            tera_ctx.insert("config_root", &root.to_string_lossy());
         }
 
         // Convert task env directives to (EnvDirective, PathBuf) pairs

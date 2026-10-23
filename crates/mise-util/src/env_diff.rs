@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fmt::Debug;
@@ -266,7 +267,7 @@ impl EnvDiff {
             v: u32,
             old: IndexMap<&'a str, &'a str>,
             new: IndexMap<&'a str, String>,
-            path: &'a [PathBuf],
+            path: Vec<Cow<'a, str>>,
         }
         let wire = Wire {
             v: ENV_STATE_VERSION,
@@ -281,7 +282,10 @@ impl EnvDiff {
                 .iter()
                 .map(|(k, v)| (k.as_str(), hash_env_value(v)))
                 .collect(),
-            path: &self.path,
+            // serde refuses a path that is not valid UTF-8. PATH is exported
+            // as a lossy string, so that is also the form the next run has to
+            // find in it.
+            path: self.path.iter().map(|p| p.to_string_lossy()).collect(),
         };
         let mut gz = ZlibEncoder::new(Vec::new(), Compression::fast());
         gz.write_all(&rmp_serde::to_vec_named(&wire)?)?;
@@ -616,6 +620,19 @@ mod tests {
         let exclude: BTreeSet<String> = ["SECRET".to_string()].into();
         let back = EnvDiff::deserialize(&diff.serialize_excluding(&exclude).unwrap()).unwrap();
         assert!(back.old.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_serialize_path_that_is_not_utf8() {
+        use std::os::unix::ffi::OsStrExt;
+        let path = PathBuf::from(std::ffi::OsStr::from_bytes(b"/tmp/caf\xe9/bin"));
+        let diff = EnvDiff {
+            path: vec![path.clone()],
+            ..Default::default()
+        };
+        let back = EnvDiff::deserialize(&diff.serialize().unwrap()).unwrap();
+        assert_eq!(back.path, [PathBuf::from(&*path.to_string_lossy())]);
     }
 
     #[test]

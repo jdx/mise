@@ -503,7 +503,9 @@ pub struct HookEnvSession {
     #[serde(default = "legacy_env_state_version")]
     pub v: u32,
     pub loaded_tools: IndexSet<String>,
+    #[serde(with = "session_paths")]
     pub loaded_configs: IndexSet<PathBuf>,
+    #[serde(with = "session_paths")]
     pub config_paths: IndexSet<PathBuf>,
     /// Env var name to [`hash_env_value`] digest (plaintext in a version 1 session). Values
     /// are only compared, so they are not stored.
@@ -512,12 +514,13 @@ pub struct HookEnvSession {
     pub aliases: indexmap::IndexMap<String, String>,
     /// Files accessed by tera template functions (read_file, hash_file, etc.)
     /// that should be watched for changes.
-    #[serde(default)]
+    #[serde(default, with = "session_paths")]
     pub tera_files: Vec<PathBuf>,
     /// Resolved file paths from [[watch_files]] config patterns and env plugin watch_files.
     /// Stored so the fast-path can detect changes without loading config.
-    #[serde(default)]
+    #[serde(default, with = "session_paths")]
     pub watch_files: Vec<PathBuf>,
+    #[serde(default, with = "session_paths::option")]
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
@@ -526,6 +529,81 @@ pub struct HookEnvSession {
     /// loading settings. False in sessions from older mise versions.
     #[serde(default)]
     hook_env_shortcuts_unset: bool,
+}
+
+/// A path in `__MISE_SESSION`. serde refuses a path that is not valid UTF-8,
+/// which a file name on unix need not be. It is kept as raw bytes rather than
+/// lossily because the next run has to find the same file again.
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum SessionPath {
+    Utf8(String),
+    Bytes(Vec<u8>),
+}
+
+impl From<&PathBuf> for SessionPath {
+    fn from(path: &PathBuf) -> Self {
+        #[cfg(unix)]
+        use std::os::unix::ffi::OsStrExt;
+        match path.to_str() {
+            Some(path) => Self::Utf8(path.to_string()),
+            #[cfg(unix)]
+            None => Self::Bytes(path.as_os_str().as_bytes().to_vec()),
+            #[cfg(not(unix))]
+            None => Self::Utf8(path.to_string_lossy().to_string()),
+        }
+    }
+}
+
+impl From<SessionPath> for PathBuf {
+    fn from(path: SessionPath) -> Self {
+        #[cfg(unix)]
+        use std::os::unix::ffi::OsStringExt;
+        match path {
+            SessionPath::Utf8(path) => path.into(),
+            #[cfg(unix)]
+            SessionPath::Bytes(path) => std::ffi::OsString::from_vec(path).into(),
+            #[cfg(not(unix))]
+            SessionPath::Bytes(path) => String::from_utf8_lossy(&path).to_string().into(),
+        }
+    }
+}
+
+mod session_paths {
+    use super::*;
+    use serde::{Deserializer, Serializer};
+
+    pub(crate) fn serialize<'a, S: Serializer>(
+        paths: impl IntoIterator<Item = &'a PathBuf>,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        serializer.collect_seq(paths.into_iter().map(SessionPath::from))
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>, T: FromIterator<PathBuf>>(
+        deserializer: D,
+    ) -> std::result::Result<T, D::Error> {
+        let paths = Vec::<SessionPath>::deserialize(deserializer)?;
+        Ok(paths.into_iter().map(PathBuf::from).collect())
+    }
+
+    pub(crate) mod option {
+        use super::*;
+
+        pub(crate) fn serialize<S: Serializer>(
+            path: &Option<PathBuf>,
+            serializer: S,
+        ) -> std::result::Result<S::Ok, S::Error> {
+            path.as_ref().map(SessionPath::from).serialize(serializer)
+        }
+
+        pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+            deserializer: D,
+        ) -> std::result::Result<Option<PathBuf>, D::Error> {
+            let path = Option::<SessionPath>::deserialize(deserializer)?;
+            Ok(path.map(PathBuf::from))
+        }
+    }
 }
 
 pub fn serialize<T: serde::Serialize>(obj: &T) -> Result<String> {
@@ -924,6 +1002,30 @@ mod tests {
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn session_keeps_paths_that_are_not_utf8() {
+        use super::{HookEnvSession, deserialize, serialize};
+        use std::os::unix::ffi::OsStrExt;
+        use std::path::PathBuf;
+
+        let dir = PathBuf::from(std::ffi::OsStr::from_bytes(b"/tmp/caf\xe9"));
+        let session = HookEnvSession {
+            loaded_configs: [dir.join("mise.toml"), "/tmp/mise.toml".into()].into(),
+            config_paths: [dir.join("bin")].into(),
+            tera_files: vec![dir.join("file")],
+            watch_files: vec![dir.join("watched")],
+            dir: Some(dir),
+            ..Default::default()
+        };
+        let back: HookEnvSession = deserialize(serialize(&session).unwrap()).unwrap();
+        assert_eq!(back.loaded_configs, session.loaded_configs);
+        assert_eq!(back.config_paths, session.config_paths);
+        assert_eq!(back.tera_files, session.tera_files);
+        assert_eq!(back.watch_files, session.watch_files);
+        assert_eq!(back.dir, session.dir);
     }
 
     #[test]

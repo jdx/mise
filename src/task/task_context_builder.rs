@@ -564,7 +564,7 @@ impl TaskContextBuilder {
     ) -> Result<(tera::Context, Option<IndexMap<String, String>>)> {
         let mut tera_ctx = ts.tera_ctx(config).await?.clone();
         if let Some(root) = task_cf.project_root() {
-            tera_ctx.insert("config_root", &root);
+            tera_ctx.insert("config_root", &root.to_string_lossy());
         }
         let mut resolved_vars = None;
         // If we have task-specific config files, resolve vars from them

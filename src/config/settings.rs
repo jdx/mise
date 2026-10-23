@@ -719,18 +719,18 @@ fn settings_path_resolver<'a>(
     let mut tera = crate::tera::get_miserc_tera();
     let mut context = tera::Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
-    context.insert("config_root", &config_root);
+    context.insert("config_root", &config_root.to_string_lossy());
     context.insert(
         "config_source",
         &crate::config::config_file::config_root::config_source(path),
     );
     if let Ok(cwd) = std::env::current_dir() {
-        context.insert("cwd", &cwd);
+        context.insert("cwd", &cwd.to_string_lossy());
     }
-    context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
-    context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
-    context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
-    context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
+    context.insert("xdg_cache_home", &env::XDG_CACHE_HOME.to_string_lossy());
+    context.insert("xdg_config_home", &env::XDG_CONFIG_HOME.to_string_lossy());
+    context.insert("xdg_data_home", &env::XDG_DATA_HOME.to_string_lossy());
+    context.insert("xdg_state_home", &env::XDG_STATE_HOME.to_string_lossy());
     context.insert("system_brew_prefix", &env::system_brew_prefix());
 
     move |label: &str, target: &mut toml::Value| -> Result<()> {

@@ -289,8 +289,8 @@ impl EnvResults {
             //     &source
             // );
             let config_root = crate::config::config_file::config_root::config_root(&source);
-            ctx.insert("cwd", &*dirs::CWD);
-            ctx.insert("config_root", &config_root);
+            ctx.insert("cwd", &dirs::CWD.as_ref().map(|p| p.to_string_lossy()));
+            ctx.insert("config_root", &config_root.to_string_lossy());
             ctx.insert(
                 "config_source",
                 &crate::config::config_file::config_root::config_source(&source),

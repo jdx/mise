@@ -2349,7 +2349,7 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
         );
         let mut tera_ctx = config.tera_ctx.clone();
         tera_ctx.insert("vars", &vars);
-        tera_ctx.insert("config_root", &root);
+        tera_ctx.insert("config_root", &root.to_string_lossy());
         maps.push(BootstrapConfigMap {
             config_files,
             tera_ctx,
@@ -3418,7 +3418,14 @@ fn resolved_task_file(task: &Task) -> Option<PathBuf> {
         // may belong to a different config hierarchy and produce a false
         // source match.
         let mut tera_ctx = ::tera::Context::new();
-        tera_ctx.insert("config_root", &task.config_root.clone().unwrap_or_default());
+        tera_ctx.insert(
+            "config_root",
+            &task
+                .config_root
+                .clone()
+                .unwrap_or_default()
+                .to_string_lossy(),
+        );
         match render_str(&mut tera, &file_str, &tera_ctx) {
             Ok(rendered) => rendered,
             Err(err) => {
@@ -4268,7 +4275,10 @@ pub fn command_wrapper_source(config_files: &ConfigMap, name: &str) -> Result<Op
 /// Adds the template variables of a value declared in the config file at `path`, as its other
 /// values get them: `config_root` and `config_source`.
 pub fn insert_config_file_template_vars(ctx: &mut tera::Context, path: &Path) {
-    ctx.insert("config_root", &config_file::config_root::config_root(path));
+    ctx.insert(
+        "config_root",
+        &config_file::config_root::config_root(path).to_string_lossy(),
+    );
     ctx.insert(
         "config_source",
         &config_file::config_root::config_source(path),
@@ -4464,7 +4474,7 @@ fn bootstrap_dry_run_var(
     context.insert("vars", vars);
     context.insert(
         "config_root",
-        &config_file::config_root::config_root(source),
+        &config_file::config_root::config_root(source).to_string_lossy(),
     );
     context.insert(
         "config_source",
@@ -4926,7 +4936,7 @@ fn render_task_input_entries(
     tera_ctx: &tera::Context,
 ) -> Result<Vec<String>> {
     let mut tera_ctx = tera_ctx.clone();
-    tera_ctx.insert("config_root", config_root);
+    tera_ctx.insert("config_root", &config_root.to_string_lossy());
     let mut tera = crate::tera::get_tera(Some(config_root));
     entries
         .iter()

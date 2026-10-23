@@ -1213,7 +1213,7 @@ fn hashed_path_filename(path: &Path) -> String {
     let canonicalized_path = path.canonicalize().unwrap();
     let hash = hash_to_str(&canonicalized_path);
     let trunc_str = |s: &OsStr| {
-        let mut s = s.to_str().unwrap().to_string();
+        let mut s = s.to_string_lossy().to_string();
         s = s.chars().take(20).collect();
         s
     };

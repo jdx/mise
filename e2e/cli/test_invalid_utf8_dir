@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# mise has to work in a directory whose name is not valid UTF-8. Git stores
+# file names as bytes, so a repository can carry one. serde refuses to
+# serialize such a path, which panicked in the template context, in the trust
+# record name and in __MISE_SESSION.
+
+# macOS file systems refuse such names
+if [[ $(uname) != Linux ]]; then
+  exit 0
+fi
+
+# "café" in ISO-8859-1: 0xE9 alone is not valid UTF-8
+dir="$PWD/$(printf 'caf\xe9')"
+mkdir -p "$dir/empty"
+
+eval "$(mise activate bash)"
+
+cd "$dir/empty" || exit 1
+assert_succeed "mise hook-env -s bash"
+eval "$(mise hook-env -s bash)"
+assert_succeed "mise hook-env -s bash"
+
+cat <<'EOF' >"$dir/mise.toml"
+[env]
+FOO = "bar"
+[tasks.hi]
+run = "echo hi"
+EOF
+touch "$dir/.tool-versions"
+
+cd "$dir" || exit 1
+mise trust
+eval "$(mise hook-env -s bash)"
+assert "echo $FOO" "bar"
+assert_succeed "mise ls"
+assert_succeed "mise tasks --json"
+assert_succeed "mise tasks info hi --json"
+assert "mise run hi" "hi"
+
+cd ../ || exit 1
+eval "$(mise hook-env -s bash)"
+assert "echo ${FOO:-unset}" "unset"
+
+# An untrusted config whose resolved name is not valid UTF-8 names its trust
+# record from that name.
+export MISE_TRUSTED_CONFIG_PATHS="$HOME/.config/mise"
+unset CI GITHUB_ACTIONS GITHUB_ACTION
+mkdir linked
+printf '[env]\nBAR = "1"\n' >"linked/$(printf 'caf\xe9').toml"
+ln -s "$(printf 'caf\xe9').toml" linked/mise.toml
+cd linked || exit 1
+assert_succeed "mise hook-env -s bash --force"
+assert_succeed "mise trust"
+assert_contains "mise env -s bash" "BAR"

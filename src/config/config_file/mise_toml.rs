@@ -462,7 +462,7 @@ impl MiseToml {
         let mut context = BASE_CONTEXT.clone();
         context.insert(
             "config_root",
-            config_root::config_root(path).to_str().unwrap(),
+            &config_root::config_root(path).to_string_lossy(),
         );
         context.insert("config_source", &config_root::config_source(path));
         let mut rf = Self {
@@ -679,7 +679,7 @@ impl MiseToml {
         rf.context = BASE_CONTEXT.clone();
         rf.context.insert(
             "config_root",
-            config_root::config_root(path).to_str().unwrap(),
+            &config_root::config_root(path).to_string_lossy(),
         );
         rf.context
             .insert("config_source", &config_root::config_source(path));

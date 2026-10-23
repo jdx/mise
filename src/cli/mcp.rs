@@ -617,7 +617,11 @@ impl ServerHandler for MiseServer {
                 })?;
 
                 let config_info = json!({
-                    "config_files": config.config_files.keys().collect::<Vec<_>>(),
+                    "config_files": config
+                        .config_files
+                        .keys()
+                        .map(|p| p.to_string_lossy())
+                        .collect::<Vec<_>>(),
                     "project_root": config.project_root.as_ref().map(|p| p.to_string_lossy()),
                 });
 

@@ -171,18 +171,18 @@ fn render_miserc_template(
     let tera = tera.get_or_insert_with(get_miserc_tera);
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
-    context.insert("config_root", config_root);
+    context.insert("config_root", &config_root.to_string_lossy());
     // Use the invocation directory, not the current one: the global ignore list
     // is rendered lazily, possibly after `-C` changed directory, and must match
     // what startup rendered.
     match invocation_cwd() {
-        Some(dir) => context.insert("cwd", dir),
+        Some(dir) => context.insert("cwd", &dir.to_string_lossy()),
         None => debug!("miserc template: could not determine cwd, `cwd` will be unavailable"),
     };
-    context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
-    context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
-    context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
-    context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
+    context.insert("xdg_cache_home", &env::XDG_CACHE_HOME.to_string_lossy());
+    context.insert("xdg_config_home", &env::XDG_CONFIG_HOME.to_string_lossy());
+    context.insert("xdg_data_home", &env::XDG_DATA_HOME.to_string_lossy());
+    context.insert("xdg_state_home", &env::XDG_STATE_HOME.to_string_lossy());
     context.insert("system_brew_prefix", &env::system_brew_prefix());
     match render_str(tera, content, &context) {
         Ok(rendered) => rendered,

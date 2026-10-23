@@ -312,19 +312,21 @@ fn tera_v1_float(value: Value, args: Kwargs) -> TeraResult<Value> {
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
-    context.insert("mise_bin", &*env::MISE_BIN);
+    // `Context::insert` panics when the value does not serialize, which a
+    // path that is not valid UTF-8 does not, so paths go in as lossy strings.
+    context.insert("mise_bin", &env::MISE_BIN.to_string_lossy());
     context.insert("mise_pid", &*env::MISE_PID);
     let mise_env = env::mise_env();
     if !mise_env.is_empty() {
         context.insert("mise_env", mise_env);
     }
     if let Ok(dir) = env::current_dir() {
-        context.insert("cwd", &dir);
+        context.insert("cwd", &dir.to_string_lossy());
     }
-    context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
-    context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
-    context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
-    context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
+    context.insert("xdg_cache_home", &env::XDG_CACHE_HOME.to_string_lossy());
+    context.insert("xdg_config_home", &env::XDG_CONFIG_HOME.to_string_lossy());
+    context.insert("xdg_data_home", &env::XDG_DATA_HOME.to_string_lossy());
+    context.insert("xdg_state_home", &env::XDG_STATE_HOME.to_string_lossy());
     context.insert("system_brew_prefix", &env::system_brew_prefix());
     context
 });
