@@ -3405,7 +3405,7 @@ fn config_set_contains(set: &IndexSet<PathBuf>, path: &Path) -> bool {
 fn resolved_task_file(task: &Task) -> Option<PathBuf> {
     let file = task.file.as_ref()?;
     let file_str = file.to_string_lossy().to_string();
-    let rendered = if contains_template_syntax(&file_str) {
+    let rendered = if !task.file_from_discovery && contains_template_syntax(&file_str) {
         let mut tera = get_empty_tera();
         // Only config_root has source-stable semantics here. Task env/vars may
         // themselves be effectful templates, while the active Config context
@@ -5102,7 +5102,7 @@ fn user_global_task_includes(has_config: bool) -> Vec<String> {
     includes
 }
 
-fn is_global_task_include_path(path: &Path) -> bool {
+pub(crate) fn is_global_task_include_path(path: &Path) -> bool {
     [
         dirs::CONFIG.join("tasks"),
         dirs::SYSTEM_CONFIG.join("tasks"),

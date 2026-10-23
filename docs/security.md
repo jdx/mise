@@ -60,15 +60,32 @@ idea:
   tool options such as `node[postinstall=...] 24`, or a `path:` version.
 - Idiomatic version files such as `.nvmrc` need trust only when they contain a
   `path:` version.
+- A project's [`mise.lock`](/dev-tools/mise-lock.html) is read with its config.
+  Until that config is trusted, the lockfile only pins versions and checksums:
+  mise ignores an entry that locks a tool to a backend other than the one its
+  tool key or the registry selects, or that adds options, and downloads from
+  where the backend normally would instead of the lockfile's URLs and
+  dependency graphs.
 - Task files, including TOML files from
   [`task_config.includes`](/tasks/task-discovery.html), need trust only when they
   contain template syntax or list `secrets`.
+  `mise lock` still asks for trust before it resolves a task's tools that carry
+  options, as it would for a tool option table.
+- A [tool stub](/dev-tools/tool-stubs.html) needs no trust to run, since running
+  it is your approval. `mise lock` also reads the stubs that `mise.lock` lists
+  under `tool-stubs`, and for that the project's config needs trust. In safe
+  mode it does not apply the options of those stubs.
 - A [`.miserc.toml`](/configuration.html#miserc) never needs trust. It only
   holds early settings that choose which config files load. Templates in a
   project `.miserc.toml` see no environment variables and may use only `if`
   statements and a short list of functions and filters, so they cannot leak your
   environment or hang mise; see
   [templates in .miserc.toml](/templates.html#miserc-template-support).
+
+Tasks that load without trust run nothing until you run one. Shell completion
+of their arguments leaves out the commands a
+[usage spec](/tasks/task-arguments.html) can name, `complete run=`,
+`complete delegate=`, `choices run=` and `mount`, until the project is trusted.
 
 [Paranoid mode](/paranoid.html) removes these exemptions apart from
 `.miserc.toml`: every other config file outside global and system config needs
@@ -239,6 +256,7 @@ These are skipped without an error, so resolution commands keep working:
   too.
 - `_.source` in every config, including global config.
 - Project `[shell_alias]`.
+- The commands in a project task's usage spec that shell completion would run.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
 - Your credentials, for hosts project config chooses: a project `api_url` gets
   no GitHub, GitLab or Forgejo token (unless global config names the same host),
@@ -275,7 +293,9 @@ Version resolution keeps working for backends that query HTTP APIs, such as core
 tools, `aqua:`, `github:`, `gitlab:`, `http:`, `cargo:`, `pypi:`, `gem:`,
 `dotnet:` and `npm:`. The `go:` backend runs `go list` with
 `GOTOOLCHAIN=local`, so a project's `go.mod` cannot make Go download another
-toolchain. Listing installed tools and refreshing `mise.lock` work as usual.
+toolchain. Listing installed tools and refreshing `mise.lock` work as usual,
+except that a project's `mise.lock` is not written through a symlink that leaves
+its directory.
 
 Safe mode loads untrusted config without a prompt or an error, in paranoid mode
 too. It does not mark the config trusted for later runs without safe mode. Syntax

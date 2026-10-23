@@ -7,7 +7,7 @@
 
 use crate::config::SettingsExt;
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
 use eyre::Result;
@@ -15,7 +15,7 @@ use path_absolutize::Absolutize;
 use tera::Context;
 
 use crate::config::config_file::diagnostic::toml_parse_error;
-use crate::config::settings::MisercSettings;
+use crate::config::settings::{MisercSettings, warn_settings_file_error};
 use crate::dirs;
 use crate::env;
 use crate::env_diff::EnvMap;
@@ -175,7 +175,7 @@ fn render_miserc_template(
     let global = is_global_miserc_dir(config_root);
     if !global && let Err(reason) = check_project_template(content) {
         // queued: the logger is not up yet while miserc loads
-        crate::config::settings::warn_settings_file_error(format!(
+        warn_settings_file_error(format!(
             "not rendering the templates of the .miserc.toml in {}: {reason}",
             file::display_path(config_root)
         ));
@@ -440,11 +440,54 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
             let mut settings = toml::from_str::<MisercSettings>(&content)
                 .map_err(|e| toml_parse_error(&e, &content, &path))?;
             resolve_ignored_config_paths(&mut settings, config_root);
+            drop_names_leaving_the_directory(&mut settings, &path);
             merge_settings(&mut merged, settings);
         }
     }
 
     Ok(merged)
+}
+
+/// `env` and the override filenames only choose which files mise loads from the
+/// directories it already searches: an environment name is one part of a filename
+/// (`mise.<env>.toml`, `mise.<env>.lock`) and an override filename is relative to
+/// each directory. A project `.miserc.toml` is read without trust, so a value that
+/// would lead out of the directory must not become a path: `mise lock` deletes
+/// the lockfiles it migrates and rewrites the ones it finds.
+fn drop_names_leaving_the_directory(settings: &mut MisercSettings, path: &Path) {
+    if let Some(envs) = settings.env.as_mut() {
+        envs.retain(|name| {
+            let valid = !name.contains(['/', '\\']);
+            if !valid {
+                warn_settings_file_error(format!(
+                    "{}: ignoring environment {name:?}: a name cannot contain a path separator",
+                    file::display_path(path)
+                ));
+            }
+            valid
+        });
+    }
+    for filenames in [
+        settings.override_config_filenames.as_mut(),
+        settings.override_tool_versions_filenames.as_mut(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        filenames.retain(|filename| {
+            let valid = !filename.contains('\\')
+                && Path::new(filename)
+                    .components()
+                    .all(|c| matches!(c, Component::Normal(_) | Component::CurDir));
+            if !valid {
+                warn_settings_file_error(format!(
+                    "{}: ignoring override filename {filename:?}: it must stay in its directory",
+                    file::display_path(path)
+                ));
+            }
+            valid
+        });
+    }
 }
 
 fn resolve_ignored_config_paths(settings: &mut MisercSettings, config_root: &Path) {
@@ -594,6 +637,52 @@ ceiling_paths = ["/home/user"]
         );
         assert_eq!(settings.env_conf_d, Some(true));
         assert!(settings.ceiling_paths.is_some());
+    }
+
+    #[test]
+    fn test_drop_names_leaving_the_directory() {
+        let mut settings = MisercSettings {
+            env: Some(
+                ["development", "linux-x64", "x/../../other/Cargo", r"x\..\y"]
+                    .map(String::from)
+                    .to_vec(),
+            ),
+            override_config_filenames: Some(
+                [
+                    "mise.ci.toml",
+                    "../other/mise.toml",
+                    ".config/mise.toml",
+                    "/etc/mise.toml",
+                ]
+                .map(String::from)
+                .to_vec(),
+            ),
+            override_tool_versions_filenames: Some(
+                [".tool-versions", "x/../../.tool-versions"]
+                    .map(String::from)
+                    .to_vec(),
+            ),
+            ..Default::default()
+        };
+
+        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"));
+
+        assert_eq!(
+            settings.env,
+            Some(["development", "linux-x64"].map(String::from).to_vec())
+        );
+        assert_eq!(
+            settings.override_config_filenames,
+            Some(
+                ["mise.ci.toml", ".config/mise.toml"]
+                    .map(String::from)
+                    .to_vec()
+            )
+        );
+        assert_eq!(
+            settings.override_tool_versions_filenames,
+            Some([".tool-versions"].map(String::from).to_vec())
+        );
     }
 
     #[test]
