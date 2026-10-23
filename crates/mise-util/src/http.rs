@@ -1276,8 +1276,13 @@ impl Client {
         if !is_html {
             bail!("Got non-HTML text from {}", log_url(&url));
         }
-        let html = buffer_body(resp).await?.text().await?;
-        Ok(html)
+        let read = async { Ok(buffer_body(resp).await?.text().await?) };
+        read_body_within(
+            crate::network::http_download_timeout(&Settings::get()),
+            &url,
+            read,
+        )
+        .await
     }
 
     pub async fn json_headers<T, U: IntoUrl>(&self, url: U) -> Result<(T, HeaderMap)>
@@ -2083,7 +2088,27 @@ impl Client {
     /// Send with retries, turning the response into `T` inside the retried unit.
     /// reqwest resolves a request once the headers arrive, so reading the body
     /// after the retry loop leaves a mid-body connection drop unretried.
+    /// Reading the body is bounded by `http_download_timeout`, as a file
+    /// download is.
     async fn send_with_retries<T, F, Fut>(&self, req: RetryableRequest<'_>, read: F) -> Result<T>
+    where
+        F: Fn(Response) -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        self.send_with_retries_body_timeout(
+            req,
+            read,
+            crate::network::http_download_timeout(&Settings::get()),
+        )
+        .await
+    }
+
+    async fn send_with_retries_body_timeout<T, F, Fut>(
+        &self,
+        req: RetryableRequest<'_>,
+        read: F,
+        body_timeout: Duration,
+    ) -> Result<T>
     where
         F: Fn(Response) -> Fut,
         Fut: std::future::Future<Output = Result<T>>,
@@ -2100,7 +2125,7 @@ impl Client {
                     options,
                 )
                 .await?;
-            read(resp).await
+            read_body_within(body_timeout, &req.url, read(resp)).await
         })
         .await
     }
@@ -2506,6 +2531,26 @@ fn is_github_forbidden(url: &Url, resp: &Response) -> bool {
 
 fn is_github_unauthorized(url: &Url, resp: &Response) -> bool {
     resp.status() == StatusCode::UNAUTHORIZED && crate::github::is_github_api_url(url)
+}
+
+/// Awaits `read`, which reads a response body, for at most `timeout`. Only
+/// `Fetch` requests carry a total request timeout; on the `Http` client the
+/// idle `read_timeout` restarts whenever a byte arrives, so a body that
+/// trickles in needs its own deadline. The error is not a reqwest timeout, so
+/// it is not retried.
+async fn read_body_within<T>(
+    timeout: Duration,
+    url: &Url,
+    read: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    match tokio::time::timeout(timeout, read).await {
+        Ok(result) => result,
+        Err(_) => bail!(
+            "HTTP response body timed out after {} for {} (change with `http_download_timeout` or env `MISE_HTTP_DOWNLOAD_TIMEOUT`)",
+            format_duration(timeout),
+            log_url(url),
+        ),
+    }
 }
 
 /// Most decoded bytes a successful response may hold in memory when mise parses

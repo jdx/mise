@@ -1721,6 +1721,10 @@ and sends a strong `ETag` or `Last-Modified` value, mise keeps a partial
 download and resumes it on the next attempt, even in a later run; otherwise the
 download starts over. Changing the URL or request headers discards the partial
 file.
+
+The same limit bounds reading the body of a response that mise parses instead
+of saving, such as a checksum file or a version list, so a server that sends it
+a byte at a time cannot hold a command forever.
 """
 env = "MISE_HTTP_DOWNLOAD_TIMEOUT"
 type = "Duration"

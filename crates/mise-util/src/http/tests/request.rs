@@ -508,3 +508,81 @@ async fn test_buffer_body_keeps_what_decoding_the_body_needs() {
     assert_eq!(resp.url().as_str(), url);
     assert_eq!(resp.text().await.unwrap(), unbuffered);
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_body_timeout_bounds_trickling_text_response() {
+    let port = spawn_trickling_server().await;
+    let url = format!("http://127.0.0.1:{port}/SHA256SUMS");
+    // The server sends a byte every 10ms, so the 100ms idle read timeout never
+    // fires. The body deadline must still end the read, and must not be
+    // retried.
+    let client = Client::new(Duration::from_millis(100), ClientKind::Http).unwrap();
+    let headers = HeaderMap::new();
+    let err = tokio::time::timeout(
+        Duration::from_secs(5),
+        client.send_with_retries_body_timeout(
+            RetryableRequest {
+                method: Method::GET,
+                url: Url::parse(&url).unwrap(),
+                headers: &headers,
+                verb_label: "GET",
+                retries: 3,
+                error_for_status: true,
+            },
+            |resp| async move { Ok(resp.text().await?) },
+            Duration::from_millis(500),
+        ),
+    )
+    .await
+    .expect("the body deadline did not end the read")
+    .unwrap_err();
+    let message = err.to_string();
+
+    assert!(
+        message.contains("HTTP response body timed out after 500.0ms"),
+        "{message}"
+    );
+    assert!(message.contains(&url), "{message}");
+    assert!(message.contains("MISE_HTTP_DOWNLOAD_TIMEOUT"), "{message}");
+    assert!(!is_transient(&err));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_get_html_body_is_bounded_by_http_download_timeout() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let _settings = {
+        let lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.http_download_timeout = Some("500ms".to_string());
+        crate::testing::reset_settings(Some(settings));
+        SettingsGuard { _lock: lock }
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let Ok((mut socket, _)) = listener.accept().await else {
+            return;
+        };
+        let mut request = [0u8; 4096];
+        let _ = socket.read(&mut request).await;
+        let _ = socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 1000000\r\nConnection: close\r\n\r\n")
+            .await;
+        while socket.write_all(b"x").await.is_ok() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    });
+    let client = Client::new(Duration::from_millis(100), ClientKind::Http).unwrap();
+    let err = tokio::time::timeout(
+        Duration::from_secs(5),
+        client.get_html(format!("http://127.0.0.1:{port}/simple/")),
+    )
+    .await
+    .expect("the body deadline did not end the read")
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("HTTP response body timed out"),
+        "{err}"
+    );
+}
