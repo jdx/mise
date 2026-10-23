@@ -1437,8 +1437,8 @@ impl NPMBackend {
         // already records can have had a graph.
         if !request
             .read_lockfile(config)?
-            .tools()
-            .contains_key(&request.ba().short)
+            .tools_for(&request.ba().short)
+            .is_some()
         {
             return Ok(None);
         }

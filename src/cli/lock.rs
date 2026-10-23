@@ -1540,7 +1540,7 @@ impl Lock {
             indexmap::IndexMap::new();
         for (ba, tv) in tools {
             let entry = new_versions
-                .entry(ba.short.clone())
+                .entry(crate::toolset::install_state::state_short(&ba.short).into_owned())
                 .or_insert_with(|| (Some(ba.full()), Vec::new()));
             if !entry.1.contains(&tv.version) {
                 entry.1.push(tv.version.clone());
@@ -1791,7 +1791,13 @@ impl Lock {
             // option change).
             let resolved = tools
                 .iter()
-                .map(|(ba, tv)| (ba.short.clone(), ba.stored_full(), tv.version.clone()))
+                .map(|(ba, tv)| {
+                    (
+                        crate::toolset::install_state::state_short(&ba.short).into_owned(),
+                        ba.stored_full(),
+                        tv.version.clone(),
+                    )
+                })
                 .collect::<Vec<_>>();
             lockfile.retain_unsuperseded_unbound_entries(|short, entry| {
                 resolved.iter().any(|(name, backend, version)| {
@@ -1812,7 +1818,7 @@ impl Lock {
                 .iter()
                 .map(|(ba, tv)| {
                     Ok((
-                        ba.short.clone(),
+                        crate::toolset::install_state::state_short(&ba.short).into_owned(),
                         ba.stored_full(),
                         tv.version.clone(),
                         tv.backend()?.lockfile_options(
@@ -1896,7 +1902,7 @@ impl Lock {
                     return None;
                 }
                 let stale_versions = stale_versions.get(&result.short)?;
-                let locked_tools = lockfile.tools().get(&result.short)?;
+                let locked_tools = lockfile.tools_for(&result.short)?;
                 if locked_tools.iter().any(|tool| {
                     tool.version == result.version
                         && tool.platforms.contains_key(&result.platform)

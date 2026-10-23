@@ -4452,6 +4452,50 @@ backend = "cargo:https://ci:t0ken@host/acme/tool.git"
     assert!(!written.contains("t0ken"), "{written}");
 }
 
+/// Pruning compares configured tools in the form the lockfile keys them in,
+/// so a tool configured with URL credentials keeps its clean entry.
+#[test]
+fn test_pruning_keeps_a_tool_configured_with_url_credentials() {
+    let mut lockfile = Lockfile::default();
+    lockfile.set_platform_info(
+        "cargo:https://host/acme/tool.git",
+        "tag:1.0.0",
+        Some("cargo:https://host/acme/tool.git"),
+        &BTreeMap::new(),
+        "linux-x64",
+        PlatformInfo {
+            checksum: Some("sha256:abc".to_string()),
+            ..Default::default()
+        },
+    );
+    let configured = "cargo:https://ci:t0ken@host/acme/tool.git";
+    let shorts = BTreeSet::from([configured.to_string()]);
+    let backends = BTreeSet::from([configured.to_string()]);
+    assert!(lockfile.stale_tool_shorts(&shorts, &backends).is_empty());
+    lockfile.retain_tools_by_short_or_backend(&shorts, &backends);
+    assert!(lockfile.tools_for(configured).is_some());
+    // A pypi tool is kept by its short alone.
+    lockfile.set_platform_info(
+        "pypi:git+https://host/acme/py.git",
+        "1.0.0",
+        None,
+        &BTreeMap::new(),
+        "linux-x64",
+        PlatformInfo::default(),
+    );
+    let shorts = BTreeSet::from(["pypi:git+https://u:t0ken@host/acme/py.git".to_string()]);
+    assert!(
+        lockfile
+            .stale_tool_shorts(&shorts, &BTreeSet::new())
+            .contains("cargo:https://host/acme/tool.git")
+    );
+    assert!(
+        !lockfile
+            .stale_tool_shorts(&shorts, &BTreeSet::new())
+            .contains("pypi:git+https://host/acme/py.git")
+    );
+}
+
 #[test]
 fn test_lockfile_write_refuses_credential_queries() {
     let tmp = tempfile::tempdir().unwrap();

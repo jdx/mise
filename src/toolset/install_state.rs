@@ -91,7 +91,7 @@ fn default_true() -> bool {
 /// as `cargo:https://host/repo`). Lookups take the configured spelling and go
 /// through this too, so both meet. The credential is read from config when an
 /// install needs it, never from install state.
-pub(crate) fn state_short(short: &str) -> std::borrow::Cow<'_, str> {
+pub fn state_short(short: &str) -> std::borrow::Cow<'_, str> {
     mise_util::redactions::strip_url_credentials_in_arg(short)
 }
 

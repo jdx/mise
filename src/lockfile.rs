@@ -1324,7 +1324,7 @@ impl Lockfile {
             .map(|(key, _)| key)
     }
 
-    pub(crate) fn tools_for(&self, short: &str) -> Option<&Vec<LockfileTool>> {
+    pub fn tools_for(&self, short: &str) -> Option<&Vec<LockfileTool>> {
         self.tool_key(short).and_then(|key| self.tools.get(key))
     }
 
@@ -1922,8 +1922,9 @@ impl Lockfile {
         keep_shorts: &BTreeSet<String>,
         keep_backends: &BTreeSet<String>,
     ) {
+        let (keep_shorts, keep_backends) = (stored_form(keep_shorts), stored_form(keep_backends));
         self.tools.retain(|short, versions| {
-            Self::should_keep_tool(short, versions, keep_shorts, keep_backends)
+            Self::should_keep_tool(short, versions, &keep_shorts, &keep_backends)
         });
         self.cleanup_unreferenced_conda_packages();
     }
@@ -1965,10 +1966,11 @@ impl Lockfile {
         keep_shorts: &BTreeSet<String>,
         keep_backends: &BTreeSet<String>,
     ) -> BTreeSet<String> {
+        let (keep_shorts, keep_backends) = (stored_form(keep_shorts), stored_form(keep_backends));
         self.tools
             .iter()
             .filter_map(|(short, versions)| {
-                (!Self::should_keep_tool(short, versions, keep_shorts, keep_backends))
+                (!Self::should_keep_tool(short, versions, &keep_shorts, &keep_backends))
                     .then_some(short.clone())
             })
             .collect()
@@ -2274,6 +2276,15 @@ impl Lockfile {
     pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         self.save(path)
     }
+}
+
+/// Tool selectors or backends from config in the form a lockfile records them
+/// in: without the credentials of a URL in them.
+pub(crate) fn stored_form(selectors: &BTreeSet<String>) -> BTreeSet<String> {
+    selectors
+        .iter()
+        .map(|s| crate::toolset::install_state::state_short(s).into_owned())
+        .collect()
 }
 
 fn lockfile_entry_key(short: &str, entry: &LockfileTool) -> LockfileEntryKey {
@@ -3337,7 +3348,10 @@ pub(crate) fn update_lockfiles(
                         })
                         .unwrap_or_default();
                     selected_python_specifiers
-                        .entry(dependency.ba().short.clone())
+                        .entry(
+                            crate::toolset::install_state::state_short(&dependency.ba().short)
+                                .into_owned(),
+                        )
                         .or_default()
                         .insert((dependency.version(), options));
                 }
@@ -3416,7 +3430,9 @@ pub(crate) fn update_lockfiles(
                     &consumed_keys,
                 );
             }
-            if let Some(specifiers) = selected_python_specifiers.get(&short) {
+            if let Some(specifiers) =
+                selected_python_specifiers.get(&*crate::toolset::install_state::state_short(&short))
+            {
                 preserve_selected_python_entries(
                     &mut merged_tools,
                     existing_lockfile.tools_for(&short),
@@ -3969,7 +3985,7 @@ pub(crate) async fn auto_lock_new_versions(
             .or_default();
         for (short, versions) in tools {
             requested
-                .entry(short)
+                .entry(crate::toolset::install_state::state_short(&short).into_owned())
                 .or_default()
                 .extend(versions.into_iter().map(|tv| tv.version));
         }
