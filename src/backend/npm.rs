@@ -27,7 +27,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, OnceLock};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -239,7 +239,7 @@ fn git_package_install_spec(name: &str, version: &str, has_checksum: bool) -> Re
 pub(crate) struct NPMBackend {
     ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
-    latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
+    latest_version_cache: OnceLock<TokioMutex<CacheManager<Option<String>>>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1041,7 +1041,7 @@ impl Backend for NPMBackend {
             self.ensure_npm_for_version_check(config).await;
         }
 
-        let cache = self.latest_version_cache.lock().await;
+        let cache = self.latest_version_cache().lock().await;
         let this = self;
         timeout::run_with_timeout_async(
             async || {
@@ -1526,13 +1526,25 @@ impl NPMBackend {
 
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self {
-            latest_version_cache: TokioMutex::new(
-                CacheManagerBuilder::new(ba.cache_path().join("latest_version.msgpack.z"))
-                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-                    .build(),
-            ),
+            latest_version_cache: OnceLock::new(),
             ba: Arc::new(ba),
         }
+    }
+
+    /// The cache of the package's `latest` dist-tag. Its directory is named by
+    /// the kebab-cased short name, which `npm:@acme/cli` and `npm:acme-cli`
+    /// share, so the package is in the key too. Built on first use: `full()`
+    /// reads aliases and the lockfile, which are only known once config loads,
+    /// as for the version-list cache.
+    fn latest_version_cache(&self) -> &TokioMutex<CacheManager<Option<String>>> {
+        self.latest_version_cache.get_or_init(|| {
+            TokioMutex::new(
+                CacheManagerBuilder::new(self.ba.cache_path().join("latest_version.msgpack.z"))
+                    .with_cache_key(self.ba.full())
+                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+                    .build(),
+            )
+        })
     }
 
     /// Legacy `npm view` version listing, kept behind `npm.shell_out` for
@@ -3492,6 +3504,23 @@ mod tests {
             backend.list_installed_versions_matching("1.3.1-3"),
             ["1.3.1-3"]
         );
+    }
+
+    #[tokio::test]
+    async fn latest_version_cache_is_not_shared_between_packages() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let scoped = NPMBackend::from_arg("npm:@acme-latest-cache/cli".into());
+        let unscoped = NPMBackend::from_arg("npm:acme-latest-cache-cli".into());
+        // Kebab-casing gives both the same cache directory.
+        assert_eq!(scoped.ba.cache_path(), unscoped.ba.cache_path());
+
+        let latest = Some("1.0.0".to_string());
+        let unscoped_cache = unscoped.latest_version_cache().lock().await;
+        unscoped_cache.write(&latest).unwrap();
+        assert_eq!(unscoped_cache.get_cached().unwrap(), latest);
+
+        let scoped_cache = scoped.latest_version_cache().lock().await;
+        assert!(scoped_cache.get_cached().is_err());
     }
 
     #[tokio::test]

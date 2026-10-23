@@ -2406,6 +2406,9 @@ impl AquaBackend {
             version_tags_cache: CacheManagerBuilder::new(
                 cache_path.join("version_tags_v2.msgpack.z"),
             )
+            // The directory is named by the kebab-cased short name, which two
+            // packages can share.
+            .with_cache_key(id.to_string())
             .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
             .build(),
         }
