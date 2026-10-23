@@ -3392,6 +3392,13 @@ pub(crate) fn discovered_global_config(path: &Path) -> Option<PathBuf> {
     config_set_get(&global_config_files(), path)
         .cloned()
         .or_else(|| config_set_get(&system_config_files(), path).cloned())
+        // Override files are recognized by name and directory, so one that
+        // `--override` has just created counts before discovery lists it.
+        .or_else(|| {
+            is_override_config(path)
+                .then(|| path.file_name().map(|name| dirs::CONFIG.join(name)))
+                .flatten()
+        })
 }
 
 /// Whether `path` was loaded from a `[bootstrap].config_roots` root that global
