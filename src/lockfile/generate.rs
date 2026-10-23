@@ -156,7 +156,11 @@ pub fn read_previous(config: &Config, path: &Path, upgrade: bool) -> Result<Lock
             }
             previous.lockfile_version = previous.lockfile_version.max(legacy.lockfile_version);
         }
+        let stubs = live_tool_stub_paths(&legacy, &source);
         merge_lockfile_preserving_root(&mut previous, legacy);
+        for stub in stubs {
+            previous.add_tool_stub(path, &stub)?;
+        }
     }
     Ok(previous)
 }

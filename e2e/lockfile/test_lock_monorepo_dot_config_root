@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+export MISE_EXPERIMENTAL=1
+export MISE_LOCKFILE=1
+
+# A root config in .config/ keeps its lockfile there in monorepo mode, and
+# descendant configs share it instead of writing <root>/mise.lock.
+mkdir -p monorepo/.config monorepo/apps/foo
+cat >monorepo/.config/mise.toml <<'EOT2'
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["apps/*"]
+
+[tools]
+"npm:cowsay" = "1.6.0"
+EOT2
+cat >monorepo/apps/foo/mise.toml <<'EOT2'
+[tools]
+"npm:is-odd" = "3.0.1"
+EOT2
+
+mise -C monorepo lock
+assert_succeed "test -f monorepo/.config/mise.lock"
+assert_fail "test -e monorepo/mise.lock"
+assert_contains "cat monorepo/.config/mise.lock" "npm:is-odd"
+
+# A lockfile shared at the root before the fix moves next to the root config.
+rm monorepo/.config/mise.lock
+mkdir -p monorepo2/.config monorepo2/apps/foo
+cp monorepo/.config/mise.toml monorepo2/.config/mise.toml
+cp monorepo/apps/foo/mise.toml monorepo2/apps/foo/mise.toml
+cat >monorepo2/mise.lock <<'EOT2'
+[[tools."npm:cowsay"]]
+version = "1.6.0"
+backend = "npm:cowsay"
+EOT2
+mise -C monorepo2 lock
+assert_succeed "test -f monorepo2/.config/mise.lock"
+assert_fail "test -e monorepo2/mise.lock"
+
+# The root declared in .config/mise.toml wins over a sibling mise.toml.
+mkdir -p monorepo4/.config monorepo4/apps/foo
+cp monorepo/.config/mise.toml monorepo4/.config/mise.toml
+cp monorepo/apps/foo/mise.toml monorepo4/apps/foo/mise.toml
+cat >monorepo4/mise.toml <<'EOT2'
+[tools]
+"npm:cowsay" = "1.6.0"
+EOT2
+mise -C monorepo4 lock
+assert_succeed "test -f monorepo4/.config/mise.lock"
+assert_fail "test -e monorepo4/mise.lock"
