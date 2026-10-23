@@ -297,7 +297,7 @@ impl NodePlugin {
                     info.url.as_deref() == Some(url.as_str())
                         && info.install.as_deref() == lockfile_install
                 })
-                .and_then(|info| info.checksum.clone());
+                .and_then(|info| info.pin_checksum().cloned());
             HTTP.download_file_stored(url.clone(), local, pinned.as_deref(), Some(ctx.pr.as_ref()))
                 .await?;
         }

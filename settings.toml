@@ -700,8 +700,11 @@ hash, and uses one again in two cases:
   carries the `ETag` or `Last-Modified` value the server sent, and a
   `304 Not Modified` answer means the kept file is used instead of a new
   download. Servers that send no validator are not cached.
-- **A tool pinned its checksum**, in its options or in `mise.lock`. The kept
-  file is used with no request at all, even if the URL changed.
+- **A tool pinned its checksum**, in its options or in `mise.lock`, and the kept
+  file was downloaded from the same URL. It is used with no request at all. A
+  file another URL served is not, even when it has that checksum, and neither
+  is anything for a checksum `mise lock` took from mise-versions without
+  downloading (see [`mise.lock`](/dev-tools/mise-lock.html#checksums)).
 
 The `http`, `github`, `aqua` and `packslip` backends and the core tools'
 precompiled archives pin and install from the stored file, linked into place
@@ -1059,6 +1062,33 @@ See [Credential command](/dev-tools/github-tokens.html#credential-command) and
 env = "MISE_GITHUB_CREDENTIAL_COMMAND"
 global_only = true
 type = "String"
+
+[github.enterprise_hosts]
+default = []
+description = "Extra GitHub Enterprise hosts that receive your GitHub token on their `/api/v3` URLs."
+docs = """
+mise sends the GitHub token to `api.github.com` and `api.*.ghe.com`, and to
+an `/api/v3` URL only on the origin of the tool's
+[`api_url`](/dev-tools/backends/github.html#api-url). A GitHub Enterprise
+Server URL that reaches mise any other way, such as an `http:` tool, an aqua
+package or a remote task file under `https://github.mycompany.com/api/v3/`,
+gets no token. List the hosts that should get one:
+
+```toml [~/.config/mise/config.toml]
+[settings.github]
+enterprise_hosts = ["github.mycompany.com"]
+```
+
+The token is sent over `https` only, to any port of a listed host, and only on
+paths under `/api/v3`. mise ignores this setting in project config, since a
+repository could otherwise list a host of its choosing. See
+[GitHub Enterprise](/dev-tools/github-tokens.html#github-enterprise).
+"""
+env = "MISE_GITHUB_ENTERPRISE_HOSTS"
+global_only = true
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
 
 [github.gh_cli_tokens]
 default = true

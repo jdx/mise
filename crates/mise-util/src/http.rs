@@ -299,6 +299,8 @@ struct Fetched {
     /// The validator that came with a complete response, for keeping it.
     validator: Option<DownloadValidator>,
     request_hash: String,
+    /// The URL requested, which a kept file is pinned under.
+    url: String,
 }
 
 /// How long a download may take and how much it may write.
@@ -793,7 +795,11 @@ pub async fn download_file_checksum_pinned<U: IntoUrl>(
     sha256: &str,
     pr: Option<&dyn SingleReport>,
 ) -> Result<()> {
-    HTTP_CHECKSUM_PINNED.download_file(url, path, pr).await?;
+    // Pinned, so a download that fails the check below is not kept.
+    let pin = format!("sha256:{sha256}");
+    HTTP_CHECKSUM_PINNED
+        .download_file_pinned(url, path, Some(&pin), pr)
+        .await?;
     verify_sha256_or_remove(path, sha256, pr)
 }
 
@@ -1641,6 +1647,7 @@ impl Client {
                     &path,
                     cas::Keep {
                         request_hash: &fetched.request_hash,
+                        url: &fetched.url,
                         pin: pin.as_deref(),
                         validator: fetched.validator.as_ref(),
                         effective_filename,
@@ -1753,11 +1760,13 @@ impl Client {
                 let effective_filename = fetched.metadata.effective_filename.clone();
                 let validator = fetched.validator.clone();
                 let hash = fetched.request_hash.clone();
+                let fetched_url = fetched.url.clone();
                 tokio::task::spawn_blocking(move || {
                     cas::ingest(
                         &staged,
                         cas::Keep {
                             request_hash: &hash,
+                            url: &fetched_url,
                             pin: pin.as_deref(),
                             validator: validator.as_ref(),
                             effective_filename,
@@ -1768,8 +1777,8 @@ impl Client {
             }
         };
         let dest = dest.to_path_buf();
-        // With nothing to index it by (no validator, no pin) the staged file is
-        // the download itself.
+        // With nothing to index it by (no validator, no pin), or a pin it
+        // doesn't match, the staged file is the download itself.
         let (source, link) = match &blob {
             Some(blob) => (blob.clone(), true),
             None => (staging.clone(), false),
@@ -1803,7 +1812,7 @@ impl Client {
         let request_hash = download_request_hash(&url, headers);
         // A pinned download kept earlier needs no request, so this comes before
         // the offline check.
-        if use_cache && let Some(hit) = pin.and_then(cas::lookup_pin) {
+        if use_cache && let Some(hit) = pin.and_then(|pin| cas::lookup_pin(pin, url.as_str())) {
             let effective_filename = hit.effective_filename.clone();
             if let Some(blob) = tokio::task::spawn_blocking(move || hit.verified()).await? {
                 return Ok(Fetched {
@@ -1811,6 +1820,7 @@ impl Client {
                     stored: Some(blob),
                     validator: None,
                     request_hash,
+                    url: url.to_string(),
                 });
             }
         }
@@ -1837,7 +1847,7 @@ impl Client {
         let attempt = Arc::new(AtomicUsize::new(0));
         let progress = Arc::new(DownloadProgress::default());
         let cached = if use_cache {
-            cas::lookup_url(&request_hash)
+            cas::lookup_url(&request_hash, pin)
         } else {
             None
         };
@@ -1919,6 +1929,7 @@ impl Client {
                     stored: Some(blob),
                     validator: None,
                     request_hash,
+                    url: url.to_string(),
                 });
             }
             // The stored file no longer matches what was recorded: fetch it again.
@@ -1953,6 +1964,7 @@ impl Client {
             stored: None,
             validator,
             request_hash,
+            url: url.to_string(),
         })
     }
 
@@ -3046,13 +3058,13 @@ pub fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
     // files are a 404 without the token, so it is routed here too. `get_headers`
     // decides what each host actually gets.
     if crate::github::is_github_api_url(url) || crate::github::is_github_raw_content_url(url) {
-        return crate::github::get_headers(url.as_str());
+        return crate::github::get_headers(url.as_str(), crate::github::API_URL);
     }
 
-    // A generic URL does not carry the configured GitLab or Forgejo API origin,
-    // so it cannot establish a safe trust boundary for those tokens. Their
-    // backend-specific callers must pass the request and API URLs directly to
-    // the corresponding `get_headers` function.
+    // A generic URL does not carry the configured GitHub Enterprise, GitLab or
+    // Forgejo API origin, so it cannot establish a safe trust boundary for those
+    // tokens. Their backend-specific callers must pass the request and API URLs
+    // directly to the corresponding `get_headers` function.
     Ok(HeaderMap::new())
 }
 

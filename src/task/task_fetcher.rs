@@ -1,4 +1,4 @@
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::task::Task;
 use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
 use dashmap::DashMap;
@@ -124,10 +124,18 @@ impl TaskFetcher {
             .is_some_and(|f| f.to_string_lossy().starts_with("git::"))
     }
 
-    /// For an unfetched `git::` task, a copy without its file, so its usage spec comes from
+    /// True for a task whose `file` is a remote source that has not been fetched: a gated
+    /// `git::` file, or any remote file of project config in safe mode.
+    pub fn is_unfetched_remote_task(task: &Task) -> bool {
+        task.file
+            .as_ref()
+            .is_some_and(|f| Self::is_remote_source(&f.to_string_lossy()))
+    }
+
+    /// For an unfetched remote task, a copy without its file, so its usage spec comes from
     /// its TOML metadata alone; `None` for any other task.
     pub fn toml_only(task: &Task) -> Option<Task> {
-        Self::is_unfetched_git_task(task).then(|| {
+        Self::is_unfetched_remote_task(task).then(|| {
             let mut task = task.clone();
             task.file = None;
             task
@@ -147,6 +155,12 @@ impl TaskFetcher {
 
                 // Skip local files - they don't need provider resolution
                 if !Self::is_remote_source(&source) {
+                    continue;
+                }
+                // Safe mode loads untrusted project config without a trust prompt, and
+                // fetching a URL is not something such a config gets to do, as for remote
+                // includes. The task keeps its TOML metadata, and safe mode refuses to run it.
+                if !t.global && Settings::safe_mode() {
                     continue;
                 }
                 if source.starts_with("git::") {

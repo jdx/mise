@@ -626,6 +626,31 @@ pub enum GithubAttestationsStatus {
     Unavailable,
 }
 
+/// Where a lockfile checksum came from, when not from the artifact itself.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, strum::Display)]
+pub enum ChecksumSource {
+    /// The release metadata mise-versions served to `mise lock`, which records
+    /// it without downloading. It is compared with the file after a real
+    /// download, and never used to reuse a kept download: that would let
+    /// mise-versions choose which kept file is installed.
+    #[serde(rename = "mise-versions")]
+    #[strum(serialize = "mise-versions")]
+    VersionsHost,
+}
+
+/// When two entries being merged hold the same checksum, its source in the
+/// result: unmarked if either copy is, since one of them was confirmed by a
+/// download. `None` when the checksums differ, so the caller keeps the source
+/// of whichever checksum it chose.
+fn same_checksum_source(
+    a: &Option<String>,
+    a_source: Option<ChecksumSource>,
+    b: &Option<String>,
+    b_source: Option<ChecksumSource>,
+) -> Option<Option<ChecksumSource>> {
+    (a.is_some() && a == b).then(|| a_source.and(b_source))
+}
+
 /// True when both checksums use the same algorithm and name different bytes.
 /// Provenance vouches for the bytes a checksum names, not for the URL they were
 /// fetched from, so it must not carry over across such a change. Digests of
@@ -664,6 +689,9 @@ fn merge_provenance_state(
 pub struct ArtifactInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
+    /// Set when `checksum` was not confirmed by a download (see [`ChecksumSource`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checksum_source: Option<ChecksumSource>,
     /// Size in bytes (read-only field, preserved from existing lockfiles but not written)
     #[serde(skip_serializing, default)]
     pub size: Option<u64>,
@@ -686,17 +714,26 @@ impl ArtifactInfo {
         if self.url != other.url {
             return self.clone();
         }
-        let checksum = match (&self.checksum, &other.checksum) {
+        // The source follows whichever side's checksum is kept.
+        let (checksum, checksum_source) = match (&self.checksum, &other.checksum) {
             (Some(self_checksum), Some(other_checksum)) => {
                 if other_checksum.starts_with("sha256:") && !self_checksum.starts_with("sha256:") {
-                    Some(other_checksum.clone())
+                    (Some(other_checksum.clone()), other.checksum_source)
                 } else {
-                    Some(self_checksum.clone())
+                    (Some(self_checksum.clone()), self.checksum_source)
                 }
             }
-            (Some(checksum), None) | (None, Some(checksum)) => Some(checksum.clone()),
-            (None, None) => None,
+            (Some(checksum), None) => (Some(checksum.clone()), self.checksum_source),
+            (None, Some(checksum)) => (Some(checksum.clone()), other.checksum_source),
+            (None, None) => (None, None),
         };
+        let checksum_source = same_checksum_source(
+            &self.checksum,
+            self.checksum_source,
+            &other.checksum,
+            other.checksum_source,
+        )
+        .unwrap_or(checksum_source);
         // Other bytes under the same URL do not inherit the other side's provenance.
         let (provenance, provenance_verified) =
             if checksum_changed(other.checksum.as_deref(), self.checksum.as_deref()) {
@@ -711,6 +748,7 @@ impl ArtifactInfo {
             };
         ArtifactInfo {
             checksum,
+            checksum_source,
             size: self.size.or(other.size),
             url: self.url.clone(),
             url_api: self.url_api.clone().or_else(|| other.url_api.clone()),
@@ -744,6 +782,9 @@ pub struct PlatformInfo {
     pub install: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
+    /// Set when `checksum` was not confirmed by a download (see [`ChecksumSource`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checksum_source: Option<ChecksumSource>,
     /// Size in bytes (read-only field, preserved from existing lockfiles but not written)
     #[serde(skip_serializing, default)]
     pub size: Option<u64>,
@@ -806,6 +847,7 @@ impl PlatformInfo {
     pub(crate) fn is_empty(&self) -> bool {
         self.install.is_none()
             && self.checksum.is_none()
+            && self.checksum_source.is_none()
             && self.url.is_none()
             && self.url_api.is_none()
             && self.conda_deps.is_none()
@@ -841,6 +883,7 @@ impl PlatformInfo {
             install: self.install.clone(),
             conda_deps: self.conda_deps.clone(),
             checksum: None,
+            checksum_source: None,
             size: None,
             url: None,
             url_api: None,
@@ -859,6 +902,15 @@ impl PlatformInfo {
     /// True when the lockfile has checksum-backed, successfully verified provenance.
     pub(crate) fn has_checksum_and_provenance(&self) -> bool {
         self.checksum.is_some() && self.provenance.is_some()
+    }
+
+    /// The checksum when it may serve as a download pin, which reuses a kept
+    /// file with no request: not when no download has confirmed it
+    /// ([`ChecksumSource`]). It is still compared after the download.
+    pub(crate) fn pin_checksum(&self) -> Option<&String> {
+        self.checksum
+            .as_ref()
+            .filter(|_| self.checksum_source.is_none())
     }
 
     /// Merge this PlatformInfo with another, preserving important data.
@@ -880,22 +932,36 @@ impl PlatformInfo {
         // For checksums, prefer sha256 over blake3 since sha256 comes from
         // official releases and is more portable/verifiable. If artifacts disagree,
         // ignore the other side's artifact-bound fields entirely.
-        let checksum = if artifact_changed {
-            self.checksum.clone()
+        // The checksum's source follows whichever side's checksum is kept.
+        let (checksum, checksum_source) = if artifact_changed {
+            (self.checksum.clone(), self.checksum_source)
         } else {
             match (&self.checksum, &other.checksum) {
                 (Some(self_cs), Some(other_cs)) => {
                     let self_is_sha256 = self_cs.starts_with("sha256:");
                     let other_is_sha256 = other_cs.starts_with("sha256:");
                     match (self_is_sha256, other_is_sha256) {
-                        (true, _) => Some(self_cs.clone()),
-                        (false, true) => Some(other_cs.clone()),
-                        (false, false) => Some(self_cs.clone()), // both blake3, use self
+                        (true, _) => (Some(self_cs.clone()), self.checksum_source),
+                        (false, true) => (Some(other_cs.clone()), other.checksum_source),
+                        // both blake3, use self
+                        (false, false) => (Some(self_cs.clone()), self.checksum_source),
                     }
                 }
-                (Some(cs), None) | (None, Some(cs)) => Some(cs.clone()),
-                (None, None) => None,
+                (Some(cs), None) => (Some(cs.clone()), self.checksum_source),
+                (None, Some(cs)) => (Some(cs.clone()), other.checksum_source),
+                (None, None) => (None, None),
             }
+        };
+        let checksum_source = if artifact_changed {
+            checksum_source
+        } else {
+            same_checksum_source(
+                &self.checksum,
+                self.checksum_source,
+                &other.checksum,
+                other.checksum_source,
+            )
+            .unwrap_or(checksum_source)
         };
 
         let size = if artifact_changed {
@@ -932,6 +998,7 @@ impl PlatformInfo {
                 }
             }),
             checksum,
+            checksum_source,
             size,
             url: if artifact_changed {
                 self.url.clone()
@@ -990,6 +1057,13 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 let checksum = match t.remove("checksum") {
                     Some(toml::Value::String(s)) => Some(s),
                     _ => None,
+                };
+                let checksum_source = match t.remove("checksum_source") {
+                    Some(value) => Some(
+                        ChecksumSource::deserialize(value)
+                            .map_err(|e| eyre!("unrecognized checksum_source in lockfile: {e}"))?,
+                    ),
+                    None => None,
                 };
                 let size = t
                     .remove("size")
@@ -1117,6 +1191,7 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 Ok(PlatformInfo {
                     install,
                     checksum,
+                    checksum_source,
                     size,
                     url,
                     url_api,
@@ -1144,6 +1219,9 @@ impl From<PlatformInfo> for toml::Value {
         }
         if let Some(checksum) = platform_info.checksum {
             table.insert("checksum".to_string(), checksum.into());
+        }
+        if let Some(source) = platform_info.checksum_source {
+            table.insert("checksum_source".to_string(), source.to_string().into());
         }
         if let Some(url) = platform_info.url {
             table.insert("url".to_string(), url.into());
@@ -1529,6 +1607,20 @@ impl Lockfile {
                 continue;
             }
             lockfile.tools.entry(short).or_default().extend(versions);
+        }
+
+        // A lockfile does not record whether GitHub or mise-versions chose a
+        // locked asset ID, so have each one confirmed before it is downloaded.
+        for info in lockfile
+            .tools
+            .values()
+            .flatten()
+            .flat_map(|tool| tool.platforms.values())
+        {
+            let additional = info.additional_artifacts.iter().map(|a| &a.url_api);
+            for url_api in std::iter::once(&info.url_api).chain(additional).flatten() {
+                crate::versions_host::remember_locked_asset_api_url(url_api);
+            }
         }
 
         if lockfile_version < FORGE_IDS_LOCKFILE_VERSION
@@ -2068,6 +2160,22 @@ impl Lockfile {
                             existing.install.clone()
                         }
                     }),
+                    // The source follows whichever checksum is kept, and a
+                    // checksum both sides hold stays unmarked if either is.
+                    checksum_source: if platform_info.checksum.is_some() {
+                        same_checksum_source(
+                            &platform_info.checksum,
+                            platform_info.checksum_source,
+                            &existing.checksum,
+                            existing.checksum_source,
+                        )
+                        .filter(|_| preserve_artifact_fields)
+                        .unwrap_or(platform_info.checksum_source)
+                    } else if preserve_artifact_fields {
+                        existing.checksum_source
+                    } else {
+                        None
+                    },
                     checksum: platform_info.checksum.or_else(|| {
                         if preserve_artifact_fields {
                             existing.checksum.clone()
@@ -6085,7 +6193,7 @@ fn format(mut doc: DocumentMut) -> String {
                                 let mut keys: Vec<_> =
                                     platform_info.iter().map(|(k, _)| k.to_string()).collect();
                                 keys.sort_by_key(|k| match k.as_str() {
-                                    "checksum" => 0,
+                                    "checksum" | "checksum_source" => 0,
                                     "size" => 1,
                                     "url" => 2,
                                     "url_api" => 3,

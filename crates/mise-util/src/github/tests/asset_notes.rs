@@ -158,7 +158,11 @@ fn test_same_release_download() {
 
 #[test]
 fn test_github_content_headers_request_raw_content() {
-    let headers = get_headers("https://api.github.com/repos/o/r/contents/bin/tool").unwrap();
+    let headers = get_headers(
+        "https://api.github.com/repos/o/r/contents/bin/tool",
+        API_URL,
+    )
+    .unwrap();
 
     assert_eq!(headers.get("accept").unwrap(), "application/vnd.github.raw");
 }

@@ -2019,6 +2019,14 @@
               "description": "Command that prints a GitHub token on stdout.",
               "type": "string"
             },
+            "enterprise_hosts": {
+              "default": [],
+              "description": "Extra GitHub Enterprise hosts that receive your GitHub token on their `/api/v3` URLs.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
             "gh_cli_tokens": {
               "default": true,
               "description": "Read GitHub tokens that the gh CLI stores in its `hosts.yml` file.",

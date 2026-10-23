@@ -10,7 +10,7 @@ use crate::dirs;
 use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::{PlatformInfo, ProvenanceType};
+use crate::lockfile::{ChecksumSource, PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::platform::{ARCH, OS};
 use crate::plugins::VERSION_REGEX;
@@ -619,7 +619,11 @@ impl Backend for AquaBackend {
         // Public repos download from the browser URL; private repos return 404/HTML there
         // and must be fetched from the API asset endpoint instead.
         let download_url = select_github_download_url(pkg.private, &url, url_api.as_deref()).await;
-        self.download(ctx, &tv, &download_url, &filename, api_digest.as_deref())
+        // verify() still compares a digest mise-versions supplied after the
+        // download; it just may not pick a kept file.
+        let pin_digest =
+            crate::versions_host::digest_download_pin(api_digest.as_deref(), url_api.as_deref());
+        self.download(ctx, &tv, &download_url, &filename, pin_digest.as_deref())
             .await?;
 
         // Snapshot before any mutation so verify() knows whether the lockfile
@@ -941,6 +945,13 @@ impl Backend for AquaBackend {
             pkg = Self::apply_selected_asset_libc_replacement(pkg, target_os, filename);
         }
 
+        // A digest from a release mise-versions served is recorded but marked,
+        // unless the lock-time provenance check below downloads the artifact.
+        let mut mirror_digest = checksum.is_some()
+            && url_api
+                .as_deref()
+                .is_some_and(crate::versions_host::is_mirrored_asset_api_url);
+
         // Try to get checksum from checksum file if not available from GitHub API
         let mut checksum = match checksum {
             Some(c) => Some(c),
@@ -1046,6 +1057,8 @@ impl Backend for AquaBackend {
             {
                 Ok(verified) => {
                     provenance = verified;
+                    // The artifact was downloaded and checked against it.
+                    mirror_digest = false;
                     verified_at_lock_time = true;
                 }
                 Err(e) => {
@@ -1067,6 +1080,7 @@ impl Backend for AquaBackend {
             );
         }
         Ok(PlatformInfo {
+            checksum_source: mirror_digest.then_some(ChecksumSource::VersionsHost),
             url,
             url_api,
             checksum,
@@ -2487,6 +2501,9 @@ impl AquaBackend {
             version_tags_cache: CacheManagerBuilder::new(
                 cache_path.join("version_tags_v2.msgpack.z"),
             )
+            // The directory is named by the kebab-cased short name, which two
+            // packages can share.
+            .with_cache_key(id.to_string())
             .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
             .build(),
         }
@@ -3135,7 +3152,7 @@ impl AquaBackend {
         let pinned = tv
             .lock_platforms
             .get(&self.get_platform_key())
-            .and_then(|platform| platform.checksum.clone())
+            .and_then(|platform| platform.pin_checksum().cloned())
             .or_else(|| api_digest.map(str::to_string));
         let headers = crate::http::host_auth_headers(&reqwest::Url::parse(url)?)?;
         HTTP.download_file_linked(
@@ -4188,7 +4205,9 @@ async fn select_github_download_url(
     api_url: Option<&str>,
 ) -> String {
     match api_url {
-        Some(api_url) if private => api_url.to_string(),
+        // No probe for private repos, but an asset ID that mise-versions or a
+        // lockfile supplied still has to be confirmed before it is used.
+        Some(api_url) if private => github::checked_api_asset_url(browser_url, api_url).await,
         Some(api_url) => github::pick_reachable_asset_url(browser_url, api_url).await,
         None => browser_url.to_string(),
     }

@@ -807,18 +807,7 @@ impl SelfUpdate {
     }
 
     fn request_headers(source: &SelfUpdateSource, url: &str) -> Result<reqwest::header::HeaderMap> {
-        let mut headers = crate::github::get_headers(url)?;
-        // A configured API may use any HTTPS host/path. Resolve its token
-        // explicitly, but never send it to an asset on another origin.
-        if url::Url::parse(url)?.origin() == url::Url::parse(&source.api_url)?.origin()
-            && let Some(token) = crate::github::resolve_token_for_api_url(&source.api_url)
-        {
-            headers.insert(
-                reqwest::header::AUTHORIZATION,
-                crate::tokens::bearer_header("GitHub", &token)?,
-            );
-        }
-        Ok(headers)
+        source.request_headers(url)
     }
 
     async fn release_packslip(

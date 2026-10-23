@@ -51,7 +51,7 @@ use mise_config::task::TaskDecls;
 
 use super::diagnostic::toml_parse_error;
 use super::min_version::MinVersionSpec;
-use super::version_requires_trust;
+use super::{tool_key_requires_trust, version_requires_trust};
 
 const LEGACY_ENV_KEYS_DEPRECATED_WARN_AT: &str = "2026.4.17";
 const LEGACY_ENV_KEYS_DEPRECATED_REMOVE_AT: &str = "2027.4.0";
@@ -2588,7 +2588,9 @@ impl<'de> de::Deserialize<'de> for BackendArg {
 ///   excluded because options like `postinstall` and `install_env` run code
 ///   or alter the install environment. Options can also ride in the key
 ///   (`"tool[postinstall=...]" = "1"`), so keys with inline options are
-///   excluded too. A `path:` version is excluded as well: it needs no install,
+///   excluded too, and so is an `spm:` key naming a self-hosted forge by URL,
+///   whose host would receive the user's forge token like an `api_url`
+///   option's. A `path:` version is excluded as well: it needs no install,
 ///   so it would put a directory of the repository on PATH as soon as the
 ///   config loads.
 /// - `[tasks]` definitions are inert until the user explicitly runs one
@@ -2621,7 +2623,7 @@ fn is_safe_config_body(body: &str) -> bool {
         }),
         "tools" => value.as_table().is_some_and(|tools| {
             tools.iter().all(|(tool, version)| {
-                !tool.contains('[')
+                !tool_key_requires_trust(tool)
                     && match version {
                         toml::Value::String(v) => !version_requires_trust(v),
                         toml::Value::Array(versions) => versions.iter().all(
@@ -4857,6 +4859,23 @@ run = "cargo build"
         assert!(!is_safe_config_body(indoc! {r#"
         [tools]
         "github:owner/repo[api_url=http://example.com/api/v3]" = "latest"
+        "#}));
+        // an spm URL on a self-hosted forge picks the host that gets the token,
+        // as api_url does
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        "spm:https://evil.example/o/r.git" = "latest"
+        "#}));
+        assert!(!is_safe_config_body(indoc! {r#"
+        [tools]
+        "spm:https://evil.example/o/gitlab.com.git" = "latest"
+        "#}));
+        // github.com and gitlab.com use the public APIs
+        assert!(is_safe_config_body(indoc! {r#"
+        [tools]
+        "spm:https://github.com/o/r.git" = "latest"
+        "spm:https://gitlab.com/o/r.git" = "latest"
+        "spm:o/r" = "latest"
         "#}));
         // tasks with templates render (and can exec) while loading
         assert!(!is_safe_config_body(indoc! {r#"

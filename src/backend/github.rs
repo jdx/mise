@@ -14,7 +14,7 @@ use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::{ArtifactInfo, PlatformInfo, ProvenanceType};
+use crate::lockfile::{ArtifactInfo, ChecksumSource, PlatformInfo, ProvenanceType};
 use crate::toolset::ToolVersionOptions;
 use crate::toolset::{ToolRequest, ToolVersion};
 use crate::{backend::Backend, forgejo, github, gitlab};
@@ -385,10 +385,7 @@ fn ensure_registry_provenance(
 async fn asset_download_url(asset: &ReleaseAsset) -> String {
     if asset.url_api.is_empty() {
         asset.url.clone()
-    } else if asset.url_api.starts_with(DEFAULT_GITHUB_API_BASE_URL)
-        || asset.url_api.starts_with(DEFAULT_GITLAB_API_BASE_URL)
-        || asset.url_api.starts_with(DEFAULT_FORGEJO_API_BASE_URL)
-    {
+    } else if is_public_forge_api_url(&asset.url_api) {
         github::pick_reachable_asset_url(&asset.url, &asset.url_api).await
     } else {
         debug!(
@@ -397,6 +394,59 @@ async fn asset_download_url(asset: &ReleaseAsset) -> String {
         );
         asset.url_api.clone()
     }
+}
+
+/// How `mise lock` marks `asset`'s digest in the lockfile: one from a release
+/// mise-versions served, not checked against a download at lock time, is only
+/// compared after a real download and never reuses a kept one.
+fn locked_digest_source(asset: &ReleaseAsset, downloaded: bool) -> Option<ChecksumSource> {
+    (asset.digest.is_some()
+        && !downloaded
+        && crate::versions_host::is_mirrored_asset_api_url(&asset.url_api))
+    .then_some(ChecksumSource::VersionsHost)
+}
+
+/// Record `asset` in its lockfile entry, its digest as the checksum when the
+/// entry has none, and return the checksum that may pick a kept download with
+/// no request: `pinned` (the tool's or the lockfile's, read before this) or else
+/// the asset's digest. A digest mise-versions supplied is not used that way, or
+/// it could choose which kept file is installed; it is only compared with the
+/// file after the download.
+fn record_release_asset(
+    platform_info: &mut PlatformInfo,
+    asset: &ReleaseAsset,
+    pinned: Option<String>,
+) -> Option<String> {
+    platform_info.url = Some(asset.url.clone());
+    platform_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
+    if let Some(digest) = &asset.digest
+        && platform_info.checksum.is_none()
+    {
+        debug!("using GitHub API digest for checksum verification");
+        platform_info.checksum = Some(digest.clone());
+    }
+    pinned.or_else(|| {
+        crate::versions_host::digest_download_pin(asset.digest.as_deref(), Some(&asset.url_api))
+    })
+}
+
+/// Whether `url` is under one of the public forges' API base URLs. Compared on
+/// the parsed URL, because the parser also accepts other spellings of the same
+/// host (`HTTPS://`, a leading space, userinfo) that a prefix test would take
+/// for a custom API, downloading the URL as given and skipping the browser URL
+/// and the asset-ID check.
+fn is_public_forge_api_url(url: &str) -> bool {
+    let Ok(url) = url::Url::parse(url) else {
+        return false;
+    };
+    [
+        DEFAULT_GITHUB_API_BASE_URL,
+        DEFAULT_GITLAB_API_BASE_URL,
+        DEFAULT_FORGEJO_API_BASE_URL,
+    ]
+    .iter()
+    .filter_map(|base| url::Url::parse(base).ok())
+    .any(|base| base.origin() == url.origin() && url.path().starts_with(base.path()))
 }
 
 fn attestations_supported(api_url: &str) -> bool {
@@ -1129,6 +1179,8 @@ impl Backend for UnifiedGitBackend {
                 };
                 // Every recorded provenance claim must be verified, including
                 // artifacts for platforms other than the host running mise lock.
+                // That downloads the artifact and checks its digest.
+                let primary_downloaded = provenance.is_some();
                 if provenance.is_some() {
                     match self
                         .verify_provenance_at_lock_time(
@@ -1169,6 +1221,7 @@ impl Backend for UnifiedGitBackend {
                     } else {
                         None
                     };
+                    let additional_downloaded = additional_provenance.is_some();
                     if additional_provenance.is_some() {
                         additional_provenance = self
                             .verify_provenance_at_lock_time(
@@ -1186,6 +1239,7 @@ impl Backend for UnifiedGitBackend {
                         additional_provenance.as_ref(),
                     )?;
                     additional_artifacts.push(ArtifactInfo {
+                        checksum_source: locked_digest_source(&additional, additional_downloaded),
                         checksum: additional.digest,
                         url: additional.url,
                         url_api: (!additional.url_api.is_empty()).then_some(additional.url_api),
@@ -1195,6 +1249,7 @@ impl Backend for UnifiedGitBackend {
                 }
 
                 Ok(PlatformInfo {
+                    checksum_source: locked_digest_source(&asset, primary_downloaded),
                     url: Some(asset.url),
                     url_api: (!asset.url_api.is_empty()).then_some(asset.url_api),
                     checksum: asset.digest,
@@ -1523,7 +1578,7 @@ impl UnifiedGitBackend {
         } else if self.is_forgejo() {
             forgejo::get_headers(&download_url, &api_url)?
         } else {
-            github::get_headers(&download_url)?
+            github::get_headers(&download_url, &api_url)?
         };
         HTTP.download_file_with_headers(&download_url, &artifact_path, &headers, None)
             .await?;
@@ -1803,15 +1858,10 @@ impl UnifiedGitBackend {
             .lock_platforms
             .get(&platform_key)
             .is_some_and(|p| p.checksum.is_some());
+        // Read before the asset's digest is recorded below.
+        let pinned = pinned_checksum(tv, &platform_key, opts.raw());
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-        platform_info.url = Some(asset.url.clone());
-        platform_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
-        if let Some(digest) = &asset.digest
-            && !lockfile_has_checksum
-        {
-            debug!("using GitHub API digest for checksum verification");
-            platform_info.checksum = Some(digest.clone());
-        }
+        let pinned = record_release_asset(platform_info, asset, pinned);
 
         let url = asset_download_url(asset).await;
 
@@ -1820,11 +1870,10 @@ impl UnifiedGitBackend {
         } else if self.is_forgejo() {
             forgejo::get_headers(&url, &opts.api_url())?
         } else {
-            github::get_headers(&url)?
+            github::get_headers(&url, &opts.api_url())?
         };
 
         ctx.pr.set_message(format!("download {filename}"));
-        let pinned = pinned_checksum(tv, &self.get_platform_key(), opts.raw());
         HTTP.download_file_linked(
             url,
             &file_path,
@@ -1955,7 +2004,7 @@ impl UnifiedGitBackend {
         } else if self.is_forgejo() {
             forgejo::get_headers(&url, &opts.api_url())?
         } else {
-            github::get_headers(&url)?
+            github::get_headers(&url, &opts.api_url())?
         };
 
         ctx.pr.set_message(format!("download {filename}"));
@@ -3331,6 +3380,94 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_mirrored_digest_is_recorded_but_not_a_download_pin() {
+        let asset = |url_api: &str| ReleaseAsset {
+            name: "b.tar.gz".to_string(),
+            url: "https://github.com/acme/b/releases/download/v1/b.tar.gz".to_string(),
+            url_api: url_api.to_string(),
+            digest: Some("sha256:aaaa".to_string()),
+            release_tag: Some("v1".to_string()),
+        };
+
+        // mise-versions supplied this asset, digest included: the digest is
+        // still compared after the download, but a kept file is not served by it.
+        let mirrored = "https://api.github.com/repos/acme/b/releases/assets/9001";
+        crate::versions_host::remember_mirrored_asset_api_url(mirrored);
+        let mut info = PlatformInfo::default();
+        assert_eq!(
+            record_release_asset(&mut info, &asset(mirrored), None),
+            None
+        );
+        assert_eq!(info.checksum.as_deref(), Some("sha256:aaaa"));
+
+        // GitHub's own digest (private repos, `use_versions_host = false`) is.
+        let direct = "https://api.github.com/repos/acme/b/releases/assets/9002";
+        let mut info = PlatformInfo::default();
+        assert_eq!(
+            record_release_asset(&mut info, &asset(direct), None).as_deref(),
+            Some("sha256:aaaa")
+        );
+
+        // A tool option or lockfile checksum wins, and the lockfile's is kept.
+        let mut info = PlatformInfo {
+            checksum: Some("sha256:bbbb".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            record_release_asset(&mut info, &asset(mirrored), Some("sha256:bbbb".into()))
+                .as_deref(),
+            Some("sha256:bbbb")
+        );
+        assert_eq!(info.checksum.as_deref(), Some("sha256:bbbb"));
+    }
+
+    #[test]
+    fn test_lock_marks_a_mise_versions_digest() {
+        let asset = |url_api: &str| ReleaseAsset {
+            name: "c.tar.gz".to_string(),
+            url: "https://github.com/acme/c/releases/download/v1/c.tar.gz".to_string(),
+            url_api: url_api.to_string(),
+            digest: Some("sha256:cccc".to_string()),
+            release_tag: Some("v1".to_string()),
+        };
+        let mirrored = "https://api.github.com/repos/acme/c/releases/assets/9101";
+        crate::versions_host::remember_mirrored_asset_api_url(mirrored);
+        assert_eq!(
+            locked_digest_source(&asset(mirrored), false),
+            Some(ChecksumSource::VersionsHost)
+        );
+        // Lock-time provenance verification downloaded it and checked it.
+        assert_eq!(locked_digest_source(&asset(mirrored), true), None);
+        // GitHub's own digest.
+        let direct = "https://api.github.com/repos/acme/c/releases/assets/9102";
+        assert_eq!(locked_digest_source(&asset(direct), false), None);
+    }
+
+    #[test]
+    fn test_public_forge_api_url_is_compared_parsed() {
+        for url in [
+            "https://api.github.com/repos/o/r/releases/assets/1",
+            "HTTPS://api.github.com/repos/o/r/releases/assets/1",
+            " https://api.github.com/repos/o/r/releases/assets/1",
+            "https://API.github.com/repos/o/r/releases/assets/1",
+            "https://x@api.github.com/repos/o/r/releases/assets/1",
+            "https://gitlab.com/api/v4/projects/1/packages/generic/x",
+            "https://codeberg.org/api/v1/repos/o/r/releases/assets/1",
+        ] {
+            assert!(is_public_forge_api_url(url), "{url:?}");
+        }
+        for url in [
+            "https://github.example.com/api/v3/repos/o/r/releases/assets/1",
+            "https://api.github.com.evil.example/repos/o/r/releases/assets/1",
+            "http://api.github.com/repos/o/r/releases/assets/1",
+            "https://gitlab.com/o/r/-/releases",
+            "not a url",
+        ] {
+            assert!(!is_public_forge_api_url(url), "{url:?}");
+        }
+    }
 
     #[test]
     fn test_registry_required_provenance_overrides_the_lockfile() {
