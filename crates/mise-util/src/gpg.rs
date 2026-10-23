@@ -5,6 +5,7 @@ use pgp::composed::{Deserializable, DetachedSignature, SignedPublicKey};
 use pgp::packet::Signature;
 use pgp::ser::Serialize;
 use pgp::types::{Fingerprint, KeyDetails, KeyId, VerifyingKey};
+use std::cell::Cell;
 use std::io::{Cursor, Read};
 use std::path::Path;
 
@@ -87,6 +88,21 @@ where
     if signatures.is_empty() {
         bail!("no signature found to verify");
     }
+
+    // Every verification attempt re-hashes the whole signed content, and the signature file
+    // (which comes from the download host) decides how many attempts there are: it can hold any
+    // number of signature packets, each naming any number of issuers. Cap the total at one
+    // attempt per trusted key and subkey, which is all a single signature without an issuer hint
+    // needs, so the work is bounded by the bundled keyring rather than by the downloaded file.
+    let key_count: usize = keys.iter().map(|k| 1 + k.public_subkeys.len()).sum();
+    let attempts_left = Cell::new(key_count);
+    let open_data = || match attempts_left.get().checked_sub(1) {
+        Some(left) => {
+            attempts_left.set(left);
+            open_data()
+        }
+        None => bail!("too many signature verification attempts"),
+    };
 
     // Fast path: only try keys whose id/fingerprint matches the signature's issuer, so the signed
     // content is hashed at most once in the common case.
@@ -284,6 +300,71 @@ mod tests {
     fn rejects_unparseable_signature() {
         let sig = "-----BEGIN PGP SIGNATURE-----\n\ngarbage\n-----END PGP SIGNATURE-----\n";
         assert!(verify_node(b"data", sig.as_bytes()).is_err());
+    }
+
+    /// Verify `count` copies of a bogus v4 signature carrying `unhashed` subpackets against the
+    /// swift keyring and return how often the signed content was read.
+    fn count_reads_of_bogus_signatures(unhashed: &[u8], count: usize) -> usize {
+        // v4, binary document, RSA, SHA-256, no hashed subpackets
+        let mut body = vec![4, 0, 1, 8, 0, 0, 0, unhashed.len() as u8];
+        body.extend_from_slice(unhashed);
+        // left 16 bits of the digest, then a 1-bit MPI as the "signature"
+        body.extend_from_slice(&[0, 0, 0, 1, 1]);
+        let mut packet = vec![0xc2, body.len() as u8];
+        packet.extend_from_slice(&body);
+
+        let reads = Cell::new(0);
+        let open_data = || {
+            reads.set(reads.get() + 1);
+            Ok(Cursor::new(b"data"))
+        };
+        let err = verify_detached(
+            include_str!("assets/gpg/swift.asc"),
+            &packet.repeat(count),
+            open_data,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("too many signature verification attempts"),
+            "{err}"
+        );
+        reads.get()
+    }
+
+    fn swift_key_ids() -> Vec<KeyId> {
+        parse_public_keys(include_str!("assets/gpg/swift.asc"))
+            .unwrap()
+            .iter()
+            .flat_map(|key| {
+                let subkeys = key.public_subkeys.iter().map(|k| k.legacy_key_id());
+                std::iter::once(key.legacy_key_id()).chain(subkeys)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn bounds_reads_for_signatures_without_issuer() {
+        // Issuer-less signatures fall back to every trusted key; many of them must not multiply
+        // the number of passes over the signed content.
+        assert_eq!(
+            count_reads_of_bogus_signatures(&[], 100),
+            swift_key_ids().len()
+        );
+    }
+
+    #[test]
+    fn bounds_reads_for_signatures_naming_every_issuer() {
+        let key_ids = swift_key_ids();
+        // one issuer key id subpacket (type 16) per trusted key, so every key takes the fast path
+        let unhashed: Vec<u8> = key_ids
+            .iter()
+            .flat_map(|id| [&[9, 16], id.as_ref()].concat())
+            .collect();
+        assert_eq!(
+            count_reads_of_bogus_signatures(&unhashed, 100),
+            key_ids.len()
+        );
     }
 
     // A real, checked-in detached signature over the genuine Node.js v20.11.0 `SHASUMS256.txt`

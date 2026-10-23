@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+# Tool options are rendered when the config is loaded. Rewriting an entry must
+# not save what a template rendered to: that puts the secret in mise.toml.
+export DUMMY_TOKEN=s3cr3t
+
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://{{ env.DUMMY_TOKEN }}@example.com", install_env = { AUTH = "{{ env.DUMMY_TOKEN }}" } }
+TOML
+assert "mise use dummy@2.0.0"
+assert "cat mise.toml" '[tools]
+dummy = { version = "2.0.0", url = "https://{{ env.DUMMY_TOKEN }}@example.com", install_env = { AUTH = "{{ env.DUMMY_TOKEN }}" } }'
+
+# an option given on the command line still replaces the template
+assert "mise use 'dummy[url=https://example.org]@1.0.0'"
+assert "cat mise.toml" '[tools]
+dummy = { version = "1.0.0", url = "https://example.org", install_env = { AUTH = "{{ env.DUMMY_TOKEN }}" } }'
+
+for spelling in \
+  '[tools]
+dummy = { version = "1.0.0", url = "https://{{ env.DUMMY_TOKEN }}@example.com" }' \
+  '[tools.dummy]
+version = "1.0.0"
+url = "https://{{ env.DUMMY_TOKEN }}@example.com"'; do
+  echo "$spelling" >mise.toml
+  mise install
+  assert "mise upgrade --bump dummy"
+  assert "cat mise.toml" "${spelling/1.0.0/2.0.0}"
+done
+
+cat >mise.toml <<'TOML'
+[tools]
+dummy = [{ version = "1.0.0", url = "https://{{ env.DUMMY_TOKEN }}@example.com" }, { version = "2.0.0", url = "https://{{ env.DUMMY_TOKEN }}@example.com" }]
+TOML
+assert "mise unuse dummy@1.0.0"
+assert "cat mise.toml" '[tools]
+dummy = { version = "2.0.0", url = "https://{{ env.DUMMY_TOKEN }}@example.com" }'
+
+# options inherited from another config are copied as they are written there
+rm mise.toml
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://{{ env.DUMMY_TOKEN }}@example.com" }
+TOML
+assert "mise use dummy@2.0.0"
+assert "cat mise.toml" '[tools]
+dummy = { version = "2.0.0", url = "https://{{ env.DUMMY_TOKEN }}@example.com" }'
+
+# a template that depends on the file declaring it means another path in the
+# project, so that option is copied as it rendered there; the others keep
+# their templates
+rm mise.toml
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://{{ env.DUMMY_TOKEN }}@example.com", note = "{{ config_root }}/notes" }
+TOML
+assert "mise use dummy@2.0.0"
+assert_contains "cat mise.toml" 'url = "https://{{ env.DUMMY_TOKEN }}@example.com"'
+assert_contains "cat mise.toml" 'note = "/'
+assert_not_contains "cat mise.toml" "config_root"
