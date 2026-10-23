@@ -726,6 +726,7 @@ fn test_a_stuck_pin_lock_keeps_the_download() {
     let _settings = set_test_http_retries(0);
     let cache = tempfile::tempdir().unwrap();
     *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    *cas::TEST_PIN_LOCK_WAIT.lock().unwrap() = Some(Duration::from_millis(100));
     let held = crate::lock_file::LockFile::at(&cache.path().join("pins.lock"))
         .lock()
         .unwrap();
@@ -760,6 +761,7 @@ fn test_a_stuck_pin_lock_keeps_the_download() {
     assert!(cas::lookup_pin(&pin, url).is_none());
     drop(held);
 
+    *cas::TEST_PIN_LOCK_WAIT.lock().unwrap() = None;
     *cas::TEST_ROOT.lock().unwrap() = None;
 }
 

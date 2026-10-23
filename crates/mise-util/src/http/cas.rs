@@ -415,14 +415,21 @@ fn keep_file(path: &Path, keep: Keep<'_>, move_in: bool) -> Result<Option<PathBu
 /// How long recording a pin waits for another process recording one. Each
 /// holds the lock for one small read and write, so this is only exceeded by a
 /// lock that is stuck.
-///
-/// Tests use a shorter wait so a stuck lock fails fast, but long enough that two
-/// dozen threads taking the lock in turn on a loaded runner still all get it.
-const PIN_LOCK_WAIT: std::time::Duration = if cfg!(test) {
-    std::time::Duration::from_secs(2)
-} else {
-    std::time::Duration::from_secs(5)
-};
+const PIN_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// A shorter wait for a test that holds the lock on purpose, so it doesn't sit
+/// out the whole of [`PIN_LOCK_WAIT`].
+#[cfg(test)]
+pub(super) static TEST_PIN_LOCK_WAIT: std::sync::Mutex<Option<std::time::Duration>> =
+    std::sync::Mutex::new(None);
+
+fn pin_lock_wait() -> std::time::Duration {
+    #[cfg(test)]
+    if let Some(wait) = *TEST_PIN_LOCK_WAIT.lock().unwrap() {
+        return wait;
+    }
+    PIN_LOCK_WAIT
+}
 
 /// Add `keep.url` to the URLs the pin `algo:hex` was kept from. Locked across
 /// the read and the write, or two downloads of the same file from different
@@ -430,13 +437,14 @@ const PIN_LOCK_WAIT: std::time::Duration = if cfg!(test) {
 fn record_pin(root: &Path, algo: &str, hex: &str, blake3: String, keep: &Keep<'_>) -> Result<()> {
     let lock_path = root.join("pins.lock");
     let started = std::time::Instant::now();
+    let wait = pin_lock_wait();
     let _lock = loop {
         if let Some(lock) = crate::lock_file::LockFile::at(&lock_path).try_lock()? {
             break lock;
         }
         eyre::ensure!(
-            started.elapsed() < PIN_LOCK_WAIT,
-            "the pin index stayed locked for {PIN_LOCK_WAIT:?}"
+            started.elapsed() < wait,
+            "the pin index stayed locked for {wait:?}"
         );
         std::thread::sleep(std::time::Duration::from_millis(10));
     };
