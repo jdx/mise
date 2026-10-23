@@ -1553,7 +1553,11 @@ impl Client {
                 .clone();
             let (directory, metadata) = shared
                 .get_or_try_init(|| async {
-                    let directory = tempfile::tempdir()?;
+                    // Not TEMP: a download under a deep TEMP passes MAX_PATH on Windows,
+                    // and a lockfile must not depend on where TEMP points.
+                    let scratch = crate::dirs::CACHE.join("invocation-downloads");
+                    file::create_dir_all(&scratch)?;
+                    let directory = tempfile::tempdir_in(&scratch)?;
                     let metadata = self
                         .download_file_with_headers_timeout(
                             url.clone(),

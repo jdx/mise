@@ -338,7 +338,11 @@ impl Vfox {
                     attestation.slsa_signer_issuer.as_deref(),
                 ) {
                     let min_level = attestation.slsa_min_level.unwrap_or(1u8);
-                    let signer = mise_sigstore::SlsaSignerIdentity { identity, issuer };
+                    let signer = mise_sigstore::SlsaSignerIdentity {
+                        identity,
+                        issuer,
+                        source_repository: attestation.slsa_source_repository.as_deref(),
+                    };
                     mise_sigstore::verify_slsa_provenance(file, provenance_path, min_level, signer)
                         .await?;
                     // SLSA has mid-tier recording priority: record it unless GitHub

@@ -42,11 +42,12 @@ fn validate_string_choices_checks_each_strict_setting() {
     let mut settings = Settings::default();
     settings.status.missing_tools = "always".into();
     settings.windows_shim_mode = "exe".into();
+    settings.lockfile_mode = "generate".into();
     assert!(settings.validate_string_choices().is_ok());
     let error = |settings: &Settings| settings.validate_string_choices().unwrap_err().to_string();
 
     let mut bad = settings.clone();
-    bad.lockfile_mode = Some("bogus".into());
+    bad.lockfile_mode = "bogus".into();
     assert!(error(&bad).starts_with("invalid lockfile_mode value \"bogus\""));
     let mut bad = settings.clone();
     bad.status.missing_tools = "bogus".into();
