@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+
+# `mise hook-env --json` emits the env/alias changes as data instead of shell
+# script so non-shell consumers (IDE plugins) can apply them themselves.
+
+# Applies a --json result to this shell the way a consumer would
+apply_json() {
+	eval "$(jq -r '.env | to_entries[] |
+		if .value == null then "unset \(.key)" else "export \(.key)=\(.value | @sh)" end' "$1")"
+}
+
+cat >mise.toml <<'EOF'
+[env]
+FOO = "bar"
+
+[shell_alias]
+ll = "ls -la"
+EOF
+
+unset __MISE_SESSION
+unset __MISE_DIFF
+
+mise hook-env --json >out.json
+
+assert "jq -e . >/dev/null <out.json && echo valid" "valid"
+assert "jq -r '.env.FOO' out.json" "bar"
+assert "jq -c '.aliases' out.json" '{"ll":"ls -la"}'
+assert "jq -r '.untrusted_configs | length' out.json" "0"
+
+# PATH and mise's bookkeeping vars are part of the diff so a consumer can feed
+# them back in on the next call
+assert "jq -r '.env | has(\"PATH\")' out.json" "true"
+assert "jq -r '.env | has(\"__MISE_DIFF\")' out.json" "true"
+assert "jq -r '.env | has(\"__MISE_SESSION\")' out.json" "true"
+
+# no shell script leaked into stdout
+assert_not_contains "mise hook-env --json --force" "export FOO="
+
+# --json works without a shell type being given or detectable
+assert_contains "MISE_SHELL= mise hook-env --json --force" '"FOO": "bar"'
+
+# once the result is applied and nothing has changed, the early exits still
+# print parseable JSON with nothing to apply
+apply_json out.json
+assert "printenv FOO" "bar"
+mise hook-env --json >out.json
+assert "jq -c '.env' out.json" '{}'
+assert "jq -c '.aliases' out.json" '{}'
+
+# --force and --json are seen when combined into one short flag group: only a
+# forced full run notices FOO was changed behind mise's back
+assert "FOO=other mise hook-env -J | jq -c .env" '{}'
+assert "FOO=other mise hook-env -fJ | jq -r .env.FOO" "bar"
+
+# removing an env var or alias, or unsetting one with `false`, shows up as a
+# null
+cat >mise.toml <<'EOF'
+[env]
+BAZ = "qux"
+FOO = false
+EOF
+export INHERITED=1
+cat >>mise.toml <<'EOF'
+INHERITED = false
+EOF
+
+mise hook-env --json >out.json
+
+assert "jq -r '.env.BAZ' out.json" "qux"
+assert "jq -r '.env | has(\"FOO\") and .FOO == null' out.json" "true"
+assert "jq -r '.env | has(\"INHERITED\") and .INHERITED == null' out.json" "true"
+assert "jq -c '.aliases' out.json" '{"ll":null}'
+
+# a full run reports only what changes, not every var mise manages
+apply_json out.json
+cat >>mise.toml <<'EOF'
+QUX = "1"
+EOF
+mise hook-env --json >out.json
+assert "jq -r '.env.QUX' out.json" "1"
+assert "jq -r '.env | has(\"BAZ\")' out.json" "false"
+
+apply_json out.json
+assert_fail "printenv FOO"
+assert_fail "printenv INHERITED"
+assert "printenv BAZ" "qux"
+
+# shell output is unaffected by the new flag
+assert_contains "mise hook-env -s bash --force" "export BAZ=qux"
+
+# an untrusted config is reported, and the warning is recorded in env.set so it
+# is not repeated while the consumer passes it back
+unset MISE_TRUSTED_CONFIG_PATHS CI GITHUB_ACTIONS GITHUB_ACTION
+mkdir -p untrusted
+cat >untrusted/mise.toml <<'EOF'
+[env]
+UNTRUSTED = "1"
+EOF
+cd untrusted
+mise hook-env --json >out.json 2>stderr.txt
+assert_contains "cat stderr.txt" "not trusted"
+assert_contains "jq -r '.untrusted_configs[]' out.json" "untrusted/mise.toml"
+assert "jq -r '.env | has(\"UNTRUSTED\")' out.json" "false"
+apply_json out.json
+mise hook-env --json >out.json 2>stderr.txt
+assert_not_contains "cat stderr.txt" "not trusted"
+assert "jq -e . >/dev/null <out.json && echo valid" "valid"
