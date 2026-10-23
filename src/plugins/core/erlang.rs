@@ -155,8 +155,11 @@ impl ErlangPlugin {
         }
         platform_info.install = install.map(str::to_string);
         platform_info.url = Some(url.to_string());
+        // A checksum mise.lock already pins for this artifact is what `verify_checksum`
+        // enforces; one resolved from the host during the install only fills a gap and
+        // must not replace the pin.
         if let Some(checksum) = checksum {
-            platform_info.checksum = Some(checksum);
+            platform_info.checksum.get_or_insert(checksum);
         }
         if let Some(url_api) = url_api {
             platform_info.url_api = Some(url_api);
@@ -961,6 +964,33 @@ fn require_locked_precompiled_checksum(version: &str, checksum: Option<&str>) ->
 mod tests {
     use super::*;
     use crate::duration::parse_into_timestamp;
+    use crate::toolset::ToolSource;
+
+    #[test]
+    fn test_set_lockfile_info_keeps_pinned_checksum_for_same_artifact() {
+        let plugin = ErlangPlugin::new();
+        let request = ToolRequest::new(plugin.ba().clone(), "28.3", ToolSource::Unknown).unwrap();
+        let mut tv = ToolVersion::new(request, "28.3".to_string());
+        let platform_key = plugin.get_platform_key();
+        let url = "https://builds.hex.pm/builds/otp/amd64/ubuntu-24.04/OTP-28.3.tar.gz";
+
+        // What mise.lock pins wins over what the host publishes for the same artifact
+        plugin.set_lockfile_info(&mut tv, None, url, Some("sha256:pinned".to_string()), None);
+        plugin.set_lockfile_info(&mut tv, None, url, Some("sha256:fetched".to_string()), None);
+        assert_eq!(
+            tv.lock_platforms[&platform_key].checksum.as_deref(),
+            Some("sha256:pinned")
+        );
+
+        // A different artifact starts from the freshly resolved checksum
+        let source_url = "https://github.com/erlang/otp/source.tar.gz";
+        let fetched = Some("sha256:fetched".to_string());
+        plugin.set_lockfile_info(&mut tv, Some("source"), source_url, fetched, None);
+        assert_eq!(
+            tv.lock_platforms[&platform_key].checksum.as_deref(),
+            Some("sha256:fetched")
+        );
+    }
 
     fn release(tag: &str, released_at: Option<&str>) -> ReleaseVersion {
         ReleaseVersion {

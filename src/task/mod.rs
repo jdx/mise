@@ -849,16 +849,22 @@ pub(crate) fn header_has_decoded_template(body: &str) -> bool {
 
 #[cfg(test)]
 fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
-    parse_task_script_usage_with_env(file, None)
+    parse_task_script_usage_with_env(file, None, "")
 }
 
+/// `preamble` is the task's `usage` field, which a file task only has from a template it
+/// extends: it comes first, ahead of the script's own `#USAGE` lines.
 fn parse_task_script_usage_with_env(
     file: &Path,
     env: Option<&EnvMap>,
+    preamble: &str,
 ) -> usage::Result<usage::Spec> {
     let script = std::fs::read_to_string(file)?;
     // Same reason as the `#MISE` header scan: `#USAGE` on line 1 is invisible behind a mark.
-    let raw = extract_usage_from_comments(crate::file::strip_utf8_bom(&script));
+    let mut raw = extract_usage_from_comments(crate::file::strip_utf8_bom(&script));
+    if !preamble.trim().is_empty() {
+        raw = format!("{}\n{raw}", preamble.trim_end());
+    }
     if raw.trim().is_empty() {
         return usage::Spec::parse_script(file);
     }
@@ -889,8 +895,12 @@ pub(crate) fn parse_task_usage_field(task_name: &str, spec: &str) -> Result<usag
 ///
 /// A script that cannot be read still warns and yields an empty spec: that is not a spec
 /// problem, and `mise tasks validate` reports a missing task file on its own.
-fn parse_task_script_usage_checked(file: &Path, env: Option<&EnvMap>) -> Result<usage::Spec> {
-    match parse_task_script_usage_with_env(file, env) {
+fn parse_task_script_usage_checked(
+    file: &Path,
+    env: Option<&EnvMap>,
+    preamble: &str,
+) -> Result<usage::Spec> {
+    match parse_task_script_usage_with_env(file, env, preamble) {
         Ok(spec) => Ok(spec),
         // Reading the script is the first thing this does, and a script that was discovered
         // and has since been deleted or made unreadable fails there. Calling that an invalid
@@ -914,8 +924,12 @@ fn parse_task_script_usage_checked(file: &Path, env: Option<&EnvMap>) -> Result<
 ///
 /// A file task's spec failing must not take the whole task load down, the same way one
 /// unrecognised `#MISE` key does not: every task in the project is parsed in one loop.
-fn parse_task_script_usage_or_warn(file: &Path, env: Option<&EnvMap>) -> usage::Spec {
-    parse_task_script_usage_checked(file, env).unwrap_or_else(|err| {
+fn parse_task_script_usage_or_warn(
+    file: &Path,
+    env: Option<&EnvMap>,
+    preamble: &str,
+) -> usage::Spec {
+    parse_task_script_usage_checked(file, env, preamble).unwrap_or_else(|err| {
         warn!("{err}");
         usage::Spec::default()
     })
@@ -1940,8 +1954,14 @@ impl Task {
         }
         let (mut spec, scripts) = if let Some(file) = self.file_path(config).await? {
             let include_env = self.usage_include_env(config, &file);
+            let inherited = TaskScriptParser::new(match cwd.clone() {
+                Some(cwd) => Some(cwd),
+                None => self.dir(config).await?,
+            })
+            .render_inherited_usage(config, self, false, Some(&env))
+            .await?;
             (
-                parse_task_script_usage_or_warn(&file, Some(&include_env)),
+                parse_task_script_usage_or_warn(&file, Some(&include_env), &inherited),
                 vec![],
             )
         } else {
@@ -2026,10 +2046,13 @@ impl Task {
         let dir = self.dir(config).await.unwrap_or(None);
         let mut spec = if let Some(file) = self.file_path(config).await? {
             let env = self.usage_include_env(config, &file);
+            let inherited = TaskScriptParser::new(dir.clone())
+                .render_inherited_usage(config, self, false, None)
+                .await?;
             if strict {
-                parse_task_script_usage_checked(&file, Some(&env))?
+                parse_task_script_usage_checked(&file, Some(&env), &inherited)?
             } else {
-                parse_task_script_usage_or_warn(&file, Some(&env))
+                parse_task_script_usage_or_warn(&file, Some(&env), &inherited)
             }
         } else {
             let scripts_only = self.run_script_strings();
@@ -2051,7 +2074,10 @@ impl Task {
     ) -> Result<usage::Spec> {
         let mut spec = if let Some(file) = self.file_path_raw() {
             let env = self.usage_include_env(config, &file);
-            parse_task_script_usage_or_warn(&file, Some(&env))
+            let inherited = TaskScriptParser::new(self.config_root.clone())
+                .render_inherited_usage(config, self, true, None)
+                .await?;
+            parse_task_script_usage_or_warn(&file, Some(&env), &inherited)
         } else {
             let scripts_only = self.run_script_strings();
             TaskScriptParser::new(self.config_root.clone())

@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+# A 404 for the node archive that mise.lock pins must not switch the install to a
+# source build: the locked checksum says nothing about the source tarball, so the
+# download host would choose what gets compiled.
+
+export MISE_LOCKFILE=1
+# This mirror publishes no signatures; the lock pin is what this test is about
+export MISE_NODE_GPG_VERIFY=false
+
+detect_platform
+
+MIRROR=$(mktemp -d "${TMPDIR:-/tmp}/node-mirror.XXXXXX")
+MARKER="$MIRROR/configure-ran"
+mkdir -p "$MIRROR/v22.0.0" "$MIRROR/src/node-v22.0.0"
+echo '[{"version":"v22.0.0","files":[]}]' >"$MIRROR/index.json"
+
+cat >"$MIRROR/src/node-v22.0.0/configure" <<EOF
+#!/bin/sh
+touch "$MARKER"
+echo "PREFIX=\${1#--prefix=}" >config.mk
+EOF
+chmod +x "$MIRROR/src/node-v22.0.0/configure"
+cat >"$MIRROR/src/node-v22.0.0/Makefile" <<'EOF'
+include config.mk
+all:
+install:
+	mkdir -p $(PREFIX)/bin
+	printf '#!/bin/sh\necho from-source\n' >$(PREFIX)/bin/node
+	chmod +x $(PREFIX)/bin/node
+EOF
+tar -C "$MIRROR/src" -czf "$MIRROR/v22.0.0/node-v22.0.0.tar.gz" node-v22.0.0
+if command -v sha256sum >/dev/null 2>&1; then
+  SOURCE_SHA=$(sha256sum "$MIRROR/v22.0.0/node-v22.0.0.tar.gz" | cut -d' ' -f1)
+else
+  SOURCE_SHA=$(shasum -a 256 "$MIRROR/v22.0.0/node-v22.0.0.tar.gz" | cut -d' ' -f1)
+fi
+BINARY_SHA=$(printf '0%.0s' {1..64})
+
+# The release lists a binary for every platform this test runs on but serves none
+{
+  for slug in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
+    echo "$BINARY_SHA  node-v22.0.0-$slug.tar.gz"
+  done
+  echo "$SOURCE_SHA  node-v22.0.0.tar.gz"
+} >"$MIRROR/v22.0.0/SHASUMS256.txt"
+
+start_http_server --dir "$MIRROR"
+
+export MISE_NODE_MIRROR_URL="http://127.0.0.1:$HTTP_PORT/"
+export MISE_USE_VERSIONS_HOST=0
+
+cat <<EOF >mise.toml
+[tools]
+node = "22.0.0"
+EOF
+
+assert_succeed "mise lock --platform $MISE_PLATFORM"
+assert_contains "cat mise.lock" "checksum = \"sha256:$BINARY_SHA\""
+assert_not_contains "cat mise.lock" 'install = "source"'
+cp mise.lock mise.lock.orig
+
+assert_fail "mise install" "mise.lock pins its checksum"
+assert_fail "test -e '$MARKER'"
+assert_succeed "diff mise.lock.orig mise.lock"
+
+# Without a pin the fallback still applies
+rm mise.lock mise.lock.orig
+assert_succeed "MISE_LOCKFILE=0 mise install"
+assert_succeed "test -e '$MARKER'"
+assert "MISE_LOCKFILE=0 mise exec -- node" "from-source"

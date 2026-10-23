@@ -183,6 +183,8 @@ pub(super) async fn install(
                     preserve_mtime: true,
                 },
             )?;
+            // The binary is copied by path, which reads through a shipped link.
+            file::ensure_symlinks_stay_within(&extract_dir)?;
             let Some(src) = find_native_bin(&extract_dir, binstall.bin_dir.as_deref(), &vars)?
             else {
                 if bin.required_features.is_empty() {
@@ -250,6 +252,8 @@ pub(super) async fn install(
             preserve_mtime: true,
         },
     )?;
+    // The binaries are copied by path, which reads through a shipped link.
+    file::ensure_symlinks_stay_within(extract_dir.path())?;
 
     let mut pending = vec![];
     for bin in &bins {

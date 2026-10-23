@@ -21,8 +21,9 @@ use crate::args::BackendArg;
 use crate::backend::unalias_backend;
 use crate::config::config_file::config_root;
 use crate::config::config_file::{
-    ConfigFile, TaskConfig, ToolConfig, config_trust_root, is_config_ignored_via_setting,
-    is_persisted_ignored, trust, trust_check,
+    ConfigFile, TaskConfig, ToolConfig, ToolOptionTemplate, config_trust_root,
+    ensure_versions_are_not_templates, is_config_ignored_via_setting, is_persisted_ignored, trust,
+    trust_check,
 };
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvValue};
 use crate::config::settings::SettingsPartial;
@@ -164,6 +165,42 @@ fn auto_update_value(auto_update: &str) -> Value {
         "true" => Value::from(true),
         "false" => Value::from(false),
         _ => Value::from(auto_update),
+    }
+}
+
+/// Replace each option of `request` that a template renders to with the template as it is
+/// written. Entries with the request's version and `os` come first, so a value two entries'
+/// templates both render to gets the template of the entry the request came from.
+fn restore_option_templates(request: &mut ToolRequest, templates: &[ToolOptionTemplate]) {
+    let version = request.version();
+    let os = request.os().clone();
+    let own: Vec<&ToolOptionTemplate> = templates
+        .iter()
+        .filter(|t| t.version == version && t.written.os == os)
+        .collect();
+    let candidates = if own.is_empty() {
+        templates.iter().collect()
+    } else {
+        own
+    };
+    let options = request.options_mut();
+    for (k, v) in options.opts.iter_mut() {
+        if let Some(w) = candidates.iter().find_map(|t| {
+            (t.rendered.opts.get(k) == Some(&*v))
+                .then(|| t.written.opts.get(k))
+                .flatten()
+        }) {
+            v.clone_from(w);
+        }
+    }
+    for (k, v) in options.core.install_env.iter_mut() {
+        if let Some(w) = candidates.iter().find_map(|t| {
+            (t.rendered.install_env.get(k) == Some(&*v))
+                .then(|| t.written.install_env.get(k))
+                .flatten()
+        }) {
+            v.clone_from(w);
+        }
     }
 }
 
@@ -1221,10 +1258,8 @@ impl MiseToml {
         }
     }
 
-    fn build_tool_request_set(&self, skip_templated: bool) -> eyre::Result<ToolRequestSet> {
-        let source = ToolSource::MiseToml(self.path.clone());
-        let mut trs = ToolRequestSet::new();
-        let tools = self.tools.lock().unwrap();
+    /// The context a tool's version and options are rendered with.
+    fn tool_template_context(&self) -> TeraContext {
         let mut context = self.context.clone();
         if let Some(config) = Config::maybe_get()
             && let Some(env_results) = config.env_results_cached()
@@ -1250,6 +1285,94 @@ impl MiseToml {
             context.insert("env", &env_vars);
         }
         Self::insert_resolved_vars(&mut context);
+        context
+    }
+
+    /// Render the templates in a tool's backend options and `install_env`.
+    fn render_tool_options(
+        &self,
+        context: &TeraContext,
+        ba: &BackendArg,
+        options: &mut ToolVersionOptions,
+    ) -> eyre::Result<()> {
+        // Add placeholder for version since it's not available at config load time
+        // This preserves {{ version }} in the output for install-time rendering
+        let mut opts_context = context.clone();
+        opts_context.insert("version", "{{ version }}");
+        // The http and s3 backends re-render their url/checksum_url per
+        // target platform (host at install, any target during `mise
+        // lock`), so only those two options defer os()/arch() instead of
+        // resolving them now. Every other option (here and for other
+        // backends) is consumed verbatim, so it keeps host resolution at
+        // config load — deferring it would leak raw `{{ os() }}`
+        // fragments into consumers that never render again (e.g.
+        // checksum_expr).
+        let defer_os_arch = matches!(
+            ba.backend_type(),
+            crate::backend::backend_type::BackendType::Http
+                | crate::backend::backend_type::BackendType::S3
+        );
+        // `install_env` is a typed core option, so it never reaches the
+        // `opts` loop below and its values went to the installer
+        // unrendered — `{{ env.HOME }}` arrived literally, unlike every
+        // other tool option (#13306). Render it here, with `version`
+        // bound to itself so the placeholder still round-trips: core
+        // options are deliberately exempt from the backend `{version}`
+        // normalization, and nothing renders `install_env` again later.
+        let mut install_env_context = context.clone();
+        install_env_context.insert("version", "{{version}}");
+        for value in options.core.install_env.values_mut() {
+            if let EnvValue::String(s) = value {
+                *s = self.parse_template_with_context(&install_env_context, s)?;
+            }
+        }
+        for (k, v) in options.opts.iter_mut() {
+            self.parse_tool_option_value_template(&opts_context, Some(k), v, defer_os_arch)?;
+        }
+        Ok(())
+    }
+
+    /// The templates `replace_versions` can write back for `ba`: this file's, and those of the
+    /// other loaded configs, which `mise use` copies options from. Each is rendered by the config
+    /// that declares it. An inherited template is kept only for the options it renders the same
+    /// way here: one that depends on its own file, such as `{{ config_root }}/bin`, means another
+    /// path in this file, so its value is written rendered, keeping what it pointed to.
+    fn templates_for_rewrite(&self, ba: &BackendArg) -> Vec<ToolOptionTemplate> {
+        let mut templates = self.tool_option_templates(ba);
+        let Some(config) = Config::maybe_get() else {
+            return templates;
+        };
+        let mut context = None;
+        for cf in config.config_files.values() {
+            if cf.get_path() == self.path {
+                continue;
+            }
+            for mut template in cf.tool_option_templates(ba) {
+                let context = context.get_or_insert_with(|| self.tool_template_context());
+                let mut here = template.written.clone();
+                if self.render_tool_options(context, ba, &mut here).is_err() {
+                    continue;
+                }
+                template
+                    .rendered
+                    .opts
+                    .retain(|k, v| here.opts.get(k) == Some(v));
+                template
+                    .rendered
+                    .core
+                    .install_env
+                    .retain(|k, v| here.install_env.get(k) == Some(v));
+                templates.push(template);
+            }
+        }
+        templates
+    }
+
+    fn build_tool_request_set(&self, skip_templated: bool) -> eyre::Result<ToolRequestSet> {
+        let source = ToolSource::MiseToml(self.path.clone());
+        let mut trs = ToolRequestSet::new();
+        let tools = self.tools.lock().unwrap();
+        let context = self.tool_template_context();
         for (ba, tvp) in tools.iter() {
             for tool in &tvp.0 {
                 if skip_templated && tool_has_template(tool) {
@@ -1259,45 +1382,7 @@ impl MiseToml {
                 // taken before `ba` is consumed below
                 let short = ba.short.clone();
                 let tvr = if let Some(mut options) = tool.options.clone() {
-                    // Add placeholder for version since it's not available at config load time
-                    // This preserves {{ version }} in the output for install-time rendering
-                    let mut opts_context = context.clone();
-                    opts_context.insert("version", "{{ version }}");
-                    // The http and s3 backends re-render their url/checksum_url per
-                    // target platform (host at install, any target during `mise
-                    // lock`), so only those two options defer os()/arch() instead of
-                    // resolving them now. Every other option (here and for other
-                    // backends) is consumed verbatim, so it keeps host resolution at
-                    // config load — deferring it would leak raw `{{ os() }}`
-                    // fragments into consumers that never render again (e.g.
-                    // checksum_expr).
-                    let defer_os_arch = matches!(
-                        ba.backend_type(),
-                        crate::backend::backend_type::BackendType::Http
-                            | crate::backend::backend_type::BackendType::S3
-                    );
-                    // `install_env` is a typed core option, so it never reaches the
-                    // `opts` loop below and its values went to the installer
-                    // unrendered — `{{ env.HOME }}` arrived literally, unlike every
-                    // other tool option (#13306). Render it here, with `version`
-                    // bound to itself so the placeholder still round-trips: core
-                    // options are deliberately exempt from the backend `{version}`
-                    // normalization, and nothing renders `install_env` again later.
-                    let mut install_env_context = context.clone();
-                    install_env_context.insert("version", "{{version}}");
-                    for value in options.core.install_env.values_mut() {
-                        if let EnvValue::String(s) = value {
-                            *s = self.parse_template_with_context(&install_env_context, s)?;
-                        }
-                    }
-                    for (k, v) in options.opts.iter_mut() {
-                        self.parse_tool_option_value_template(
-                            &opts_context,
-                            Some(k),
-                            v,
-                            defer_os_arch,
-                        )?;
-                    }
+                    self.render_tool_options(&context, ba, &mut options)?;
                     let mut ba = ba.clone();
                     // The registry entry this version is routed to supplies the defaults:
                     // a backend can carry other options for another version range, and a
@@ -1563,8 +1648,21 @@ impl ConfigFile for MiseToml {
         Ok(())
     }
 
-    fn replace_versions(&self, ba: &BackendArg, versions: Vec<ToolRequest>) -> eyre::Result<()> {
+    fn replace_versions(
+        &self,
+        ba: &BackendArg,
+        mut versions: Vec<ToolRequest>,
+    ) -> eyre::Result<()> {
         trace!("replacing versions {ba:?} {versions:?}");
+        ensure_versions_are_not_templates(&self.path, ba, &versions)?;
+        // A request only has its options rendered, whether it inherited them from a config entry
+        // (`mise use`) or is a copy of one (`mise upgrade --bump`). Writing those back would
+        // replace `{{ env.TOKEN }}` with the token, so a value that a template renders to is
+        // written as that template.
+        let templates = self.templates_for_rewrite(ba);
+        for tr in &mut versions {
+            restore_option_templates(tr, &templates);
+        }
         let mut tools = self.tools.lock().unwrap();
         let is_tools_sorted = is_tools_sorted(&tools); // was it previously sorted (if so we'll keep it sorted)
         let existing = tools.entry(ba.clone()).or_default();
@@ -1750,6 +1848,34 @@ impl ConfigFile for MiseToml {
 
     fn to_tool_request_set_skipping_templated(&self) -> eyre::Result<ToolRequestSet> {
         self.build_tool_request_set(true)
+    }
+
+    fn tool_option_templates(&self, ba: &BackendArg) -> Vec<ToolOptionTemplate> {
+        let tools = self.tools.lock().unwrap();
+        let entries = tools
+            .get(ba)
+            .into_iter()
+            .flat_map(|tvp| &tvp.0)
+            .filter(|tool| tool_has_template(tool))
+            .filter_map(|tool| Some((&tool.request, tool.options.as_ref()?)))
+            .collect_vec();
+        if entries.is_empty() {
+            return vec![];
+        }
+        let context = self.tool_template_context();
+        entries
+            .into_iter()
+            .filter_map(|(request, written)| {
+                let version = self.parse_template_with_context(&context, request).ok()?;
+                let mut rendered = written.clone();
+                self.render_tool_options(&context, ba, &mut rendered).ok()?;
+                Some(ToolOptionTemplate {
+                    version,
+                    written: written.clone(),
+                    rendered,
+                })
+            })
+            .collect()
     }
 
     fn templated_tool_backends(&self) -> Vec<String> {
@@ -3944,6 +4070,30 @@ run = "cargo build"
         file::remove_all(&p).unwrap();
     }
 
+    /// Versions are rendered as templates when the file is loaded, and `--pin` and `--bump`
+    /// write versions that came from a version list or release API.
+    #[tokio::test]
+    async fn test_replace_versions_rejects_template_syntax() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".template-version.mise.toml");
+        let input = "[tools]\ndummy = \"1.0.0\"\n";
+        file::write(&p, input).unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let ba: Arc<BackendArg> = Arc::new("dummy".into());
+        for version in [
+            "2.0.0{{exec(command='id')}}",
+            "2.0.0-{{env.GITHUB_TOKEN}}",
+            "2.0.0{%if x%}",
+            "2.0.0{#x#}",
+        ] {
+            let tr = ToolRequest::new_version_for_test(ba.clone(), version, ToolSource::Unknown);
+            let err = cf.replace_versions(&ba, vec![tr]).unwrap_err();
+            assert!(err.to_string().contains("template syntax"), "{err}");
+        }
+        assert_eq!(cf.dump().unwrap(), input);
+        file::remove_file(&p).unwrap();
+    }
+
     #[tokio::test]
     async fn test_replace_versions_preserves_standard_tool_table() {
         let _config = Config::get().await.unwrap();
@@ -3984,6 +4134,152 @@ run = "cargo build"
         assert_eq!(
             cf.dump().unwrap(),
             input.replace("version = \"1.0.0\"", "version = \"2.0.0\"")
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    /// Options are rendered when the file is loaded. Rewriting an entry writes each option as the
+    /// template it was written as, not the secret it renders to.
+    #[tokio::test]
+    async fn test_replace_versions_keeps_option_templates() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD.as_ref().unwrap().join(".option-templates.mise.toml");
+        let dummy = BackendArg::from("dummy");
+        let env = "[env]\nTOKEN = \"s3cr3t\"\n\n";
+        for tools in [
+            indoc! {r#"
+                [tools]
+                dummy = { version = "1.0.0", url = "https://{{ env.TOKEN }}@example.com", headers = { auth = "{{ env.TOKEN }}" }, install_env = { AUTH = "{{ env.TOKEN }}" } }
+            "#},
+            indoc! {r#"
+                [tools.dummy]
+                version = "1.0.0"
+                url = "https://{{ env.TOKEN }}@example.com"
+                headers = { auth = "{{ env.TOKEN }}" }
+                install_env = { AUTH = "{{ env.TOKEN }}" }
+            "#},
+            indoc! {r#"
+                [tools]
+                dummy = [{ version = "1.0.0", url = "https://{{ env.TOKEN }}@example.com" }, { version = "1.0.0", os = ["plan9"], install_env = { AUTH = "{{ env.TOKEN }}" } }]
+            "#},
+        ] {
+            file::write(&p, format!("{env}{tools}")).unwrap();
+            let cf = MiseToml::from_file(&p).unwrap();
+            // the requests as every caller has them: rendered
+            let versions = cf.to_tool_request_set().unwrap().tools[&dummy]
+                .iter()
+                .map(|tr| {
+                    let options = tr.options();
+                    assert!(format!("{options:?}").contains("s3cr3t"));
+                    let ba = Arc::new(dummy.clone());
+                    ToolRequest::new_with_options(ba, "2.0.0", options, ToolSource::Unknown)
+                        .unwrap()
+                })
+                .collect();
+
+            cf.replace_versions(&dummy, versions).unwrap();
+
+            assert_eq!(
+                cf.dump().unwrap(),
+                format!("{env}{}", tools.replace("1.0.0", "2.0.0"))
+            );
+        }
+        file::remove_file(&p).unwrap();
+    }
+
+    /// Two entries whose templates render to the same value each keep their own template.
+    #[tokio::test]
+    async fn test_replace_versions_keeps_each_entrys_option_template() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".option-templates-per-entry.mise.toml");
+        let dummy = BackendArg::from("dummy");
+        let input = indoc! {r#"
+            [env]
+            A = "same"
+            B = "same"
+
+            [tools]
+            dummy = [{ version = "1.0.0", install_env = { AUTH = "{{ env.A }}" } }, { version = "2.0.0", install_env = { AUTH = "{{ env.B }}" } }]
+        "#};
+        file::write(&p, input).unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        // what `mise unuse dummy@1.0.0` writes back: the remaining, rendered request
+        let remaining = cf.to_tool_request_set().unwrap().tools[&dummy]
+            .iter()
+            .filter(|tr| tr.version() == "2.0.0")
+            .cloned()
+            .collect_vec();
+        assert_eq!(remaining.len(), 1);
+
+        cf.replace_versions(&dummy, remaining).unwrap();
+
+        assert_eq!(
+            cf.dump().unwrap(),
+            indoc! {r#"
+                [env]
+                A = "same"
+                B = "same"
+
+                [tools]
+                dummy = { version = "2.0.0", install_env = { AUTH = "{{ env.B }}" } }
+            "#}
+        );
+        file::remove_file(&p).unwrap();
+    }
+
+    /// An option given on the command line differs from what the template renders to, so it
+    /// still replaces the template.
+    #[tokio::test]
+    async fn test_replace_versions_writes_changed_option_over_template() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".option-template-changed.mise.toml");
+        file::write(
+            &p,
+            indoc! {r#"
+                [env]
+                TOKEN = "s3cr3t"
+
+                [tools]
+                dummy = { version = "1.0.0", url = "https://{{ env.TOKEN }}@example.com", auth = "{{ env.TOKEN }}" }
+            "#},
+        )
+        .unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        let dummy = BackendArg::from("dummy");
+        let mut options = cf.to_tool_request_set().unwrap().tools[&dummy][0].options();
+        options
+            .opts
+            .insert("url".to_string(), "https://example.org".into());
+
+        cf.replace_versions(
+            &dummy,
+            vec![
+                ToolRequest::new_with_options(
+                    Arc::new(dummy.clone()),
+                    "1.0.0",
+                    options,
+                    ToolSource::Unknown,
+                )
+                .unwrap(),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(
+            cf.dump().unwrap(),
+            indoc! {r#"
+                [env]
+                TOKEN = "s3cr3t"
+
+                [tools]
+                dummy = { version = "1.0.0", url = "https://example.org", auth = "{{ env.TOKEN }}" }
+            "#}
         );
         file::remove_file(&p).unwrap();
     }

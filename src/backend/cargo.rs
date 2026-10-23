@@ -498,6 +498,10 @@ impl CargoBackend {
                     .list_paths(&ctx.config)
                     .await,
             )?
+            // cargo applies `[http]` from a `.cargo/config.toml` and rustup
+            // picks a `rust-toolchain.toml` from the working directory upwards,
+            // and a shim can start this install inside an untrusted project.
+            .current_dir(tv.install_path())
             .execute()
     }
 

@@ -436,6 +436,16 @@ mode = "symlink"
 variants = [{ default = true, target = "{{ xdg_config_home }}/examplectl" }]
 ```
 
+To link into the directory mise reads its config from, even when `MISE_CONFIG_DIR`
+moves it, use `{{ mise_config_dir }}`:
+
+```toml
+[dotfiles."git-tools"]
+source = "git"
+mode = "symlink"
+variants = [{ default = true, target = "{{ mise_config_dir }}/conf.d/git-tools" }]
+```
+
 The template has the context every config file gets (`env`, `xdg_config_home`,
 `config_root`, ...), but not `exec()` or `vars`. It must render to an absolute
 or `~/` path. The entry key is not rendered.

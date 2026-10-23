@@ -585,6 +585,7 @@ async fn durable_access(url: &str, branch: &str) -> bool {
         return false;
     }
     let mut command = tokio::process::Command::new(git);
+    mise_util::git::detach_git_command(command.as_std_mut());
     command
         .args(["ls-remote", "--exit-code", "--heads", "--", url, branch])
         .env("GIT_TERMINAL_PROMPT", "0")

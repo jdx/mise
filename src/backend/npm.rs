@@ -21,6 +21,7 @@ use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use async_trait::async_trait;
 use aube::embed::{EmbedderInstallOverrides, EmbedderRuntime};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use bytesize::ByteSize;
 use jiff::Timestamp;
 use serde_json::Value;
@@ -154,8 +155,8 @@ fn redact_git_stderr(stderr: &str, remote: &str, display_remote: &str) -> String
     redact_credentials(&redacted)
 }
 
-fn git_ls_remote_args(remote: &str) -> [&str; 3] {
-    ["ls-remote", remote, "HEAD"]
+fn git_ls_remote_args(remote: &str) -> Vec<&str> {
+    crate::git::ls_remote_args(&[], remote, &["HEAD"])
 }
 
 /// Resolve a git remote's default-branch HEAD to a concrete commit.
@@ -166,7 +167,9 @@ async fn git_head(remote: &str) -> eyre::Result<String> {
             // Keep the actual remote intact for Git, but never let userinfo or
             // query tokens reach the command trace or command-derived errors.
             debug!("$ git ls-remote {display_remote} HEAD");
-            let output = tokio::process::Command::new("git")
+            let mut command = tokio::process::Command::new("git");
+            crate::git::detach_git_command(command.as_std_mut());
+            let output = command
                 .args(git_ls_remote_args(remote))
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::piped())
@@ -220,6 +223,30 @@ fn validate_git_alias(name: &str) -> Result<()> {
             "cannot determine a package name from git source: npm:{}",
             redact_credentials(name)
         );
+    }
+    Ok(())
+}
+
+/// Reject a registry package version that is not a version, range or dist-tag.
+///
+/// The version reaches the package manager as `<name>@<version>` or as the
+/// root dependency's specifier, and both are parsed as full package specs: a
+/// version that is a path (`/x`, `~/x`, `x.tgz`), a URL or `owner/repo` would
+/// install that in place of the registry package. A plain tool list sets the
+/// version without trust, so only the characters a version, a range or a
+/// dist-tag needs are accepted.
+fn validate_registry_version(name: &str, version: &str) -> Result<()> {
+    let lower = version.to_ascii_lowercase();
+    let valid = !version.is_empty()
+        && !version.starts_with('.')
+        && version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || " .-_+^~<>=|*".contains(c))
+        && ![".tgz", ".tar", ".tar.gz"]
+            .iter()
+            .any(|ext| lower.ends_with(ext));
+    if !valid {
+        eyre::bail!("npm:{name}: {version:?} is not a version, range or dist-tag");
     }
     Ok(())
 }
@@ -1485,6 +1512,7 @@ impl NPMBackend {
         if is_git_spec(&tool_name) {
             return git_package_install_spec(&tool_name, &tv.version, options.checksum().is_some());
         }
+        validate_registry_version(&tool_name, &tv.version)?;
         let Some(checksum) = options.checksum() else {
             return Ok(format!("{tool_name}@{}", tv.version));
         };
@@ -1500,7 +1528,69 @@ impl NPMBackend {
         ctx.pr
             .set_message(format!("verify {}@{}", self.tool_name(), tv.version));
         crate::hash::ensure_checksum(&archive, digest, Some(ctx.pr.as_ref()), algorithm)?;
+        if let Some(lock) = &tv.aube_lock {
+            self.ensure_aube_lock_installs_archive(tv, lock.load()?, &archive)?;
+        }
         Ok(archive.to_string_lossy().into_owned())
+    }
+
+    /// With a dependency graph, the install is a frozen one that fetches whatever the graph
+    /// names for the root package, not `archive`, the download the `checksum` option was
+    /// verified against. aube holds that fetch to the graph's integrity, so require the
+    /// integrity to describe `archive`.
+    fn ensure_aube_lock_installs_archive(
+        &self,
+        tv: &ToolVersion,
+        lock: &crate::lockfile::AubeLock,
+        archive: &Path,
+    ) -> Result<()> {
+        let key = self.package_key();
+        let root_version = lock
+            .graph
+            .get("importers")
+            .and_then(|v| v.get("."))
+            .and_then(|v| v.get("dependencies"))
+            .and_then(|v| v.get(&key))
+            .and_then(|v| v.get("version"))
+            .and_then(toml::Value::as_str)
+            // a `(peer@version)` suffix follows the version when the package has peers
+            .filter(|version| version.split('(').next() == Some(tv.version.as_str()));
+        let packages = lock.graph.get("packages");
+        let integrity = root_version
+            .and_then(|version| {
+                packages
+                    .and_then(|p| p.get(format!("{key}@{version}")))
+                    .or_else(|| packages.and_then(|p| p.get(format!("{key}@{}", tv.version))))
+            })
+            .and_then(|v| v.get("resolution"))
+            .and_then(|v| v.get("integrity"))
+            .and_then(toml::Value::as_str);
+        let verified = integrity.is_some_and(|integrity| {
+            let mut hashes = integrity.split_whitespace().peekable();
+            hashes.peek().is_some()
+                && hashes.all(|hash| {
+                    hash.split_once('-')
+                        .and_then(|(algorithm, digest)| {
+                            Some((algorithm, BASE64_STANDARD.decode(digest).ok()?))
+                        })
+                        .is_some_and(|(algorithm, digest)| {
+                            crate::hash::ensure_checksum(
+                                archive,
+                                &hex::encode(digest),
+                                None,
+                                algorithm,
+                            )
+                            .is_ok()
+                        })
+                })
+        });
+        if !verified {
+            eyre::bail!(
+                "npm:{} dependency graph does not install the archive its checksum was verified against; run `mise lock --bump`",
+                self.display_tool_name()
+            );
+        }
+        Ok(())
     }
 
     /// The dependency name the package is installed under: the registry name,
@@ -1515,12 +1605,13 @@ impl NPMBackend {
     }
 
     /// The root dependency specifier: the version, or a git URL with the ref.
-    fn package_requirement(&self, tv: &ToolVersion) -> String {
+    fn package_requirement(&self, tv: &ToolVersion) -> Result<String> {
         let name = self.tool_name();
         if is_git_spec(&name) {
-            git_requirement(&name, &tv.version)
+            Ok(git_requirement(&name, &tv.version))
         } else {
-            tv.version.clone()
+            validate_registry_version(&name, &tv.version)?;
+            Ok(tv.version.clone())
         }
     }
 
@@ -1801,11 +1892,17 @@ impl NPMBackend {
         let npm = npm_view_program(&env)?;
         CmdLineRunner::new(npm)
             .arg("view")
-            .arg(package)
-            .args(fields)
             .arg(format!("--json={json}"))
             .arg("--prefix")
-            .arg(prefix)
+            .arg(&prefix)
+            // The package comes from config that need not be trusted, and npm
+            // reads an argument with a leading dash as an option wherever it
+            // stands (`--userconfig=.npmrc`).
+            .arg("--")
+            .arg(package)
+            .args(fields)
+            // Nor should a relative path npm resolves find the project's files.
+            .current_dir(&prefix)
             .env_clear()
             .envs(env)
             .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
@@ -2240,7 +2337,7 @@ impl NPMBackend {
         let mut manifest: serde_json::Value =
             serde_json::from_str(&crate::file::read_to_string(&path)?)?;
         manifest["dependencies"] =
-            serde_json::json!({ self.package_key(): self.package_requirement(tv) });
+            serde_json::json!({ self.package_key(): self.package_requirement(tv)? });
         crate::file::write(
             path,
             format!("{}\n", serde_json::to_string_pretty(&manifest)?),
@@ -2261,7 +2358,7 @@ impl NPMBackend {
             .and_then(|v| v.get(self.package_key()))
             .and_then(|v| v.get("specifier"))
             .and_then(toml::Value::as_str);
-        if requirement != Some(self.package_requirement(tv).as_str()) {
+        if requirement != Some(self.package_requirement(tv)?.as_str()) {
             eyre::bail!(
                 "npm:{} dependency graph does not match root version {}; run `mise lock`",
                 self.display_tool_name(),
@@ -3238,7 +3335,7 @@ mod tests {
             assert_eq!(remote, expected_remote);
             assert_eq!(
                 git_ls_remote_args(&remote),
-                ["ls-remote", remote.as_str(), "HEAD"]
+                ["ls-remote", "--", remote.as_str(), "HEAD"]
             );
 
             let display_remote = display_git_remote(&remote);
@@ -3306,6 +3403,50 @@ mod tests {
             );
         }
         assert!(error.contains("git ls-remote 127.0.0.1:mise-git-head-does-not-exist?"));
+    }
+
+    #[test]
+    fn registry_version_rejects_package_spec_syntax() {
+        for version in [
+            "3.6.2",
+            "3",
+            "^3",
+            "~3.6",
+            ">=3 <4",
+            "1.x || 2.x",
+            "1.2.3 - 2.3.4",
+            "*",
+            "latest",
+            "next",
+            "1.0.0-rc.1+build.5",
+        ] {
+            assert!(
+                validate_registry_version("prettier", version).is_ok(),
+                "{version}"
+            );
+        }
+        for version in [
+            "/proc/self/cwd/payload",
+            "./payload",
+            "~/payload",
+            "attacker/repo#v1.0.0",
+            "github:attacker/repo",
+            "file:payload",
+            "link:payload",
+            "https://example.com/x.tgz",
+            "payload.tgz",
+            "payload.TAR.GZ",
+            "payload.tar",
+            ".",
+            "ref:sqlite",
+            "npm:other@1",
+            "",
+        ] {
+            assert!(
+                validate_registry_version("prettier", version).is_err(),
+                "{version}"
+            );
+        }
     }
 
     #[test]
@@ -3389,6 +3530,49 @@ mod tests {
     }
     use crate::toolset::ToolVersionOptions;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn aube_lock_must_install_the_checksum_verified_archive() {
+        use sha2::{Digest, Sha512};
+
+        let backend = create_npm_backend("pnpm");
+        let request =
+            ToolRequest::new(backend.ba().clone(), "10.15.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "10.15.0".to_string());
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("package.tgz");
+        std::fs::write(&archive, "genuine").unwrap();
+        let check = |version: &str, key: &str, tarball: &str| {
+            let lock = crate::lockfile::AubeLock::from_yaml(&format!(
+                r#"importers:
+  .:
+    dependencies:
+      pnpm:
+        specifier: 10.15.0
+        version: {version}
+packages:
+  {key}:
+    resolution: {{integrity: sha512-{}}}
+"#,
+                BASE64_STANDARD.encode(Sha512::digest(tarball))
+            ))
+            .unwrap();
+            backend.ensure_aube_lock_installs_archive(&tv, &lock, &archive)
+        };
+
+        check("10.15.0", "pnpm@10.15.0", "genuine").unwrap();
+        check("10.15.0(peer@1.0.0)", "pnpm@10.15.0", "genuine").unwrap();
+        check("10.15.0(peer@1.0.0)", "pnpm@10.15.0(peer@1.0.0)", "genuine").unwrap();
+        assert!(check("10.15.0", "pnpm@10.15.0", "altered").is_err());
+        assert!(check("10.16.0", "pnpm@10.16.0", "genuine").is_err());
+        assert!(check("10.15.0", "other@10.15.0", "genuine").is_err());
+        let empty = crate::lockfile::AubeLock::default();
+        assert!(
+            backend
+                .ensure_aube_lock_installs_archive(&tv, &empty, &archive)
+                .is_err()
+        );
+    }
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
         let ba = BackendArg::new_raw(

@@ -100,6 +100,7 @@ Tera v2 also has slices (`parts[0:2]`, `parts[-1]`), spread
 | `mise_pid`                                                             | Process ID of the running mise                                                                                                                                                                                | Everywhere except `.miserc.toml`                                                 |
 | `mise_env`                                                             | List of the [config environments](/configuration/environments.html) you selected. Undefined when none is selected, so check it with <span v-pre>`{% if mise_env is defined %}`</span>                         | Everywhere except `.miserc.toml`                                                 |
 | `xdg_cache_home`, `xdg_config_home`, `xdg_data_home`, `xdg_state_home` | XDG base directories                                                                                                                                                                                          | Everywhere                                                                       |
+| `mise_config_dir`                                                      | The config directory mise resolves: `MISE_CONFIG_DIR`, else `xdg_config_home` + `/mise`                                                                                                                       | Everywhere                                                                       |
 | `system_brew_prefix`                                                   | The prefix of mise's built-in [Homebrew support](/bootstrap/packages/brew.html): `/opt/homebrew` on macOS, `/home/linuxbrew/.linuxbrew` elsewhere                                                             | Everywhere                                                                       |
 | `tools`                                                                | Active tools that are installed (see below)                                                                                                                                                                   | Tasks, and `[env]` directives with `tools = true`                                |
 | `usage`                                                                | Parsed task arguments; see [Task arguments](#task-arguments)                                                                                                                                                  | Task `run` scripts                                                               |
@@ -460,6 +461,7 @@ available:
 - `config_root`: the directory that holds the `.miserc.toml` file
 - `cwd`
 - `xdg_cache_home`, `xdg_config_home`, `xdg_data_home`, `xdg_state_home`
+- `mise_config_dir`
 - `system_brew_prefix`
 - Functions that need no project context, such as `arch()`, `os()`,
   `os_family()`, `libc()`, `avx2()`, `num_cpus()`, `choice()`, and `get_env()`
