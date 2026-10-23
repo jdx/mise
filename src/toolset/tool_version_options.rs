@@ -74,6 +74,57 @@ pub(crate) fn strip_options_credentials<'a>(
         .map(|(k, v)| (k.clone(), strip_option_credentials(v)))
 }
 
+/// Tool options as they may be printed.
+///
+/// Their templates are rendered by now, so a token the user kept out of the
+/// config file can be in them: as the userinfo of a registry or download URL
+/// (`source = "https://{{ env.GEM_TOKEN }}@gems.example.com"`), as a `headers`
+/// value, or in `install_env`. Every string is passed through `redact`, and the
+/// values of `headers` tables, which have no recognizable shape, are replaced
+/// by `[redacted]`.
+pub fn redact_tool_options(
+    mut options: ToolVersionOptions,
+    redact: &dyn Fn(&str) -> String,
+) -> ToolVersionOptions {
+    for value in options.core.install_env.values_mut() {
+        if let EnvValue::String(s) = value {
+            *s = redact(s);
+        }
+    }
+    for (key, value) in options.opts.iter_mut() {
+        *value = redact_option_value(key, value, redact);
+    }
+    options
+}
+
+fn redact_option_value(
+    key: &str,
+    value: &toml::Value,
+    redact: &dyn Fn(&str) -> String,
+) -> toml::Value {
+    let secret = key == "headers" || is_flat_platform_opt(key, "headers");
+    match value {
+        toml::Value::String(_) if secret => toml::Value::String("[redacted]".to_string()),
+        toml::Value::String(raw) => toml::Value::String(redact(raw)),
+        toml::Value::Array(values) => toml::Value::Array(
+            values
+                .iter()
+                .map(|v| redact_option_value(if secret { "headers" } else { "" }, v, redact))
+                .collect(),
+        ),
+        toml::Value::Table(table) => toml::Value::Table(
+            table
+                .iter()
+                .map(|(k, v)| {
+                    let key = if secret { "headers" } else { k.as_str() };
+                    (k.clone(), redact_option_value(key, v, redact))
+                })
+                .collect(),
+        ),
+        _ => value.clone(),
+    }
+}
+
 const AUTO_UPDATE_ERROR: &str = "auto_update must be true, false, or a duration such as \"12h\"";
 
 pub use mise_config::tools::CoreToolOptions;
@@ -984,6 +1035,44 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
     use test_log::test;
+
+    #[test]
+    fn printed_tool_options_hide_credentials() {
+        let options: ToolVersionOptions = toml::from_str(
+            r#"
+            source = "https://tok3n@gems.example.com/acme"
+            bin_path = "bin"
+            strip_components = 1
+            install_env = { PIP_INDEX_URL = "https://user:tok3n@pypi.example.com/simple", JOBS = 4 }
+            headers = { Authorization = "Bearer tok3n" }
+            headers_forward = { Authorization = ["cdn.example.com"] }
+            platforms_macos_arm64_headers = { X-Api-Key = "tok3n" }
+
+            [platforms.linux-x64]
+            url = "https://user:tok3n@dl.example.com/tool.tar.gz"
+            headers = { X-Api-Key = "tok3n" }
+            "#,
+        )
+        .unwrap();
+        let expected: ToolVersionOptions = toml::from_str(
+            r#"
+            source = "https://[redacted]@gems.example.com/acme"
+            bin_path = "bin"
+            strip_components = 1
+            install_env = { PIP_INDEX_URL = "https://[redacted]@pypi.example.com/simple", JOBS = 4 }
+            headers = { Authorization = "[redacted]" }
+            headers_forward = { Authorization = ["cdn.example.com"] }
+            platforms_macos_arm64_headers = { X-Api-Key = "[redacted]" }
+
+            [platforms.linux-x64]
+            url = "https://[redacted]@dl.example.com/tool.tar.gz"
+            headers = { X-Api-Key = "[redacted]" }
+            "#,
+        )
+        .unwrap();
+        let redact = |s: &str| mise_util::redactions::redact_url_userinfo_in_arg(s).into_owned();
+        assert_eq!(redact_tool_options(options, &redact), expected);
+    }
 
     fn s(v: &str) -> toml::Value {
         toml::Value::String(v.to_string())

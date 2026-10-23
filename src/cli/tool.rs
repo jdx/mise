@@ -6,8 +6,9 @@ use serde::Serialize;
 
 use crate::args::BackendArg;
 use crate::config::Config;
-use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder};
+use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder, redact_tool_options};
 use crate::ui::table;
+use mise_util::redactions::redact_url_userinfo_in_arg;
 
 /// Show information about a tool
 ///
@@ -132,7 +133,9 @@ impl Tool {
                     .collect::<Vec<_>>()
             }),
             config_source: tvl.map(|tvl| tvl.source.clone()),
-            tool_options: ba.opts(),
+            tool_options: redact_tool_options(ba.opts(), &|s| {
+                config.redact(&redact_url_userinfo_in_arg(s))
+            }),
             security,
         };
 
