@@ -1540,6 +1540,7 @@ impl Lockfile {
     }
 
     pub fn prepare_write(&self, path: &Path) -> Result<Option<PreparedWrite>> {
+        self.ensure_no_credential_queries()?;
         // Resolve the lockfile target before choosing sidecar locations and pointers.
         let mut source_symlink = None;
         let target = if path.is_symlink() {
@@ -2188,6 +2189,41 @@ impl Lockfile {
                     .map(|(_, version)| *version)
             })
             .unwrap_or(self.lockfile_version)
+    }
+
+    /// Refuse to record a URL whose query string carries a credential, in a
+    /// platform's `url`/`url_api` or in a lock option. The lockfile is meant to
+    /// be committed, and a token in a query (`?token={{ env.TOKEN }}`) is
+    /// rendered into the value before it gets here.
+    fn ensure_no_credential_queries(&self) -> Result<()> {
+        for (short, entries) in &self.tools {
+            for entry in entries {
+                let urls = entry.platforms.iter().flat_map(|(platform, info)| {
+                    [("url", &info.url), ("url_api", &info.url_api)]
+                        .into_iter()
+                        .filter_map(move |(field, url)| {
+                            url.as_deref()
+                                .map(|url| (format!("platforms.{platform}.{field}"), url))
+                        })
+                });
+                let options = entry
+                    .options
+                    .iter()
+                    .map(|(key, value)| (format!("options.{key}"), value.as_str()));
+                for (field, value) in urls.chain(options) {
+                    if let Some(param) = credential_query_param(value) {
+                        bail!(
+                            "{short}@{}: mise.lock does not record {field}, because the query \
+                             string of its URL carries `{param}`, which looks like a credential. \
+                             Send the credential with the tool's `headers` option or a netrc \
+                             entry instead of the URL.",
+                            entry.version
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Save the lockfile to disk (public for mise lock command)
@@ -5173,6 +5209,54 @@ pub(crate) fn strip_lock_options_credentials(
             (key, value)
         })
         .collect()
+}
+
+/// The name of the first query parameter, of any URL in `text`, whose name
+/// says it carries a credential (`token`, `access_token`, `key`, `sig`,
+/// `X-Amz-Signature`, ...). Names alone decide, so a templated value is caught
+/// whatever it rendered to.
+pub(crate) fn credential_query_param(text: &str) -> Option<String> {
+    regex!(r#"://[^\s?#'"]*\?([^\s#'"]*)"#)
+        .captures_iter(text)
+        .flat_map(|captures| {
+            captures
+                .get(1)
+                .map_or("", |query| query.as_str())
+                .split('&')
+                .map(|pair| pair.split_once('=').map_or(pair, |(name, _)| name))
+                .collect::<Vec<_>>()
+        })
+        .find(|name| is_credential_query_param(name))
+        .map(str::to_string)
+}
+
+fn is_credential_query_param(name: &str) -> bool {
+    const NAMES: &[&str] = &[
+        "token",
+        "access_token",
+        "private_token",
+        "auth",
+        "api_key",
+        "apikey",
+        "key",
+        "sig",
+        "signature",
+        "password",
+        "passwd",
+        "pwd",
+        "secret",
+        "credential",
+        "credentials",
+        "x-amz-credential",
+        "x-goog-credential",
+    ];
+    const SUFFIXES: &[&str] = &["token", "key", "secret", "password", "signature"];
+    let name = name.to_ascii_lowercase();
+    NAMES.contains(&name.as_str())
+        || SUFFIXES.iter().any(|suffix| {
+            name.strip_suffix(suffix)
+                .is_some_and(|rest| rest.ends_with('_') || rest.ends_with('-'))
+        })
 }
 
 fn strip_lock_option_credentials(value: &str) -> String {

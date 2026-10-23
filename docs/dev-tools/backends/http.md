@@ -415,6 +415,13 @@ For HTTP Basic auth, add the host to your netrc file; see the
 [`netrc`](/configuration/settings.html#netrc) setting. Use `headers` for a token
 or an API key.
 
+Credentials in the URL itself stay out of `mise.lock`: userinfo
+(`https://user:token@host/...`) is removed from the recorded URL, and a URL
+whose query string carries a credential (`?token=`, `?access_token=`, `?key=`,
+`?sig=`, `?X-Amz-Signature=` and similar) is refused, so `mise lock` and
+installs that write the lockfile fail with an error naming the parameter. Move
+such a credential to `headers` or netrc.
+
 ### `headers`
 
 Extra request headers for the download and for the

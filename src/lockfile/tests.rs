@@ -4207,9 +4207,83 @@ fn tool_stub_reference_climbs_out_of_the_lockfile_dir() {
     );
 }
 
+#[test]
+fn test_credential_query_params_are_found_by_name() {
+    for (text, param) in [
+        (
+            "https://dl.example.com/t.tgz?private_token=x",
+            "private_token",
+        ),
+        ("https://dl.example.com/t.tgz?v=1&token=x", "token"),
+        (
+            "https://b.s3.example.com/t?X-Amz-Signature=x",
+            "X-Amz-Signature",
+        ),
+        ("https://blob.example.com/t?sv=1&sig=x", "sig"),
+        (
+            "--index-url https://h.example/simple?api_key=x --x",
+            "api_key",
+        ),
+        ("https://h.example/t?password", "password"),
+    ] {
+        assert_eq!(
+            credential_query_param(text).as_deref(),
+            Some(param),
+            "{text}"
+        );
+    }
+    for text in [
+        "https://dl.example.com/t.tgz",
+        "https://dl.example.com/t.tgz?raw=true&page=2",
+        "https://h.example/t?monkey=1&keys=2",
+        "token=x not a url",
+    ] {
+        assert_eq!(credential_query_param(text), None, "{text}");
+    }
+}
+
+#[test]
+fn test_lockfile_write_refuses_credential_queries() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("mise.lock");
+    let mut lockfile = Lockfile::default();
+    let mut tool = LockfileTool {
+        version: "1.0.0".to_string(),
+        backend: Some("http:tool".to_string()),
+        specifiers: Default::default(),
+        options: Default::default(),
+        platforms: BTreeMap::from([(
+            "linux-x64".to_string(),
+            PlatformInfo {
+                url: Some("https://dl.example.com/t.tgz?token=s3cret".to_string()),
+                ..Default::default()
+            },
+        )]),
+        aube: None,
+        uv: None,
+    };
+    lockfile
+        .tools
+        .insert("http:tool".to_string(), vec![tool.clone()]);
+    let err = lockfile.write(&path).unwrap_err().to_string();
+    assert!(err.contains("`token`"), "{err}");
+    assert!(!err.contains("s3cret"), "{err}");
+    assert!(!path.exists());
+
+    tool.platforms.get_mut("linux-x64").unwrap().url =
+        Some("https://dl.example.com/t.tgz".to_string());
+    tool.options.insert(
+        "api_url".to_string(),
+        "https://h.example/api?access_token=s3cret".to_string(),
+    );
+    lockfile.tools.insert("http:tool".to_string(), vec![tool]);
+    let err = lockfile.write(&path).unwrap_err().to_string();
+    assert!(err.contains("options.api_url"), "{err}");
+}
+
 /// A lockfile is committed, so a token templated into a lock option from the
-/// environment must not reach it, and an entry an older mise wrote with one
-/// must still match the request.
+/// environment must not reach it, and an entry that already holds one must
+/// still match the request.
 #[test]
 fn test_lock_options_drop_credentials() {
     let options = BTreeMap::from([
