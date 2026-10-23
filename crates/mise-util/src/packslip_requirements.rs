@@ -1,6 +1,6 @@
 //! Host requirements describe prerequisites, not dependencies to install.
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use eyre::{Result, bail};
@@ -137,10 +137,43 @@ async fn os_version() -> Option<String> {
     version
 }
 
-async fn library_present(name: &str) -> Option<bool> {
+/// The loader cache's names, read at most once per [`check_host`]: the
+/// manifest decides how many libraries are asked about, and `ldconfig -p`
+/// gives the same answer for all of them. `None` inside means it could not
+/// be read.
+type LoaderCache = tokio::sync::OnceCell<Option<BTreeSet<String>>>;
+
+/// The names `ldconfig -p` resolves to an existing file of this
+/// architecture.
+#[cfg(target_os = "linux")]
+fn loader_cache_names(cache: &str) -> BTreeSet<String> {
+    let arch = std::env::consts::ARCH;
+    cache
+        .lines()
+        .filter(|line| {
+            let native = match arch {
+                "x86_64" => line.contains("x86-64"),
+                "aarch64" => line.contains("AArch64"),
+                _ => true,
+            };
+            native
+                && line
+                    .split("=>")
+                    .nth(1)
+                    .is_some_and(|p| std::path::Path::new(p.trim()).is_file())
+        })
+        .filter_map(|line| line.split_whitespace().next())
+        .map(str::to_owned)
+        .collect()
+}
+
+async fn library_present(name: &str, loader_cache: &LoaderCache) -> Option<bool> {
     if !file::is_plain_file_name(name) {
         return None;
     }
+    // Only Linux has a loader cache to read.
+    #[cfg(not(target_os = "linux"))]
+    let _ = loader_cache;
     #[cfg(target_os = "linux")]
     {
         let mut paths: Vec<PathBuf> = std::env::var_os("LD_LIBRARY_PATH")
@@ -152,20 +185,13 @@ async fn library_present(name: &str) -> Option<bool> {
         }
         // Cache failure is unknown, not proof of absence. The cache normally
         // covers distribution-specific multiarch directories as well.
-        let cache = probe("/sbin/ldconfig", &["-p"]).await?;
-        let arch = std::env::consts::ARCH;
-        Some(cache.lines().any(|line| {
-            line.split_whitespace().next() == Some(name)
-                && match arch {
-                    "x86_64" => line.contains("x86-64"),
-                    "aarch64" => line.contains("AArch64"),
-                    _ => true,
-                }
-                && line
-                    .split("=>")
-                    .nth(1)
-                    .is_some_and(|p| std::path::Path::new(p.trim()).is_file())
-        }))
+        let names = loader_cache
+            .get_or_init(|| async {
+                let cache = probe("/sbin/ldconfig", &["-p"]).await?;
+                Some(loader_cache_names(&cache))
+            })
+            .await;
+        Some(names.as_ref()?.contains(name))
     }
     #[cfg(target_os = "macos")]
     {
@@ -226,8 +252,9 @@ pub async fn check_host(artifact: &Artifact) -> Report {
         let glibc = glibc_version().await;
         check_min(&mut report, "glibc", glibc.as_deref(), min, true);
     }
+    let loader_cache = LoaderCache::new();
     for lib in req.libs.iter().flatten() {
-        match library_present(lib).await {
+        match library_present(lib, &loader_cache).await {
             Some(true) => {}
             Some(false) => report.failures.push(format!(
                 "shared library {lib} was not found by the host loader search"
@@ -346,6 +373,33 @@ mod tests {
         }
         assert_eq!(version_from_output("tool v1.2 built 2026"), None);
         assert_eq!(version_from_output("openjdk 21-ea 2026-09-04"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn the_loader_cache_is_read_once_for_every_library() {
+        let exe = std::env::current_exe().unwrap();
+        let exe = exe.display();
+        let names = loader_cache_names(&format!(
+            "3 libs found in cache `/etc/ld.so.cache'\n\
+             \tlibhere.so.1 (libc6,x86-64,AArch64) => {exe}\n\
+             \tlibgone.so.1 (libc6,x86-64,AArch64) => {exe}.gone\n\
+             \tlibother.so.1 (libc6,other) => {exe}\n"
+        ));
+        assert!(names.contains("libhere.so.1"));
+        assert!(!names.contains("libgone.so.1"));
+        if matches!(std::env::consts::ARCH, "x86_64" | "aarch64") {
+            assert_eq!(names.len(), 1);
+        }
+
+        // What the cache already holds answers; `ldconfig` is not run again
+        // for each name the manifest lists.
+        let cache = LoaderCache::new_with(Some(Some(names)));
+        assert_eq!(library_present("libhere.so.1", &cache).await, Some(true));
+        assert_eq!(library_present("libgone.so.1", &cache).await, Some(false));
+        // A cache that could not be read stays unknown for every name.
+        let unread = LoaderCache::new_with(Some(None));
+        assert_eq!(library_present("libhere.so.1", &unread).await, None);
     }
 
     #[cfg(unix)]
