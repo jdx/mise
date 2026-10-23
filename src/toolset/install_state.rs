@@ -2116,7 +2116,7 @@ explicit_backend = true
 
 #[cfg(test)]
 mod credential_tests {
-    use super::{credential_named_dir, persistent_opts, remove_credential_named_installs_in};
+    use super::{credential_named_dir, persistent_opts};
     use crate::args::BackendArg;
     use crate::toolset::ToolVersionOptions;
     use crate::toolset::tool_version_options::strip_option_credentials as strip_url_credentials;
@@ -2161,7 +2161,7 @@ mod credential_tests {
         symlink(named.join("1.0.0/bin/tool"), shims.join("tool")).unwrap();
         symlink(outside.join("keep"), shims.join("other")).unwrap();
 
-        remove_credential_named_installs_in(
+        super::remove_credential_named_installs_in(
             &installs,
             "named",
             "clean",
@@ -2177,7 +2177,7 @@ mod credential_tests {
         assert!(outside.join("keep").exists(), "a symlink was followed");
 
         std::fs::create_dir_all(installs.join("clean/2.0.0")).unwrap();
-        remove_credential_named_installs_in(
+        super::remove_credential_named_installs_in(
             &installs,
             "named",
             "clean",
@@ -2244,7 +2244,7 @@ mod credential_tests {
         std::fs::create_dir_all(installs.join("clean/1.0.0")).unwrap();
         std::os::unix::fs::symlink(&elsewhere, installs.join("named")).unwrap();
 
-        remove_credential_named_installs_in(&installs, "named", "clean", &[]);
+        super::remove_credential_named_installs_in(&installs, "named", "clean", &[]);
 
         assert!(elsewhere.join("1.0.0").is_dir());
     }
