@@ -2821,7 +2821,7 @@ mod tests {
             authorization: None,
         };
 
-        let err = download_blob_once(&mut session, &format!("{}{blob}", registry.url()), None)
+        let err = download_blob_once(&mut session, &format!("{}{blob}", registry.url()), 8, None)
             .await
             .unwrap_err();
 
