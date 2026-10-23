@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The harness pins lockfile_mode to merge through the environment, which would
+# override the mode this test selects in config.
+unset MISE_LOCKFILE_MODE
+
 # A global lockfile can be committed for machines that load different profile
 # configurations. Keep the active profile intentionally small while the shared
 # file starts with a tool from an inactive profile and an aube sidecar.

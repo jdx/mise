@@ -8,6 +8,15 @@ pub enum AttestationError {
     Verification(String),
     #[error("Workflow verification failed: {0}")]
     WorkflowMismatch(String),
+    /// Attestations verified, but other repositories (`owner/repo`) made them.
+    #[error(
+        "Repository verification failed: expected an attestation made by {expected}, found {}",
+        .found.join(", ")
+    )]
+    RepositoryMismatch {
+        expected: String,
+        found: Vec<String>,
+    },
     #[error("SLSA subject mismatch: {0}")]
     SubjectMismatch(String),
     #[error("Unsupported attestation format: {0}")]
@@ -62,6 +71,7 @@ impl AttestationError {
                 "attestation signature verification failed"
             }
             Self::WorkflowMismatch(_) => "signer workflow mismatch",
+            Self::RepositoryMismatch { .. } => "source repository mismatch",
             Self::SubjectMismatch(_) => "artifact subject mismatch",
             Self::UnsupportedFormat(_) => "unsupported attestation format",
             Self::NoAttestations => "no attestations found",
@@ -87,10 +97,20 @@ pub struct SlsaArtifact {
 ///
 /// Both values must match the Fulcio certificate exactly. The identity is the
 /// certificate's URI subject alternative name, including its workflow ref.
+///
+/// When the identity is a GitHub Actions workflow, the certificate's source
+/// repository (the repository whose workflow run was signed) must also be the
+/// repository that holds that workflow, or `source_repository`. A reusable
+/// workflow such as slsa-github-generator signs with the same identity for
+/// every repository that calls it, so a tool built with one passes its own
+/// repository here.
 #[derive(Debug, Clone, Copy)]
 pub struct SlsaSignerIdentity<'a> {
     pub identity: &'a str,
     pub issuer: &'a str,
+    /// The tool's repository: `owner/repo`, `github.com/owner/repo` or
+    /// `https://github.com/owner/repo`.
+    pub source_repository: Option<&'a str>,
 }
 
 impl SlsaArtifact {

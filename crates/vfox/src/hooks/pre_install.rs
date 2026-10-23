@@ -129,6 +129,9 @@ pub struct PreInstallAttestation {
     pub slsa_min_level: Option<u8>,
     pub slsa_signer_identity: Option<String>,
     pub slsa_signer_issuer: Option<String>,
+    /// `owner/repo` whose workflow run made the provenance, when the signer
+    /// is a reusable workflow from another repository (slsa-github-generator).
+    pub slsa_source_repository: Option<String>,
 }
 
 impl FromLua for PreInstallAttestation {
@@ -158,6 +161,8 @@ impl FromLua for PreInstallAttestation {
                     slsa_min_level: table.get::<Option<u8>>("slsa_min_level")?,
                     slsa_signer_identity: table.get::<Option<String>>("slsa_signer_identity")?,
                     slsa_signer_issuer: table.get::<Option<String>>("slsa_signer_issuer")?,
+                    slsa_source_repository: table
+                        .get::<Option<String>>("slsa_source_repository")?,
                 })
             }
             _ => Err(LuaError::FromLuaConversionError {
@@ -669,10 +674,15 @@ mod tests {
                 "https://token.actions.githubusercontent.com",
             )
             .unwrap();
+        table.set("slsa_source_repository", "owner/tool").unwrap();
         let attestation = PreInstallAttestation::from_lua(mlua::Value::Table(table), &lua).unwrap();
         assert_eq!(
             attestation.slsa_signer_issuer.as_deref(),
             Some("https://token.actions.githubusercontent.com")
+        );
+        assert_eq!(
+            attestation.slsa_source_repository.as_deref(),
+            Some("owner/tool")
         );
     }
 

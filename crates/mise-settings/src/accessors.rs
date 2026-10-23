@@ -27,14 +27,14 @@ impl Settings {
     }
 
     pub fn generate_lockfiles(&self) -> bool {
-        self.lockfile_mode.as_deref() == Some("generate")
+        self.lockfile_mode == "generate"
     }
 
     /// Reject unknown values of the [`STRICT_CHOICE_SETTINGS`], so a typo fails
     /// here instead of panicking later.
     pub fn validate_string_choices(&self) -> Result<()> {
         for (key, value) in [
-            ("lockfile_mode", self.lockfile_mode.as_deref()),
+            ("lockfile_mode", Some(self.lockfile_mode.as_str())),
             (
                 "status.missing_tools",
                 Some(self.status.missing_tools.as_str()),

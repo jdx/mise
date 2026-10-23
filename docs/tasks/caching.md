@@ -547,9 +547,10 @@ removing the least recently used entries first, and treats an entry older than
 the age limit as a miss.
 
 mise verifies each entry's checksum before restoring it, and concurrent `mise`
-processes can share the cache safely. A corrupt, partial, or unreadable entry
-counts as a miss, so the task runs. Errors while reading or writing the cache
-never turn a successful task into a failure.
+processes can share the cache safely. A corrupt, partial, or unreadable entry,
+or one holding a path that the task's `outputs` do not select, counts as a miss,
+so the task runs. Errors while reading or writing the cache never turn a
+successful task into a failure.
 
 mise replays a restored log with the output mode of the current run, so
 `prefix`, `interleave`, `keep-order`, `timed`, `replacing`, `quiet`, `silent`,
