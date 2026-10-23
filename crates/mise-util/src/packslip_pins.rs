@@ -224,6 +224,60 @@ pub struct Observed<'a> {
     /// a project that moved its signing workflow: a person's say-so that a
     /// release may move from one of them to another.
     pub listed: &'a [String],
+    /// Signers that pins without a repository ID recorded, which
+    /// api.github.com itself confirmed are the release's repository under a
+    /// name it had before (see [`renames_to_confirm`]).
+    pub confirmed: &'a [String],
+}
+
+/// The repositories of two GitHub workflow signers (`owner/repo` each),
+/// when they are the same workflow file of two differently named
+/// repositories: what a rename or a transfer looks like by name alone.
+pub fn github_rename(previous: &str, current: &str) -> Option<(String, String)> {
+    fn split(signer: &str) -> Option<(String, String)> {
+        let path = signer_of("sigstore-oidc", signer);
+        let rest = path.strip_prefix("https://github.com/")?;
+        let mut parts = rest.splitn(3, '/');
+        let (owner, repo, file) = (parts.next()?, parts.next()?, parts.next()?);
+        if owner.is_empty() || repo.is_empty() || !file.starts_with(".github/workflows/") {
+            return None;
+        }
+        Some((format!("{owner}/{repo}"), file.to_string()))
+    }
+    let (before, before_file) = split(previous)?;
+    let (now, now_file) = split(current)?;
+    (before_file == now_file && !before.eq_ignore_ascii_case(&now)).then_some((before, now))
+}
+
+/// The signers of the pins without a repository ID that speak for
+/// `project`, which this release would continue but for its repository's
+/// name. A pin that recorded no ID cannot tell a rename from another
+/// repository with a workflow of the same name, so only api.github.com
+/// itself can confirm one: the caller asks it, and passes the signers it
+/// confirmed as [`Observed::confirmed`].
+pub fn renames_to_confirm(project: &str, observed: Observed<'_>) -> Result<Vec<String>> {
+    renames_to_confirm_at(&pins_file(), project, observed)
+}
+
+pub fn renames_to_confirm_at(
+    path: &Path,
+    project: &str,
+    observed: Observed<'_>,
+) -> Result<Vec<String>> {
+    if observed.scheme != "sigstore-oidc" {
+        return Ok(Vec::new());
+    }
+    let pins = load(path)?;
+    let verified = observed.forge.and_then(|check| check.pin.as_ref());
+    let signer = signer_of(observed.scheme, observed.key_id);
+    Ok(pins
+        .pin_keys(project, verified)
+        .iter()
+        .map(|key| &pins.pins[key])
+        .filter(|pin| pin.forge.is_none() && pin.scheme == observed.scheme)
+        .filter(|pin| github_rename(&pin.signer, &signer).is_some())
+        .map(|pin| pin.signer.clone())
+        .collect())
 }
 
 /// The signer a pin records for a key id. For a workflow identity that is
@@ -317,9 +371,15 @@ fn check_against(pin: &Pin, key: &str, project: &str, observed: Observed<'_>) ->
     // by name: the ID `observed.forge` was checked against is what the forge
     // says the name belongs to today, or what a lockfile recorded, and says
     // nothing about the repository this pin was set for.
+    // The one exception: api.github.com itself confirmed that the pinned
+    // signer's repository and the release's are one repository renamed.
     let listed = |signer: &str| observed.listed.iter().any(|listed| listed == signer);
+    let confirmed_rename = pin.forge.is_none()
+        && observed.confirmed.contains(&pin.signer)
+        && github_rename(&pin.signer, &signer).is_some();
     let same_signer = pin.signer == signer
         || (listed(&pin.signer) && listed(&signer))
+        || confirmed_rename
         || by_pin
             .as_ref()
             .is_some_and(|check| continues_signer(check, &pin.signer));
@@ -570,6 +630,7 @@ mod tests {
             logged: true,
             forge: None,
             listed: &[],
+            confirmed: &[],
         }
     }
 
@@ -1047,6 +1108,112 @@ pinned_at = "2026-09-01T00:00:00Z"
         // lets an older list in.
         assert!(forget_at(&path, new).unwrap());
         check_sequence_at(&path, new, 1, Some(&repo(new, "42"))).unwrap();
+    }
+
+    #[test]
+    fn a_pin_without_an_id_follows_only_a_rename_github_confirmed() {
+        use packslip::sigstore::{GITHUB_ISSUER, SourceRepository};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let project = "github.com/o/old";
+        let old = "https://github.com/o/old/.github/workflows/release.yml";
+        // Pinned under signer options, which make no forge check: no ID.
+        let first = format!("{old}@refs/tags/v1");
+        record_at(&path, project, observed("sigstore-oidc", &first)).unwrap();
+        // A release signed by the same workflow of `o/new`, which the forge
+        // check (whose ID may come from a mirror) calls the same repository.
+        let release = |name: &str, id: &str| {
+            let key_id =
+                format!("https://github.com/{name}/.github/workflows/release.yml@refs/tags/v2");
+            let source = SourceRepository::new(format!("https://github.com/{name}")).with_id(id);
+            let check = forge::check(
+                &Expected::new(project).resolved(Some(id)),
+                &format!("github.com/{name}"),
+                &key_id,
+                Some(GITHUB_ISSUER),
+                Some(&source),
+            )
+            .unwrap();
+            (key_id, check)
+        };
+        let (key_id, check) = release("o/new", "42");
+        let renamed = Observed {
+            forge: Some(&check),
+            ..observed("sigstore-oidc", &key_id)
+        };
+        assert_eq!(
+            renames_to_confirm_at(&path, project, renamed).unwrap(),
+            [old.to_string()]
+        );
+        // Unconfirmed, it is another signer.
+        let err = check_at(&path, project, renamed).unwrap_err();
+        assert!(err.to_string().contains("mise packslip forget"), "{err}");
+        assert!(record_at(&path, project, renamed).is_err());
+        // Confirmed by GitHub, it follows, and the pin records the ID.
+        let confirmed = [old.to_string()];
+        let followed = Observed {
+            confirmed: &confirmed,
+            ..renamed
+        };
+        check_at(&path, project, followed).unwrap();
+        let pin = record_at(&path, project, followed).unwrap();
+        assert_eq!(pin.forge, Some(repo("github.com/o/new", "42")));
+        assert_eq!(
+            pin.signer,
+            "https://github.com/o/new/.github/workflows/release.yml"
+        );
+        // From then on the ID decides: another repository is refused, even
+        // with a confirmation for the old signer in hand.
+        let (key_id, check) = release("o/new", "99");
+        let other = Observed {
+            forge: Some(&check),
+            confirmed: &confirmed,
+            ..observed("sigstore-oidc", &key_id)
+        };
+        assert!(check_at(&path, project, other).is_err());
+
+        // A confirmation never makes another workflow file the same signer.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        record_at(&path, project, observed("sigstore-oidc", &first)).unwrap();
+        let other_file = "https://github.com/o/new/.github/workflows/other.yml@refs/tags/v2";
+        let moved = Observed {
+            forge: Some(&check),
+            confirmed: &confirmed,
+            ..observed("sigstore-oidc", other_file)
+        };
+        assert!(
+            renames_to_confirm_at(&path, project, moved)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(check_at(&path, project, moved).is_err());
+    }
+
+    #[test]
+    fn a_github_rename_is_the_same_workflow_of_another_repository() {
+        let rename = github_rename(
+            "https://github.com/o/old/.github/workflows/release.yml",
+            "https://github.com/o/new/.github/workflows/release.yml@refs/tags/v1",
+        );
+        assert_eq!(rename, Some(("o/old".into(), "o/new".into())));
+        for (previous, current) in [
+            (
+                "https://github.com/o/r/.github/workflows/release.yml",
+                "https://github.com/O/R/.github/workflows/release.yml@refs/tags/v1",
+            ),
+            (
+                "https://github.com/o/old/.github/workflows/release.yml",
+                "https://github.com/o/new/.github/workflows/other.yml@refs/tags/v1",
+            ),
+            (
+                "https://gitlab.com/o/old//.gitlab-ci.yml",
+                "https://gitlab.com/o/new//.gitlab-ci.yml@refs/tags/v1",
+            ),
+            ("alice@example.com", "bob@example.com"),
+        ] {
+            assert_eq!(github_rename(previous, current), None, "{current}");
+        }
     }
 
     #[test]
