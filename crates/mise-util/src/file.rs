@@ -772,15 +772,13 @@ pub fn ensure_config_file_size<P: AsRef<Path>>(path: P) -> Result<()> {
     }
 }
 
-/// [`read_to_string_async`] for a config file, see [`read_config_to_string`].
+/// [`read_config_to_string`] on the blocking pool, for async callers: the same
+/// regular-file check and size limit, judged on the opened handle.
 pub async fn read_config_to_string_async<P: AsRef<Path>>(path: P) -> Result<String> {
-    let path = path.as_ref();
-    ensure_config_file_size(path)?;
-    let body = read_to_string_async(path).await?;
-    if body.len() as u64 > CONFIG_FILE_LIMIT {
-        return Err(config_file_too_large(path));
-    }
-    Ok(body)
+    let path = path.as_ref().to_path_buf();
+    tokio::task::spawn_blocking(move || read_config_to_string(&path))
+        .await
+        .wrap_err("config file read was cancelled")?
 }
 
 /// The bytes of a UTF-8 byte-order mark, as [`decode_text`] matches them below.

@@ -148,6 +148,28 @@ fn open_regular_file_refuses_a_pipe_without_blocking() {
     assert!(open_regular_file(&dir).is_err());
 }
 
+/// The async reader makes the same checks on the opened handle: a pipe that a
+/// size check by name would pass (it reports no length) is refused at once.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn read_config_to_string_async_refuses_a_pipe_without_blocking() {
+    let tmp = tempfile::tempdir().unwrap();
+    let fifo = tmp.path().join("tasks.toml");
+    nix::unistd::mkfifo(
+        &fifo,
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .unwrap();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        read_config_to_string_async(&fifo),
+    )
+    .await
+    .expect("reading a pipe blocked");
+    let err = result.unwrap_err();
+    assert!(format!("{err:#}").contains("not a regular file"), "{err:#}");
+}
+
 /// A config file larger than any real one is refused rather than read whole.
 #[test]
 fn config_files_over_the_limit_are_refused() {
