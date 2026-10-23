@@ -29,6 +29,8 @@ change between releases.
 - The tools installed on the host. Run `mise install` before building: the build
   fails for a configured version that is not installed. The exception is a tool
   layer that [`mise oci push` reuses from the registry](#reuse-layers-from-the-registry).
+  rust is not an exception: its [toolchain layer](#rust) is built from the host's
+  install every time.
 - Docker or Podman, for `mise oci run` only. Building and pushing use mise's own
   registry client.
 - A base image with a compatible libc. See [Base images](#registry-base-image-support).
@@ -92,10 +94,12 @@ global config. See [Environment variables in the image](#environment-variables-i
    `/mise/plugins/<name>/`, annotated with `dev.mise.plugin`.
 5. One layer per tool at `/mise/installs/<tool>/<version>/`, annotated with
    `dev.mise.tool.short` and `dev.mise.tool.version`.
-6. One layer per [copied file or directory](#copy-files-into-the-image),
+6. One layer for the [rust toolchain](#rust) at `/mise/rust/`, if the toolset
+   includes rust, annotated with `dev.mise.rust.homes`.
+7. One layer per [copied file or directory](#copy-files-into-the-image),
    annotated with `dev.mise.copy`.
-7. One layer for the [dotfiles](#bootstrap-and-dotfiles-in-oci-images), if any.
-8. `/etc/mise/config.toml`, which pins each packaged tool to its exact version.
+8. One layer for the [dotfiles](#bootstrap-and-dotfiles-in-oci-images), if any.
+9. `/etc/mise/config.toml`, which pins each packaged tool to its exact version.
    The image's `MISE_DATA_DIR` and `MISE_CONFIG_DIR=/etc/mise` environment
    variables point the embedded mise at these files.
 
@@ -448,6 +452,21 @@ needs alongside it, and test the image with the commands your project runs.
 [asdf plugins](/dev-tools/backends/asdf.html) are rejected. Their install
 scripts can write outside the version's directory, which a per-tool layer cannot
 capture, and their `exec-env` scripts expect bash at runtime.
+
+### rust
+
+[rust](/lang/rust.html) installs through rustup into `~/.cargo` and `~/.rustup`, not
+into mise's install directory. `mise oci build` copies what rustup needs into one
+extra layer at `/mise/rust/` (`cargo/` and `rustup/` under the mount point): the
+rustup proxies, rustup's `settings.toml`, and the directory of each toolchain the
+toolset uses. It does not copy the rest of the build host's homes, such as registry
+caches, other toolchains, and binaries from `cargo install`. The image sets
+`CARGO_HOME` and `RUSTUP_HOME` to those directories, and `cargo` and `rustc` work
+without rustup downloading anything.
+
+The build fails when rust comes from a rustup that mise does not manage, such as a
+system package's rustup on `PATH`. Install rust with mise, or set `CARGO_HOME` and
+`RUSTUP_HOME`, and run `mise install` again.
 
 ### vfox plugins
 
