@@ -959,8 +959,15 @@ impl Backend for AquaBackend {
         };
 
         // Detect provenance from aqua registry config
-        let mut provenance = self.detect_provenance_type(&pkg);
-        if matches!(provenance, Some(ProvenanceType::GithubAttestations))
+        // A registry requirement is recorded without asking anyone (a "none" answer is
+        // exactly what it must not trust); the lock-time verification below still has to
+        // pass.
+        let required = self.registry_required_provenance(tv, &pkg);
+        let mut provenance = required
+            .clone()
+            .or_else(|| self.detect_provenance_type(&pkg));
+        if required.is_none()
+            && matches!(provenance, Some(ProvenanceType::GithubAttestations))
             && let Some(digest) = checksum.as_deref().filter(|d| d.starts_with("sha256:"))
             && let Some(attestations) = &pkg.github_artifact_attestations
         {
@@ -1018,6 +1025,7 @@ impl Backend for AquaBackend {
         }
 
         // Record only cryptographically verified provenance for the target artifact.
+        let mut verified_at_lock_time = false;
         if provenance.is_some()
             && let Some(ref artifact_url) = url
         {
@@ -1030,12 +1038,14 @@ impl Backend for AquaBackend {
                     &v,
                     artifact_url,
                     provenance.as_ref().unwrap(),
+                    required.is_some(),
                     &mut checksum,
                 )
                 .await
             {
                 Ok(verified) => {
                     provenance = verified;
+                    verified_at_lock_time = true;
                 }
                 Err(e) => {
                     return Err(e.wrap_err(format!(
@@ -1044,6 +1054,16 @@ impl Backend for AquaBackend {
                     )));
                 }
             }
+        }
+        if let Some(required) = &required
+            && (!verified_at_lock_time || provenance.as_ref() != Some(required))
+        {
+            bail!(
+                "mise registry requires {required} provenance for {}@{} but none was verified. \
+                 This may indicate a downgrade attack.",
+                self.ba(),
+                tv.version
+            );
         }
         Ok(PlatformInfo {
             url,
@@ -1518,6 +1538,28 @@ impl AquaBackend {
         Some((checksum, attestations))
     }
 
+    /// The provenance the mise registry requires for `tv`: GitHub attestations, when
+    /// the registry marks this backend as publishing them from a version on
+    /// (`attestations_since`) and the aqua recipe declares them. From that version
+    /// on, "no attestation for this file" is a downgrade, not a release that has
+    /// none. Earlier versions, versions the registry can't place, and users who
+    /// turned GitHub attestations off keep the recipe's best-effort check.
+    fn registry_required_provenance(
+        &self,
+        tv: &ToolVersion,
+        pkg: &AquaPackage,
+    ) -> Option<ProvenanceType> {
+        let settings = Settings::get();
+        (settings.github_attestations
+            && settings.aqua.github_attestations
+            && Self::has_github_attestations_config(pkg)
+            && crate::registry::requires_github_attestations(
+                &self.ba.full_without_opts(),
+                &tv.version,
+            ))
+        .then_some(ProvenanceType::GithubAttestations)
+    }
+
     fn has_github_attestations_config(pkg: &AquaPackage) -> bool {
         pkg.github_artifact_attestations
             .as_ref()
@@ -1680,6 +1722,7 @@ impl AquaBackend {
         v: &str,
         artifact_url: &str,
         detected: &ProvenanceType,
+        attestations_required: bool,
         checksum: &mut Option<String>,
     ) -> Result<Option<ProvenanceType>> {
         let tmp_dir = Self::lock_time_download_dir()?;
@@ -1745,6 +1788,14 @@ impl AquaBackend {
                 match status {
                     GithubAttestationStatus::Verified => {
                         return Ok(Some(ProvenanceType::GithubAttestations));
+                    }
+                    GithubAttestationStatus::Unavailable if attestations_required => {
+                        bail!(
+                            "mise registry requires GitHub artifact attestations for {}/{} {v} \
+                             but none exist for {filename}. This may indicate a downgrade attack.",
+                            pkg.repo_owner,
+                            pkg.repo_name
+                        );
                     }
                     GithubAttestationStatus::Unavailable => {
                         match self.detect_non_github_provenance_type(pkg) {
@@ -3095,14 +3146,21 @@ impl AquaBackend {
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();
         let platform_key = self.get_platform_key();
-        let has_lockfile_integrity = tv
-            .lock_platforms
-            .get(&platform_key)
-            .is_some_and(PlatformInfo::has_checksum_and_provenance);
-        let locked_provenance = tv
+        let recorded_provenance = tv
             .lock_platforms
             .get(&platform_key)
             .and_then(|p| p.provenance.clone());
+        // A lockfile entry stands in for verification only when it records what the
+        // registry requires: it may have been written after a wrong "no attestations".
+        let required = self.registry_required_provenance(tv, pkg);
+        let has_lockfile_integrity = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(PlatformInfo::has_checksum_and_provenance)
+            && required
+                .as_ref()
+                .is_none_or(|required| recorded_provenance.as_ref() == Some(required));
+        let locked_provenance = required.clone().or(recorded_provenance.clone());
         if lockfile_has_checksum && has_lockfile_integrity && !force_verify {
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
         } else if !force_verify && locked_provenance.is_none() && lockfile_has_checksum {
@@ -3114,8 +3172,9 @@ impl AquaBackend {
         } else {
             // Verifying for real needs the expected signer; without one the locked SLSA
             // requirement would be dropped silently.
-            Self::ensure_locked_slsa_signer(tv, locked_provenance.as_ref(), pkg)?;
-            self.verify_provenance(ctx, tv, pkg, v, filename).await?;
+            Self::ensure_locked_slsa_signer(tv, recorded_provenance.as_ref(), pkg)?;
+            self.verify_provenance(ctx, tv, pkg, v, filename, required)
+                .await?;
         }
 
         let tarball_path = tv.download_path().join(filename);
@@ -3147,15 +3206,19 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
         filename: &str,
+        required: Option<ProvenanceType>,
     ) -> Result<()> {
         // Check if the lockfile expects provenance for this platform, then clear it
-        // so we can detect whether verification actually re-set it
+        // so we can detect whether verification actually re-set it. The registry's
+        // requirement, when there is one, takes precedence: a lockfile may have been
+        // written without it.
         let platform_key = self.get_platform_key();
         let locked_provenance = tv
             .lock_platforms
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
-        let expected_provenance = locked_provenance.as_ref();
+        let expected = required.or(locked_provenance);
+        let expected_provenance = expected.as_ref();
 
         // When the lockfile specifies a provenance type, only run that specific mechanism.
         // This prevents false-positive downgrade errors when a tool supports multiple mechanisms
@@ -3365,7 +3428,7 @@ impl AquaBackend {
                     .map(|g| g.to_string())
                     .unwrap_or_else(|| "no verification".to_string());
                 return Err(eyre!(
-                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
+                    "Lockfile or mise registry requires {expected} provenance for {tv} but {got_str} was used. \
                      This may indicate a downgrade attack. Enable the corresponding verification setting \
                      or update the lockfile."
                 ));

@@ -191,6 +191,12 @@ accepts that answer, and a lockfile written afterwards records no provenance.
 The `provenance` category confirms a "none" answer with GitHub before it skips verification.
 This costs one GitHub API request per artifact without attestations.
 
+Neither mode accepts "none" for a release the mise registry says must have
+attestations: a `github:` backend, or an `aqua:` backend whose recipe declares
+them, at or after the backend's
+[`attestations_since`](/contributing/registry.html#required-attestations)
+version. There a missing attestation fails the install and `mise lock`.
+
 In either mode, when mise-versions fails to answer (a timeout, a lost
 connection, or a `429` or `5xx` response), mise asks GitHub's attestation API
 instead and verifies what GitHub returns the same way.
