@@ -167,18 +167,20 @@ impl ErlangPlugin {
         format!("otp_src_{version}.tar.gz")
     }
 
+    // The version is encoded as part of one path segment in these URLs: it can come from a config
+    // file or a version list, and a `/`, `#` or `%2e%2e` in it would otherwise reach another path.
     fn source_asset_url(version: &str) -> String {
         format!(
             "https://github.com/erlang/otp/releases/download/{}/{}",
-            Self::release_tag(version),
-            Self::source_asset_name(version)
+            urlencoding::encode(&Self::release_tag(version)),
+            urlencoding::encode(&Self::source_asset_name(version))
         )
     }
 
     fn source_archive_url(version: &str) -> String {
         format!(
             "https://github.com/erlang/otp/archive/{}.tar.gz",
-            Self::release_tag(version)
+            urlencoding::encode(&Self::release_tag(version))
         )
     }
 
@@ -210,7 +212,10 @@ impl ErlangPlugin {
             .await?;
         let checksum = parse_hex_build_checksum(&builds, &release_tag)?;
         Ok(PlatformInfo {
-            url: Some(format!("{base_url}/{release_tag}.tar.gz")),
+            url: Some(format!(
+                "{base_url}/{}.tar.gz",
+                urlencoding::encode(&release_tag)
+            )),
             checksum: Some(checksum),
             ..Default::default()
         })

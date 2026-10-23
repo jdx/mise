@@ -759,13 +759,20 @@ fn validate_version_string(s: &str) -> Result<()> {
     if s.starts_with('-') {
         bail!("invalid tool version {s:?}: must not start with '-'");
     }
-    if s.contains("..") {
+    if contains_dot_dot(s) {
         bail!("invalid tool version {s:?}: contains path-traversal sequence");
     }
     if let Some(c) = s.chars().find(|c| is_forbidden_version_char(*c)) {
         bail!("invalid tool version {s:?}: contains forbidden character {c:?}");
     }
     Ok(())
+}
+
+/// Whether `s` holds `..`, spelled out or percent-encoded. Versions and refs are formatted into
+/// download URLs, and URL parsing resolves `%2e%2e` (in any case, or mixed with a plain `.`) like a
+/// `..` segment.
+fn contains_dot_dot(s: &str) -> bool {
+    s.contains("..") || s.to_ascii_lowercase().replace("%2e", ".").contains("..")
 }
 
 /// Validate `ref:`/`branch:`/`tag:`/`rev:` values. Same character rules as
@@ -780,7 +787,7 @@ fn validate_ref_string(s: &str) -> Result<()> {
     if s.starts_with('-') {
         bail!("invalid tool ref {s:?}: must not start with '-'");
     }
-    if s.contains("..") {
+    if contains_dot_dot(s) {
         bail!("invalid tool ref {s:?}: contains path-traversal sequence");
     }
     if let Some(c) = s.chars().find(|c| is_forbidden_version_char(*c)) {
@@ -1144,6 +1151,11 @@ mod tests {
             // path traversal
             "../etc/passwd",
             "1.0/../etc",
+            // percent-encoded traversal, which URL parsing resolves like `..`
+            "1.3.0/%2e%2e/%2e%2e/evil/payload",
+            "1/%2E%2e/x",
+            "1/.%2e/x",
+            "1/%2e./x",
         ] {
             assert!(
                 validate_version_string(v).is_err(),
@@ -1170,6 +1182,7 @@ mod tests {
             "a\\b",
             "--version",
             "-v",
+            "1/%2e%2e/x",
         ] {
             assert!(
                 validate_ref_string(v).is_err(),
