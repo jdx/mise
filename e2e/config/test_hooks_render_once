@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# A hook command is rendered once, when its config is loaded. Text that the
+# template substitutes, such as a directory name or exec() output, is data and
+# must not be rendered again.
+
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[hooks]
+cd = 'echo CD={{ cwd | quote }}'
+EOF
+
+dir='{{exec(command="echo RENDERED-TWICE")}}'
+mkdir "$dir"
+
+eval "$(mise hook-env)"
+
+cd "$dir" || exit 1
+output="$(mise hook-env 2>&1)"
+assert_contains_text "$output" "CD=$PWD"
+assert_not_contains_text "$output" "/RENDERED-TWICE"
+eval "$(mise hook-env)"
+cd .. || exit 1
+eval "$(mise hook-env)"
+
+# exec() output substituted into a project hook is not rendered again either
+mkdir proj
+echo '{{exec(command="echo RENDERED-TWICE")}}' >proj/payload.txt
+cat >proj/mise.toml <<'EOF'
+[hooks]
+enter = "echo OUT={{ exec(command='cat payload.txt') | quote }}"
+EOF
+cd proj || exit 1
+output="$(mise hook-env 2>&1)"
+assert_contains_text "$output" 'OUT={{exec(command="echo RENDERED-TWICE")}}'
+assert_not_contains_text "$output" "OUT=RENDERED-TWICE"

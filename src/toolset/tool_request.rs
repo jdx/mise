@@ -328,6 +328,11 @@ impl ToolRequest {
         self
     }
 
+    /// The effective options, to rewrite a value without changing where it came from.
+    pub(crate) fn options_mut(&mut self) -> &mut ToolVersionOptions {
+        self.resolved_options_mut().effective_mut()
+    }
+
     fn resolved_options_mut(&mut self) -> &mut ResolvedToolOptions {
         match self {
             Self::Version { options: o, .. }
