@@ -1082,13 +1082,15 @@ pub(crate) async fn with_safe_mode_tool_scope<T>(
     ba: &BackendArg,
     future: impl std::future::Future<Output = T>,
 ) -> T {
+    // Boxed: this wraps resolving, installing and listing, whose futures are large,
+    // and holding one inline here (twice over, in the scopes) overflows the stack
+    // of a debug build.
+    let future = Box::pin(future);
     if !Settings::safe_mode() || crate::config::is_safe_mode_project_tool(ba) {
         return future.await;
     }
-    mise_util::tera::with_trusted_templates(mise_util::untrusted_hosts::with_trusted_tool_scope(
-        future,
-    ))
-    .await
+    let trusted = Box::pin(mise_util::untrusted_hosts::with_trusted_tool_scope(future));
+    mise_util::tera::with_trusted_templates(trusted).await
 }
 
 /// Resolve a `path:` tool version request value against the config file's directory.
