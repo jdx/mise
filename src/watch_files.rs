@@ -362,6 +362,9 @@ pub(crate) fn glob(root: &Path, patterns: &[String]) -> Result<Vec<PathBuf>> {
         require_literal_separator: true,
         ..Default::default()
     };
+    // only the patterns are globs; the root is a literal directory
+    let escaped_root = glob::Pattern::escape(&root.to_string_lossy());
+    let root = Path::new(&escaped_root);
     Ok(patterns
         .iter()
         .map(|pattern| root.join(pattern).to_string_lossy().to_string())

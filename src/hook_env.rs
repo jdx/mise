@@ -197,10 +197,10 @@ impl From<&Path> for WatchFilePattern {
 
 impl From<PathBuf> for WatchFilePattern {
     fn from(path: PathBuf) -> Self {
-        Self {
-            patterns: vec![path.to_string_lossy().to_string()],
-            root: Some(path),
-        }
+        // A path is a literal file to watch, never a glob: a `root` would make
+        // `get_watch_files` expand it, and a config dir name like `**` (from
+        // `conf.d/*/mise.toml` in an untrusted checkout) then walks forever.
+        path.as_path().into()
     }
 }
 
@@ -1080,6 +1080,35 @@ mod tests {
         assert_eq!(current.v, ENV_STATE_VERSION);
         assert!(env_value_matches(current.v, &current.env["K"], "secret"));
         assert!(!env_value_matches(current.v, &current.env["K"], "other"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn watched_paths_are_not_expanded_as_globs() {
+        use super::{WatchFilePattern, get_watch_files};
+
+        // `**` follows the link back into the directory, so expanding the path
+        // as a glob finds the lockfile again below it
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("**");
+        std::fs::create_dir(&dir).unwrap();
+        std::os::unix::fs::symlink(".", dir.join("a")).unwrap();
+        let lockfile = dir.join("mise.lock");
+        std::fs::write(&lockfile, "").unwrap();
+
+        assert_eq!(
+            WatchFilePattern::from(lockfile.clone()),
+            WatchFilePattern::from(lockfile.as_path())
+        );
+        let project_pattern = WatchFilePattern {
+            root: Some(dir.clone()),
+            patterns: vec!["*.lock".to_string()],
+        };
+        for pattern in [lockfile.clone().into(), project_pattern] {
+            let watches = get_watch_files([pattern]).unwrap();
+            let below_tmp = watches.iter().filter(|p| p.starts_with(tmp.path()));
+            assert_eq!(below_tmp.collect::<Vec<_>>(), vec![&lockfile]);
+        }
     }
 
     #[test]
