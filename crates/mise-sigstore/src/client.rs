@@ -263,7 +263,14 @@ impl AttestationClient {
     /// The request must have no streaming body so it can be cloned per attempt —
     /// true for all GET calls here. Non-transient responses (incl. 4xx like 404)
     /// are returned as-is for the caller to interpret.
-    async fn send_with_retry(&self, request: reqwest::RequestBuilder) -> Result<HttpResponse> {
+    pub(crate) async fn send_with_retry(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> Result<HttpResponse> {
+        // Build once, so an error the builder holds (an invalid URL, say) is
+        // returned here: `RequestBuilder::try_clone` returns `None` for one,
+        // not only for a streaming body.
+        let request = request.build()?;
         let mut attempt = 1;
         loop {
             let req = request
@@ -276,7 +283,7 @@ impl AttestationClient {
             // whole delay. Each attempt either returns, errors out, or breaks
             // with the delay to wait before the next attempt.
             let delay = 'attempt: {
-                match req.send().await {
+                match self.client.execute(req).await {
                     Ok(response) => {
                         let status = response.status();
                         if !last && is_retryable_status(status) {
@@ -360,10 +367,18 @@ impl AttestationClient {
                 .split_once('?')
                 .map_or(bundle_url, |(url, _)| url)
         );
-        let request = self
-            .client
-            .get(bundle_url)
-            .headers(self.github_headers(bundle_url)?);
+        // A malformed answer, not an unreachable API: report it as a bad
+        // payload so `provenance_api_failures_fatal = false` can't wave it on.
+        let url = reqwest::Url::parse(bundle_url)
+            .ok()
+            .filter(|url| matches!(url.scheme(), "http" | "https") && url.host().is_some())
+            .ok_or_else(|| {
+                AttestationError::UnsupportedFormat(
+                    "attestation bundle_url is not an absolute http(s) URL".to_string(),
+                )
+            })?;
+        let headers = self.github_headers(url.as_str())?;
+        let request = self.client.get(url).headers(headers);
         let response = self.send_with_retry(request).await?;
         if !response.status.is_success() {
             return Err(AttestationError::Api(format!(

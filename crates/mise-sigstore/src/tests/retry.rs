@@ -221,6 +221,53 @@ async fn fetch_attestations_ignores_entries_beyond_limit() {
     );
 }
 
+#[tokio::test]
+async fn fetch_attestations_errors_on_invalid_bundle_url() {
+    // `bundle_url` comes from the server: one that is not an absolute
+    // http(s) URL must fail the lookup, not panic, and is never requested.
+    for bundle_url in [
+        "not a url",
+        "",
+        "/bundles/1.json",
+        "//127.0.0.1/x",
+        "http://",
+        "file:///x",
+        "data:,x",
+    ] {
+        let body = format!(r#"{{"attestations":[{{"bundle_url":{bundle_url:?}}}]}}"#);
+        let (base_url, hits) = flaky_server(vec![], body.leak());
+        let client = test_client(&base_url);
+        let err = client
+            .fetch_attestations(FetchParams {
+                owner: "EarthBuild".to_string(),
+                repo: Some("EarthBuild/earthbuild".to_string()),
+                digest: "sha256:abc".to_string(),
+                limit: 30,
+                predicate_type: None,
+            })
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(err, AttestationError::UnsupportedFormat(_)),
+            "{bundle_url:?}: {err:?}"
+        );
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "{bundle_url:?} should not be requested"
+        );
+    }
+}
+
+#[tokio::test]
+async fn send_with_retry_returns_a_builder_error() {
+    let client = test_client("http://127.0.0.1:1");
+    let request = reqwest::Client::new().get("not a url");
+    let result = client.send_with_retry(request).await;
+    assert!(matches!(result, Err(AttestationError::Http(_))));
+}
+
 #[test]
 fn retry_after_parses_delta_seconds_and_caps() {
     fn headers_with(value: Option<&str>) -> HeaderMap {
