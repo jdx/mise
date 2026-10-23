@@ -4290,12 +4290,10 @@ pub async fn resolve_tool_lock_info(
                 );
             }
         };
-        let request_opts = tv.request.options().opts;
         match crate::env::with_install_env(
             tv.install_env(),
             crate::toolset::with_safe_mode_tool_scope(
                 backend.ba(),
-                &request_opts,
                 backend.resolve_lock_info(&tv, &target),
             ),
         )

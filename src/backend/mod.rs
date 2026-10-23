@@ -3428,18 +3428,8 @@ pub trait Backend: Debug + Send + Sync {
                 "Calling backend to list remote versions for {}",
                 ba.to_string()
             );
-            let opts = if Settings::safe_mode() {
-                config
-                    .get_tool_opts_with_overrides(self.ba())
-                    .await
-                    .map(|opts| opts.opts)
-                    .unwrap_or_default()
-            } else {
-                Default::default()
-            };
             let (listed, listing_degraded) = crate::toolset::with_safe_mode_tool_scope(
                 self.ba(),
-                &opts,
                 self._list_remote_versions_checked(config),
             )
             .await?;
@@ -4672,15 +4662,6 @@ pub trait Backend: Debug + Send + Sync {
             }
             None => match crate::toolset::with_safe_mode_tool_scope(
                 self.ba(),
-                &if Settings::safe_mode() {
-                    config
-                        .get_tool_opts_with_overrides(self.ba())
-                        .await
-                        .map(|opts| opts.opts.into_map())
-                        .unwrap_or_default()
-                } else {
-                    Default::default()
-                },
                 self._list_remote_versions(config),
             )
             .await
@@ -5217,12 +5198,8 @@ pub trait Backend: Debug + Send + Sync {
             return Err(e);
         }
         let install_env = tv.install_env();
-        let request_opts = tv.request.options().opts;
-        let install = crate::toolset::with_safe_mode_tool_scope(
-            self.ba(),
-            &request_opts,
-            self.install_version_(&ctx, tv),
-        );
+        let install =
+            crate::toolset::with_safe_mode_tool_scope(self.ba(), self.install_version_(&ctx, tv));
         let tv = match crate::env::with_install_env(install_env, install).await {
             Ok(tv) => tv,
             Err(e) => {
