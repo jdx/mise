@@ -109,8 +109,14 @@ impl RemoteCacheClient {
                 ) {
                     return Ok(None);
                 }
-                let capabilities: RemoteCacheCapabilities =
-                    response.error_for_status()?.json().await?;
+                let Some(body) =
+                    read_body_limited(response.error_for_status()?, MAX_CAPABILITIES_BYTES).await?
+                else {
+                    bail!(
+                        "remote cache capabilities are larger than {MAX_CAPABILITIES_BYTES} bytes"
+                    );
+                };
+                let capabilities: RemoteCacheCapabilities = serde_json::from_slice(&body)?;
                 if capabilities.protocol.major != PROTOCOL_VERSION {
                     bail!(
                         "remote cache capability protocol {} is incompatible with client protocol {PROTOCOL_VERSION}",
@@ -280,6 +286,8 @@ impl RemoteCacheClient {
         .await
     }
 
+    /// The blob `digest` names, which may hold no more than the size the
+    /// digest records: the server's reply is not trusted to stop there.
     pub async fn get_blob(
         &self,
         digest: &CacheDigest,
@@ -294,7 +302,9 @@ impl RemoteCacheClient {
                 .send()
                 .await?
                 .error_for_status()?;
-            let bytes = response.bytes().await?.to_vec();
+            let Some(bytes) = read_body_limited(response, digest.size).await? else {
+                bail!("remote cache blob failed digest verification: it is larger than its digest records");
+            };
             if !digest.matches_bytes(&bytes)? {
                 bail!("remote cache blob failed digest verification");
             }
@@ -319,7 +329,14 @@ impl RemoteCacheClient {
             fs::create_dir_all(staging_dir)?;
             let temporary = tempfile::NamedTempFile::new_in(staging_dir)?;
             let mut output = tokio::fs::File::from_std(temporary.reopen()?);
+            let mut written = 0u64;
             while let Some(chunk) = response.chunk().await? {
+                written += chunk.len() as u64;
+                if written > digest.size {
+                    bail!(
+                        "remote cache blob failed digest verification: it is larger than its digest records"
+                    );
+                }
                 output.write_all(&chunk).await?;
             }
             output.flush().await?;
@@ -370,4 +387,25 @@ impl RemoteCacheClient {
         })
         .await
     }
+}
+
+/// Most bytes the capabilities document may hold.
+const MAX_CAPABILITIES_BYTES: u64 = 1024 * 1024;
+
+/// The body, or `None` once more than `limit` decoded bytes arrive.
+async fn read_body_limited(mut response: reqwest::Response, limit: u64) -> Result<Option<Vec<u8>>> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit)
+    {
+        return Ok(None);
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if (body.len() + chunk.len()) as u64 > limit {
+            return Ok(None);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(Some(body))
 }

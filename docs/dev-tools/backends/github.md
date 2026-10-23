@@ -541,12 +541,18 @@ api.github.com whether the two names are the same repository. A
 [`url_replacements`](/url-replacements.html) mirror for the API cannot confirm a
 rename.
 
-Without both options, mise skips SLSA provenance and uses the other checks. A
-lockfile entry that records a checksum and SLSA provenance installs without
-verifying again, unless
+With both options set, a release that has no SLSA provenance mise can verify
+for the asset, because it publishes none or the file is empty or unreadable,
+fails to install and to lock, unless GitHub artifact attestations verify it
+first. Without both options, mise skips SLSA provenance and uses the other
+checks. A lockfile entry that records a checksum and SLSA provenance installs
+without verifying again, unless
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
-is set; that setting also makes missing signer options an error. These options
-are GitHub only.
+is set; that setting also makes missing signer options an error. A lockfile
+entry that records a checksum but no provenance installs on the checksum alone,
+even with both options set, unless `locked_verify_provenance` or
+[paranoid mode](/paranoid.html) for provenance is on. These options are GitHub
+only.
 
 ### Templates
 

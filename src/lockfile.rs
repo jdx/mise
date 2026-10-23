@@ -651,6 +651,23 @@ fn same_checksum_source(
     (a.is_some() && a == b).then(|| a_source.and(b_source))
 }
 
+/// True when both checksums use the same algorithm and name different bytes.
+/// Provenance vouches for the bytes a checksum names, not for the URL they were
+/// fetched from, so it must not carry over across such a change. Digests of
+/// different algorithms (blake3 from an install, sha256 from a release API)
+/// cannot be compared and are not treated as a change.
+fn checksum_changed(old: Option<&str>, new: Option<&str>) -> bool {
+    match (
+        old.and_then(|c| c.split_once(':')),
+        new.and_then(|c| c.split_once(':')),
+    ) {
+        (Some((old_algo, old_hash)), Some((new_algo, new_hash))) => {
+            old_algo.eq_ignore_ascii_case(new_algo) && !old_hash.eq_ignore_ascii_case(new_hash)
+        }
+        _ => false,
+    }
+}
+
 fn merge_provenance_state(
     current: Option<ProvenanceType>,
     current_verified: Option<bool>,
@@ -717,12 +734,18 @@ impl ArtifactInfo {
             other.checksum_source,
         )
         .unwrap_or(checksum_source);
-        let (provenance, provenance_verified) = merge_provenance_state(
-            self.provenance.clone(),
-            self.provenance_verified,
-            other.provenance.clone(),
-            other.provenance_verified,
-        );
+        // Other bytes under the same URL do not inherit the other side's provenance.
+        let (provenance, provenance_verified) =
+            if checksum_changed(other.checksum.as_deref(), self.checksum.as_deref()) {
+                (self.provenance.clone(), self.provenance_verified)
+            } else {
+                merge_provenance_state(
+                    self.provenance.clone(),
+                    self.provenance_verified,
+                    other.provenance.clone(),
+                    other.provenance_verified,
+                )
+            };
         ArtifactInfo {
             checksum,
             checksum_source,
@@ -897,6 +920,8 @@ impl PlatformInfo {
     /// - Drops the other side's checksum/size/url_api when URLs disagree, since
     ///   those fields describe a specific artifact and become stale if the URL
     ///   changes.
+    /// - Drops the other side's provenance when the checksums disagree, since
+    ///   provenance describes the bytes the checksum names.
     pub(crate) fn merge_with(&self, other: &PlatformInfo) -> PlatformInfo {
         let url_changed = self.url.is_some() && other.url.is_some() && self.url != other.url;
         let install_changed = self.install.is_some() && self.install != other.install;
@@ -951,7 +976,10 @@ impl PlatformInfo {
             self.url_api.clone().or_else(|| other.url_api.clone())
         };
 
-        let (provenance, provenance_verified) = if artifact_changed {
+        // Other bytes under the same URL do not inherit the other side's provenance.
+        let (provenance, provenance_verified) = if artifact_changed
+            || checksum_changed(other.checksum.as_deref(), self.checksum.as_deref())
+        {
             (self.provenance.clone(), self.provenance_verified)
         } else {
             merge_provenance_state(
@@ -2105,7 +2133,13 @@ impl Lockfile {
                     && platform_info.install.is_none()
                     && existing.install.as_deref() == Some("source");
                 let preserve_artifact_fields = !url_changed && !install_changed && !source_to_url;
-                let (provenance, provenance_verified) = if preserve_artifact_fields {
+                // Provenance vouches for the bytes the checksum names, not for the
+                // URL: other bytes under the same URL do not inherit it.
+                let same_bytes = !checksum_changed(
+                    existing.checksum.as_deref(),
+                    platform_info.checksum.as_deref(),
+                );
+                let (provenance, provenance_verified) = if preserve_artifact_fields && same_bytes {
                     merge_provenance_state(
                         platform_info.provenance.clone(),
                         platform_info.provenance_verified,
@@ -3613,6 +3647,81 @@ fn check_single_tool_provenance(
     ))
 }
 
+/// Check if a locked tool version is losing provenance while its artifact changes.
+///
+/// Returns an error message if `new` names other bytes than the entry already
+/// locked for this version, backend, options and platform (a changed checksum,
+/// whether or not the URL changed with it) and the provenance recorded for the
+/// old bytes was not established for the new ones, or None if the check passes.
+/// Merging never carries provenance across a checksum change, so without this a
+/// re-uploaded release asset would be locked with weaker provenance silently, and
+/// a later install would trust that entry. Used by `apply_lock_result`; complete
+/// generation has the same ratchet in `generate::ensure_no_downgrade`.
+fn check_replaced_artifact_provenance(
+    existing_tools: Option<&[LockfileTool]>,
+    short: &str,
+    version: &str,
+    backend: &str,
+    options: &BTreeMap<String, String>,
+    platform_key: &str,
+    new: &PlatformInfo,
+) -> Option<String> {
+    let existing = existing_tools?
+        .iter()
+        .find(|tool| {
+            tool.version == version
+                && &tool.options == options
+                && tool.backend.as_deref().is_none_or(|b| b == backend)
+        })?
+        .platforms
+        .get(platform_key)?;
+    // Mirrors `generate::ensure_no_downgrade`: a verified Packslip signer is the
+    // replacement trust baseline for detected GitHub provenance.
+    let packslip_signer_replaces_provenance =
+        backend.starts_with("packslip:") && new.signer.is_some();
+    let loses_provenance = |old_checksum: Option<&str>,
+                            old_provenance: Option<&ProvenanceType>,
+                            new_checksum: Option<&str>,
+                            new_provenance: Option<&ProvenanceType>| {
+        checksum_changed(old_checksum, new_checksum)
+            && generate::provenance_is_downgrade(
+                old_provenance,
+                new_provenance,
+                packslip_signer_replaces_provenance,
+            )
+    };
+    let (url, prov) = if loses_provenance(
+        existing.checksum.as_deref(),
+        existing.provenance.as_ref(),
+        new.checksum.as_deref(),
+        new.provenance.as_ref(),
+    ) {
+        (existing.url.as_deref(), existing.provenance.as_ref()?)
+    } else {
+        // Additional artifacts are paired by position, as `merge_additional_artifacts` does.
+        let (_, old) = new
+            .additional_artifacts
+            .iter()
+            .zip(&existing.additional_artifacts)
+            .find(|(new, old)| {
+                loses_provenance(
+                    old.checksum.as_deref(),
+                    old.provenance.as_ref(),
+                    new.checksum.as_deref(),
+                    new.provenance.as_ref(),
+                )
+            })?;
+        (Some(old.url.as_str()), old.provenance.as_ref()?)
+    };
+    Some(format!(
+        "{short}@{version} no longer matches its locked checksum on {platform_key}{}, \
+         and the new artifact has no {prov} provenance like the locked one. This could \
+         indicate a supply chain attack. Verify the release is authentic before proceeding; \
+         to accept the new artifact, remove the entry from mise.lock and lock again.",
+        url.map(|url| format!(" ({url})")).unwrap_or_default(),
+    ))
+}
+
 fn parse_provenance_version(version: &str) -> Option<nodejs_semver::Version> {
     nodejs_semver::Version::parse(strip_leading_v(version)).ok()
 }
@@ -4485,7 +4594,8 @@ pub async fn resolve_tool_lock_info(
 /// platform.
 ///
 /// Returns an error if a github backend tool loses provenance on version upgrade,
-/// which could indicate a supply chain attack.
+/// or if a locked artifact is replaced by one with weaker provenance, which could
+/// indicate a supply chain attack.
 pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) -> Result<bool> {
     let (short, version, backend, platform, info, options, conda_packages, _error_is_fatal) =
         result;
@@ -4499,6 +4609,17 @@ pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) 
             &backend,
             &platform_key,
             info.provenance.as_ref(),
+        ) {
+            return Err(eyre!("{err}"));
+        }
+        if let Some(err) = check_replaced_artifact_provenance(
+            lockfile.tools_for(&short).map(Vec::as_slice),
+            &short,
+            &version,
+            &backend,
+            &options,
+            &platform_key,
+            info,
         ) {
             return Err(eyre!("{err}"));
         }

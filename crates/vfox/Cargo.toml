@@ -29,6 +29,7 @@ path = "src/bin.rs"
 [dependencies]
 glob = "0.3"
 homedir = "0.3"
+http = "1"
 indexmap = { version = "2", features = ["serde"] }
 itertools = "0.15"
 log = "0.4"

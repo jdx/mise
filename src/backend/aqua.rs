@@ -971,8 +971,15 @@ impl Backend for AquaBackend {
         };
 
         // Detect provenance from aqua registry config
-        let mut provenance = self.detect_provenance_type(&pkg);
-        if matches!(provenance, Some(ProvenanceType::GithubAttestations))
+        // A registry requirement is recorded without asking anyone (a "none" answer is
+        // exactly what it must not trust); the lock-time verification below still has to
+        // pass.
+        let required = self.registry_required_provenance(tv, &pkg);
+        let mut provenance = required
+            .clone()
+            .or_else(|| self.detect_provenance_type(&pkg));
+        if required.is_none()
+            && matches!(provenance, Some(ProvenanceType::GithubAttestations))
             && let Some(digest) = checksum.as_deref().filter(|d| d.starts_with("sha256:"))
             && let Some(attestations) = &pkg.github_artifact_attestations
         {
@@ -1030,6 +1037,7 @@ impl Backend for AquaBackend {
         }
 
         // Record only cryptographically verified provenance for the target artifact.
+        let mut verified_at_lock_time = false;
         if provenance.is_some()
             && let Some(ref artifact_url) = url
         {
@@ -1042,6 +1050,7 @@ impl Backend for AquaBackend {
                     &v,
                     artifact_url,
                     provenance.as_ref().unwrap(),
+                    required.is_some(),
                     &mut checksum,
                 )
                 .await
@@ -1050,6 +1059,7 @@ impl Backend for AquaBackend {
                     provenance = verified;
                     // The artifact was downloaded and checked against it.
                     mirror_digest = false;
+                    verified_at_lock_time = true;
                 }
                 Err(e) => {
                     return Err(e.wrap_err(format!(
@@ -1058,6 +1068,16 @@ impl Backend for AquaBackend {
                     )));
                 }
             }
+        }
+        if let Some(required) = &required
+            && (!verified_at_lock_time || provenance.as_ref() != Some(required))
+        {
+            bail!(
+                "mise registry requires {required} provenance for {}@{} but none was verified. \
+                 This may indicate a downgrade attack.",
+                self.ba(),
+                tv.version
+            );
         }
         Ok(PlatformInfo {
             checksum_source: mirror_digest.then_some(ChecksumSource::VersionsHost),
@@ -1534,6 +1554,28 @@ impl AquaBackend {
         Some((checksum, attestations))
     }
 
+    /// The provenance the mise registry requires for `tv`: GitHub attestations, when
+    /// the registry marks this backend as publishing them from a version on
+    /// (`attestations_since`) and the aqua recipe declares them. From that version
+    /// on, "no attestation for this file" is a downgrade, not a release that has
+    /// none. Earlier versions, versions the registry can't place, and users who
+    /// turned GitHub attestations off keep the recipe's best-effort check.
+    fn registry_required_provenance(
+        &self,
+        tv: &ToolVersion,
+        pkg: &AquaPackage,
+    ) -> Option<ProvenanceType> {
+        let settings = Settings::get();
+        (settings.github_attestations
+            && settings.aqua.github_attestations
+            && Self::has_github_attestations_config(pkg)
+            && crate::registry::requires_github_attestations(
+                &self.ba.full_without_opts(),
+                &tv.version,
+            ))
+        .then_some(ProvenanceType::GithubAttestations)
+    }
+
     fn has_github_attestations_config(pkg: &AquaPackage) -> bool {
         pkg.github_artifact_attestations
             .as_ref()
@@ -1696,6 +1738,7 @@ impl AquaBackend {
         v: &str,
         artifact_url: &str,
         detected: &ProvenanceType,
+        attestations_required: bool,
         checksum: &mut Option<String>,
     ) -> Result<Option<ProvenanceType>> {
         let tmp_dir = Self::lock_time_download_dir()?;
@@ -1722,22 +1765,20 @@ impl AquaBackend {
         }
         let expected_checksum = checksum.as_deref();
 
-        match detected {
+        // GitHub attestations are the only mechanism that can come back with nothing to
+        // check. As at install, that is not the end of it: the next mechanism the registry
+        // declares (SLSA, cosign or minisign) still has to vouch for the artifact, or bytes
+        // nobody signed would be locked on the strength of their own checksum, and a later
+        // install would trust that entry without looking at any signature.
+        let detected = match detected {
             ProvenanceType::GithubAttestations => {
-                if let Some(attestations) = pkg
+                let status = if let Some(attestations) = pkg
                     .github_artifact_attestations
                     .as_ref()
                     .filter(|attestations| attestations.enabled != Some(false))
                 {
-                    match self
-                        .run_github_attestation_check(&artifact_path, pkg, attestations)
+                    self.run_github_attestation_check(&artifact_path, pkg, attestations)
                         .await?
-                    {
-                        GithubAttestationStatus::Verified => {
-                            Ok(Some(ProvenanceType::GithubAttestations))
-                        }
-                        GithubAttestationStatus::Unavailable => Ok(None),
-                    }
                 } else {
                     let (checksum_config, attestations) =
                         Self::checksum_github_attestations_config(pkg).wrap_err(
@@ -1746,22 +1787,46 @@ impl AquaBackend {
                     let checksum_path = self
                         .download_checksum_file(checksum_config, pkg, v, tmp_dir.path(), None)
                         .await?;
-                    match self
+                    let status = self
                         .run_github_attestation_check(&checksum_path, pkg, attestations)
-                        .await?
-                    {
-                        GithubAttestationStatus::Verified => {
-                            self.verify_checksum_file_matches_expected(
-                                checksum_config,
-                                &checksum_path,
-                                &filename,
-                                expected_checksum,
-                            )?;
-                            Ok(Some(ProvenanceType::GithubAttestations))
+                        .await?;
+                    if status == GithubAttestationStatus::Verified {
+                        self.verify_checksum_file_matches_expected(
+                            checksum_config,
+                            &checksum_path,
+                            &artifact_path,
+                            &filename,
+                            expected_checksum,
+                        )?;
+                    }
+                    status
+                };
+                match status {
+                    GithubAttestationStatus::Verified => {
+                        return Ok(Some(ProvenanceType::GithubAttestations));
+                    }
+                    GithubAttestationStatus::Unavailable if attestations_required => {
+                        bail!(
+                            "mise registry requires GitHub artifact attestations for {}/{} {v} \
+                             but none exist for {filename}. This may indicate a downgrade attack.",
+                            pkg.repo_owner,
+                            pkg.repo_name
+                        );
+                    }
+                    GithubAttestationStatus::Unavailable => {
+                        match self.detect_non_github_provenance_type(pkg) {
+                            Some(next) => next,
+                            None => return Ok(None),
                         }
-                        GithubAttestationStatus::Unavailable => Ok(None),
                     }
                 }
+            }
+            detected => detected.clone(),
+        };
+
+        match detected {
+            ProvenanceType::GithubAttestations => {
+                unreachable!("detect_non_github_provenance_type never returns GitHub attestations")
             }
             ProvenanceType::Slsa { .. } => {
                 let provenance_url = self
@@ -1813,6 +1878,7 @@ impl AquaBackend {
                     self.verify_checksum_file_matches_expected(
                         checksum_config,
                         &checksum_path,
+                        &artifact_path,
                         &filename,
                         expected_checksum,
                     )?;
@@ -1835,6 +1901,7 @@ impl AquaBackend {
                     self.verify_checksum_file_matches_expected(
                         checksum_config,
                         &checksum_path,
+                        &artifact_path,
                         &filename,
                         expected_checksum,
                     )?;
@@ -2370,10 +2437,16 @@ impl AquaBackend {
         }
     }
 
+    /// Bind the downloaded artifact to a checksum file whose signature has already been
+    /// verified. The expected checksum (usually GitHub's asset digest, which is sha256 and
+    /// follows a re-upload) can only be compared with the signed digest when both use the
+    /// same algorithm. Otherwise the artifact itself is hashed with the signed file's
+    /// algorithm: skipping the comparison would leave nothing tying it to the signature.
     fn verify_checksum_file_matches_expected(
         &self,
         checksum_config: &AquaChecksum,
         checksum_path: &Path,
+        artifact_path: &Path,
         artifact_filename: &str,
         expected_checksum: Option<&str>,
     ) -> Result<()> {
@@ -2383,16 +2456,24 @@ impl AquaBackend {
             checksum_config,
             artifact_filename,
         )?;
-        let checksum_val = format!("{}:{}", checksum_config.algorithm(), checksum_str);
+        let algorithm = checksum_config.algorithm();
+        let checksum_val = format!("{algorithm}:{checksum_str}");
         if let Some(expected) = expected_checksum
             && same_checksum_algorithm(expected, &checksum_val)
-            && expected != checksum_val
         {
-            bail!(
-                "verified checksum file digest does not match expected checksum for {artifact_filename}"
-            );
+            if expected != checksum_val {
+                bail!(
+                    "verified checksum file digest does not match expected checksum for {artifact_filename}"
+                );
+            }
+            return Ok(());
         }
-        Ok(())
+        crate::hash::ensure_checksum(artifact_path, &checksum_str, None, algorithm.as_ref())
+            .wrap_err_with(|| {
+                format!(
+                    "verified checksum file digest does not match downloaded {artifact_filename}"
+                )
+            })
     }
 
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
@@ -3106,14 +3187,21 @@ impl AquaBackend {
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();
         let platform_key = self.get_platform_key();
-        let has_lockfile_integrity = tv
-            .lock_platforms
-            .get(&platform_key)
-            .is_some_and(PlatformInfo::has_checksum_and_provenance);
-        let locked_provenance = tv
+        let recorded_provenance = tv
             .lock_platforms
             .get(&platform_key)
             .and_then(|p| p.provenance.clone());
+        // A lockfile entry stands in for verification only when it records what the
+        // registry requires: it may have been written after a wrong "no attestations".
+        let required = self.registry_required_provenance(tv, pkg);
+        let has_lockfile_integrity = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(PlatformInfo::has_checksum_and_provenance)
+            && required
+                .as_ref()
+                .is_none_or(|required| recorded_provenance.as_ref() == Some(required));
+        let locked_provenance = required.clone().or(recorded_provenance.clone());
         if lockfile_has_checksum && has_lockfile_integrity && !force_verify {
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
         } else if !force_verify && locked_provenance.is_none() && lockfile_has_checksum {
@@ -3125,8 +3213,9 @@ impl AquaBackend {
         } else {
             // Verifying for real needs the expected signer; without one the locked SLSA
             // requirement would be dropped silently.
-            Self::ensure_locked_slsa_signer(tv, locked_provenance.as_ref(), pkg)?;
-            self.verify_provenance(ctx, tv, pkg, v, filename).await?;
+            Self::ensure_locked_slsa_signer(tv, recorded_provenance.as_ref(), pkg)?;
+            self.verify_provenance(ctx, tv, pkg, v, filename, required)
+                .await?;
         }
 
         let tarball_path = tv.download_path().join(filename);
@@ -3158,15 +3247,19 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
         filename: &str,
+        required: Option<ProvenanceType>,
     ) -> Result<()> {
         // Check if the lockfile expects provenance for this platform, then clear it
-        // so we can detect whether verification actually re-set it
+        // so we can detect whether verification actually re-set it. The registry's
+        // requirement, when there is one, takes precedence: a lockfile may have been
+        // written without it.
         let platform_key = self.get_platform_key();
         let locked_provenance = tv
             .lock_platforms
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
-        let expected_provenance = locked_provenance.as_ref();
+        let expected = required.or(locked_provenance);
+        let expected_provenance = expected.as_ref();
 
         // When the lockfile specifies a provenance type, only run that specific mechanism.
         // This prevents false-positive downgrade errors when a tool supports multiple mechanisms
@@ -3376,7 +3469,7 @@ impl AquaBackend {
                     .map(|g| g.to_string())
                     .unwrap_or_else(|| "no verification".to_string());
                 return Err(eyre!(
-                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
+                    "Lockfile or mise registry requires {expected} provenance for {tv} but {got_str} was used. \
                      This may indicate a downgrade attack. Enable the corresponding verification setting \
                      or update the lockfile."
                 ));
@@ -4865,6 +4958,7 @@ mod lock_candidate_tests {
             .verify_checksum_file_matches_expected(
                 &checksum,
                 &path,
+                &tmp.path().join(ARTIFACT),
                 ARTIFACT,
                 Some(&format!("sha256:{DIGEST}")),
             )
@@ -4876,12 +4970,51 @@ mod lock_candidate_tests {
             .verify_checksum_file_matches_expected(
                 &checksum,
                 &path,
+                &tmp.path().join(ARTIFACT),
                 ARTIFACT,
                 Some(&format!("sha256:{}", "0".repeat(64))),
             )
             .unwrap_err()
             .to_string();
         assert!(err.contains("does not match expected checksum"), "{err}");
+    }
+
+    /// A signed sha512 checksum file cannot be compared with GitHub's sha256 asset digest, so
+    /// the downloaded artifact itself has to match it. Skipping the check let `mise lock`
+    /// record a re-uploaded artifact as signature-verified.
+    #[test]
+    fn test_verify_checksum_file_hashes_artifact_when_algorithms_differ() {
+        const ARTIFACT: &str = "tool_linux_amd64";
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let artifact = tmp.path().join(ARTIFACT);
+        std::fs::write(&artifact, "published").unwrap();
+        let sums = tmp.path().join("SHA512SUMS");
+        let digest = crate::hash::file_hash_prog::<sha2::Sha512>(&artifact, None).unwrap();
+        std::fs::write(&sums, format!("{digest}  {ARTIFACT}\n")).unwrap();
+
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let checksum: AquaChecksum = serde_json::from_str(r#"{"algorithm":"sha512"}"#).unwrap();
+        // the asset digest follows a re-upload, the signed file does not
+        let verify = || {
+            let api_digest = crate::hash::file_hash_sha256(&artifact, None).unwrap();
+            backend.verify_checksum_file_matches_expected(
+                &checksum,
+                &sums,
+                &artifact,
+                ARTIFACT,
+                Some(&format!("sha256:{api_digest}")),
+            )
+        };
+
+        verify().unwrap();
+
+        std::fs::write(&artifact, "replaced").unwrap();
+        let err = format!("{:?}", verify().unwrap_err());
+        assert!(err.contains("does not match downloaded"), "{err}");
     }
 
     /// A checksum file listing several other filenames, but not the requested one, must not

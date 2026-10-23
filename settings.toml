@@ -922,6 +922,23 @@ it, check whether it still happens with `experimental = false`, then
 env = "MISE_EXPERIMENTAL"
 type = "Bool"
 
+[extract_max_ratio]
+default = 100
+description = "How many times its own size a downloaded archive or compressed file may unpack to."
+docs = """
+A small download can be built to unpack to far more data than the disk holds:
+1 GiB of zeroes is under 1 KiB of bzip2. When mise unpacks a tool's archive or
+compressed file, it stops, and the install fails, once the output is larger
+than 256 MiB and more than this many times the size of the download. Tool
+archives rarely unpack to more than 10 times their size.
+
+Raise it for a tool that legitimately unpacks to more, such as an archive of
+mostly empty disk images. `0` means no limit.
+"""
+env = "MISE_EXTRACT_MAX_RATIO"
+global_only = true
+type = "Integer"
+
 [fetch_remote_versions_cache]
 default_docs = "1h"
 description = "How long a tool's cached list of available versions stays fresh."
@@ -1734,6 +1751,10 @@ and sends a strong `ETag` or `Last-Modified` value, mise keeps a partial
 download and resumes it on the next attempt, even in a later run; otherwise the
 download starts over. Changing the URL or request headers discards the partial
 file.
+
+The same limit bounds reading the body of a response that mise parses instead
+of saving, such as a checksum file or a version list, so a server that sends it
+a byte at a time cannot hold a command forever.
 """
 env = "MISE_HTTP_DOWNLOAD_TIMEOUT"
 type = "Duration"

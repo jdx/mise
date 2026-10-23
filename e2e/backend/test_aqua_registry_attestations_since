@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+# The mise registry can mark an aqua: backend as publishing GitHub attestations
+# from a version on (`attestations_since`). For an aqua recipe that declares
+# attestations, a release from that version on with no attestation is refused by
+# `mise install` and `mise lock` instead of being installed unchecked. Earlier
+# versions keep the recipe's best-effort check.
+#
+# Everything is served locally: the release list and a 404 for every attestation
+# lookup, the aqua recipe from a file registry, and the mise registry entry from
+# a floating-registry archive placed in the cache.
+
+export MISE_LOCKFILE=1
+export MISE_AQUA_BAKED_REGISTRY=0
+export MISE_USE_VERSIONS_HOST=0
+# The attestation API is served over plain HTTP below, where mise refuses to send a token
+unset GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN GITHUB_API_TOKEN
+
+mkdir -p server/api/repos/example/tool
+cat <<'EOF' >server/api/repos/example/tool/releases
+[
+  {"tag_name": "2.0.0", "draft": false, "prerelease": false, "created_at": "2026-01-02T00:00:00Z", "assets": []},
+  {"tag_name": "1.0.0", "draft": false, "prerelease": false, "created_at": "2026-01-01T00:00:00Z", "assets": []}
+]
+EOF
+printf '#!/bin/sh\necho tool-1\n' >server/tool-1.0.0
+printf '#!/bin/sh\necho tool-2\n' >server/tool-2.0.0
+start_http_server --dir server
+export MISE_URL_REPLACEMENTS="{\"https://api.github.com\":\"http://127.0.0.1:$HTTP_PORT/api\",\"https://mise.jdx.dev\":\"http://127.0.0.1:1\"}"
+
+REGISTRY_DIR="$PWD/aqua-registry-local"
+mkdir -p "$REGISTRY_DIR"
+cat <<EOF >"$REGISTRY_DIR/registry.yaml"
+packages:
+  - type: http
+    repo_owner: example
+    repo_name: tool
+    url: http://127.0.0.1:$HTTP_PORT/tool-{{.Version}}
+    format: raw
+    github_artifact_attestations:
+      signer_workflow: example/tool/\.github/workflows/release\.yml
+    supported_envs:
+      - linux
+EOF
+export MISE_AQUA_REGISTRY_URL="file://$REGISTRY_DIR"
+
+# The floating mise registry, as a zstd-compressed tar of registry/*.toml. The
+# frame uses uncompressed blocks, so no zstd tool is needed to build it.
+export MISE_REGISTRY_FLOATING=1
+export MISE_REGISTRY_CACHE_TTL=1h
+mkdir -p "$MISE_CACHE_DIR/mise-registry"
+python3 - "$MISE_CACHE_DIR/mise-registry/registry.tar.zst" <<'PY'
+import io
+import struct
+import sys
+import tarfile
+
+ENTRY = b"""backends = [{ full = "aqua:example/tool", attestations_since = "2.0.0" }]
+version_order = "semver"
+"""
+
+buf = io.BytesIO()
+with tarfile.open(fileobj=buf, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+    info = tarfile.TarInfo("registry/example-tool.toml")
+    info.size = len(ENTRY)
+    tar.addfile(info, io.BytesIO(ENTRY))
+raw = buf.getvalue()
+
+# zstd frame: magic, a single-segment header with a 4-byte content size, then
+# raw blocks of at most 128 KiB, the last one flagged.
+out = bytearray(struct.pack("<I", 0xFD2FB528))
+out.append(0xA0)
+out += struct.pack("<I", len(raw))
+size = 128 * 1024
+chunks = [raw[i : i + size] for i in range(0, len(raw), size)]
+for i, chunk in enumerate(chunks):
+    last = 1 if i == len(chunks) - 1 else 0
+    out += ((len(chunk) << 3) | last).to_bytes(3, "little") + chunk
+with open(sys.argv[1], "wb") as f:
+    f.write(out)
+PY
+
+# Before the cutoff, a release without attestations installs as it always has.
+cat <<'EOF' >mise.toml
+[tools]
+"aqua:example/tool" = "1.0.0"
+EOF
+assert_contains "mise x -- tool" "tool-1"
+
+# From the cutoff on, the missing attestation is refused at install...
+cat <<'EOF' >mise.toml
+[tools]
+"aqua:example/tool" = "2.0.0"
+EOF
+assert_fail "mise install" "github-attestations provenance"
+if [[ -e "$MISE_DATA_DIR/installs/aqua-example-tool/2.0.0" ]]; then
+  fail "aqua:example/tool@2.0.0 was installed without its required attestation"
+fi
+
+# ...and by mise lock, which writes no entry for it.
+rm -f mise.lock
+assert_contains "mise lock --platform linux-x64 2>&1" "lock-time provenance verification failed"
+if [[ -f mise.lock ]]; then
+  assert_not_contains "cat mise.lock" "tool-2.0.0"
+fi

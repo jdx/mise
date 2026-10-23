@@ -469,6 +469,18 @@ fn slsa_signer_missing_error(tv: &ToolVersion) -> eyre::Report {
     )
 }
 
+/// A tool that names its SLSA signer has asked for that check, so a release
+/// without provenance it can verify is refused rather than installed unchecked:
+/// replacing the binary and deleting (or emptying) its provenance is exactly
+/// what the signer is there to catch.
+fn slsa_provenance_missing_error(tv: &ToolVersion, asset_name: &str) -> eyre::Report {
+    eyre::eyre!(
+        "slsa_signer_identity is set for {tv} but the release has no verifiable SLSA \
+         provenance for {asset_name}. Remove the slsa_signer options if the tool does \
+         not publish SLSA provenance."
+    )
+}
+
 /// Status returned from verification attempts
 enum VerificationStatus {
     /// No attestations or provenance found (not an error, tool may not have them)
@@ -1437,12 +1449,21 @@ impl UnifiedGitBackend {
         let version = &tv.version;
         let version_prefix = opts.version_prefix();
 
-        let release = self
+        let signer_pinned = settings.slsa && settings.github.slsa && opts.slsa_signer().is_some();
+        let release = match self
             .release_for_asset(&api_url, &repo, version, version_prefix, asset)
             .await
-            .ok();
-        let Some(release) = release else {
-            return Ok(None);
+        {
+            Ok(release) => release,
+            // A tool that names its SLSA signer keeps that requirement when the
+            // release can't be looked up (a direct `url` skips the lookup during
+            // asset selection): lock-time verification then has to succeed, instead
+            // of a checksum-only entry that later installs would trust.
+            Err(e) if signer_pinned => {
+                debug!("release lookup failed for {tv}, still requiring SLSA provenance: {e}");
+                return Ok(Some(ProvenanceType::Slsa { url: None }));
+            }
+            Err(_) => return Ok(None),
         };
 
         // Check github-attestations first (higher priority, matching install verification order)
@@ -1496,7 +1517,7 @@ impl UnifiedGitBackend {
         // Check for SLSA provenance from release assets using the same platform-aware
         // picker as install-time verification. This ensures we only record SLSA provenance
         // when a matching provenance file exists for the target platform.
-        if settings.slsa && settings.github.slsa && opts.slsa_signer().is_some() {
+        if signer_pinned {
             let asset_names: Vec<String> = release.assets.iter().map(|a| a.name.clone()).collect();
             // Narrow provenance the same way the binary is narrowed, so a
             // multi-binary release's per-binary provenance files don't
@@ -1519,6 +1540,11 @@ impl UnifiedGitBackend {
                     .map(|a| a.browser_download_url.clone());
                 return Ok(Some(ProvenanceType::Slsa { url }));
             }
+            // The tool names its signer, so a release without provenance must not be
+            // locked on its checksum alone (a later install would trust that entry).
+            // Let lock-time verification decide: it still accepts GitHub attestations
+            // the digest lookup above could not see, and refuses everything else.
+            return Ok(Some(ProvenanceType::Slsa { url: None }));
         }
 
         Ok(None)
@@ -1648,8 +1674,10 @@ impl UnifiedGitBackend {
                     .find(|a| a.name == provenance_name)
                     .expect("provenance asset should exist since we found its name");
 
-                ensure_plain_asset_name(&provenance_asset.name)?;
-                let provenance_path = tmp_dir.path().join(&provenance_asset.name);
+                // Under a fixed name in a directory of its own: the release chooses the
+                // asset's name, which may equal the artifact's or climb out with `..`.
+                let provenance_dir = tempfile::tempdir_in(tmp_dir.path())?;
+                let provenance_path = provenance_dir.path().join("provenance");
                 HTTP.download_file(
                     &provenance_asset.browser_download_url,
                     &provenance_path,
@@ -1721,6 +1749,9 @@ impl UnifiedGitBackend {
             }
         }
 
+        if settings.slsa && settings.github.slsa && opts.slsa_signer().is_some() {
+            return Err(slsa_provenance_missing_error(tv, &asset.name));
+        }
         Err(eyre::eyre!(
             "provenance was detected but could not be verified at lock time"
         ))
@@ -2929,8 +2960,10 @@ impl UnifiedGitBackend {
                     return Err(eyre::eyre!("SLSA provenance verification failed for {tv}"));
                 }
                 Err(VerificationStatus::NoAttestations) => {
-                    // No provenance found - this is fine
-                    debug!("No SLSA provenance found for {tv}");
+                    // The signer is only set by a tool that publishes SLSA provenance,
+                    // so a missing or unverifiable provenance file is a failure, not a
+                    // release that has none.
+                    return Err(slsa_provenance_missing_error(tv, &asset.name));
                 }
                 Err(VerificationStatus::ApiError(e)) => {
                     if expected_provenance.is_some() || settings.provenance_api_failures_fatal {
@@ -3147,11 +3180,15 @@ impl UnifiedGitBackend {
             .find(|a| a.name == provenance_name)
             .expect("provenance asset should exist since we found its name");
 
-        // Download the provenance file
-        ensure_plain_asset_name(&provenance_asset.name)
-            .map_err(|e| VerificationStatus::Error(e.to_string()))?;
-        let download_dir = tv.download_path();
-        let provenance_path = download_dir.join(&provenance_asset.name);
+        // Download the provenance file under a fixed name in a directory of its own.
+        // The release chooses the asset's name: next to the artifact, a name equal to
+        // the artifact's (or `provenance/../<artifact>`) would replace the file whose
+        // checksum was just verified, and more `..` would write outside the download
+        // directory.
+        let provenance_dir = tempfile::tempdir_in(tv.download_path()).map_err(|e| {
+            VerificationStatus::Error(format!("Failed to create provenance directory: {e}"))
+        })?;
+        let provenance_path = provenance_dir.path().join("provenance");
 
         ctx.pr
             .set_message(format!("download {}", provenance_asset.name));
@@ -3226,7 +3263,8 @@ impl UnifiedGitBackend {
 /// Prefer provenance explicitly attached to the selected release asset. This is
 /// important when `asset_pattern` intentionally selects an asset for a platform
 /// other than the host. Fall back to the existing platform-aware picker for
-/// shared provenance files and releases without an exact sidecar.
+/// shared provenance files and releases without an exact sidecar. The selected
+/// asset is never its own provenance, even when its name looks like one.
 fn pick_slsa_provenance(
     picker: &AssetPicker,
     assets: &[String],
@@ -3237,7 +3275,14 @@ fn pick_slsa_provenance(
         .iter()
         .find(|asset| asset.eq_ignore_ascii_case(&sidecar))
         .cloned()
-        .or_else(|| picker.pick_best_provenance(assets))
+        .or_else(|| {
+            let others = assets
+                .iter()
+                .filter(|asset| !asset.eq_ignore_ascii_case(selected_asset))
+                .cloned()
+                .collect::<Vec<_>>();
+            picker.pick_best_provenance(&others)
+        })
 }
 
 /// Templates a string pattern with version and target platform values
@@ -4058,6 +4103,27 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         assert_eq!(
             pick_slsa_provenance(&picker, &assets, "tool-linux-amd64").as_deref(),
             Some("tool-linux-amd64.provenance.json")
+        );
+    }
+
+    /// An artifact whose name looks like provenance must not be offered as its own
+    /// provenance: downloading it a second time would replace the verified file.
+    #[test]
+    fn test_pick_slsa_provenance_never_returns_selected_asset() {
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        let assets = vec!["tool-linux-x64-provenance".to_string()];
+        assert_eq!(
+            pick_slsa_provenance(&picker, &assets, "tool-linux-x64-provenance"),
+            None
+        );
+
+        let assets = vec![
+            "tool-linux-x64-provenance".to_string(),
+            "tool-linux-x64.provenance.json".to_string(),
+        ];
+        assert_eq!(
+            pick_slsa_provenance(&picker, &assets, "tool-linux-x64-provenance").as_deref(),
+            Some("tool-linux-x64.provenance.json")
         );
     }
 

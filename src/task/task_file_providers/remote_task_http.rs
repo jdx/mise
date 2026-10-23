@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 
-use crate::{Result, dirs, env, file, hash, http::HTTP, remote_source::RemoteSource};
+use crate::http::{HTTP, MAX_BODY_BYTES};
+use crate::{Result, dirs, env, file, hash, remote_source::RemoteSource};
 
 use super::{TaskFileArtifact, TaskFileProvider};
 
@@ -49,7 +50,10 @@ impl RemoteTaskHttp {
 
     async fn download_file(&self, file: &str, destination: &PathBuf) -> Result<()> {
         trace!("Downloading file: {}", file);
-        HTTP.download_file(file, destination, None).await?;
+        // The file is read whole into memory to list its task, so its size is
+        // capped like a response mise parses.
+        HTTP.download_file_limited(file, destination, MAX_BODY_BYTES as u64, None)
+            .await?;
         file::make_executable(destination)?;
         Ok(())
     }

@@ -20,10 +20,8 @@ use crate::{Result, lock_file::LockFile};
 use crate::{dirs, file, plugins, sysconfig, versions_host};
 use async_trait::async_trait;
 use eyre::{bail, eyre};
-use flate2::read::GzDecoder;
 use itertools::Itertools;
 use std::collections::BTreeMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, OnceLock};
@@ -309,10 +307,7 @@ impl PythonPlugin {
             .get_or_try_init_async(async || {
                 let settings = Settings::get();
                 let url_path = python_precompiled_url_path(&settings);
-                let rsp = versions_host::python_precompiled(&url_path).await?;
-                let mut decoder = GzDecoder::new(rsp.as_ref());
-                let mut raw = String::new();
-                decoder.read_to_string(&mut raw)?;
+                let raw = versions_host::python_precompiled(&url_path).await?;
                 let platform = python_precompiled_platform();
                 let flavor = settings.python.precompiled_flavor.clone();
                 // order by version, whether it is a release candidate, date, and in the preferred order of install types
@@ -835,10 +830,7 @@ impl PythonPlugin {
 
         let platform = format!("{arch}-{os}");
         let url_path = format!("python-precompiled-{arch}-{os}.gz");
-        let rsp = versions_host::python_precompiled(&url_path).await?;
-        let mut decoder = GzDecoder::new(rsp.as_ref());
-        let mut raw = String::new();
-        decoder.read_to_string(&mut raw)?;
+        let raw = versions_host::python_precompiled(&url_path).await?;
 
         let flavor = settings.python.precompiled_flavor.clone();
 

@@ -22,6 +22,13 @@ use std::time::Duration;
 
 const AUTO_UPDATE_REEXEC_ENV: &str = "__MISE_AUTO_UPDATE_REEXEC";
 
+// Ceilings for what self-update reads from the release host before any
+// signature is checked, so that host cannot fill memory or the temp directory.
+// A release archive of mise is a few tens of MiB.
+const MAX_RELEASE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_PACKSLIP_BYTES: usize = 4 * 1024 * 1024;
+const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+
 fn release_archive_name(version: &str, os: &str, arch: &str, build_target: &str) -> String {
     // Rust reports every 32-bit ARM target as `arm`, but our releases use `armv7`.
     // Preserve the build's ARM variant rather than upgrading an unsupported ARM CPU to v7.
@@ -788,14 +795,15 @@ impl SelfUpdate {
             .map_err(|()| eyre::eyre!("invalid release API URL"))?
             .pop_if_empty()
             .push(&tag);
-        Ok(client
+        let response = client
             .get(url.clone())
             .headers(Self::request_headers(source, url.as_str())?)
             .send()
             .await?
-            .error_for_status()?
-            .json()
-            .await?)
+            .error_for_status()?;
+        let body = Self::read_body_limited(response, MAX_RELEASE_BYTES, "release").await?;
+        serde_json::from_slice(&body)
+            .map_err(|err| eyre::eyre!("error decoding release {tag} from {url}: {err}"))
     }
 
     fn request_headers(source: &SelfUpdateSource, url: &str) -> Result<reqwest::header::HeaderMap> {
@@ -831,36 +839,57 @@ impl SelfUpdate {
         debug!("GET {url}");
         let mut headers = Self::request_headers(source, url)?;
         headers.insert(reqwest::header::ACCEPT, "application/octet-stream".parse()?);
-        let mut response = client
+        let response = client
             .get(url)
             .headers(headers)
             .send()
             .await?
             .error_for_status()?;
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await? {
-            eyre::ensure!(
-                bytes.len() + chunk.len() <= 4 * 1024 * 1024,
-                "self-update packslip exceeds 4 MiB"
-            );
-            bytes.extend_from_slice(&chunk);
-        }
+        let bytes = Self::read_body_limited(response, MAX_PACKSLIP_BYTES, "packslip").await?;
         Ok(String::from_utf8(bytes)?)
     }
 
+    /// Buffers a body that must stay small. The release host decides how much
+    /// it sends, so stop at `limit` bytes instead of trusting it.
+    async fn read_body_limited(
+        mut response: reqwest::Response,
+        limit: usize,
+        what: &str,
+    ) -> Result<Vec<u8>> {
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            eyre::ensure!(
+                bytes.len() + chunk.len() <= limit,
+                "self-update {what} exceeds {} MiB",
+                limit / (1024 * 1024)
+            );
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
+    }
+
     fn http_client() -> Result<reqwest::Client> {
+        Ok(mise_tls::build_client(Self::http_client_builder)?)
+    }
+
+    fn http_client_builder() -> reqwest::ClientBuilder {
         let settings = Settings::get();
-        Ok(mise_tls::build_client(|| {
-            reqwest::Client::builder()
-                .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
-                .https_only(true)
-                .redirect(Self::redirect_policy())
-                .connect_timeout(settings.http_timeout())
-                .read_timeout(settings.http_timeout())
-                .timeout(settings.http_download_timeout())
-                .no_gzip()
-                .no_zstd()
-        })?)
+        reqwest::Client::builder()
+            .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
+            .https_only(true)
+            .redirect(Self::redirect_policy())
+            .connect_timeout(settings.http_timeout())
+            .read_timeout(settings.http_timeout())
+            .timeout(settings.http_download_timeout())
+            // Every decoder, not only the two mise's own Cargo.toml asks reqwest
+            // for: other dependencies enable brotli and deflate, and a decoder
+            // that is compiled in is on by default. A few hundred bytes from the
+            // host would otherwise inflate to gigabytes before any signature is
+            // checked.
+            .no_gzip()
+            .no_zstd()
+            .no_brotli()
+            .no_deflate()
     }
 
     async fn download_archive(
@@ -885,8 +914,25 @@ impl SelfUpdate {
         if let Some(length) = response.content_length() {
             progress.set_length(length);
         }
+        let too_large = || {
+            eyre::eyre!(
+                "self-update archive exceeds {} MiB",
+                MAX_ARCHIVE_BYTES / (1024 * 1024)
+            )
+        };
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_ARCHIVE_BYTES)
+        {
+            return Err(too_large());
+        }
         let mut file = tokio::fs::File::create(path).await?;
+        let mut written = 0u64;
         while let Some(chunk) = response.chunk().await? {
+            written += chunk.len() as u64;
+            if written > MAX_ARCHIVE_BYTES {
+                return Err(too_large());
+            }
             file.write_all(&chunk).await?;
             progress.inc(chunk.len() as u64);
         }
@@ -934,7 +980,8 @@ impl SelfUpdate {
         source.validate()?;
         let version = version.strip_prefix('v').unwrap_or(version);
         let archive_name = format!("mise-v{version}-{}-{}.zip", *OS, *ARCH);
-        let release = Self::fetch_release(&Self::http_client()?, source, version).await?;
+        let client = Self::http_client()?;
+        let release = Self::fetch_release(&client, source, version).await?;
         let asset = release
             .assets
             .iter()
@@ -945,36 +992,16 @@ impl SelfUpdate {
                     source.repository
                 )
             })?;
-        // Every redirect is governed by the downgrade-rejecting client below.
+        // Every redirect is governed by the downgrade-rejecting self-update client.
         let url = source.asset_url(asset).to_string();
         debug!("Downloading mise-shim.exe from {url}");
 
         let temp_dir = tempfile::tempdir()?;
         // Use the real archive name so zipsign context matches the release signature
         let zip_path = temp_dir.path().join(&archive_name);
-        let headers = source.request_headers(&url)?;
-        let settings = Settings::get();
-        let request_timeout = settings.http_timeout();
-        let archive = mise_tls::build_client(|| {
-            reqwest::Client::builder()
-                .user_agent(format!("mise/{}", env!("CARGO_PKG_VERSION")))
-                .https_only(true)
-                .redirect(Self::redirect_policy())
-                .connect_timeout(request_timeout)
-                .read_timeout(request_timeout)
-                .timeout(settings.http_download_timeout())
-        })?
-        .get(&url)
-        .headers(headers)
-        .send()
-        .await?
-        .error_for_status()?
-        .bytes()
-        .await?;
-        fs::write(&zip_path, archive)?;
+        Self::download_archive(&client, source, &url, &zip_path).await?;
 
-        let manifest =
-            Self::release_packslip(&Self::http_client()?, source, &release, version).await?;
+        let manifest = Self::release_packslip(&client, source, &release, version).await?;
         if let Some(manifest) = manifest {
             // The main executable already enforced age for this exact release.
             crate::file::run_blocking(|| packslip::verify(&manifest, version, &zip_path, None))?;
@@ -1317,6 +1344,66 @@ mod archive_tests {
         let dest = dir.path().join("staged-binary");
         assert!(extract_update_binary(&path, &dest).is_err());
         assert!(!dest.exists());
+    }
+
+    #[tokio::test]
+    async fn limited_body_reads_stop_at_the_limit() {
+        let response =
+            |body: Vec<u8>| reqwest::Response::from(http::Response::builder().body(body).unwrap());
+        assert_eq!(
+            SelfUpdate::read_body_limited(response(vec![b' '; 8]), 8, "release")
+                .await
+                .unwrap(),
+            vec![b' '; 8]
+        );
+        let err = SelfUpdate::read_body_limited(response(vec![b' '; 9]), 8, "release")
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("self-update release exceeds"));
+    }
+
+    #[tokio::test]
+    async fn self_update_transport_takes_bodies_as_sent() {
+        // A body labelled with an encoding mise never asked for. Decoded, these
+        // bytes would be a decompression bomb, or here a decoding error.
+        let body = b"not compressed".to_vec();
+        let mut server = mockito::Server::new_async().await;
+        let mut mocks = vec![];
+        for encoding in ["gzip", "zstd", "br", "deflate"] {
+            mocks.push(
+                server
+                    .mock("GET", format!("/{encoding}").as_str())
+                    .match_header("accept-encoding", mockito::Matcher::Missing)
+                    .with_header("content-encoding", encoding)
+                    .with_body(&body)
+                    .create_async()
+                    .await,
+            );
+        }
+        // The real client is HTTPS-only; the mock server is not.
+        let client = SelfUpdate::http_client_builder()
+            .https_only(false)
+            .build()
+            .unwrap();
+        for encoding in ["gzip", "zstd", "br", "deflate"] {
+            let response = client
+                .get(format!("{}/{encoding}", server.url()))
+                .send()
+                .await
+                .unwrap()
+                .error_for_status()
+                .unwrap();
+            assert_eq!(
+                SelfUpdate::read_body_limited(response, 1024, "release")
+                    .await
+                    .unwrap(),
+                body,
+                "{encoding}"
+            );
+        }
+        for mock in mocks {
+            mock.assert_async().await;
+        }
     }
 
     #[tokio::test]

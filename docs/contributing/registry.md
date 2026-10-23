@@ -355,8 +355,9 @@ version, so add a range only for a change those releases already handle wrongly.
 
 When a project publishes
 [GitHub artifact attestations](https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations)
-for its release assets, set `attestations_since` on its `github:` backend to the
-first version whose assets all carry them:
+for its release assets, set `attestations_since` on its `github:` backend, or
+on an `aqua:` backend whose aqua recipe declares `github_artifact_attestations`,
+to the first version whose assets all carry them:
 
 <!-- schema: skip -->
 
@@ -368,15 +369,22 @@ version_order = "semver"
 ```
 
 From that version on, mise refuses to install or lock an asset, including
-`additional_asset_patterns` assets, unless a GitHub attestation for it
-verifies. Finding none fails as a possible downgrade instead of skipping
-verification, also when the shared mise-versions cache or a lockfile reported
+`additional_asset_patterns` assets on `github:`, unless a GitHub attestation for
+it verifies. For an `aqua:` backend the attestation is checked where the recipe
+declares it, on the artifact or on its checksum file. Finding none fails as a
+possible downgrade instead of skipping verification, also when the shared mise-versions cache or a lockfile reported
 the missing attestation. Other provenance, such as SLSA, does not count.
 Earlier versions, versions that are not semantic versions (`nightly`, `1.0`,
 `2024.01.15`), and users who turn off
 [`github_attestations`](/configuration/settings.html#github_attestations) or
 [`github.github_attestations`](/configuration/settings.html#github.github_attestations)
 are unaffected.
+
+mise releases from before aqua support reject `attestations_since` on an
+`aqua:` backend, and a release that rejects one entry of the
+[floating registry](/configuration/settings.html#registry_floating) falls back
+to its built-in registry. Hold aqua cutoffs back until those releases are no
+longer in use.
 
 The value must be a complete semantic version. The tool's `version_order` can be
 anything: mise compares only the version being installed with the boundary.

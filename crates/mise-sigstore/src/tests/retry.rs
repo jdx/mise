@@ -361,3 +361,49 @@ async fn fetch_attestations_retries_on_body_read_failure() {
         "should have taken 1 body-drop + 1 successful attempt"
     );
 }
+
+#[tokio::test]
+async fn fetch_attestations_refuses_an_oversized_response() {
+    use std::io::{Read, Write};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // Valid JSON, padded past the limit, sent without a Content-Length so only
+    // the bytes read can stop it.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hits_thread = hits.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+            hits_thread.fetch_add(1, Ordering::SeqCst);
+            let mut buf = [0u8; 1024];
+            let _ = stream.read(&mut buf);
+            let mut body = vec![b' '; crate::client::MAX_RESPONSE_BYTES];
+            body.extend_from_slice(br#"{"attestations":[]}"#);
+            let _ = stream.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n",
+            );
+            let _ = stream.write_all(&body);
+        }
+    });
+    let client = test_client(&format!("http://{addr}"));
+    let err = client
+        .fetch_attestations(FetchParams {
+            owner: "EarthBuild".to_string(),
+            repo: Some("EarthBuild/earthbuild".to_string()),
+            digest: "sha256:abc".to_string(),
+            limit: 30,
+            predicate_type: None,
+        })
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(&err, AttestationError::Api(message) if message.contains("larger than")),
+        "got {err:?}"
+    );
+    // Not a transient failure, so not retried.
+    assert_eq!(hits.load(Ordering::SeqCst), 1);
+}
