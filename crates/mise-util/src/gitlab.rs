@@ -521,9 +521,16 @@ fn read_glab_hosts() -> Option<HashMap<String, String>> {
             return None;
         }
     };
-    warn_glab_expired_tokens(&contents);
+    let expired = warn_glab_expired_tokens(&contents);
     match tokens::yaml_hosts_to_tokens(&contents) {
-        Some(tokens) => Some(tokens),
+        Some(mut tokens) => {
+            // An expired OAuth2 token only earns a 401, so fall through to an
+            // unauthenticated request rather than send it.
+            for host in expired {
+                tokens.remove(&host);
+            }
+            Some(tokens)
+        }
         None => {
             debug!("failed to parse glab config.yml at {}", path.display());
             None
@@ -538,12 +545,17 @@ fn read_glab_hosts() -> Option<HashMap<String, String>> {
 /// that is the correct format going forward--old tokens will simply not trigger the
 /// warning. mise cannot refresh OAuth2 tokens itself, so we warn the user to run a
 /// glab command (e.g. `glab api user`) which will trigger a silent token refresh.
-fn warn_glab_expired_tokens(contents: &str) {
-    for (host, expiry_str) in find_expired_glab_tokens(contents) {
-        warn!(
-            "glab OAuth2 token for {host} expired at {expiry_str}. Run a glab command (e.g. `glab api user`) to refresh it."
-        );
-    }
+/// Returns the hosts whose token expired so the caller can stop using them.
+fn warn_glab_expired_tokens(contents: &str) -> Vec<String> {
+    find_expired_glab_tokens(contents)
+        .into_iter()
+        .map(|(host, expiry_str)| {
+            warn!(
+                "glab OAuth2 token for {host} expired at {expiry_str}, ignoring it. Run a glab command (e.g. `glab api user`) to refresh it."
+            );
+            host
+        })
+        .collect()
 }
 
 /// Returns `(host, expiry_str)` pairs for every glab host whose OAuth2 token is expired.
