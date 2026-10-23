@@ -840,10 +840,14 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::S3 => Some(Arc::new(s3::S3Backend::from_arg(ba))),
         BackendType::Ubi => Some(Arc::new(ubi::UbiBackend::from_arg(ba))),
         BackendType::Vfox => Some(Arc::new(vfox::VfoxBackend::from_arg(ba, None))),
-        BackendType::VfoxBackend(plugin_name) => Some(Arc::new(vfox::VfoxBackend::from_arg(
-            ba,
-            Some(plugin_name.to_string()),
-        ))),
+        BackendType::VfoxBackend(plugin_name) => {
+            // The name is joined onto the plugins directory, where its Lua is loaded from.
+            if !file::is_plain_file_name(&plugin_name) {
+                warn_once!("{plugin_name} is not a valid plugin name");
+                return None;
+            }
+            Some(Arc::new(vfox::VfoxBackend::from_arg(ba, Some(plugin_name))))
+        }
         BackendType::Unknown => None,
     }
 }
@@ -4840,6 +4844,11 @@ pub trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        // Before anything is keyed by the version: it names the install directory, which plugin
+        // hooks put into shell commands, and backends format it into download URLs.
+        if tv.request.uses_resolved_version_as_pathname() {
+            crate::toolset::tool_request::validate_installable_version(&tv.version)?;
+        }
         // Read the entry through the BackendArg so a tool alias reaches it, and only warn
         // when the resolved backend is one of its own, so a plugin that overrides the
         // shorthand doesn't get a warning about a CLI it doesn't install.
