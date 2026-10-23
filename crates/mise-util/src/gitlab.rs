@@ -521,14 +521,27 @@ fn read_glab_hosts() -> Option<HashMap<String, String>> {
             return None;
         }
     };
-    warn_glab_expired_tokens(&contents);
-    match tokens::yaml_hosts_to_tokens(&contents) {
-        Some(tokens) => Some(tokens),
-        None => {
-            debug!("failed to parse glab config.yml at {}", path.display());
-            None
+    let hosts = glab_usable_tokens(&contents);
+    if hosts.is_none() {
+        debug!("failed to parse glab config.yml at {}", path.display());
+    }
+    hosts
+}
+
+/// Parse glab's config into host tokens, warning about and dropping expired OAuth2 tokens.
+fn glab_usable_tokens(contents: &str) -> Option<HashMap<String, String>> {
+    let expired = warn_glab_expired_tokens(contents);
+    let mut tokens = tokens::yaml_hosts_to_tokens(contents)?;
+    // An expired OAuth2 token only earns a 401, so fall through to an
+    // unauthenticated request rather than send it.
+    // Only drop the host when the selected token is the expired one; a valid
+    // token for the same host from another config section must survive.
+    for (host, expired_token) in expired {
+        if tokens.get(&host) == Some(&expired_token) {
+            tokens.remove(&host);
         }
     }
+    Some(tokens)
 }
 
 /// Warn if any glab OAuth2 tokens are expired.
@@ -538,16 +551,21 @@ fn read_glab_hosts() -> Option<HashMap<String, String>> {
 /// that is the correct format going forward--old tokens will simply not trigger the
 /// warning. mise cannot refresh OAuth2 tokens itself, so we warn the user to run a
 /// glab command (e.g. `glab api user`) which will trigger a silent token refresh.
-fn warn_glab_expired_tokens(contents: &str) {
-    for (host, expiry_str) in find_expired_glab_tokens(contents) {
-        warn!(
-            "glab OAuth2 token for {host} expired at {expiry_str}. Run a glab command (e.g. `glab api user`) to refresh it."
-        );
-    }
+/// Returns the `(host, token)` pairs that expired so the caller can stop using them.
+fn warn_glab_expired_tokens(contents: &str) -> Vec<(String, String)> {
+    find_expired_glab_tokens(contents)
+        .into_iter()
+        .map(|(host, expiry_str, token)| {
+            warn!(
+                "glab OAuth2 token for {host} expired at {expiry_str}, ignoring it. Run a glab command (e.g. `glab api user`) to refresh it."
+            );
+            (host, token)
+        })
+        .collect()
 }
 
-/// Returns `(host, expiry_str)` pairs for every glab host whose OAuth2 token is expired.
-fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String)> {
+/// Returns `(host, expiry_str, token)` for every glab host whose OAuth2 token is expired.
+fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String, String)> {
     let Ok(doc) = yaml::from_str::<Value>(contents) else {
         return vec![];
     };
@@ -562,6 +580,12 @@ fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String)> {
         if entry.get("oauth2_refresh_token").is_none() {
             continue;
         }
+        let Some(entry_map) = entry.as_mapping() else {
+            continue;
+        };
+        let Some(token) = tokens::token_from_entry(entry_map) else {
+            continue;
+        };
         let Some(expiry_str) = entry.get("oauth2_expiry_date").and_then(Value::as_str) else {
             continue;
         };
@@ -569,7 +593,7 @@ fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String)> {
             continue;
         };
         if expiry_date < now {
-            expired.push((host.to_string(), expiry_str.to_string()));
+            expired.push((host.to_string(), expiry_str.to_string(), token));
         }
     }
     expired
@@ -628,6 +652,23 @@ hosts:
         assert_eq!(expired.len(), 1);
         assert_eq!(expired[0].0, "gitlab.com");
         assert_eq!(expired[0].1, "2023-03-13T15:47:00Z");
+        assert_eq!(expired[0].2, "gloas-abc123");
+    }
+
+    #[test]
+    fn test_glab_usable_tokens_keeps_valid_login_over_expired_host_token() {
+        let yaml = r#"
+hosts:
+  gitlab.com:
+    oauth_token: gloas-expired
+    oauth2_refresh_token: refresh
+    oauth2_expiry_date: "2023-03-13T15:47:00Z"
+logins:
+  - name: gitlab.com
+    token: glpat-valid
+"#;
+        let tokens = glab_usable_tokens(yaml).unwrap();
+        assert_eq!(tokens.get("gitlab.com").unwrap(), "glpat-valid");
     }
 
     #[test]
