@@ -1403,7 +1403,14 @@ fn release_cache_key(api_url: &str, repo: &str, tag: &str, use_versions_host: bo
     } else {
         "direct"
     };
-    format!("{api_url}-{repo}-{tag}-{source}").to_kebab_case()
+    // Kebab-casing alone is lossy (`hasura/graphql-engine` and
+    // `hasura-graphql/engine` come out the same), so the exact tuple is hashed in
+    // too, or one repository's cached release would answer for another's.
+    format!(
+        "{}-{}-{source}",
+        format!("{api_url}-{repo}-{tag}").to_kebab_case(),
+        crate::hash::hash_to_str(&(api_url, repo, tag))
+    )
 }
 
 #[doc(hidden)]
