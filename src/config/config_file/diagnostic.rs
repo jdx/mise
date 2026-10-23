@@ -4,7 +4,7 @@ use crate::dirs;
 use crate::file::display_path;
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// A TOML parsing error with source location information for rich display.
@@ -115,10 +115,29 @@ pub(crate) fn may_quote(path: &Path) -> bool {
 /// [`may_quote`] for a file found under `root`, such as a task file found in a
 /// task directory of the project at `root`: every directory between `root` and
 /// the file is checked too, whatever its name.
+///
+/// Config discovery starts in the working directory and its ancestors, and a
+/// configured filename may name any path below them
+/// (`override_config_filenames = ["custom/private.toml"]`), so the check also
+/// reaches back to the deepest directory the file shares with the working
+/// directory. The working directory comes from the OS already resolved, so the
+/// directories it shares hold no link the project put there.
 pub(crate) fn may_quote_below(path: &Path, root: &Path) -> bool {
     path.starts_with(*dirs::CONFIG)
         || path.starts_with(*dirs::SYSTEM_CONFIG)
-        || !reached_through_link(path, root)
+        || !reached_through_link(path, &discovery_root(path, root))
+}
+
+/// The shallower of `root` and the deepest ancestor `path` shares with the
+/// working directory.
+fn discovery_root(path: &Path, root: &Path) -> PathBuf {
+    let Some(cwd) = dirs::CWD.as_deref() else {
+        return root.to_path_buf();
+    };
+    match path.ancestors().find(|dir| cwd.starts_with(dir)) {
+        Some(shared) if root.starts_with(shared) => shared.to_path_buf(),
+        _ => root.to_path_buf(),
+    }
 }
 
 /// Whether `path`, a directory between `root` and it, or a config directory
@@ -264,8 +283,10 @@ mod tests {
     #[test]
     fn quotes_a_file_but_not_what_a_link_leads_to() {
         let tmp = tempfile::tempdir().unwrap();
-        // the project itself may sit behind a link, as macOS's temp dirs do
-        let tmp = tmp.path();
+        // resolved, as the working directory mise starts from is: macOS keeps
+        // its temp dirs behind a link
+        let tmp = tmp.path().canonicalize().unwrap();
+        let tmp = tmp.as_path();
         let (home, project) = (tmp.join("home"), tmp.join("project"));
         std::fs::create_dir_all(&home).unwrap();
         std::fs::create_dir_all(&project).unwrap();
@@ -286,10 +307,12 @@ mod tests {
         let linked_dir = reports(&project.join(".config/mise.toml"));
         assert!(!linked_dir.contains("s3cr3t"), "{linked_dir}");
 
-        // A project reached through a link of the user's own is still quoted.
+        // The directory discovery starts from, and those above it, are not
+        // checked: a project reached through a link of the user's own is
+        // still quoted.
         let via = tmp.join("via");
         symlink(&home, &via).unwrap();
-        assert_eq!(reports(&via.join("mise.toml")).matches("s3cr3t").count(), 2);
+        assert!(!reached_through_link(&via.join("mise.toml"), &via));
 
         // Below a known root every directory counts, whatever its name, but the
         // root itself may sit behind a link.
@@ -297,7 +320,16 @@ mod tests {
         std::fs::create_dir_all(&tasks).unwrap();
         symlink(&home, tasks.join("group")).unwrap();
         assert!(!may_quote_below(&tasks.join("group/mise.toml"), &project));
-        assert!(may_quote_below(&via.join("mise.toml"), &via));
+
+        // A configured filename can name a path below the discovery directory
+        // (`custom/private.toml`), whose directories count too.
+        symlink(&home, project.join("custom")).unwrap();
+        let custom = project.join("custom/mise.toml");
+        assert!(reached_through_link(&custom, &project));
+        // Even when the caller only knows the file's own directory, the check
+        // reaches back to the directory the file shares with the working one.
+        assert!(!may_quote_below(&custom, &project.join("custom")));
+        assert!(!may_quote(&custom));
     }
 
     #[test]

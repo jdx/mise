@@ -52,6 +52,14 @@ ln -s "$HOME/private" .config
 assert_not_contains "mise ls 2>&1 || true" "s3cr3t"
 rm .config
 
+# So is a link in a directory a configured filename names, whatever its name.
+cp "$HOME/private/mise.toml" "$HOME/private/private.toml"
+ln -s "$HOME/private" custom
+echo 'override_config_filenames = ["custom/private.toml"]' >.miserc.toml
+assert_fail_contains "MISE_SAFE=1 mise ls" "Invalid TOML in config file ~/workdir/custom/private.toml"
+assert_not_contains "MISE_SAFE=1 mise ls 2>&1 || true" "s3cr3t"
+rm custom .miserc.toml "$HOME/private/private.toml"
+
 # The user's own links are fine: dotfile managers keep the global config behind one.
 ln -s "$HOME/private/mise.toml" "$MISE_CONFIG_DIR/config.toml"
 assert_fail_contains "mise ls" "s3cr3t"
