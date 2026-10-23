@@ -294,3 +294,12 @@ EOS
 assert "mise run file_task" "profile=prod"
 # Help has no task env, so the env-based flag is dropped with a warning instead of failing
 assert_contains "mise run file_task -h 2>&1" "ignoring the usage"
+
+# A template that cannot render for a reason other than the task env still fails validation
+cat <<'EOT' >mise.toml
+[task_templates.tmpl]
+usage = '''
+flag "--x <p>" default="{{ vars.nope }}"
+'''
+EOT
+assert_fail "mise tasks validate"

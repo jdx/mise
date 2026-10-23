@@ -404,11 +404,16 @@ impl TaskScriptParser {
         if let Some(env) = env {
             tera_ctx.insert("env", env);
         }
+        // A malformed expression fails whatever the env is, so validation still catches it.
+        tera.validate_template_syntax("__mise_inherited_usage", &task.usage)
+            .map_err(Self::task_script_tera_error)
+            .with_context(|| format!("Failed to render task usage: {}", task.usage))?;
         let rendered = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx);
         // Without the resolved task env (help, validation, preflight), a template that reads it
         // cannot render. That must not take the task's own flags down with it.
         if env.is_none()
             && let Err(err) = &rendered
+            && is_missing_env_field(&format!("{err:#}"))
         {
             warn!(
                 "ignoring the usage task '{}' inherits from its template: {err:#}",
@@ -2547,4 +2552,9 @@ cmd "parent" {
             "spec with only examples should be recognized as having usage"
         );
     }
+}
+
+/// Whether a render error is a template reading a field of `env` that the context lacks.
+fn is_missing_env_field(err: &str) -> bool {
+    err.contains("is not defined") && (err.contains("env.") || err.contains("env["))
 }
