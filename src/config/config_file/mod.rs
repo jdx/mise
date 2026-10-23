@@ -614,12 +614,18 @@ pub fn untrusted_env_files() -> Vec<(PathBuf, Option<PathBuf>)> {
 /// Set on a `mise` that acts for someone other than the user who typed it,
 /// such as the children the MCP server starts. Such a process trusts nothing
 /// on its own: not the config its command would implicitly trust, and not on
-/// a `yes` setting. Untrusted config fails with [`UntrustedConfig`] instead.
+/// a `yes` setting. Untrusted config fails with [`UntrustedConfig`] instead,
+/// and so do the task files a typed `mise run` would be the consent to run.
 /// The variable is inherited, so a `mise` a task starts follows it too.
 pub const REQUIRE_EXPLICIT_TRUST_ENV: &str = "__MISE_REQUIRE_EXPLICIT_TRUST";
 
 static REQUIRE_EXPLICIT_TRUST: Lazy<bool> =
     Lazy::new(|| std::env::var_os(REQUIRE_EXPLICIT_TRUST_ENV).is_some_and(|v| !v.is_empty()));
+
+/// Whether this process trusts nothing on its own. See [`REQUIRE_EXPLICIT_TRUST_ENV`].
+pub(crate) fn requires_explicit_trust() -> bool {
+    *REQUIRE_EXPLICIT_TRUST
+}
 
 pub fn set_implicitly_trust_active_config(enabled: bool) {
     IMPLICITLY_TRUST_ACTIVE_CONFIG.store(enabled, Ordering::Relaxed);

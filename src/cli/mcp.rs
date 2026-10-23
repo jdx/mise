@@ -681,12 +681,16 @@ impl Mcp {
 }
 
 /// `task` is handed to `mise run` as an argument, so a leading dash would be
-/// parsed as a flag (`--raw`, `--cd=...`) instead of naming a task.
+/// parsed as a flag (`--raw`, `--cd=...`) instead of naming a task, and the
+/// path of an existing file would run that file, which no project config names
+/// and no trust check covers.
 fn validate_task_name(task: &str) -> std::result::Result<(), ErrorData> {
     let message = if task.is_empty() {
         "invalid task name '': a task name is required".to_string()
     } else if task.starts_with('-') {
         format!("invalid task name '{task}': task names cannot start with '-'")
+    } else if crate::task::task_list::script_path_arg(task).is_some() {
+        format!("invalid task name '{task}': only the project's tasks can be run, not a file path")
     } else {
         return Ok(());
     };
@@ -711,6 +715,19 @@ mod tests {
             validate_task_name("--raw").unwrap_err().message,
             "invalid task name '--raw': task names cannot start with '-'"
         );
+    }
+
+    #[test]
+    fn validate_task_name_rejects_file_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("build.sh");
+        std::fs::write(&script, "#!/bin/sh\n").unwrap();
+        let script = script.to_string_lossy().to_string();
+        for task in [script.clone(), format!("/{script}")] {
+            let err = validate_task_name(&task).unwrap_err();
+            assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{task:?}");
+            assert!(err.message.contains("not a file path"), "{task:?}");
+        }
     }
 
     #[test]

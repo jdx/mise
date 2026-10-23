@@ -417,6 +417,28 @@ async fn prompt_for_task(config: &Arc<Config>, load_all: bool) -> Result<Task> {
     }
 }
 
+/// The file a task argument names, when it is one. `mise run` runs an existing file given as
+/// any of these as an ad-hoc task instead of looking up a task:
+/// - ./path/to/script
+/// - ~/path/to/script
+/// - /path/to/script
+/// - ../path/to/script
+/// - C:\path\to\script
+/// - .\path\to\script
+pub fn script_path_arg(t: &str) -> Option<PathBuf> {
+    // A path starting with "//" on Windows will be treated as a UNC path by
+    // PathBuf, but "//" in UNIX will be collapsed to "/" by PathBuf.
+    // Checking a nonexistent UNC path for Windows will incur a large
+    // hiccup (~2.8s) due to Windows trying to resolve the UNC path.
+    let t = t
+        .strip_prefix("//")
+        .map(|s| format!("/{s}"))
+        .unwrap_or_else(|| t.to_string());
+    let arg_re = xx::regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#);
+    let path = PathBuf::from(&t);
+    (arg_re.is_match(&t) && path.exists()).then_some(path)
+}
+
 /// Get a list of tasks to run from command-line arguments
 /// Handles task patterns, monorepo paths, and interactive selection
 pub async fn get_task_lists(
@@ -486,45 +508,25 @@ pub async fn get_task_lists(
     };
 
     let mut tasks = vec![];
-    let arg_re = xx::regex!(r#"^((\.*|~)(/|\\)|\w:\\)"#);
     for (t, args) in args {
         // Expand :task pattern to match tasks in current directory's config root
         let original_name = t.clone();
         let t = crate::task::expand_colon_task_syntax(&t, config)?;
 
-        // A path starting with "//" on Windows will be treated as a UNC path by
-        // PathBuf, but "//" in UNIX will be collapsed to "/" by PathBuf.
-        // Checking a nonexistent UNC path for Windows will incur a large
-        // hiccup (~2.8s) due to Windows trying to resolve the UNC path.
-        let t_for_path_check = t
-            .strip_prefix("//")
-            .map(|s| format!("/{s}"))
-            .unwrap_or_else(|| t.clone());
-
-        // can be any of the following:
-        // - ./path/to/script
-        // - ~/path/to/script
-        // - /path/to/script
-        // - ../path/to/script
-        // - C:\path\to\script
-        // - .\path\to\script
-        if arg_re.is_match(&t_for_path_check) {
-            let path = PathBuf::from(&t_for_path_check);
-            if path.exists() {
-                let config_root = config
-                    .project_root
-                    .clone()
-                    .or_else(|| dirs::CWD.clone())
-                    .unwrap_or_default();
-                // A task resolves a relative file against its config root, but this path is
-                // relative to where mise was run, so make it absolute. The name still comes
-                // from the path as typed.
-                let abs_path = path.absolutize()?;
-                let mut task =
-                    Task::from_path(config, &abs_path, &PathBuf::new(), &config_root).await?;
-                task.name = name_from_path(PathBuf::new(), &path)?;
-                return Ok(vec![task.with_args(args)]);
-            }
+        if let Some(path) = script_path_arg(&t) {
+            let config_root = config
+                .project_root
+                .clone()
+                .or_else(|| dirs::CWD.clone())
+                .unwrap_or_default();
+            // A task resolves a relative file against its config root, but this path is
+            // relative to where mise was run, so make it absolute. The name still comes
+            // from the path as typed.
+            let abs_path = path.absolutize()?;
+            let mut task =
+                Task::from_path(config, &abs_path, &PathBuf::new(), &config_root).await?;
+            task.name = name_from_path(PathBuf::new(), &path)?;
+            return Ok(vec![task.with_args(args)]);
         }
         // Load tasks with the appropriate context
         // If the task was expanded to monorepo syntax (e.g., bare "build" -> "//packages/foo:build"),

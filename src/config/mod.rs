@@ -7563,7 +7563,11 @@ fn remote_task_file_requires_trust(path: &Path) -> bool {
 /// exec() etc. when task fields render), so only files containing template
 /// syntax need trust. Paranoid mode keeps requiring trust for everything.
 fn task_include_requires_trust(path: &Path) -> bool {
-    if Settings::try_get().is_ok_and(|settings| settings.paranoid.config()) {
+    // A process that requires explicit trust has no typed `mise run` behind it,
+    // so nothing has consented to the scripts either.
+    if Settings::try_get().is_ok_and(|settings| settings.paranoid.config())
+        || config_file::requires_explicit_trust()
+    {
         return true;
     }
     let Ok(body) = file::read_to_string(path) else {

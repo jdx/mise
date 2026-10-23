@@ -64,7 +64,10 @@ Connect the server only to a project and a client you trust.
   terminal, neither trusts the project for you: both refuse a project whose
   config files are not trusted, and list the `mise trust` commands to run after
   you review the files. The `mise` they start trusts nothing on its own either,
-  so config it reaches in a subdirectory must be trusted too.
+  so config it reaches in a subdirectory must be trusted too, and so must
+  [file tasks](/tasks/file-tasks.html) in a project with no config file: run
+  `mise trust <dir>` for the directory that holds `mise-tasks/`. `run_task`
+  takes the name of a task, not the path of a script to run.
 - `run_task` runs without stdin and sets `MISE_YES=1`, which answers mise's
   other confirmation prompts. Use your client's tool approval settings to decide
   which tasks may run, and review task definitions before allowing them.

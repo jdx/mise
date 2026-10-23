@@ -35,8 +35,12 @@ proc.stdout.readline()
 send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 send({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
       "params": {"name": sys.argv[1], "arguments": json.loads(sys.argv[2])}})
-result = json.loads(proc.stdout.readline())["result"]
+response = json.loads(proc.stdout.readline())
 proc.terminate()
+if "error" in response:
+    print(response["error"]["message"])
+    sys.exit(1)
+result = response["result"]
 print("status=error" if result.get("isError") else "status=ok")
 print(result["content"][0]["text"])
 EOF
@@ -80,3 +84,28 @@ assert_contains "$run_render" "are not trusted"
 mise trust sub
 assert_contains "$run_render" "status=ok"
 assert_contains "$run_render" "rendered"
+
+# A project can hold scripts and no config file. A template-free task file
+# loads without trust because typing `mise run` is the consent to run it, and
+# a client's request is not.
+script_marker="$PWD/script-ran"
+mkdir -p ../scripts_only/mise-tasks
+cat >../scripts_only/mise-tasks/build <<EOF
+#!/bin/sh
+touch '$script_marker'
+EOF
+chmod +x ../scripts_only/mise-tasks/build
+run_script="cd ../scripts_only && python3 ../workdir/mcp_call.py run_task '{\"task\": \"build\"}'"
+assert_contains "$run_script" "status=error"
+assert_contains "$run_script" "not trusted"
+assert_fail "test -e '$script_marker'"
+mise trust ../scripts_only
+assert_contains "$run_script" "status=ok"
+assert "test -e '$script_marker' && rm '$script_marker' && echo ran" "ran"
+
+# A script given by path is not one of the project's tasks, even from a trusted
+# project.
+cp ../scripts_only/mise-tasks/build ../build.sh
+run_path="python3 mcp_call.py run_task '{\"task\": \"../build.sh\"}'"
+assert_fail_contains "$run_path" "not a file path"
+assert_fail "test -e '$script_marker'"
