@@ -39,8 +39,13 @@ To check your work, preview with `mise dot apply --dry-run` (add `--verbose`
 to see content diffs) or [`mise dot diff`](/cli/dotfiles/diff.html), apply with
 `mise dot apply`, and confirm with
 [`mise dot status`](/cli/dotfiles/status.html). Apply skips targets that
-already match. The [reference](/dotfiles/reference.html#entry-keys) lists
-every entry key.
+already match. `mise dot diff` reads the entries declared in your config, not
+only those you created with `mise dot add`. It prints the difference for each
+target that would change. When none would, it reports `files: all files are
+applied` for whole-file entries and `edits: all edits are applied` for
+[edits](/dotfiles/edits.html); `track` entries are skipped, because
+[`mise dot history diff`](/cli/dotfiles/history/diff.html) covers them. The
+[reference](/dotfiles/reference.html#entry-keys) lists every entry key.
 
 ## Modes {#modes}
 
@@ -337,6 +342,11 @@ additive: exclusions prevent future copies but leave existing target files in
 place. To leave files out of a [tracked directory](/dotfiles/history.html#exclude-files-from-one-directory),
 use the tracked entry's own `exclude` list.
 
+`exclude` is a field of the entry, so set it by editing the entry in your
+config. [`mise dot exclude`](/cli/dotfiles/exclude.html) is a different,
+global rule: it adds a glob to `[history] exclude` and applies to every
+tracked path.
+
 ### Deploy only files committed to Git {#git-tracked-directories}
 
 Set `manifest = "git"` on a `symlink-each` or directory `copy` entry to manage
@@ -509,7 +519,12 @@ symlinks and permissions, instead of moving it.
 - `--mode copy` keeps a regular file at the target; `--mode` takes any mode.
 - `--source <path>` uses that source instead of one under `dotfiles.root`.
 - `--no-apply` copies the file to its source and writes the entry without
-  changing the original file, so you can review both first.
+  changing the original file, so you can review both first. It still writes
+  the source: when the source already exists with different contents, `add`
+  overwrites it with the live file, and asks first only in a terminal (`--force`
+  or `--yes` skip the prompt). `--dry-run` prints a `cp` line for every target
+  that exists, whether or not its contents already match the source, so compare
+  an existing source with the live file yourself before you add.
 - `--dry-run` prints the source and config changes without making them.
 
 The entry goes to your global config, or to the file named by
