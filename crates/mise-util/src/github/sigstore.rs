@@ -24,7 +24,8 @@
 //! [`crate::github::resolve_token_for_api_url`] can parse the host correctly; a bare hostname
 //! would be silently misrouted for GitHub Enterprise Server tenants. After token resolution,
 //! the API URL is routed through [`crate::http::apply_url_replacements`] so attestation
-//! requests follow the same trusted proxy/cache replacements as normal mise HTTP requests.
+//! requests follow the same trusted proxy/cache replacements as normal mise HTTP requests. A
+//! replacement that changes the host drops the token, which was resolved for the original host.
 
 use std::path::Path;
 
@@ -81,19 +82,37 @@ fn resolve_token_for_wrapper(api_url: Option<&str>) -> Option<String> {
     crate::github::resolve_token_for_api_url(url)
 }
 
-fn routed_api_url(api_url: &str, has_credentials: bool) -> AttestationResult<String> {
+/// Apply `url_replacements` to the attestation API base URL with the credential rules
+/// [`crate::http`] applies to any rewritten request: credentials resolved for the original
+/// host are dropped when the rule changes the host, then an HTTPS-to-HTTP downgrade is
+/// refused for whatever credentials are left.
+///
+/// `token` is the token resolved for `api_url`. Returns the URL to use and the token that
+/// may still be sent to it.
+fn routed_api_url(
+    api_url: &str,
+    token: Option<String>,
+) -> AttestationResult<(String, Option<String>)> {
     let Ok(mut url) = url::Url::parse(api_url) else {
         debug!("invalid GitHub attestation API URL, skipping url_replacements: {api_url}");
-        return Ok(api_url.to_string());
+        return Ok((api_url.to_string(), token));
     };
     let original = url.clone();
     crate::http::apply_url_replacements(&mut url);
-    crate::http::ensure_secure_url_replacement(&original, &url, has_credentials)
+    // mise-sigstore builds the Authorization header itself, so the token is scoped here;
+    // `clear_cross_host_credentials` only has inherited userinfo left to strip.
+    let token = token.filter(|_| url.host() == original.host());
+    crate::http::clear_cross_host_credentials(
+        &mut reqwest::header::HeaderMap::new(),
+        &original,
+        &mut url,
+    );
+    crate::http::ensure_secure_url_replacement(&original, &url, token.is_some())
         .map_err(|err| AttestationError::Verification(err.to_string()))?;
     if url == original {
-        Ok(api_url.to_string())
+        Ok((api_url.to_string(), token))
     } else {
-        Ok(url.to_string())
+        Ok((url.to_string(), token))
     }
 }
 
@@ -133,8 +152,7 @@ fn mise_retry_config() -> RetryConfig {
 }
 
 fn attestation_client(api_url: &str) -> AttestationResult<AttestationClient> {
-    let token = resolve_token_for_wrapper(Some(api_url));
-    let base_url = routed_api_url(api_url, token.is_some())?;
+    let (base_url, token) = routed_api_url(api_url, resolve_token_for_wrapper(Some(api_url)))?;
     let mut builder = AttestationClient::builder()
         .base_url(&base_url)
         .retry_config(mise_retry_config());
@@ -215,8 +233,10 @@ async fn verify_attestation_uncached(
         digest = Some(artifact_digest);
     }
 
-    let token = resolve_token_for_wrapper(api_url);
-    let base_url = routed_api_url(api_url.unwrap_or(crate::github::API_URL), token.is_some())?;
+    let (base_url, token) = routed_api_url(
+        api_url.unwrap_or(crate::github::API_URL),
+        resolve_token_for_wrapper(api_url),
+    )?;
     let result = if let Some(digest) = digest {
         mise_sigstore::verify_github_attestation_with_base_url_and_digest(
             mise_sigstore::GithubAttestationRequest {
@@ -390,8 +410,8 @@ pub async fn detect_attestations(
         }
     }
 
-    let token = resolve_token_for_wrapper(Some(api_url));
-    let base_url = routed_api_url(api_url, token.is_some()).map_err(DetectError::SourceCreation)?;
+    let (base_url, token) = routed_api_url(api_url, resolve_token_for_wrapper(Some(api_url)))
+        .map_err(DetectError::SourceCreation)?;
     let source = GitHubSource::with_base_url(owner, repo, token.as_deref(), &base_url)
         .map_err(DetectError::SourceCreation)?;
     let artifact_ref = ArtifactRef::from_digest(digest);
@@ -1422,15 +1442,22 @@ mod tests {
         );
     }
 
+    fn original_host_token() -> Option<String> {
+        Some("ghp_original_host".to_string())
+    }
+
     #[test]
     fn test_routed_api_url_applies_simple_url_replacement() {
         let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
             "https://api.github.com".to_string() => "https://github-proxy.example.com".to_string(),
         }));
 
-        let routed = routed_api_url(crate::github::API_URL, true).unwrap();
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
 
         assert_eq!(routed, "https://github-proxy.example.com/");
+        // The token was resolved for api.github.com; the proxy does not get it.
+        assert_eq!(token, None);
     }
 
     #[test]
@@ -1439,30 +1466,77 @@ mod tests {
             "regex:^https://api\\.github\\.com".to_string() => "https://github-proxy.example.com/api".to_string(),
         }));
 
-        let routed = routed_api_url(crate::github::API_URL, true).unwrap();
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
 
         assert_eq!(routed, "https://github-proxy.example.com/api/");
+        assert_eq!(token, None);
     }
 
     #[test]
     fn test_routed_api_url_keeps_original_url_without_replacement() {
         let _settings = SettingsGuard::new(None);
 
-        let routed = routed_api_url(crate::github::API_URL, true).unwrap();
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
 
         assert_eq!(routed, crate::github::API_URL);
+        assert_eq!(token, original_host_token());
+    }
+
+    #[test]
+    fn test_routed_api_url_keeps_token_on_same_host_replacement() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => "https://api.github.com/proxy".to_string(),
+        }));
+
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
+
+        assert_eq!(routed, "https://api.github.com/proxy/");
+        assert_eq!(token, original_host_token());
+    }
+
+    #[test]
+    fn test_routed_api_url_drops_inherited_userinfo_on_cross_host_replacement() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "regex:^https://(.*)ghe\\.example\\.com".to_string()
+                => "https://${1}github-proxy.example.com".to_string(),
+        }));
+
+        let (routed, token) = routed_api_url(
+            "https://user:password@ghe.example.com/api/v3",
+            original_host_token(),
+        )
+        .unwrap();
+
+        assert_eq!(routed, "https://github-proxy.example.com/api/v3");
+        assert_eq!(token, None);
     }
 
     #[test]
     fn test_routed_api_url_rejects_credential_downgrade() {
         let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
-            "https://api.github.com".to_string() => "http://github-proxy.example.com".to_string(),
+            "https://api.github.com".to_string() => "http://api.github.com".to_string(),
         }));
 
-        let err = routed_api_url(crate::github::API_URL, true).unwrap_err();
+        let err = routed_api_url(crate::github::API_URL, original_host_token()).unwrap_err();
 
         assert!(err.to_string().contains("refusing to send credentials"));
         assert!(!is_api_failure(&err));
+    }
+
+    #[test]
+    fn test_routed_api_url_drops_token_on_cross_host_downgrade() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => "http://github-proxy.example.com".to_string(),
+        }));
+
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
+
+        assert_eq!(routed, "http://github-proxy.example.com/");
+        assert_eq!(token, None);
     }
 
     #[test]
@@ -1472,7 +1546,7 @@ mod tests {
                 => "http://user:password@github-proxy.example.com".to_string(),
         }));
 
-        let err = routed_api_url(crate::github::API_URL, false).unwrap_err();
+        let err = routed_api_url(crate::github::API_URL, None).unwrap_err();
 
         assert!(err.to_string().contains("refusing to send credentials"));
         assert!(!err.to_string().contains("password"));
