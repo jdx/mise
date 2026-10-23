@@ -62,8 +62,12 @@ assert_fail "test -e '$HOME/project-file-sourced'"
 assert_not_contains "cat '$RUBY_BUILD_LOG'" "pwd=$PWD "
 assert_contains "cat '$RUBY_BUILD_LOG'" "def=jruby-9.4.5.0"
 
-# A version that is a path never reaches ruby-build.
+# A version that is a path never reaches ruby-build. Relative paths pass the
+# generic version rules, so the ruby backend's own check refuses them.
 assert_fail "mise install ruby@.ci/ruby-3.3.0" "a build definition name cannot be a path"
-assert_fail "mise install ruby@$PWD/.ci/ruby-3.3.0" "a build definition name cannot be a path"
+assert_fail "mise install ruby@./jruby-9.4.5.0" "a build definition name cannot be a path"
+# An absolute path is refused when the version is parsed; either layer may report it.
+assert_fail_matches "mise install ruby@$PWD/.ci/ruby-3.3.0" "must not start with '/'|a build definition name cannot be a path"
 assert_fail "test -e '$HOME/project-file-sourced'"
 assert_not_contains "cat '$RUBY_BUILD_LOG'" "ruby-3.3.0"
+assert_not_contains "cat '$RUBY_BUILD_LOG'" "def=./jruby-9.4.5.0"
