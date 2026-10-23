@@ -65,7 +65,7 @@ the same meaning. Repeat an `--allow-*` flag to allow more paths or variables.
 | `--deny-all`           | `deny_all`         | Turn on the read, write, network and environment restrictions                                    |
 | `--deny-read`          | `deny_read`        | Block reads, except the [implicit paths](#implicit-access)                                       |
 | `--deny-write`         | `deny_write`       | Block writes, except to `/tmp` and `/dev`                                                        |
-| `--deny-net`           | `deny_net`         | Block IPv4 and IPv6 sockets; Unix sockets still work                                             |
+| `--deny-net`           | `deny_net`         | Block network sockets and io_uring; Unix sockets still work                                      |
 | `--deny-env`           | `deny_env`         | Pass only the [essential variables](#environment-variables)                                      |
 | `--allow-read=<path>`  | `allow_read`       | Allow reads under a path, and block other reads                                                  |
 | `--allow-write=<path>` | `allow_write`      | Allow reads and writes under a path, and block other writes                                      |
@@ -194,8 +194,10 @@ is unavailable or cannot apply the rules, the command fails.
 
 Network rules use a
 [seccomp-bpf](https://www.kernel.org/doc/html/latest/userspace-api/seccomp_filter.html)
-filter that blocks IPv4 and IPv6 sockets and allows Unix sockets. It supports
-x86_64 and arm64; on other architectures, `--deny-net` is an error.
+filter that allows Unix and netlink sockets and blocks every other socket
+family. It also blocks io_uring, which can create sockets the filter does not
+see, so a program that needs io_uring does not run under `--deny-net`. It
+supports x86_64 and arm64; on other architectures, `--deny-net` is an error.
 
 Every allowed path must exist when the command starts. Landlock attaches a rule
 to an open file, so mise drops the rule for a missing path and warns:
