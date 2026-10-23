@@ -187,6 +187,7 @@ pub use mise_config::alias::Alias;
 
 static _CONFIG: RwLock<Option<Arc<Config>>> = RwLock::new(None);
 use mise_util::redactions::GLOBAL_REDACTOR as _REDACTOR;
+use mise_util::redactions::secret_patterns;
 /// Set when a `redact` entry from config or task env registered a non-empty value.
 static CONFIG_REDACTIONS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -1933,7 +1934,10 @@ impl Config {
     /// Append-only for the same reason as `add_redactions_excluding`: removing a
     /// value could expose a different key that happens to share it.
     pub(crate) fn add_redactions(&self, values: impl IntoIterator<Item = String>) {
-        let values: Vec<String> = values.into_iter().collect();
+        let values: Vec<String> = values
+            .into_iter()
+            .flat_map(|v| secret_patterns(&v))
+            .collect();
         if values.iter().any(|v| !v.is_empty()) {
             CONFIG_REDACTIONS.store(true, std::sync::atomic::Ordering::Relaxed);
         }
@@ -1957,7 +1961,7 @@ impl Config {
                 let matcher = Wildcard::new(vec![pattern]);
                 env.iter()
                     .filter(|(k, _)| !exclusions.contains(*k) && matcher.match_any(k))
-                    .map(|(_, v)| v.clone())
+                    .flat_map(|(_, v)| secret_patterns(v))
                     .collect::<Vec<_>>()
             })
             .collect();

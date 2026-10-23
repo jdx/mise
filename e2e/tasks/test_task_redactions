@@ -144,3 +144,17 @@ ls -ld "$(dirname "$0")" | cut -c1-10
 """
 TOML
 assert "umask 022 && mise run a" "drwx------"
+
+# Task output is redacted line by line, so each line of a multi-line value is
+# redacted, and so is a value read from a file that ends in a newline
+printf 'npm_fileToken_8d2e41b7\n' >npm_token.txt
+cat <<'TOML' >mise.toml
+[env]
+DEPLOY_KEY = { value = "-----BEGIN KEY-----\nb3BlbnNzaC1rZXktdjEAAAA\nQyNTUxOQAAACDfakefake\n-----END KEY-----", redact = true }
+NPM_TOKEN = { value = "{{ read_file(path='npm_token.txt') }}", redact = true }
+[tasks.a]
+run = 'printenv DEPLOY_KEY NPM_TOKEN'
+TOML
+assert_not_contains "mise run a" "b3BlbnNzaC1rZXktdjEAAAA"
+assert_not_contains "mise run a" "QyNTUxOQAAACDfakefake"
+assert_not_contains "mise run a" "npm_fileToken_8d2e41b7"
