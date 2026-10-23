@@ -467,7 +467,9 @@ impl Exec {
                 symlinked_allow_paths: vec![],
             },
         );
-        sandbox.resolve_paths();
+        let project_roots: Vec<&std::path::Path> =
+            config.project_root.as_deref().into_iter().collect();
+        sandbox.resolve_paths(&project_roots)?;
 
         // Only when asked: `mise x` hands the command nothing by default, and fnox never
         // runs. This sees the unfiltered env, which G11 compares against; G13 and the

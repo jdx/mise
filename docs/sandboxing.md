@@ -126,6 +126,16 @@ empty path, or a template that renders to nothing, allows no path but still
 blocks the other reads or writes. See the
 [task configuration reference](/tasks/task-configuration.html) for each property.
 
+The project usually holds the code you are sandboxing, and a checkout can ship
+`dist` as a symlink to `/`. So when an allowed path goes through a symlink in
+the current directory, the project root or the task's directory, and that link
+leads out of the directory it is in, mise exits with an error instead of
+allowing what the link points to:
+`sandbox: ./dist leads out of <directory> through the symlink ...`. To allow
+the target anyway, name it directly. Symlinks elsewhere, including directly in
+your home directory, such as a `~/.npm` that points to another disk, are
+followed as before.
+
 ## Implicit access
 
 When filesystem restrictions are on, these paths stay available so that programs
@@ -167,8 +177,9 @@ print. It sees an ordinary error such as `Permission denied` or
 `Could not resolve host`. mise does not report these.
 
 mise itself reports problems that affect the sandbox before the command runs: a
-missing allowed path on Linux is a warning, while `--allow-net` and an
-unavailable Landlock are errors.
+missing allowed path on Linux is a warning, while `--allow-net`, an allowed
+path that a project symlink leads out of the project, and an unavailable
+Landlock are errors.
 
 ## Access to particular hosts
 

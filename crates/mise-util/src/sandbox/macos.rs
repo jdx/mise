@@ -282,7 +282,7 @@ mod tests {
             allow_read: vec![allowed_file.clone()],
             ..Default::default()
         };
-        config.resolve_paths();
+        config.resolve_paths(&[]).unwrap();
         let profile = generate_seatbelt_profile(&config, Some(Path::new("/bin/sh")));
         let read = |path: &std::path::Path| {
             Command::new(SANDBOX_EXEC)
@@ -372,7 +372,7 @@ mod tests {
             allow_write: vec![writable.clone()],
             ..Default::default()
         };
-        config.resolve_paths();
+        config.resolve_paths(&[]).unwrap();
         let profile = generate_seatbelt_profile(&config, None);
 
         // A write-allowed path is implicitly readable, so it needs the walk too.
@@ -461,7 +461,7 @@ mod tests {
             allow_read: vec![nested],
             ..Default::default()
         };
-        config.resolve_paths();
+        config.resolve_paths(&[]).unwrap();
         let profile = generate_seatbelt_profile(&config, None);
 
         // Assert both halves: the two disagreeing is the signature of the bug,
@@ -515,7 +515,7 @@ puts "read #{File.read(path)}"
             allow_read: vec![configured.clone()],
             ..Default::default()
         };
-        config.resolve_paths();
+        config.resolve_paths(&[]).unwrap();
         assert_eq!(config.allow_read, vec![target.join("deep")]);
         assert_eq!(config.symlinked_allow_paths, vec![configured.clone()]);
 
