@@ -242,6 +242,47 @@ fn works_when_the_remote_is_not_named_origin() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn git_errors_that_are_not_utf8_are_reported() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let git_in = |dir: &std::path::Path, args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("spawn git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git_in(&repo, &["-c", "init.defaultBranch=main", "init", "-q"]);
+
+    // git repeats the URL of a remote or submodule it cannot reach byte for
+    // byte in its error message, and nothing requires that URL to be UTF-8.
+    let mut url = tmp.path().to_str().unwrap().as_bytes().to_vec();
+    url.extend(b"/\xff\xfe\xfd.git\n");
+    let mut config = std::fs::read(repo.join(".git/config")).unwrap();
+    config.extend(b"[remote \"origin\"]\n\turl = ");
+    config.extend(&url);
+    std::fs::write(repo.join(".git/config"), config).unwrap();
+    let mut gitmodules = b"[submodule \"dep\"]\n\tpath = dep\n\turl = ".to_vec();
+    gitmodules.extend(&url);
+    std::fs::write(repo.join(".gitmodules"), gitmodules).unwrap();
+    let gitlink = format!("160000,{},dep", "1".repeat(40));
+    git_in(&repo, &["update-index", "--add", "--cacheinfo", &gitlink]);
+
+    let git = Git::new(&repo);
+    let err = git.update_tag("v1".to_string()).unwrap_err();
+    assert!(format!("{err:#}").contains("\u{fffd}.git"), "{err:#}");
+    let err = git.update_submodules().unwrap_err();
+    assert!(format!("{err:#}").contains("\u{fffd}.git"), "{err:#}");
+}
+
 mod worktree;
 
 #[test]

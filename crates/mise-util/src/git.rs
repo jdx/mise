@@ -173,7 +173,7 @@ impl Git {
                 } else {
                     Err(eyre!(
                         "git failed: {cmd:?} {}",
-                        String::from_utf8(res.stdout).unwrap()
+                        String::from_utf8_lossy(&res.stdout)
                     ))
                 }
             }
@@ -316,7 +316,7 @@ impl Git {
                 } else {
                     Err(eyre!(
                         "git failed: {cmd:?} {}",
-                        String::from_utf8(res.stdout).unwrap()
+                        String::from_utf8_lossy(&res.stdout)
                     ))
                 }
             }
