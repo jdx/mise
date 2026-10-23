@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# e2e:non-root
 # `mise uninstall` removes an installation whose directories deny their owner writes, as a sealed
 # archive or Go's read-only module cache installs them.
 
