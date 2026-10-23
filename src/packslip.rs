@@ -1338,6 +1338,18 @@ pub(crate) enum CompletionSource {
     },
 }
 
+/// How narrowly an entry is scoped: naming the artifact beats any platform
+/// field, then the one naming the most of `os`, `arch`, and `libc` wins.
+fn specificity(r: &Resource) -> (bool, usize) {
+    (
+        r.artifact.is_some(),
+        [&r.os, &r.arch, &r.libc]
+            .into_iter()
+            .filter(|f| f.is_some())
+            .count(),
+    )
+}
+
 /// The entries of one kind that apply to the selected artifact, keeping
 /// only the most specific of them: a resource may carry `os`, `arch`, or
 /// `libc` when layouts differ by platform, and the one naming the most of
@@ -1346,15 +1358,6 @@ pub(crate) fn applicable<'a>(
     resources: impl Iterator<Item = &'a Resource>,
     artifact: Option<&Artifact>,
 ) -> Vec<&'a Resource> {
-    let specificity = |r: &Resource| {
-        (
-            r.artifact.is_some(),
-            [&r.os, &r.arch, &r.libc]
-                .into_iter()
-                .filter(|f| f.is_some())
-                .count(),
-        )
-    };
     let fits: Vec<&Resource> = resources
         .filter(|r| match artifact {
             Some(artifact) => resource_fits(r, artifact),
@@ -1371,21 +1374,40 @@ pub(crate) fn applicable<'a>(
         .collect()
 }
 
-fn selected_resources<'a>(
+/// The resources to use with the selected artifact, as
+/// `packslip::select_resources` chooses them: for each thing the entries
+/// describe, those that fit the artifact and, of them, the most specific,
+/// in document order. Computed here in one pass over the list, where the
+/// crate rescans the whole list once per thing it describes: the vendor
+/// decides how long the list is, and the prompt hook is one of the readers.
+pub(crate) fn selected_resources<'a>(
     statement: &'a Statement,
     artifact: Option<&Artifact>,
 ) -> Vec<&'a Resource> {
-    match artifact {
-        Some(artifact) => packslip::select_resources(statement, artifact),
-        None => statement
-            .predicate
-            .resources
-            .iter()
+    let resources = statement.predicate.resources.iter();
+    let Some(artifact) = artifact else {
+        return resources
             .filter(|r| {
                 r.artifact.is_none() && r.os.is_none() && r.arch.is_none() && r.libc.is_none()
             })
-            .collect(),
+            .collect();
+    };
+    let sole_bin = statement.sole_bin();
+    let fits: Vec<_> = resources
+        .filter(|r| resource_fits(r, artifact))
+        .map(|r| (r, r.identities_for(sole_bin)))
+        .collect();
+    let mut best: BTreeMap<_, (bool, usize)> = BTreeMap::new();
+    for (r, identities) in &fits {
+        for identity in identities {
+            let best = best.entry(identity).or_default();
+            *best = specificity(r).max(*best);
+        }
     }
+    fits.iter()
+        .filter(|(r, identities)| identities.iter().any(|i| best[i] == specificity(r)))
+        .map(|(r, _)| *r)
+        .collect()
 }
 
 /// Every way the statement offers a `shell` completion, in the order the
@@ -1412,12 +1434,27 @@ pub(crate) fn completion_sources(
     artifact: Option<&Artifact>,
     tool: Option<&str>,
 ) -> Vec<CompletionSource> {
-    let bin = completion_bin(statement, tool);
-    let describes =
-        |r: &&Resource| r.bin.as_deref().or_else(|| statement.sole_bin()) == bin && bin.is_some();
     // Select per identity before considering source order. A completion
     // for one executable must never hide or complete another executable.
     let selected = selected_resources(statement, artifact);
+    completion_sources_among(&selected, statement, install_path, shell, artifact, tool)
+}
+
+/// [`completion_sources`] given the statement's [`selected_resources`].
+/// What is selected does not depend on the executable asked about, so a
+/// caller asking about every executable of a release, as the prompt hook
+/// does, selects once rather than once for each.
+pub(crate) fn completion_sources_among(
+    selected: &[&Resource],
+    statement: &Statement,
+    install_path: &Path,
+    shell: &str,
+    artifact: Option<&Artifact>,
+    tool: Option<&str>,
+) -> Vec<CompletionSource> {
+    let bin = completion_bin(statement, tool);
+    let describes =
+        |r: &&Resource| r.bin.as_deref().or_else(|| statement.sole_bin()) == bin && bin.is_some();
     let completion_entries = applicable(
         selected.iter().copied().filter(describes).filter(|r| {
             r.kind == "completion"
@@ -2093,6 +2130,54 @@ mod tests {
         let unknown = selected_resources(&s, None);
         assert!(unknown.contains(&&s.predicate.resources[0]));
         assert!(!unknown.contains(&&s.predicate.resources[1]));
+    }
+
+    #[test]
+    fn selecting_agrees_with_the_specification() {
+        let s = statement_with(
+            r#"[
+            {"kind":"completion","bin":"t","shells":["bash","zsh"],"exec":["t","completion","{shell}"]},
+            {"kind":"completion","bin":"t","shell":"zsh","archive":"linux/_t","os":"linux"},
+            {"kind":"completion","bin":"t","shell":"zsh","archive":"gnu/_t","os":"linux","libc":"gnu"},
+            {"kind":"completion","bin":"t","shell":"zsh","repo":"gnu/_t","os":"linux","libc":"gnu"},
+            {"kind":"completion","bin":"t","shell":"zsh","archive":"macos/_t","os":"macos"},
+            {"kind":"completion","bin":"u","shell":"zsh","archive":"generic/_u"},
+            {"kind":"completion","bin":"u","shell":"bash","archive":"named/u","artifact":"t-linux-x64.tar.xz"},
+            {"kind":"completion","bin":"u","shell":"bash","archive":"scoped/u","os":"linux","arch":"x86_64","libc":"gnu"},
+            {"kind":"cli-spec","format":"usage","bin":"t","archive":"t.kdl"},
+            {"kind":"cli-spec","format":"usage","bin":"t","archive":"linux/t.kdl","os":"linux"},
+            {"kind":"man","bin":"t","archive":"t.1"},
+            {"kind":"man","bin":"u","archive":"t.1","arch":"x86_64"},
+            {"kind":"license","archive":"LICENSE"},
+            {"kind":"skill","name":"t","asset":"t-skill.tar.gz"}
+        ]"#,
+        );
+        let artifact = &s.predicate.artifacts[0];
+        let selected = selected_resources(&s, Some(artifact));
+        assert_eq!(selected, packslip::select_resources(&s, artifact));
+        assert!(selected.len() < s.predicate.resources.len());
+    }
+
+    #[test]
+    fn selecting_takes_one_pass_over_a_long_resource_list() {
+        // The vendor decides how long the list is, and the prompt hook reads
+        // it on every directory change: selecting must not rescan the list
+        // for each thing it describes.
+        let entries: Vec<String> = (0..20_000)
+            .map(|i| {
+                format!(r#"{{"kind":"completion","bin":"t","shell":"s{i}","archive":"c/{i}"}}"#)
+            })
+            .collect();
+        let s = statement_with(&format!("[{}]", entries.join(",")));
+        let started = std::time::Instant::now();
+        let selected = selected_resources(&s, Some(&s.predicate.artifacts[0]));
+        assert_eq!(selected.len(), entries.len());
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "selecting {} resources took {:?}",
+            entries.len(),
+            started.elapsed()
+        );
     }
 
     #[test]
