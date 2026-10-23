@@ -258,16 +258,22 @@ fn downloaded_sign_in_page(url: &str, dest: &Path) -> bool {
     is_sign_in_page(url, &head[..read])
 }
 
+/// Most bytes a packslip manifest may hold. It is read whole into memory
+/// before anything has verified it, and a genuine one is a few tens of KiB.
+pub(crate) const MAX_MANIFEST_BYTES: u64 = 4 * 1024 * 1024;
+
 /// Download a file a packslip names, falling back to the authenticated GitHub
 /// release-asset endpoint when its browser URL is unreachable. See [`retry_url`].
+/// With `max_bytes`, the download fails once more than that has arrived.
 pub(crate) async fn download_file(
     url: &str,
     dest: &Path,
     pin: Option<&str>,
     pr: Option<&dyn SingleReport>,
+    max_bytes: Option<u64>,
 ) -> Result<()> {
     let reason = match HTTP
-        .download_file_linked(url, dest, &headers_for(url)?, pin, pr)
+        .download_file_linked_limited(url, dest, &headers_for(url)?, pin, pr, max_bytes)
         .await
     {
         Ok(_) if !downloaded_sign_in_page(url, dest) => return Ok(()),
@@ -277,7 +283,7 @@ pub(crate) async fn download_file(
     let Some(api_url) = retry_url(url, &reason).await else {
         return Err(reason.into_error(url));
     };
-    HTTP.download_file_linked(&api_url, dest, &headers_for(&api_url)?, pin, pr)
+    HTTP.download_file_linked_limited(&api_url, dest, &headers_for(&api_url)?, pin, pr, max_bytes)
         .await
         .map(|_| ())
 }
@@ -376,7 +382,9 @@ pub(crate) async fn fetch_files(
                     let signed = statement
                         .digest_of(name)
                         .map(|sha256| format!("sha256:{sha256}"));
-                    if let Err(err) = download_file(url, &dest, signed.as_deref(), Some(pr)).await {
+                    if let Err(err) =
+                        download_file(url, &dest, signed.as_deref(), Some(pr), None).await
+                    {
                         let _ = file::remove_all(&dest);
                         warn!("{}: could not fetch {name}: {err}", tv.style());
                         continue;
@@ -2010,7 +2018,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("tool.tar.gz");
         let url = format!("{}/tool.tar.gz", server.url());
-        download_file(&url, &dest, None, None).await.unwrap();
+        download_file(&url, &dest, None, None, None).await.unwrap();
         assert_eq!(file::read_to_string(&dest).unwrap(), "payload");
         mock.assert_async().await;
     }

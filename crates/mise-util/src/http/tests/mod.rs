@@ -446,17 +446,6 @@ fn truncated_download_without_validator_response() -> &'static str {
         "hello"
     )
 }
-fn truncated_encoded_download_response() -> &'static str {
-    concat!(
-        "HTTP/1.1 200 OK\r\n",
-        "Content-Length: 10\r\n",
-        "Content-Encoding: gzip\r\n",
-        "ETag: \"artifact-v1\"\r\n",
-        "Connection: close\r\n",
-        "\r\n",
-        "hello"
-    )
-}
 fn range_not_satisfiable_response() -> &'static str {
     concat!(
         "HTTP/1.1 416 Range Not Satisfiable\r\n",

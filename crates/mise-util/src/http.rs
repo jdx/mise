@@ -301,9 +301,22 @@ struct Fetched {
     request_hash: String,
 }
 
-/// What an attempt learned beyond the bytes it wrote.
+/// How long a download may take and how much it may write.
+#[derive(Clone, Copy)]
+struct DownloadLimits {
+    /// For every attempt and backoff delay together.
+    time: Duration,
+    /// More fails the download. `None` for files that are streamed to disk
+    /// and never read into memory whole.
+    bytes: Option<u64>,
+}
+
+/// What every attempt is told, and what an attempt learned beyond the bytes it
+/// wrote.
 #[derive(Default)]
 struct AttemptOutcome {
+    /// The most bytes the download may write.
+    max_bytes: Option<u64>,
     /// The validator of the stored copy, sent so the server can confirm it.
     cond: Option<DownloadValidator>,
     /// The server confirmed the stored copy is current; nothing was written.
@@ -833,7 +846,15 @@ pub struct Client {
     /// Built on first use by [`Client::send_following_redirects`], which follows
     /// redirects itself so it can decide what each hop may carry.
     manual_redirects: std::sync::OnceLock<Result<reqwest::Client, String>>,
+    /// The two clients above with every `Content-Encoding` decoder off, built
+    /// on first use by [`Client::send_scoped`] for requests that ask for
+    /// `identity`: downloads, whose bytes must be the ones the server sent.
+    undecoded: std::sync::OnceLock<Result<reqwest::Client, String>>,
+    undecoded_manual_redirects: std::sync::OnceLock<Result<reqwest::Client, String>>,
     timeout: Duration,
+    /// What `reqwest` was built with, to build `undecoded` the same way.
+    read_timeout: Option<Duration>,
+    downgrade: Downgrade,
     kind: ClientKind,
 }
 
@@ -863,9 +884,14 @@ impl Client {
                 kind,
                 Downgrade::Refuse,
                 Some(timeout),
+                true,
             )?),
             manual_redirects: Default::default(),
+            undecoded: Default::default(),
+            undecoded_manual_redirects: Default::default(),
             timeout,
+            read_timeout: Some(timeout),
+            downgrade: Downgrade::Refuse,
             kind,
         })
     }
@@ -876,20 +902,28 @@ impl Client {
 
     fn new_shared_without_read_timeout(timeout: Duration, kind: ClientKind) -> Self {
         Self {
-            reqwest: Self::build(timeout, kind, Downgrade::Refuse, None)
+            reqwest: Self::build(timeout, kind, Downgrade::Refuse, None, true)
                 .map_err(|err| format!("{err:#}")),
             manual_redirects: Default::default(),
+            undecoded: Default::default(),
+            undecoded_manual_redirects: Default::default(),
             timeout,
+            read_timeout: None,
+            downgrade: Downgrade::Refuse,
             kind,
         }
     }
 
     fn new_shared_with(timeout: Duration, kind: ClientKind, downgrade: Downgrade) -> Self {
         Self {
-            reqwest: Self::build(timeout, kind, downgrade, Some(timeout))
+            reqwest: Self::build(timeout, kind, downgrade, Some(timeout), true)
                 .map_err(|err| format!("{err:#}")),
             manual_redirects: Default::default(),
+            undecoded: Default::default(),
+            undecoded_manual_redirects: Default::default(),
             timeout,
+            read_timeout: Some(timeout),
+            downgrade,
             kind,
         }
     }
@@ -899,11 +933,12 @@ impl Client {
         kind: ClientKind,
         downgrade: Downgrade,
         read_timeout: Option<Duration>,
+        decode: bool,
     ) -> Result<reqwest::Client> {
         // Built through `build_client` so an empty system trust store falls back
         // to bundled roots; it may call this closure twice.
         Ok(mise_tls::build_client(|| {
-            let builder = Self::_new().connect_timeout(timeout);
+            let builder = Self::_new_with(decode).connect_timeout(timeout);
             let builder = match read_timeout {
                 Some(read_timeout) => builder.read_timeout(read_timeout),
                 None => builder,
@@ -929,7 +964,11 @@ impl Client {
         Self {
             reqwest: Err(error.into()),
             manual_redirects: Default::default(),
+            undecoded: Default::default(),
+            undecoded_manual_redirects: Default::default(),
             timeout: Duration::from_secs(1),
+            read_timeout: Some(Duration::from_secs(1)),
+            downgrade: Downgrade::Refuse,
             kind: ClientKind::Http,
         }
     }
@@ -945,10 +984,35 @@ impl Client {
             .map_err(|err| eyre!("Could not initialize the HTTP client: {err}"))
     }
 
+    /// [`Client::reqwest`] with every `Content-Encoding` decoder off.
+    fn undecoded(&self) -> Result<&reqwest::Client> {
+        // What kept that one from being built would keep this one from it too.
+        self.reqwest()?;
+        self.undecoded
+            .get_or_init(|| {
+                Self::build(
+                    self.timeout,
+                    self.kind,
+                    self.downgrade,
+                    self.read_timeout,
+                    false,
+                )
+                .map_err(|err| format!("{err:#}"))
+            })
+            .as_ref()
+            .map_err(|err| eyre!("Could not initialize the HTTP client: {err}"))
+    }
+
     /// Send `req`, following redirects ourselves when `headers` hold a credential that
     /// reqwest would forward to another host. reqwest only strips `Authorization`,
     /// `Cookie` and `Proxy-Authorization` on a cross-host redirect, so a header such as
     /// `X-Api-Key` would otherwise reach whatever host the server redirects to.
+    ///
+    /// The response to a request for `Accept-Encoding: identity` is returned as
+    /// it was sent. reqwest decodes by the response's `Content-Encoding` alone,
+    /// so a server that ignores `identity` could otherwise have a few kilobytes
+    /// inflated to gigabytes, with the `Content-Length` that would have bounded
+    /// them removed.
     async fn send_scoped(
         &self,
         method: &Method,
@@ -957,9 +1021,16 @@ impl Client {
         forward: &ForwardRules,
         timeout: Option<Duration>,
     ) -> std::result::Result<Response, SendError> {
+        let decode = headers
+            .get(ACCEPT_ENCODING)
+            .is_none_or(|encoding| encoding != "identity");
         if !has_unscoped_credential(headers) && !forward.applies_to(headers) {
-            let mut req = self
-                .reqwest()
+            let client = if decode {
+                self.reqwest()
+            } else {
+                self.undecoded()
+            };
+            let mut req = client
                 .map_err(|err| SendError::Refused(format!("{err:#}")))?
                 .request(method.clone(), url.clone());
             if let Some(timeout) = timeout {
@@ -971,11 +1042,15 @@ impl Client {
                 .await
                 .map_err(Into::into);
         }
-        let client = self
-            .manual_redirects
+        let manual_redirects = if decode {
+            &self.manual_redirects
+        } else {
+            &self.undecoded_manual_redirects
+        };
+        let client = manual_redirects
             .get_or_init(|| {
                 mise_tls::build_client(|| {
-                    Self::_new()
+                    Self::_new_with(decode)
                         .read_timeout(self.timeout)
                         .connect_timeout(self.timeout)
                         .redirect(reqwest::redirect::Policy::none())
@@ -1039,10 +1114,19 @@ impl Client {
     }
 
     fn _new() -> ClientBuilder {
-        ClientBuilder::new()
-            .user_agent(crate::user_agent::get())
-            .gzip(true)
-            .zstd(true)
+        Self::_new_with(true)
+    }
+
+    /// With `decode`, gzip and zstd responses are inflated transparently.
+    /// Without it, no `Content-Encoding` is: brotli and deflate are compiled
+    /// in through other dependencies and are on by default once they are.
+    fn _new_with(decode: bool) -> ClientBuilder {
+        let builder = ClientBuilder::new().user_agent(crate::user_agent::get());
+        if decode {
+            builder.gzip(true).zstd(true)
+        } else {
+            builder.no_gzip().no_zstd().no_brotli().no_deflate()
+        }
     }
 
     fn request_timeout(&self) -> Duration {
@@ -1363,6 +1447,24 @@ impl Client {
             .map(|_| ())
     }
 
+    /// [`Client::download_file`] for a file mise then reads whole into memory,
+    /// such as a remote task file. The server decides how much it sends, so the
+    /// download fails once more than `max_bytes` have arrived, instead of
+    /// filling the disk and then memory.
+    pub async fn download_file_limited<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        max_bytes: u64,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<()> {
+        let url = url.into_url()?;
+        let headers = host_auth_headers(&url)?;
+        self.download_file_with_pin_limited(url, path, &headers, None, pr, Some(max_bytes))
+            .await
+            .map(|_| ())
+    }
+
     pub async fn download_file_with_metadata<U: IntoUrl>(
         &self,
         url: U,
@@ -1423,9 +1525,26 @@ impl Client {
         pin: Option<&str>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<DownloadFileMetadata> {
+        self.download_file_with_pin_limited(url, path, headers, pin, pr, None)
+            .await
+    }
+
+    async fn download_file_with_pin_limited<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        headers: &HeaderMap,
+        pin: Option<&str>,
+        pr: Option<&dyn SingleReport>,
+        max_bytes: Option<u64>,
+    ) -> Result<DownloadFileMetadata> {
         let url = url.into_url()?;
         if Settings::get().generate_lockfiles() {
-            let key = format!("{:p}:{}", self, download_request_hash(&url, headers));
+            let key = format!(
+                "{:p}:{}:{max_bytes:?}",
+                self,
+                download_request_hash(&url, headers)
+            );
             let shared = INVOCATION_DOWNLOADS
                 .lock()
                 .unwrap()
@@ -1442,7 +1561,10 @@ impl Client {
                             headers,
                             pin,
                             pr,
-                            crate::network::http_download_timeout(&Settings::get()),
+                            DownloadLimits {
+                                time: crate::network::http_download_timeout(&Settings::get()),
+                                bytes: max_bytes,
+                            },
                         )
                         .await?;
                     Ok::<_, eyre::Report>((directory, metadata))
@@ -1475,7 +1597,10 @@ impl Client {
             headers,
             pin,
             pr,
-            crate::network::http_download_timeout(&Settings::get()),
+            DownloadLimits {
+                time: crate::network::http_download_timeout(&Settings::get()),
+                bytes: max_bytes,
+            },
         )
         .await
     }
@@ -1487,7 +1612,7 @@ impl Client {
         headers: &HeaderMap,
         pin: Option<&str>,
         pr: Option<&dyn SingleReport>,
-        total_timeout: Duration,
+        limits: DownloadLimits,
     ) -> Result<DownloadFileMetadata> {
         let use_cache = cache_allowed(pin);
         let cache = CacheMode {
@@ -1495,7 +1620,7 @@ impl Client {
             enabled: use_cache,
         };
         let fetched = self
-            .download_file_inner(url, path, headers, cache, pr, total_timeout)
+            .download_file_inner(url, path, headers, cache, pr, limits)
             .await?;
         if let Some(blob) = fetched.stored {
             let dest = path.to_path_buf();
@@ -1554,6 +1679,21 @@ impl Client {
         pin: Option<&str>,
         pr: Option<&dyn SingleReport>,
     ) -> Result<DownloadFileMetadata> {
+        self.download_file_linked_limited(url, dest, headers, pin, pr, None)
+            .await
+    }
+
+    /// [`Client::download_file_linked`] that fails once more than `max_bytes`
+    /// have arrived, for a file mise then reads whole into memory.
+    pub async fn download_file_linked_limited<U: IntoUrl>(
+        &self,
+        url: U,
+        dest: &Path,
+        headers: &HeaderMap,
+        pin: Option<&str>,
+        pr: Option<&dyn SingleReport>,
+        max_bytes: Option<u64>,
+    ) -> Result<DownloadFileMetadata> {
         let url = url.into_url()?;
         let name = dest
             .file_name()
@@ -1566,7 +1706,7 @@ impl Client {
             .flatten();
         let Some(staging) = staging else {
             return self
-                .download_file_with_pin(url, dest, headers, pin, pr)
+                .download_file_with_pin_limited(url, dest, headers, pin, pr, max_bytes)
                 .await;
         };
         let cache = CacheMode { pin, enabled: true };
@@ -1577,7 +1717,10 @@ impl Client {
                 headers,
                 cache,
                 pr,
-                crate::network::http_download_timeout(&Settings::get()),
+                DownloadLimits {
+                    time: crate::network::http_download_timeout(&Settings::get()),
+                    bytes: max_bytes,
+                },
             )
             .await?;
         let blob = match fetched.stored {
@@ -1626,8 +1769,9 @@ impl Client {
         headers: &HeaderMap,
         cache: CacheMode<'_>,
         pr: Option<&dyn SingleReport>,
-        total_timeout: Duration,
+        limits: DownloadLimits,
     ) -> Result<Fetched> {
+        let total_timeout = limits.time;
         let CacheMode {
             pin,
             enabled: use_cache,
@@ -1676,6 +1820,7 @@ impl Client {
             None
         };
         let outcome = Arc::new(AttemptOutcome {
+            max_bytes: limits.bytes,
             cond: cached.as_ref().map(|c| c.validator.clone()),
             ..Default::default()
         });
@@ -1692,8 +1837,17 @@ impl Client {
             async move {
                 attempt.fetch_add(1, Ordering::Relaxed);
                 progress.start_attempt();
-                self.download_file_attempt(request_url, headers, &partial, pr, &progress, &outcome)
-                    .await
+                // Boxed: inlined, this future nests deeply enough to overflow
+                // the compiler's layout query depth in some callers.
+                Box::pin(self.download_file_attempt(
+                    request_url,
+                    headers,
+                    &partial,
+                    pr,
+                    &progress,
+                    &outcome,
+                ))
+                .await
             }
         });
 
@@ -1762,7 +1916,11 @@ impl Client {
                         log_url(&url)
                     )
                 })?;
-            return Box::pin(self.download_file_inner(url, &path, headers, cache, pr, remaining))
+            let limits = DownloadLimits {
+                time: remaining,
+                ..limits
+            };
+            return Box::pin(self.download_file_inner(url, &path, headers, cache, pr, limits))
                 .await;
         }
         let persist_path = path.clone();
@@ -1785,6 +1943,14 @@ impl Client {
         progress: &DownloadProgress,
         outcome: &AttemptOutcome,
     ) -> Result<DownloadFileMetadata> {
+        let max_bytes = outcome.max_bytes;
+        let too_large = |max: u64| {
+            eyre!(
+                "download from {} is larger than {}",
+                log_url(&url),
+                bytesize::ByteSize::b(max).display().iec()
+            )
+        };
         let mut restarted_without_resume = false;
         loop {
             let resume = if restarted_without_resume {
@@ -1946,6 +2112,13 @@ impl Client {
                     )
                 };
 
+            if let Some(max) = max_bytes
+                && total_size.is_some_and(|total| total > max)
+            {
+                partial.clear()?;
+                return Err(too_large(max));
+            }
+
             let state = validator.map(|validator| PartialDownloadState {
                 version: PARTIAL_DOWNLOAD_STATE_VERSION,
                 request_hash: partial.request_hash.clone(),
@@ -1972,10 +2145,19 @@ impl Client {
                 .truncate(write_offset == 0)
                 .open(&partial.path)
                 .await?;
+            let mut over_limit = false;
             let transfer = async {
+                let mut written = write_offset;
                 while let Some(chunk) = resp.chunk().await? {
                     if crate::cancel::is_cancelled() {
                         bail!("download cancelled by user");
+                    }
+                    written += chunk.len() as u64;
+                    if let Some(max) = max_bytes
+                        && written > max
+                    {
+                        over_limit = true;
+                        return Err(too_large(max));
                     }
                     file.write_all(&chunk).await?;
                     progress
@@ -2003,7 +2185,7 @@ impl Client {
             // Before `clear()`: flushing into a file that has just been removed
             // would recreate it.
             if transfer.is_err()
-                && !resumable
+                && (!resumable || over_limit)
                 && let Err(err) = partial.clear()
             {
                 debug!("failed to remove unvalidated partial download: {err:#}");
