@@ -197,7 +197,12 @@ impl SecretValues {
             TeraEngine::V2(tera) => self.register_v2(tera),
             TeraEngine::V1(tera) => self.register_v1(tera),
         };
-        let rendered = render_str(&mut tera, input, config.bootstrap_tera_ctx(config_path));
+        let rendered = crate::host::render_config_str(
+            &mut tera,
+            input,
+            config.bootstrap_tera_ctx(config_path),
+            config_path,
+        );
         self.finish_render(Some(config), used, rendered)
     }
 
@@ -245,7 +250,15 @@ impl SecretValues {
         }
         context.insert("config_root", base);
         context.insert("target", target);
-        let rendered = render_str_v2(&mut tera, input, &context);
+        let rendered = match config {
+            Some((_, config_path)) => crate::host::render_config_str(
+                &mut TeraEngine::V2(Box::new(tera)),
+                input,
+                &context,
+                config_path,
+            ),
+            None => render_str_v2(&mut tera, input, &context),
+        };
         self.finish_render(config.map(|(config, _)| config), used, rendered)
     }
 

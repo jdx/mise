@@ -428,7 +428,7 @@ fn render_variant_target(target: &str, origin: &ResourceOrigin) -> Result<String
             std::path::absolute(&origin.config).unwrap_or_else(|_| origin.config.clone());
         ctx.insert("config_source", &config_source.to_string_lossy());
         let mut tera = mise_util::tera::get_tera_without_exec(origin.config.parent());
-        mise_util::tera::render_str(&mut tera, target, &ctx).map_err(|err| {
+        crate::host::render_config_str(&mut tera, target, &ctx, &origin.config).map_err(|err| {
             eyre::eyre!(
                 "variant target {target:?}: {}",
                 mise_util::tera::error_chain(&err)

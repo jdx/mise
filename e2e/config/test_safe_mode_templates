@@ -45,3 +45,13 @@ FROM_GLOBAL = "{{ env.SAFE_TEMPLATE }}"
 EOF
 assert_contains "SAFE_TEMPLATE=2.0.0 MISE_SAFE=1 mise ls --json" '"requested_version": "2.0.0"'
 assert_contains "SAFE_TEMPLATE=2.0.0 MISE_SAFE=1 mise env" "FROM_GLOBAL=2.0.0"
+
+# so do global dotfile templates, which mise-system renders
+mkdir -p dots
+echo 'value={{ env.SAFE_TEMPLATE }}' >dots/safe.tmpl
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[dotfiles]
+"~/.safe-dot" = { source = "$PWD/dots/safe.tmpl", mode = "template" }
+EOF
+assert_succeed "SAFE_TEMPLATE=from-env MISE_SAFE=1 mise dotfiles apply ~/.safe-dot --yes"
+assert "cat ~/.safe-dot" "value=from-env"

@@ -10,7 +10,7 @@ use tera::Context as TeraContext;
 use crate::config::Settings;
 use crate::config::env_directive::shell_expand_env;
 use crate::file::display_path;
-use crate::tera::{contains_template_syntax, get_tera, render_str};
+use crate::tera::{contains_template_syntax, get_tera};
 
 #[derive(Debug, Clone)]
 pub(crate) struct DepsTemplateContext {
@@ -187,7 +187,8 @@ fn render_template_field(
         return Ok(input.to_string());
     }
     let mut tera = get_tera(template.config_path.parent());
-    render_str(&mut tera, input, context).wrap_err_with(|| template_error_context(template, field))
+    crate::tera::render_config_str(&mut tera, input, context, &template.config_path)
+        .wrap_err_with(|| template_error_context(template, field))
 }
 
 fn template_error_context(template: &DepsTemplateContext, field: &str) -> String {
