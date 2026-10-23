@@ -27,7 +27,6 @@ use zip::ZipArchive;
 
 use crate::progress::SingleReport;
 use crate::{dirs, env};
-#[cfg(windows)]
 use mise_settings::Settings;
 
 pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
@@ -2055,10 +2054,71 @@ pub fn executable_names(bin: &str) -> Vec<String> {
     names
 }
 
+/// Unpacking may always produce this much, whatever `extract_max_ratio` allows:
+/// a small download that compresses well is no threat to the disk. Lower in
+/// tests, which have to unpack more than this to reach the limit.
+const EXTRACT_MIN_LIMIT: u64 = if cfg!(test) {
+    1024 * 1024
+} else {
+    256 * 1024 * 1024
+};
+
+/// The most bytes unpacking `input` may produce: `extract_max_ratio` times its
+/// size, and at least [`EXTRACT_MIN_LIMIT`]. Release archives rarely unpack to
+/// more than 10 times their size, while 1 GiB of zeroes is under 1 KiB of
+/// bzip2, so without a bound a small download could fill the disk.
+fn extract_limit(input: &Path) -> Result<u64> {
+    let ratio = Settings::get().extract_max_ratio;
+    if ratio <= 0 {
+        return Ok(u64::MAX);
+    }
+    let size = input.metadata()?.len();
+    Ok(size.saturating_mul(ratio as u64).max(EXTRACT_MIN_LIMIT))
+}
+
+fn extract_limit_error(limit: u64) -> std::io::Error {
+    std::io::Error::other(format!(
+        "unpacked size exceeds {limit} bytes, the limit set by the extract_max_ratio setting"
+    ))
+}
+
+/// Fails once more than `remaining` bytes have been read from `inner`.
+struct LimitedReader<R> {
+    inner: R,
+    limit: u64,
+    remaining: u64,
+}
+
+impl<R: Read> LimitedReader<R> {
+    fn new(inner: R, limit: u64) -> Self {
+        Self {
+            inner,
+            limit,
+            remaining: limit,
+        }
+    }
+
+    /// Bounds what `decoder` may produce from the compressed file `input`.
+    fn for_input(input: &Path, decoder: R) -> Result<Self> {
+        Ok(Self::new(decoder, extract_limit(input)?))
+    }
+}
+
+impl<R: Read> Read for LimitedReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.remaining = self
+            .remaining
+            .checked_sub(n as u64)
+            .ok_or_else(|| extract_limit_error(self.limit))?;
+        Ok(n)
+    }
+}
+
 pub fn un_gz(input: &Path, dest: &Path) -> Result<()> {
     debug!("gunzip {} > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = GzDecoder::new(f);
+    let mut dec = LimitedReader::for_input(input, GzDecoder::new(f))?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-gzip: {}", display_path(input)))?;
@@ -2068,7 +2128,7 @@ pub fn un_gz(input: &Path, dest: &Path) -> Result<()> {
 pub fn un_xz(input: &Path, dest: &Path) -> Result<()> {
     debug!("xz -d {} -c > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = xz2::read::XzDecoder::new(f);
+    let mut dec = LimitedReader::for_input(input, xz2::read::XzDecoder::new(f))?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-xz: {}", display_path(input)))?;
@@ -2092,7 +2152,7 @@ fn zstd_decoder<R: Read>(reader: R) -> Result<zstd::Decoder<'static, BufReader<R
 pub fn un_zst(input: &Path, dest: &Path) -> Result<()> {
     debug!("zstd -d {} -c > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = zstd_decoder(f)?;
+    let mut dec = LimitedReader::for_input(input, zstd_decoder(f)?)?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-zst: {}", display_path(input)))?;
@@ -2102,7 +2162,7 @@ pub fn un_zst(input: &Path, dest: &Path) -> Result<()> {
 pub fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
     debug!("bzip2 -d {} -c > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = BzDecoder::new(f);
+    let mut dec = LimitedReader::for_input(input, BzDecoder::new(f))?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-bz2: {}", display_path(input)))?;
@@ -2381,9 +2441,12 @@ pub fn untar(
     })
 }
 
+/// The decoded tar stream of `archive`, bounded by [`extract_limit`]. Sparse
+/// members are the exception: jdx-tar makes up their holes itself, and writes
+/// them as holes, so they never pass through this reader.
 fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io::Read>> {
     let f = File::open(archive)?;
-    Ok(match format {
+    let tar: Box<dyn std::io::Read> = match format {
         // TODO: we probably shouldn't assume raw is tar.gz, but this was to retain existing behavior
         ExtractionFormat::TarGz | ExtractionFormat::Raw => Box::new(GzDecoder::new(f)),
         ExtractionFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
@@ -2405,7 +2468,8 @@ fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io:
         ExtractionFormat::Zip => bail!("zip format not supported"),
         ExtractionFormat::SevenZip => bail!("7z format not supported"),
         ExtractionFormat::Rar => bail!("rar format not supported"),
-    })
+    };
+    Ok(Box::new(LimitedReader::for_input(archive, tar)?))
 }
 
 fn reset_dir_mtime_to_now(dir: &Path) -> Result<()> {
@@ -2485,12 +2549,21 @@ pub fn unzip(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<(
         ));
     }
     run_blocking(|| {
-        ZipArchive::new(File::open(archive)?)
-            .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
-            .extract(dest)
-            .wrap_err_with(|| {
-                format!("failed to extract zip archive: {}", display_path(archive))
-            })?;
+        let mut zip = ZipArchive::new(File::open(archive)?)
+            .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?;
+        let err = || format!("failed to extract zip archive: {}", display_path(archive));
+        // The zip crate fails an entry that unpacks to more than the size its
+        // central directory record declares, so those sizes bound what
+        // `extract` writes, even when several records share one member.
+        let limit = extract_limit(archive)?;
+        let mut declared = 0u64;
+        for i in 0..zip.len() {
+            declared = declared.saturating_add(zip.by_index_raw(i).wrap_err_with(err)?.size());
+            if declared > limit {
+                return Err(eyre::Report::new(extract_limit_error(limit)).wrap_err(err()));
+            }
+        }
+        zip.extract(dest).wrap_err_with(err)?;
 
         if !opts.preserve_mtime {
             reset_dir_mtime_to_now(dest)?;
@@ -2654,12 +2727,22 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
         dest
     };
     run_blocking(|| {
+        let limit = extract_limit(archive)?;
+        let mut remaining = limit;
         sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
             let dest_path = dest.join(
                 sanitize_7z_entry_path(entry.name())
                     .map_err(|err| sevenz_rust2::Error::Other(format!("{err:#}").into()))?,
             );
-            sevenz_rust2::default_entry_extract_fn(entry, reader, &dest_path)
+            // One budget across entries, not one per entry.
+            let mut reader = LimitedReader {
+                inner: reader,
+                limit,
+                remaining,
+            };
+            let extracted = sevenz_rust2::default_entry_extract_fn(entry, &mut reader, &dest_path);
+            remaining = reader.remaining;
+            extracted
         })
         .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
 

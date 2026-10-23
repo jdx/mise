@@ -624,3 +624,192 @@ fn test_reset_dir_mtime_to_now_handles_read_only_files() {
     assert!(metadata.permissions().readonly());
     assert_ne!(FileTime::from_last_modification_time(&metadata), old_mtime);
 }
+
+#[test]
+fn test_limited_reader_fails_past_its_limit() {
+    let read = |len, limit| {
+        let mut reader = LimitedReader::new(std::io::repeat(0).take(len), limit);
+        std::io::copy(&mut reader, &mut std::io::sink())
+    };
+
+    assert_eq!(read(10, 10).unwrap(), 10);
+    let err = read(11, 10).unwrap_err();
+    assert!(err.to_string().contains("extract_max_ratio"), "{err}");
+}
+
+#[test]
+fn test_extract_limit_follows_the_input_size_and_the_setting() {
+    use confique::Layer;
+
+    let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("tool.gz");
+    let file = File::create(&path).unwrap();
+
+    assert_eq!(extract_limit(&path).unwrap(), EXTRACT_MIN_LIMIT);
+    file.set_len(EXTRACT_MIN_LIMIT).unwrap();
+    assert_eq!(extract_limit(&path).unwrap(), 100 * EXTRACT_MIN_LIMIT);
+
+    let mut settings = mise_settings::SettingsPartial::empty();
+    settings.extract_max_ratio = Some(0);
+    crate::testing::reset_settings(Some(settings));
+    let limit = extract_limit(&path);
+    crate::testing::reset_settings(None);
+    assert_eq!(limit.unwrap(), u64::MAX);
+}
+
+/// One byte more of zeroes than a small download may unpack to.
+fn bomb_payload() -> impl Read {
+    std::io::repeat(0).take(EXTRACT_MIN_LIMIT + 1)
+}
+
+#[test]
+fn test_decompress_file_refuses_a_bomb() {
+    let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("tool");
+    let create = |name: &str| File::create(dir.path().join(name)).unwrap();
+
+    let mut gz = flate2::write::GzEncoder::new(create("tool.gz"), flate2::Compression::fast());
+    std::io::copy(&mut bomb_payload(), &mut gz).unwrap();
+    gz.finish().unwrap();
+    let mut xz = xz2::write::XzEncoder::new(create("tool.xz"), 0);
+    std::io::copy(&mut bomb_payload(), &mut xz).unwrap();
+    xz.finish().unwrap();
+    zstd::stream::copy_encode(bomb_payload(), create("tool.zst"), 1).unwrap();
+    let mut bz2 = bzip2::write::BzEncoder::new(create("tool.bz2"), bzip2::Compression::fast());
+    std::io::copy(&mut bomb_payload(), &mut bz2).unwrap();
+    bz2.finish().unwrap();
+
+    for format in [
+        ExtractionFormat::Gz,
+        ExtractionFormat::Xz,
+        ExtractionFormat::Zst,
+        ExtractionFormat::Bz2,
+    ] {
+        let src = dir.path().join(format!("tool.{format}"));
+        let err = decompress_file(&src, &dest, format).unwrap_err();
+        assert!(format!("{err:#}").contains("extract_max_ratio"), "{err:#}");
+        assert!(dest.metadata().unwrap().len() <= EXTRACT_MIN_LIMIT);
+    }
+}
+
+#[test]
+fn test_extract_archive_refuses_a_bomb() {
+    use confique::Layer;
+
+    let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    let dir = tempfile::tempdir().unwrap();
+
+    let tar_path = dir.path().join("tool.tar.zst");
+    let encoder = zstd::Encoder::new(File::create(&tar_path).unwrap(), 1).unwrap();
+    let mut builder = jdx_tar::Builder::new(encoder);
+    let mut header = jdx_tar::Header::new_gnu(EntryType::File);
+    header.set_size(EXTRACT_MIN_LIMIT + 1);
+    header.set_mode(0o755);
+    builder
+        .append_data(&mut header, "tool", bomb_payload())
+        .unwrap();
+    builder.into_inner().unwrap().finish().unwrap();
+
+    let zip_path = dir.path().join("tool.zip");
+    let mut zip = zip::ZipWriter::new(File::create(&zip_path).unwrap());
+    zip.start_file("tool", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    std::io::copy(&mut bomb_payload(), &mut zip).unwrap();
+    zip.finish().unwrap();
+
+    // Three central directory records that all point at one member, each well
+    // under the limit on its own.
+    let overlapping_zip_path = dir.path().join("overlapping.zip");
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for name in ["a", "b", "c"] {
+        zip.start_file(name, zip::write::SimpleFileOptions::default())
+            .unwrap();
+        std::io::copy(
+            &mut std::io::repeat(0).take(EXTRACT_MIN_LIMIT / 2),
+            &mut zip,
+        )
+        .unwrap();
+    }
+    let mut bytes = zip.finish().unwrap().into_inner();
+    for i in 0..bytes.len() - 46 {
+        if bytes[i..].starts_with(b"PK\x01\x02") {
+            bytes[i + 42..i + 46].fill(0);
+        }
+    }
+    std::fs::write(&overlapping_zip_path, bytes).unwrap();
+
+    let sevenz_path = dir.path().join("tool.7z");
+    let src_dir = dir.path().join("src");
+    std::fs::create_dir(&src_dir).unwrap();
+    let file = File::create(src_dir.join("tool")).unwrap();
+    file.set_len(EXTRACT_MIN_LIMIT + 1).unwrap();
+    sevenz_rust2::compress_to_path(&src_dir, &sevenz_path).unwrap();
+
+    for (archive, format) in [
+        (&tar_path, ExtractionFormat::TarZst),
+        (&zip_path, ExtractionFormat::Zip),
+        (&overlapping_zip_path, ExtractionFormat::Zip),
+        (&sevenz_path, ExtractionFormat::SevenZip),
+    ] {
+        let dest = dir.path().join("out");
+        let err = extract_archive(archive, &dest, format, &ExtractOptions::default()).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("extract_max_ratio"),
+            "{}: {err:#}",
+            archive.display()
+        );
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    // Unlimited, the same tar unpacks.
+    let mut settings = mise_settings::SettingsPartial::empty();
+    settings.extract_max_ratio = Some(0);
+    crate::testing::reset_settings(Some(settings));
+    let dest = dir.path().join("unlimited");
+    let result = extract_archive(
+        &tar_path,
+        &dest,
+        ExtractionFormat::TarZst,
+        &ExtractOptions::default(),
+    );
+    crate::testing::reset_settings(None);
+    result.unwrap();
+    assert_eq!(
+        dest.join("tool").metadata().unwrap().len(),
+        EXTRACT_MIN_LIMIT + 1
+    );
+}
+
+/// `unzip` relies on the zip crate holding each entry to the size its central
+/// directory record declares; summing those sizes is its whole bound.
+#[test]
+fn test_unzip_fails_an_entry_larger_than_it_declares() {
+    let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+    let dir = tempfile::tempdir().unwrap();
+    let zip_path = dir.path().join("lying.zip");
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    zip.start_file("tool", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    std::io::copy(&mut bomb_payload(), &mut zip).unwrap();
+    let mut bytes = zip.finish().unwrap().into_inner();
+    // Claim one byte in both the local and the central header.
+    let central = bytes.windows(4).rposition(|w| w == b"PK\x01\x02").unwrap();
+    for size_field in [22, central + 24] {
+        bytes[size_field..size_field + 4].copy_from_slice(&1u32.to_le_bytes());
+    }
+    std::fs::write(&zip_path, bytes).unwrap();
+
+    let dest = dir.path().join("out");
+    assert!(
+        extract_archive(
+            &zip_path,
+            &dest,
+            ExtractionFormat::Zip,
+            &ExtractOptions::default()
+        )
+        .is_err()
+    );
+    assert!(dest.join("tool").metadata().map_or(0, |m| m.len()) <= 1);
+}
