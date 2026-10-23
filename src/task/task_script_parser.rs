@@ -404,7 +404,19 @@ impl TaskScriptParser {
         if let Some(env) = env {
             tera_ctx.insert("env", env);
         }
-        Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx)
+        let rendered = Self::render_usage_with_context(&mut tera, &task.usage, &tera_ctx);
+        // Without the resolved task env (help, validation, preflight), a template that reads it
+        // cannot render. That must not take the task's own flags down with it.
+        if env.is_none()
+            && let Err(err) = &rendered
+        {
+            warn!(
+                "ignoring the usage task '{}' inherits from its template: {err:#}",
+                task.name
+            );
+            return Ok(String::new());
+        }
+        rendered
     }
 
     fn setup_tera_for_spec_parsing(&self, task: &Task) -> TeraSpecParsingResult {
