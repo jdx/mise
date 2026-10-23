@@ -21,8 +21,9 @@ use crate::args::BackendArg;
 use crate::backend::unalias_backend;
 use crate::config::config_file::config_root;
 use crate::config::config_file::{
-    ConfigFile, TaskConfig, ToolConfig, config_trust_root, ensure_versions_are_not_templates,
-    is_config_ignored_via_setting, is_persisted_ignored, trust, trust_check,
+    ConfigFile, TaskConfig, ToolConfig, ToolOptionTemplate, config_trust_root,
+    ensure_versions_are_not_templates, is_config_ignored_via_setting, is_persisted_ignored, trust,
+    trust_check,
 };
 use crate::config::env_directive::{AgeFormat, EnvDirective, EnvValue};
 use crate::config::settings::SettingsPartial;
@@ -166,26 +167,38 @@ fn auto_update_value(auto_update: &str) -> Value {
     }
 }
 
-/// Replace each value in `options` that one of the `(written, rendered)` templates renders to with
-/// the template as it is written.
-fn restore_option_templates(
-    options: &mut ToolVersionOptions,
-    templates: &[(ToolVersionOptions, ToolVersionOptions)],
-) {
-    for (written, rendered) in templates {
-        for (k, v) in options.opts.iter_mut() {
-            if let (Some(r), Some(w)) = (rendered.opts.get(k), written.opts.get(k))
-                && r == v
-            {
-                v.clone_from(w);
-            }
+/// Replace each option of `request` that a template renders to with the template as it is
+/// written. Entries with the request's version and `os` come first, so a value two entries'
+/// templates both render to gets the template of the entry the request came from.
+fn restore_option_templates(request: &mut ToolRequest, templates: &[ToolOptionTemplate]) {
+    let version = request.version();
+    let os = request.os().clone();
+    let own: Vec<&ToolOptionTemplate> = templates
+        .iter()
+        .filter(|t| t.version == version && t.written.os == os)
+        .collect();
+    let candidates = if own.is_empty() {
+        templates.iter().collect()
+    } else {
+        own
+    };
+    let options = request.options_mut();
+    for (k, v) in options.opts.iter_mut() {
+        if let Some(w) = candidates.iter().find_map(|t| {
+            (t.rendered.opts.get(k) == Some(&*v))
+                .then(|| t.written.opts.get(k))
+                .flatten()
+        }) {
+            v.clone_from(w);
         }
-        for (k, v) in options.core.install_env.iter_mut() {
-            if let (Some(r), Some(w)) = (rendered.install_env.get(k), written.install_env.get(k))
-                && r == v
-            {
-                v.clone_from(w);
-            }
+    }
+    for (k, v) in options.core.install_env.iter_mut() {
+        if let Some(w) = candidates.iter().find_map(|t| {
+            (t.rendered.install_env.get(k) == Some(&*v))
+                .then(|| t.written.install_env.get(k))
+                .flatten()
+        }) {
+            v.clone_from(w);
         }
     }
 }
@@ -1318,34 +1331,40 @@ impl MiseToml {
         Ok(())
     }
 
-    /// The templated options `ba` has in this file and in the other loaded configs, each as it
-    /// is written and as it renders in this file. `mise use` copies options from another config,
-    /// where `{{ config_root }}` is not what it is here, so those are rendered in this file's
-    /// context too and are written rendered when that gives another value.
-    fn tool_option_templates(
-        &self,
-        ba: &BackendArg,
-    ) -> Vec<(ToolVersionOptions, ToolVersionOptions)> {
-        let mut written = self.templated_tool_options(ba);
-        if let Some(config) = Config::maybe_get() {
-            for cf in config.config_files.values() {
-                if cf.get_path() != self.path {
-                    written.extend(cf.templated_tool_options(ba));
+    /// The templates `replace_versions` can write back for `ba`: this file's, and those of the
+    /// other loaded configs, which `mise use` copies options from. Each is rendered by the config
+    /// that declares it. An inherited template is kept only for the options it renders the same
+    /// way here: one that depends on its own file, such as `{{ config_root }}/bin`, means another
+    /// path in this file, so its value is written rendered, keeping what it pointed to.
+    fn templates_for_rewrite(&self, ba: &BackendArg) -> Vec<ToolOptionTemplate> {
+        let mut templates = self.tool_option_templates(ba);
+        let Some(config) = Config::maybe_get() else {
+            return templates;
+        };
+        let mut context = None;
+        for cf in config.config_files.values() {
+            if cf.get_path() == self.path {
+                continue;
+            }
+            for mut template in cf.tool_option_templates(ba) {
+                let context = context.get_or_insert_with(|| self.tool_template_context());
+                let mut here = template.written.clone();
+                if self.render_tool_options(context, ba, &mut here).is_err() {
+                    continue;
                 }
+                template
+                    .rendered
+                    .opts
+                    .retain(|k, v| here.opts.get(k) == Some(v));
+                template
+                    .rendered
+                    .core
+                    .install_env
+                    .retain(|k, v| here.install_env.get(k) == Some(v));
+                templates.push(template);
             }
         }
-        if written.is_empty() {
-            return vec![];
-        }
-        let context = self.tool_template_context();
-        written
-            .into_iter()
-            .filter_map(|written| {
-                let mut rendered = written.clone();
-                self.render_tool_options(&context, ba, &mut rendered).ok()?;
-                Some((written, rendered))
-            })
-            .collect()
+        templates
     }
 
     fn build_tool_request_set(&self, skip_templated: bool) -> eyre::Result<ToolRequestSet> {
@@ -1637,9 +1656,9 @@ impl ConfigFile for MiseToml {
         // (`mise use`) or is a copy of one (`mise upgrade --bump`). Writing those back would
         // replace `{{ env.TOKEN }}` with the token, so a value that a template renders to is
         // written as that template.
-        let templates = self.tool_option_templates(ba);
+        let templates = self.templates_for_rewrite(ba);
         for tr in &mut versions {
-            restore_option_templates(tr.options_mut(), &templates);
+            restore_option_templates(tr, &templates);
         }
         let mut tools = self.tools.lock().unwrap();
         let is_tools_sorted = is_tools_sorted(&tools); // was it previously sorted (if so we'll keep it sorted)
@@ -1828,15 +1847,31 @@ impl ConfigFile for MiseToml {
         self.build_tool_request_set(true)
     }
 
-    fn templated_tool_options(&self, ba: &BackendArg) -> Vec<ToolVersionOptions> {
-        self.tools
-            .lock()
-            .unwrap()
+    fn tool_option_templates(&self, ba: &BackendArg) -> Vec<ToolOptionTemplate> {
+        let tools = self.tools.lock().unwrap();
+        let entries = tools
             .get(ba)
             .into_iter()
             .flat_map(|tvp| &tvp.0)
             .filter(|tool| tool_has_template(tool))
-            .filter_map(|tool| tool.options.clone())
+            .filter_map(|tool| Some((&tool.request, tool.options.as_ref()?)))
+            .collect_vec();
+        if entries.is_empty() {
+            return vec![];
+        }
+        let context = self.tool_template_context();
+        entries
+            .into_iter()
+            .filter_map(|(request, written)| {
+                let version = self.parse_template_with_context(&context, request).ok()?;
+                let mut rendered = written.clone();
+                self.render_tool_options(&context, ba, &mut rendered).ok()?;
+                Some(ToolOptionTemplate {
+                    version,
+                    written: written.clone(),
+                    rendered,
+                })
+            })
             .collect()
     }
 
@@ -4135,6 +4170,49 @@ run = "cargo build"
                 format!("{env}{}", tools.replace("1.0.0", "2.0.0"))
             );
         }
+        file::remove_file(&p).unwrap();
+    }
+
+    /// Two entries whose templates render to the same value each keep their own template.
+    #[tokio::test]
+    async fn test_replace_versions_keeps_each_entrys_option_template() {
+        let _config = Config::get().await.unwrap();
+        let p = CWD
+            .as_ref()
+            .unwrap()
+            .join(".option-templates-per-entry.mise.toml");
+        let dummy = BackendArg::from("dummy");
+        let input = indoc! {r#"
+            [env]
+            A = "same"
+            B = "same"
+
+            [tools]
+            dummy = [{ version = "1.0.0", install_env = { AUTH = "{{ env.A }}" } }, { version = "2.0.0", install_env = { AUTH = "{{ env.B }}" } }]
+        "#};
+        file::write(&p, input).unwrap();
+        let cf = MiseToml::from_file(&p).unwrap();
+        // what `mise unuse dummy@1.0.0` writes back: the remaining, rendered request
+        let remaining = cf.to_tool_request_set().unwrap().tools[&dummy]
+            .iter()
+            .filter(|tr| tr.version() == "2.0.0")
+            .cloned()
+            .collect_vec();
+        assert_eq!(remaining.len(), 1);
+
+        cf.replace_versions(&dummy, remaining).unwrap();
+
+        assert_eq!(
+            cf.dump().unwrap(),
+            indoc! {r#"
+                [env]
+                A = "same"
+                B = "same"
+
+                [tools]
+                dummy = { version = "2.0.0", install_env = { AUTH = "{{ env.B }}" } }
+            "#}
+        );
         file::remove_file(&p).unwrap();
     }
 

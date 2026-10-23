@@ -109,6 +109,16 @@ fn ensure_versions_are_not_templates(
     Ok(())
 }
 
+/// A templated tool entry's options as written and as the config that declares them renders
+/// them, so a rewrite can put the template back in place of the value it rendered to.
+#[derive(Debug, Clone)]
+pub struct ToolOptionTemplate {
+    /// The entry's version, rendered, to tell which entry a request came from.
+    pub version: String,
+    pub written: ToolVersionOptions,
+    pub rendered: ToolVersionOptions,
+}
+
 pub trait ConfigFile: Debug + Send + Sync {
     fn get_path(&self) -> &Path;
     fn provenance(&self) -> ConfigProvenance {
@@ -166,8 +176,9 @@ pub trait ConfigFile: Debug + Send + Sync {
     fn templated_tool_backends(&self) -> Vec<String> {
         vec![]
     }
-    /// The options, unrendered, of this config's entries for `ba` that have a template in them.
-    fn templated_tool_options(&self, _ba: &BackendArg) -> Vec<ToolVersionOptions> {
+    /// This config's entries for `ba` that have a template in them, each rendered in this
+    /// config's own context.
+    fn tool_option_templates(&self, _ba: &BackendArg) -> Vec<ToolOptionTemplate> {
         vec![]
     }
     /// A hash of the text this config was parsed from, for a config that keeps one,

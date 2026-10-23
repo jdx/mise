@@ -46,3 +46,16 @@ TOML
 assert "mise use dummy@2.0.0"
 assert "cat mise.toml" '[tools]
 dummy = { version = "2.0.0", url = "https://{{ env.DUMMY_TOKEN }}@example.com" }'
+
+# a template that depends on the file declaring it means another path in the
+# project, so that option is copied as it rendered there; the others keep
+# their templates
+rm mise.toml
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[tools]
+dummy = { version = "1.0.0", url = "https://{{ env.DUMMY_TOKEN }}@example.com", note = "{{ config_root }}/notes" }
+TOML
+assert "mise use dummy@2.0.0"
+assert_contains "cat mise.toml" 'url = "https://{{ env.DUMMY_TOKEN }}@example.com"'
+assert_contains "cat mise.toml" 'note = "/'
+assert_not_contains "cat mise.toml" "config_root"
