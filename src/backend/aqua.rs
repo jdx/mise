@@ -3633,6 +3633,7 @@ impl AquaBackend {
                 extraction_format,
                 &extract_opts,
             )?;
+            file::ensure_symlinks_stay_within(&install_path)?;
             make_executable = true;
         } else if let AquaPackageType::GithubContent = pkg.package_type() {
             if let Some(parent) = first_bin_path.parent() {
@@ -3660,6 +3661,9 @@ impl AquaBackend {
                 extraction_format,
                 &extract_opts,
             )?;
+            // The bins are chmodded and linked by name below, which would
+            // follow a link the archive shipped out of the install directory.
+            file::ensure_symlinks_stay_within(&install_path)?;
             make_executable = true;
         }
 

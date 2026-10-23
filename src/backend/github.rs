@@ -2040,7 +2040,8 @@ impl UnifiedGitBackend {
             pr,
             ..Default::default()
         };
-        file::extract_archive(file_path, install_path, format, &extract_opts)
+        file::extract_archive(file_path, install_path, format, &extract_opts)?;
+        file::ensure_symlinks_stay_within(install_path)
     }
 
     /// Discovers bin paths in the installation directory

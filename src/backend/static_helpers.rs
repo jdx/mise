@@ -944,6 +944,9 @@ pub(crate) fn install_artifact(
 
         // Extract with determined strip_components
         file::extract_archive(file_path, &install_path, format, &extract_opts)?;
+        // The steps below rename, chmod and link paths under the install
+        // directory by name, so a link the archive shipped must not lead out.
+        file::ensure_symlinks_stay_within(&install_path)?;
 
         // Extract just the repo name from tool_name (e.g., "opsgenie/opsgenie-lamp" -> "opsgenie-lamp")
         let full_tool_name = tv.ba().tool_name.as_str();

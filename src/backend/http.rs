@@ -875,6 +875,9 @@ impl HttpBackend {
         };
 
         file::extract_archive(file_path, dest, cache_plan.file_info.format, &extract_opts)?;
+        // rename_exe below renames by name, which would follow a link the
+        // archive shipped out of the extraction directory.
+        file::ensure_symlinks_stay_within(dest)?;
 
         // Handle rename_exe option for archives
         if let Some(rename_value) = lookup_value_with_fallback(opts.raw(), "rename_exe") {
