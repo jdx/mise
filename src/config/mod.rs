@@ -5019,6 +5019,22 @@ async fn apply_task_config_inputs(
     Ok(())
 }
 
+/// The directories from `start` up that hold one of the default task directories (`mise-tasks`,
+/// `.mise/tasks`, ...), leaving out the global ones. File tasks load from each whether or not
+/// the directory has a config file.
+pub(crate) fn dirs_with_default_task_includes_from(start: &Path) -> Vec<PathBuf> {
+    all_dirs_from(start)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|dir| {
+            default_task_includes().iter().any(|include| {
+                let path = dir.join(include);
+                path.is_dir() && !is_global_task_include_path(&path)
+            })
+        })
+        .collect()
+}
+
 fn default_task_includes() -> Vec<String> {
     vec![
         "mise-tasks".to_string(),

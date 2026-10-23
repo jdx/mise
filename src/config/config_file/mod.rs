@@ -623,7 +623,7 @@ static REQUIRE_EXPLICIT_TRUST: Lazy<bool> =
     Lazy::new(|| std::env::var_os(REQUIRE_EXPLICIT_TRUST_ENV).is_some_and(|v| !v.is_empty()));
 
 /// Whether this process trusts nothing on its own. See [`REQUIRE_EXPLICIT_TRUST_ENV`].
-pub(crate) fn requires_explicit_trust() -> bool {
+pub fn requires_explicit_trust() -> bool {
     *REQUIRE_EXPLICIT_TRUST
 }
 

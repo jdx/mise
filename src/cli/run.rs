@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use super::args::ToolArg;
 use crate::cli::{render_subcommand_help, unescape_task_args};
-use crate::config::{Config, Settings, SettingsExt};
+use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::deps::{DepsEngine, DepsOptions, DepsStepResult};
 use crate::duration;
 use crate::env;
@@ -781,6 +781,15 @@ impl Run {
             return Ok(());
         }
         warn_secrets_flag_in_task_args(&task_list);
+        // A process that requires explicit trust (a task hook, an MCP request) has no typed
+        // `mise run` behind it. Task files already need trust there, but the inline tasks of a
+        // tasks-only `mise.toml` load without it, so check every task this run would reach.
+        if config_file::requires_explicit_trust()
+            && let Some(task) =
+                crate::config::untrusted_task_reached(&config, task_list.clone()).await?
+        {
+            return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
+        }
 
         // Args after -- go directly to tasks (no prefix). They are also
         // recorded on `trailing_args` so the task renderer can detect

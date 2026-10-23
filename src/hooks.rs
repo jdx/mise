@@ -456,8 +456,10 @@ impl<'a> HookRoots<'a> {
     }
 }
 
-/// Whether every project config the `mise run` of a task hook would load from `root` up is
-/// trusted. `.tool-versions` files define no tasks, so they do not need to be.
+/// Whether every project config and default task directory the `mise run` of a task hook
+/// would load from `root` up is trusted. `.tool-versions` files define no tasks, so they do
+/// not need to be. A task directory counts too: the child requires trust for its files, so an
+/// untrusted one would fail the whole hook rather than only the task that lives there.
 fn project_is_trusted(root: &Path) -> bool {
     crate::config::load_config_paths_from(root, &crate::config::DEFAULT_CONFIG_FILENAMES, false)
         .iter()
@@ -465,6 +467,9 @@ fn project_is_trusted(root: &Path) -> bool {
         .all(|path| {
             crate::config::is_tool_versions_file(path) || config_file::is_path_trusted(path)
         })
+        && crate::config::dirs_with_default_task_includes_from(root)
+            .iter()
+            .all(|dir| config_file::is_trusted(dir))
 }
 
 async fn run_matched_hook(

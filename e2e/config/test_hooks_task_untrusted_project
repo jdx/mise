@@ -63,3 +63,36 @@ output="$(cd clone/proj && mise hook-env -s bash 2>&1)"
 assert_contains_text "$output" "not trusted"
 assert_fail "test -e '$marker'"
 assert_contains "mise -C clone trust --show" "untrusted"
+
+echo "=== a project task hook does not run a task an untrusted parent supplies ==="
+# tasks only, so the parent loads without trust
+mkdir -p tasks-parent/proj
+cat <<EOF >tasks-parent/mise.toml
+[tasks.parent-task]
+run = "touch '$marker'"
+EOF
+cat <<'EOF' >tasks-parent/proj/mise.toml
+[tasks.setup]
+depends = ["parent-task"]
+run = 'echo PROJECT-SETUP'
+
+[hooks]
+enter = { task = "setup" }
+EOF
+mise trust tasks-parent/proj >/dev/null
+output="$(cd tasks-parent/proj && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "not trusted"
+assert_not_contains_text "$output" "PROJECT-SETUP"
+assert_fail "test -e '$marker'"
+
+echo "=== untrusted file tasks send a global task hook to the global root ==="
+mkdir -p scripts-only/mise-tasks
+touch scripts-only/.tool-versions
+cat <<EOF >scripts-only/mise-tasks/greet
+#!/bin/sh
+touch '$marker'
+EOF
+chmod +x scripts-only/mise-tasks/greet
+output="$(cd scripts-only && mise hook-env -s bash 2>&1)"
+assert_contains_text "$output" "GLOBAL-GREET"
+assert_fail "test -e '$marker'"

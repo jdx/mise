@@ -99,11 +99,12 @@ mise runs the task with `mise run` in a subprocess, so dependencies, the task's
 environment and file tasks work as usual. Task hooks work with every event.
 
 Unlike a `mise run` you type, this one does not
-[trust](/security.html#implicit-trust) the config it loads: an untrusted config
-makes the hook fail with a warning. A task hook in the global config runs in the
-active project only once you have trusted that project's config, so an untrusted
-project cannot replace the task with one of the same name. Until then it runs in
-the global config root.
+[trust](/security.html#implicit-trust) the config it loads: an untrusted config,
+or an untrusted task the hook's task would run or depend on, makes the hook fail
+with a warning. A task hook in the global config runs in the active project only
+once you have trusted that project's config and task directories, so an
+untrusted project cannot replace the task with one of the same name. Until then
+it runs in the global config root.
 
 As a `preinstall` hook, a task runs without installing its missing tools first,
 because the install it prepares has not happened yet. The commands it needs must
