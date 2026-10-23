@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+# bin_path is joined onto the install directory and the result goes on PATH.
+# An absolute or parent-escaping value would put any directory there, which
+# safe mode lets project config set on a tool that is already installed.
+
+mkdir -p safe-bin/bin evil
+printf '#!/bin/sh\necho tool\n' >safe-bin/bin/safe-bin
+chmod +x safe-bin/bin/safe-bin
+tar -czf safe-bin.tar.gz safe-bin
+rm -rf safe-bin
+url="file://$PWD/safe-bin.tar.gz"
+
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[tools]
+"http:safe-bin" = { version = "1.0.0", url = "$url" }
+EOF
+mise install
+assert_contains "mise env" "installs/http-safe-bin/1.0.0/bin"
+
+for bin_path in "$PWD/evil" "../../../../../../../../../../..$PWD/evil" "{{ '..' }}/evil"; do
+  cat <<EOF >mise.toml
+[tools]
+"http:safe-bin" = { version = "1.0.0", url = "$url", bin_path = "$bin_path" }
+EOF
+  assert_not_contains "MISE_SAFE=1 mise env 2>/dev/null" "evil"
+  assert_contains "MISE_SAFE=1 mise env 2>&1" "must be a directory inside the install directory"
+done

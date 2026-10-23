@@ -39,7 +39,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    ArchiveLayout, get_filename_from_url, install_artifact, template_string,
+    ArchiveLayout, get_filename_from_url, install_artifact, render_bin_path, template_string,
     template_string_for_target, verify_artifact,
 };
 use crate::backend::version_list;
@@ -697,7 +697,7 @@ impl Backend for S3Backend {
 
         // Check for explicit bin_path
         if let Some(bin_path_template) = opts.bin_path() {
-            let bin_path = template_string(&bin_path_template, tv);
+            let bin_path = render_bin_path(&bin_path_template, tv)?;
             return Ok(vec![runtime_path_for_install_path(
                 tv,
                 tv.install_path().join(bin_path),

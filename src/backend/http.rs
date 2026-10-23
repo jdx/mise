@@ -9,7 +9,7 @@ use crate::backend::static_helpers::{
     apply_rename_exe, bin_name_for_download, clean_binary_name, ensure_plain_bin_name,
     ensure_safe_relative_bin_path, eval_checksum_expr, fetch_checksum_from_file_with_headers,
     fetch_checksum_from_shasums_with_headers, get_filename_from_url, lookup_value_with_fallback,
-    pinned_checksum, rename_binary_name, shasums_has_entries, template_string,
+    pinned_checksum, rename_binary_name, render_bin_path, shasums_has_entries, template_string,
     template_string_for_target, template_string_strict, verify_artifact,
 };
 use crate::backend::version_list;
@@ -761,7 +761,9 @@ impl HttpBackend {
             || cache_plan.file_info.is_compressed_binary
         {
             opts.bin_path()
-                .map(|path| tmp_path.join(template_string(&path, tv)))
+                .map(|path| render_bin_path(&path, tv))
+                .transpose()?
+                .map(|path| tmp_path.join(path))
                 .unwrap_or_else(|| tmp_path.clone())
         } else {
             tmp_path.clone()
@@ -881,7 +883,7 @@ impl HttpBackend {
             // When bin_path is not explicitly set, auto-detect bin/ subdirectory to match
             // the same logic used by discover_bin_paths() for PATH construction
             let search_dir = if let Some(bin_path_template) = opts.bin_path() {
-                let bin_path = template_string(&bin_path_template, tv);
+                let bin_path = render_bin_path(&bin_path_template, tv)?;
                 dest.join(&bin_path)
             } else {
                 let bin_dir = dest.join("bin");
@@ -1017,7 +1019,7 @@ impl HttpBackend {
         if let ExtractionType::RawFile { filename } = extraction_type
             && let Some(bin_path_template) = opts.bin_path()
         {
-            let bin_path = template_string(&bin_path_template, tv);
+            let bin_path = render_bin_path(&bin_path_template, tv)?;
             let dest_dir = install_path.join(&bin_path);
             file::create_dir_all(&dest_dir)?;
 
@@ -1663,7 +1665,7 @@ impl Backend for HttpBackend {
 
         // Check for explicit bin_path
         if let Some(bin_path_template) = opts.bin_path() {
-            let bin_path = template_string(&bin_path_template, &tv);
+            let bin_path = render_bin_path(&bin_path_template, &tv)?;
             return Ok(vec![runtime_path_for_install_path(
                 &tv,
                 install_path.join(bin_path),
