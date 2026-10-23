@@ -219,6 +219,9 @@ fn is_gemfile_path(path: &Path) -> bool {
 }
 
 /// Relative paths from a Gemfile `ruby file:` option, for hook-env watches.
+///
+/// hook-env expands watches as globs and the Gemfile is read without trust, so
+/// the name is escaped to match only the one file Bundler would read.
 pub(crate) fn gemfile_watch_patterns(gemfile_path: &Path) -> Vec<String> {
     if gemfile_path
         .file_name()
@@ -233,7 +236,7 @@ pub(crate) fn gemfile_watch_patterns(gemfile_path: &Path) -> Vec<String> {
         Some(filename)
             if is_safe_relative_ruby_file(&filename) && !is_gemfile_path(Path::new(&filename)) =>
         {
-            vec![filename]
+            vec![glob::Pattern::escape(&filename)]
         }
         _ => vec![],
     }
@@ -244,7 +247,8 @@ fn read_ruby_file_option(gemfile_path: &Path, filename: &str) -> Option<String> 
         return None;
     }
     let path = gemfile_path.parent()?.join(filename);
-    if is_gemfile_path(&path) {
+    // A pipe or a link to a device under that name would be read without end.
+    if is_gemfile_path(&path) || !path.is_file() {
         return None;
     }
     let version = parse_bundler_ruby_version_file(&file::read_to_string(&path).ok()?);
@@ -478,6 +482,28 @@ mod tests {
             vec![".ruby-version".to_string()]
         );
         assert!(gemfile_watch_patterns(&dir.path().join(".ruby-version")).is_empty());
+    }
+
+    #[test]
+    fn gemfile_watch_patterns_escape_glob_characters() {
+        let dir = tempfile::tempdir().unwrap();
+        let gemfile = dir.path().join("Gemfile");
+        file::write(dir.path().join("other"), "3.3.5\n").unwrap();
+        file::write(&gemfile, "ruby file: \"**/*\"\n").unwrap();
+        let patterns = gemfile_watch_patterns(&gemfile);
+        assert_eq!(patterns, vec!["[*][*]/[*]".to_string()]);
+        assert!(
+            crate::watch_files::glob(dir.path(), &patterns)
+                .unwrap()
+                .is_empty()
+        );
+
+        file::write(dir.path().join("ruby[1]"), "3.3.6\n").unwrap();
+        file::write(&gemfile, "ruby file: \"ruby[1]\"\n").unwrap();
+        assert_eq!(
+            crate::watch_files::glob(dir.path(), &gemfile_watch_patterns(&gemfile)).unwrap(),
+            vec![dir.path().join("ruby[1]")]
+        );
     }
 
     #[test]
