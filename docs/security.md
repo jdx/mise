@@ -225,6 +225,8 @@ These are skipped without an error, so resolution commands keep working:
 - Project `[settings]`, so a repository cannot turn off verification or redirect
   a backend.
 - Remote `include` entries in project config, which mise does not fetch.
+- Remote task files (`file = "https://…"` or `git::…`) in project config. Their
+  tasks are listed from their TOML alone.
 - Project daemon declarations. Daemons also do not start or stop when you change
   directories.
 - Project `[bootstrap]`, `[dotfiles]` and `[dotfile_groups]`, and the

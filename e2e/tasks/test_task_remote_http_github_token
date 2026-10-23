@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+# A remote task file named by a config that was never trusted is a URL that
+# config chose. Listing its tasks must not hand the user's GitHub token to that
+# host because the path looks like a GitHub Enterprise API (`/api/v3`), and in
+# safe mode the file is not fetched at all.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+export GITHUB_TOKEN="ghp_e2e_victim_token"
+export MISE_GITHUB_ENTERPRISE_TOKEN="ghes_e2e_victim_token"
+
+mkdir -p srv/api/v3 headers
+cat <<'EOF' >srv/api/v3/build.sh
+#!/usr/bin/env bash
+#MISE description="a remote build task"
+echo build
+EOF
+cp srv/api/v3/build.sh srv/api/v3/lint.sh
+start_http_server --dir "$PWD/srv" --headers-log "$PWD/headers"
+
+cat <<EOF >mise.toml
+[tasks.build]
+file = "http://127.0.0.1:${HTTP_PORT}/api/v3/build.sh"
+EOF
+
+assert_contains "MISE_YES=0 mise tasks ls" "a remote build task"
+assert_contains "cat headers/*.json" "/api/v3/build.sh"
+assert_not_contains "cat headers/*.json" "e2e_victim_token"
+assert_not_contains "cat headers/*.json" "uthorization"
+
+# Safe mode loads the untrusted config without a prompt, so it does not fetch
+# the URL it names, as for remote includes. The task is listed from its TOML.
+rm -f headers/*.json
+cat <<EOF >mise.toml
+[tasks.lint]
+file = "http://127.0.0.1:${HTTP_PORT}/api/v3/lint.sh"
+EOF
+assert_contains "MISE_SAFE=1 MISE_YES=0 mise tasks ls" "lint"
+assert_directory_empty headers
