@@ -313,6 +313,38 @@ async fn test_download_metadata_uses_redirected_filename() {
     artifact.assert();
 }
 
+/// A token in a download URL's query must not be handed to the host the
+/// download is redirected to, in a `Referer` header or otherwise.
+#[tokio::test]
+async fn test_redirect_target_is_not_told_the_previous_url() {
+    let mut origin = mockito::Server::new_async().await;
+    let mut storage = mockito::Server::new_async().await;
+    let redirect = origin
+        .mock("GET", "/tool.tar.gz?private_token=secret")
+        .with_status(302)
+        .with_header("location", &format!("{}/tool.tar.gz", storage.url()))
+        .expect(1)
+        .create_async()
+        .await;
+    let artifact = storage
+        .mock("GET", "/tool.tar.gz")
+        .match_header("referer", mockito::Matcher::Missing)
+        .with_body("OK")
+        .expect(1)
+        .create_async()
+        .await;
+    let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+
+    let body = client
+        .get_text(format!("{}/tool.tar.gz?private_token=secret", origin.url()))
+        .await
+        .unwrap();
+
+    assert_eq!(body, "OK");
+    redirect.assert();
+    artifact.assert();
+}
+
 #[test]
 fn test_download_filename_hint_excludes_unsafe_or_private_url_parts() {
     let url: Url =
