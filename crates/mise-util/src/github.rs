@@ -1683,14 +1683,29 @@ pub fn is_github_api_url(url: &url::Url) -> bool {
 /// them from whoever put `/api/v3` in a task file URL, a release link or a
 /// `Link: rel="next"` header.
 fn may_send_token(url: &url::Url, api_url: &str) -> bool {
+    may_send_token_with(url, api_url, &Settings::get().github.enterprise_hosts)
+}
+
+/// [`may_send_token`], where `enterprise_hosts` (`github.enterprise_hosts`, a
+/// global-only setting) are Enterprise Servers the user named, whose `/api/v3`
+/// URLs get a token over https whatever `api_url` is.
+fn may_send_token_with(url: &url::Url, api_url: &str, enterprise_hosts: &[String]) -> bool {
     match url.host_str() {
         Some(host) if host == "api.github.com" || is_ghe_com_api_host(host) => {
             url.scheme() == "https"
         }
-        _ => {
+        Some(host) => {
             is_github_api_url(url)
-                && url::Url::parse(api_url).is_ok_and(|api_url| url.origin() == api_url.origin())
+                && (url::Url::parse(api_url).is_ok_and(|api_url| url.origin() == api_url.origin())
+                    || (url.scheme() == "https"
+                        && enterprise_hosts.iter().any(|listed| {
+                            listed
+                                .trim()
+                                .trim_end_matches('.')
+                                .eq_ignore_ascii_case(host)
+                        })))
         }
+        None => false,
     }
 }
 

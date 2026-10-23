@@ -1046,6 +1046,33 @@ env = "MISE_GITHUB_CREDENTIAL_COMMAND"
 global_only = true
 type = "String"
 
+[github.enterprise_hosts]
+default = []
+description = "Extra GitHub Enterprise hosts that receive your GitHub token on their `/api/v3` URLs."
+docs = """
+mise sends the GitHub token to `api.github.com` and `api.*.ghe.com`, and to
+an `/api/v3` URL only on the origin of the tool's
+[`api_url`](/dev-tools/backends/github.html#api-url). A GitHub Enterprise
+Server URL that reaches mise any other way, such as an `http:` tool, an aqua
+package or a remote task file under `https://github.mycompany.com/api/v3/`,
+gets no token. List the hosts that should get one:
+
+```toml [~/.config/mise/config.toml]
+[settings.github]
+enterprise_hosts = ["github.mycompany.com"]
+```
+
+The token is sent over `https` only, to any port of a listed host, and only on
+paths under `/api/v3`. mise ignores this setting in project config, since a
+repository could otherwise list a host of its choosing. See
+[GitHub Enterprise](/dev-tools/github-tokens.html#github-enterprise).
+"""
+env = "MISE_GITHUB_ENTERPRISE_HOSTS"
+global_only = true
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
+
 [github.gh_cli_tokens]
 default = true
 description = "Read GitHub tokens that the gh CLI stores in its `hosts.yml` file."

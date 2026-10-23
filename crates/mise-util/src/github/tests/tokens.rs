@@ -286,6 +286,29 @@ fn test_enterprise_api_path_gets_token_only_at_api_url_origin() {
     });
 }
 
+/// `github.enterprise_hosts` names Enterprise Servers whose `/api/v3` URLs get
+/// the token from any caller, such as an `http:` tool or a remote task file.
+#[test]
+fn test_enterprise_hosts_setting_extends_token_hosts() {
+    let listed = vec!["GitHub.MyCompany.com".to_string()];
+    let ok = |url: &str| may_send_token_with(&url::Url::parse(url).unwrap(), API_URL, &listed);
+    assert!(ok("https://github.mycompany.com/api/v3/repos/o/r/releases"));
+    assert!(ok("https://github.mycompany.com:8443/api/v3/repos/o/r"));
+    // https only, /api/v3 only, and only the listed host.
+    assert!(!ok("http://github.mycompany.com/api/v3/repos/o/r"));
+    assert!(!ok(
+        "https://github.mycompany.com/o/r/releases/download/v1/x"
+    ));
+    assert!(!ok("https://other.example.com/api/v3/repos/o/r"));
+    assert!(!ok("https://github.mycompany.com.evil.example/api/v3/x"));
+    // Without the setting, nothing changes.
+    assert!(!may_send_token_with(
+        &url::Url::parse("https://github.mycompany.com/api/v3/repos/o/r").unwrap(),
+        API_URL,
+        &[]
+    ));
+}
+
 #[test]
 fn test_get_headers_rejects_relative_url() {
     let err = get_headers("/repos/jdx/aube/releases", API_URL).unwrap_err();

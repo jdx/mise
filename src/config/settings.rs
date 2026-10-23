@@ -2525,6 +2525,25 @@ mod tests {
         assert_eq!(partial.forgejo.credential_command, None);
     }
 
+    /// A repository must not name a host that then receives the GitHub token.
+    #[test]
+    fn test_parse_settings_file_strips_local_github_enterprise_hosts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [settings.github]
+            enterprise_hosts = ["attacker.example"]
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.github.enterprise_hosts, None);
+    }
+
     #[test]
     fn test_parse_settings_file_strips_local_history_describe_command() {
         let dir = tempfile::tempdir().unwrap();
