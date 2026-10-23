@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+
+# A deno install with no lockfile entry checks the archive against the .sha256sum
+# file Deno publishes next to it, not only against one mise.lock already holds.
+
+RELEASE="$(mktemp -d "${TMPDIR:-/tmp}/deno-release.XXXXXX")"
+
+# How the .sha256sum file is answered is read from "$RELEASE/mode": "genuine"
+# holds the archive's checksum, "tampered" another one, "empty" none, "absent"
+# is a 404 and "error" a 500
+start_http_server --dir "$RELEASE" --handler - <<'PY'
+import hashlib
+import io
+import zipfile
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+mode_file = Path("mode").absolute()
+script = b"""#!/usr/bin/env bash
+echo deno 2.0.0
+"""
+
+
+def archive():
+    body = io.BytesIO()
+    with zipfile.ZipFile(body, "w") as zf:
+        info = zipfile.ZipInfo("deno")
+        info.create_system = 3
+        info.external_attr = 0o755 << 16
+        zf.writestr(info, script)
+    return body.getvalue()
+
+
+class Handler(BaseHTTPRequestHandler):
+    def reply(self, data):
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        if path.endswith(".zip"):
+            return self.reply(archive())
+        if path.endswith(".zip.sha256sum"):
+            mode = mode_file.read_text().strip()
+            if mode == "absent":
+                return self.send_error(404)
+            if mode == "error":
+                return self.send_error(500)
+            if mode == "empty":
+                return self.reply(b"\n")
+            sha = hashlib.sha256(archive()).hexdigest()
+            if mode == "tampered":
+                sha = "0" * 64
+            return self.reply(f"{sha}  {Path(path).name.removesuffix('.sha256sum')}\n".encode())
+        self.send_error(404)
+
+
+SERVER_CLASS = HTTPServer
+PY
+
+MISE_URL_REPLACEMENTS="$(printf '{\"https://dl.deno.land\":\"http://127.0.0.1:%s\"}' "$HTTP_PORT")"
+export MISE_URL_REPLACEMENTS
+# Retries would turn the 500 case into minutes of backoff
+export MISE_HTTP_RETRIES=0
+
+echo tampered >"$RELEASE/mode"
+assert_fail "mise install deno@2.0.0" "Checksum mismatch"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/deno/2.0.0/bin"
+
+# A checksum file that exists must hold a checksum
+echo empty >"$RELEASE/mode"
+assert_fail "mise install deno@2.0.0" "does not list a checksum for this archive"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/deno/2.0.0/bin"
+
+# A failed request is not taken for a release without checksums
+echo error >"$RELEASE/mode"
+assert_fail "mise install deno@2.0.0" "failed to fetch checksum"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/deno/2.0.0/bin"
+
+echo genuine >"$RELEASE/mode"
+assert_succeed "mise install deno@2.0.0"
+
+# A release that never published a .sha256sum file installs with a warning
+mise uninstall deno@2.0.0
+echo absent >"$RELEASE/mode"
+assert_contains "mise install deno@2.0.0 2>&1" "skipping checksum verification"
