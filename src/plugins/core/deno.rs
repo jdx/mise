@@ -14,8 +14,10 @@ use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::fetch_checksum_from_file;
 use crate::backend::static_helpers::lock_checksum;
+use crate::backend::static_helpers::{
+    fetch_checksum_from_file, fetch_published_checksum_from_file,
+};
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
 use crate::github::{self, ReleaseVersion};
@@ -55,7 +57,7 @@ impl DenoPlugin {
             .execute()
     }
 
-    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    async fn download(&self, tv: &mut ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let url = self
             .get_tarball_url(tv, &PlatformTarget::from_current())
             .await?
@@ -71,6 +73,27 @@ impl DenoPlugin {
             Some(pr),
         )
         .await?;
+
+        // Without a checksum in the lockfile, take the one Deno publishes in the
+        // .sha256sum file next to the zip so verify_checksum compares the zip
+        // against it instead of only recording what was downloaded.
+        let checksum_url = format!("{url}.sha256sum");
+        let platform_info = tv
+            .lock_platforms
+            .entry(self.get_platform_key())
+            .or_default();
+        if platform_info.checksum.is_none() {
+            match fetch_published_checksum_from_file(&checksum_url, "sha256").await? {
+                Some(checksum) => {
+                    platform_info.url = Some(url.clone());
+                    platform_info.checksum = Some(checksum);
+                }
+                // A release that never published a .sha256sum file. It would come from
+                // the same host as the zip and is unsigned, so failing here would
+                // protect nothing that host could not also forge.
+                None => warn!("deno: {checksum_url} not found, skipping checksum verification"),
+            }
+        }
 
         Ok(tarball_path)
     }
@@ -131,7 +154,7 @@ impl Backend for DenoPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
+        let tarball_path = self.download(&mut tv, ctx.pr.as_ref()).await?;
         ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.next_operation();

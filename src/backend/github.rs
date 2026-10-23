@@ -5,9 +5,9 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, VersionOrder};
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    ArchiveLayout, VerifiableError, get_filename_from_url, install_artifact, lookup_platform_key,
-    lookup_with_fallback, pinned_checksum, tag_candidates, template_string, try_release_tags,
-    try_with_v_prefix, verify_artifact,
+    ArchiveLayout, VerifiableError, ensure_plain_asset_name, get_filename_from_url,
+    install_artifact, lookup_platform_key, lookup_with_fallback, pinned_checksum, tag_candidates,
+    template_string, try_release_tags, try_with_v_prefix, verify_artifact,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::config::{Config, Settings, SettingsExt};
@@ -1789,6 +1789,7 @@ impl UnifiedGitBackend {
         opts: &GitBackendOptions<'_>,
     ) -> Result<()> {
         let filename = asset.name.clone();
+        ensure_plain_asset_name(&filename)?;
         let file_path = tv.download_path().join(&filename);
 
         // Store the asset URL and digest (if available) in the tool version
@@ -1922,6 +1923,7 @@ impl UnifiedGitBackend {
         index: usize,
     ) -> Result<()> {
         let filename = asset.name.clone();
+        ensure_plain_asset_name(&filename)?;
         let file_path = tv.download_path().join(&filename);
         let platform_key = self.get_platform_key();
         let mut artifact_info = tv
@@ -2069,7 +2071,8 @@ impl UnifiedGitBackend {
             pr,
             ..Default::default()
         };
-        file::extract_archive(file_path, install_path, format, &extract_opts)
+        file::extract_archive(file_path, install_path, format, &extract_opts)?;
+        file::ensure_symlinks_stay_within(install_path)
     }
 
     /// Discovers bin paths in the installation directory

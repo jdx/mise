@@ -317,6 +317,9 @@ you support sets `url`, mise lists releases even if they have no assets; see
 
 ### Extracting and naming executables
 
+mise refuses an archive that contains a symlink pointing outside the install
+directory, and a release asset whose name is not a plain file name.
+
 #### `format`
 
 The archive format, such as `tar.gz`, `tar.xz` or `zip`. Set it when an asset

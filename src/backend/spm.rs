@@ -4,6 +4,7 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::{BackendOptions, is_falsey, is_truthy};
 use crate::backend::platform_target::PlatformTarget;
+use crate::backend::static_helpers::{ensure_plain_asset_name, ensure_plain_bin_name};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::git::{CloneOptions, Git};
@@ -277,6 +278,8 @@ impl Backend for SPMBackend {
             &tv.version,
         )? {
             let artifactbundle_required = opts.requires_artifactbundle(artifactbundle_mode);
+            // Read before the attempt, which records the release's own digest in `tv`.
+            let artifactbundle_locked = self.locked_artifactbundle_checksum(&tv).is_some();
             match self
                 .try_install_artifactbundle(
                     ctx,
@@ -301,8 +304,18 @@ impl Backend for SPMBackend {
                         repo.shorthand
                     );
                 }
+                // A source build has nothing to check the lockfile's checksum against,
+                // so it must not stand in for a locked bundle that cannot be installed.
+                Ok(false) if artifactbundle_locked => {
+                    bail!(
+                        "{} locks a SwiftPM artifact bundle of {}, but it has no binary for this Swift target, \
+                         and a source build is not covered by mise.lock; set artifactbundle = false to build from source",
+                        self.describe_lock_entry(&tv, &self.get_platform_key()),
+                        repo.shorthand
+                    );
+                }
                 Ok(false) => {}
-                Err(err) if artifactbundle_required => return Err(err),
+                Err(err) if artifactbundle_required || artifactbundle_locked => return Err(err),
                 Err(err) if Settings::get().spm.artifactbundle_only => return Err(err),
                 Err(err) => {
                     debug!(
@@ -333,6 +346,14 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
 impl SPMBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
+    }
+
+    /// The checksum the lockfile holds for this platform. It is that of the
+    /// release's artifact bundle; nothing is recorded about the source.
+    fn locked_artifactbundle_checksum<'a>(&self, tv: &'a ToolVersion) -> Option<&'a str> {
+        tv.lock_platforms
+            .get(&self.get_platform_key())
+            .and_then(|platform| platform.checksum.as_deref())
     }
 
     async fn install_from_source(
@@ -574,9 +595,17 @@ impl SPMBackend {
     ) -> eyre::Result<bool> {
         let Some(asset) = resolve_artifactbundle_asset(provider, repo, revision, opts).await?
         else {
+            if let Some(checksum) = self.locked_artifactbundle_checksum(tv) {
+                bail!(
+                    "{} locks a SwiftPM artifact bundle ({checksum}), but the {revision} release of {} has none",
+                    self.describe_lock_entry(tv, &self.get_platform_key()),
+                    repo.shorthand
+                );
+            }
             return Ok(false);
         };
 
+        ensure_plain_asset_name(&asset.name)?;
         let bundle_dir = tv.cache_path().join("artifactbundle");
         file::remove_all(&bundle_dir)?;
         file::create_dir_all(&bundle_dir)?;
@@ -595,7 +624,10 @@ impl SPMBackend {
         .await?;
 
         let platform_key = self.get_platform_key();
-        let platform_info = tv.lock_platforms.entry(platform_key).or_default();
+        // A bundle with no binary for this target is not what gets installed, so its
+        // URL and checksum must not end up in the lock entry of a source build.
+        let previous_lock_entry = tv.lock_platforms.get(&platform_key).cloned();
+        let platform_info = tv.lock_platforms.entry(platform_key.clone()).or_default();
         platform_info.url = Some(asset.url.clone());
         platform_info.url_api = asset.url_api.clone();
         if platform_info.checksum.is_none() {
@@ -608,13 +640,17 @@ impl SPMBackend {
 
         let triples = swift_target_triples(ctx, self, tv).await?;
         let binaries = artifactbundle_binaries(&bundle_dir, &triples)?;
+        let binaries = if binaries.is_empty() {
+            binaries
+        } else {
+            filter_artifactbundle_binaries(opts, binaries)?
+        };
         if binaries.is_empty() {
             file::remove_all(tv.cache_path())?;
-            return Ok(false);
-        }
-        let binaries = filter_artifactbundle_binaries(opts, binaries)?;
-        if binaries.is_empty() {
-            file::remove_all(tv.cache_path())?;
+            match previous_lock_entry {
+                Some(entry) => tv.lock_platforms.insert(platform_key, entry),
+                None => tv.lock_platforms.remove(&platform_key),
+            };
             return Ok(false);
         }
 
@@ -1073,6 +1109,7 @@ fn artifactbundle_binaries(
     target_triples: &[String],
 ) -> eyre::Result<Vec<ArtifactBundleBinary>> {
     let mut binaries = vec![];
+    let root = extract_dir.canonicalize()?;
     for bundle in artifactbundle_dirs(extract_dir)? {
         let info = file::read_to_string(bundle.join("info.json"))?;
         let manifest = serde_json::from_str::<ArtifactBundleInfo>(&info)
@@ -1081,6 +1118,8 @@ fn artifactbundle_binaries(
             if artifact.r#type != "executable" {
                 continue;
             }
+            // The name becomes the installed file's name under bin/.
+            ensure_plain_bin_name("artifact bundle executable name", &name)?;
             for variant in artifact.variants {
                 if variant
                     .supported_triples
@@ -1092,6 +1131,15 @@ fn artifactbundle_binaries(
                         bail!(
                             "artifact bundle executable does not exist: {}",
                             path.display()
+                        );
+                    }
+                    // The executable is copied into the install, so it must be
+                    // part of the bundle, not reached through `..`, an absolute
+                    // path or a symlink the bundle shipped.
+                    if !path.canonicalize()?.starts_with(&root) {
+                        bail!(
+                            "artifact bundle executable {:?} is outside the bundle",
+                            variant.path
                         );
                     }
                     binaries.push(ArtifactBundleBinary {
@@ -2033,6 +2081,86 @@ mod tests {
         let binaries =
             artifactbundle_binaries(tmp.path(), &["x86_64-unknown-linux-gnu".to_string()]).unwrap();
         assert!(binaries.is_empty());
+    }
+
+    fn executable_bundle_info(name: &str, path: &str) -> String {
+        serde_json::json!({
+            "schemaVersion": "1.0",
+            "artifacts": {
+                name: {
+                    "version": "1.0.0",
+                    "type": "executable",
+                    "variants": [
+                        { "path": path, "supportedTriples": ["x86_64-unknown-linux-gnu"] }
+                    ]
+                }
+            }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn test_artifactbundle_binaries_rejects_names_and_paths_outside_the_bundle() {
+        let triples = ["x86_64-unknown-linux-gnu".to_string()];
+        let tmp = tempfile::tempdir().unwrap();
+        let outside = tmp.path().join("secret");
+        file::write(&outside, "secret").unwrap();
+        let extract = tmp.path().join("extract");
+        let bundle = extract.join("tool.artifactbundle");
+        file::create_dir_all(bundle.join("bin")).unwrap();
+        file::write(bundle.join("bin/tool"), "").unwrap();
+
+        // The executable's name becomes a file under the install's bin/.
+        for name in [
+            "../../../../.bashrc",
+            "/tmp/tool",
+            "sub/tool",
+            "..",
+            "..\\tool",
+        ] {
+            file::write(
+                bundle.join("info.json"),
+                executable_bundle_info(name, "bin/tool"),
+            )
+            .unwrap();
+            let err = artifactbundle_binaries(&extract, &triples).unwrap_err();
+            assert!(err.to_string().contains("plain file name"), "{name}: {err}");
+        }
+
+        // The variant path is the copy's source and must stay in the bundle.
+        for path in ["../../secret", outside.to_str().unwrap()] {
+            file::write(
+                bundle.join("info.json"),
+                executable_bundle_info("tool", path),
+            )
+            .unwrap();
+            let err = artifactbundle_binaries(&extract, &triples).unwrap_err();
+            assert!(
+                err.to_string().contains("outside the bundle"),
+                "{path}: {err}"
+            );
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&outside, bundle.join("bin/linked")).unwrap();
+            file::write(
+                bundle.join("info.json"),
+                executable_bundle_info("tool", "bin/linked"),
+            )
+            .unwrap();
+            let err = artifactbundle_binaries(&extract, &triples).unwrap_err();
+            assert!(err.to_string().contains("outside the bundle"), "{err}");
+        }
+
+        // A path spelled with `./` still names a file in the bundle.
+        file::write(
+            bundle.join("info.json"),
+            executable_bundle_info("tool", "./bin/tool"),
+        )
+        .unwrap();
+        let binaries = artifactbundle_binaries(&extract, &triples).unwrap();
+        assert_eq!(binaries.len(), 1);
+        assert_eq!(binaries[0].name, "tool");
     }
 
     #[test]

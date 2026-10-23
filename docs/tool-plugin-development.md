@@ -267,7 +267,8 @@ mise downloads `url`, checks every checksum and attestation you return, and
 extracts the file into the install directory. It extracts `.tar.gz`, `.tgz`,
 `.tar.xz`, `.txz`, `.tar.bz2`, `.tbz2`, `.tbz` and `.zip` archives, and when an
 archive holds a single top-level directory, that directory's contents become
-the install directory. Any other file is moved into the install directory and
+the install directory. An archive with a symlink that leads out of the install
+directory is rejected. Any other file is moved into the install directory and
 marked executable. Without a `url`, mise downloads nothing and `PostInstall`
 does the install, as in a build from source.
 

@@ -325,6 +325,7 @@ pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
     context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
     context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
+    context.insert("mise_config_dir", &*env::MISE_CONFIG_DIR);
     context.insert("system_brew_prefix", &env::system_brew_prefix());
     context
 });
@@ -407,7 +408,8 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
             let path = Path::new(s);
             track_tera_file(path);
-            let mut hash = hash::file_hash_blake3(path, None).unwrap();
+            let mut hash =
+                hash::file_hash_blake3(path, None).map_err(|e| tera_err(e.to_string()))?;
             if let Some(len) = args.get::<u64>("len")? {
                 hash = hash.chars().take(len as usize).collect();
             }
@@ -494,7 +496,9 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
             track_tera_file(p);
             let metadata = p.metadata()?;
             let modified = metadata.modified()?;
-            let modified = modified.duration_since(std::time::UNIX_EPOCH).unwrap();
+            let modified = modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| tera_err(e.to_string()))?;
             Ok(Value::from(modified.as_secs()))
         },
     );

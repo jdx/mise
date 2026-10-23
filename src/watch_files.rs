@@ -260,6 +260,7 @@ async fn execute(
             use std::os::windows::io::AsHandle;
             c.env_clear();
             c.envs(env.iter());
+            c.current_dir(root);
             c.stdout(std::io::stderr().as_handle().try_clone_to_owned()?);
             let status = c.status()?;
             if !status.success() {
@@ -268,11 +269,13 @@ async fn execute(
             return Ok(());
         }
     }
+    // Run in the project root, like the task form and install hooks, so a relative path in
+    // `run` names the project's file and not one in the shell's current directory.
     crate::inline_command::optimize_expression(
-        cmd(program, args).full_env(&env),
+        cmd(program, args).full_env(&env).dir(root),
         run,
         &env,
-        None,
+        Some(root),
         direct_enabled,
     )
     .stdout_to_stderr()
