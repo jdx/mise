@@ -637,8 +637,10 @@ fn config_search_dir_mtimes() -> Vec<SystemTime> {
             for subdir in &config_subdirs {
                 // `conf.d/*` names the folder fragments: a file added to one
                 // changes that folder's mtime, not conf.d's.
-                let check_dirs = if subdir.contains('*') {
-                    glob::glob(&dir.join(subdir).to_string_lossy())
+                let check_dirs = if subdir.contains(['*', '?', '[']) {
+                    // `dir` is a literal directory: escape its glob metacharacters.
+                    let escaped_dir = glob::Pattern::escape(&dir.to_string_lossy());
+                    glob::glob(&Path::new(&escaped_dir).join(subdir).to_string_lossy())
                         .map(|paths| paths.flatten().collect())
                         .unwrap_or_default()
                 } else if subdir.is_empty() {

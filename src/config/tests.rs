@@ -1677,6 +1677,50 @@ fn test_env_config_patterns_escape_glob_characters() -> Result<()> {
 }
 
 #[test]
+fn test_glob_treats_directory_as_literal() -> Result<()> {
+    let tmp = TempDir::new()?;
+    for dir in ["[ab]", "a", "**"] {
+        let confd = tmp.path().join(dir).join(".mise/conf.d");
+        fs::create_dir_all(&confd)?;
+        fs::write(confd.join("tools.toml"), "")?;
+    }
+    // `[ab]` is the directory of that name, not a character class matching `a`.
+    assert_eq!(
+        glob(&tmp.path().join("[ab]"), ".mise/conf.d/*.toml")?,
+        vec![tmp.path().join("[ab]/.mise/conf.d/tools.toml")]
+    );
+    // `**` is the directory of that name, not a recursive walk of `tmp`.
+    assert_eq!(
+        glob(&tmp.path().join("**"), ".mise/conf.d/*.toml")?,
+        vec![tmp.path().join("**/.mise/conf.d/tools.toml")]
+    );
+    Ok(())
+}
+
+/// Override filenames come from a project `.miserc.toml` that loads without
+/// trust, and are looked up in every ancestor directory: they are names, not
+/// patterns.
+#[test]
+fn test_shared_config_filenames_escape_glob_characters() -> Result<()> {
+    let tmp = TempDir::new()?;
+    fs::write(tmp.path().join("**"), "[env]\n")?;
+    fs::write(tmp.path().join("mise.toml"), "[env]\n")?;
+    fs::write(tmp.path().join("tools.toml"), "[env]\n")?;
+
+    let overrides: IndexSet<String> = ["**".to_string()].into();
+    let filenames = shared_config_filenames(Some(&overrides), &overrides)
+        .into_iter()
+        .collect_vec();
+    assert_eq!(filenames, vec!["[*][*]".to_string()]);
+    assert_eq!(
+        config_paths_in_dir_with_filenames(tmp.path(), &filenames),
+        vec![tmp.path().join("**")]
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_env_config_patterns_with_non_star_glob_characters() -> Result<()> {
     for env_name in ["qa?", "qa[1]", "qa]"] {
         let tmp = TempDir::new()?;

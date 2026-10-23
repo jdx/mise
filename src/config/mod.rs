@@ -2462,43 +2462,61 @@ async fn idiomatic_filenames_for_root(
 /// Shared (non-`.local`) config filenames for one directory, lowest precedence first.
 /// `DEFAULT_CONFIG_FILENAMES` places the environment files and then the `.local`
 /// overrides above these.
-static SHARED_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
-    let mut paths: IndexSet<&'static str> = IndexSet::new();
-    if let Some(o) = &*env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES {
-        paths.extend(o.iter().map(|s| s.as_str()));
+static SHARED_CONFIG_FILENAMES: Lazy<IndexSet<String>> = Lazy::new(|| {
+    shared_config_filenames(
+        env::MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES.as_ref(),
+        &env::MISE_OVERRIDE_CONFIG_FILENAMES,
+    )
+});
+
+/// `SHARED_CONFIG_FILENAMES` with the override lists injected, so tests can
+/// cover them without touching global state.
+///
+/// Every entry is expanded as a glob pattern in each directory on the way up to
+/// the root. The configured names are filenames, not patterns, and a project
+/// `.miserc.toml` sets the overrides before anything is trusted: unescaped, `**`
+/// would walk the whole filesystem and `*` would load every file in every
+/// ancestor directory as a config.
+fn shared_config_filenames(
+    override_tool_versions_filenames: Option<&IndexSet<String>>,
+    override_config_filenames: &IndexSet<String>,
+) -> IndexSet<String> {
+    let escape = |s: &String| glob::Pattern::escape(s);
+    let mut paths: IndexSet<String> = IndexSet::new();
+    if let Some(o) = override_tool_versions_filenames {
+        paths.extend(o.iter().map(escape));
     } else {
         paths.extend([
-            ".tool-versions",
-            &*env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME, // .tool-versions
+            ".tool-versions".to_string(),
+            escape(&env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME), // .tool-versions
         ]);
     }
-    if !env::MISE_OVERRIDE_CONFIG_FILENAMES.is_empty() {
-        paths.extend(
-            env::MISE_OVERRIDE_CONFIG_FILENAMES
-                .iter()
-                .map(|s| s.as_str()),
-        )
+    if !override_config_filenames.is_empty() {
+        paths.extend(override_config_filenames.iter().map(escape))
     } else {
-        paths.extend([
-            ".config/mise/conf.d/*.toml",
-            ".config/mise/conf.d/*/mise.toml",
-            ".config/mise/config.toml",
-            ".config/mise/mise.toml",
-            ".config/mise.toml",
-            ".mise/conf.d/*.toml",
-            ".mise/conf.d/*/mise.toml",
-            ".mise/config.toml",
-            "mise/conf.d/*.toml",
-            "mise/conf.d/*/mise.toml",
-            "mise/config.toml",
-            "mise.toml",
-            &*env::MISE_DEFAULT_CONFIG_FILENAME, // mise.toml
-            ".mise.toml",
-        ]);
+        paths.extend(
+            [
+                ".config/mise/conf.d/*.toml",
+                ".config/mise/conf.d/*/mise.toml",
+                ".config/mise/config.toml",
+                ".config/mise/mise.toml",
+                ".config/mise.toml",
+                ".mise/conf.d/*.toml",
+                ".mise/conf.d/*/mise.toml",
+                ".mise/config.toml",
+                "mise/conf.d/*.toml",
+                "mise/conf.d/*/mise.toml",
+                "mise/config.toml",
+                "mise.toml",
+                &escape(&env::MISE_DEFAULT_CONFIG_FILENAME), // mise.toml
+                ".mise.toml",
+            ]
+            .map(String::from),
+        );
     }
 
     paths
-});
+}
 /// `.local` override filenames for one directory, lowest precedence first. They
 /// outrank every shared and environment file in the same directory, except the
 /// environment-specific `.local` files. `MISE_OVERRIDE_CONFIG_FILENAMES` replaces
@@ -2548,7 +2566,7 @@ fn env_config_patterns_with_conf_d(env: &str, local: bool, env_conf_d: bool) -> 
 
 pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
     layer_config_filenames(
-        SHARED_CONFIG_FILENAMES.iter().copied(),
+        SHARED_CONFIG_FILENAMES.iter().map(String::as_str),
         LOCAL_OVERRIDE_CONFIG_FILENAMES.iter().copied(),
         &env::MISE_ENV_WITH_AUTO,
     )
@@ -2647,7 +2665,9 @@ pub(crate) fn glob(dir: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
     if let Some(glob) = results.get(&key) {
         return Ok(glob.clone());
     }
-    let full_pattern = dir.join(pattern);
+    // `dir` is a literal directory, so escape any glob metacharacters in it:
+    // only `pattern` is meant to match.
+    let full_pattern = Path::new(&glob::Pattern::escape(&dir.to_string_lossy())).join(pattern);
     let full_pattern = full_pattern.to_string_lossy();
     let paths = if glob_parent_exists(dir, pattern) {
         glob::glob(full_pattern.as_ref())?
