@@ -143,8 +143,11 @@ mise trust --ignore            # never load this config
 ```
 
 In normal mode, trust belongs to a config root, usually the directory that holds
-`mise.toml`, so it covers every config file there, such as `mise.local.toml`.
-`mise trust --all` walks subdirectories, skipping hidden and gitignored ones and
+`mise.toml`, so it covers every config file there, such as `mise.local.toml` or
+`.mise/config.toml`. A `mise/`, `.mise/` or `.config/` directory that is a git
+checkout of its own, such as a repository cloned there, is a separate project:
+its config and tasks are not loaded as the directory's, and it is trusted on its
+own. `mise trust --all` walks subdirectories, skipping hidden and gitignored ones and
 `node_modules`, `vendor`, `target`, `dist` and `build`. Trust records are kept in
 the [state directory](/directories.html). See [`mise trust`](/cli/trust.html)
 for every flag.
@@ -165,7 +168,8 @@ Two settings decide trust by location:
   stops configs under these paths from loading. It overrides
   `trusted_config_paths` and `mise trust`. mise reads it before it looks for
   config files, so set it in a [`.miserc.toml`](/configuration.html#miserc) or
-  in `MISE_IGNORED_CONFIG_PATHS`.
+  in `MISE_IGNORED_CONFIG_PATHS`. A project's `.miserc.toml` cannot ignore
+  global or system config.
 
 ```toml
 # ~/.config/mise/config.toml
@@ -186,6 +190,12 @@ A config in a linked git worktree is trusted when the same path in the main
 checkout is trusted. `mise trust --untrust` in the worktree warns that the file
 stays trusted for that reason; use `mise trust --ignore` there to stop it
 loading. Paranoid mode does not share trust between worktrees.
+
+The repository has to list the worktree at its current location: a `.git` file
+that only names one of the repository's worktrees shares nothing. After moving a
+worktree by hand, run `git worktree repair`. A path in the main checkout that is
+a symlink, or sits below one, shares nothing either; trust the worktree's config
+directly instead.
 
 ## Safe mode
 
