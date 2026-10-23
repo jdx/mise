@@ -40,7 +40,7 @@ assert_fail "test -e probe.log"
 rm -rf .venv probe.log
 cat >probe <<EOF2
 #!/bin/sh
-timeout 60 "$(command -v mise)" env >/dev/null || echo "nested mise failed" >>"\$PWD/probe.log"
+"$(command -v mise)" env >/dev/null || echo "nested mise failed" >>"\$PWD/probe.log"
 exec python3 "\$@"
 EOF2
 cat >mise.toml <<EOF2
@@ -54,6 +54,7 @@ venv = {path = "my_venv", create = true}
 python.uv_venv_create_args = ["--python", "$PWD/probe"]
 EOF2
 rm uv.lock
-mise env >/dev/null
+# the portable timeout is a shell function, so it wraps the outer call; a hang ends it with 124
+assert_succeed "timeout 120 mise env >/dev/null"
 assert "test -d my_venv && echo created" "created"
 assert_fail "test -e probe.log"
