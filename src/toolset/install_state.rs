@@ -161,28 +161,41 @@ fn read_manifest_from(path: &Path) -> Manifest {
 fn load_root_manifest() -> Manifest {
     let path = manifest_path();
     let raw = read_raw_manifest_from(&path);
-    let mut changed = false;
-    let mut manifest = Manifest::new();
     for (dir, mt) in &raw {
         if credential_named_dir(&mt.short).as_deref() == Some(dir.as_str()) {
             remove_credential_named_installs(&mt.short);
-            if dirs::INSTALLS.join(dir).symlink_metadata().is_err() {
-                changed = true;
-                continue;
-            }
+        }
+    }
+    let (manifest, changed) = clean_root_manifest(&raw);
+    // Best effort, and never waiting on a writer that is mid-update: the next
+    // write of this file leaves it without credentials anyway. The file is read
+    // again under the lock, so an entry written since the read above is kept.
+    if changed && let std::result::Result::Ok(_lock) = MANIFEST_LOCK.try_lock() {
+        let (manifest, changed) = clean_root_manifest(&read_raw_manifest_from(&path));
+        if changed && let Err(err) = write_manifest_to(&path, &manifest) {
+            debug!("could not rewrite {}: {err:#}", display_path(&path));
+        }
+        return manifest;
+    }
+    manifest
+}
+
+/// `raw` without credentials and without the entries of credential-named
+/// directories that no longer exist, and whether that changed anything.
+fn clean_root_manifest(raw: &Manifest) -> (Manifest, bool) {
+    let mut changed = false;
+    let mut manifest = Manifest::new();
+    for (dir, mt) in raw {
+        if credential_named_dir(&mt.short).as_deref() == Some(dir.as_str())
+            && dirs::INSTALLS.join(dir).symlink_metadata().is_err()
+        {
+            changed = true;
+            continue;
         }
         changed |= mt.has_credentials();
         manifest.insert(dir.clone(), mt.without_credentials());
     }
-    // Best effort, and never waiting on a writer that is mid-update: the next
-    // write of this file leaves it without credentials anyway.
-    if changed
-        && let std::result::Result::Ok(_lock) = MANIFEST_LOCK.try_lock()
-        && let Err(err) = write_manifest_to(&path, &manifest)
-    {
-        debug!("could not rewrite {}: {err:#}", display_path(&path));
-    }
-    manifest
+    (manifest, changed)
 }
 
 fn read_raw_manifest_from(path: &Path) -> Manifest {
@@ -748,8 +761,10 @@ pub(crate) fn get_tool(short: &str) -> Option<InstallStateTool> {
 }
 
 /// Add the scan of directory `dir_name` to `tools`. Two directories can record
-/// the same tool (its own and a credential-named one); then the versions of
-/// both are kept, and the tool's own directory supplies its identity and path.
+/// the same tool: its own and a credential-named one. The tool's own directory
+/// is the one its versions are installed in, so it alone stands for the tool,
+/// whichever is scanned first; a version left only in the credential-named one
+/// is installed again under the tool's own name, and the old copy then goes.
 fn insert_scanned_tool(tools: &mut InstallStateTools, dir_name: &str, tool: InstallStateTool) {
     match tools.entry(tool.short.clone()) {
         std::collections::btree_map::Entry::Vacant(v) => {
@@ -757,12 +772,8 @@ fn insert_scanned_tool(tools: &mut InstallStateTools, dir_name: &str, tool: Inst
         }
         std::collections::btree_map::Entry::Occupied(mut o) => {
             if crate::backend::tool_directory_name(&tool.short) == dir_name {
-                let other = o.insert(tool);
-                merge_scanned_into(o.get_mut(), other);
-            } else {
-                merge_scanned_into(o.get_mut(), tool);
+                o.insert(tool);
             }
-            sort_versions(&mut o.get_mut().versions);
         }
     }
 }
@@ -927,7 +938,22 @@ fn with_tool<T>(short: &str, f: impl FnOnce(&InstallStateTool) -> T) -> Option<T
 }
 
 pub(crate) fn get_tool_full(short: &str) -> Option<String> {
-    with_tool(short, |t| t.full.clone()).flatten()
+    with_tool(short, |t| t.full.clone())
+        .flatten()
+        .map(|full| with_request_credentials(short, full))
+}
+
+/// `full` as a request spelled `short` uses it. Install state and lockfiles
+/// record a URL-named tool without its credentials; when `full` is that record
+/// of `short`, the request's own spelling, credentials included, is what
+/// downloads and builds use.
+pub(crate) fn with_request_credentials(short: &str, full: String) -> String {
+    let stripped = state_short(short);
+    if stripped != short && full == stripped {
+        short.to_string()
+    } else {
+        full
+    }
 }
 
 pub fn get_plugin_type(short: &str) -> Option<PluginType> {
@@ -2260,9 +2286,10 @@ mod credential_tests {
     }
 
     /// The tool's own directory and a credential-named one record the same
-    /// tool; a full scan keeps the versions of both, in either order.
+    /// tool; a full scan takes the tool's own directory, in either order, so
+    /// every version it lists exists under the tool's install path.
     #[test]
-    fn two_directories_of_one_tool_merge_their_versions() {
+    fn the_tools_own_directory_stands_for_it() {
         let short = "cargo:https://host/acme/tool.git";
         let tool = |dir: &str, versions: &[&str]| super::InstallStateTool {
             short: short.to_string(),
@@ -2280,14 +2307,34 @@ mod credential_tests {
                 let versions: &[&str] = if dir == named { &["1.0.0"] } else { &["2.0.0"] };
                 super::insert_scanned_tool(&mut tools, dir, tool(dir, versions));
             }
-            let merged = &tools[short];
-            assert_eq!(merged.versions, ["1.0.0", "2.0.0"], "{order:?}");
+            let found = &tools[short];
+            assert_eq!(found.versions, ["2.0.0"], "{order:?}");
             assert_eq!(
-                merged.installs_path.as_deref(),
+                found.installs_path.as_deref(),
                 Some(std::path::Path::new(&own)),
                 "{order:?}"
             );
         }
+        // Alone, the credential-named directory still lists what it holds.
+        let mut tools = super::InstallStateTools::new();
+        super::insert_scanned_tool(&mut tools, named, tool(named, &["1.0.0"]));
+        assert_eq!(tools[short].versions, ["1.0.0"]);
+    }
+
+    /// What install state and lockfiles record is credential-free; a request
+    /// spelled with credentials still downloads and builds with them.
+    #[test]
+    fn a_request_keeps_its_own_credentials() {
+        use super::with_request_credentials;
+        let short = "cargo:https://ci:t0ken@host/r.git";
+        let clean = "cargo:https://host/r.git";
+        assert_eq!(with_request_credentials(short, clean.into()), short);
+        assert_eq!(with_request_credentials(clean, clean.into()), clean);
+        assert_eq!(
+            with_request_credentials(short, "cargo:other".into()),
+            "cargo:other"
+        );
+        assert_eq!(BackendArg::from(short).stored_full(), clean);
     }
 
     /// An install that is incomplete, or locked by an install in progress, is
