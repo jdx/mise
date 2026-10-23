@@ -1014,11 +1014,15 @@ fn verify_bundle(
 /// under a given pin and this machine's pins is done once per process. Only
 /// the latest text is kept for each project and signer. Expiry is checked
 /// every time.
+///
+/// `lock` is the selected version's lock entries, whose repository IDs the
+/// list is held to as its bundles are; none when no version is selected yet.
 async fn verify_project_release_list(
     project: &str,
     bundle: &str,
     pin: &Pin,
     require_log: bool,
+    lock: &[&PlatformInfo],
 ) -> Result<(ReleaseListStatement, Option<ForgePin>)> {
     use sha2::{Digest, Sha256};
     struct Verified {
@@ -1029,7 +1033,7 @@ async fn verify_project_release_list(
     }
     static VERIFIED: std::sync::LazyLock<std::sync::Mutex<BTreeMap<String, Verified>>> =
         std::sync::LazyLock::new(Default::default);
-    let key = format!("{project}\0{pin:?}\0{require_log}");
+    let key = release_list_cache_key(project, pin, require_log, lock);
     let text = hex::encode(Sha256::digest(bundle.as_bytes()));
     let pins = pins_digest()?;
     if let Some(verified) = VERIFIED.lock().unwrap().get(&key)
@@ -1040,7 +1044,7 @@ async fn verify_project_release_list(
         return Ok((verified.list.clone(), verified.forge.clone()));
     }
     let (list, forge) =
-        verify_project_release_list_uncached(project, bundle, pin, require_log).await?;
+        verify_project_release_list_uncached(project, bundle, pin, require_log, lock).await?;
     let verified = Verified {
         text,
         pins,
@@ -1049,6 +1053,24 @@ async fn verify_project_release_list(
     };
     VERIFIED.lock().unwrap().insert(key, verified);
     Ok((list, forge))
+}
+
+/// What a verified release list is cached under: the project, the pin, and
+/// the repository IDs its lock entries commit to, since a list one lockfile
+/// refuses must not be served to it from a verification made without it.
+fn release_list_cache_key(
+    project: &str,
+    pin: &Pin,
+    require_log: bool,
+    lock: &[&PlatformInfo],
+) -> String {
+    let ids: std::collections::BTreeSet<String> = lock
+        .iter()
+        .filter_map(|info| packslip_forge::lock_pin(project, info))
+        .map(|pin| pin.repository_id)
+        .collect();
+    let ids = ids.into_iter().join(",");
+    format!("{project}\0{pin:?}\0{require_log}\0{ids}")
 }
 
 /// A digest of this machine's signer pins, every project's: a pin left under a
@@ -1073,8 +1095,9 @@ async fn verify_project_release_list_uncached(
     bundle: &str,
     pin: &Pin,
     require_log: bool,
+    lock: &[&PlatformInfo],
 ) -> Result<(ReleaseListStatement, Option<ForgePin>)> {
-    let Some(forge) = pin.forge(project, [], bundle).await? else {
+    let Some(forge) = pin.forge(project, lock.iter().copied(), bundle).await? else {
         return Ok((verify_release_list(bundle, pin, require_log)?, None));
     };
     file::run_blocking(|| {
@@ -1515,6 +1538,7 @@ impl PackslipBackend {
         project: &str,
         pin: &Pin,
         opts: &PackslipOptions<'_>,
+        lock: &[&PlatformInfo],
     ) -> Result<ReleaseListStatement> {
         let pin = pin.for_release_list(opts)?;
         let url = well_known_url(project);
@@ -1526,7 +1550,7 @@ impl PackslipBackend {
                 format!("fetching the release list of packslip:{project} from {url}")
             })?;
         let (list, forge) =
-            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
+            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged(), lock)
                 .await
                 .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
         if list.predicate.project != project && !matches!(pin, Pin::Forge(_)) {
@@ -1550,6 +1574,7 @@ impl PackslipBackend {
         repo: &str,
         pin: &Pin,
         opts: &PackslipOptions<'_>,
+        lock: &[&PlatformInfo],
     ) -> Result<Option<ReleaseListStatement>> {
         let pin = pin.for_release_list(opts)?;
         let path = match repository_subpath(project) {
@@ -1569,7 +1594,7 @@ impl PackslipBackend {
             return Ok(None);
         };
         let (list, forge) =
-            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged())
+            verify_project_release_list(project, &text, &pin, !opts.allow_unlogged(), lock)
                 .await
                 .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
         if list.predicate.project != project && !matches!(pin, Pin::Forge(_)) {
@@ -1594,8 +1619,11 @@ impl PackslipBackend {
         pin: &Pin,
         opts: &PackslipOptions<'_>,
     ) -> Result<Vendor> {
+        // The version is chosen, so the list is held to the repository IDs
+        // its lock entries commit to, as the bundle will be.
+        let lock: Vec<&PlatformInfo> = tv.lock_platforms.values().collect();
         if let Some(repo) = Self::repo(project) {
-            let Some(list) = self.github_list(project, &repo, pin, opts).await? else {
+            let Some(list) = self.github_list(project, &repo, pin, opts, &lock).await? else {
                 return Ok(Vendor::NoList);
             };
             let Some(entry) = list
@@ -1613,7 +1641,7 @@ impl PackslipBackend {
                 list_missing: false,
             }));
         }
-        let list = self.release_list(project, pin, opts).await?;
+        let list = self.release_list(project, pin, opts, &lock).await?;
         let Some(entry) = list
             .predicate
             .releases
@@ -1806,12 +1834,12 @@ impl PackslipBackend {
     ) -> Result<Option<String>> {
         let Some(repo) = Self::repo(project) else {
             return Ok(self
-                .release_list(project, pin, opts)
+                .release_list(project, pin, opts, &[])
                 .await?
                 .predicate
                 .latest);
         };
-        let list = self.github_list(project, &repo, pin, opts).await?;
+        let list = self.github_list(project, &repo, pin, opts, &[]).await?;
         if let Some(latest) = list.as_ref().and_then(|l| l.predicate.latest.as_ref()) {
             return Ok(Some(latest.clone()));
         }
@@ -2041,7 +2069,7 @@ impl PackslipBackend {
             // The repository's own signed list, when it keeps one, is the
             // last word on what it names: a withdrawn release goes, and a
             // release whose tag names no version is added.
-            if let Some(list) = self.github_list(&project, &repo, &pin, &opts).await? {
+            if let Some(list) = self.github_list(&project, &repo, &pin, &opts, &[]).await? {
                 for entry in &list.predicate.releases {
                     if entry.is_yanked() {
                         versions.retain(|v| v.version != entry.version);
@@ -2058,7 +2086,7 @@ impl PackslipBackend {
             }
             return Ok(versions);
         }
-        let list = self.release_list(&project, &pin, &opts).await?;
+        let list = self.release_list(&project, &pin, &opts, &[]).await?;
         let mut versions: Vec<VersionInfo> = list
             .predicate
             .releases
@@ -3602,6 +3630,31 @@ mod tests {
             let raw: ToolVersionOptions = toml::from_str(r#"workflow = "release.yml""#).unwrap();
             pin(project, &PackslipOptions::new(&raw))
         }
+    }
+
+    #[test]
+    fn a_verified_release_list_is_cached_per_lock_commitment() {
+        let project = "github.com/jdx/hk";
+        let pin = Pin::Forge(Policy::for_project(project).unwrap());
+        let entry = |id: Option<&str>| PlatformInfo {
+            signer: Some(
+                "sigstore-oidc:https://github.com/jdx/hk/.github/workflows/release.yml".into(),
+            ),
+            repository_id: id.map(str::to_string),
+            ..Default::default()
+        };
+        let (pinned, other, unpinned) = (entry(Some("922514152")), entry(Some("1")), entry(None));
+        let key = |lock: &[&PlatformInfo]| release_list_cache_key(project, &pin, true, lock);
+        // A list verified without the lockfile, or under one that pins
+        // another repository, is not the verification a lockfile gets.
+        assert_ne!(key(&[]), key(&[&pinned]));
+        assert_ne!(key(&[&pinned]), key(&[&other]));
+        assert_ne!(key(&[&pinned]), key(&[&pinned, &other]));
+        // Entries that commit to the same repository share one.
+        assert_eq!(key(&[&pinned]), key(&[&pinned, &pinned]));
+        assert_eq!(key(&[&pinned, &other]), key(&[&other, &pinned]));
+        // An entry with no ID commits to no repository.
+        assert_eq!(key(&[]), key(&[&unpinned]));
     }
 
     #[tokio::test]
