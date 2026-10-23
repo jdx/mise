@@ -144,3 +144,37 @@ assert_succeed "cd namespaced && MISE_YES=0 mise bootstrap --skip tools"
 assert "test -f $HOME/global_finish_ran"
 assert "test -f $HOME/global_task_ran"
 assert_fail "test -f $HOME/project_task_ran"
+
+# an exact `bootstrap` wins over an alias an untrusted task declares, as it
+# does for `mise run bootstrap`
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[tasks.bootstrap]
+run = "touch $HOME/global_task_ran"
+EOF
+rm -f "$HOME"/*_ran
+mkdir -p alias-shadow
+cat <<'EOF' >alias-shadow/mise.toml
+[tasks.setup]
+alias = "bootstrap"
+run = "touch $HOME/project_task_ran"
+EOF
+assert_succeed "cd alias-shadow && MISE_YES=0 mise bootstrap --skip tools"
+assert "test -f $HOME/global_task_ran"
+assert_fail "test -f $HOME/project_task_ran"
+
+# a templated `run` entry that resolves to an untrusted task is refused before
+# that task's tools are installed
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[tasks.bootstrap]
+run = [{ task = "{{ 'finish' }}" }, "touch $HOME/global_task_ran"]
+EOF
+rm -f "$HOME"/*_ran
+mkdir -p tool-shadow
+cat <<'EOF' >tool-shadow/mise.toml
+[tasks.finish]
+tools = { dummy = "2.0.0" }
+run = "touch $HOME/project_task_ran"
+EOF
+assert_fail "cd tool-shadow && MISE_YES=0 mise bootstrap" "not trusted"
+assert_fail "test -f $HOME/project_task_ran"
+assert_fail "test -e $MISE_DATA_DIR/installs/dummy/2.0.0"

@@ -1309,6 +1309,16 @@ impl TaskExecutor {
             to_run.push(t);
         }
         let sub_deps = Deps::new_pruned(config, to_run, completion_state).await?;
+        // Scheduling an injected task installs its tools before `run_task_sched` looks at it,
+        // so a run that must not execute untrusted tasks refuses the whole sub-graph here,
+        // before any of it is scheduled.
+        if crate::config::runs_only_trusted_tasks()
+            && let Some(task) = sub_deps
+                .all()
+                .find(|t| !crate::config::task_is_trusted(config, t))
+        {
+            return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
+        }
         // Give these tasks their keep-order slots now, while the order they were
         // written in is still known and before any of them can produce a line.
         // Reaching this from `&self` is fine: the state is behind the shared
