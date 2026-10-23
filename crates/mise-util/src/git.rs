@@ -699,6 +699,53 @@ pub fn sanitize_git_command(cmd: &mut std::process::Command) {
     }
 }
 
+/// Prepares a Git command that needs no repository, such as `ls-remote <url>`
+/// or `credential fill`. Git still looks for a repository from its working
+/// directory upwards and obeys the config it finds there (`core.sshCommand`
+/// and `credential.helper` are shell commands), and the directory mise runs in
+/// may be a project the user has not trusted. Only the user's own and the
+/// system Git configuration apply to the command.
+pub fn detach_git_command(cmd: &mut std::process::Command) {
+    cmd.current_dir(detached_git_dir());
+    // An inherited GIT_DIR would select a repository again.
+    sanitize_git_command(cmd);
+}
+
+/// The user's home directory, or the filesystem root when there is none.
+fn detached_git_dir() -> &'static Path {
+    let home: &'static Path = crate::env::HOME.as_path();
+    if home.is_absolute() && home.is_dir() {
+        home
+    } else {
+        Path::new(std::path::MAIN_SEPARATOR_STR)
+    }
+}
+
+/// Reads `git ls-remote <options> -- <remote> <patterns>` for a remote given by
+/// URL. The `--` keeps a remote that starts with `-` from being read as an
+/// option (`--upload-pack=<cmd>` runs a command), and the command runs detached
+/// from the current directory (see [`detach_git_command`]).
+pub async fn ls_remote(options: &[&str], remote: &str, patterns: &[&str]) -> Result<String> {
+    let mut cmd = tokio::process::Command::new("git");
+    detach_git_command(cmd.as_std_mut());
+    let args = ls_remote_args(options, remote, patterns);
+    crate::cmd::cmd_read_async_command(cmd, "git", &args).await
+}
+
+/// The argument list for [`ls_remote`].
+pub fn ls_remote_args<'a>(
+    options: &[&'a str],
+    remote: &'a str,
+    patterns: &[&'a str],
+) -> Vec<&'a str> {
+    let mut args = vec!["ls-remote"];
+    args.extend_from_slice(options);
+    args.push("--");
+    args.push(remote);
+    args.extend_from_slice(patterns);
+    args
+}
+
 const GIT_CONTEXT_ENV: &[&str] = &[
     "GIT_DIR",
     "GIT_WORK_TREE",

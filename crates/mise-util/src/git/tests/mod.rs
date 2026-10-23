@@ -293,6 +293,115 @@ fn git_errors_that_are_not_utf8_are_reported() {
     assert!(format!("{err:#}").contains("\u{fffd}.git"), "{err:#}");
 }
 
+#[test]
+fn ls_remote_args_end_options_before_the_remote() {
+    assert_eq!(
+        ls_remote_args(&["--tags", "--refs"], "--upload-pack=touch x", &["go*"]),
+        [
+            "ls-remote",
+            "--tags",
+            "--refs",
+            "--",
+            "--upload-pack=touch x",
+            "go*"
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn ls_remote_ignores_the_repository_it_is_run_in() {
+    struct RestoreCwd(std::path::PathBuf);
+    impl Drop for RestoreCwd {
+        fn drop(&mut self) {
+            std::env::set_current_dir(&self.0).unwrap();
+        }
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let marker = tmp.path().join("marker");
+    // Files anyone can commit: to git, a directory that holds them is a bare repository.
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(repo.join("objects")).unwrap();
+    std::fs::create_dir_all(repo.join("refs")).unwrap();
+    std::fs::write(repo.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+    std::fs::write(
+        repo.join("config"),
+        format!(
+            "[core]\n\tbare = true\n\tsshCommand = \"touch '{}'; false\"\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    // Stands in for ssh, so the test stays off the network.
+    let global = tmp.path().join("gitconfig");
+    std::fs::write(&global, "[core]\n\tsshCommand = false\n").unwrap();
+    let mut env = crate::testing::EnvVarGuard::new();
+    env.set("GIT_CONFIG_GLOBAL", &global);
+    env.set("GIT_CONFIG_NOSYSTEM", "1");
+    let remote = "ssh://git@example.invalid/x/y.git";
+
+    let _cwd = RestoreCwd(std::env::current_dir().unwrap());
+    std::env::set_current_dir(&repo).unwrap();
+    assert!(ls_remote(&[], remote, &["HEAD"]).await.is_err());
+    assert!(
+        !marker.exists(),
+        "ran the sshCommand of the current directory"
+    );
+
+    env.set("GIT_DIR", &repo);
+    assert!(ls_remote(&[], remote, &["HEAD"]).await.is_err());
+    assert!(!marker.exists(), "ran the sshCommand of $GIT_DIR");
+
+    // A remote that looks like an option stays a remote.
+    let upload_pack = format!("--upload-pack=touch '{}'", marker.display());
+    assert!(ls_remote(&[], &upload_pack, &["HEAD"]).await.is_err());
+    assert!(!marker.exists(), "read the remote as --upload-pack");
+}
+
+#[cfg(unix)]
+#[test]
+fn git_credential_fill_ignores_the_repository_it_is_run_in() {
+    let tmp = tempfile::tempdir().unwrap();
+    let marker = tmp.path().join("marker");
+    let repo = tmp.path().join("repo");
+    std::fs::create_dir_all(repo.join("objects")).unwrap();
+    std::fs::create_dir_all(repo.join("refs")).unwrap();
+    std::fs::write(repo.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+    std::fs::write(
+        repo.join("config"),
+        format!(
+            "[core]\n\tbare = true\n[credential]\n\thelper = \"!touch '{}'; false\"\n",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    let global = tmp.path().join("gitconfig");
+    std::fs::write(&global, "").unwrap();
+    let mut env = crate::testing::EnvVarGuard::new();
+    env.set("GIT_CONFIG_GLOBAL", &global);
+    env.set("GIT_CONFIG_NOSYSTEM", "1");
+
+    struct RestoreCwd(std::path::PathBuf);
+    impl Drop for RestoreCwd {
+        fn drop(&mut self) {
+            std::env::set_current_dir(&self.0).unwrap();
+        }
+    }
+    let _cwd = RestoreCwd(std::env::current_dir().unwrap());
+    std::env::set_current_dir(&repo).unwrap();
+    // Each call is cached per provider and host, so use names no other test asks for.
+    crate::tokens::get_git_credential_token("cwd-test", "cwd.example.invalid");
+    assert!(
+        !marker.exists(),
+        "ran the credential.helper of the current directory"
+    );
+
+    env.set("GIT_DIR", &repo);
+    crate::tokens::get_git_credential_token("git-dir-test", "git-dir.example.invalid");
+    assert!(!marker.exists(), "ran the credential.helper of $GIT_DIR");
+}
+
 mod worktree;
 
 #[test]

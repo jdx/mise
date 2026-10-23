@@ -2558,12 +2558,23 @@ where
     K: AsRef<OsStr>,
     V: AsRef<OsStr>,
 {
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.envs(extra_env);
+    cmd_read_async_command(cmd, program, args).await
+}
+
+/// [`cmd_read_async_inherited_env`] for a `program` command the caller has
+/// already given its environment and working directory.
+pub(crate) async fn cmd_read_async_command(
+    mut cmd: tokio::process::Command,
+    program: &str,
+    args: &[&str],
+) -> Result<String> {
     let display_args = args.join(" ");
     debug!("$ {program} {display_args}");
 
-    let output = tokio::process::Command::new(program)
+    let output = cmd
         .args(args)
-        .envs(extra_env)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
