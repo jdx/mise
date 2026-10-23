@@ -57,6 +57,12 @@ idea:
 - `.tool-versions` needs trust only when it contains template syntax or inline
   tool options such as `node[postinstall=...] 24`.
 - Idiomatic version files such as `.nvmrc` never need trust.
+- A project's [`mise.lock`](/dev-tools/mise-lock.html) is read with its config.
+  Until that config is trusted, the lockfile only pins versions and checksums:
+  mise ignores an entry that locks a tool to a backend other than the one its
+  tool key or the registry selects, or that adds options, and downloads from
+  where the backend normally would instead of the lockfile's URLs and
+  dependency graphs.
 - Task files, including TOML files from
   [`task_config.includes`](/tasks/task-discovery.html), need trust only when they
   contain template syntax or list `secrets`.

@@ -335,6 +335,86 @@ fn basic_tool(version: &str, backend: &str) -> LockfileTool {
 }
 
 #[test]
+fn untrusted_lockfile_may_confirm_a_backend_but_not_choose_one() {
+    // the registry's backend for a shorthand, or the backend the tool key names
+    assert!(!locked_backend_needs_trust("shfmt", "aqua:mvdan/sh"));
+    assert!(!locked_backend_needs_trust("node", "core:node"));
+    assert!(!locked_backend_needs_trust(
+        "github:acme/tool",
+        "github:acme/tool"
+    ));
+    // inline options need trust in a tool key, so they do in a lock entry
+    assert!(locked_backend_needs_trust(
+        "github:acme/tool",
+        "github:acme/tool[api_url=http://example.com/api/v3]"
+    ));
+    assert!(locked_backend_needs_trust(
+        "shfmt",
+        "http:shfmt[url=http://example.com/shfmt.tar.gz,postinstall=id]"
+    ));
+    // a backend the registry never installs the tool from
+    assert!(locked_backend_needs_trust(
+        "shellcheck",
+        "cargo:https://example.com/shellcheck.git"
+    ));
+    assert!(locked_backend_needs_trust(
+        "gron",
+        "ubi:http://example.com/gron.tar.gz"
+    ));
+    assert!(locked_backend_needs_trust(
+        "github:acme/tool",
+        "github:acme/other"
+    ));
+    // names that designate no tool
+    assert!(locked_backend_needs_trust("shfmt", ""));
+    assert!(locked_backend_needs_trust("shfmt", "asdf:"));
+    assert!(locked_backend_needs_trust("", "core:node"));
+}
+
+#[test]
+fn untrusted_lockfile_keeps_pins_but_not_download_locations() {
+    let mut pinned = basic_tool("3.10.0", "aqua:mvdan/sh");
+    pinned.platforms.insert(
+        "linux-x64".to_string(),
+        PlatformInfo {
+            checksum: Some("sha256:abc".to_string()),
+            url: Some("http://example.com/shfmt".to_string()),
+            url_api: Some("http://example.com/api/v3/assets/1".to_string()),
+            ..Default::default()
+        },
+    );
+    pinned.uv = Some(GraphRef::Sidecar {
+        dir: PathBuf::from("graphs/shfmt"),
+        base: PathBuf::new(),
+        digest: format!("sha256:{}", "0".repeat(64)),
+        cell: Default::default(),
+    });
+    let mut lockfile = Lockfile::default();
+    lockfile.tools.insert(
+        "shfmt".to_string(),
+        vec![
+            pinned,
+            basic_tool("3.11.0", "http:shfmt[url=http://example.com/shfmt.tar.gz]"),
+        ],
+    );
+    lockfile
+        .tools
+        .insert("pipx".to_string(), vec![basic_tool("1.0", "pipx:a")]);
+    lockfile.drop_what_needs_trust(Path::new("mise.lock"));
+
+    assert_eq!(lockfile.tools.keys().collect::<Vec<_>>(), vec!["shfmt"]);
+    let [entry] = lockfile.tools["shfmt"].as_slice() else {
+        panic!("expected one entry: {:?}", lockfile.tools["shfmt"]);
+    };
+    assert_eq!(entry.version, "3.10.0");
+    assert!(entry.uv.is_none());
+    let info = &entry.platforms["linux-x64"];
+    assert_eq!(info.checksum.as_deref(), Some("sha256:abc"));
+    assert!(info.url.is_none());
+    assert!(info.url_api.is_none());
+}
+
+#[test]
 fn tool_stub_finds_nearest_base_config_lockfile_from_where_it_lives() {
     let temp = tempfile::tempdir().unwrap();
     let project = fs::canonicalize(temp.path()).unwrap().join("project");
@@ -2657,7 +2737,7 @@ fn test_read_lockfile_at_only_promotes_when_primary_exists() {
         .insert("node".to_string(), vec![basic_tool("20.0.0", "core:node")]);
     legacy.save(&legacy_path).unwrap();
 
-    let legacy_only = read_lockfile_at(primary_path.clone(), Some(legacy_path.clone()));
+    let legacy_only = read_lockfile_at(primary_path.clone(), Some(legacy_path.clone()), true);
     assert_eq!(legacy_only.lockfile_version(), 0);
 
     let mut primary = Lockfile::default();
@@ -2676,7 +2756,7 @@ fn test_read_lockfile_at_only_promotes_when_primary_exists() {
     primary.save(&primary_path).unwrap();
     invalidate_caches();
 
-    let mixed = read_lockfile_at(primary_path, Some(legacy_path));
+    let mixed = read_lockfile_at(primary_path, Some(legacy_path), true);
     assert_eq!(mixed.lockfile_version(), CURRENT_LOCKFILE_VERSION);
     assert!(mixed.uses_request_bindings());
     assert!(

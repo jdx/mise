@@ -2371,9 +2371,18 @@ fn lockfile_path_for_tool_source_with_root(
 /// the directory it is invoked from never matters. Local and environment
 /// configs are skipped: a committed stub resolves the same way everywhere.
 pub fn lockfile_path_for_tool_stub(stub: &Path) -> Option<(PathBuf, bool)> {
+    let (config_path, monorepo_root) = tool_stub_config(stub)?;
+    Some(lockfile_path_for_config(
+        &config_path,
+        monorepo_root.as_deref(),
+    ))
+}
+
+/// The project config whose lockfile a tool stub reads from (see
+/// [`lockfile_path_for_tool_stub`]), with its monorepo lockfile root.
+fn tool_stub_config(stub: &Path) -> Option<(PathBuf, Option<PathBuf>)> {
     let stub = resolve_tool_stub_path(stub)?;
     let monorepo_root = crate::config::monorepo_lockfile_root_from_dir(stub.parent()?);
-    let monorepo_root = monorepo_root.as_deref();
     let dirs = file::all_dirs(stub.parent()?, &env::MISE_CEILING_PATHS).ok()?;
     dirs.iter().find_map(|dir| {
         crate::config::config_paths_in_dir(dir)
@@ -2385,7 +2394,7 @@ pub fn lockfile_path_for_tool_stub(stub: &Path) -> Option<(PathBuf, bool)> {
                     && !crate::config::is_global_config(path)
                     && !crate::config::is_system_config(path)
             })
-            .map(|config_path| lockfile_path_for_config(&config_path, monorepo_root))
+            .map(|config_path| (config_path, monorepo_root.clone()))
     })
 }
 
@@ -4704,12 +4713,12 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
         // AUTO_ENV_NAMES is ordered least to most specific, so reverse it here
         // to read the most specific (e.g. macos-arm64) first.
         for path in active_lockfile_paths_in_dir(&root) {
-            push_existing_lockfile(&mut all, &path);
+            push_existing_lockfile(config, &mut all, &path);
         }
     }
     let roots_end = all.len();
     for legacy_path in legacy_lockfiles {
-        push_existing_lockfile(&mut all, legacy_path);
+        push_existing_lockfile(config, &mut all, legacy_path);
     }
     // Highest precedence first: the innermost root's lockfiles, each root in
     // its own order, then the legacy lockfiles.
@@ -4768,15 +4777,87 @@ fn read_lockfiles_by_precedence(config: &Config) -> Arc<Vec<Lockfile>> {
     cached(&key).unwrap_or_default()
 }
 
-fn push_existing_lockfile(lockfiles: &mut Vec<Lockfile>, path: &Path) {
+fn push_existing_lockfile(config: &Config, lockfiles: &mut Vec<Lockfile>, path: &Path) {
     if !path.exists() {
         return;
     }
     match Lockfile::read(path) {
-        Ok(lockfile) => lockfiles.push(lockfile),
+        Ok(mut lockfile) => {
+            if !lockfile_is_trusted(config, path) {
+                lockfile.drop_what_needs_trust(path);
+            }
+            lockfiles.push(lockfile)
+        }
         Err(err) => {
             handle_lockfile_read_error(err, path);
         }
+    }
+}
+
+/// Whether a lock entry that binds `short` to the backend `full` may only
+/// apply once the lockfile's config is trusted.
+///
+/// A tool key in a config that loads without trust may not carry inline
+/// options, and a lock entry must not add what the key could not: `api_url`
+/// sends the user's token to the host it names, `postinstall` and `bin_path`
+/// run commands or change PATH. Nor may it choose the backend: until the
+/// project is trusted its lock may confirm the backend the tool key or the
+/// registry selects, or that the user installed the tool with, but not
+/// replace it.
+fn locked_backend_needs_trust(short: &str, full: &str) -> bool {
+    if crate::args::split_bracketed_opts(full).is_some() {
+        return true;
+    }
+    let short = backend::unalias_backend(short);
+    if short.contains(':') {
+        return short != full;
+    }
+    let without_opts =
+        |full: &'static str| crate::args::split_bracketed_opts(full).map_or(full, |(full, _)| full);
+    let registry = crate::registry::REGISTRY
+        .get(short.as_ref())
+        .is_some_and(|tool| tool.backends.iter().any(|b| without_opts(b.full) == full));
+    !registry && crate::toolset::install_state::get_tool_full(&short).as_deref() != Some(full)
+}
+
+impl Lockfile {
+    /// Reduce a lockfile whose config is not trusted to what it may decide
+    /// without that trust: which version each tool is pinned to, and the
+    /// checksums that version is verified against.
+    ///
+    /// An entry that chooses the backend or adds options goes whole (see
+    /// [`locked_backend_needs_trust`]); its artifacts belong to the backend it
+    /// names. The rest keep their pins but lose what says where to download
+    /// from: artifact URLs, conda packages and dependency graphs, which carry
+    /// the URLs of every dependency. The backend then downloads from where it
+    /// normally would.
+    fn drop_what_needs_trust(&mut self, path: &Path) {
+        for (short, entries) in &mut self.tools {
+            entries.retain_mut(|entry| {
+                if let Some(full) = &entry.backend
+                    && locked_backend_needs_trust(short, full)
+                {
+                    // The same file is read for each config and for the
+                    // merged view, so warn once per entry.
+                    warn_once!(
+                        "{} locks {short}@{} to {full}, which needs its config to be trusted; ignoring the entry. Run `mise trust` to use it",
+                        display_path(path),
+                        entry.version,
+                    );
+                    return false;
+                }
+                entry.uv = None;
+                entry.aube = None;
+                for info in entry.platforms.values_mut() {
+                    info.url = None;
+                    info.url_api = None;
+                    info.conda_deps = None;
+                }
+                true
+            });
+        }
+        self.tools.retain(|_, entries| !entries.is_empty());
+        self.conda_packages.clear();
     }
 }
 
@@ -4788,10 +4869,18 @@ fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {
         .as_deref()
         .and_then(|root| legacy_lockfile_path_for_config(path, root));
 
-    read_lockfile_at(lockfile_path, legacy_path)
+    let trusted = lockfile_is_trusted(config, &lockfile_path);
+    read_lockfile_at(lockfile_path, legacy_path, trusted)
 }
 
-fn read_lockfile_at(lockfile_path: PathBuf, legacy_path: Option<PathBuf>) -> Arc<Lockfile> {
+/// Read the lockfile at `lockfile_path`, merged with a legacy monorepo
+/// lockfile. Unless `trusted`, it is reduced to what a lockfile may decide
+/// before its config is trusted ([`Lockfile::drop_what_needs_trust`]).
+fn read_lockfile_at(
+    lockfile_path: PathBuf,
+    legacy_path: Option<PathBuf>,
+    trusted: bool,
+) -> Arc<Lockfile> {
     let cache_key: Vec<PathBuf> = std::iter::once(lockfile_path.clone())
         .chain(legacy_path.iter().cloned())
         .collect();
@@ -4819,6 +4908,9 @@ fn read_lockfile_at(lockfile_path: PathBuf, legacy_path: Option<PathBuf>) -> Arc
             "failed to read legacy monorepo lockfile {} (possible corruption): {err:?}",
             display_path(legacy_path)
         );
+    }
+    if !trusted {
+        lockfile.drop_what_needs_trust(&lockfile_path);
     }
 
     let lockfile = Arc::new(lockfile);
@@ -4864,7 +4956,13 @@ pub(crate) fn read_lockfile_for_tool_source(
         .map(|(path, _)| path)
         .filter(|path| path != &lockfile_path);
 
-    Ok(read_lockfile_at(lockfile_path, legacy_path)
+    // A stub run from elsewhere reads the lockfile of a config that is not
+    // loaded, so that config's trust decides.
+    let trusted = lockfile_is_trusted(config, &lockfile_path)
+        || matches!(source, ToolSource::ToolStub(stub)
+            if tool_stub_config(stub)
+                .is_some_and(|(config_path, _)| crate::config::config_file::is_path_trusted(&config_path)));
+    Ok(read_lockfile_at(lockfile_path, legacy_path, trusted)
         .as_ref()
         .clone())
 }
