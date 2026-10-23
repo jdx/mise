@@ -226,8 +226,9 @@ struct ResolvedPackage {
     pkg: AquaPackage,
     v: String,
     v_prefixed: Option<String>,
-    /// `v`, when it is the release tag and not a guess: the tag was listed or
-    /// is in the lockfile's URL, or the recipe's `version_prefix` makes it.
+    /// `v`, when it is the release tag and not a guess: the tag was listed, or
+    /// is in the lockfile's URL and maps back to the version, or the recipe's
+    /// `version_prefix` makes it.
     release_tag: Option<String>,
 }
 
@@ -621,11 +622,11 @@ impl Backend for AquaBackend {
             (url, url_api, v.to_string(), filename, digest)
         };
 
-        // A lockfile's URL only hints at `v` (the prefix may not be in it), so it
-        // can't name the tag. Otherwise `v` is the tag the asset was found under.
+        // A lockfile's URL only hints at `v` (the prefix may not be in it), so
+        // the tag is the one resolved before the URL was read.
         let release_tag = match validated_url {
             Some(_) => release_tag,
-            None => Some(v.clone()),
+            None => selected_release_tag(&pkg, &v, release_tag.as_deref()),
         };
 
         let original_linux_replacement = pkg.replacements.get("linux").cloned();
@@ -890,6 +891,7 @@ impl Backend for AquaBackend {
             });
         }
         ensure_url_safe_version(&v)?;
+        let known_tag = (tag.is_some() || pkg.version_prefix.is_some()).then(|| v.clone());
 
         // Check if this platform is supported
         if !is_platform_supported(&pkg.supported_envs, target_os, target_arch) {
@@ -1066,7 +1068,11 @@ impl Backend for AquaBackend {
             match verifier
                 .verify_provenance_at_lock_time(
                     &pkg,
-                    &v,
+                    AquaVersion {
+                        v: &v,
+                        release_tag: selected_release_tag(&pkg, &v, known_tag.as_deref())
+                            .as_deref(),
+                    },
                     artifact_url,
                     provenance.as_ref().unwrap(),
                     required.is_some(),
@@ -1154,6 +1160,7 @@ impl AquaBackend {
         let locked_tag = existing_platform
             .as_deref()
             .and_then(github_release_tag_from_url);
+        let tag_is_locked = locked_tag.is_some();
         let tag = if let Some(tag) = locked_tag {
             Some(tag)
         } else if existing_platform.is_some() {
@@ -1188,6 +1195,17 @@ impl AquaBackend {
         let mut v_prefixed =
             (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
+        // A listed tag was mapped to the version when it was listed; a locked
+        // URL's tag has to be mapped here, or it could name another release.
+        let current = PlatformTarget::from_current();
+        let tag_names_version = !tag_is_locked
+            || tag.as_deref().is_some_and(|tag| {
+                let (target_os, target_arch) = Self::to_aqua_platform(&current);
+                versioned_package_from_tag(&pkg, tag, target_os, target_arch, None)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|(version, _)| version == tv.version)
+            });
         let versions = resolved_package_version_candidates(&tv.version, tag.as_deref(), &pkg);
         let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
         let pkg = Self::package_with_options_for_pkg(tv, pkg, &versions)?;
@@ -1206,7 +1224,10 @@ impl AquaBackend {
         }
         validate(&pkg, &v)?;
         ensure_url_safe_version(&v)?;
-        let release_tag = (tag.is_some() || pkg.version_prefix.is_some()).then(|| v.clone());
+        let release_tag = match tag {
+            Some(_) => tag_names_version.then(|| v.clone()),
+            None => pkg.version_prefix.is_some().then(|| v.clone()),
+        };
 
         Ok(ResolvedPackage {
             platform_key,
@@ -1753,12 +1774,13 @@ impl AquaBackend {
     async fn verify_provenance_at_lock_time(
         &self,
         pkg: &AquaPackage,
-        v: &str,
+        version: AquaVersion<'_>,
         artifact_url: &str,
         detected: &ProvenanceType,
         attestations_required: bool,
         checksum: &mut Option<String>,
     ) -> Result<Option<ProvenanceType>> {
+        let AquaVersion { v, release_tag } = version;
         let tmp_dir = Self::lock_time_download_dir()?;
         let filename = get_filename_from_url(artifact_url);
         let artifact_path = tmp_dir.path().join(&filename);
@@ -1848,7 +1870,7 @@ impl AquaBackend {
             }
             ProvenanceType::Slsa { .. } => {
                 let provenance_url = self
-                    .run_slsa_check(&artifact_path, pkg, v, Some(v), tmp_dir.path(), None)
+                    .run_slsa_check(&artifact_path, pkg, v, release_tag, tmp_dir.path(), None)
                     .await?;
                 Ok(Some(ProvenanceType::Slsa {
                     url: Some(provenance_url),
@@ -4689,6 +4711,18 @@ fn slsa_source_repository(pkg: &AquaPackage) -> String {
     format!("{owner}/{name}")
 }
 
+/// The release tag of `v`, the version an install or lock picked for `pkg`.
+/// A GitHub release package's asset was found in the release `v` names, so
+/// `v` is its tag. For other packages, a `v` whose URL happened to work is no
+/// tag, so it counts only when it is `known_tag`: listed, locked, or made by
+/// `version_prefix`.
+fn selected_release_tag(pkg: &AquaPackage, v: &str, known_tag: Option<&str>) -> Option<String> {
+    if pkg.package_type() == AquaPackageType::GithubRelease {
+        return Some(v.to_string());
+    }
+    known_tag.filter(|tag| *tag == v).map(str::to_string)
+}
+
 /// The tag a package's SLSA provenance must have been built from, as
 /// slsa-verifier's `--source-tag` took it: the recipe's `source_tag`, or else
 /// the version's release tag, when mise knows it. A `source_tag` of `-` turns
@@ -5463,6 +5497,28 @@ slsa_provenance:
         assert_eq!(
             slsa_source_repository(&pkg("  source_uri: github.com/owner/source\n")),
             "github.com/owner/source"
+        );
+    }
+
+    #[test]
+    fn selected_release_tag_needs_a_release_or_a_known_tag() {
+        let release = pkg_from_yaml(
+            "type: github_release\nrepo_owner: owner\nrepo_name: tool\nasset: tool.tar.gz\n",
+        );
+        let http = pkg_from_yaml(
+            "type: http\nrepo_owner: owner\nrepo_name: tool\nurl: https://example.com/tool-{{.SemVer}}.tar.gz\n",
+        );
+        // The asset was found in the release `v1.2.3` names.
+        assert_eq!(
+            selected_release_tag(&release, "v1.2.3", None).as_deref(),
+            Some("v1.2.3")
+        );
+        // A URL that worked for `v1.2.3` says nothing about the tag.
+        assert_eq!(selected_release_tag(&http, "v1.2.3", None), None);
+        assert_eq!(selected_release_tag(&http, "v1.2.3", Some("1.2.3")), None);
+        assert_eq!(
+            selected_release_tag(&http, "v1.2.3", Some("v1.2.3")).as_deref(),
+            Some("v1.2.3")
         );
     }
 
