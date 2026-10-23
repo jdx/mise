@@ -440,6 +440,35 @@ struct HookRoots<'a> {
     project: &'a Path,
 }
 
+impl<'a> HookRoots<'a> {
+    /// The directory a `{ task = ... }` hook runs `mise run` in. A global hook names a task of
+    /// the user's own config, and runs it in the active project only once the user has trusted
+    /// that project: the child `mise run` loads the project's config, and an untrusted project
+    /// could define a task of the same name and have it run on `cd`. Elsewhere it runs in the
+    /// root of the config that defines it.
+    fn task_root(self, hook: &Hook) -> &'a Path {
+        if hook.global && self.project != self.config && !project_is_trusted(self.project) {
+            self.config
+        } else {
+            self.project
+        }
+    }
+}
+
+/// Whether every project config and default task directory the `mise run` of a task hook
+/// would load from `root` up is trusted. `.tool-versions` files define no tasks, so they do
+/// not need to be. A task directory counts too: the child requires trust for its files, so an
+/// untrusted one would fail the whole hook rather than only the task that lives there.
+fn project_is_trusted(root: &Path) -> bool {
+    crate::config::load_config_paths_from(root, &crate::config::DEFAULT_CONFIG_FILENAMES, false)
+        .iter()
+        .filter(|path| !crate::config::is_global_config(path))
+        .all(|path| {
+            crate::config::is_tool_versions_file(path) || config_file::is_path_trusted(path)
+        })
+        && crate::config::default_task_dirs_trusted_from(root)
+}
+
 async fn run_matched_hook(
     config: &Arc<Config>,
     ts: &Toolset,
@@ -450,7 +479,7 @@ async fn run_matched_hook(
     dry_run: bool,
 ) {
     if dry_run {
-        if let Err(e) = preview_matched_hook(roots.project, hook) {
+        if let Err(e) = preview_matched_hook(roots, hook) {
             warn!(
                 "failed to preview {} hook in {}: {e}",
                 hook.hook,
@@ -462,16 +491,7 @@ async fn run_matched_hook(
     let hook_type = hook.hook;
     match &hook.action {
         HookAction::Task { task_name } => {
-            if let Err(e) = execute_task(
-                config,
-                ts,
-                roots.config,
-                roots.project,
-                hook,
-                task_name,
-                installed_tools,
-            )
-            .await
+            if let Err(e) = execute_task(config, ts, roots, hook, task_name, installed_tools).await
             {
                 warn!(
                     "{hook_type} hook in {} failed: {e}",
@@ -531,11 +551,16 @@ async fn run_matched_hook(
     }
 }
 
-fn preview_matched_hook(root: &Path, hook: &Hook) -> Result<()> {
+fn preview_matched_hook(roots: HookRoots<'_>, hook: &Hook) -> Result<()> {
+    let root = roots.project;
     let action = match &hook.action {
-        HookAction::Task { task_name } => shell_words::join(
-            once("mise".to_string()).chain(task_hook_args(root, hook.hook, task_name)),
-        ),
+        HookAction::Task { task_name } => {
+            shell_words::join(once("mise".to_string()).chain(task_hook_args(
+                roots.task_root(hook),
+                hook.hook,
+                task_name,
+            )))
+        }
         HookAction::CurrentShell { script, .. } => script.clone(),
         HookAction::Run { shell, .. } => {
             let Some(run) = hook.action.run_for_current_platform() else {
@@ -736,12 +761,15 @@ fn hook_cwd<'a>(hook: &Hook, project_root: &'a Path) -> Option<&'a Path> {
 async fn execute_task(
     config: &Arc<Config>,
     ts: &Toolset,
-    config_root: &Path,
-    project_root: &Path,
+    roots: HookRoots<'_>,
     hook: &Hook,
     task_name: &str,
     installed_tools: Option<&[InstalledToolInfo]>,
 ) -> Result<()> {
+    let HookRoots {
+        config: config_root,
+        project: project_root,
+    } = roots;
     let mise_bin = crate::shims::running_mise_bin();
 
     let mut env = if hook.hook == Hooks::Preinstall {
@@ -779,11 +807,20 @@ async fn execute_task(
         crate::secrets::DENIED_MARKER.to_string(),
         "hook".to_string(),
     );
+    // Nobody typed this `mise run`: it runs because of a `cd` or an install. Unlike a typed
+    // one, it must not trust the config it loads, so untrusted config fails it instead.
+    env.insert(
+        config_file::REQUIRE_EXPLICIT_TRUST_ENV.to_string(),
+        "1".to_string(),
+    );
 
-    cmd(mise_bin, task_hook_args(project_root, hook.hook, task_name))
-        .stdout_to_stderr()
-        .full_env(env)
-        .run()?;
+    cmd(
+        mise_bin,
+        task_hook_args(roots.task_root(hook), hook.hook, task_name),
+    )
+    .stdout_to_stderr()
+    .full_env(env)
+    .run()?;
     Ok(())
 }
 

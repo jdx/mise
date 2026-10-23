@@ -489,6 +489,12 @@ pub fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
     Ok(())
 }
 
+/// Parses a purely dot-separated numeric version such as `2026.08.19`, which
+/// neither SemVer nor `versions` accept because of the leading zeros.
+fn numeric_components(v: &str) -> Option<Vec<u64>> {
+    v.split('.').map(|c| c.parse().ok()).collect()
+}
+
 /// Checks whether the current version is older than a backend-selected candidate.
 /// Uses SemVer precedence when possible, then the general version comparison;
 /// versions that cannot be ordered are considered outdated when they differ.
@@ -498,6 +504,8 @@ pub fn is_outdated_version(current: &str, latest: &str) -> bool {
     }
     if let (Some(c), Some(l)) = (Version::new(current), Version::new(latest)) {
         c.lt(&l)
+    } else if let (Some(c), Some(l)) = (numeric_components(current), numeric_components(latest)) {
+        c < l
     } else {
         current != latest
     }
@@ -521,6 +529,8 @@ mod tests {
     /// candidates use different prefixes, while retaining non-SemVer comparisons.
     #[test]
     fn test_is_outdated_version() {
+        assert_eq!(is_outdated_version("2026.08.19", "2026.10.21"), true);
+        assert_eq!(is_outdated_version("2026.10.21", "2026.08.19"), false);
         assert_eq!(is_outdated_version("3.7b", "3.7c"), true);
         assert_eq!(is_outdated_version("3.7c", "3.7b"), false);
         assert_eq!(is_outdated_version("1.10.0", "1.12.0"), true);

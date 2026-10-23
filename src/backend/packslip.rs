@@ -285,7 +285,7 @@ async fn revalidate_policy_text(url: &str, store: &Path) -> Result<Option<String
     // expiry and sequence, before anything trusts it.
     let etag = header(ETAG);
     let last_modified = header(LAST_MODIFIED);
-    let text = resp.text().await?;
+    let text = crate::http::buffer_body(resp).await?.text().await?;
     if etag.is_some() || last_modified.is_some() {
         let stored = StoredPolicy {
             url: url.to_string(),
@@ -2244,8 +2244,14 @@ impl PackslipBackend {
         let bundle_path = tv.download_path().join(bundle_name(&project));
         file::create_dir_all(tv.download_path())?;
         ctx.pr.set_message("download packslip".into());
-        crate::packslip::download_file(&located.url, &bundle_path, None, Some(ctx.pr.as_ref()))
-            .await?;
+        crate::packslip::download_file(
+            &located.url,
+            &bundle_path,
+            None,
+            Some(ctx.pr.as_ref()),
+            Some(crate::packslip::MAX_MANIFEST_BYTES),
+        )
+        .await?;
         let pinned: Vec<&String> = located.digest.iter().chain(vendor_digest.iter()).collect();
         if !pinned.is_empty() {
             let (actual, _) = packslip::digest_file(&bundle_path)?;
@@ -2410,8 +2416,14 @@ impl PackslipBackend {
         let signed = statement
             .digest_of(&artifact.name)
             .map(|sha256| format!("sha256:{sha256}"));
-        crate::packslip::download_file(&url, &file_path, signed.as_deref(), Some(ctx.pr.as_ref()))
-            .await?;
+        crate::packslip::download_file(
+            &url,
+            &file_path,
+            signed.as_deref(),
+            Some(ctx.pr.as_ref()),
+            None,
+        )
+        .await?;
 
         // The signed digest and size first, then what the lockfile remembers:
         // a lock entry written from an earlier packslip keeps its checksum and

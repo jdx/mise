@@ -881,7 +881,7 @@ fn ensure_no_downgrade(old: &PlatformInfo, new: &PlatformInfo, backend: &str) ->
     Ok(())
 }
 
-fn provenance_is_downgrade(
+pub(super) fn provenance_is_downgrade(
     old: Option<&ProvenanceType>,
     new: Option<&ProvenanceType>,
     packslip_signer_replaces_provenance: bool,

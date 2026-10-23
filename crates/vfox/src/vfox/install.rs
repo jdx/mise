@@ -164,7 +164,9 @@ impl Vfox {
         let url_str = request_url.to_string();
         let client = client()?;
         let no_redirect_client = no_redirect_client()?;
-        let bytes = retry_async(&url_str, || async {
+        file::mkdirp(path.parent().unwrap())?;
+        // Streamed to the file, so an archive is never held in memory whole.
+        download_to_file(&url_str, &path, || async {
             let resp = match plugin_headers.filter(|h| !h.is_empty()) {
                 Some(plugin_headers) => {
                     // The headers belong to the plugin's own `url`; a rewritten
@@ -190,15 +192,10 @@ impl Vfox {
                     request.send().await?
                 }
             };
-            let resp = resp.error_for_status()?;
-            resp.bytes().await.map(Some)
+            Ok(Some(resp))
         })
-        .await?
+        .await??
         .ok_or_else(|| format!("too many redirects downloading {request_url}"))?;
-        file::mkdirp(path.parent().unwrap())?;
-        let mut file = tokio::fs::File::create(&path).await?;
-        tokio::io::AsyncWriteExt::write_all(&mut file, &bytes).await?;
-        file.sync_all().await?;
         Ok(path)
     }
 

@@ -33,6 +33,12 @@ IMPLICIT_TRUST = "run"
 run = "echo $IMPLICIT_TRUST"
 EOF
 
+# Reading the help of `mise run` or `mise watch` runs nothing the project defines.
+assert_contains "cd run && MISE_YES=0 mise run --help" "Usage: mise run"
+assert_contains "cd run && MISE_YES=0 mise run -h" "Usage: mise run"
+assert_contains "cd run && MISE_YES=0 mise watch -- --help" "Usage: mise watch"
+assert_contains "cd run && MISE_YES=0 mise trust --show" "untrusted"
+
 assert_contains "cd run && MISE_YES=0 mise run hi" "run"
 assert_contains "cd run && MISE_YES=0 mise trust --show" "trusted"
 assert "cd run && mise untrust"

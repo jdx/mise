@@ -308,6 +308,11 @@ async fn execute_task(
         crate::secrets::DENIED_MARKER.to_string(),
         "watch_files".to_string(),
     );
+    // Nobody typed this `mise run`, so it must not trust the config it loads.
+    env.insert(
+        crate::config::config_file::REQUIRE_EXPLICIT_TRUST_ENV.to_string(),
+        "1".to_string(),
+    );
     if let Some(cwd) = &*dirs::CWD {
         env.insert(
             "MISE_ORIGINAL_CWD".to_string(),

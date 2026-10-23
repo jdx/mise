@@ -1975,6 +1975,11 @@
           "description": "Enable experimental features, which may change or be removed in any release.",
           "type": "boolean"
         },
+        "extract_max_ratio": {
+          "default": 100,
+          "description": "How many times its own size a downloaded archive or compressed file may unpack to.",
+          "type": "integer"
+        },
         "fetch_remote_versions_cache": {
           "description": "How long a tool's cached list of available versions stays fresh.",
           "type": "string"

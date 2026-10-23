@@ -118,6 +118,13 @@ also have a global setting, such as
 [`github_attestations`](/configuration/settings.html#github_attestations) or
 [`slsa`](/configuration/settings.html#slsa).
 
+A recipe's GitHub artifact attestations are checked when the release has them.
+A release with none is installed on its other checks, unless the mise registry
+sets [`attestations_since`](/contributing/registry.html#required-attestations)
+on the tool's `aqua:` backend: from that version on, a missing attestation fails
+`mise install` and `mise lock` as a possible downgrade. Earlier versions, and
+versions that are not semantic versions, are unaffected.
+
 The SLSA signer fields are the exact Fulcio certificate URI subject and OIDC
 issuer. Packages whose recipe has no signer skip SLSA and may use another check.
 To supply one, see

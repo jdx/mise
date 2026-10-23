@@ -470,7 +470,9 @@ impl Commands {
 
     /// Shell integration runs on startup and every prompt, so it must not do
     /// an all-project tracked-config scan or mutate installed tools. Deferred
-    /// cleanup will run on the next ordinary command instead.
+    /// cleanup will run on the next ordinary command instead. The cleanup also
+    /// loads the current directory's config, which `trust` and `untrust` are
+    /// deciding about and so must not load.
     fn allows_tool_purgatory_auto_prune(&self) -> bool {
         !matches!(
             self,
@@ -482,15 +484,26 @@ impl Commands {
                 | Self::PublishSystemInstall(_)
                 | Self::Ssh(_)
                 | Self::ToolUpdate(_)
+                | Self::Trust(_)
+                | Self::Untrust(_)
         )
     }
 
+    /// Whether running this command is the user's decision to run the project's code. Asking a
+    /// command for its own help is not: the parser leaves `--help` to the task for `run` and
+    /// `watch`, so those see it here.
     fn implicitly_trusts_active_config(&self) -> bool {
+        // A shim that is not mise itself (the Windows `exe` and `file` modes, the scripts
+        // `reshim` writes for an asdf plugin's shims) runs `mise x -- <tool>` in place of
+        // `handle_shim` and names itself in `__MISE_SHIM_PATH`. The user typed the tool's name,
+        // not `mise exec`, so that dispatch trusts no more than `handle_shim` does.
+        if matches!(self, Self::Exec(_)) && crate::env::MISE_SHIM_PATH.read().unwrap().is_some() {
+            return false;
+        }
         matches!(self, Self::Daemons(cmd) if cmd.starts())
-            || matches!(
-                self,
-                Self::Exec(_) | Self::Install(_) | Self::Run(_) | Self::Watch(_)
-            )
+            || matches!(self, Self::Run(cmd) if !cmd.only_prints_help())
+            || matches!(self, Self::Watch(cmd) if !cmd.only_prints_help())
+            || matches!(self, Self::Exec(_) | Self::Install(_))
     }
 
     /// Builds the subcommand's future on the heap instead of awaiting it
@@ -1109,7 +1122,10 @@ impl Cli {
             cli.command
                 .as_ref()
                 .is_some_and(Commands::implicitly_trusts_active_config)
-                || cli.task.is_some(),
+                || cli
+                    .task
+                    .as_deref()
+                    .is_some_and(|task| !matches!(task, "help" | "-h" | "--help")),
         );
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;
@@ -1980,6 +1996,30 @@ mod tests {
     }
 
     #[test]
+    fn trust_commands_do_not_allow_tool_purgatory_auto_prune() {
+        for args in [
+            vec!["mise", "trust"],
+            vec!["mise", "trust", "--show"],
+            vec!["mise", "trust", "--ignore"],
+            vec!["mise", "untrust"],
+        ] {
+            let cli = parse_cli(&args).unwrap();
+            assert!(
+                !cli.command
+                    .as_ref()
+                    .is_some_and(Commands::allows_tool_purgatory_auto_prune),
+                "expected {args:?} to skip deferred pruning"
+            );
+        }
+        let cli = parse_cli(&["mise", "ls"]).unwrap();
+        assert!(
+            cli.command
+                .as_ref()
+                .is_some_and(Commands::allows_tool_purgatory_auto_prune)
+        );
+    }
+
+    #[test]
     fn test_commands_that_implicitly_trust_active_config() {
         let trusting = [
             vec!["mise", "run", "task"],
@@ -2001,6 +2041,11 @@ mod tests {
             vec!["mise", "hook-env", "-s", "bash"],
             vec!["mise", "env"],
             vec!["mise", "ls"],
+            vec!["mise", "run", "--help"],
+            vec!["mise", "run", "-h"],
+            vec!["mise", "run", "--force", "--help"],
+            vec!["mise", "watch", "--", "--help"],
+            vec!["mise", "watch", "--", "-h"],
         ];
         for args in non_trusting {
             let cli = parse_cli(&args).unwrap();

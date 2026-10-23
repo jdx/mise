@@ -4382,3 +4382,171 @@ fn tool_stub_reference_climbs_out_of_the_lockfile_dir() {
         fs::canonicalize(&stub).unwrap()
     );
 }
+
+/// Relock a single github entry and return the outcome; a refused relock must
+/// leave the locked entry as it was.
+fn relock_replaced_artifact(locked: PlatformInfo, resolved: PlatformInfo) -> Result<bool> {
+    let mut lockfile = Lockfile::default();
+    lockfile.set_platform_info(
+        "tool",
+        "1.0.0",
+        Some("github:owner/tool"),
+        &BTreeMap::new(),
+        "linux-x64",
+        locked.clone(),
+    );
+    let result = (
+        "tool".to_string(),
+        "1.0.0".to_string(),
+        "github:owner/tool".to_string(),
+        Platform::parse("linux-x64").unwrap(),
+        Ok(resolved),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        crate::lockfile::LockResolutionStatus::Optional,
+    );
+    let applied = apply_lock_result(&mut lockfile, result);
+    if applied.is_err() {
+        assert_eq!(lockfile.tools["tool"][0].platforms["linux-x64"], locked);
+    }
+    applied
+}
+
+#[test]
+fn replaced_artifact_must_not_lose_locked_provenance() {
+    let at = |url: &str, checksum: &str, provenance: Option<ProvenanceType>| PlatformInfo {
+        checksum: Some(checksum.to_string()),
+        url: Some(url.to_string()),
+        provenance,
+        ..Default::default()
+    };
+    let info =
+        |checksum: &str, provenance| at("https://example.com/tool.tar.gz", checksum, provenance);
+    let extra = |checksum: &str, provenance: Option<ProvenanceType>| PlatformInfo {
+        additional_artifacts: vec![ArtifactInfo {
+            checksum: Some(checksum.to_string()),
+            url: "https://example.com/extra.tar.gz".to_string(),
+            provenance,
+            ..Default::default()
+        }],
+        ..info("sha256:tool", None)
+    };
+    let attested = || Some(ProvenanceType::GithubAttestations);
+    let cosign = || Some(ProvenanceType::Cosign);
+
+    // Other bytes under the same URL without the locked provenance are refused.
+    let err = relock_replaced_artifact(info("sha256:old", attested()), info("sha256:new", None))
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("no github-attestations provenance like the locked one"),
+        "{err}"
+    );
+    assert!(
+        relock_replaced_artifact(info("sha256:old", attested()), info("sha256:new", cosign()))
+            .is_err()
+    );
+    assert!(
+        relock_replaced_artifact(extra("sha256:old", attested()), extra("sha256:new", None))
+            .is_err()
+    );
+    // So is a replacement uploaded under another name the asset selection still matches.
+    assert!(
+        relock_replaced_artifact(
+            info("sha256:old", attested()),
+            at("https://example.com/tool2.tar.gz", "sha256:new", None)
+        )
+        .is_err()
+    );
+
+    // Same provenance, same bytes, an incomparable digest, or no locked
+    // provenance are not downgrades.
+    assert!(
+        relock_replaced_artifact(
+            info("sha256:old", attested()),
+            info("sha256:new", attested())
+        )
+        .is_ok()
+    );
+    assert!(
+        relock_replaced_artifact(info("sha256:old", attested()), info("sha256:old", None)).is_ok()
+    );
+    assert!(
+        relock_replaced_artifact(info("blake3:old", attested()), info("sha256:new", None)).is_ok()
+    );
+    assert!(relock_replaced_artifact(info("sha256:old", None), info("sha256:new", None)).is_ok());
+}
+
+#[test]
+fn test_provenance_merge_does_not_follow_changed_checksum() {
+    let info = |checksum: &str, provenance: Option<ProvenanceType>| PlatformInfo {
+        checksum: Some(checksum.to_string()),
+        url: Some("https://example.com/tool.tar.gz".to_string()),
+        provenance: provenance.clone(),
+        additional_artifacts: vec![ArtifactInfo {
+            checksum: Some(checksum.to_string()),
+            url: "https://example.com/extra.tar.gz".to_string(),
+            provenance,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let attested = Some(ProvenanceType::GithubAttestations);
+
+    // Other bytes under the same URL do not inherit the provenance of the old ones.
+    let merged = info("sha256:new", None).merge_with(&info("sha256:old", attested.clone()));
+    assert_eq!(merged.checksum.as_deref(), Some("sha256:new"));
+    assert_eq!(merged.provenance, None);
+    assert_eq!(merged.additional_artifacts[0].provenance, None);
+
+    // Same bytes, or digests that cannot be compared, merge as before.
+    let merged = info("sha256:old", None).merge_with(&info("sha256:OLD", attested.clone()));
+    assert_eq!(merged.provenance, attested);
+    assert_eq!(merged.additional_artifacts[0].provenance, attested);
+    let merged = info("blake3:new", None).merge_with(&info("sha256:old", attested.clone()));
+    assert_eq!(merged.checksum.as_deref(), Some("sha256:old"));
+    assert_eq!(merged.provenance, attested);
+}
+
+#[test]
+fn test_set_platform_info_does_not_carry_provenance_to_changed_checksum() {
+    let relock = |locked: &str, resolved: &str, provenance: Option<ProvenanceType>| {
+        let mut lockfile = Lockfile::default();
+        for (checksum, provenance) in [
+            (locked, Some(ProvenanceType::GithubAttestations)),
+            (resolved, provenance),
+        ] {
+            lockfile.set_platform_info(
+                "tool",
+                "1.0.0",
+                Some("github:owner/tool"),
+                &BTreeMap::new(),
+                "linux-x64",
+                PlatformInfo {
+                    checksum: Some(checksum.to_string()),
+                    url: Some("https://example.com/tool.tar.gz".to_string()),
+                    provenance,
+                    ..Default::default()
+                },
+            );
+        }
+        let info = &lockfile.tools["tool"][0].platforms["linux-x64"];
+        (info.checksum.clone().unwrap(), info.provenance.clone())
+    };
+
+    let attested = Some(ProvenanceType::GithubAttestations);
+    let cosign = Some(ProvenanceType::Cosign);
+
+    // Other bytes under the same URL do not inherit the provenance of the old ones.
+    assert_eq!(
+        relock("sha256:old", "sha256:new", None),
+        ("sha256:new".to_string(), None)
+    );
+    assert_eq!(
+        relock("sha256:old", "sha256:new", cosign.clone()),
+        ("sha256:new".to_string(), cosign)
+    );
+    // Same bytes, or digests that cannot be compared, keep the recorded provenance.
+    assert_eq!(relock("sha256:old", "sha256:OLD", None).1, attested);
+    assert_eq!(relock("blake3:old", "sha256:new", None).1, attested);
+}

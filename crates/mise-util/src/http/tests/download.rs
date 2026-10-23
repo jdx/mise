@@ -249,27 +249,101 @@ async fn test_download_without_validator_restarts_from_zero() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn test_download_does_not_resume_automatically_decoded_response() {
+async fn test_download_stores_encoded_response_as_sent() {
+    use std::io::Write;
+
     let _guard = set_test_http_retries(0);
-    let (port, count) = spawn_canned_server(vec![truncated_encoded_download_response()]).await;
-    let url = format!("http://127.0.0.1:{port}/artifact");
+    // About 1 KiB on the wire, 1 MiB if it were decoded.
+    let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+    gzip.write_all(&vec![0; 1024 * 1024]).unwrap();
+    let gzip = gzip.finish().unwrap();
+    let mut api_key = HeaderMap::new();
+    api_key.insert("x-api-key", HeaderValue::from_static("secret"));
+    let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+    let mut server = mockito::Server::new_async().await;
     let dir = tempfile::tempdir().unwrap();
-    let destination = dir.path().join("artifact");
+
+    // The server ignores the `identity` it was asked for. Bytes that are not
+    // a valid stream of the encoding would fail to decode.
+    for (encoding, body) in [
+        ("gzip", gzip),
+        ("zstd", b"not zstd".to_vec()),
+        ("br", b"not brotli".to_vec()),
+        ("deflate", b"not deflate".to_vec()),
+    ] {
+        let mock = server
+            .mock("GET", format!("/{encoding}").as_str())
+            .match_header("accept-encoding", "identity")
+            .with_header("content-encoding", encoding)
+            .with_body(&body)
+            .expect(2)
+            .create_async()
+            .await;
+        let url = format!("{}/{encoding}", server.url());
+        // Once through the shared client, once through the one that follows
+        // redirects itself.
+        for headers in [&HeaderMap::new(), &api_key] {
+            let destination = dir.path().join(encoding);
+            client
+                .download_file_with_headers(&url, &destination, headers, None)
+                .await
+                .unwrap();
+            assert_eq!(std::fs::read(&destination).unwrap(), body, "{encoding}");
+        }
+        mock.assert_async().await;
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn test_limited_download_stops_at_its_limit() {
+    let _guard = set_test_http_retries(0);
+    let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let dir = tempfile::tempdir().unwrap();
+    let destination = dir.path().join("task");
+
+    // A declared length over the limit is refused before anything is written.
+    let declared = server
+        .mock("GET", "/declared")
+        .with_body(vec![b'x'; 9])
+        .create_async()
+        .await;
+    let url = format!("{}/declared", server.url());
+    let err = client
+        .download_file_limited(&url, &destination, 8, None)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("is larger than 8 B"), "{err}");
+    assert!(!destination.exists());
+    declared.assert_async().await;
+
+    // Without a length, the bytes that arrive are counted.
+    let chunked = server
+        .mock("GET", "/chunked")
+        .with_chunked_body(|w| w.write_all(&[b'x'; 9]))
+        .create_async()
+        .await;
+    let url = format!("{}/chunked", server.url());
+    let err = client
+        .download_file_limited(&url, &destination, 8, None)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("is larger than 8 B"), "{err}");
+    assert!(!destination.exists());
     let partial = PartialDownload::new(
         &destination,
         download_request_hash(&url.parse().unwrap(), &HeaderMap::new()),
     )
     .unwrap();
-    let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
-
-    let _err = client
-        .download_file(&url, &destination, None)
-        .await
-        .unwrap_err();
-
-    assert_eq!(count.load(Ordering::SeqCst), 1);
     assert!(!partial.path.exists());
-    assert!(!partial.state_path.exists());
+    chunked.assert_async().await;
+
+    // At the limit is fine.
+    client
+        .download_file_limited(&url, &destination, 9, None)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(&destination).unwrap(), [b'x'; 9]);
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -446,7 +520,10 @@ async fn test_download_total_timeout_bounds_trickling_response() {
             &HeaderMap::new(),
             None,
             None,
-            Duration::from_millis(500),
+            DownloadLimits {
+                time: Duration::from_millis(500),
+                bytes: None,
+            },
         ),
     )
     .await

@@ -179,7 +179,8 @@ pub struct RegistryBackend {
     pub max_version: Option<&'static str>,
     /// The first version whose release assets carry GitHub attestations. From
     /// it on, a missing attestation is a downgrade, not a tool that doesn't
-    /// publish them. Only the one version being installed is compared, never
+    /// publish them. `github:` and `aqua:` backends only; for `aqua:` the
+    /// recipe must also declare the attestations. Only the one version being installed is compared, never
     /// a version list, so unlike `min_version` any `version_order` works: a
     /// version that isn't semver is simply not required.
     pub attestations_since: Option<&'static str>,
@@ -685,8 +686,8 @@ fn parse_registry_backend(value: &toml::Value) -> Result<RegistryBackend> {
                         eyre::eyre!("backend attestations_since must be a string")
                     })?;
                     ensure!(
-                        full.starts_with("github:"),
-                        "backend attestations_since is only supported for github: backends"
+                        full.starts_with("github:") || full.starts_with("aqua:"),
+                        "backend attestations_since is only supported for github: and aqua: backends"
                     );
                     semver::Version::parse(value)
                         .wrap_err("backend attestations_since must be a semantic version")?;
@@ -1802,7 +1803,10 @@ backends = [{{ full = "{full}", attestations_since = {since} }}]
         }
         // Any version order: only the installed version is compared.
         assert!(parse("source", "github:example/tool", r#""2.50.0""#).is_ok());
-        assert!(parse("semver", "aqua:example/tool", r#""2.50.0""#).is_err());
+        // aqua recipes that declare GitHub attestations take the same cutoff.
+        let (tool, _) = parse("semver", "aqua:example/tool", r#""2.50.0""#).unwrap();
+        assert_eq!(tool.backends[0].attestations_since, Some("2.50.0"));
+        assert!(parse("semver", "npm:example-tool", r#""2.50.0""#).is_err());
     }
 
     #[test]

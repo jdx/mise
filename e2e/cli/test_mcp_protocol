@@ -286,6 +286,26 @@ def test_install_tool_unknown(proc):
     return 0
 
 
+def test_install_tool_options(proc):
+    send(proc, {
+        "jsonrpc": "2.0", "id": 9,
+        "method": "tools/call",
+        "params": {
+            "name": "install_tool",
+            "arguments": {"tool": "dummy[postinstall=touch mcp-postinstall]", "version": "2.0.0"},
+        },
+    })
+    resp = recv(proc, timeout=60.0)
+    if not resp or "error" not in resp:
+        print(f"ERROR: Bad install_tool response: {resp}")
+        return 1
+
+    assert "tool options are not accepted" in resp["error"]["message"], resp
+    assert not os.path.exists("mcp-postinstall"), "the client's postinstall ran"
+    print("✓ install_tool refuses tool options")
+    return 0
+
+
 def main():
     mise_path = find_mise()
     if not mise_path:
@@ -311,6 +331,7 @@ def main():
             ("run_task unknown task", test_run_task_unknown),
             ("install_tool", test_install_tool),
             ("install_tool failure", test_install_tool_unknown),
+            ("install_tool options", test_install_tool_options),
         ]
         for name, test_fn in tests:
             print(f"\n--- {name} ---")
