@@ -26,7 +26,7 @@ use crate::manifest::{
     MEDIA_TYPE_DOCKER_MANIFEST_LIST, MEDIA_TYPE_OCI_INDEX, MEDIA_TYPE_OCI_MANIFEST,
 };
 use mise_ui::progress_report::SingleReport;
-use mise_util::http::{HTTP, HTTP_UPLOAD};
+use mise_util::http::{HTTP, HTTP_UPLOAD, buffer_body};
 
 /// A parsed registry reference.
 #[derive(Debug, Clone)]
@@ -481,7 +481,7 @@ async fn fetch_bearer_token(
             .await
             .wrap_err_with(|| format!("fetching OAuth2 token from {realm}"))?
             .error_for_status()?;
-        let resp: TokenResponse = resp.json().await?;
+        let resp: TokenResponse = buffer_body(resp).await?.json().await?;
         return Ok(resp.access_token.or(resp.token));
     }
 
@@ -514,6 +514,17 @@ async fn fetch_bearer_token(
             None => format!("fetching anonymous token from {realm}"),
         })?;
     Ok(resp.token.or(resp.access_token))
+}
+
+/// The start of a failed response's body, for an error message. Bounded in size
+/// and time, so a registry cannot make mise hold or wait for an arbitrarily
+/// large one.
+async fn error_body(resp: reqwest::Response) -> String {
+    mise_util::http::read_bounded_error_body(
+        resp,
+        network::http_timeout(&mise_settings::Settings::get()),
+    )
+    .await
 }
 
 /// Fetch a manifest (or index) as JSON, retrying once on `401` with a
@@ -557,7 +568,7 @@ async fn fetch_manifest_json(
         } else {
             ""
         };
-        let body = resp.text().await.unwrap_or_default();
+        let body = error_body(resp).await;
         bail!(
             "fetching {url} failed: {}{hint}\n{}",
             status.as_u16(),
@@ -565,10 +576,11 @@ async fn fetch_manifest_json(
         );
     }
     let content_type = header_str(&resp, "content-type");
-    let bytes = resp
-        .bytes()
+    let bytes = buffer_body(resp)
         .await
-        .wrap_err_with(|| format!("reading response from {url}"))?;
+        .wrap_err_with(|| format!("reading response from {url}"))?
+        .bytes()
+        .await?;
     // A manifest requested by digest must hash to that digest, otherwise a
     // registry could serve different content than the pin promises.
     if let Some(expected) = pinned_digest {
@@ -617,13 +629,16 @@ macro_rules! retry_transient {
 
 /// Download a blob (config or layer) into memory, refreshing auth on `401`
 /// (via [`AuthSession::send`]) and retrying transient failures. `pr` shows
-/// byte progress for large layers.
+/// byte progress for large layers. `size` is what the blob's descriptor
+/// declares; a registry that sends more is refused before the digest is
+/// checked, so it cannot make mise hold more than the manifest promised.
 async fn download_blob(
     session: &mut AuthSession,
     url: &str,
+    size: u64,
     pr: Option<&dyn SingleReport>,
 ) -> Result<Vec<u8>> {
-    retry_transient!("GET", url, download_blob_once(session, url, pr).await)
+    retry_transient!("GET", url, download_blob_once(session, url, size, pr).await)
 }
 
 /// One download attempt: GET the blob through the auth session, streaming
@@ -631,6 +646,7 @@ async fn download_blob(
 async fn download_blob_once(
     session: &mut AuthSession,
     url: &str,
+    size: u64,
     pr: Option<&dyn SingleReport>,
 ) -> Result<Vec<u8>> {
     let resp = session
@@ -656,9 +672,17 @@ async fn download_blob_once(
         }
         pr.set_position(0);
     }
+    let too_large =
+        || eyre::eyre!("blob {url} is larger than the {size} bytes its descriptor declares");
+    if resp.content_length().is_some_and(|len| len > size) {
+        return Err(too_large());
+    }
     let mut resp = resp;
     let mut bytes = Vec::new();
     while let Some(chunk) = resp.chunk().await? {
+        if (bytes.len() + chunk.len()) as u64 > size {
+            return Err(too_large());
+        }
         bytes.extend_from_slice(&chunk);
         if let Some(pr) = pr {
             pr.inc(chunk.len() as u64);
@@ -734,7 +758,7 @@ pub async fn pull_base_image(
         "{base_url}/v2/{}/blobs/{}",
         r.repository, manifest.config.digest
     );
-    let config_bytes = download_blob(&mut session, &config_url, None).await?;
+    let config_bytes = download_blob(&mut session, &config_url, manifest.config.size, None).await?;
     // Preserve the byte-level digest by writing under the exact digest name.
     layout.write_blob_with_digest(&manifest.config.digest, &config_bytes)?;
 
@@ -750,7 +774,7 @@ pub async fn pull_base_image(
         // Abandon the progress bar on any failure (download *or* the write
         // below) so a failed layer never leaves a stale in-progress bar.
         let result = async {
-            let bytes = download_blob(&mut session, &layer_url, Some(&*pr)).await?;
+            let bytes = download_blob(&mut session, &layer_url, layer.size, Some(&*pr)).await?;
             layout.write_blob_with_digest(&layer.digest, &bytes)
         }
         .await;
@@ -1048,7 +1072,7 @@ pub async fn pull_artifact(reference: &str, dest: &Path) -> Result<()> {
     let scratch = tempfile::tempdir()?;
     for (layer, kind) in layers {
         let url = format!("{base_url}/v2/{}/blobs/{}", r.repository, layer.digest);
-        let bytes = download_blob(&mut session, &url, None).await?;
+        let bytes = download_blob(&mut session, &url, layer.size, None).await?;
         let actual = sha256_digest(&bytes);
         if actual != layer.digest {
             bail!(
@@ -1144,7 +1168,7 @@ pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> 
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => return Ok(None),
         s => bail!("fetching {manifest_url} failed: {}", s.as_u16()),
     }
-    let mut body: serde_json::Value = resp.json().await?;
+    let mut body: serde_json::Value = buffer_body(resp).await?.json().await?;
     // An index (multi-arch, e.g. a tag maintained with --update-index):
     // descend into the entry for the build platform so its layers remain
     // reusable.
@@ -1197,7 +1221,7 @@ pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> 
         "{base_url}/v2/{}/blobs/{}",
         r.repository, manifest.config.digest
     );
-    let config_bytes = download_blob(&mut session, &config_url, None).await?;
+    let config_bytes = download_blob(&mut session, &config_url, manifest.config.size, None).await?;
     let config: serde_json::Value = serde_json::from_slice(&config_bytes)?;
     let diff_ids: Vec<String> = config
         .get("rootfs")
@@ -1363,7 +1387,7 @@ pub async fn push_image(
                 pusher.base_url, pusher.repository, desc.digest
             );
             let result = async {
-                let bytes = download_blob(&mut pusher.session, &url, Some(&*pr)).await?;
+                let bytes = download_blob(&mut pusher.session, &url, desc.size, Some(&*pr)).await?;
                 layout.write_blob_with_digest(&desc.digest, &bytes)
             }
             .await;
@@ -1729,7 +1753,7 @@ impl Pusher {
             // answers with 201 Created. Accept both before finalizing below.
             if status != StatusCode::ACCEPTED && status != StatusCode::CREATED {
                 resp.error_for_status_ref()?;
-                let body = resp.text().await.unwrap_or_default();
+                let body = error_body(resp).await;
                 bail!(
                     "blob PATCH upload failed: {}{}\n{}",
                     status.as_u16(),
@@ -1758,7 +1782,7 @@ impl Pusher {
             let status = resp.status();
             if !status.is_success() {
                 resp.error_for_status_ref()?;
-                let body = resp.text().await.unwrap_or_default();
+                let body = error_body(resp).await;
                 bail!(
                     "blob upload failed: {}{}\n{}",
                     status.as_u16(),
@@ -1790,7 +1814,7 @@ impl Pusher {
             let status = resp.status();
             if status != StatusCode::CREATED && status != StatusCode::ACCEPTED {
                 resp.error_for_status_ref()?;
-                let body = resp.text().await.unwrap_or_default();
+                let body = error_body(resp).await;
                 bail!(
                     "blob upload failed: {}{}\n{}",
                     status.as_u16(),
@@ -1838,7 +1862,7 @@ impl Pusher {
             .wrap_err_with(|| format!("PUT {url}"))?;
         let status = resp.status();
         if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
+            let body = error_body(resp).await;
             bail!(
                 "manifest push failed: {} {url}{}\n{}",
                 status.as_u16(),
@@ -1906,7 +1930,7 @@ impl Pusher {
             s => bail!("fetching current index for {url} failed: {}", s.as_u16()),
         }
         let content_type = header_str(&resp, "content-type");
-        let bytes = resp.bytes().await?;
+        let bytes = buffer_body(resp).await?.bytes().await?;
         let body: serde_json::Value = serde_json::from_slice(&bytes)?;
 
         // Already an index — take its entries.
@@ -1954,11 +1978,16 @@ impl Pusher {
             .ok_or_else(|| eyre::eyre!("manifest has no config digest"))?
             .to_string();
         crate::layout::validate_sha256_digest(&config_digest)?;
+        let config_size = body
+            .get("config")
+            .and_then(|c| c.get("size"))
+            .and_then(|s| s.as_u64())
+            .ok_or_else(|| eyre::eyre!("manifest has no config size"))?;
         let config_url = format!(
             "{}/v2/{}/blobs/{config_digest}",
             self.base_url, self.repository
         );
-        let config_bytes = download_blob(&mut self.session, &config_url, None).await?;
+        let config_bytes = download_blob(&mut self.session, &config_url, config_size, None).await?;
         let config: serde_json::Value = serde_json::from_slice(&config_bytes)?;
         let platform = platform_from_config_value(&config)?;
         Ok(Descriptor {
@@ -2314,6 +2343,61 @@ mod tests {
             config_get.assert_async().await;
             layer_get.assert_async().await;
         }
+    }
+
+    #[tokio::test]
+    async fn a_blob_larger_than_its_descriptor_is_refused() {
+        use sha2::{Digest, Sha256};
+
+        let mut server = mockito::Server::new_async().await;
+        let reference = format!("{}/tools:base", server.host_with_port());
+        let td = tempfile::tempdir().unwrap();
+        let layer = b"layer";
+        let digest = format!(
+            "sha256:{}",
+            crate::layer::hex_encode(&Sha256::digest(layer))
+        );
+        let config = serde_json::json!({
+            "architecture": "amd64", "os": "linux",
+            "rootfs": {"type": "layers", "diff_ids": [digest]}
+        })
+        .to_string();
+        let config_digest = format!(
+            "sha256:{}",
+            crate::layer::hex_encode(&Sha256::digest(config.as_bytes()))
+        );
+        server.mock("GET", "/v2/tools/manifests/base")
+            .with_header("content-type", MEDIA_TYPE_OCI_MANIFEST)
+            .with_body(serde_json::json!({
+                "schemaVersion": 2, "mediaType": MEDIA_TYPE_OCI_MANIFEST,
+                "config": {"mediaType": "application/vnd.oci.image.config.v1+json", "digest": config_digest, "size": config.len()},
+                "layers": [{"mediaType": "application/vnd.oci.image.layer.v1.tar", "digest": digest, "size": layer.len()}]
+            }).to_string())
+            .create_async().await;
+        server
+            .mock("GET", format!("/v2/tools/blobs/{config_digest}").as_str())
+            .with_body(&config)
+            .create_async()
+            .await;
+        // The registry answers the 5-byte layer with far more than that.
+        let layer_get = server
+            .mock("GET", format!("/v2/tools/blobs/{digest}").as_str())
+            .with_body(vec![0; 1024 * 1024])
+            .expect(1)
+            .create_async()
+            .await;
+
+        let layout = ImageLayout::init(&td.path().join("layout")).unwrap();
+        let err = pull_base_image(&reference, &layout, None, None)
+            .await
+            .err()
+            .unwrap();
+        assert!(
+            format!("{err:#}").contains("larger than the 5 bytes its descriptor declares"),
+            "{err:#}"
+        );
+        // Not a transient failure, so not retried.
+        layer_get.assert_async().await;
     }
 
     #[test]

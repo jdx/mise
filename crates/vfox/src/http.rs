@@ -178,6 +178,84 @@ pub(crate) fn retry_delay(attempt: usize) -> Duration {
     Duration::from_millis(base_ms * jitter_pct / 100)
 }
 
+/// Most decoded bytes `http.get` and `http.try_get` hold in memory. reqwest
+/// inflates compressed replies transparently, so a few KiB on the wire can
+/// otherwise become gigabytes.
+pub(crate) const MAX_BODY_BYTES: usize = 128 * 1024 * 1024;
+
+/// The body as text, decoded like [`reqwest::Response::text`], or the inner
+/// error once it passes [`MAX_BODY_BYTES`]. The outer error is the transfer's.
+pub(crate) async fn text_limited(
+    mut resp: reqwest::Response,
+) -> Result<Result<String, String>, reqwest::Error> {
+    let mut bytes = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        if bytes.len() + chunk.len() > MAX_BODY_BYTES {
+            return Ok(Err(format!(
+                "response body from {} is larger than {MAX_BODY_BYTES} bytes",
+                resp.url()
+            )));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    // Rebuilt so the charset in `Content-Type` decodes it as before.
+    let mut buffered = http::Response::new(bytes);
+    *buffered.headers_mut() = std::mem::take(resp.headers_mut());
+    reqwest::Response::from(buffered).text().await.map(Ok)
+}
+
+/// Writes the body to `file` as it arrives, so a download is never held in
+/// memory whole. The outer error is the transfer's, which the caller may
+/// retry; the inner one is the file's.
+pub(crate) async fn write_body(
+    mut resp: reqwest::Response,
+    file: &mut tokio::fs::File,
+) -> Result<std::io::Result<()>, reqwest::Error> {
+    use tokio::io::AsyncWriteExt;
+
+    while let Some(chunk) = resp.chunk().await? {
+        if let Err(err) = file.write_all(&chunk).await {
+            return Ok(Err(err));
+        }
+    }
+    Ok(file.sync_all().await)
+}
+
+/// Downloads with `send` (retried as a whole on transient failures) into a
+/// new file at `path`, streaming the body instead of buffering it. `send`
+/// returns `None` when there is nothing to download, which is passed on. The
+/// outer error is the transfer's, the inner one the file's; on either, the
+/// partial file is removed.
+pub(crate) async fn download_to_file<F, Fut>(
+    url: &str,
+    path: &std::path::Path,
+    mut send: F,
+) -> Result<std::io::Result<Option<()>>, reqwest::Error>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<Option<reqwest::Response>, reqwest::Error>>,
+{
+    let result = retry_async(url, || {
+        let send = send();
+        async move {
+            let Some(resp) = send.await? else {
+                return Ok(Ok(None));
+            };
+            let resp = resp.error_for_status()?;
+            let mut file = match tokio::fs::File::create(path).await {
+                Ok(file) => file,
+                Err(err) => return Ok(Err(err)),
+            };
+            Ok(write_body(resp, &mut file).await?.map(Some))
+        }
+    })
+    .await;
+    if !matches!(result, Ok(Ok(_))) {
+        let _ = tokio::fs::remove_file(path).await;
+    }
+    result
+}
+
 /// Retry an async operation that issues a request AND extracts the body.
 /// Use for download/text/bytes flows where mid-stream failures (is_body()) need
 /// to restart the whole request. Warns immediately on each transient failure
