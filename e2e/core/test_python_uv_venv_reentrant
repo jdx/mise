@@ -1,23 +1,36 @@
 #!/usr/bin/env bash
 
 export MISE_EXPERIMENTAL=1
-export MISE_PYTHON_GITHUB_ATTESTATIONS=0
 
 # A mise started by `uv venv` (it probes mise's python shims) must not create the venv again,
 # or the shims re-enter mise without bound (discussions#14926).
+
+# uv runs the interpreter it is given, so this stands in for a probed shim: it records the marker
+# the `uv venv` child received, then hands over to the system python.
+cat >probe <<'EOF2'
+#!/bin/sh
+echo "marker=${__MISE_CREATING_VENV:-unset}" >>"$PWD/probe.log"
+exec python3 "$@"
+EOF2
+chmod +x probe
+
 cat >mise.toml <<EOF2
 [tools]
-python = "3.12.3"
 uv = "0.5.4"
 
 [settings]
 python.uv_venv_auto = "create|source"
+python.uv_venv_create_args = ["--python", "$PWD/probe"]
 EOF2
 touch uv.lock
 mise i
 
-__MISE_CREATING_VENV=1 mise env >/dev/null
-assert_fail "test -d .venv"
-
 mise env >/dev/null
 assert "test -d .venv && echo created" "created"
+assert_contains "cat probe.log" "marker=1"
+
+# a mise started inside that child declines to create
+rm -rf .venv probe.log
+__MISE_CREATING_VENV=1 mise env >/dev/null
+assert_fail "test -d .venv"
+assert_fail "test -e probe.log"
