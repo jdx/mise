@@ -258,6 +258,11 @@ fn test_enterprise_api_path_gets_token_only_at_api_url_origin() {
             ("https://github.example.com/api/v3/repos/o/r/tags", API_URL),
             ("http://api.github.com/repos/o/r/tags", API_URL),
             ("http://api.octocorp.ghe.com/repos/o/r/tags", API_URL),
+            // A plain-http api_url would carry the token in the clear.
+            (
+                "http://github.example.com/api/v3/repos/o/r/tags",
+                "http://github.example.com/api/v3",
+            ),
         ] {
             let headers = get_headers(url, api_url).unwrap();
             assert!(

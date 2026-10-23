@@ -377,7 +377,9 @@ Point the tool at the instance's API with the
 mise looks up tokens for the host of `api_url`, here `github.mycompany.com`,
 `gitlab.mycompany.com` and `forgejo.mycompany.com`. The Forgejo backend uses
 Codeberg when `api_url` is not set. For GitHub Enterprise Cloud with data
-residency (`api.<name>.ghe.com`), key tokens by `<name>.ghe.com`.
+residency (`api.<name>.ghe.com`), key tokens by `<name>.ghe.com`. A GitHub
+`api_url` gets the token over `https` only, or on a loopback address such as a
+local proxy.
 
 `MISE_GITHUB_TOKEN` and the other general variables also reach Enterprise hosts.
 To use a different token for github.com and an Enterprise host, set

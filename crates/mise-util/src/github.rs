@@ -1678,12 +1678,22 @@ pub fn is_github_api_url(url: &url::Url) -> bool {
 ///
 /// GitHub's own API hosts are known by name and get one over https only. An
 /// Enterprise Server is known only from configuration, so it has to share the
-/// origin of `api_url`, the API base URL the caller was configured with. The
+/// origin of `api_url`, the API base URL the caller was configured with, and
+/// be reached over https as well. The
 /// environment tokens apply to every host, so nothing further down would keep
 /// them from whoever put `/api/v3` in a task file URL, a release link or a
 /// `Link: rel="next"` header.
 fn may_send_token(url: &url::Url, api_url: &str) -> bool {
     may_send_token_with(url, api_url, &Settings::get().github.enterprise_hosts)
+}
+
+fn is_loopback(url: &url::Url) -> bool {
+    match url.host() {
+        Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    }
 }
 
 /// [`may_send_token`], where `enterprise_hosts` (`github.enterprise_hosts`, a
@@ -1694,16 +1704,19 @@ fn may_send_token_with(url: &url::Url, api_url: &str, enterprise_hosts: &[String
         Some(host) if host == "api.github.com" || is_ghe_com_api_host(host) => {
             url.scheme() == "https"
         }
+        // An Enterprise Server gets one over https too: a plain-http `api_url`
+        // would send the token across the network in the clear. Loopback never
+        // leaves the machine, such as a local proxy in front of the server.
         Some(host) => {
-            is_github_api_url(url)
+            (url.scheme() == "https" || is_loopback(url))
+                && is_github_api_url(url)
                 && (url::Url::parse(api_url).is_ok_and(|api_url| url.origin() == api_url.origin())
-                    || (url.scheme() == "https"
-                        && enterprise_hosts.iter().any(|listed| {
-                            listed
-                                .trim()
-                                .trim_end_matches('.')
-                                .eq_ignore_ascii_case(host)
-                        })))
+                    || enterprise_hosts.iter().any(|listed| {
+                        listed
+                            .trim()
+                            .trim_end_matches('.')
+                            .eq_ignore_ascii_case(host)
+                    }))
         }
         None => false,
     }
