@@ -415,8 +415,11 @@ fn keep_file(path: &Path, keep: Keep<'_>, move_in: bool) -> Result<Option<PathBu
 /// How long recording a pin waits for another process recording one. Each
 /// holds the lock for one small read and write, so this is only exceeded by a
 /// lock that is stuck.
+///
+/// Tests use a shorter wait so a stuck lock fails fast, but long enough that two
+/// dozen threads taking the lock in turn on a loaded runner still all get it.
 const PIN_LOCK_WAIT: std::time::Duration = if cfg!(test) {
-    std::time::Duration::from_millis(200)
+    std::time::Duration::from_secs(2)
 } else {
     std::time::Duration::from_secs(5)
 };
