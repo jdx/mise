@@ -133,6 +133,8 @@ impl Git {
     /// would be redundant (and on servers without
     /// `uploadpack.allowReachableSHA1InWant`, would fail).
     fn checkout(&self, gitref: &str) -> Result<()> {
+        validate_revision("revision", gitref)?;
+        let target = checkout_target(gitref);
         let cmd = git_cmd!(
             &self.dir,
             "-c",
@@ -141,7 +143,7 @@ impl Git {
             "advice.objectNameWarning=false",
             "checkout",
             "--force",
-            gitref,
+            &target,
         );
         let res = cmd
             .stderr_to_stdout()
@@ -155,7 +157,27 @@ impl Git {
                 String::from_utf8_lossy(&res.stdout)
             ));
         }
+        self.ensure_pinned_commit_checked_out(gitref)?;
         touch_dir(&self.dir)?;
+        Ok(())
+    }
+
+    /// When `gitref` is a full commit SHA, fails unless `HEAD` is that commit.
+    ///
+    /// The remote names the refs in a clone, and git does not reject a branch
+    /// or tag spelled like an object ID. 64 hex digits in a SHA-1 repository
+    /// can only be such a ref, which the remote is free to move.
+    fn ensure_pinned_commit_checked_out(&self, gitref: &str) -> Result<()> {
+        if !looks_like_sha(gitref) {
+            return Ok(());
+        }
+        let head = self.current_sha()?;
+        if !head.eq_ignore_ascii_case(gitref) {
+            return Err(eyre!(
+                "{gitref} is not a commit in {}: git checked out {head}",
+                self.dir.display()
+            ));
+        }
         Ok(())
     }
 
@@ -195,8 +217,9 @@ impl Git {
         ))?;
         let prev_rev = self.current_sha()?;
         let checkout_ref = match (remote_ref_kind, qualified_ref.as_deref()) {
-            (Some(RemoteRefKind::Tag), Some(tag_ref)) => tag_ref,
-            _ => &gitref,
+            (Some(RemoteRefKind::Tag), Some(tag_ref)) => tag_ref.to_string(),
+            (None, _) => checkout_target(&gitref),
+            _ => gitref.clone(),
         };
         exec(git_cmd!(
             &self.dir,
@@ -208,6 +231,9 @@ impl Git {
             "--force",
             &checkout_ref
         ))?;
+        if remote_ref_kind.is_none() {
+            self.ensure_pinned_commit_checked_out(&gitref)?;
+        }
         let post_rev = self.current_sha()?;
         touch_dir(&self.dir)?;
 
@@ -729,13 +755,29 @@ fn remote_ref_kind(output: &str, branch_ref: &str, tag_ref: &str) -> Option<Remo
 
 /// Heuristic for whether a ref string is a commit SHA (full SHA-1 or SHA-256).
 ///
-/// Branch and tag names that happen to be all-hex would also match, but git
-/// disallows refs that are valid object IDs anyway (see `git check-ref-format`),
-/// so the heuristic is safe in practice. Abbreviated SHAs are intentionally not
+/// Branch and tag names that happen to be all-hex also match: git itself
+/// accepts them (`git check-ref-format` does), so a remote can publish one.
+/// Checking out a match therefore goes through `checkout_target` and
+/// `ensure_pinned_commit_checked_out`. Abbreviated SHAs are intentionally not
 /// matched — they are ambiguous with short branch names and need server-side
 /// resolution before they can be checked out.
 fn looks_like_sha(s: &str) -> bool {
     matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// The argument to hand `git checkout` for `gitref`.
+///
+/// `git checkout <name>` switches to a local branch called `<name>` before it
+/// considers `<name>` as a commit, and the remote names the branch a clone
+/// starts on. `^{commit}` cannot be part of a ref name, so git resolves the
+/// result as a revision, where a full object ID wins over a ref spelled the
+/// same way, and checks it out detached.
+fn checkout_target(gitref: &str) -> String {
+    if looks_like_sha(gitref) {
+        format!("{gitref}^{{commit}}")
+    } else {
+        gitref.to_string()
+    }
 }
 
 /// Whether `s` looks like a commit SHA shortened below its full length.

@@ -178,6 +178,16 @@ fn update_resolves_short_branches_and_tags() {
         .update_tag("refs/tags/annotated-v1".to_string())
         .unwrap_or_else(|err| panic!("update_tag with full ref failed: {err:#}"));
     assert_eq!(git_in(&clone, &["rev-parse", "HEAD"]), release_sha);
+
+    // 64 hex digits look like a commit SHA, but here they can only name a ref.
+    let sha256_like = "0123456789abcdef".repeat(4);
+    git_in(&origin, &["branch", &sha256_like]);
+    let clone = tmp.path().join("clone-sha256-like");
+    git_in(tmp.path(), &["clone", "-q", &url, clone.to_str().unwrap()]);
+    let err = Git::new(&clone)
+        .update(Some(sha256_like))
+        .expect_err("a branch must not pass for a commit SHA");
+    assert!(format!("{err:#}").contains("is not a commit in"));
 }
 
 #[test]
