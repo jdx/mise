@@ -439,7 +439,7 @@ pub(crate) fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
             } else if kind.is_symlink() {
                 let target = std::fs::read_link(&path)?;
                 let base = path.parent().unwrap().canonicalize()?;
-                if !link_target_stays_within(&real_root, &base, &target) {
+                if !link_target_stays_within(&real_root, root, &base, &target) {
                     return Err(format!(
                         "symlink {path:?} points outside of the install directory: {target:?}"
                     )
@@ -452,22 +452,38 @@ pub(crate) fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
 }
 
 /// Resolves `target` as seen from the directory `base` (already real), following every
-/// link on the way, and reports whether each step stays under `root`. Components that do
-/// not exist are taken as written. A chain of links that loops without leaving `root` is
+/// link on the way, and reports whether each step stays under `root` (the real path of
+/// the tree, which is `given_root` as the caller spelled it). Components that do not
+/// exist are taken as written. A chain of links that loops without leaving `root` is
 /// harmless, so the walk stops after `MAX_LINKS` links and accepts it.
-fn link_target_stays_within(root: &Path, base: &Path, target: &Path) -> bool {
+fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target: &Path) -> bool {
     use std::collections::VecDeque;
     use std::path::Component;
     const MAX_LINKS: usize = 40;
+    let parts = |path: &Path| -> VecDeque<PathBuf> {
+        path.components()
+            .map(|part| PathBuf::from(part.as_os_str()))
+            .collect()
+    };
     let mut current = base.to_path_buf();
-    let mut pending: VecDeque<PathBuf> = target
-        .components()
-        .map(|part| PathBuf::from(part.as_os_str()))
-        .collect();
+    let mut pending = parts(target);
     let mut followed = 0;
     while let Some(part) = pending.pop_front() {
         match Path::new(&part).components().next().unwrap() {
-            Component::Prefix(_) | Component::RootDir => current = part,
+            Component::Prefix(_) | Component::RootDir => {
+                // An absolute path stays inside only if it names the tree's root, by
+                // either spelling; walk the rest from the root rather than through the
+                // root's ancestors.
+                let absolute: PathBuf = std::iter::once(part).chain(pending.drain(..)).collect();
+                let Some(rest) = [root, given_root]
+                    .into_iter()
+                    .find_map(|root| absolute.strip_prefix(root).ok())
+                else {
+                    return false;
+                };
+                pending = parts(rest);
+                current = root.to_path_buf();
+            }
             Component::CurDir => {}
             Component::ParentDir => {
                 current.pop();

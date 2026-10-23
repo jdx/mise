@@ -150,6 +150,15 @@ fn test_ensure_symlinks_stay_within_accepts_links_inside_the_tree() {
     symlink("libexec/bin", root.join("bin")).unwrap();
     symlink("../bin/tool", root.join("libexec/alias")).unwrap();
     symlink("missing", root.join("dangling")).unwrap();
+    // Absolute targets inside the tree, spelled from the root as given and
+    // from its real path.
+    symlink(root.join("libexec/bin/tool"), root.join("abs")).unwrap();
+    symlink(
+        root.canonicalize().unwrap().join("libexec/bin"),
+        root.join("libexec/abs-dir"),
+    )
+    .unwrap();
+    symlink(&root, root.join("libexec/to-root")).unwrap();
 
     ensure_symlinks_stay_within(&root).unwrap();
 }
@@ -166,6 +175,11 @@ fn test_ensure_symlinks_stay_within_refuses_links_out_of_the_tree() {
         ("bin", PathBuf::from("../outside")),
         ("nested/deep/bin", PathBuf::from("../../../outside")),
         ("abs", outside.clone()),
+        // Starts with the root's path but climbs out of it.
+        ("abs-climb", tmp.path().join("install-abs-climb/../outside")),
+        // The root's parent, and a sibling sharing the root's name as a prefix.
+        ("abs-parent", tmp.path().to_path_buf()),
+        ("abs-sibling", tmp.path().join("install-abs-sibling-2")),
     ] {
         let root = tmp
             .path()

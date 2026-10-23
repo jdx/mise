@@ -278,6 +278,27 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn test_decompress_accepts_absolute_links_inside_the_destination() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let dst_path = temp_dir.path().join("unzip");
+        std::fs::create_dir_all(dst_path.join("lib")).unwrap();
+        std::fs::write(dst_path.join("lib/tool"), "tool").unwrap();
+        // Already in the destination, pointing into it by absolute path.
+        std::os::unix::fs::symlink(dst_path.join("lib/tool"), dst_path.join("tool")).unwrap();
+        let dst_path_str = dst_path.to_string_lossy().to_string();
+        let lua = Lua::new();
+        mod_archiver(&lua).unwrap();
+        lua.load(mlua::chunk! {
+            local archiver = require("archiver")
+            archiver.decompress("test/data/foo.zip", $dst_path_str)
+        })
+        .exec()
+        .unwrap();
+        assert!(dst_path.join("foo/test.txt").is_file());
+    }
+
     #[test]
     fn test_decompress_error_can_be_caught_with_pcall() {
         let lua = Lua::new();
