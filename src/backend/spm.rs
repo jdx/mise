@@ -213,8 +213,8 @@ impl Backend for SPMBackend {
                     .await?
                     .into_iter()
                     .map(|r| VersionInfo {
+                        created_at: r.published_at().map(str::to_string),
                         version: r.tag_name,
-                        created_at: r.released_at,
                         ..Default::default()
                     })
                     .rev()

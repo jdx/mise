@@ -23,7 +23,7 @@ use packslip::model::{ReleaseListStatement, ReleaseRef};
 use packslip::sigstore::Policy;
 use serde::{Deserialize, Serialize};
 
-use crate::backend::packslip::{Pin, fetch_policy_text, verify_release_list};
+use crate::backend::packslip::{Pin, fetch_policy_text, pinned_key, verify_release_list};
 use crate::config::Settings;
 use crate::dirs;
 use crate::file;
@@ -61,12 +61,7 @@ impl Stamper {
                 identity_prefix: Some(pin.to_string()),
             })
         } else {
-            let text = if std::path::Path::new(pin).is_file() {
-                file::read_to_string(pin)?
-            } else {
-                pin.to_string()
-            };
-            let key = packslip::minisign::PublicKey::parse(&text)
+            let key = pinned_key(pin)
                 .map_err(|e| eyre!("packslip.stampers entry for {host}: pubkey: {e}"))?;
             Pin::Key(key)
         };

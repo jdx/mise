@@ -228,3 +228,36 @@ fn remove_all_still_removes_ordinary_files_and_directories() {
     // A path that was never there is not an error: most callers remove opportunistically.
     remove_all(dir.path().join("never-existed")).unwrap();
 }
+
+#[cfg(unix)]
+#[test]
+fn remove_all_removes_a_tree_whose_directories_deny_their_owner_writes() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let install = dir.path().join("install");
+    let nested = install.join("lib/python3.14/encodings");
+    create_dir_all(&nested).unwrap();
+    write(nested.join("aliases.py"), "x").unwrap();
+    // A link out of the tree into a sealed directory the removal does not own.
+    let outside = dir.path().join("outside");
+    create_dir_all(&outside).unwrap();
+    write(outside.join("keep.txt"), "important").unwrap();
+    make_symlink(&outside, &install.join("lib/outside")).unwrap();
+    for path in [
+        &outside,
+        &nested,
+        &install.join("lib/python3.14"),
+        &install.join("lib"),
+        &install,
+    ] {
+        fs::set_permissions(path, fs::Permissions::from_mode(0o555)).unwrap();
+    }
+
+    remove_all(&install).unwrap();
+    assert!(!entry_present(&install));
+    let mode = fs::metadata(&outside).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o555);
+    assert!(outside.join("keep.txt").exists());
+    fs::set_permissions(&outside, fs::Permissions::from_mode(0o755)).unwrap();
+}

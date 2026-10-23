@@ -45,7 +45,9 @@ A `mise.toml` loads without trust when it has no template syntax
 
 - `min_version`
 - `[tools]` entries whose values are version strings or arrays of version
-  strings, with no options in the tool name (`"tool[opt=value]"`)
+  strings, with no options in the tool name (`"tool[opt=value]"`) and no
+  [`path:`](/dev-tools/versions.html) version, which puts a directory on `PATH`
+  without an install
 - `[tasks]`, as long as no task lists `secrets`
 
 Anything else needs trust, including tool option tables, `[env]`, `[hooks]`,
@@ -54,9 +56,10 @@ config that is not trusted, so a repository cannot change mirrors, build
 commands or other settings before you trust it. Other files follow the same
 idea:
 
-- `.tool-versions` needs trust only when it contains template syntax or inline
-  tool options such as `node[postinstall=...] 24`.
-- Idiomatic version files such as `.nvmrc` never need trust.
+- `.tool-versions` needs trust only when it contains template syntax, inline
+  tool options such as `node[postinstall=...] 24`, or a `path:` version.
+- Idiomatic version files such as `.nvmrc` need trust only when they contain a
+  `path:` version.
 - A project's [`mise.lock`](/dev-tools/mise-lock.html) is read with its config.
   Until that config is trusted, the lockfile only pins versions and checksums:
   mise ignores an entry that locks a tool to a backend other than the one its
@@ -73,9 +76,11 @@ idea:
   under `tool-stubs`, and for that the project's config needs trust. In safe
   mode it does not apply the options of those stubs.
 - A [`.miserc.toml`](/configuration.html#miserc) never needs trust. It only
-  holds early settings that choose which config files load, and its templates
-  cannot call `exec()`, `read_file()`, `read_json()`, `read_yaml()`, or
-  `read_toml()`.
+  holds early settings that choose which config files load. Templates in a
+  project `.miserc.toml` see no environment variables and may use only `if`
+  statements and a short list of functions and filters, so they cannot leak your
+  environment or hang mise; see
+  [templates in .miserc.toml](/templates.html#miserc-template-support).
 
 Tasks that load without trust run nothing until you run one. Shell completion
 of their arguments leaves out the commands a
@@ -143,8 +148,11 @@ mise trust --ignore            # never load this config
 ```
 
 In normal mode, trust belongs to a config root, usually the directory that holds
-`mise.toml`, so it covers every config file there, such as `mise.local.toml`.
-`mise trust --all` walks subdirectories, skipping hidden and gitignored ones and
+`mise.toml`, so it covers every config file there, such as `mise.local.toml` or
+`.mise/config.toml`. A `mise/`, `.mise/` or `.config/` directory that is a git
+checkout of its own, such as a repository cloned there, is a separate project:
+its config and tasks are not loaded as the directory's, and it is trusted on its
+own. `mise trust --all` walks subdirectories, skipping hidden and gitignored ones and
 `node_modules`, `vendor`, `target`, `dist` and `build`. Trust records are kept in
 the [state directory](/directories.html). See [`mise trust`](/cli/trust.html)
 for every flag.
@@ -165,7 +173,8 @@ Two settings decide trust by location:
   stops configs under these paths from loading. It overrides
   `trusted_config_paths` and `mise trust`. mise reads it before it looks for
   config files, so set it in a [`.miserc.toml`](/configuration.html#miserc) or
-  in `MISE_IGNORED_CONFIG_PATHS`.
+  in `MISE_IGNORED_CONFIG_PATHS`. A project's `.miserc.toml` cannot ignore
+  global or system config.
 
 ```toml
 # ~/.config/mise/config.toml
@@ -186,6 +195,12 @@ A config in a linked git worktree is trusted when the same path in the main
 checkout is trusted. `mise trust --untrust` in the worktree warns that the file
 stays trusted for that reason; use `mise trust --ignore` there to stop it
 loading. Paranoid mode does not share trust between worktrees.
+
+The repository has to list the worktree at its current location: a `.git` file
+that only names one of the repository's worktrees shares nothing. After moving a
+worktree by hand, run `git worktree repair`. A path in the main checkout that is
+a symlink, or sits below one, shares nothing either; trust the worktree's config
+directly instead.
 
 ## Safe mode
 
@@ -215,12 +230,17 @@ build scripts, such as a `cargo:` crate's `build.rs`.
 
 These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
 
-- `exec()`, `read_file()`, `read_json()`, `read_yaml()`, and `read_toml()` in
-  templates, in any config.
+- `exec()`, `read_file()`, `read_json()`, `read_yaml()`, `read_toml()` and
+  `get_env()` in templates, the `hash_file`, `file_size`, `last_modified` and
+  `canonicalize` filters, and the `dir`, `file` and `exists` tests, in any
+  config.
 - Running tasks.
-- The tool options `postinstall` and `install_env`.
+- The tool options `postinstall` and `install_env`, and the `spm:` backend's
+  `install_command`.
 - asdf plugin scripts, so tools from the `asdf:` backend cannot list or install
   versions.
+- Requests to S3, which are signed with your AWS credentials, so tools from the
+  `s3:` backend cannot list or install versions.
 - Installing plugins. vfox plugins that are already installed or built in still
   run, because the operator chose them.
 - mise secrets: `[secrets]` sources, `mise secrets ls`, tasks that list
@@ -236,15 +256,37 @@ These are skipped without an error, so resolution commands keep working:
   config, and bootstrap hooks, as with `--no-hooks`.
 - Project `[env]`, `[vars]` and environment directives such as `_.path` and
   `_.file`.
+- Project `path:` tool versions, and project `[tool_alias]` versions that point
+  to one.
+- The environment of the process that runs mise, in templates: `env` is empty
+  in templates outside global and system config files, so a repository cannot
+  put your credentials into a URL mise requests, into `mise.lock` or into
+  command output. A template that reads a variable without a `default` fails, as
+  it does when the variable is unset. This covers a project's `.miserc.toml`
+  too. The options of a tool from global or system config, including a global
+  `[tool_alias]`, keep `env` when a backend renders them later.
 - `_.source` in every config, including global config.
 - Project `[shell_alias]`.
 - The commands in a project task's usage spec that shell completion would run.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
+- Your credentials, for hosts project config chooses: a project `api_url` gets
+  no GitHub, GitLab or Forgejo token (unless global config names the same host),
+  and a tool that project config declares gets no `~/.netrc` credentials for
+  the hosts its `url`, `checksum_url`, `version_list_url`, `version_date_url`
+  or `api_url` names. Tools from global and system config keep theirs. A
+  project that points at a private forge or file server therefore cannot list
+  or download versions there.
+- A project `[tool_alias]` for a tool that global config declares, so a
+  repository cannot point your tool at another backend, options or versions.
+- Project [lazy tools](/dev-tools/shims.html#lazy-tools): mise writes no shims
+  for their commands and does not install them on first use.
 - Project `[settings]`, so a repository cannot turn off verification or redirect
   a backend.
 - Remote `include` entries in project config, which mise does not fetch.
 - Remote task files (`file = "https://…"` or `git::…`) in project config. Their
   tasks are listed from their TOML alone.
+- Project `[deps]`, so `mise deps` and `mise exec` do not run a repository's
+  dependency providers. Providers in global and system config still run.
 - Project daemon declarations. Daemons also do not start or stop when you change
   directories.
 - Project `[bootstrap]`, `[dotfiles]` and `[dotfile_groups]`, and the

@@ -20,8 +20,30 @@ use crate::{dirs, env};
 pub struct GitlabRelease {
     pub tag_name: String,
     pub description: Option<String>,
+    /// When GitLab stored the release. A release list an older mise cached
+    /// has none.
+    #[serde(default)]
+    pub created_at: Option<String>,
     pub released_at: Option<String>,
     pub assets: GitlabAssets,
+}
+
+impl GitlabRelease {
+    /// The time this release became public. GitLab's `released_at` is a date
+    /// the publisher may set to anything, older than the release itself for
+    /// a "historical release"; `created_at` is when GitLab stored it. The
+    /// later of the two is used, so a backdated release is still as new as
+    /// it is and an upcoming one (a future `released_at`) stays hidden until
+    /// its date.
+    pub fn published_at(&self) -> Option<&str> {
+        let timestamp = |s: &str| s.parse::<jiff::Timestamp>().ok();
+        match (self.created_at.as_deref(), self.released_at.as_deref()) {
+            (Some(created), Some(released)) if timestamp(created) > timestamp(released) => {
+                Some(created)
+            }
+            (created, released) => released.or(created),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -415,6 +437,10 @@ pub mod test_support {
 /// 5. glab CLI token (from `config.yml`)
 /// 6. `git credential fill` (if enabled)
 pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
+    // A host that project config named in safe mode; see `untrusted_hosts`.
+    if crate::untrusted_hosts::forge_token_denied(host) {
+        return None;
+    }
     if crate::testing::in_tests()
         && let Some(token) = test_support::lookup_tokens_file_override(host)
     {
@@ -832,6 +858,48 @@ hosts:
             "released_at": null,
             "assets": { "sources": [], "links": [] },
         })
+    }
+
+    #[test]
+    fn published_at_is_the_later_of_created_at_and_released_at() {
+        let published_at = |created_at: Option<&str>, released_at: Option<&str>| {
+            let mut json = release_json("v1.0.0");
+            json["created_at"] = created_at.into();
+            json["released_at"] = released_at.into();
+            let release: GitlabRelease = serde_json::from_value(json).unwrap();
+            release.published_at().map(str::to_string)
+        };
+        let created = "2026-01-02T00:00:00.000Z";
+
+        // A historical release: the publisher backdated `released_at`.
+        assert_eq!(
+            published_at(Some(created), Some("2020-01-01T00:00:00.000Z")).as_deref(),
+            Some(created)
+        );
+        // An upcoming release.
+        assert_eq!(
+            published_at(Some(created), Some("2026-02-01T00:00:00.000Z")).as_deref(),
+            Some("2026-02-01T00:00:00.000Z")
+        );
+        // Instants are compared, not strings: this is 2026-01-01T23:30Z.
+        assert_eq!(
+            published_at(Some(created), Some("2026-01-02T01:30:00.000+02:00")).as_deref(),
+            Some(created)
+        );
+        assert_eq!(
+            published_at(Some(created), Some("garbage")).as_deref(),
+            Some(created)
+        );
+        assert_eq!(published_at(Some(created), None).as_deref(), Some(created));
+        assert_eq!(published_at(None, Some(created)).as_deref(), Some(created));
+        assert_eq!(published_at(None, None), None);
+    }
+
+    #[test]
+    fn a_release_cached_without_created_at_still_reads() {
+        let release: GitlabRelease = serde_json::from_value(release_json("v1.0.0")).unwrap();
+        assert_eq!(release.created_at, None);
+        assert_eq!(release.published_at(), None);
     }
 
     #[test]

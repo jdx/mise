@@ -167,7 +167,7 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
             trace!("rm -rf {}", display_path(path));
             // `map_err` rather than `wrap_err_with`: the hint depends on the error, and
             // `wrap_err_with`'s closure is not given it.
-            fs::remove_dir_all(path).map_err(|e| {
+            remove_dir_all_restoring_owner_access(path).map_err(|e| {
                 let msg = with_io_hint(
                     // Not "rm -rf": mise calls `remove_dir_all`, and on Windows it is naming a
                     // command the reader does not have.
@@ -180,6 +180,77 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
         }
         _ => {}
     };
+    Ok(())
+}
+
+/// [`fs::remove_dir_all`], retried once after the owner regains full access to every
+/// directory in the tree. An archive can install directories without the owner's write bit (a
+/// sealed `0555` runtime, or Go's read-only module cache), and nothing can be unlinked from such
+/// a directory, so `mise uninstall` failed with "Permission denied" on what mise had installed.
+fn remove_dir_all_restoring_owner_access(path: &Path) -> std::io::Result<()> {
+    let result = fs::remove_dir_all(path);
+    #[cfg(unix)]
+    if let Err(err) = &result
+        && err.kind() == std::io::ErrorKind::PermissionDenied
+        && restore_owner_access(path).is_ok()
+    {
+        return fs::remove_dir_all(path);
+    }
+    result
+}
+
+#[cfg(unix)]
+fn restore_owner_access(path: &Path) -> Result<()> {
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    let Some(name) = path.file_name() else {
+        bail!("no directory name in {}", display_path(path));
+    };
+    restore_owner_access_at(File::open(parent)?, name)
+}
+
+/// Give the owner read, write and search access to the directory `name` under `parent` and to
+/// every directory below it. Each directory is opened relative to the descriptor of the one
+/// holding it with `O_NOFOLLOW` and changed through its own descriptor, as [`remove_all_at`]
+/// walks a tree, so neither a link in the tree nor one swapped in mid-walk can redirect the
+/// change to a directory outside it. A directory the owner cannot open stops the walk.
+#[cfg(unix)]
+fn restore_owner_access_at<Fd: std::os::fd::AsFd>(
+    parent: Fd,
+    name: &std::ffi::OsStr,
+) -> Result<()> {
+    let fd = nix::fcntl::openat(
+        &parent,
+        name,
+        nix::fcntl::OFlag::O_RDONLY
+            | nix::fcntl::OFlag::O_DIRECTORY
+            | nix::fcntl::OFlag::O_NOFOLLOW
+            | nix::fcntl::OFlag::O_CLOEXEC,
+        nix::sys::stat::Mode::empty(),
+    )?;
+    let mode = nix::sys::stat::fstat(&fd)?.st_mode;
+    if mode & 0o700 != 0o700 {
+        nix::sys::stat::fchmod(&fd, nix::sys::stat::Mode::from_bits_truncate(mode | 0o700))?;
+    }
+    let mut directory = nix::dir::Dir::from_fd(fd)?;
+    let entries = directory
+        .iter()
+        .map(|entry| entry.map(|entry| entry.file_name().to_owned()))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for entry in entries {
+        let entry = std::ffi::OsStr::from_bytes(entry.to_bytes());
+        if entry == "." || entry == ".." {
+            continue;
+        }
+        let stat =
+            nix::sys::stat::fstatat(&directory, entry, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)?;
+        let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode & nix::libc::S_IFMT);
+        if kind == nix::sys::stat::SFlag::S_IFDIR {
+            restore_owner_access_at(&directory, entry)?;
+        }
+    }
     Ok(())
 }
 

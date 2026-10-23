@@ -1527,7 +1527,7 @@ impl Config {
             // config loading (e.g., during `mise upgrade`) never prompts.
             // Plain .tool-versions and idiomatic version files are safe to
             // parse without trust and must still protect their tool versions.
-            if config_file::detection_requires_trust(&path, &detection)
+            if config_file::detection_requires_trust(&path, &detection).await
                 && !is_global_config(&path)
                 && !config_file::is_trusted(&trust_root)
             {
@@ -2361,6 +2361,28 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
     Ok(maps)
 }
 
+/// The filenames `mise trust` looks for. Idiomatic version files need trust
+/// only in paranoid mode, so only then are they listed.
+///
+/// Finding the idiomatic filenames loads the tool backends. If that fails,
+/// this falls back to the default filenames with a warning rather than failing
+/// the trust command: it only widens what a pathless `mise trust` looks for.
+pub async fn trust_config_filenames() -> Vec<String> {
+    if !Settings::get().paranoid.config() {
+        return DEFAULT_CONFIG_FILENAMES.clone();
+    }
+    if let Err(err) = backend::load_tools().await {
+        warn!("could not look for idiomatic version files: {err:#}");
+        return DEFAULT_CONFIG_FILENAMES.clone();
+    }
+    load_idiomatic_filenames()
+        .await
+        .into_keys()
+        .chain(DEFAULT_CONFIG_FILENAMES.iter().cloned())
+        .unique()
+        .collect()
+}
+
 async fn load_idiomatic_filenames() -> BTreeMap<String, Vec<String>> {
     let settings = Settings::get();
     let enable_tools = settings.idiomatic_version_file_enable_tools.clone();
@@ -2802,7 +2824,7 @@ pub fn environments_for_config_path(path: &Path) -> Vec<String> {
         .collect()
 }
 
-fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> Vec<PathBuf> {
+pub fn config_paths_in_dir_with_filenames(dir: &Path, filenames: &[String]) -> Vec<PathBuf> {
     let config_paths: Vec<PathBuf> = filenames
         .iter()
         .rev()
@@ -3021,6 +3043,18 @@ fn load_config_paths_from_dirs(
     config_files
         .into_iter()
         .filter(|p| !config_path_is_ignored(p, include_ignored))
+        // A project path that is a symlink to global or system config is that
+        // config, which the entries above already list where discovery found
+        // it. Dropping the project spelling keeps everything derived from a
+        // config's location (its root, task roots, lockfile) with the global
+        // entry rather than inside a directory the user may not control. The
+        // reverse, a global config the user linked to a real file in their own
+        // project (a dotfiles layout), keeps the project spelling, so its
+        // lockfile stays beside the file.
+        .filter(|p| {
+            discovered_global_config(p)
+                .is_none_or(|global| global == *p || p.canonicalize().is_ok_and(|real| real == *p))
+        })
         .unique_by(|p| file::desymlink_path(p))
         .collect()
 }
@@ -3363,6 +3397,23 @@ pub fn is_override_config(path: &Path) -> bool {
         })
 }
 
+/// The path global or system config discovery found `path` at, if `path` is
+/// global config. The two differ when `path` only resolves to that file, which
+/// also holds for a symlink to it from a directory the user does not control,
+/// so whatever global config derives from its location has to come from here.
+pub(crate) fn discovered_global_config(path: &Path) -> Option<PathBuf> {
+    config_set_get(&global_config_files(), path)
+        .cloned()
+        .or_else(|| config_set_get(&system_config_files(), path).cloned())
+        // Override files are recognized by name and directory, so one that
+        // `--override` has just created counts before discovery lists it.
+        .or_else(|| {
+            is_override_config(path)
+                .then(|| path.file_name().map(|name| dirs::CONFIG.join(name)))
+                .flatten()
+        })
+}
+
 /// Whether `path` was loaded from a `[bootstrap].config_roots` root that global
 /// or system config selected. The operator chose those roots, so safe mode
 /// treats their bootstrap and dotfiles sections like global config even though
@@ -3393,13 +3444,19 @@ pub fn is_system_config(path: &Path) -> bool {
 /// PWD prefix is not byte-equal to its `$HOME`-derived entry and is wrongly
 /// treated as a local config (stripping global-only settings).
 fn config_set_contains(set: &IndexSet<PathBuf>, path: &Path) -> bool {
-    if set.contains(path) {
-        return true;
+    config_set_get(set, path).is_some()
+}
+
+/// The member of `set` that [`config_set_contains`] matches `path` to.
+fn config_set_get<'a>(set: &'a IndexSet<PathBuf>, path: &Path) -> Option<&'a PathBuf> {
+    if let Some(p) = set.get(path) {
+        return Some(p);
     }
     // This runs for every config file each time a tool resolves, so resolving
     // the same paths again would dominate short commands.
     let target = file::desymlink_path_cached(path);
-    set.iter().any(|p| file::desymlink_path_cached(p) == target)
+    set.iter()
+        .find(|p| file::desymlink_path_cached(p) == target)
 }
 
 fn resolved_task_file(task: &Task) -> Option<PathBuf> {
@@ -3477,6 +3534,17 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
     if is_default_config_dir_override_filtered(path) {
         return true;
     }
+    // A `mise/`, `.mise/` or `.config/` directory that is a git checkout of
+    // its own is a project, not the config folder of the directory above it.
+    // Run inside that checkout, its config (such as `.config/mise.toml`, the
+    // `mise.toml` of a checkout named `.config`) still loads, with the
+    // checkout as its trust root, so trust in the directory above never
+    // covers it.
+    if let Some(checkout) = config_file::config_root::nested_checkout(path)
+        && !std::env::current_dir().is_ok_and(|cwd| cwd.starts_with(&checkout))
+    {
+        return true;
+    }
     if include_ignored {
         return false;
     }
@@ -3488,7 +3556,11 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
     // The persisted ignore list (dismissed prompt / `mise trust --ignore`) is
     // overridden by `trusted_config_paths`, matching is_trusted's precedence so
     // a settings-trusted config is still discovered and loaded.
-    if config_file::is_persisted_ignored(&ctr) || config_file::is_persisted_ignored(path) {
+    // Global config shares its trust root, the home directory, with a project
+    // config there, so ignoring that project must not drop the global config
+    // and the global-only settings it holds.
+    let ctr_ignored = !is_global_config(path) && config_file::is_persisted_ignored(&ctr);
+    if ctr_ignored || config_file::is_persisted_ignored(path) {
         return !config_file::is_trusted_via_config_paths(path);
     }
     false
@@ -4156,6 +4228,10 @@ async fn parse_config_file(
         remote_include::apply(config_file::parse(f).await?).await
     } else {
         trace!("idiomatic version file: {}", display_path(f));
+        // `config_file::parse` does this for every other kind of config file.
+        if Settings::try_get().is_ok_and(|settings| settings.paranoid.config()) {
+            trust_check(f)?;
+        }
         let tools = backend::list()
             .into_iter()
             .filter(|backend| plugins.contains(&backend.to_string()))
@@ -4181,20 +4257,107 @@ fn matching_idiomatic_tools(
 fn load_aliases(config_files: &ConfigMap) -> Result<AliasMap> {
     let mut aliases: AliasMap = AliasMap::new();
 
+    // In safe mode a project (non-global) config cannot alias a version to a
+    // `path:`, for the same reason its `path:` tool versions are ignored (see
+    // `ToolRequest::ignored_in_safe_mode`). The request an alias rewrites can
+    // come from global config, so this is checked here rather than per request.
+    let safe_mode = Settings::safe_mode();
+    // Nor can a project alias a tool that global config declares: that would
+    // redirect the operator's tool to a backend, options or versions the project
+    // chose.
+    let declared_tools = |global: bool| -> BTreeSet<String> {
+        if !safe_mode {
+            return BTreeSet::new();
+        }
+        // `tool_backends` reads the tool keys without rendering any version,
+        // which could fail this early and drop every tool of the file.
+        config_files
+            .values()
+            .filter(|cf| is_global_config(cf.get_path()) == global)
+            .flat_map(|cf| cf.tool_backends())
+            .collect()
+    };
+    let global_tools = declared_tools(true);
+    let mut project_tools = declared_tools(false);
+
     for config_file in config_files.values() {
+        let project = safe_mode && !is_global_config(config_file.get_path());
+        let ignore_path_versions = project;
         for (plugin, plugin_aliases) in config_file.aliases()? {
+            if project && global_tools.contains(&plugin) {
+                debug!(
+                    "ignoring tool alias {plugin} in {}: global config declares the tool and safe mode (MISE_SAFE=1) is on",
+                    display_path(config_file.get_path())
+                );
+                continue;
+            }
+            if project {
+                project_tools.insert(plugin.clone());
+            }
+            if safe_mode
+                && let Some(backend) = &plugin_aliases.backend
+                && let Some((_, opts)) = crate::args::split_bracketed_opts(backend)
+            {
+                crate::toolset::record_safe_mode_credential_hosts(
+                    &crate::toolset::parse_tool_options(opts).opts,
+                    project,
+                );
+            }
             let alias = aliases.entry(plugin).or_default();
             if let Some(full) = plugin_aliases.backend {
                 alias.backend = Some(full);
             }
             for (from, to) in plugin_aliases.versions {
+                if ignore_path_versions && config_file::version_requires_trust(&to) {
+                    debug!(
+                        "ignoring tool alias version {from} = {to} in {}: safe mode (MISE_SAFE=1)",
+                        display_path(config_file.get_path())
+                    );
+                    continue;
+                }
                 alias.versions.insert(from, to);
             }
         }
     }
     trace!("load_aliases: {}", aliases.len());
+    record_safe_mode_project_tools(project_tools);
 
     Ok(aliases)
+}
+
+/// Adds to the tools recorded for [`is_safe_mode_project_tool`], never replaces
+/// them: a later load of global config alone (such as the global runtime's) must
+/// not drop the project tools of the main one.
+fn record_safe_mode_project_tools(tools: BTreeSet<String>) {
+    SAFE_MODE_PROJECT_TOOLS.lock().unwrap().extend(tools);
+}
+
+#[cfg(test)]
+mod safe_mode_project_tools_tests {
+    use super::*;
+
+    #[test]
+    fn a_global_only_load_keeps_the_project_tools() {
+        record_safe_mode_project_tools(BTreeSet::from(["http:project-only-tool".to_string()]));
+        record_safe_mode_project_tools(BTreeSet::new());
+        assert!(is_safe_mode_project_tool(&BackendArg::from(
+            "http:project-only-tool"
+        )));
+    }
+}
+
+/// The tools that project config declares or aliases, recorded in safe mode by
+/// [`load_aliases`]; see [`is_safe_mode_project_tool`].
+static SAFE_MODE_PROJECT_TOOLS: std::sync::Mutex<BTreeSet<String>> =
+    std::sync::Mutex::new(BTreeSet::new());
+
+/// Whether, in safe mode, project config declares or aliases `ba`, so that its
+/// options (and the hosts they name) come from config nobody reviewed. A tool
+/// that a project and global config both declare counts, since the project's
+/// entry takes precedence.
+pub(crate) fn is_safe_mode_project_tool(ba: &BackendArg) -> bool {
+    let tools = SAFE_MODE_PROJECT_TOOLS.lock().unwrap();
+    tools.contains(&ba.short) || tools.contains(&ba.full())
 }
 
 fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {
@@ -5008,6 +5171,24 @@ fn default_task_includes() -> Vec<String> {
         ".config/mise/tasks".to_string(),
         "mise/tasks".to_string(),
     ]
+}
+
+/// [`default_task_includes`] for `dir`, without a task directory that sits in
+/// a git checkout of its own below `dir`, such as a repository cloned into
+/// `dir` as `mise`: that checkout's `tasks/` are its own, not `dir`'s.
+fn default_task_includes_for(dir: &Path) -> Vec<String> {
+    without_nested_checkouts(dir, default_task_includes())
+}
+
+/// `includes` without a task directory that sits in a git checkout of its own
+/// below `dir`. See [`default_task_includes_for`].
+fn without_nested_checkouts(dir: &Path, includes: Vec<String>) -> Vec<String> {
+    includes
+        .into_iter()
+        .filter(|include| {
+            config_file::config_root::checkout_between(dir, &dir.join(include)).is_none()
+        })
+        .collect()
 }
 
 /// The default task directories of the user-global scope.
@@ -6814,7 +6995,7 @@ fn task_include_patterns_for_dir(
         })
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
-            (default_task_includes(), dir.to_path_buf(), true)
+            (default_task_includes_for(dir), dir.to_path_buf(), true)
         }))
 }
 
@@ -7340,6 +7521,12 @@ async fn load_task_sources_from_configs(
     // a config can only vouch for task include files when it was actually
     // trusted — safe configs load without trust and cannot vouch for anything
     let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
+    // Paranoid mode binds a project config's trust to its own content, which
+    // covers the remote includes it pins but not task files on disk that change
+    // without it, so each of those needs trust of its own there. Global config
+    // is trusted by path, and so are the task files it includes.
+    let require_local_task_include_trust = require_task_include_trust
+        || (!is_global && Settings::try_get().is_ok_and(|settings| settings.paranoid.config()));
     let (includes, resolve_dir, include_config_precedence) = configs
         .iter()
         .enumerate()
@@ -7359,7 +7546,11 @@ async fn load_task_sources_from_configs(
         })
         .unwrap_or_else(|| {
             (
-                default_includes.unwrap_or_else(default_task_includes),
+                // The user-global scope supplies its own defaults, which a
+                // checkout cloned into the home directory must not join either.
+                default_includes
+                    .map(|includes| without_nested_checkouts(dir, includes))
+                    .unwrap_or_else(|| default_task_includes_for(dir)),
                 dir.to_path_buf(),
                 configs.len(),
             )
@@ -7468,6 +7659,11 @@ async fn load_task_sources_from_configs(
                 .collect()
         };
         let remote = is_remote_task_include(include).then(|| include.clone());
+        let require_trust = if remote.is_some() {
+            require_task_include_trust
+        } else {
+            require_local_task_include_trust
+        };
         for artifact in artifacts {
             let p = artifact.path;
             let mut loaded = load_tasks_includes(
@@ -7478,7 +7674,7 @@ async fn load_task_sources_from_configs(
                 templates,
                 LoadTaskIncludesOptions {
                     monorepo_cf,
-                    require_trust: require_task_include_trust,
+                    require_trust,
                     rendered_file_tasks: rendered_file_tasks.as_deref_mut(),
                     excludes: &excludes,
                 },
