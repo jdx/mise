@@ -187,7 +187,7 @@ impl SendOnceOptions {
         if self.error_for_status
             && !(self.allow_range_not_satisfiable
                 && response.status() == StatusCode::RANGE_NOT_SATISFIABLE)
-            && let Err(err) = response.error_for_status_ref()
+            && let Err(err) = response.error_for_status_ref().map_err(redact_error_url)
         {
             return Err(match retry_after(&response) {
                 Some(wait) => {
@@ -1079,7 +1079,7 @@ impl Client {
                 retries: crate::network::http_retries(&Settings::get()),
                 error_for_status: true,
             },
-            |resp| async move { Ok(resp.bytes().await?) },
+            |resp| async move { Ok(resp.bytes().await.map_err(redact_error_url)?) },
         )
         .await
     }
@@ -1103,7 +1103,7 @@ impl Client {
         let resp = self
             .send_with_https_fallback(Method::GET, url, headers, "GET")
             .await?;
-        resp.error_for_status_ref()?;
+        resp.error_for_status_ref().map_err(redact_error_url)?;
         Ok(resp)
     }
 
@@ -1156,7 +1156,7 @@ impl Client {
             },
         )
         .await?;
-        resp.error_for_status_ref()?;
+        resp.error_for_status_ref().map_err(redact_error_url)?;
         Ok(resp)
     }
 
@@ -1173,7 +1173,7 @@ impl Client {
         let resp = self
             .send_with_https_fallback(Method::HEAD, url, headers, "HEAD")
             .await?;
-        resp.error_for_status_ref()?;
+        resp.error_for_status_ref().map_err(redact_error_url)?;
         Ok(resp)
     }
 
@@ -1276,7 +1276,7 @@ impl Client {
         if !is_html {
             bail!("Got non-HTML text from {}", log_url(&url));
         }
-        let html = resp.text().await?;
+        let html = resp.text().await.map_err(redact_error_url)?;
         Ok(html)
     }
 
@@ -1313,7 +1313,7 @@ impl Client {
             },
             |resp| async move {
                 let headers = resp.headers().clone();
-                Ok((resp.json().await?, headers))
+                Ok((resp.json().await.map_err(redact_error_url)?, headers))
             },
         )
         .await
@@ -1867,7 +1867,7 @@ impl Client {
                     restarted_without_resume = true;
                     continue;
                 }
-                resp.error_for_status_ref()?;
+                resp.error_for_status_ref().map_err(redact_error_url)?;
             }
 
             let (write_offset, total_size, validator, resumable, effective_filename) =
@@ -1968,7 +1968,7 @@ impl Client {
                 .open(&partial.path)
                 .await?;
             let transfer = async {
-                while let Some(chunk) = resp.chunk().await? {
+                while let Some(chunk) = resp.chunk().await.map_err(redact_error_url)? {
                     if crate::cancel::is_cancelled() {
                         bail!("download cancelled by user");
                     }
@@ -2205,6 +2205,7 @@ impl Client {
                 let status_error = response
                     .error_for_status_ref()
                     .expect_err("403 response should be an error");
+                let status_error = redact_error_url(status_error);
                 let used_github_token = headers.contains_key(AUTHORIZATION);
                 let rate_limit = github_rate_limit_summary(&response);
                 let body = read_bounded_error_body(response, self.timeout).await;
@@ -2365,6 +2366,7 @@ impl Client {
             let status_error = resp
                 .error_for_status_ref()
                 .expect_err("401 response should be an error");
+            let status_error = redact_error_url(status_error);
             let used_github_token = final_headers.contains_key(AUTHORIZATION);
             // Use the source captured when this exact token was added to the request.
             // A netrc/caller-provided header must not be blamed on an unrelated token.
@@ -2387,6 +2389,7 @@ impl Client {
             let status_error = resp
                 .error_for_status_ref()
                 .expect_err("403 response should be an error");
+            let status_error = redact_error_url(status_error);
             let used_github_token = final_headers.contains_key(AUTHORIZATION);
             let rate_limit = github_rate_limit_summary(&resp);
             let rate_limited = is_github_rate_limited(&resp);
@@ -2481,7 +2484,7 @@ impl TextRequest<'_> {
                     retries: self.retries,
                     error_for_status: true,
                 },
-                |resp| async move { Ok(resp.text().await?) },
+                |resp| async move { Ok(resp.text().await.map_err(redact_error_url)?) },
             )
             .await?;
         if !self.allow_html && text.starts_with("<!DOCTYPE html>") {
@@ -3061,9 +3064,57 @@ pub fn apply_url_replacements(url: &mut Url) {
     }
 }
 
-/// `url` for a log line or error message, without the credentials it may embed.
+/// `url` for a log line or error message, without the credentials it may embed:
+/// its userinfo, and the values of its query parameters (see [`redact_query`]).
 fn log_url(url: &Url) -> std::borrow::Cow<'_, str> {
-    redact_url_userinfo(url.as_str())
+    match url.query() {
+        Some(query) if redact_query(query) != query => {
+            let mut url = url.clone();
+            url.set_query(Some(&redact_query(query)));
+            redact_url_userinfo(url.as_str()).into_owned().into()
+        }
+        _ => redact_url_userinfo(url.as_str()),
+    }
+}
+
+/// A query string with the value of each parameter replaced by `[redacted]`.
+///
+/// Signed URLs and API keys travel in the query (`?private_token=`,
+/// `?X-Amz-Signature=`), and mise cannot tell those from harmless parameters by
+/// name. Names are kept, and so are short numbers (`page=2`, `per_page=100`),
+/// which keep paged requests readable and are no credential.
+fn redact_query(query: &str) -> String {
+    query
+        .split('&')
+        .map(|pair| {
+            let (name, value) = match pair.split_once('=') {
+                Some((name, value)) => (Some(name), value),
+                None => (None, pair),
+            };
+            let harmless =
+                value.is_empty() || (value.len() <= 6 && value.bytes().all(|b| b.is_ascii_digit()));
+            match (name, harmless) {
+                (_, true) => pair.to_string(),
+                (Some(name), false) => format!("{name}=[redacted]"),
+                (None, false) => "[redacted]".to_string(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+/// `err` with the URL it reports (`for url (...)`, the last hop after
+/// redirects) stripped of its credentials, as [`log_url`] shows URLs. The error
+/// keeps its kind and status, so retry decisions are unaffected.
+fn redact_error_url(mut err: reqwest::Error) -> reqwest::Error {
+    if let Some(url) = err.url_mut() {
+        let _ = url.set_username("");
+        let _ = url.set_password(None);
+        if let Some(query) = url.query().map(redact_query) {
+            url.set_query(Some(&query));
+        }
+    }
+    err
 }
 
 fn display_github_rate_limit(resp: &Response) {

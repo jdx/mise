@@ -433,6 +433,36 @@ fn log_url_hides_userinfo() {
     assert_eq!(log_url(&url), "https://git.example.com/a@b");
 }
 
+#[test]
+fn log_url_hides_query_values() {
+    let url =
+        Url::parse("https://dl.example.com/a.tar.gz?private_token=s3cret&page=2&raw").unwrap();
+    assert_eq!(
+        log_url(&url),
+        "https://dl.example.com/a.tar.gz?private_token=[redacted]&page=2&[redacted]"
+    );
+}
+
+/// A status error names the URL it was for. The query there can hold a
+/// token, and the error reaches warnings, progress lines and the final report.
+#[tokio::test]
+async fn status_error_hides_url_query_token() {
+    let mut server = mockito::Server::new_async().await;
+    let _missing = server
+        .mock("GET", "/a.tar.gz?private_token=s3cret")
+        .with_status(404)
+        .create_async()
+        .await;
+    let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+    let err = client
+        .get_text(format!("{}/a.tar.gz?private_token=s3cret", server.url()))
+        .await
+        .unwrap_err();
+    let message = format!("{err:#}");
+    assert!(message.contains("404"), "{message}");
+    assert!(!message.contains("s3cret"), "{message}");
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn request_timeout_error_hides_url_credentials() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
