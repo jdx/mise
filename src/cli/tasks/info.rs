@@ -41,23 +41,7 @@ impl TasksInfo {
     pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
 
-        let task_name = crate::task::expand_colon_task_syntax(&self.task, &config)?;
-
-        let tasks = if task_name.starts_with("//") {
-            let ctx = crate::task::TaskLoadContext::from_pattern(&task_name);
-            config.tasks_with_context(Some(&ctx)).await?
-        } else if crate::task::is_workspace_project_task(&task_name) {
-            let ctx = crate::task::TaskLoadContext::all();
-            config.tasks_with_context(Some(&ctx)).await?
-        } else {
-            config.tasks().await?
-        };
-
-        let tasks_with_aliases = crate::task::build_task_ref_map(tasks.iter());
-
-        use crate::task::GetMatchingExt;
-        let matching = tasks_with_aliases.get_matching(&task_name).ok();
-        let task = matching.and_then(|m| m.first().cloned().cloned());
+        let task = find_task(&config, &self.task).await?;
 
         if let Some(task) = task {
             // Resolve remote task files before displaying task info
@@ -223,4 +207,26 @@ async fn usage_spec(config: &Arc<Config>, task: &Task) -> Result<usage::Spec> {
         Some(toml_only) => toml_only.parse_usage_spec_for_display(config).await,
         None => task.parse_usage_spec_for_display(config).await,
     }
+}
+
+/// Looks a task up the way `mise tasks info <name>` does, including colon
+/// expansion and monorepo patterns.
+pub(super) async fn find_task(config: &Arc<Config>, name: &str) -> Result<Option<Task>> {
+    let task_name = crate::task::expand_colon_task_syntax(name, config)?;
+
+    let tasks = if task_name.starts_with("//") {
+        let ctx = crate::task::TaskLoadContext::from_pattern(&task_name);
+        config.tasks_with_context(Some(&ctx)).await?
+    } else if crate::task::is_workspace_project_task(&task_name) {
+        let ctx = crate::task::TaskLoadContext::all();
+        config.tasks_with_context(Some(&ctx)).await?
+    } else {
+        config.tasks().await?
+    };
+
+    let tasks_with_aliases = crate::task::build_task_ref_map(tasks.iter());
+
+    use crate::task::GetMatchingExt;
+    let matching = tasks_with_aliases.get_matching(&task_name).ok();
+    Ok(matching.and_then(|m| m.first().cloned().cloned()).cloned())
 }

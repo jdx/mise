@@ -103,9 +103,6 @@ impl Tasks {
 }
 
 async fn task_exists(name: &str) -> Result<bool> {
-    use crate::task::GetMatchingExt;
     let config = Config::get().await?;
-    let tasks = config.tasks().await?;
-    let refs = crate::task::build_task_ref_map(tasks.iter());
-    Ok(refs.get_matching(name).is_ok_and(|m| !m.is_empty()))
+    Ok(info::find_task(&config, name).await?.is_some())
 }
