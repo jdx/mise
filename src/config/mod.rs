@@ -6,7 +6,7 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::{Either, Itertools};
 use path_absolutize::Absolutize;
 pub use settings::{CompilePurpose, Settings, SettingsExt};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
 use std::path::{Component, Path, PathBuf};
@@ -5069,6 +5069,50 @@ pub fn task_is_trusted(config: &Config, task: &Task) -> bool {
                 && task.config_root.as_deref() == Some(cf.config_root().as_path())
                 && is_path_trusted(path)
         })
+}
+
+/// The first task that running `roots` would reach and that [`task_is_trusted`] rejects: a
+/// root itself, a task in its `depends` or `depends_post` graph, or a task a `run` entry
+/// names (`{ task = ... }` or `{ tasks = [...] }`), followed transitively. Names resolve
+/// against every loaded task and a name matches every task it could mean, so an untrusted
+/// task that could stand in for one of them counts as reached.
+pub async fn untrusted_task_reached(
+    config: &Arc<Config>,
+    roots: Vec<Task>,
+) -> Result<Option<Task>> {
+    let all_tasks = config.tasks().await?;
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut pending = roots;
+    while !pending.is_empty() {
+        let deps =
+            crate::task::Deps::new_for_inspection(config, std::mem::take(&mut pending)).await?;
+        for task in deps.all() {
+            if !task_is_trusted(config, task) {
+                return Ok(Some(task.clone()));
+            }
+            if !seen.insert(task.name.clone()) {
+                continue;
+            }
+            for entry in task.run() {
+                let names = match entry {
+                    RunEntry::Script(_) => &[][..],
+                    RunEntry::SingleTask { task, .. } => std::slice::from_ref(task),
+                    RunEntry::TaskGroup { tasks } => tasks.as_slice(),
+                };
+                for name in names {
+                    let (name, _) = crate::task::task_list::split_task_spec(name);
+                    let name = crate::task::resolve_task_pattern(name, Some(task));
+                    pending.extend(
+                        all_tasks
+                            .values()
+                            .filter(|t| t.is_match(&name) && !seen.contains(&t.name))
+                            .cloned(),
+                    );
+                }
+            }
+        }
+    }
+    Ok(None)
 }
 
 fn is_global_task_include_path(path: &Path) -> bool {

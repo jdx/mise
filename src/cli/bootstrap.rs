@@ -2466,22 +2466,27 @@ impl Bootstrap {
             debug!("bootstrap: `bootstrap` task skipped");
         } else {
             let tasks = config.tasks().await?;
-            if tasks.iter().any(|(_, t)| {
+            let is_bootstrap = |t: &crate::task::Task| {
                 t.aliases.iter().any(|a| a == "bootstrap")
                     || (!t.name.contains(':') && t.is_match("bootstrap"))
-            }) {
+            };
+            let roots = tasks
+                .values()
+                .filter(|t| is_bootstrap(t))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !roots.is_empty() {
                 // Tasks-only config and template-free task files load without trust because
                 // their tasks are inert until `mise run` names one. Nobody named this one, and a
-                // project task replaces a global one of the same name (`bootstrap` or one it
-                // depends on), so every loaded task has to come from config the user trusts.
-                // Safe mode refuses to run tasks below.
+                // project task replaces a global one of the same name, so the `bootstrap` task
+                // and every task it reaches have to come from config the user trusts. Tasks it
+                // does not reach may come from anywhere. Safe mode refuses to run tasks below.
                 if !Settings::safe_mode()
-                    && let Some(task) = tasks
-                        .values()
-                        .find(|t| !config::task_is_trusted(&config, t))
+                    && let Some(task) = config::untrusted_task_reached(&config, roots).await?
                 {
                     bail!(
-                        "bootstrap: not running the `bootstrap` task: {} is not trusted; review it and run `mise trust {}`, or pass `--skip task`",
+                        "bootstrap: not running the `bootstrap` task: it would run `{}` from {}, which is not trusted; review it and run `mise trust {}`, or pass `--skip task`",
+                        task.name,
                         task.config_source.display_user(),
                         config::config_file::config_trust_root(&task.config_source).display_user()
                     );

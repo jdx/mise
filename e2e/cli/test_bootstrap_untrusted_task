@@ -59,3 +59,52 @@ assert_succeed "cd project && mise trust"
 assert_succeed "cd project && MISE_YES=0 mise bootstrap --skip tools"
 assert "test -f $HOME/project_task_ran"
 assert_fail "test -f $HOME/global_task_ran"
+
+# Only what the bootstrap task reaches has to be trusted: a task it depends on
+# or names in `run`. An unrelated task in an untrusted project does not stop
+# the user's own bootstrap.
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[tasks.setup]
+run = "touch $HOME/global_setup_ran"
+
+[tasks.finish]
+run = "touch $HOME/global_finish_ran"
+
+[tasks.bootstrap]
+depends = ["setup"]
+run = [{ task = "finish" }, "touch $HOME/global_task_ran"]
+EOF
+rm -f "$HOME"/*_ran
+
+mkdir -p unrelated
+cat <<'EOF' >unrelated/mise.toml
+[tasks.lint]
+run = "touch $HOME/project_task_ran"
+EOF
+assert_succeed "cd unrelated && MISE_YES=0 mise bootstrap --skip tools"
+assert "test -f $HOME/global_setup_ran"
+assert "test -f $HOME/global_finish_ran"
+assert "test -f $HOME/global_task_ran"
+assert_fail "test -f $HOME/project_task_ran"
+assert_contains "cd unrelated && mise trust --show" "untrusted"
+rm -f "$HOME"/*_ran
+
+# a project task that replaces a dependency
+mkdir -p dep-shadow
+cat <<'EOF' >dep-shadow/mise.toml
+[tasks.setup]
+run = "touch $HOME/project_task_ran"
+EOF
+assert_fail "cd dep-shadow && MISE_YES=0 mise bootstrap --skip tools" "is not trusted"
+assert_fail "test -f $HOME/project_task_ran"
+assert_fail "test -f $HOME/global_task_ran"
+
+# a project task that replaces one the bootstrap task runs
+mkdir -p run-shadow
+cat <<'EOF' >run-shadow/mise.toml
+[tasks.finish]
+run = "touch $HOME/project_task_ran"
+EOF
+assert_fail "cd run-shadow && MISE_YES=0 mise bootstrap --skip tools" "is not trusted"
+assert_fail "test -f $HOME/project_task_ran"
+assert_fail "test -f $HOME/global_task_ran"
