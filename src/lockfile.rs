@@ -2242,30 +2242,35 @@ impl Lockfile {
     /// be committed, and a token in a query (`?token={{ env.TOKEN }}`) is
     /// rendered into the value before it gets here.
     fn ensure_no_credential_queries(&self) -> Result<()> {
+        let refuse = |what: &str, field: &str, param: &str| {
+            eyre!(
+                "{what}: mise.lock does not record {field}, because the query string of its \
+                 URL carries `{param}`, which looks like a credential. Send the credential \
+                 with the tool's `headers` option or a netrc entry instead of the URL."
+            )
+        };
+        // Every string an entry is written with: platform URLs, additional
+        // artifacts, provenance, options.
         for (short, entries) in &self.tools {
             for entry in entries {
-                let urls = entry.platforms.iter().flat_map(|(platform, info)| {
-                    [("url", &info.url), ("url_api", &info.url_api)]
-                        .into_iter()
-                        .filter_map(move |(field, url)| {
-                            url.as_deref()
-                                .map(|url| (format!("platforms.{platform}.{field}"), url))
-                        })
-                });
-                let options = entry
-                    .options
-                    .iter()
-                    .map(|(key, value)| (format!("options.{key}"), value.as_str()));
-                for (field, value) in urls.chain(options) {
-                    if let Some(param) = credential_query_param(value) {
-                        bail!(
-                            "{short}@{}: mise.lock does not record {field}, because the query \
-                             string of its URL carries `{param}`, which looks like a credential. \
-                             Send the credential with the tool's `headers` option or a netrc \
-                             entry instead of the URL.",
-                            entry.version
-                        );
-                    }
+                let value = entry.clone().into_toml_value(true);
+                if let Some((field, param)) = find_credential_query(&value, String::new()) {
+                    return Err(refuse(
+                        &format!("{short}@{}", entry.version),
+                        &field,
+                        &param,
+                    ));
+                }
+            }
+        }
+        for (platform, packages) in &self.conda_packages {
+            for (basename, info) in packages {
+                if let Some(param) = credential_query_param(&info.url) {
+                    return Err(refuse(
+                        &format!("conda package {basename} on {platform}"),
+                        "url",
+                        &param,
+                    ));
                 }
             }
         }
@@ -2275,6 +2280,27 @@ impl Lockfile {
     /// Save the lockfile to disk (public for mise lock command)
     pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         self.save(path)
+    }
+}
+
+/// The dotted path and parameter name of the first string in `value` with a
+/// URL whose query carries a credential.
+fn find_credential_query(value: &toml::Value, path: String) -> Option<(String, String)> {
+    match value {
+        toml::Value::String(s) => credential_query_param(s).map(|param| (path, param)),
+        toml::Value::Array(values) => values
+            .iter()
+            .enumerate()
+            .find_map(|(i, v)| find_credential_query(v, format!("{path}[{i}]"))),
+        toml::Value::Table(table) => table.iter().find_map(|(key, v)| {
+            let path = if path.is_empty() {
+                key.clone()
+            } else {
+                format!("{path}.{key}")
+            };
+            find_credential_query(v, path)
+        }),
+        _ => None,
     }
 }
 
@@ -5507,15 +5533,13 @@ pub(crate) fn credential_query_param(text: &str) -> Option<String> {
     regex!(r#"://[^\s?#'"]*\?([^\s#'"]*)"#)
         .captures_iter(text)
         .flat_map(|captures| {
-            captures
-                .get(1)
-                .map_or("", |query| query.as_str())
-                .split('&')
-                .map(|pair| pair.split_once('=').map_or(pair, |(name, _)| name))
+            let query = captures.get(1).map_or("", |query| query.as_str());
+            // Names are compared decoded: `api%5Fkey` is `api_key`.
+            url::form_urlencoded::parse(query.as_bytes())
+                .map(|(name, _)| name.into_owned())
                 .collect::<Vec<_>>()
         })
         .find(|name| is_credential_query_param(name))
-        .map(str::to_string)
 }
 
 fn is_credential_query_param(name: &str) -> bool {
@@ -5549,7 +5573,7 @@ fn is_credential_query_param(name: &str) -> bool {
 
 fn strip_lock_option_credentials(value: &str) -> String {
     let value = mise_util::redactions::strip_url_credentials(value);
-    regex!(r"(--(?:\S*:)?_(?:auth|authToken|password)=)\S+")
+    regex!(r#"(--(?:\S*:)?_(?:auth|authToken|password)=)(?:"[^"]*"|'[^']*'|\S+)"#)
         .replace_all(&value, "${1}[redacted]")
         .into_owned()
 }

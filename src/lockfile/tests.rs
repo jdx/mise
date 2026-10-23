@@ -4390,6 +4390,7 @@ fn test_credential_query_params_are_found_by_name() {
             "api_key",
         ),
         ("https://h.example/t?password", "password"),
+        ("https://h.example/t?api%5Fkey=x", "api_key"),
     ] {
         assert_eq!(
             credential_query_param(text).as_deref(),
@@ -4530,9 +4531,50 @@ fn test_lockfile_write_refuses_credential_queries() {
         "api_url".to_string(),
         "https://h.example/api?access_token=s3cret".to_string(),
     );
-    lockfile.tools.insert("http:tool".to_string(), vec![tool]);
+    lockfile
+        .tools
+        .insert("http:tool".to_string(), vec![tool.clone()]);
     let err = lockfile.write(&path).unwrap_err().to_string();
     assert!(err.contains("options.api_url"), "{err}");
+
+    // Every URL the entry is written with is checked: additional artifacts
+    // and shared conda packages too.
+    tool.options.clear();
+    tool.platforms
+        .get_mut("linux-x64")
+        .unwrap()
+        .additional_artifacts = vec![ArtifactInfo {
+        checksum: None,
+        size: None,
+        url: "https://dl.example.com/sig.tgz?sig=s3cret".to_string(),
+        url_api: None,
+        provenance: None,
+        provenance_verified: None,
+    }];
+    lockfile
+        .tools
+        .insert("http:tool".to_string(), vec![tool.clone()]);
+    let err = lockfile.write(&path).unwrap_err().to_string();
+    assert!(err.contains("`sig`"), "{err}");
+
+    tool.platforms
+        .get_mut("linux-x64")
+        .unwrap()
+        .additional_artifacts = vec![];
+    lockfile.tools.insert("http:tool".to_string(), vec![tool]);
+    lockfile.conda_packages.insert(
+        "linux-x64".to_string(),
+        BTreeMap::from([(
+            "pkg-1.0-0".to_string(),
+            CondaPackageInfo {
+                url: "https://conda.example.com/pkg.conda?token=s3cret".to_string(),
+                checksum: None,
+            },
+        )]),
+    );
+    let err = lockfile.write(&path).unwrap_err().to_string();
+    assert!(err.contains("conda package pkg-1.0-0"), "{err}");
+    assert!(!path.exists());
 }
 
 /// A lockfile is committed, so a token templated into a lock option from the
@@ -4548,7 +4590,7 @@ fn test_lock_options_drop_credentials() {
         ),
         (
             "npm_args".to_string(),
-            "--//npm.example.com/:_authToken=tok3n --_auth=tok3n --registry=https://ci:tok3n@npm.example.com/"
+            "--//npm.example.com/:_authToken=tok3n --_auth=tok3n --registry=https://ci:tok3n@npm.example.com/ --_password=\"tok3n second\""
                 .to_string(),
         ),
         (
@@ -4558,7 +4600,9 @@ fn test_lock_options_drop_credentials() {
     ]);
     let stripped = strip_lock_options_credentials(options);
     assert!(
-        stripped.values().all(|v| !v.contains("tok3n")),
+        stripped
+            .values()
+            .all(|v| !v.contains("tok3n") && !v.contains("second")),
         "{stripped:?}"
     );
     assert_eq!(
@@ -4567,7 +4611,7 @@ fn test_lock_options_drop_credentials() {
     );
     assert_eq!(
         stripped["npm_args"],
-        "--//npm.example.com/:_authToken=[redacted] --_auth=[redacted] --registry=https://npm.example.com/"
+        "--//npm.example.com/:_authToken=[redacted] --_auth=[redacted] --registry=https://npm.example.com/ --_password=[redacted]"
     );
     assert_eq!(stripped["api_url"], "https://ghe.example.com/api/v3");
     // Stripping twice changes nothing, so read and computed options agree.
