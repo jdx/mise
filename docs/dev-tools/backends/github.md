@@ -547,8 +547,11 @@ first. Without both options, mise skips SLSA provenance and uses the other
 checks. A lockfile entry that records a checksum and SLSA provenance installs
 without verifying again, unless
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
-is set; that setting also makes missing signer options an error. These options
-are GitHub only.
+is set; that setting also makes missing signer options an error. A lockfile
+entry that records a checksum but no provenance installs on the checksum alone,
+even with both options set, unless `locked_verify_provenance` or
+[paranoid mode](/paranoid.html) for provenance is on. These options are GitHub
+only.
 
 ### Templates
 
