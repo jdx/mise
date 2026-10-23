@@ -109,3 +109,26 @@ cp ../scripts_only/mise-tasks/build ../build.sh
 run_path="python3 mcp_call.py run_task '{\"task\": \"../build.sh\"}'"
 assert_fail_contains "$run_path" "not a file path"
 assert_fail "test -e '$script_marker'"
+
+# The trust check sees the tasks with the arguments they run with: the
+# client's, and those of a `run` entry.
+mkdir -p ../with_args
+cat >../with_args/mise.toml <<'EOF'
+[tasks.pick]
+usage = 'arg "[target]" default="missing"'
+depends = ["{{usage.target}}"]
+run = "echo picked"
+
+[tasks.real]
+run = "echo REAL-DEP"
+
+[tasks.nested]
+run = [{ task = "pick", args = ["real"] }]
+EOF
+mise trust ../with_args
+run_pick="cd ../with_args && python3 ../workdir/mcp_call.py run_task '{\"task\": \"pick\", \"args\": [\"real\"]}'"
+assert_contains "$run_pick" "status=ok"
+assert_contains "$run_pick" "REAL-DEP"
+run_nested="cd ../with_args && python3 ../workdir/mcp_call.py run_task '{\"task\": \"nested\"}'"
+assert_contains "$run_nested" "status=ok"
+assert_contains "$run_nested" "REAL-DEP"

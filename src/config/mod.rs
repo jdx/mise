@@ -5129,7 +5129,8 @@ pub async fn untrusted_task_reached(
     roots: Vec<Task>,
 ) -> Result<Option<Task>> {
     let all_tasks = config.tasks().await?;
-    let mut seen: HashSet<String> = HashSet::new();
+    // A task reached with other arguments can depend on other tasks, so it counts again.
+    let mut seen: HashSet<(String, Vec<String>)> = HashSet::new();
     let mut pending = roots;
     while !pending.is_empty() {
         let deps =
@@ -5138,24 +5139,29 @@ pub async fn untrusted_task_reached(
             if !task_is_trusted(config, task) {
                 return Ok(Some(task.clone()));
             }
-            if !seen.insert(task.name.clone()) {
+            if !seen.insert((task.name.clone(), task.args.clone())) {
                 continue;
             }
+            // Named and given arguments the way the executor injects them: the entry's `args`
+            // when it has some, else the ones written after the name.
             for entry in task.run() {
-                let names = match entry {
-                    RunEntry::Script(_) => &[][..],
-                    RunEntry::SingleTask { task, .. } => std::slice::from_ref(task),
-                    RunEntry::TaskGroup { tasks } => tasks.as_slice(),
+                let (specs, entry_args) = match entry {
+                    RunEntry::Script(_) => (&[][..], None),
+                    RunEntry::SingleTask { task, args, .. } => (
+                        std::slice::from_ref(task),
+                        (!args.is_empty()).then_some(args),
+                    ),
+                    RunEntry::TaskGroup { tasks } => (tasks.as_slice(), None),
                 };
-                for name in names {
-                    let (name, _) = crate::task::task_list::split_task_spec(name);
-                    let name = crate::task::resolve_task_pattern(name, Some(task));
-                    pending.extend(
-                        all_tasks
-                            .values()
-                            .filter(|t| t.is_match(&name) && !seen.contains(&t.name))
-                            .cloned(),
-                    );
+                for spec in specs {
+                    let spec = crate::task::resolve_task_pattern(spec, Some(task));
+                    let (name, inline_args) = crate::task::task_list::split_task_spec(&spec);
+                    let args = entry_args.cloned().unwrap_or(inline_args);
+                    pending.extend(all_tasks.values().filter(|t| t.is_match(name)).map(|t| {
+                        let mut t = t.clone();
+                        t.args = args.clone();
+                        t
+                    }));
                 }
             }
         }

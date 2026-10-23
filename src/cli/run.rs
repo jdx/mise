@@ -781,15 +781,6 @@ impl Run {
             return Ok(());
         }
         warn_secrets_flag_in_task_args(&task_list);
-        // A process that requires explicit trust (a task hook, an MCP request) has no typed
-        // `mise run` behind it. Task files already need trust there, but the inline tasks of a
-        // tasks-only `mise.toml` load without it, so check every task this run would reach.
-        if config_file::requires_explicit_trust()
-            && let Some(task) =
-                crate::config::untrusted_task_reached(&config, task_list.clone()).await?
-        {
-            return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
-        }
 
         // Args after -- go directly to tasks (no prefix). They are also
         // recorded on `trailing_args` so the task renderer can detect
@@ -841,6 +832,18 @@ impl Run {
                         .await?;
                 }
             }
+        }
+        // A process that requires explicit trust (a task hook, an MCP request) has no typed
+        // `mise run` behind it. Task files already need trust there, but the inline tasks of a
+        // tasks-only `mise.toml` load without it, so check every task this run would reach. The
+        // tasks carry the caller's arguments by now, so dependencies named from usage values
+        // resolve as they will when the run starts. The executor checks each task again as it
+        // schedules it.
+        if config_file::requires_explicit_trust()
+            && let Some(task) =
+                crate::config::untrusted_task_reached(&config, task_list.clone()).await?
+        {
+            return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
         }
         time!("run get_task_lists");
 
