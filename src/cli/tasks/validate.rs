@@ -882,8 +882,10 @@ impl TasksValidate {
 
         // Check if task has no run entries and no file
         // Allow tasks with dependencies but no run entries (meta/group tasks)
+        // An empty `run_windows` beside a `run` is a deliberate Windows skip, not a missing command
+        let skips_on_windows = task.run_windows_declared && !task.run.is_empty();
         if task.run().is_empty()
-            && !(task.run_windows_declared && !task.run.is_empty())
+            && !skips_on_windows
             && task.file.is_none()
             && task.depends.is_empty()
             && task.depends_post.is_empty()
