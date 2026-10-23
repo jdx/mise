@@ -3515,7 +3515,11 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
     // The persisted ignore list (dismissed prompt / `mise trust --ignore`) is
     // overridden by `trusted_config_paths`, matching is_trusted's precedence so
     // a settings-trusted config is still discovered and loaded.
-    if config_file::is_persisted_ignored(&ctr) || config_file::is_persisted_ignored(path) {
+    // Global config shares its trust root, the home directory, with a project
+    // config there, so ignoring that project must not drop the global config
+    // and the global-only settings it holds.
+    let ctr_ignored = !is_global_config(path) && config_file::is_persisted_ignored(&ctr);
+    if ctr_ignored || config_file::is_persisted_ignored(path) {
         return !config_file::is_trusted_via_config_paths(path);
     }
     false

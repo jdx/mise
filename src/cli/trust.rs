@@ -187,10 +187,21 @@ fn is_trust_metadata(path: &Path) -> bool {
         })
 }
 
+/// The config `--ignore` and `--untrust` act on when no path is given: the nearest project
+/// config, never global or system config. Trust does not apply to those, and once no project
+/// config is left in `ALL_CONFIG_FILES` its first entry is the global one; ignoring it would stop
+/// mise loading it, dropping every setting held there, including the global-only `paranoid`.
+fn nearest_local_config_file() -> Option<PathBuf> {
+    ALL_CONFIG_FILES
+        .iter()
+        .find(|p| !is_global_config(p))
+        .cloned()
+}
+
 pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
     let path = match config_file {
         Some(filename) => filename,
-        None => match ALL_CONFIG_FILES.first().cloned() {
+        None => match nearest_local_config_file() {
             Some(path) => path,
             None => {
                 warn!("No trusted config files found.");
@@ -272,7 +283,7 @@ impl Trust {
     fn ignore(&self) -> Result<()> {
         let path = match self.config_file()? {
             Some(filename) => filename,
-            None => match self.get_next() {
+            None => match nearest_local_config_file() {
                 Some(path) => path,
                 None => {
                     warn!("No trusted config files found.");
@@ -280,6 +291,15 @@ impl Trust {
                 }
             },
         };
+        // Also when the user named the path: a symlink inside a project can resolve to the
+        // global config, and outside paranoid mode its trust root is the home directory.
+        if is_global_config(&path) {
+            bail!(
+                "{} is global config, which cannot be ignored with `mise trust --ignore`. \
+                 Use the `ignored_config_paths` setting instead.",
+                display_path(&path)
+            );
+        }
         let cfr = config_file::trust_root_for_cli(&path);
         config_file::add_ignored(cfr.clone())?;
         // `mise trust` also approved the file itself when only `env_files` is on.
@@ -443,9 +463,6 @@ impl Trust {
         resolve_config_file(self.config_file.as_ref())
     }
 
-    fn get_next(&self) -> Option<PathBuf> {
-        ALL_CONFIG_FILES.first().cloned()
-    }
     fn get_next_untrusted(&self) -> Option<PathBuf> {
         config::load_config_paths(&DEFAULT_CONFIG_FILENAMES, true)
             .into_iter()
