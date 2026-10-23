@@ -127,6 +127,37 @@ pub fn redact_output(text: &str) -> String {
     }
 }
 
+/// `value` with every string in it, keys included, redacted the way the
+/// logger redacts a record ([`redact_output`]), for JSON that mise prints.
+/// Redacting the strings rather than the serialized text keeps the JSON valid
+/// whatever a registered secret is (`false`, `"`, `:`).
+pub fn redact_json(value: serde_json::Value) -> serde_json::Value {
+    redact_json_with(value, &redact_output)
+}
+
+/// [`redact_json`] with `redact` applied to each string.
+pub fn redact_json_with(
+    value: serde_json::Value,
+    redact: &dyn Fn(&str) -> String,
+) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Value::String(s) => Value::String(redact(&s)),
+        Value::Array(values) => Value::Array(
+            values
+                .into_iter()
+                .map(|v| redact_json_with(v, redact))
+                .collect(),
+        ),
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(k, v)| (redact(&k), redact_json_with(v, redact)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 fn redact_userinfo(text: &str, whitespace_ends_url: bool) -> Cow<'_, str> {
     rewrite_userinfo(text, whitespace_ends_url, Userinfo::Redact)
 }
@@ -354,6 +385,25 @@ mod tests {
             strip_url_credentials_in_arg("cargo:https://bot:my t0ken@host/r"),
             "cargo:https://host/r"
         );
+    }
+
+    /// A registered secret that happens to be JSON syntax (`false`) must not
+    /// turn into `[redacted]` outside a string.
+    #[test]
+    fn test_redact_json_redacts_strings_not_syntax() {
+        let redactor = Redactor::new(["false".to_string(), "s3cret".to_string()]);
+        let redact = |s: &str| redact_url_userinfo(&redactor.redact(s)).into_owned();
+        let value = serde_json::json!({
+            "activated": false,
+            "env": {"TOKEN": "s3cret", "s3cret": "x"},
+            "urls": ["https://u:p@host/x"],
+        });
+        let out = serde_json::to_string(&redact_json_with(value, &redact)).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["activated"], false);
+        assert_eq!(parsed["env"]["TOKEN"], "[redacted]");
+        assert_eq!(parsed["env"]["[redacted]"], "x");
+        assert_eq!(parsed["urls"][0], "https://[redacted]@host/x");
     }
 
     #[test]

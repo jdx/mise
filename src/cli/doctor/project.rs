@@ -12,6 +12,7 @@ use crate::config::doctor::DoctorCheck;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::env_diff::EnvMap;
 use crate::toolset::{ResolveOptions, ToolsetBuilder};
+use mise_util::redactions::redact_output;
 
 /// Run the project's diagnostic checks
 ///
@@ -84,16 +85,23 @@ impl Project {
             Ok(report) => report,
             Err(err) => Report {
                 checks: vec![],
-                errors: vec![mise_util::redactions::redact_output(&format!("{err:#}"))],
+                errors: vec![format!("{err:#}")],
             },
         };
+        // Check names, descriptions and messages come from config and command
+        // output; both forms are printed outside the logger.
         if self.json || parent_json {
+            let report = mise_util::redactions::redact_json(serde_json::to_value(&report)?);
             miseprintln!("{}", serde_json::to_string_pretty(&report)?);
         } else if report.checks.is_empty() && report.errors.is_empty() {
             miseprintln!("No project checks configured. Add [doctor.checks.<name>] to mise.toml.");
         } else {
+            let print = |line: String| -> Result<()> {
+                miseprintln!("{}", redact_output(&line));
+                Ok(())
+            };
             for error in &report.errors {
-                miseprintln!("ERROR {error}");
+                print(format!("ERROR {error}"))?;
             }
             for check in &report.checks {
                 let status = match check.status {
@@ -103,18 +111,18 @@ impl Project {
                     Status::Skipped => "SKIP",
                     Status::Blocked => "BLOCKED",
                 };
-                miseprintln!(
+                print(format!(
                     "{status} {}: {}",
                     check.name,
                     check.description.as_deref().unwrap_or(&check.name)
-                );
+                ))?;
                 if let Some(message) = &check.message {
-                    miseprintln!("  {message}");
+                    print(format!("  {message}"))?;
                 }
                 if matches!(check.status, Status::Fail | Status::Error)
                     && let Some(hint) = &check.hint
                 {
-                    miseprintln!("  {hint}");
+                    print(format!("  {hint}"))?;
                 }
             }
         }

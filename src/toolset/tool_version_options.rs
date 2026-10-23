@@ -79,16 +79,21 @@ pub(crate) fn strip_options_credentials<'a>(
 /// Their templates are rendered by now, so a token the user kept out of the
 /// config file can be in them: as the userinfo of a registry or download URL
 /// (`source = "https://{{ env.GEM_TOKEN }}@gems.example.com"`), as a `headers`
-/// value, or in `install_env`. Every string is passed through `redact`, and the
-/// values of `headers` tables, which have no recognizable shape, are replaced
-/// by `[redacted]`.
+/// value, or in `install_env`. Every string is passed through `redact`, and
+/// values with no recognizable shape are replaced by `[redacted]` whole: those
+/// of `headers` tables, and those under a secret-shaped name (`api_key`,
+/// `NPM_TOKEN`; see [`mise_settings::is_secret_name`]).
 pub fn redact_tool_options(
     mut options: ToolVersionOptions,
     redact: &dyn Fn(&str) -> String,
 ) -> ToolVersionOptions {
-    for value in options.core.install_env.values_mut() {
+    for (key, value) in options.core.install_env.iter_mut() {
         if let EnvValue::String(s) = value {
-            *s = redact(s);
+            *s = if mise_settings::is_secret_name(key) {
+                "[redacted]".to_string()
+            } else {
+                redact(s)
+            };
         }
     }
     for (key, value) in options.opts.iter_mut() {
@@ -102,7 +107,9 @@ fn redact_option_value(
     value: &toml::Value,
     redact: &dyn Fn(&str) -> String,
 ) -> toml::Value {
-    let secret = key == "headers" || is_flat_platform_opt(key, "headers");
+    let secret = key == "headers"
+        || is_flat_platform_opt(key, "headers")
+        || mise_settings::is_secret_name(key);
     match value {
         toml::Value::String(_) if secret => toml::Value::String("[redacted]".to_string()),
         toml::Value::String(raw) => toml::Value::String(redact(raw)),
@@ -1047,7 +1054,8 @@ mod tests {
             source = "https://tok3n@gems.example.com/acme"
             bin_path = "bin"
             strip_components = 1
-            install_env = { PIP_INDEX_URL = "https://user:tok3n@pypi.example.com/simple", JOBS = 4 }
+            install_env = { PIP_INDEX_URL = "https://user:tok3n@pypi.example.com/simple", JOBS = 4, NPM_TOKEN = "tok3n" }
+            api_token = "tok3n"
             headers = { Authorization = "Bearer tok3n" }
             headers_forward = { Authorization = ["cdn.example.com"] }
             platforms_macos_arm64_headers = { X-Api-Key = "tok3n" }
@@ -1063,7 +1071,8 @@ mod tests {
             source = "https://[redacted]@gems.example.com/acme"
             bin_path = "bin"
             strip_components = 1
-            install_env = { PIP_INDEX_URL = "https://[redacted]@pypi.example.com/simple", JOBS = 4 }
+            install_env = { PIP_INDEX_URL = "https://[redacted]@pypi.example.com/simple", JOBS = 4, NPM_TOKEN = "[redacted]" }
+            api_token = "[redacted]"
             headers = { Authorization = "[redacted]" }
             headers_forward = { Authorization = ["cdn.example.com"] }
             platforms_macos_arm64_headers = { X-Api-Key = "[redacted]" }
