@@ -58,3 +58,24 @@ rm uv.lock
 timeout 120 mise env >/dev/null
 assert "test -d my_venv && echo created" "created"
 assert_fail "test -e probe.log"
+
+# the stdlib branch (`python3 -m venv`) gets the same marker
+rm -rf my_venv probe.log
+mkdir bin
+REAL_PYTHON3="$(command -v python3)"
+cat >bin/python3 <<EOF2
+#!/bin/sh
+echo "stdlib marker=\${__MISE_CREATING_VENV:-unset}" >>"\$PWD/probe.log"
+exec "$REAL_PYTHON3" "\$@"
+EOF2
+chmod +x bin/python3
+cat >mise.toml <<EOF2
+[env._.python]
+venv = {path = "my_venv", create = true}
+
+[settings]
+python.venv_stdlib = true
+EOF2
+PATH="$PWD/bin:$PATH" mise env >/dev/null
+assert "test -d my_venv && echo created" "created"
+assert_contains "cat probe.log" "stdlib marker=1"
