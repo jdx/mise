@@ -149,55 +149,6 @@ pub(crate) fn lock_signer_continues(
         })
 }
 
-/// The signers of this machine's pins without a repository ID that
-/// api.github.com itself confirms are the release's repository under a name
-/// it had before, for [`packslip_pins::Observed::confirmed`]. Such a pin
-/// recorded no ID to compare the certificate's with, and the forge check's
-/// ID may come from a `url_replacements` mirror, so nothing short of GitHub's
-/// own answer shows the rename: [`github::canonical_repo`] refuses to ask a
-/// mirror. Nothing is asked when no such pin would otherwise refuse the
-/// release.
-pub(crate) async fn confirmed_renames(
-    project: &str,
-    observed: packslip_pins::Observed<'_>,
-) -> eyre::Result<Vec<String>> {
-    let candidates = packslip_pins::renames_to_confirm(project, observed)?;
-    if candidates.is_empty() || Settings::get().offline() {
-        return Ok(Vec::new());
-    }
-    let signer = packslip_pins::signer_of(observed.scheme, observed.key_id);
-    Ok(
-        confirm_renames_with(candidates, &signer, async |repo: &str| {
-            github::canonical_repo(repo).await
-        })
-        .await,
-    )
-}
-
-/// [`confirmed_renames`] with `canonical` naming the repository each
-/// `owner/repo` leads to now: the pinned signer's repository and the
-/// release's must lead to the same one.
-async fn confirm_renames_with(
-    candidates: Vec<String>,
-    signer: &str,
-    canonical: impl AsyncFn(&str) -> eyre::Result<String>,
-) -> Vec<String> {
-    let mut confirmed = Vec::new();
-    for previous in candidates {
-        let Some((before, now)) = packslip_pins::github_rename(&previous, signer) else {
-            continue;
-        };
-        let (Ok(before), Ok(now)) = (canonical(&before).await, canonical(&now).await) else {
-            debug!("could not confirm with GitHub that {before} was renamed to {now}");
-            continue;
-        };
-        if before.eq_ignore_ascii_case(&now) {
-            confirmed.push(previous);
-        }
-    }
-    confirmed
-}
-
 /// Whether a newly resolved lock entry for `project` is signed by the signer
 /// the old one committed to: the same scheme, and the same signer given the
 /// forge pin each entry recorded ([`packslip::forge::same_workflow`]). A
@@ -865,7 +816,6 @@ mod tests {
             logged: true,
             forge: check,
             listed: &[],
-            confirmed: &[],
         };
         // A pin set under the new name, before mise recorded forge IDs.
         let hook = "https://github.com/jdx/hook/.github/workflows/release.yml@refs/tags/v3.0.0";
@@ -923,73 +873,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn a_rename_is_confirmed_only_when_both_names_lead_to_one_repository() {
-        let old = "https://github.com/jdx/hook/.github/workflows/release.yml".to_string();
-        // What GitHub answers for `GET /repos/{repo}`: renamed, taken over,
-        // or not asked at all (a mirror in its place, offline).
-        let renamed = async |repo: &str| -> eyre::Result<String> {
-            Ok(match repo {
-                "jdx/hook" | "jdx/hk" => "jdx/hk".into(),
-                other => other.into(),
-            })
-        };
-        let taken = async |repo: &str| -> eyre::Result<String> { Ok(repo.into()) };
-        let unasked = async |_: &str| -> eyre::Result<String> { eyre::bail!("not GitHub") };
-        let signer = "https://github.com/jdx/hk/.github/workflows/release.yml";
-        assert_eq!(
-            confirm_renames_with(vec![old.clone()], signer, renamed).await,
-            std::slice::from_ref(&old)
-        );
-        assert!(
-            confirm_renames_with(vec![old.clone()], signer, taken)
-                .await
-                .is_empty()
-        );
-        assert!(
-            confirm_renames_with(vec![old.clone()], signer, unasked)
-                .await
-                .is_empty()
-        );
-        // Another workflow file is another signer, whatever GitHub says.
-        let other = "https://github.com/jdx/hk/.github/workflows/other.yml";
-        assert!(
-            confirm_renames_with(vec![old], other, renamed)
-                .await
-                .is_empty()
-        );
-    }
-
-    #[tokio::test]
-    async fn a_rename_a_mirror_reports_is_not_confirmed() {
-        use crate::config::SettingsExt;
-        use crate::config::settings::SettingsPartial;
-        use confique::Layer;
-        let _config = crate::config::Config::get().await.unwrap();
-        let mut server = mockito::Server::new_async().await;
-        // A host in GitHub's place that says both names are one repository.
-        let mock = server
-            .mock("GET", mockito::Matcher::Regex("^/repos/".into()))
-            .with_body(r#"{"id": 922514152, "full_name": "jdx/hk"}"#)
-            .expect(0)
-            .create_async()
-            .await;
-        let _settings = crate::test::SettingsGuard::lock();
-        let mut settings = SettingsPartial::empty();
-        settings.url_replacements = Some(indexmap::indexmap! {
-            "https://api.github.com".to_string() => server.url(),
-        });
-        Settings::reset(Some(settings));
-        let old = "https://github.com/jdx/hook/.github/workflows/release.yml".to_string();
-        let signer = "https://github.com/jdx/hk/.github/workflows/release.yml";
-        let confirmed = confirm_renames_with(vec![old], signer, async |repo: &str| {
-            github::canonical_repo(repo).await
-        })
-        .await;
-        assert!(confirmed.is_empty());
-        mock.assert_async().await;
-    }
-
     #[test]
     fn a_machine_pin_without_forge_ids_gains_them_under_its_own_name() {
         let dir = tempfile::tempdir().unwrap();
@@ -1021,7 +904,6 @@ mod tests {
             logged: true,
             forge: check,
             listed: &[],
-            confirmed: &[],
         }
     }
 

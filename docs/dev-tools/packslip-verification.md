@@ -162,20 +162,14 @@ which repository the requested name now belongs to. If it cannot ask, for
 example offline or when rate-limited, it compares names only and refuses the
 release.
 
-A pin or a `mise.lock` entry that recorded no repository ID holds by name.
-Versions of mise from before it recorded IDs left such records, and so do the
-`identity`, `identity_prefix`, and `pubkey` options. The ID a forge check
-compares can come from a mirror that
-[`url_replacements`](/url-replacements.html) puts in GitHub's place, so it does
-not show that a release signed under another name is the pinned repository.
-A pin follows a GitHub rename only when api.github.com itself confirms that the
-pinned name and the release's name lead to the same repository and the release
-is signed by the same workflow file; mise then records the repository ID, and
-later releases are held to it. Otherwise, including whenever `url_replacements`
-reroutes api.github.com, the release is refused until you run
-`mise packslip forget`. A lockfile entry without an ID is refused until you
-remove it. The next release accepted under the pinned name with a forge check
-adds the ID.
+A pin or a `mise.lock` entry that recorded no repository ID holds by name and
+never follows a rename. Versions of mise from before it recorded IDs left such
+records, and so do the `identity`, `identity_prefix`, and `pubkey` options. The
+forge's answer says which repository has the name today, not which one was
+pinned, so a release signed under another name is a different signer and is
+refused. For a machine pin, run `mise packslip forget <tool>` and install
+again; for a lockfile entry, remove it and run `mise lock` again. The next
+release accepted under the pinned name with a forge check adds the ID.
 
 This is still trust on first use. The first install on a machine with no pin and
 no lockfile entry accepts whichever repository owns the name at that moment, so

@@ -1780,23 +1780,17 @@ impl PackslipBackend {
         let scheme = verified.scheme.to_string();
         let attested_by = verified.attested_by.to_string();
         let listed = pin.listed_signers();
-        let observed = Observed {
-            scheme: &scheme,
-            key_id: &verified.key_id,
-            issuer: verified.issuer.as_deref(),
-            attested_by: &attested_by,
-            provenance: verified.provenance_linked,
-            logged: verified.logged_at.is_some(),
-            forge: accepted.check.as_ref(),
-            listed: &listed,
-            confirmed: &[],
-        };
-        let confirmed = packslip_forge::confirmed_renames(project, observed).await?;
         packslip_pins::check(
             project,
             Observed {
-                confirmed: &confirmed,
-                ..observed
+                scheme: &scheme,
+                key_id: &verified.key_id,
+                issuer: verified.issuer.as_deref(),
+                attested_by: &attested_by,
+                provenance: verified.provenance_linked,
+                logged: verified.logged_at.is_some(),
+                forge: accepted.check.as_ref(),
+                listed: &listed,
             },
         )?;
         let payload = packslip::sigstore::peek_statement(&text).map_err(|e| eyre!("{e}"))?;
@@ -2090,7 +2084,6 @@ pub(crate) struct PendingPin {
     logged: bool,
     forge: Option<Check>,
     listed: Vec<String>,
-    confirmed: Vec<String>,
 }
 
 impl PendingPin {
@@ -2106,7 +2099,6 @@ impl PendingPin {
                 logged: self.logged,
                 forge: self.forge.as_ref(),
                 listed: &self.listed,
-                confirmed: &self.confirmed,
             },
         )?;
         Ok(())
@@ -2299,12 +2291,6 @@ impl PackslipBackend {
             logged: verified.logged_at.is_some(),
             forge: check,
             listed: &listed,
-            confirmed: &[],
-        };
-        let confirmed = packslip_forge::confirmed_renames(&project, observed).await?;
-        let observed = Observed {
-            confirmed: &confirmed,
-            ..observed
         };
         packslip_pins::check(&project, observed)?;
         let signer = format!(
@@ -2476,7 +2462,6 @@ impl PackslipBackend {
                 logged: observed.logged,
                 forge: observed.forge.cloned(),
                 listed,
-                confirmed,
             },
         ))
     }
