@@ -45,3 +45,33 @@ CLONE_ENV = "1"
 EOF
 git init -q .mise
 assert_not_contains "mise env -s bash 2>&1" "CLONE_ENV"
+
+# A checkout named .config is outside config for the directory above it, but
+# run inside it, its mise.toml is its own project config and trusted on its own.
+rm -rf .mise
+mkdir .config
+cat <<EOF >.config/mise.toml
+[env]
+CHECKOUT_ENV = "1"
+EOF
+git init -q .config
+assert_not_contains "mise env -s bash 2>&1" "CHECKOUT_ENV"
+cd .config || exit 1
+mise trust
+assert_contains "mise env -s bash" "CHECKOUT_ENV"
+assert_contains "mise trust --show" ".config: trusted"
+cd .. || exit 1
+assert_not_contains "mise env -s bash 2>&1" "CHECKOUT_ENV"
+
+# A checkout cloned into the home directory as mise-tasks does not supply
+# global tasks either, while a plain directory there does.
+echo "[env]" >"$MISE_CONFIG_DIR/config.toml"
+mkdir -p "$HOME/mise-tasks"
+cat <<EOF >"$HOME/mise-tasks/hometask"
+#!/usr/bin/env bash
+echo hometask
+EOF
+chmod +x "$HOME/mise-tasks/hometask"
+assert_contains "mise tasks ls 2>&1" "hometask"
+git init -q "$HOME/mise-tasks"
+assert_not_contains "mise tasks ls 2>&1" "hometask"

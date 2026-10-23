@@ -3536,7 +3536,13 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
     }
     // A `mise/`, `.mise/` or `.config/` directory that is a git checkout of
     // its own is a project, not the config folder of the directory above it.
-    if config_file::config_root::nested_checkout(path).is_some() {
+    // Run inside that checkout, its own project config (such as
+    // `.config/mise.toml` read as the `mise.toml` of a checkout named
+    // `.config`) still loads, with the checkout as its trust root.
+    if let Some(checkout) = config_file::config_root::nested_checkout(path)
+        && !(std::env::current_dir().is_ok_and(|cwd| cwd.starts_with(&checkout))
+            && config_paths_in_dir(&checkout).iter().any(|p| p == path))
+    {
         return true;
     }
     if include_ignored {
@@ -5084,7 +5090,13 @@ fn default_task_includes() -> Vec<String> {
 /// a git checkout of its own below `dir`, such as a repository cloned into
 /// `dir` as `mise`: that checkout's `tasks/` are its own, not `dir`'s.
 fn default_task_includes_for(dir: &Path) -> Vec<String> {
-    default_task_includes()
+    without_nested_checkouts(dir, default_task_includes())
+}
+
+/// `includes` without a task directory that sits in a git checkout of its own
+/// below `dir`. See [`default_task_includes_for`].
+fn without_nested_checkouts(dir: &Path, includes: Vec<String>) -> Vec<String> {
+    includes
         .into_iter()
         .filter(|include| {
             config_file::config_root::checkout_between(dir, &dir.join(include)).is_none()
@@ -7447,7 +7459,11 @@ async fn load_task_sources_from_configs(
         })
         .unwrap_or_else(|| {
             (
-                default_includes.unwrap_or_else(|| default_task_includes_for(dir)),
+                // The user-global scope supplies its own defaults, which a
+                // checkout cloned into the home directory must not join either.
+                default_includes
+                    .map(|includes| without_nested_checkouts(dir, includes))
+                    .unwrap_or_else(|| default_task_includes_for(dir)),
                 dir.to_path_buf(),
                 configs.len(),
             )
