@@ -123,10 +123,12 @@ impl GoPlugin {
         let tarball_path = tv.download_path().join(filename);
 
         let tarball_url_ = tarball_url.clone();
-        let checksum_handle = tokio::spawn(async move {
-            let checksum_url = format!("{}.sha256", tarball_url_);
-            HTTP.get_text(checksum_url).await
-        });
+        let checksum_handle = tokio::spawn(mise_util::untrusted_hosts::inherit_trusted_scope(
+            async move {
+                let checksum_url = format!("{}.sha256", tarball_url_);
+                HTTP.get_text(checksum_url).await
+            },
+        ));
         pr.set_message(format!("download {filename}"));
         HTTP.download_file_stored(
             &*tarball_url,

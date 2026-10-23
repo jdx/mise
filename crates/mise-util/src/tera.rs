@@ -125,18 +125,20 @@ pub async fn with_trusted_templates<T>(future: impl std::future::Future<Output =
     TRUSTED_TEMPLATES.scope(true, future).await
 }
 
+/// Whether the current task runs inside [`with_trusted_templates`].
+pub fn in_trusted_templates() -> bool {
+    TRUSTED_TEMPLATES
+        .try_with(|trusted| *trusted)
+        .unwrap_or(false)
+}
+
 /// Empties `env` in safe mode. Project config loads without trust there, and
 /// what its templates render reaches the URLs mise requests, the lockfile and
 /// command output, so they must not see the credentials in the operator's
 /// environment. This is done on every render rather than where a context is
 /// built because backends and tasks render with contexts of their own.
 fn safe_context(context: &Context) -> std::borrow::Cow<'_, Context> {
-    if !context.contains_key("env")
-        || !safe_mode()
-        || TRUSTED_TEMPLATES
-            .try_with(|trusted| *trusted)
-            .unwrap_or(false)
-    {
+    if !context.contains_key("env") || !safe_mode() || in_trusted_templates() {
         return std::borrow::Cow::Borrowed(context);
     }
     let mut context = context.clone();

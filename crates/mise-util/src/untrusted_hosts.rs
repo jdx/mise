@@ -105,6 +105,27 @@ pub async fn with_trusted_tool_scope<T>(future: impl Future<Output = T>) -> T {
     TRUSTED_TOOL.scope(true, future).await
 }
 
+/// Wraps `future`, about to be spawned as a task of its own (`tokio::spawn`, a
+/// `JoinSet`, [`crate::parallel::parallel`]), so that it runs in the trusted
+/// scopes of the task spawning it: task-locals do not pass to a spawned task, so
+/// without this the work a global tool spreads over tasks would lose its netrc
+/// credentials and its templates' `env`. A future spawned outside those scopes
+/// stays outside them.
+pub fn inherit_trusted_scope<F: Future>(future: F) -> impl Future<Output = F::Output> {
+    let tool = TRUSTED_TOOL.try_with(|trusted| *trusted).unwrap_or(false);
+    let templates = crate::tera::in_trusted_templates();
+    async move {
+        match (tool, templates) {
+            (true, true) => {
+                crate::tera::with_trusted_templates(Box::pin(with_trusted_tool_scope(future))).await
+            }
+            (true, false) => with_trusted_tool_scope(future).await,
+            (false, true) => crate::tera::with_trusted_templates(future).await,
+            (false, false) => future.await,
+        }
+    }
+}
+
 /// Whether netrc credentials must not be sent with a request for `url`: project
 /// config named its host, and the request is not made for a tool that global or
 /// system config declares.
@@ -163,6 +184,41 @@ mod tests {
                 netrc_denied(&url("https://files.example/private.env"))
             }));
         assert!(!trusted);
+        // and keeps them in the tasks that work spawns, but only through
+        // `inherit_trusted_scope`
+        let (inherited, plain, parallel, outside) = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .build()
+            .unwrap()
+            .block_on(async {
+                let target = url("https://files.example/private.env");
+                let (inherited, plain, parallel) = with_trusted_tool_scope(async {
+                    let t = target.clone();
+                    let inherited =
+                        tokio::spawn(inherit_trusted_scope(async move { netrc_denied(&t) }));
+                    let t = target.clone();
+                    let plain = tokio::spawn(async move { netrc_denied(&t) });
+                    let parallel =
+                        crate::parallel::parallel(vec![target.clone()], |t| async move {
+                            Ok(netrc_denied(&t))
+                        });
+                    (
+                        inherited.await.unwrap(),
+                        plain.await.unwrap(),
+                        parallel.await.unwrap(),
+                    )
+                })
+                .await;
+                let t = target.clone();
+                let outside = tokio::spawn(inherit_trusted_scope(async move { netrc_denied(&t) }))
+                    .await
+                    .unwrap();
+                (inherited, plain, parallel, outside)
+            });
+        assert!(!inherited);
+        assert!(plain);
+        assert_eq!(parallel, [false]);
+        assert!(outside);
         deny_netrc_for_url("https://{{ os() }}.evil.example/tool");
         assert!(netrc_denied(&url("https://linux.evil.example/tool")));
         assert!(netrc_denied(&url("https://mirror.example/x")));
