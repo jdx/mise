@@ -165,6 +165,39 @@ fn intoto_envelope_requires_the_tool_repository_for_a_reusable_workflow() {
     }
 }
 
+#[tokio::test]
+async fn unaccepted_source_repositories_name_the_signing_run() {
+    let path = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/sops_v3_9_0.intoto.jsonl"
+    ));
+    let unaccepted = async |signer| {
+        slsa_provenance_unaccepted_source_repositories(path, signer)
+            .await
+            .unwrap()
+    };
+    // Expecting the name the repository had before it moved to getsops.
+    assert_eq!(
+        unaccepted(SlsaSignerIdentity {
+            source_repository: Some("mozilla/sops"),
+            ..GENUINE_SIGNER
+        })
+        .await,
+        ["getsops/sops"]
+    );
+    // Nothing to look up when the source is accepted, or the signer differs.
+    assert!(unaccepted(GENUINE_SIGNER).await.is_empty());
+    assert!(
+        unaccepted(SlsaSignerIdentity {
+            issuer: "https://accounts.google.com",
+            source_repository: Some("mozilla/sops"),
+            ..GENUINE_SIGNER
+        })
+        .await
+        .is_empty()
+    );
+}
+
 #[test]
 fn github_workflow_repository_of_identity() {
     assert_eq!(

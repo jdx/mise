@@ -96,7 +96,73 @@ pub(crate) fn verify_slsa_signer_certificate(
     let cert = Certificate::from_der(cert_der).map_err(|e| {
         AttestationError::Verification(format!("failed to parse SLSA signer certificate: {e}"))
     })?;
-    if !certificate_uri_sans(&cert)
+    verify_slsa_signer_identity(&cert, expected)?;
+
+    // A reusable workflow has the same identity and issuer in every
+    // repository that calls it; only the source repository extension says
+    // whose workflow run was signed. Accept the repository that holds the
+    // signing workflow, or the one the caller expects.
+    if let Some(workflow_repository) = github_workflow_repository(expected.identity) {
+        let source = certificate_source_repository(&cert);
+        if !source
+            .as_deref()
+            .is_some_and(|source| slsa_source_accepted(source, workflow_repository, expected))
+        {
+            let expected = match expected
+                .source_repository
+                .and_then(normalize_github_repository)
+            {
+                Some(expected) if !expected.eq_ignore_ascii_case(workflow_repository) => {
+                    format!("{expected} or {workflow_repository}")
+                }
+                _ => workflow_repository.to_string(),
+            };
+            return Err(AttestationError::WorkflowMismatch(format!(
+                "SLSA provenance was built in {}, expected {expected}",
+                source.as_deref().unwrap_or("an unknown repository"),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The repository a certificate says its workflow run belonged to, when the
+/// certificate names `expected`'s identity and issuer but that repository is
+/// not one `expected` accepts. The certificate is not verified here, so this
+/// is only a lead (to a renamed or transferred repository, say); provenance
+/// must be verified again in full before it is trusted.
+pub(crate) fn unaccepted_slsa_source_repository(
+    cert_der: &[u8],
+    expected: SlsaSignerIdentity<'_>,
+) -> Option<String> {
+    use x509_cert::Certificate;
+    use x509_cert::der::Decode;
+
+    let cert = Certificate::from_der(cert_der).ok()?;
+    verify_slsa_signer_identity(&cert, expected).ok()?;
+    let workflow_repository = github_workflow_repository(expected.identity)?;
+    let source = certificate_source_repository(&cert)?;
+    (!slsa_source_accepted(&source, workflow_repository, expected)).then_some(source)
+}
+
+fn slsa_source_accepted(
+    source: &str,
+    workflow_repository: &str,
+    expected: SlsaSignerIdentity<'_>,
+) -> bool {
+    source.eq_ignore_ascii_case(workflow_repository)
+        || expected
+            .source_repository
+            .and_then(normalize_github_repository)
+            .is_some_and(|expected| source.eq_ignore_ascii_case(expected))
+}
+
+/// The certificate's URI SAN and OIDC issuer must be `expected`'s exactly.
+fn verify_slsa_signer_identity(
+    cert: &x509_cert::Certificate,
+    expected: SlsaSignerIdentity<'_>,
+) -> Result<()> {
+    if !certificate_uri_sans(cert)
         .iter()
         .any(|identity| identity == expected.identity)
     {
@@ -124,33 +190,6 @@ pub(crate) fn verify_slsa_signer_certificate(
             expected.issuer
         )));
     }
-
-    // A reusable workflow has the same identity and issuer in every
-    // repository that calls it; only the source repository extension says
-    // whose workflow run was signed. Accept the repository that holds the
-    // signing workflow, or the one the caller expects.
-    if let Some(workflow_repository) = github_workflow_repository(expected.identity) {
-        let expected_repository = expected
-            .source_repository
-            .and_then(normalize_github_repository);
-        let source = certificate_source_repository(&cert);
-        let accepted = source.as_deref().is_some_and(|source| {
-            source.eq_ignore_ascii_case(workflow_repository)
-                || expected_repository.is_some_and(|expected| source.eq_ignore_ascii_case(expected))
-        });
-        if !accepted {
-            let expected = match expected_repository {
-                Some(expected) if !expected.eq_ignore_ascii_case(workflow_repository) => {
-                    format!("{expected} or {workflow_repository}")
-                }
-                _ => workflow_repository.to_string(),
-            };
-            return Err(AttestationError::WorkflowMismatch(format!(
-                "SLSA provenance was built in {}, expected {expected}",
-                source.as_deref().unwrap_or("an unknown repository"),
-            )));
-        }
-    }
     Ok(())
 }
 
@@ -165,7 +204,7 @@ pub(crate) fn github_workflow_repository(identity: &str) -> Option<&str> {
 
 /// `owner/repo` from `owner/repo`, `github.com/owner/repo` or
 /// `https://github.com/owner/repo`.
-pub(crate) fn normalize_github_repository(repository: &str) -> Option<&str> {
+pub fn normalize_github_repository(repository: &str) -> Option<&str> {
     let repository = repository.trim_end_matches('/');
     let repository = repository.strip_prefix("https://").unwrap_or(repository);
     let repository = repository.strip_prefix("github.com/").unwrap_or(repository);

@@ -930,14 +930,32 @@ pub async fn verify_slsa_provenance(
     signer: SlsaSignerIdentity<'_>,
 ) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
-    if !mise_settings::Settings::get().generate_lockfiles() {
-        return mise_sigstore::verify_slsa_provenance(
+    let verify = async {
+        let result = mise_sigstore::verify_slsa_provenance(
             artifact_path,
             provenance_path,
             min_level,
             signer,
         )
         .await;
+        match renamed_slsa_source(&result, provenance_path, signer, None).await {
+            Some(renamed) => {
+                mise_sigstore::verify_slsa_provenance(
+                    artifact_path,
+                    provenance_path,
+                    min_level,
+                    SlsaSignerIdentity {
+                        source_repository: Some(&renamed),
+                        ..signer
+                    },
+                )
+                .await
+            }
+            None => result,
+        }
+    };
+    if !mise_settings::Settings::get().generate_lockfiles() {
+        return verify.await;
     }
     let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
     let provenance_digest = mise_sigstore::calculate_file_digest(provenance_path).await?;
@@ -945,11 +963,7 @@ pub async fn verify_slsa_provenance(
         "slsa:{artifact_digest}:{provenance_digest}:{min_level}:{}:{}:{:?}",
         signer.identity, signer.issuer, signer.source_repository
     );
-    shared_verification(
-        key,
-        mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level, signer),
-    )
-    .await
+    shared_verification(key, verify).await
 }
 
 pub async fn verify_slsa_provenance_artifacts(
@@ -958,9 +972,85 @@ pub async fn verify_slsa_provenance_artifacts(
     min_level: u8,
     signer: SlsaSignerIdentity<'_>,
 ) -> AttestationResult<bool> {
+    verify_slsa_provenance_artifacts_with(provenance_path, artifacts, min_level, signer, None).await
+}
+
+/// Stands in for GitHub's answer to "are these one repository?" in tests.
+type ConfirmRename<'a> = Option<&'a (dyn Fn(&str, &str, &str) -> bool + Sync)>;
+
+async fn verify_slsa_provenance_artifacts_with(
+    provenance_path: &Path,
+    artifacts: &[SlsaArtifact],
+    min_level: u8,
+    signer: SlsaSignerIdentity<'_>,
+    confirm: ConfirmRename<'_>,
+) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
-    mise_sigstore::verify_slsa_provenance_artifacts(provenance_path, artifacts, min_level, signer)
-        .await
+    let result = mise_sigstore::verify_slsa_provenance_artifacts(
+        provenance_path,
+        artifacts,
+        min_level,
+        signer,
+    )
+    .await;
+    match renamed_slsa_source(&result, provenance_path, signer, confirm).await {
+        Some(renamed) => {
+            mise_sigstore::verify_slsa_provenance_artifacts(
+                provenance_path,
+                artifacts,
+                min_level,
+                SlsaSignerIdentity {
+                    source_repository: Some(&renamed),
+                    ..signer
+                },
+            )
+            .await
+        }
+        None => result,
+    }
+}
+
+/// When `result` failed because the provenance was built in a repository
+/// `signer` doesn't accept, the name `signer.source_repository` had when it
+/// was built, if GitHub confirms that both names are one repository (renamed
+/// or transferred since). Provenance names the repository as it was when it
+/// was signed. The caller verifies again in full with that name.
+///
+/// Only api.github.com itself can confirm a rename:
+/// [`crate::github::canonical_repo`] refuses when `url_replacements`
+/// reroutes it, since that host may have served the provenance.
+async fn renamed_slsa_source(
+    result: &AttestationResult<bool>,
+    provenance_path: &Path,
+    signer: SlsaSignerIdentity<'_>,
+    confirm: ConfirmRename<'_>,
+) -> Option<String> {
+    if result.is_ok() {
+        return None;
+    }
+    let (owner, repo) = signer
+        .source_repository
+        .and_then(mise_sigstore::normalize_github_repository)?
+        .split_once('/')?;
+    let unaccepted =
+        mise_sigstore::slsa_provenance_unaccepted_source_repositories(provenance_path, signer)
+            .await
+            .ok()?;
+    // A handful at most; each one costs GitHub API requests.
+    for other in unaccepted.into_iter().take(3) {
+        let confirmed = match confirm {
+            Some(confirm) => confirm(owner, repo, &other),
+            None => {
+                crate::github::attested_by_repository(owner, repo, std::slice::from_ref(&other))
+                    .await
+            }
+        };
+        if confirmed {
+            debug!("SLSA provenance for {owner}/{repo} was built in {other}, its former name");
+            return Some(other);
+        }
+    }
+    None
 }
 
 pub fn is_slsa_subject_mismatch(error: &AttestationError) -> bool {
@@ -1403,6 +1493,94 @@ mod tests {
             outcome,
             CachedAttestationVerification::Retry(Some(AttestationError::WorkflowMismatch(_)))
         ));
+    }
+
+    /// slsa-github-generator provenance for sops v3.9.0, built in
+    /// getsops/sops, which was mozilla/sops until its transfer.
+    fn sops_provenance() -> &'static Path {
+        Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../mise-sigstore/tests/fixtures/sops_v3_9_0.intoto.jsonl"
+        ))
+    }
+
+    fn sops_artifact() -> SlsaArtifact {
+        SlsaArtifact {
+            name: "sops-v3.9.0.linux.amd64".to_string(),
+            sha256: "0d65660fbe785647ff4f1764d7f69edf598f79d6d79ebbef4a501909b6ff6b82".to_string(),
+        }
+    }
+
+    /// The generator's identity, expecting sops under its former name.
+    const SOPS_SIGNER_BEFORE_TRANSFER: SlsaSignerIdentity<'static> = SlsaSignerIdentity {
+        identity: "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@refs/tags/v2.0.0",
+        issuer: "https://token.actions.githubusercontent.com",
+        source_repository: Some("mozilla/sops"),
+    };
+
+    #[test]
+    fn test_slsa_accepts_a_rename_github_confirms() {
+        let _settings = SettingsGuard::new(None);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let verify = |confirm: &(dyn Fn(&str, &str, &str) -> bool + Sync)| {
+            runtime.block_on(verify_slsa_provenance_artifacts_with(
+                sops_provenance(),
+                &[sops_artifact()],
+                1,
+                SOPS_SIGNER_BEFORE_TRANSFER,
+                Some(confirm),
+            ))
+        };
+
+        // Without GitHub's word, provenance built in getsops/sops is not
+        // mozilla/sops's.
+        let err = verify(&|_, _, _| false).unwrap_err();
+        assert!(err.to_string().contains("built in getsops/sops"), "{err}");
+
+        // api.github.com says getsops/sops is mozilla/sops, transferred.
+        let confirmed = verify(&|owner, repo, other| {
+            (owner, repo, other) == ("mozilla", "sops", "getsops/sops")
+        });
+        assert!(confirmed.unwrap());
+    }
+
+    #[test]
+    fn test_slsa_rename_cannot_be_confirmed_by_a_mirror() {
+        // A host standing in for api.github.com claims both names are one
+        // repository. It must not get to vouch for the provenance it may
+        // have served.
+        let mut mirror = mockito::Server::new();
+        let lookups = ["mozilla/sops", "getsops/sops"].map(|repo| {
+            mirror
+                .mock("GET", format!("/repos/{repo}").as_str())
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"id": 1, "full_name": "getsops/sops"}"#)
+                .expect(0)
+                .create()
+        });
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => mirror.url(),
+        }));
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let err = runtime
+            .block_on(verify_slsa_provenance_artifacts(
+                sops_provenance(),
+                &[sops_artifact()],
+                1,
+                SOPS_SIGNER_BEFORE_TRANSFER,
+            ))
+            .unwrap_err();
+        assert!(err.to_string().contains("built in getsops/sops"), "{err}");
+        for lookup in lookups {
+            lookup.assert();
+        }
     }
 
     #[test]
