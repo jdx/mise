@@ -2762,12 +2762,24 @@ async fn read_body_within<T>(
 ) -> Result<T> {
     match tokio::time::timeout(timeout, read).await {
         Ok(result) => result,
-        Err(_) => bail!(
-            "HTTP response body timed out after {} for {} (change with `http_download_timeout` or env `MISE_HTTP_DOWNLOAD_TIMEOUT`)",
-            format_duration(timeout),
-            log_url(url),
-        ),
+        Err(_) => Err(BodyTimedOut {
+            timeout,
+            url: log_url(url).into_owned(),
+        }
+        .into()),
     }
+}
+
+/// A response body that did not finish arriving within `http_download_timeout`.
+/// A caller that falls back when a host is unavailable can treat it as that.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "HTTP response body timed out after {} for {url} (change with `http_download_timeout` or env `MISE_HTTP_DOWNLOAD_TIMEOUT`)",
+    format_duration(*timeout)
+)]
+pub struct BodyTimedOut {
+    timeout: Duration,
+    url: String,
 }
 
 /// Most decoded bytes a successful response may hold in memory when mise parses

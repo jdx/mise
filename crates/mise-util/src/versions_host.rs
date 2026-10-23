@@ -672,10 +672,14 @@ where
     // The body is read first so that a connection lost while reading it is
     // mise-versions being unavailable, like one lost before the status;
     // only a body that arrived and doesn't parse, or is too large to hold,
-    // is a bad answer.
+    // is a bad answer. A body still arriving when the download budget runs out
+    // is a slow host, not a bad answer.
     let body = match http::buffer_body(resp).await {
         Ok(resp) => resp.bytes().await?,
-        Err(err) if err.downcast_ref::<reqwest::Error>().is_some() => {
+        Err(err)
+            if err.downcast_ref::<reqwest::Error>().is_some()
+                || err.downcast_ref::<http::BodyTimedOut>().is_some() =>
+        {
             return Err(VersionsHostUnavailable {
                 status: None,
                 message: format!("reading {url}: {err:#}"),
@@ -1217,6 +1221,55 @@ mod tests {
         .unwrap();
         assert_eq!(entries[1].name, "refs");
         assert_eq!(entries[1].kind, "dir");
+    }
+
+    /// A versions-host reply whose body never finishes within the download
+    /// budget is a host that is temporarily unavailable, so callers fall back
+    /// to api.github.com or a cached copy. An oversized reply stays a bad
+    /// answer.
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_slow_body_is_temporarily_unavailable() {
+        use confique::Layer;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.http_download_timeout = Some("500ms".to_string());
+        settings.http_retries = Some(0);
+        crate::testing::reset_settings(Some(settings));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let mut request = [0u8; 4096];
+            let _ = socket.read(&mut request).await;
+            let _ = socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 1000000\r\nConnection: close\r\n\r\n",
+                )
+                .await;
+            while socket.write_all(b" ").await.is_ok() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        });
+        let url = format!("http://127.0.0.1:{port}/gh/v1/repos/jdx/mise/releases/v1.0.0");
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            fetch_json_unless_not_found::<serde_json::Value>(
+                &url,
+                VersionsHostLogContext::github_release("jdx/mise", "v1.0.0"),
+            ),
+        )
+        .await
+        .expect("the body deadline did not end the read");
+        crate::testing::reset_settings(None);
+
+        let err = result.unwrap_err();
+        assert!(is_temporarily_unavailable(&err), "{err:#}");
+        assert!(retries_on_github(&err), "{err:#}");
     }
 
     #[test]
