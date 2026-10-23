@@ -1,5 +1,92 @@
 # Changelog
 
+## [2026.10.18](https://github.com/jdx/mise/releases/tag/v2026.10.18) - 2026-10-23
+
+### 🚀 Features
+
+- **(bootstrap)** add run_windows to bootstrap hook tables by @jdx in [#14851](https://github.com/jdx/mise/pull/14851)
+- **(doctor)** let a project check depend on another check by @jdx in [#14773](https://github.com/jdx/mise/pull/14773)
+- **(dotfiles)** erase a tracked path from history with `mise dot history purge` by @jdx in [#14831](https://github.com/jdx/mise/pull/14831)
+- **(dotfiles)** render templates in a variant's target by @jdx in [#14856](https://github.com/jdx/mise/pull/14856)
+- **(lsp)** add mise lsp, a language server for mise.toml by @jdx in [#14744](https://github.com/jdx/mise/pull/14744)
+- **(lsp)** complete, define, and rename tasks by @jdx in [#14808](https://github.com/jdx/mise/pull/14808)
+- **(lsp)** flag unknown task references and rewrite deprecated keys by @jdx in [#14811](https://github.com/jdx/mise/pull/14811)
+- **(lsp)** complete and describe tools by @jdx in [#14812](https://github.com/jdx/mise/pull/14812)
+- **(upgrade)** write resolved versions on bare --bump when pin is set by @jdx in [#14791](https://github.com/jdx/mise/pull/14791)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** make the baked registry encoding deterministic by @jdx in [#14809](https://github.com/jdx/mise/pull/14809)
+- **(backend)** reuse cached conda downloads in locked installs by @zeitlinger in [#14866](https://github.com/jdx/mise/pull/14866)
+- **(bootstrap)** match only an exact bootstrap task by @jdx in [#14858](https://github.com/jdx/mise/pull/14858)
+- **(brew)** tolerate custom Requirement classes in tap formulae by @jdx in [#14807](https://github.com/jdx/mise/pull/14807)
+- **(config)** keep tracked .tool-versions recognized under a filename override by @jdx in [#14779](https://github.com/jdx/mise/pull/14779)
+- **(dotfiles)** keep entries declared in an unselected env config tracked by @jdx in [#14815](https://github.com/jdx/mise/pull/14815)
+- **(dotfiles)** report a saved enrollment under a symlinked parent instead of failing capture by @jdx in [#14871](https://github.com/jdx/mise/pull/14871)
+- **(e2e)** reap background watch process and retry isolated dir cleanup by @jdx in [#14824](https://github.com/jdx/mise/pull/14824)
+- **(generate)** end install-script and task-stubs files with a newline by @itochan in [#14819](https://github.com/jdx/mise/pull/14819)
+- **(github)** skip .netrc credentials on the asset reachability HEAD by @jdx in [#14786](https://github.com/jdx/mise/pull/14786)
+- **(github)** page when mise-versions lists no releases for a repo by @jdx in [#14877](https://github.com/jdx/mise/pull/14877)
+- **(gitlab)** ignore expired glab OAuth2 tokens instead of sending them by @jdx in [#14873](https://github.com/jdx/mise/pull/14873)
+- **(http)** fall back to bundled root certificates when the system store is empty by @jdx in [#14817](https://github.com/jdx/mise/pull/14817)
+- **(http)** extract zip archives that contain read-only files on Windows by @jdx in [#14869](https://github.com/jdx/mise/pull/14869)
+- **(install)** ignore curlrc write-out when downloading in install.sh by @jdx in [#14830](https://github.com/jdx/mise/pull/14830)
+- **(install)** run [hooks].postinstall against the just-installed version by @jdx in [#14853](https://github.com/jdx/mise/pull/14853)
+- **(java)** pick the newest build when installed versions differ only after `+` by @jdx in [#14876](https://github.com/jdx/mise/pull/14876)
+- **(lock)** prefer the nearest lockfile when an unowned request is ambiguous by @jdx in [#14818](https://github.com/jdx/mise/pull/14818)
+- **(lock)** accept PEP 691 +html content types from PyPI simple indexes by @jdx in [#14852](https://github.com/jdx/mise/pull/14852)
+- **(lock)** keep a .config root's monorepo lockfile next to its config by @jdx in [#14860](https://github.com/jdx/mise/pull/14860)
+- **(lockfile)** keep the Python a pipx tool selects by @jdx in [#14794](https://github.com/jdx/mise/pull/14794)
+- **(oci)** package the rust toolchain in mise oci build by @jdx in [#14854](https://github.com/jdx/mise/pull/14854)
+- **(packslip)** stay quiet about an installed version past the release-age cutoff by @jdx in [#14835](https://github.com/jdx/mise/pull/14835)
+- **(pipx)** find uv's Windows launcher for console scripts ending in .py by @jdx in [#14825](https://github.com/jdx/mise/pull/14825)
+- **(prune)** resolve symlinked Python path in pypi receipts by @jdx in [#14857](https://github.com/jdx/mise/pull/14857)
+- **(prune)** keep a selected Python reached through a minor-version link by @jdx in [#14874](https://github.com/jdx/mise/pull/14874)
+- **(ruby)** don't fail gem installs when mise is not on PATH by @jdx in [#14850](https://github.com/jdx/mise/pull/14850)
+- **(schema)** declare dotfile_groups entry keys and lint the schema with Tombi by @jdx in [#14810](https://github.com/jdx/mise/pull/14810)
+- **(task)** let an empty run_windows skip the task on Windows by @jdx in [#14859](https://github.com/jdx/mise/pull/14859)
+- **(task)** accept mise tasks list as an alias for ls by @jdx in [#14878](https://github.com/jdx/mise/pull/14878)
+- **(unuse)** prune only the named version and say why one is kept by @jdx in [#14863](https://github.com/jdx/mise/pull/14863)
+
+### 📚 Documentation
+
+- **(dotfiles)** explain repo-only files, existing repos, and undoing an accidental track by @jdx in [#14829](https://github.com/jdx/mise/pull/14829)
+- **(dotfiles)** explain what add --no-apply, dot diff, and exclude do by @jdx in [#14862](https://github.com/jdx/mise/pull/14862)
+
+### ⚡ Performance
+
+- **(config)** check trusted_config_paths after cheaper trust rules by @jdx in [#14875](https://github.com/jdx/mise/pull/14875)
+
+### 📦️ Dependency Updates
+
+- update communique, hk, mr-boxington in mise.lock by @jdx in [#14789](https://github.com/jdx/mise/pull/14789)
+- update jdx/workflows action to v1.1.2 by @renovate[bot] in [#14792](https://github.com/jdx/mise/pull/14792)
+- update mise tools to latest by @renovate[bot] in [#14793](https://github.com/jdx/mise/pull/14793)
+- update aube to v2.8.1 by @renovate[bot] in [#14605](https://github.com/jdx/mise/pull/14605)
+- update rust crate sigstore-verify to 0.15 by @renovate[bot] in [#14783](https://github.com/jdx/mise/pull/14783)
+- lock file maintenance by @renovate[bot] in [#14777](https://github.com/jdx/mise/pull/14777)
+- update github actions by @renovate[bot] in [#14796](https://github.com/jdx/mise/pull/14796)
+- lock file maintenance by @renovate[bot] in [#14797](https://github.com/jdx/mise/pull/14797)
+- update rust crate serde-saphyr to v2 by @renovate[bot] in [#14774](https://github.com/jdx/mise/pull/14774)
+- update node.js to v24.22.0 by @renovate[bot] in [#14798](https://github.com/jdx/mise/pull/14798)
+- update rust crates by @renovate[bot] in [#14755](https://github.com/jdx/mise/pull/14755)
+- update rust crate tokio to v1.54.1 by @jdx in [#14849](https://github.com/jdx/mise/pull/14849)
+- update jdx crates to v7.1.1 by @renovate[bot] in [#14861](https://github.com/jdx/mise/pull/14861)
+
+### 📦 Registry
+
+- add goose-agent ([aqua:aaif-goose/goose](https://github.com/aaif-goose/goose)) by @kwsantiago in [#14822](https://github.com/jdx/mise/pull/14822)
+
+### Ci
+
+- retry windows-lint once and print diagnostics when it fails by @jdx in [#14820](https://github.com/jdx/mise/pull/14820)
+- retry the docker image build in the bootstrap linux host test by @jdx in [#14821](https://github.com/jdx/mise/pull/14821)
+- use jdx/workflows retry and gpg-import actions by @jdx in [#14828](https://github.com/jdx/mise/pull/14828)
+
+### New Contributors
+
+- @kwsantiago made their first contribution in [#14822](https://github.com/jdx/mise/pull/14822)
+
 ## [2026.10.17](https://github.com/jdx/mise/releases/tag/v2026.10.17) - 2026-10-20
 
 ### 🚀 Features

@@ -353,7 +353,7 @@ fn collect_list_tokens(v: &Value, out: &mut HashMap<String, String>) {
     }
 }
 
-fn token_from_entry(entry: &yaml::Mapping) -> Option<String> {
+pub(crate) fn token_from_entry(entry: &yaml::Mapping) -> Option<String> {
     ["oauth_token", "token", "access_token", "access-token"]
         .iter()
         .find_map(|k| {

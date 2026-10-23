@@ -60,6 +60,20 @@ where
     deserializer.deserialize_any(ArrVisitor(std::marker::PhantomData))
 }
 
+/// Like [`deserialize_arr`], but an absent key stays `None` so an explicit empty list can be told
+/// apart from it.
+pub fn deserialize_opt_arr<'de, D, C, T>(
+    deserializer: D,
+) -> std::result::Result<Option<C>, D::Error>
+where
+    D: de::Deserializer<'de>,
+    C: FromIterator<T> + Deserialize<'de>,
+    T: FromStr + Deserialize<'de>,
+    <T as FromStr>::Err: std::fmt::Display,
+{
+    deserialize_arr(deserializer).map(Some)
+}
+
 /// A list item [`deserialize_arr`] reads: a string, parsed later with `FromStr`, or anything else,
 /// which `T` reads itself.
 ///

@@ -2290,11 +2290,14 @@ pub fn lockfile_path_for_config(
         parent
     };
 
+    let monorepo_dir_holder;
     let lockfile_dir = if let Some(root) = monorepo_root
         && config_path.starts_with(root)
-        && lockfile_dir != root
+        && lockfile_dir != crate::config::monorepo_lockfile_dir(root)
     {
-        root
+        // Held in a local so the borrow outlives the match arm.
+        monorepo_dir_holder = crate::config::monorepo_lockfile_dir(root);
+        &monorepo_dir_holder
     } else {
         lockfile_dir
     };
@@ -2393,17 +2396,24 @@ fn tool_stub_reference(lockfile_path: &Path, stub: &Path) -> Result<String> {
     let dir = lockfile_path.parent().unwrap_or(Path::new("."));
     let dir = fs::canonicalize(dir)?;
     let stub = fs::canonicalize(stub)?;
-    let relative = stub.strip_prefix(&dir).map_err(|_| {
-        eyre!(
-            "tool stub {} is outside the directory of {}",
-            display_path(&stub),
-            display_path(lockfile_path)
-        )
-    })?;
-    Ok(relative
+    // A shared monorepo lockfile may sit beside the root config (`.config/`)
+    // while a stub lives in a sibling project, so climb out with `..`.
+    let common = dir
+        .ancestors()
+        .find(|ancestor| stub.starts_with(ancestor))
+        .ok_or_else(|| {
+            eyre!(
+                "tool stub {} is outside the directory of {}",
+                display_path(&stub),
+                display_path(lockfile_path)
+            )
+        })?;
+    let ups = dir.strip_prefix(common)?.components().map(|_| "..");
+    let down = stub
+        .strip_prefix(common)?
         .components()
-        .map(|c| c.as_os_str().to_string_lossy())
-        .join("/"))
+        .map(|c| c.as_os_str().to_string_lossy());
+    Ok(ups.map(std::borrow::Cow::Borrowed).chain(down).join("/"))
 }
 
 pub fn tool_stub_path(lockfile_path: &Path, reference: &str) -> PathBuf {
@@ -2480,7 +2490,7 @@ pub fn monorepo_lockfile_migration_paths(config: &Config) -> Vec<(PathBuf, PathB
         .into_iter()
         .filter_map(|source| {
             let filename = source.file_name()?;
-            let target = monorepo_root.join(filename);
+            let target = crate::config::monorepo_lockfile_dir(&monorepo_root).join(filename);
             (source != target).then_some((source, target))
         })
         .collect()
@@ -2572,7 +2582,12 @@ fn migrate_monorepo_lockfiles_inner(
                 display_path(target)
             );
         }
+        // Stub references are relative to their lockfile, so rebase them.
+        let stubs = live_tool_stub_paths(&subproject_lockfile, source);
         merge_lockfile_preserving_root(&mut root_lockfile, subproject_lockfile);
+        for stub in stubs {
+            root_lockfile.add_tool_stub(target, &stub)?;
+        }
         root_lockfile.save(target)?;
         if let Err(err) = fs::remove_file(source)
             && err.kind() != ErrorKind::NotFound
@@ -2586,7 +2601,7 @@ fn migrate_monorepo_lockfiles_inner(
     if migrated > 0 {
         miseprintln!(
             "migrated {migrated} subproject lockfile(s) into {} (monorepo uses a single root lockfile)",
-            display_path(&monorepo_root)
+            display_path(crate::config::monorepo_lockfile_dir(&monorepo_root))
         );
     }
 
@@ -2659,23 +2674,32 @@ fn discover_monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf>
     let Some(monorepo_root) = config.monorepo_lockfile_root() else {
         return IndexSet::new();
     };
+    let lockfile_dir = crate::config::monorepo_lockfile_dir(&monorepo_root);
+    let mut source_lockfiles = IndexSet::new();
+    // A root config in a subdirectory (`.config/mise.toml`) moves the shared
+    // lockfile off the root; lockfiles previously shared at the root follow it.
+    if lockfile_dir != monorepo_root {
+        for source in lockfile_variant_paths_in_dir(&monorepo_root) {
+            source_lockfiles.insert(source);
+        }
+    }
+
     let config_roots = match config.monorepo_config_root_dirs_for_lockfiles() {
         Ok(config_roots) => config_roots,
         Err(err) => {
             warn_once!(
                 "[monorepo] lockfile = true is set, but [monorepo].config_roots could not be resolved: {err:#}; using root lockfiles without migration"
             );
-            return IndexSet::new();
+            return source_lockfiles;
         }
     };
-    let mut source_lockfiles = IndexSet::new();
 
     for config_root in config_roots {
         if config_root == monorepo_root {
             continue;
         }
         for source in lockfile_variant_paths_in_dir(&config_root) {
-            if source.parent() != Some(monorepo_root.as_path()) {
+            if source.parent() != Some(lockfile_dir.as_path()) {
                 source_lockfiles.insert(source);
             }
         }
@@ -2710,20 +2734,45 @@ fn legacy_lockfile_path_for_config(config_path: &Path, monorepo_root: &Path) -> 
         return None;
     }
     let (source, _) = lockfile_path_for_config(config_path, None);
-    (source.parent() != Some(monorepo_root)).then_some(source)
+    let target_dir = crate::config::monorepo_lockfile_dir(monorepo_root);
+    if source.parent() != Some(target_dir.as_path()) {
+        return Some(source);
+    }
+    // The root config's own lockfile is the target; when the target moved off
+    // the root (`.config/`), the lockfile shared at the root is the legacy one.
+    (target_dir != monorepo_root)
+        .then(|| source.file_name().map(|name| monorepo_root.join(name)))
+        .flatten()
+}
+
+/// The stubs a lockfile references that still exist, as paths.
+fn live_tool_stub_paths(lockfile: &Lockfile, lockfile_path: &Path) -> Vec<PathBuf> {
+    lockfile
+        .tool_stubs()
+        .iter()
+        .map(|reference| tool_stub_path(lockfile_path, reference))
+        .filter(|stub| stub.is_file())
+        .collect()
 }
 
 fn merge_legacy_lockfile_if_present(
     lockfile: &mut Lockfile,
+    lockfile_path: &Path,
     legacy_path: &Path,
     primary_exists: bool,
 ) -> Result<()> {
     match Lockfile::read(legacy_path) {
         Ok(legacy) => {
+            // Stub references are relative to their lockfile, so rebase them.
+            let stubs = live_tool_stub_paths(&legacy, legacy_path);
             if primary_exists {
                 merge_lockfile_for_lookup(lockfile, legacy);
             } else {
                 *lockfile = legacy;
+                lockfile.tool_stubs.clear();
+            }
+            for stub in stubs {
+                lockfile.add_tool_stub(lockfile_path, &stub)?;
             }
             Ok(())
         }
@@ -2767,6 +2816,12 @@ fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
                     && existing.backend == tool.backend
                 {
                     existing.uv = tool.uv;
+                }
+                if existing.aube.is_none()
+                    && existing.backend.is_some()
+                    && existing.backend == tool.backend
+                {
+                    existing.aube = tool.aube;
                 }
             } else if keys.insert(key) {
                 root_tools.push(tool);
@@ -2920,9 +2975,9 @@ pub(crate) fn update_lockfiles(
                 continue;
             }
         }
-        let is_monorepo_root_lockfile = config
-            .monorepo_lockfile_root()
-            .is_some_and(|root| lockfile_path.parent() == Some(root.as_path()));
+        let is_monorepo_root_lockfile = config.monorepo_lockfile_root().is_some_and(|root| {
+            lockfile_path.parent() == Some(crate::config::monorepo_lockfile_dir(&root).as_path())
+        });
         let _lock = crate::lock_file::LockFile::new(&lockfile_path)
             .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
             .lock()?;
@@ -3895,9 +3950,9 @@ pub(crate) async fn auto_lock_new_versions(
         // Monorepo root lockfiles hold sibling projects' entries that this run cannot
         // see, so an absent version there is not necessarily a baseline. Fail closed
         // and leave them alone, as `update_lockfiles` does.
-        let is_monorepo_root_lockfile = config
-            .monorepo_lockfile_root()
-            .is_some_and(|root| lockfile_path.parent() == Some(root.as_path()));
+        let is_monorepo_root_lockfile = config.monorepo_lockfile_root().is_some_and(|root| {
+            lockfile_path.parent() == Some(crate::config::monorepo_lockfile_dir(&root).as_path())
+        });
         if provenance_errors.is_empty() && !is_monorepo_root_lockfile {
             let current_platform = Platform::current().to_key();
             let empty = BTreeSet::new();
@@ -4681,8 +4736,12 @@ fn read_lockfile_at(lockfile_path: PathBuf, legacy_path: Option<PathBuf>) -> Arc
     let mut lockfile = Lockfile::read(&lockfile_path)
         .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
     if let Some(legacy_path) = &legacy_path
-        && let Err(err) =
-            merge_legacy_lockfile_if_present(&mut lockfile, legacy_path, primary_exists)
+        && let Err(err) = merge_legacy_lockfile_if_present(
+            &mut lockfile,
+            &lockfile_path,
+            legacy_path,
+            primary_exists,
+        )
     {
         warn!(
             "failed to read legacy monorepo lockfile {} (possible corruption): {err:?}",

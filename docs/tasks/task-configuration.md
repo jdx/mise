@@ -96,6 +96,14 @@ that needs nothing but `run` can be written in one line, such as
 On Windows, mise runs this instead of `run`. It accepts the same forms as
 `run`. Without it, Windows runs `run`.
 
+An empty list skips the task on Windows:
+
+```mise-toml
+[tasks.enable-linger]
+run = "loginctl enable-linger"
+run_windows = []
+```
+
 ```mise-toml
 [tasks.build]
 run = "cargo build"

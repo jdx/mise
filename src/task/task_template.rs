@@ -64,8 +64,9 @@ impl Task {
         }
 
         // run_windows: only use template if local is empty
-        if self.run_windows.is_empty() && !command_is_a_file {
-            self.run_windows = template.run_windows.clone();
+        if self.run_windows.is_empty() && !self.run_windows_declared && !command_is_a_file {
+            self.run_windows_declared = template.run_windows.is_some();
+            self.run_windows = template.run_windows.clone().unwrap_or_default();
         }
 
         // tools: deep merge (template first, then local overrides)
@@ -282,7 +283,7 @@ mod tests {
         };
         let template = TaskTemplate {
             run: vec![RunEntry::Script("template command".to_string())],
-            run_windows: vec![RunEntry::Script("template command".to_string())],
+            run_windows: Some(vec![RunEntry::Script("template command".to_string())]),
             description: "template description".to_string(),
             ..Default::default()
         };
@@ -302,7 +303,7 @@ mod tests {
         let template = TaskTemplate {
             file: Some("mise-tasks/build".to_string()),
             run: vec![RunEntry::Script("template command".to_string())],
-            run_windows: vec![RunEntry::Script("template command".to_string())],
+            run_windows: Some(vec![RunEntry::Script("template command".to_string())]),
             ..Default::default()
         };
 
@@ -313,6 +314,37 @@ mod tests {
         assert_eq!(task.file, Some("mise-tasks/build".into()));
         assert!(task.run.is_empty());
         assert!(task.run_windows.is_empty());
+    }
+
+    #[test]
+    fn test_merge_template_local_empty_run_windows_wins() {
+        let mut task = Task {
+            run_windows_declared: true,
+            ..Default::default()
+        };
+        let template = TaskTemplate {
+            run_windows: Some(vec![RunEntry::Script("template command".to_string())]),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert!(task.run_windows.is_empty());
+        assert!(task.run_windows_declared);
+    }
+
+    #[test]
+    fn test_merge_template_inherits_empty_run_windows() {
+        let mut task = Task::default();
+        let template = TaskTemplate {
+            run_windows: Some(vec![]),
+            ..Default::default()
+        };
+
+        task.merge_template(&template);
+
+        assert!(task.run_windows.is_empty());
+        assert!(task.run_windows_declared);
     }
 
     #[test]
