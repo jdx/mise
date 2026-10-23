@@ -146,6 +146,13 @@ impl Pins {
         keys
     }
 
+    /// The forge identity the pins under `keys` hold: that of the first with
+    /// one. A pin set without a forge check has none, and says nothing
+    /// against the ID another name recorded for the same repository.
+    fn forge_of(&self, keys: &[String]) -> Option<ForgePin> {
+        keys.iter().find_map(|key| self.pins[key].forge.clone())
+    }
+
     /// Move what a release list left under `from` to `to`, keeping the
     /// higher sequence, so a pin that follows a rename takes it along.
     fn move_list(&mut self, from: &str, to: &str) {
@@ -255,10 +262,7 @@ pub fn forge_pin(project: &str) -> Result<Option<ForgePin>> {
 
 pub fn forge_pin_at(path: &Path, project: &str) -> Result<Option<ForgePin>> {
     let pins = load(path)?;
-    Ok(pins
-        .pin_keys(project, None)
-        .first()
-        .and_then(|key| pins.pins[key].forge.clone()))
+    Ok(pins.forge_of(&pins.pin_keys(project, None)))
 }
 
 /// Compare what a release showed with the project's pin, refusing what
@@ -406,7 +410,9 @@ pub fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<P
         attested_by: observed.attested_by.to_string(),
         provenance: observed.provenance || any(|pin| pin.provenance),
         unlogged: !observed.logged || any(|pin| pin.unlogged),
-        forge: forge.or(pin.forge.clone()),
+        // Like the floors, from every pin merged: the project's own may
+        // have been set without a forge check while another name's has one.
+        forge: forge.or_else(|| pins.forge_of(&keys)),
         // The names the pin leaves by moving to `project` stay held to it,
         // with those it left before.
         former_names: keys
@@ -826,6 +832,36 @@ pinned_at = "2026-09-01T00:00:00Z"
         // Forgetting the new name forgets the pin found under it.
         assert!(forget_at(&path, "github.com/new/r").unwrap());
         assert_eq!(forge_pin_at(&path, "github.com/old/r").unwrap(), None);
+    }
+
+    #[test]
+    fn merging_pins_keeps_the_repository_id_another_name_recorded() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pins.toml");
+        let (old, new) = ("github.com/o/old", "github.com/o/r");
+        // The new name was pinned without a forge check, as under signer
+        // options, and then the old name with one.
+        let v1 = oidc("v1");
+        let unchecked = record_at(&path, new, observed("sigstore-oidc", &v1)).unwrap();
+        assert_eq!(unchecked.forge, None);
+        let mut pins = load(&path).unwrap();
+        pins.pins.insert(
+            old.into(),
+            Pin {
+                forge: Some(repo(new, "42")),
+                ..unchecked
+            },
+        );
+        save(&path, &pins).unwrap();
+        assert_eq!(forge_pin_at(&path, new).unwrap(), Some(repo(new, "42")));
+        // Another release that brings no ID merges the two into one pin,
+        // which keeps the ID.
+        let pin = record_at(&path, new, observed("sigstore-oidc", &v1)).unwrap();
+        assert_eq!(pin.forge, Some(repo(new, "42")));
+        assert_eq!(
+            list_at(&path).unwrap(),
+            BTreeMap::from([(new.to_string(), pin)])
+        );
     }
 
     fn repo(project: &str, id: &str) -> ForgePin {
