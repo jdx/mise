@@ -338,10 +338,16 @@ impl Vfox {
                     attestation.slsa_signer_issuer.as_deref(),
                 ) {
                     let min_level = attestation.slsa_min_level.unwrap_or(1u8);
+                    if attestation.slsa_source_tag.is_none() {
+                        debug!(
+                            "the plugin sets no slsa_source_tag; not checking the SLSA provenance's tag"
+                        );
+                    }
                     let signer = mise_sigstore::SlsaSignerIdentity {
                         identity,
                         issuer,
                         source_repository: attestation.slsa_source_repository.as_deref(),
+                        source_tag: attestation.slsa_source_tag.as_deref(),
                     };
                     mise_sigstore::verify_slsa_provenance(file, provenance_path, min_level, signer)
                         .await?;
