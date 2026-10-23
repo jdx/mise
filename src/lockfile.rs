@@ -1316,8 +1316,12 @@ impl Lockfile {
         self.lockfile_version > 0
     }
 
+    /// The key `short`'s entries are recorded under: its spelling without the
+    /// credentials of a URL in it, so a credentialed request finds them.
     fn tool_key(&self, short: &str) -> Option<&String> {
-        self.tools.get_key_value(short).map(|(key, _)| key)
+        self.tools
+            .get_key_value(&*crate::toolset::install_state::state_short(short))
+            .map(|(key, _)| key)
     }
 
     pub(crate) fn tools_for(&self, short: &str) -> Option<&Vec<LockfileTool>> {
@@ -1478,6 +1482,10 @@ impl Lockfile {
                     if let Some(graph) = &mut entry.aube {
                         graph.resolve_path(path)?;
                     }
+                    // A lockfile records a URL-named tool without its credentials.
+                    if let Some(backend) = &mut entry.backend {
+                        *backend = crate::toolset::install_state::state_short(backend).into_owned();
+                    }
                     Ok(entry)
                 })
                 .collect::<Result<Vec<_>>>()?
@@ -1500,7 +1508,11 @@ impl Lockfile {
             if versions.is_empty() {
                 continue;
             }
-            lockfile.tools.entry(short).or_default().extend(versions);
+            lockfile
+                .tools
+                .entry(crate::toolset::install_state::state_short(&short).into_owned())
+                .or_default()
+                .extend(versions);
         }
 
         if lockfile_version < FORGE_IDS_LOCKFILE_VERSION
@@ -1992,7 +2004,7 @@ impl Lockfile {
         let key = self
             .tool_key(short)
             .cloned()
-            .unwrap_or_else(|| short.to_owned());
+            .unwrap_or_else(|| crate::toolset::install_state::state_short(short).into_owned());
         let tools = self.tools.entry(key).or_default();
         // Platform option migration is handled while merging freshly resolved
         // entries. Writes here always target the exact resolved option variant.
@@ -2213,7 +2225,7 @@ impl Lockfile {
                 self.entry_lockfile_versions
                     .iter()
                     .find(|((key_short, version, backend, options), _)| {
-                        key_short == short
+                        *key_short == crate::toolset::install_state::state_short(short)
                             && version == &entry.version
                             && backend == &entry.backend
                             && options.is_empty()
@@ -2266,7 +2278,7 @@ impl Lockfile {
 
 fn lockfile_entry_key(short: &str, entry: &LockfileTool) -> LockfileEntryKey {
     (
-        short.to_owned(),
+        crate::toolset::install_state::state_short(short).into_owned(),
         entry.version.clone(),
         entry.backend.clone(),
         entry.options.clone(),
@@ -2983,7 +2995,10 @@ fn merge_lockfile_for_lookup(root: &mut Lockfile, other: Lockfile) {
 
 fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
     for (short, tools) in other.tools {
-        let key = root.tool_key(&short).cloned().unwrap_or(short);
+        let key = root
+            .tool_key(&short)
+            .cloned()
+            .unwrap_or_else(|| crate::toolset::install_state::state_short(&short).into_owned());
         let root_tools = root.tools.entry(key).or_default();
         let mut keys: HashSet<(String, BTreeMap<String, String>)> = root_tools
             .iter()
@@ -3414,7 +3429,10 @@ pub(crate) fn update_lockfiles(
             // gone before auto-lock runs, letting a genuine regression slip through. The
             // stale baseline self-heals on the next update once the new version is locked.
             reinsert_deferred_baselines(&mut merged_tools, &deferred_baselines, &short);
-            existing_lockfile.tools.insert(short.clone(), merged_tools);
+            existing_lockfile.tools.insert(
+                crate::toolset::install_state::state_short(&short).into_owned(),
+                merged_tools,
+            );
             if existing_lockfile.uses_request_bindings() {
                 for (specifier, version, options) in bindings {
                     existing_lockfile.bind_request(&short, &specifier, &version, &options);

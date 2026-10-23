@@ -4407,6 +4407,51 @@ fn test_credential_query_params_are_found_by_name() {
     }
 }
 
+/// A lockfile keys a URL-named tool, and records its backend, without the
+/// URL's credentials. One that holds them is read without them, a credentialed
+/// request still finds the entry, and the file is written back clean.
+#[test]
+fn test_lockfile_keys_and_backends_have_no_credentials() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("mise.lock");
+    fs::write(
+        &path,
+        r#"
+[[tools."cargo:https://ci:t0ken@host/acme/tool.git"]]
+version = "tag:1.0.0"
+backend = "cargo:https://ci:t0ken@host/acme/tool.git"
+"#,
+    )
+    .unwrap();
+    let mut lockfile = Lockfile::read(&path).unwrap();
+    assert_eq!(
+        lockfile.tools.keys().collect::<Vec<_>>(),
+        vec!["cargo:https://host/acme/tool.git"]
+    );
+    for short in [
+        "cargo:https://ci:t0ken@host/acme/tool.git",
+        "cargo:https://host/acme/tool.git",
+    ] {
+        let entries = lockfile.tools_for(short).unwrap();
+        assert_eq!(
+            entries[0].backend.as_deref(),
+            Some("cargo:https://host/acme/tool.git")
+        );
+    }
+    lockfile.set_platform_info(
+        "cargo:https://ci:t0ken@host/acme/tool.git",
+        "tag:2.0.0",
+        Some("cargo:https://host/acme/tool.git"),
+        &BTreeMap::new(),
+        "linux-x64",
+        PlatformInfo::default(),
+    );
+    assert_eq!(lockfile.tools.len(), 1);
+    lockfile.write(&path).unwrap();
+    let written = fs::read_to_string(&path).unwrap();
+    assert!(!written.contains("t0ken"), "{written}");
+}
+
 #[test]
 fn test_lockfile_write_refuses_credential_queries() {
     let tmp = tempfile::tempdir().unwrap();
