@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+# A tool stub sets tool options, and an option such as an http: `url` is a
+# template that can run commands. Running a stub is the consent for that, but
+# `mise lock` reads the stubs mise.lock lists, so an untrusted project must not
+# be able to have a file of its own locked that way. Tools declared by tasks
+# are resolved by `mise lock` too, so their options need trust as well.
+
+export MISE_LOCKFILE=1
+export MISE_OFFLINE=1
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+mkdir -p proj/bin tasks
+cd proj || exit 1
+echo '[tools]' >mise.toml
+echo 'tool-stubs = ["bin/widget"]' >mise.lock
+cat >bin/widget <<'STUB'
+tool = "http:widget"
+version = "1.0.0"
+url = "file:///nonexistent/{{ exec(command='touch $HOME/stub-option-ran') }}widget.tar.gz"
+STUB
+cp mise.lock mise.lock.orig
+
+assert_fail_contains "MISE_YES=0 mise lock 2>&1" "not trusted"
+assert_fail "test -e $HOME/stub-option-ran"
+assert "diff mise.lock mise.lock.orig"
+
+# Paranoid mode ties trust to each file's contents, so the stub needs its own.
+MISE_PARANOID=1 mise trust mise.toml
+assert_fail_contains "MISE_PARANOID=1 MISE_YES=0 mise lock 2>&1" "not trusted"
+assert_fail "test -e $HOME/stub-option-ran"
+MISE_PARANOID=1 mise trust --untrust mise.toml
+cp mise.lock.orig mise.lock
+
+# control: once the project is trusted the stub is locked, options included
+mise trust mise.toml
+assert_succeed "MISE_YES=0 mise lock"
+assert_succeed "test -e $HOME/stub-option-ran"
+assert_contains "cat mise.lock" '[[tools."http:widget"]]'
+
+# Task tools with options need trust; a plain version does not.
+cd ../tasks || exit 1
+cat >mise.toml <<'EOF'
+[tasks.build]
+run = "make"
+
+[tasks.build.tools."github:acme/widget"]
+version = "latest"
+api_url = "http://127.0.0.1:9/api/v3"
+EOF
+assert_fail_contains "MISE_YES=0 mise lock 2>&1" "not trusted"
+assert_contains "MISE_YES=0 mise trust --show" "untrusted"

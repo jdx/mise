@@ -66,6 +66,11 @@ idea:
 - Task files, including TOML files from
   [`task_config.includes`](/tasks/task-discovery.html), need trust only when they
   contain template syntax or list `secrets`.
+  `mise lock` still asks for trust before it resolves a task's tools that carry
+  options, as it would for a tool option table.
+- A [tool stub](/dev-tools/tool-stubs.html) needs no trust to run, since running
+  it is your approval. `mise lock` also reads the stubs that `mise.lock` lists
+  under `tool-stubs`, and for that the project's config needs trust.
 - A [`.miserc.toml`](/configuration.html#miserc) never needs trust. It only
   holds early settings that choose which config files load, and its templates
   cannot call `exec()`, `read_file()`, `read_json()`, `read_yaml()`, or

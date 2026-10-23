@@ -248,6 +248,9 @@ to keep their entries and refresh them with the rest of the lockfile. When a
 listed stub is deleted, `mise lock` removes it from the list and prunes its
 entry.
 
+A stub sets tool options, so `mise lock` reads the listed stubs only when the
+project's config is [trusted](/security.html#configuration-trust).
+
 A stub finds its lockfile from where the stub file lives, not from the
 directory it runs in, and a symlinked stub is followed to its real location.
 `./bin/node` and a `~/.local/bin/node` symlink to it both use the project's
