@@ -139,6 +139,12 @@ is nothing to lock, because mise treats the file as global config. Run
 From other directories mise reads and writes `~/.config/mise/mise.lock`, so also
 symlink that path to `~/dotfiles/mise.lock`. Sidecars follow the symlink target.
 
+mise updates the target of a symlinked lockfile and keeps the link. A link that
+leaves the lockfile's directory is only followed for global and system config,
+and for [trusted](/security.html#configuration-trust) project config outside
+[safe mode](/security.html#safe-mode). Otherwise the write fails, so a checkout
+cannot choose which of your files `mise lock` replaces.
+
 ### Monorepos
 
 In a [monorepo](/tasks/monorepo.html) (`monorepo_root = true`), set

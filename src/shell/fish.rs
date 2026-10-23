@@ -1,4 +1,5 @@
 #![allow(unknown_lints)]
+use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 
 use crate::config::Settings;
@@ -6,7 +7,6 @@ use crate::env::{self};
 use crate::shell::{self, ActivateOptions, Shell};
 use indoc::formatdoc;
 use itertools::Itertools;
-use shell_escape::unix::escape;
 
 #[derive(Default)]
 pub(super) struct Fish {}
@@ -257,6 +257,47 @@ impl Display for Fish {
     }
 }
 
+/// Quote `input` for fish, leaving it bare when it needs no quoting.
+///
+/// Inside `'...'` fish reads exactly two escapes: `\'` is a quote and `\\` is a backslash. Any
+/// other backslash, and everything else including a newline, is literal.
+/// `shell_escape::unix::escape` was writing bash's rules instead -- `'` as `'\''` and a
+/// backslash copied through unchanged -- so a value holding `\'` came out as `'…\'\''…'`, which
+/// fish reads as two escaped quotes and then the end of the string, and whatever followed ran
+/// as commands when the output was sourced. A value ending in `\` left its string open.
+///
+/// A backslash is doubled only where fish would otherwise read it as an escape: before a `\`,
+/// before a `'`, or at the end of the value, where it would escape the closing quote. Any other
+/// backslash is already literal, so a Windows path is written exactly as before.
+///
+/// The signature is `shell_escape`'s so the call sites are unchanged.
+pub fn escape(input: Cow<'_, str>) -> Cow<'_, str> {
+    if !input.is_empty() && !input.contains(needs_quoting) {
+        return input;
+    }
+    let mut out = String::with_capacity(input.len() + 2);
+    out.push('\'');
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' => out.push_str("\\'"),
+            '\\' if matches!(chars.peek(), None | Some('\\' | '\'')) => out.push_str("\\\\"),
+            c => out.push(c),
+        }
+    }
+    out.push('\'');
+    Cow::Owned(out)
+}
+
+/// Whether `ch` forces its string to be quoted.
+///
+/// Deliberately the set `shell_escape` used, not fish's own bareword set. Quoting something fish
+/// would have accepted bare is harmless, and keeping the decision fixed means this change is
+/// only about how a quoted value is written.
+fn needs_quoting(ch: char) -> bool {
+    !matches!(ch, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '=' | '/' | ',' | '.' | '+')
+}
+
 #[cfg(all(test, not(windows)))]
 mod tests {
     use insta::assert_snapshot;
@@ -329,8 +370,43 @@ mod tests {
     fn original_path_is_emitted_as_a_fish_path_list() {
         assert_eq!(
             Fish::default().set_env("__MISE_ORIG_PATH", "/a path:/say'hi"),
-            concat!(r"set -gx __MISE_ORIG_PATH '/a path' '/say'\''hi'", "\n")
+            concat!(r"set -gx __MISE_ORIG_PATH '/a path' '/say\'hi'", "\n")
         );
+    }
+
+    /// A directory name reaches `set_env` through `JAVA_HOME`, `PATH` and the hook variables
+    /// `MISE_ORIGINAL_CWD`/`MISE_PREVIOUS_DIR`, and a `\'` in it was written as `\'\''`: fish
+    /// read that as two escaped quotes and a closing one, and ran the rest of the value. Now
+    /// the backslash is doubled and the quote escaped, so fish reads back exactly the value.
+    #[test]
+    fn a_backslash_before_a_quote_stays_inside_the_string() {
+        assert_eq!(
+            Fish::default().set_env("FOO", r"x\'; touch PWNED; #"),
+            concat!(r"set -gx FOO 'x\\\'; touch PWNED; #'", "\n")
+        );
+        assert_eq!(
+            Fish::default().prepend_env("PATH", r"/c\'; touch PWNED; #/bin"),
+            concat!(
+                r"fish_add_path --global --path '/c\\\'; touch PWNED; #/bin'",
+                "\n"
+            )
+        );
+    }
+
+    /// The other shape of the same bug: a value ending in `\` used to leave its string open, so
+    /// the next emitted line was swallowed into it.
+    #[test]
+    fn a_trailing_backslash_does_not_leave_the_string_open() {
+        assert_eq!(
+            Fish::default().set_env("FOO", r"ends\"),
+            concat!(r"set -gx FOO 'ends\\'", "\n")
+        );
+    }
+
+    /// A backslash fish would not read as an escape is written as it is.
+    #[test]
+    fn other_backslashes_are_left_alone() {
+        assert_eq!(escape(r"a\b\\c".into()), r"'a\b\\\c'");
     }
 
     #[test]

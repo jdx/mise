@@ -2453,7 +2453,8 @@
           "type": "boolean"
         },
         "lockfile_mode": {
-          "description": "How lockfiles are written: entry by entry, or rebuilt from the current requests.",
+          "default": "generate",
+          "description": "How lockfiles are written: rebuilt from the current requests, or entry by entry.",
           "type": "string",
           "enum": ["merge", "generate"]
         },

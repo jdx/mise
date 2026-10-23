@@ -4,6 +4,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::config::config_file::trust_check;
 use crate::config::{Config, ConfigMap, SettingsExt};
 use crate::file::display_path;
 use crate::install_before::resolve_cli_minimum_release_age;
@@ -104,9 +105,16 @@ fn push_unique_lock_tool(tools: &mut Vec<LockTool>, mut tool: LockTool) {
 
 /// Tool stubs listed in a lockfile that still find it from where they live,
 /// each paired with its parsed stub or the error parsing it.
+///
+/// A stub sets tool options, which a config file may only do once it is
+/// trusted. Running a stub stands in for that, but nobody ran these: the
+/// lockfile names them. So `config_paths`, the configs the lockfile belongs
+/// to, have to be trusted before any of them is read, and in paranoid mode,
+/// where trust is bound to each file's content, each stub as well.
 fn live_tool_stubs(
     lockfile_path: &Path,
-) -> Vec<(PathBuf, Result<crate::cli::tool_stub::ToolStubFile>)> {
+    config_paths: &[PathBuf],
+) -> Result<Vec<(PathBuf, Result<crate::cli::tool_stub::ToolStubFile>)>> {
     let mut lockfile = match Lockfile::read(lockfile_path) {
         Ok(lockfile) => lockfile,
         Err(err) => {
@@ -114,17 +122,25 @@ fn live_tool_stubs(
                 "skipping tool stubs of {}: {err}",
                 display_path(lockfile_path)
             );
-            return vec![];
+            return Ok(vec![]);
         }
     };
     lockfile.retain_live_tool_stubs(lockfile_path);
+    if !lockfile.tool_stubs().is_empty() {
+        for path in config_paths {
+            trust_check(path)?;
+        }
+    }
     lockfile
         .tool_stubs()
         .iter()
         .map(|reference| {
             let path = lockfile::tool_stub_path(lockfile_path, reference);
+            if Settings::get().paranoid.config() {
+                trust_check(&path)?;
+            }
             let stub = crate::cli::tool_stub::ToolStubFile::from_file(&path);
-            (path, stub)
+            Ok((path, stub))
         })
         .collect()
 }
@@ -559,6 +575,12 @@ impl SkipWarnings {
     }
 }
 
+fn with_platform(platforms: Vec<Platform>, platform: Platform) -> Vec<Platform> {
+    let mut platforms: BTreeSet<Platform> = platforms.into_iter().collect();
+    platforms.insert(platform);
+    platforms.into_iter().collect()
+}
+
 impl Lock {
     pub(crate) async fn run(self) -> Result<()> {
         self.run_with_installed(None, Config::get().await?).await
@@ -907,7 +929,12 @@ impl Lock {
         }
         outcome.has_lock_targets = true;
 
-        let target_platforms = self.determine_target_platforms(&target.lockfile_path)?;
+        let mut target_platforms = self.determine_target_platforms(&target.lockfile_path)?;
+        // An install records its own artifact, so a lockfile written elsewhere
+        // still gains an entry for this platform.
+        if run.setup.installed.is_some() && self.platform.is_empty() {
+            target_platforms = with_platform(target_platforms, Platform::current());
+        }
         self.announce_target(&target, &target_platforms)?;
 
         if self.dry_run {
@@ -1964,13 +1991,13 @@ impl Lock {
         effective_config_files: &ConfigMap,
     ) -> Option<ToolSelectors> {
         let (mut configured_tools, mut configured_backends) = self.configured_tool_selectors(tools);
-        let config_paths: BTreeSet<&PathBuf> = config_paths.iter().collect();
+        let config_path_set: BTreeSet<&PathBuf> = config_paths.iter().collect();
 
         for (path, cf) in effective_config_files {
             let source = cf.source();
             let source_lockfile_matches = lockfile::lockfile_path_for_tool_source(config, &source)
                 .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path);
-            if !(config_paths.contains(path)
+            if !(config_path_set.contains(path)
                 || source.is_idiomatic_version_file() && source_lockfile_matches)
             {
                 continue;
@@ -1995,7 +2022,17 @@ impl Lock {
             }
         }
 
-        for (path, stub) in live_tool_stubs(target_lockfile_path) {
+        let stubs = match live_tool_stubs(target_lockfile_path, config_paths) {
+            Ok(stubs) => stubs,
+            Err(err) => {
+                debug!(
+                    "skipping stale-tool pruning for {} because its tool stubs could not be read: {err}",
+                    display_path(target_lockfile_path)
+                );
+                return None;
+            }
+        };
+        for (path, stub) in stubs {
             let request = stub.and_then(|stub| stub.to_tool_request(&path));
             match request {
                 Ok(request) => {
@@ -2398,11 +2435,37 @@ impl Lock {
         // They are not part of any config, so nothing above sees them.
         let python_named = self.tool.iter().any(|t| t.ba.short == "python");
         let mut stub_python_requests = Vec::new();
-        for (path, stub) in live_tool_stubs(target_lockfile_path) {
-            let request = match stub.and_then(|stub| stub.to_tool_request(&path)) {
+        for (path, stub) in live_tool_stubs(target_lockfile_path, config_paths)? {
+            // The error of a file that does not parse quotes its content, and the
+            // file is one the lockfile names, so only the debug log carries it.
+            let skip = |err: eyre::Report| {
+                warn!(
+                    "skipping tool stub {}: not a valid tool stub",
+                    display_path(&path)
+                );
+                debug!("tool stub {}: {err:#}", display_path(&path));
+            };
+            let stub = match stub {
+                Ok(stub) => stub,
+                Err(err) => {
+                    skip(err);
+                    continue;
+                }
+            };
+            // Safe mode keeps project config inert, and a stub's options (an http
+            // `url`, a github `api_url`, `install_env`, ...) are the project's
+            // tool options. Its lock entries stay as they are.
+            if Settings::safe_mode() && stub.has_tool_options() {
+                warn!(
+                    "skipping tool stub {} in safe mode: its tool options apply only outside safe mode",
+                    display_path(&path)
+                );
+                continue;
+            }
+            let request = match stub.to_tool_request(&path) {
                 Ok(request) => request,
                 Err(err) => {
-                    warn!("skipping tool stub {}: {err:#}", display_path(&path));
+                    skip(err);
                     continue;
                 }
             };
@@ -2667,6 +2730,13 @@ impl Lock {
                 let Some(request) = tool.tvr else {
                     continue;
                 };
+                // A task loads without trust because it is inert until it
+                // runs, but its tools are resolved here. Their options need
+                // the trust they need on a `[tools]` entry of the config the
+                // task is locked for.
+                if tool.ba.explicit_opts().is_some_and(|opts| !opts.is_empty()) {
+                    trust_check(&config_path)?;
+                }
                 let request = ToolRequest::new_with_options(
                     tool.ba.clone(),
                     &request.version(),
@@ -2926,10 +2996,24 @@ impl Lock {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn with_platform_adds_a_platform_the_lockfile_lacks() {
+        let linux = Platform::parse("linux-x64").unwrap();
+        let macos = Platform::parse("macos-arm64").unwrap();
+        assert_eq!(
+            with_platform(vec![linux.clone()], macos.clone()),
+            vec![linux.clone(), macos.clone()]
+        );
+        assert_eq!(
+            with_platform(vec![linux.clone(), macos.clone()], macos.clone()),
+            vec![linux, macos]
+        );
+    }
+
     use super::{
         Lock, LockTaskResult, LockTaskStatus, LockfileSnapshot, SkipWarnings, classify_lock_result,
         distinct_lockfile_targets, prepare_lockfile_rollback, push_unique_lock_tool,
-        restore_lockfile_snapshots,
+        restore_lockfile_snapshots, with_platform,
     };
     use crate::args::{BackendArg, ToolArg};
     use crate::lockfile::{Lockfile, PlatformInfo, apply_lock_result};

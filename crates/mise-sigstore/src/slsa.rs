@@ -38,17 +38,7 @@ pub async fn verify_slsa_provenance_artifacts(
     let mut errors = Vec::new();
     let mut trust_roots = TrustRoots::default();
 
-    let mut candidates: Vec<&str> = content
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect();
-    let trimmed = content.trim();
-    if !trimmed.is_empty() && !candidates.contains(&trimmed) {
-        candidates.push(trimmed);
-    }
-
-    for candidate in candidates {
+    for candidate in provenance_candidates(&content) {
         // Bundle::from_json failure falls through to the DSSE envelope path.
         if let Ok(bundle) = Bundle::from_json(candidate) {
             let result =
@@ -86,6 +76,66 @@ pub async fn verify_slsa_provenance_artifacts(
     collapse_slsa_errors(errors, || {
         "File does not contain valid attestations or SLSA provenance".to_string()
     })
+}
+
+/// Each line of a provenance file, and the whole file when it is one
+/// multi-line document.
+fn provenance_candidates(content: &str) -> Vec<&str> {
+    let mut candidates: Vec<&str> = content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let trimmed = content.trim();
+    if !trimmed.is_empty() && !candidates.contains(&trimmed) {
+        candidates.push(trimmed);
+    }
+    candidates
+}
+
+/// Repositories whose workflow runs signed this provenance with `signer`'s
+/// identity and issuer, but which `signer` does not accept as its source
+/// repository (see [`SlsaSignerIdentity`]), as `owner/repo`.
+///
+/// Read from the certificates without verifying them, so a name here proves
+/// nothing: it is a lead for a caller that can confirm, with GitHub, that the
+/// repository was renamed or transferred, and then verifies the provenance
+/// again in full with that name as the source repository.
+pub async fn slsa_provenance_unaccepted_source_repositories(
+    provenance_path: &Path,
+    signer: SlsaSignerIdentity<'_>,
+) -> Result<Vec<String>> {
+    let content = tokio::fs::read_to_string(provenance_path).await?;
+    let mut repositories: Vec<String> = Vec::new();
+    for candidate in provenance_candidates(&content) {
+        let certificates: Vec<Vec<u8>> = if let Ok(bundle) = Bundle::from_json(candidate) {
+            bundle
+                .signing_certificate()
+                .map(|cert| cert.as_bytes().to_vec())
+                .into_iter()
+                .collect()
+        } else {
+            serde_json::from_str::<serde_json::Value>(candidate)
+                .ok()
+                .and_then(|envelope| envelope.get("signatures")?.as_array().cloned())
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|sig| sig.get("cert")?.as_str())
+                .filter_map(|pem| DerCertificate::from_pem(pem).ok())
+                .map(|cert| cert.as_bytes().to_vec())
+                .collect()
+        };
+        for cert in certificates {
+            if let Some(repository) = unaccepted_slsa_source_repository(&cert, signer)
+                && !repositories
+                    .iter()
+                    .any(|r| r.eq_ignore_ascii_case(&repository))
+            {
+                repositories.push(repository);
+            }
+        }
+    }
+    Ok(repositories)
 }
 
 #[cfg(test)]

@@ -18,7 +18,7 @@ hooks outside it. To load config you have not reviewed, use
 
 | Restriction                                                                       | Linux                                   | macOS                                   | Windows          |
 | --------------------------------------------------------------------------------- | --------------------------------------- | --------------------------------------- | ---------------- |
-| Reads and writes (`--deny-read`, `--deny-write`, `--allow-read`, `--allow-write`) | Landlock, Linux 5.13 or later           | Seatbelt (`sandbox-exec`)               | Not enforced     |
+| Reads and writes (`--deny-read`, `--deny-write`, `--allow-read`, `--allow-write`) | Landlock, Linux 5.13 (writes: 6.2)      | Seatbelt (`sandbox-exec`)               | Not enforced     |
 | All network access (`--deny-net`)                                                 | seccomp, on x86_64 and arm64            | Seatbelt                                | Not enforced     |
 | Access to particular hosts (`--allow-net`)                                        | Not supported; mise exits with an error | Not supported; mise exits with an error | Not enforced     |
 | Environment variables (`--deny-env`, `--allow-env`)                               | Filtered by mise                        | Filtered by mise                        | Filtered by mise |
@@ -65,7 +65,7 @@ the same meaning. Repeat an `--allow-*` flag to allow more paths or variables.
 | `--deny-all`           | `deny_all`         | Turn on the read, write, network and environment restrictions                                    |
 | `--deny-read`          | `deny_read`        | Block reads, except the [implicit paths](#implicit-access)                                       |
 | `--deny-write`         | `deny_write`       | Block writes, except to `/tmp` and `/dev`                                                        |
-| `--deny-net`           | `deny_net`         | Block IPv4 and IPv6 sockets; Unix sockets still work                                             |
+| `--deny-net`           | `deny_net`         | Block network sockets and io_uring; Unix sockets still work                                      |
 | `--deny-env`           | `deny_env`         | Pass only the [essential variables](#environment-variables)                                      |
 | `--allow-read=<path>`  | `allow_read`       | Allow reads under a path, and block other reads                                                  |
 | `--allow-write=<path>` | `allow_write`      | Allow reads and writes under a path, and block other writes                                      |
@@ -121,9 +121,20 @@ every task that command runs, including dependencies.
 
 Relative paths in a task resolve from the task's working directory, and relative
 paths in flags from the directory where you run mise. Paths can start with `~`,
-and task paths can use templates such as <code v-pre>{{config_root}}</code>. See
-the [task configuration reference](/tasks/task-configuration.html) for each
-property.
+and task paths can use templates such as <code v-pre>{{config_root}}</code>. An
+empty path, or a template that renders to nothing, allows no path but still
+blocks the other reads or writes. See the
+[task configuration reference](/tasks/task-configuration.html) for each property.
+
+The project usually holds the code you are sandboxing, and a checkout can ship
+`dist` as a symlink to `/`. So when an allowed path goes through a symlink in
+the current directory, the project root or the task's directory, and that link
+leads out of the directory it is in, mise exits with an error instead of
+allowing what the link points to:
+`sandbox: ./dist leads out of <directory> through the symlink ...`. To allow
+the target anyway, name it directly. Symlinks elsewhere, including directly in
+your home directory, such as a `~/.npm` that points to another disk, are
+followed as before.
 
 ## Implicit access
 
@@ -158,6 +169,19 @@ includes the tools mise adds. A task also keeps the variables in its
 `pass_through_env` and in its cache `env`. On Windows a few more variables
 stay; see [Windows](#windows).
 
+The filter decides what the command is given; it does not hide variables that
+other processes hold. On Linux, `mise run` keeps the command from reading the
+full environment back from mise's own `/proc/<pid>/environ`: while an
+environment-filtered task runs, mise marks itself non-dumpable, which also
+stops the command from attaching to mise with ptrace. `mise exec` replaces
+itself with the command, so no mise process is left holding the variables.
+Neither covers the shell or other process that started mise: a variable
+exported there stays readable to a command running as the same user. None of
+this holds for a command running as root. Against a command you do not trust,
+also restrict writes with `--deny-write` or `--deny-all`: on Linux a command
+under a read or write restriction runs in a Landlock domain, which cannot read
+the environment of processes outside it.
+
 ## When the sandbox blocks something
 
 A blocked operation fails inside the command, and the command decides what to
@@ -166,8 +190,9 @@ print. It sees an ordinary error such as `Permission denied` or
 `Could not resolve host`. mise does not report these.
 
 mise itself reports problems that affect the sandbox before the command runs: a
-missing allowed path on Linux is a warning, while `--allow-net` and an
-unavailable Landlock are errors.
+missing allowed path on Linux is a warning, while `--allow-net`, an allowed
+path that a project symlink leads out of the project, and an unavailable
+Landlock are errors.
 
 ## Access to particular hosts
 
@@ -188,14 +213,18 @@ when a command may reach only certain hosts.
 ### Linux
 
 Filesystem rules use [Landlock](https://landlock.io/), available since Linux
-5.13. Landlock gained features over several kernel releases, and mise uses what
-the running kernel supports, so an older kernel enforces fewer rules. If Landlock
-is unavailable or cannot apply the rules, the command fails.
+5.13. Restricting writes needs Linux 6.2 or later, because an older kernel
+cannot stop a command from truncating files; on such a kernel `--deny-write`,
+`--allow-write` and `--deny-all` fail instead of running with a weaker
+sandbox. If Landlock is unavailable or cannot apply the rules, the command
+fails.
 
 Network rules use a
 [seccomp-bpf](https://www.kernel.org/doc/html/latest/userspace-api/seccomp_filter.html)
-filter that blocks IPv4 and IPv6 sockets and allows Unix sockets. It supports
-x86_64 and arm64; on other architectures, `--deny-net` is an error.
+filter that allows Unix and netlink sockets and blocks every other socket
+family. It also blocks io_uring, which can create sockets the filter does not
+see, so a program that needs io_uring does not run under `--deny-net`. It
+supports x86_64 and arm64; on other architectures, `--deny-net` is an error.
 
 Every allowed path must exist when the command starts. Landlock attaches a rule
 to an open file, so mise drops the rule for a missing path and warns:

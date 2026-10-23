@@ -859,6 +859,7 @@ impl Backend for AquaBackend {
                 }
             });
         }
+        ensure_url_safe_version(&v)?;
 
         // Check if this platform is supported
         if !is_platform_supported(&pkg.supported_envs, target_os, target_arch) {
@@ -1174,6 +1175,7 @@ impl AquaBackend {
             });
         }
         validate(&pkg, &v)?;
+        ensure_url_safe_version(&v)?;
 
         Ok(ResolvedPackage {
             platform_key,
@@ -2062,9 +2064,11 @@ impl AquaBackend {
         let (identity, issuer) = self.slsa_signer_identity(pkg, v)?.ok_or_else(|| {
             eyre!("SLSA provenance requires signer_identity and signer_issuer in Aqua registry metadata")
         })?;
+        let source_repository = slsa_source_repository(pkg);
         let signer = crate::github::sigstore::SlsaSignerIdentity {
             identity: &identity,
             issuer: &issuer,
+            source_repository: Some(&source_repository),
         };
         let target = self.verification_target();
         let (provenance_url, url_api) = self
@@ -2908,9 +2912,21 @@ impl AquaBackend {
         ))
     }
 
+    /// Built from path segments like the API URLs below, so the tag (which may hold `/`, as in
+    /// `cli/v1.2.3`) cannot add `..` segments, a query or a fragment.
     fn github_archive_url(&self, pkg: &AquaPackage, v: &str) -> String {
-        let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        format!("https://github.com/{gh_id}/archive/refs/tags/{v}.tar.gz")
+        let mut url = Url::parse("https://github.com").expect("GitHub URL should be valid");
+        url.path_segments_mut()
+            .expect("GitHub URL should support path segments")
+            .extend([
+                pkg.repo_owner.as_str(),
+                pkg.repo_name.as_str(),
+                "archive",
+                "refs",
+                "tags",
+            ])
+            .extend(format!("{v}.tar.gz").split('/'));
+        url.to_string()
     }
 
     fn github_archive_api_url(&self, pkg: &AquaPackage, v: &str) -> String {
@@ -2928,9 +2944,17 @@ impl AquaBackend {
     }
 
     fn github_content_url(&self, pkg: &AquaPackage, v: &str) -> String {
-        let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let path = pkg.path.as_deref().unwrap();
-        format!("https://raw.githubusercontent.com/{gh_id}/{v}/{path}")
+        let mut url = Url::parse("https://raw.githubusercontent.com")
+            .expect("GitHub content URL should be valid");
+        {
+            let mut segments = url
+                .path_segments_mut()
+                .expect("GitHub content URL should support path segments");
+            segments.extend([pkg.repo_owner.as_str(), pkg.repo_name.as_str()]);
+            segments.extend(v.split('/'));
+            segments.extend(pkg.path.as_deref().unwrap().split('/'));
+        }
+        url.to_string()
     }
 
     fn github_content_api_url(&self, pkg: &AquaPackage, v: &str) -> String {
@@ -4522,6 +4546,28 @@ async fn get_tags_with_release_dates(
         .collect())
 }
 
+/// The version or tag is rendered into registry URL templates (`{{.Version}}`) and checksum and
+/// signature options, none of which encode it. It can come from a config file or from release
+/// metadata, so refuse anything that would change the URL's structure: a percent escape (`%2e%2e`
+/// resolves like `..`), a query or fragment, a backslash, or a `.`/`..` path segment.
+fn ensure_url_safe_version(version: &str) -> Result<()> {
+    if let Some(c) = version
+        .chars()
+        .find(|c| matches!(c, '%' | '#' | '?' | '\\'))
+    {
+        bail!(
+            "invalid version {version:?}: contains {c:?}, which cannot be used in a download URL"
+        );
+    }
+    if version
+        .split('/')
+        .any(|segment| matches!(segment, "." | ".."))
+    {
+        bail!("invalid version {version:?}: contains a relative path segment");
+    }
+    Ok(())
+}
+
 fn validate(pkg: &AquaPackage, version: &str) -> Result<()> {
     if pkg.no_asset.unwrap_or(false) {
         bail!("no asset released");
@@ -4585,6 +4631,22 @@ fn go_install_backend(pkg: &AquaPackage, version: &str) -> Result<String> {
 }
 
 /// Resolve repo owner and name from an override config, falling back to pkg defaults.
+/// The repository whose workflow run must have made a package's SLSA
+/// provenance, as slsa-verifier's `--source-uri` took it: the recipe's
+/// `source_uri`, or else the repository the provenance is published in.
+fn slsa_source_repository(pkg: &AquaPackage) -> String {
+    let slsa = pkg.slsa_provenance.as_ref();
+    if let Some(source_uri) = slsa.and_then(|s| s.source_uri.clone()) {
+        return source_uri;
+    }
+    let (owner, name) = resolve_repo_info(
+        slsa.and_then(|s| s.repo_owner.as_ref()),
+        slsa.and_then(|s| s.repo_name.as_ref()),
+        pkg,
+    );
+    format!("{owner}/{name}")
+}
+
 fn resolve_repo_info(
     override_owner: Option<&String>,
     override_name: Option<&String>,
@@ -5325,6 +5387,24 @@ slsa_provenance:
         assert!(
             !AquaBackend::security_features(&pkg, &[])
                 .contains(&SecurityFeature::Slsa { level: None })
+        );
+    }
+
+    #[test]
+    fn slsa_source_repository_follows_the_recipe() {
+        let pkg = |slsa: &str| {
+            pkg_from_yaml(&format!(
+                "type: github_release\nrepo_owner: owner\nrepo_name: tool\nslsa_provenance:\n  type: github_release\n  asset: tool.intoto.jsonl\n{slsa}"
+            ))
+        };
+        assert_eq!(slsa_source_repository(&pkg("")), "owner/tool");
+        assert_eq!(
+            slsa_source_repository(&pkg("  repo_name: releases\n")),
+            "owner/releases"
+        );
+        assert_eq!(
+            slsa_source_repository(&pkg("  source_uri: github.com/owner/source\n")),
+            "github.com/owner/source"
         );
     }
 

@@ -530,6 +530,16 @@ The identity must match the workflow ref in the certificate exactly. It is a
 [template](#templates), so `{{ version }}` is the resolved version.
 :::
 
+The workflow run that made the provenance must also belong to the tool's
+repository (`myorg/mytool` here) or to the repository that holds the signing
+workflow. A reusable workflow such as `slsa-framework/slsa-github-generator`
+has the same identity in every repository that calls it, so the identity alone
+does not say whose release was signed. Provenance names the repository as it
+was when the release was built, so after a rename or transfer mise asks
+api.github.com whether the two names are the same repository. A
+[`url_replacements`](/url-replacements.html) mirror for the API cannot confirm a
+rename.
+
 With both options set, a release that has no SLSA provenance mise can verify
 for the asset, because it publishes none or the file is empty or unreadable,
 fails to install and to lock, unless GitHub artifact attestations verify it

@@ -424,6 +424,14 @@ pub struct Task {
 
     // file type
     pub file: Option<PathBuf>,
+    /// `file` is the path of a script found in a task directory, not a `file = "..."` string
+    /// from TOML.
+    ///
+    /// Only the latter is a template. A discovered path is used as it is on disk: a file name
+    /// that happens to contain `{{ ... }}` is still just a file name, and rendering it would
+    /// run `exec()` from a task directory that loaded without trust on the strength of its
+    /// template-free contents.
+    pub(crate) file_from_discovery: bool,
 
     /// This task was loaded from a TOML file in `task_config.includes`.
     ///
@@ -1180,6 +1188,39 @@ impl Task {
             .collect()
     }
 
+    /// Whether the user vouches for every file this task is defined in, so commands its
+    /// definition names may run before `mise run`, as shell completion runs a usage spec's
+    /// `complete run=` and `mount`. A `[tasks]`-only config and a template-free task file load
+    /// without trust because they are inert until run; this is what tells the two apart.
+    ///
+    /// Global and system config and the global task directories are the user's own. A
+    /// project's files count once the project is trusted: the file itself, its config root, or
+    /// one of the root's own config files, which is what lets the root's task includes load
+    /// without a check of their own. Safe mode keeps project config inert, trusted or not.
+    /// The `global` field is not consulted because a task definition can set it.
+    pub fn is_trusted(&self, config: &Config) -> bool {
+        use crate::config::config_file::{is_path_trusted, is_trusted};
+        let safe_mode = config::Settings::safe_mode();
+        let trusted = |path: &Path| {
+            config::is_global_config(path)
+                || config::is_global_task_include_path(path)
+                || (!safe_mode && is_path_trusted(path))
+        };
+        let root_trusted = || {
+            !safe_mode
+                && self.config_root.as_deref().is_some_and(|root| {
+                    is_trusted(root)
+                        || config.config_files.values().chain(&self.cf).any(|cf| {
+                            cf.config_root() == root
+                                && !config::is_global_config(cf.get_path())
+                                && is_path_trusted(cf.get_path())
+                        })
+                })
+        };
+        (trusted(&self.config_source) || root_trusted())
+            && self.additional_config_sources.iter().all(|p| trusted(p))
+    }
+
     pub fn tool_args(&self) -> Result<Vec<ToolArg>> {
         self.tools
             .iter()
@@ -1251,6 +1292,7 @@ impl Task {
         task.hide = hidden;
         task.record_late_secret_env(path)?;
         task.file = Some(path.to_path_buf());
+        task.file_from_discovery = true;
         Ok(task)
     }
 
@@ -2215,7 +2257,7 @@ impl Task {
     pub(crate) async fn file_path(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
         if let Some(file) = &self.file {
             let file_str = file.to_string_lossy().to_string();
-            let rendered = if contains_template_syntax(&file_str) {
+            let rendered = if !self.file_from_discovery && contains_template_syntax(&file_str) {
                 let config_root = self.config_root.clone().unwrap_or_default();
                 let mut tera = get_tera(Some(&config_root));
                 let tera_ctx = self.tera_ctx(config).await?;
@@ -2845,6 +2887,11 @@ impl Task {
             *paths = rendered;
             Ok(())
         };
+        // An allow list implies its deny, also when every entry renders to
+        // nothing: an unset optional path allows no path, it does not lift
+        // the restriction.
+        self.deny_read |= !self.allow_read.is_empty();
+        self.deny_write |= !self.allow_write.is_empty();
         // Tilde expansion is applied later when task and CLI sandbox paths are normalized.
         render_sandbox_paths(&mut self.allow_read)?;
         render_sandbox_paths(&mut self.allow_write)?;
@@ -3553,6 +3600,7 @@ impl Default for Task {
             run_windows_declared: false,
             args: vec![],
             file: None,
+            file_from_discovery: false,
             is_toml_include: false,
             name_from_file: false,
             config_precedence: usize::MAX,
@@ -5109,6 +5157,23 @@ exec proxy "$@"
         assert_eq!(task.allow_write, vec![crate::env::HOME.join("write")]);
     }
 
+    /// A list whose only entry renders to nothing allows no path; it must not
+    /// turn the write restriction off.
+    #[tokio::test]
+    async fn test_render_sandbox_allow_paths_keeps_deny_when_all_render_empty() {
+        let config = Config::get().await.unwrap();
+        let mut task = Task {
+            allow_write: vec![Path::new("{{ \"\" }}").into()],
+            ..Default::default()
+        };
+
+        task.render(&config, Path::new(".")).await.unwrap();
+
+        assert!(task.allow_write.is_empty());
+        assert!(task.deny_write);
+        assert!(!task.deny_read);
+    }
+
     #[tokio::test]
     async fn test_usage_task_description_populates_help_metadata() {
         let config = Config::get().await.unwrap();
@@ -6173,6 +6238,22 @@ echo "hello world"
         let result = task.file_path(&config).await;
         // Should succeed (not error on template rendering)
         assert!(result.is_ok());
+    }
+
+    /// A script found in a task directory loads without trust when its contents are
+    /// template-free, so its name must not be rendered: a name holding `{{ exec(...) }}` would
+    /// otherwise run the command whenever the path is resolved, as completing `mise run` does.
+    #[tokio::test]
+    async fn test_file_path_of_a_discovered_script_is_not_a_template() {
+        let config = Config::get().await.unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let tasks_dir = dir.path().join("mise-tasks");
+        std::fs::create_dir(&tasks_dir).unwrap();
+        let path = tasks_dir.join("{{ exec(command='echo rendered') }}");
+        std::fs::write(&path, "#!/bin/sh\necho hi\n").unwrap();
+
+        let task = Task::from_path_unrendered_with_cf(&path, &tasks_dir, dir.path(), None).unwrap();
+        assert_eq!(task.file_path(&config).await.unwrap(), Some(path));
     }
 
     #[test]

@@ -113,7 +113,11 @@ impl<'a> GitBackendOptions<'a> {
             .values
             .str("slsa_signer_issuer")
             .filter(|s| !s.is_empty())?;
-        Some(crate::github::sigstore::SlsaSignerIdentity { identity, issuer })
+        Some(crate::github::sigstore::SlsaSignerIdentity {
+            identity,
+            issuer,
+            source_repository: None,
+        })
     }
 
     fn slsa_signer_for(&self, tv: &ToolVersion) -> Option<(String, String)> {
@@ -1586,6 +1590,7 @@ impl UnifiedGitBackend {
             let signer = crate::github::sigstore::SlsaSignerIdentity {
                 identity: &identity,
                 issuer: &issuer,
+                source_repository: Some(&repo),
             };
             let version = &tv.version;
             let version_prefix = opts.version_prefix();
@@ -3081,6 +3086,7 @@ impl UnifiedGitBackend {
         let signer = crate::github::sigstore::SlsaSignerIdentity {
             identity: &identity,
             issuer: &issuer,
+            source_repository: Some(&repo),
         };
         let version = &tv.version;
 

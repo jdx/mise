@@ -138,6 +138,9 @@ Properties can also go in a block, one per line, as `choices` and `long_help`
 do in the next example. See the [usage spec](https://usage.jdx.dev/spec/) for
 every option.
 
+Completion runs a project task's commands, such as `complete run=`, only once
+the project is [trusted](/security.html#what-needs-trust).
+
 ### Long help
 
 ```mise-toml
@@ -459,6 +462,8 @@ exec ./target/release/mycli "$@"
 The mount command runs when shell completion asks for the task's spec, so it
 must work outside the task's own process. Calling the task itself, as shown,
 lets mise apply the task's configuration before it forwards `--usage-spec`.
+Completion runs the mount only once the project is
+[trusted](/security.html#what-needs-trust).
 
 ## Migrate from Tera argument functions <Badge type="danger" text="deprecated" /> {#tera-templates}
 

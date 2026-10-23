@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
 # An unknown value for a setting with fixed choices is an error, not a panic.
+# The harness pins lockfile_mode to merge through the environment, which would
+# override the mode this test selects in config.
+unset MISE_LOCKFILE_MODE
 cat >mise.toml <<'TOML'
 [tools]
 dummy = "1"
