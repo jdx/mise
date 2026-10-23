@@ -1,7 +1,6 @@
 use crate::cmd::cmd;
 use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::shell::Shell;
-use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::{ToolVersion, Toolset};
 use crate::{dirs, hook_env};
 use eyre::Result;
@@ -618,37 +617,20 @@ async fn execute(
 
     // Preinstall hooks skip `tools=true` env directives since the tools
     // providing those env vars aren't installed yet (fixes #6162)
-    let (tera_ctx, mut env) = if hook.hook == Hooks::Preinstall {
-        let env = ts.full_env_without_tools(config).await?;
-        let ctx = if contains_template_syntax(run) {
-            let mut ctx = config.tera_ctx.clone();
-            ctx.insert("env", &env);
-            Some(ctx)
-        } else {
-            None
-        };
-        (ctx, env)
+    let mut env = if hook.hook == Hooks::Preinstall {
+        ts.full_env_without_tools(config).await?
     } else {
-        let env = ts.full_env(config).await?;
-        let ctx = if contains_template_syntax(run) {
-            Some(ts.tera_ctx(config).await?.clone())
-        } else {
-            None
-        };
-        (ctx, env)
-    };
-    let rendered_script = if let Some(tera_ctx) = tera_ctx {
-        let mut tera = get_tera(Some(project_root));
-        render_str(&mut tera, run, &tera_ctx)?
-    } else {
-        run.to_string()
+        ts.full_env(config).await?
     };
 
+    // `run` was rendered once, when the hook was loaded from its config file.
+    // Do not render it again: what that pass substituted (cwd, env values,
+    // exec() output) is data, and template syntax in it must not be evaluated.
     let args = shell
         .iter()
         .skip(1)
         .map(|s| s.as_str())
-        .chain(once(rendered_script.as_str()))
+        .chain(once(run))
         .collect_vec();
     if let Some(cwd) = dirs::CWD.as_ref() {
         env.insert(
@@ -701,7 +683,7 @@ async fn execute(
         if crate::path::is_cmd_shell_program(Path::new(&shell[0])) && runs_command {
             use std::os::windows::io::AsHandle;
             use std::os::windows::process::CommandExt;
-            let cmd_args = crate::path::cmd_verbatim_args(&shell[1..], &rendered_script, &[]);
+            let cmd_args = crate::path::cmd_verbatim_args(&shell[1..], run, &[]);
             trace!("hook (cmd verbatim): {} {}", shell[0], cmd_args.join(" "));
             let mut c = std::process::Command::new(&shell[0]);
             for a in &cmd_args {
