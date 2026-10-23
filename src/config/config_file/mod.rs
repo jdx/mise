@@ -831,14 +831,28 @@ fn is_trusted_with(path: &Path, content_bound: bool) -> bool {
     // `trusted_config_paths` is trusted by configuration and overrides the
     // persisted ignore list (a dismissed trust prompt or `mise trust
     // --ignore`), matching the "still trusted via settings" warnings emitted by
-    // `mise trust`. It is therefore checked *before* the persisted ignore list.
-    if trusted_config_path_matches(canonicalized_path.as_path()) {
+    // `mise trust`. It only ever turns a "not trusted" answer into "trusted",
+    // so it is the fallback: matching it canonicalizes every entry, which is a
+    // real filesystem call each (slow on autofs/network mounts) and would
+    // otherwise be paid on every startup even for configs trusted by record.
+    if is_trusted_without_config_paths(path, &canonicalized_path, content_bound)
+        || trusted_config_path_matches(canonicalized_path.as_path())
+    {
         add_trusted(canonicalized_path.to_path_buf());
         return true;
     }
+    false
+}
+
+/// The trust rules that need no `trusted_config_paths` lookup.
+fn is_trusted_without_config_paths(
+    path: &Path,
+    canonicalized_path: &Path,
+    content_bound: bool,
+) -> bool {
     // The persisted ignore list blocks trust only when the path is not trusted
-    // via `trusted_config_paths` above.
-    if is_persisted_ignored(canonicalized_path.as_path()) {
+    // via `trusted_config_paths`, which the caller checks afterwards.
+    if is_persisted_ignored(canonicalized_path) {
         return false;
     }
     if config::is_global_config(path) {
@@ -877,7 +891,7 @@ fn is_trusted_with(path: &Path, content_bound: bool) -> bool {
         // shares trust with the equivalent path in the repo's main checkout.
         // Not applicable in paranoid mode (excluded above), where trust is
         // tied to file contents that can differ between worktree branches.
-        if let Some(main_path) = crate::git::main_checkout_equivalent(&canonicalized_path)
+        if let Some(main_path) = crate::git::main_checkout_equivalent(canonicalized_path)
             && is_trusted(&main_path)
         {
             add_trusted(canonicalized_path.to_path_buf());
@@ -915,9 +929,16 @@ pub(crate) fn rm_ignored(path: PathBuf) -> Result<()> {
 /// entry. Callers with a raw path use [`is_trusted_via_config_paths`], which
 /// canonicalizes first.
 fn trusted_config_path_matches(canonicalized_path: &Path) -> bool {
-    Settings::get()
-        .trusted_config_paths()
+    let settings = Settings::get();
+    // A canonical path has no symlinks, so an entry written as a prefix of it is a real
+    // directory and matches without resolving anything. Only when none does are the entries
+    // canonicalized, which costs a filesystem call each.
+    settings
+        .trusted_config_paths_as_written()
         .any(|p| canonicalized_path.starts_with(p))
+        || settings
+            .trusted_config_paths()
+            .any(|p| canonicalized_path.starts_with(p))
 }
 
 /// Whether `path` is trusted purely via the `trusted_config_paths` setting.

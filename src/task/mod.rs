@@ -411,6 +411,9 @@ pub struct Task {
     pub run: Vec<RunEntry>,
 
     pub run_windows: Vec<RunEntry>,
+    /// `run_windows` was written in config, even as an empty list, which skips the task's `run`
+    /// on Windows
+    pub run_windows_declared: bool,
 
     // command type
     // pub command: Option<String>,
@@ -1544,7 +1547,7 @@ impl Task {
     }
 
     pub fn run(&self) -> &Vec<RunEntry> {
-        if cfg!(windows) && !self.run_windows.is_empty() {
+        if cfg!(windows) && (self.run_windows_declared || !self.run_windows.is_empty()) {
             &self.run_windows
         } else {
             &self.run
@@ -2527,6 +2530,10 @@ impl Task {
             }
         }
 
+        if other.run_windows_declared {
+            self.run_windows = other.run_windows;
+            self.run_windows_declared = true;
+        }
         if !other.description.is_empty() {
             self.description = other.description;
         }
@@ -3450,7 +3457,8 @@ impl Task {
             timeout: decl.timeout,
             skip_if: decl.skip_if,
             run: decl.run,
-            run_windows: decl.run_windows,
+            run_windows_declared: decl.run_windows.is_some(),
+            run_windows: decl.run_windows.unwrap_or_default(),
             args: decl.args,
             file: decl.file,
             deny_all: decl.deny_all,
@@ -3516,6 +3524,7 @@ impl Default for Task {
             output: None,
             run: vec![],
             run_windows: vec![],
+            run_windows_declared: false,
             args: vec![],
             file: None,
             is_toml_include: false,
@@ -4452,6 +4461,23 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_toml_overlay_keeps_empty_run_windows() {
+        let mut base = Task {
+            run: vec![RunEntry::Script("echo unix".to_string())],
+            ..Default::default()
+        };
+        let overlay = Task {
+            run_windows_declared: true,
+            ..Default::default()
+        };
+
+        base.merge_toml_overlay(overlay);
+
+        assert!(base.run_windows_declared);
+        assert!(base.run_windows.is_empty());
+    }
+
+    #[test]
     fn test_merge_toml_overlay_preserves_raw_paths() {
         let base_sources = vec!["base.txt".to_string(), "{{usage.name}}.txt".to_string()];
         let base_outputs = vec!["{{usage.name}}.out".to_string()];
@@ -5374,6 +5400,22 @@ echo "hello world"
         // not the whole header and not the task.
         assert_eq!(task.description, "still parsed");
         assert!(task.run_windows.is_empty());
+    }
+
+    #[test]
+    fn test_empty_run_windows_is_declared() {
+        let decl: mise_config::task::TaskDecl =
+            toml::from_str("run = 'echo hi'\nrun_windows = []").unwrap();
+        let task = Task::from_decl(decl);
+        assert!(task.run_windows.is_empty());
+        assert!(task.run_windows_declared);
+        #[cfg(windows)]
+        assert!(task.run().is_empty());
+        #[cfg(not(windows))]
+        assert_eq!(task.run().len(), 1);
+
+        let decl: mise_config::task::TaskDecl = toml::from_str("run = 'echo hi'").unwrap();
+        assert!(!Task::from_decl(decl).run_windows_declared);
     }
 
     #[test]
