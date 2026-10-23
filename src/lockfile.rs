@@ -1880,13 +1880,18 @@ impl Lockfile {
         Ok(())
     }
 
-    /// Drop references to stubs that were deleted, or that now find a
-    /// different lockfile. Returns whether any reference was dropped.
+    /// Drop references to stubs that were deleted, that now find a different
+    /// lockfile, or that lead out of the checkout holding the lockfile.
+    /// Returns whether any reference was dropped.
     pub fn retain_live_tool_stubs(&mut self, lockfile_path: &Path) -> bool {
         let before = self.tool_stubs.len();
+        let checkout = checkout_root(lockfile_path);
         self.tool_stubs.retain(|reference| {
             let stub = tool_stub_path(lockfile_path, reference);
             stub.is_file()
+                && checkout.as_ref().is_none_or(|root| {
+                    dunce::canonicalize(&stub).is_ok_and(|stub| stub.starts_with(root))
+                })
                 && lockfile_path_for_tool_stub(&stub)
                     .is_some_and(|(path, _)| same_file_path(&path, lockfile_path))
         });
@@ -2423,6 +2428,20 @@ fn resolve_tool_stub_path(stub: &Path) -> Option<PathBuf> {
     // `tool-stubs` reference through a committed link such as
     // `proc -> /proc/self` would count as a stub of this project and be read.
     dunce::canonicalize(stub).ok()
+}
+
+/// The git checkout that holds the lockfile at `lockfile_path`, if any.
+///
+/// A config in a `mise/` or `.config/` directory covers the directory above
+/// it, so `tool-stubs` references may climb out of the lockfile's directory
+/// with `..`. When that directory is itself a checkout (a repository cloned
+/// as `mise`), the directory above is not part of it, and a reference there
+/// would name a file next to the checkout.
+fn checkout_root(lockfile_path: &Path) -> Option<PathBuf> {
+    let dir = dunce::canonicalize(lockfile_path.parent()?).ok()?;
+    dir.ancestors()
+        .find(|dir| dir.join(".git").exists())
+        .map(Path::to_path_buf)
 }
 
 /// A stub's path relative to its lockfile's directory, with `/` separators so

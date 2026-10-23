@@ -11,7 +11,7 @@ export MISE_OFFLINE=1
 export MISE_TRUSTED_CONFIG_PATHS=""
 unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
 
-mkdir -p proj/bin tasks
+mkdir -p proj/bin tasks safe/bin invalid/bin mise/bin
 cd proj || exit 1
 echo '[tools]' >mise.toml
 echo 'tool-stubs = ["bin/widget"]' >mise.lock
@@ -27,11 +27,19 @@ assert_fail "test -e $HOME/stub-option-ran"
 assert "diff mise.lock mise.lock.orig"
 
 # Paranoid mode ties trust to each file's contents, so the stub needs its own.
-MISE_PARANOID=1 mise trust mise.toml
-assert_fail_contains "MISE_PARANOID=1 MISE_YES=0 mise lock 2>&1" "not trusted"
-assert_fail "test -e $HOME/stub-option-ran"
-MISE_PARANOID=1 mise trust --untrust mise.toml
-cp mise.lock.orig mise.lock
+# The `config` category alone is enough for that.
+for paranoid in config 1; do
+  MISE_PARANOID=$paranoid mise trust mise.toml
+  assert_fail_contains "MISE_PARANOID=$paranoid MISE_YES=0 mise lock 2>&1" "bin/widget are not trusted"
+  assert_fail "test -e $HOME/stub-option-ran"
+  MISE_PARANOID=$paranoid mise trust bin/widget
+  assert_succeed "MISE_PARANOID=$paranoid MISE_YES=0 mise lock"
+  assert_succeed "test -e $HOME/stub-option-ran"
+  rm "$HOME/stub-option-ran"
+  MISE_PARANOID=$paranoid mise trust --untrust bin/widget
+  MISE_PARANOID=$paranoid mise trust --untrust mise.toml
+  cp mise.lock.orig mise.lock
+done
 
 # control: once the project is trusted the stub is locked, options included
 mise trust mise.toml
@@ -51,3 +59,51 @@ api_url = "http://127.0.0.1:9/api/v3"
 EOF
 assert_fail_contains "MISE_YES=0 mise lock 2>&1" "not trusted"
 assert_contains "MISE_YES=0 mise trust --show" "untrusted"
+
+# Safe mode keeps a project's tool options inert, a stub's included, even in a
+# trusted project. The stub's lock entries are left alone.
+cd ../safe || exit 1
+echo '[tools]' >mise.toml
+echo 'tool-stubs = ["bin/plain"]' >mise.lock
+cat >bin/plain <<'STUB'
+tool = "http:plain"
+version = "1.0.0"
+url = "file:///nonexistent/plain.tar.gz"
+STUB
+mise trust mise.toml
+(MISE_SAFE=1 mise lock >../safe.log 2>&1) || true
+assert_not_contains "cat mise.lock" "nonexistent/plain"
+assert_contains "cat ../safe.log" "in safe mode"
+assert_succeed "MISE_SAFE=1 mise lock"
+assert_contains "cat mise.lock" 'tool-stubs = ["bin/plain"]'
+assert_succeed "mise lock"
+assert_contains "cat mise.lock" "nonexistent/plain"
+
+# A listed file that is not a stub is skipped without quoting it.
+cd ../invalid || exit 1
+echo '[tools]' >mise.toml
+echo 'tool-stubs = ["bin/notes"]' >mise.lock
+echo 'DEPLOY_TOKEN=s3cr3t-value' >bin/notes
+mise trust mise.toml
+assert_contains "mise lock 2>&1" "not a valid tool stub"
+assert_not_contains "mise lock 2>&1" "s3cr3t-value"
+
+# A checkout named `mise` with a config.toml covers the directory above it, but
+# its lockfile's stub references stay inside the checkout.
+cd ../mise || exit 1
+echo '[tools]' >config.toml
+cat >../outside-stub <<'STUB'
+tool = "http:outside"
+version = "1.0.0"
+url = "file:///nonexistent/outside.tar.gz"
+STUB
+mkdir .git
+echo 'tool-stubs = ["../outside-stub"]' >mise.lock
+mise trust config.toml
+assert_succeed "mise lock"
+assert_not_contains "cat mise.lock" "outside"
+# control: without the checkout boundary the parent is the project root
+rmdir .git
+echo 'tool-stubs = ["../outside-stub"]' >mise.lock
+assert_succeed "mise lock"
+assert_contains "cat mise.lock" "../outside-stub"

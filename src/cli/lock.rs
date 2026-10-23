@@ -2425,10 +2425,36 @@ impl Lock {
         let python_named = self.tool.iter().any(|t| t.ba.short == "python");
         let mut stub_python_requests = Vec::new();
         for (path, stub) in live_tool_stubs(target_lockfile_path, config_paths)? {
-            let request = match stub.and_then(|stub| stub.to_tool_request(&path)) {
+            // The error of a file that does not parse quotes its content, and the
+            // file is one the lockfile names, so only the debug log carries it.
+            let skip = |err: eyre::Report| {
+                warn!(
+                    "skipping tool stub {}: not a valid tool stub",
+                    display_path(&path)
+                );
+                debug!("tool stub {}: {err:#}", display_path(&path));
+            };
+            let stub = match stub {
+                Ok(stub) => stub,
+                Err(err) => {
+                    skip(err);
+                    continue;
+                }
+            };
+            // Safe mode keeps project config inert, and a stub's options (an http
+            // `url`, a github `api_url`, `install_env`, ...) are the project's
+            // tool options. Its lock entries stay as they are.
+            if Settings::safe_mode() && stub.has_tool_options() {
+                warn!(
+                    "skipping tool stub {} in safe mode: its tool options apply only outside safe mode",
+                    display_path(&path)
+                );
+                continue;
+            }
+            let request = match stub.to_tool_request(&path) {
                 Ok(request) => request,
                 Err(err) => {
-                    warn!("skipping tool stub {}: {err:#}", display_path(&path));
+                    skip(err);
                     continue;
                 }
             };
