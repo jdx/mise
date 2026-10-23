@@ -3,6 +3,7 @@ use super::*;
 const GENUINE_SIGNER: SlsaSignerIdentity<'static> = SlsaSignerIdentity {
     identity: "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@refs/tags/v2.0.0",
     issuer: "https://token.actions.githubusercontent.com",
+    source_repository: Some("getsops/sops"),
 };
 
 fn slsa_statement(subjects: serde_json::Value) -> Vec<u8> {
@@ -118,6 +119,94 @@ fn intoto_envelope_requires_exact_signer_identity_and_issuer() {
     }
 }
 
+#[test]
+fn intoto_envelope_requires_the_tool_repository_for_a_reusable_workflow() {
+    // slsa-github-generator signs with the same identity and issuer for every
+    // repository that calls it, so only the certificate's source repository
+    // says whose release this provenance is for.
+    let root = embedded_sigstore_root();
+    let verify = |source_repository| {
+        verify_intoto_envelope(
+            GENUINE_INTOTO_ENVELOPE.trim(),
+            b"different artifact contents",
+            1,
+            SlsaSignerIdentity {
+                source_repository,
+                ..GENUINE_SIGNER
+            },
+            &root,
+        )
+        .unwrap_err()
+        .to_string()
+    };
+    for accepted in [
+        Some("getsops/sops"),
+        Some("GetSops/SOPS"),
+        Some("github.com/getsops/sops"),
+        Some("https://github.com/getsops/sops"),
+    ] {
+        // The signer passed; the artifact is the only mismatch left.
+        let err = verify(accepted);
+        assert!(
+            err.contains("not found in SLSA statement subjects"),
+            "{err}"
+        );
+    }
+    for rejected in [
+        None,
+        Some("example-org/example-tool"),
+        Some("getsops/sops2"),
+    ] {
+        let err = verify(rejected);
+        assert!(
+            err.contains("SLSA provenance was built in getsops/sops"),
+            "{err}"
+        );
+    }
+}
+
+#[test]
+fn github_workflow_repository_of_identity() {
+    assert_eq!(
+        github_workflow_repository(
+            "https://github.com/jdx/mise/.github/workflows/release.yml@refs/tags/v2026.9.12"
+        ),
+        Some("jdx/mise")
+    );
+    for identity in [
+        "https://github.com/jdx/.github/workflows/release.yml@refs/tags/v1",
+        "https://gitlab.com/jdx/mise/.github/workflows/release.yml@refs/tags/v1",
+        "https://github.com/jdx/mise",
+        "user@example.com",
+    ] {
+        assert_eq!(github_workflow_repository(identity), None, "{identity}");
+    }
+}
+
+#[test]
+fn normalize_github_repository_forms() {
+    for repository in [
+        "jdx/mise",
+        "github.com/jdx/mise",
+        "https://github.com/jdx/mise",
+        "https://github.com/jdx/mise/",
+        "https://github.com/jdx/mise.git",
+    ] {
+        assert_eq!(
+            normalize_github_repository(repository),
+            Some("jdx/mise"),
+            "{repository}"
+        );
+    }
+    for repository in ["jdx", "https://gitlab.com/jdx/mise", "jdx/mise/extra", ""] {
+        assert_eq!(
+            normalize_github_repository(repository),
+            None,
+            "{repository}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn bundle_requires_exact_signer_identity_and_issuer() {
     let _tuf_root = TUF_ROOT_LOCK.lock().await;
@@ -131,6 +220,7 @@ async fn bundle_requires_exact_signer_identity_and_issuer() {
     let signer = SlsaSignerIdentity {
         identity: "https://github.com/jdx/mise/.github/workflows/release.yml@refs/tags/v2026.9.12",
         issuer: "https://token.actions.githubusercontent.com",
+        source_repository: None,
     };
     let mut roots = TrustRoots::default();
     verify_bundle_with_slsa_signer(Artifact::from(&digest), &bundle, signer, &mut roots)

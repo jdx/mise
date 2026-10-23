@@ -527,6 +527,12 @@ The identity must match the workflow ref in the certificate exactly. It is a
 [template](#templates), so `{{ version }}` is the resolved version.
 :::
 
+The workflow run that made the provenance must also belong to the tool's
+repository (`myorg/mytool` here) or to the repository that holds the signing
+workflow. A reusable workflow such as `slsa-framework/slsa-github-generator`
+has the same identity in every repository that calls it, so the identity alone
+does not say whose release was signed.
+
 Without both options, mise skips SLSA provenance and uses the other checks. A
 lockfile entry that records a checksum and SLSA provenance installs without
 verifying again, unless

@@ -124,7 +124,53 @@ pub(crate) fn verify_slsa_signer_certificate(
             expected.issuer
         )));
     }
+
+    // A reusable workflow has the same identity and issuer in every
+    // repository that calls it; only the source repository extension says
+    // whose workflow run was signed. Accept the repository that holds the
+    // signing workflow, or the one the caller expects.
+    if let Some(workflow_repository) = github_workflow_repository(expected.identity) {
+        let expected_repository = expected
+            .source_repository
+            .and_then(normalize_github_repository);
+        let source = certificate_source_repository(&cert);
+        let accepted = source.as_deref().is_some_and(|source| {
+            source.eq_ignore_ascii_case(workflow_repository)
+                || expected_repository.is_some_and(|expected| source.eq_ignore_ascii_case(expected))
+        });
+        if !accepted {
+            let expected = match expected_repository {
+                Some(expected) if !expected.eq_ignore_ascii_case(workflow_repository) => {
+                    format!("{expected} or {workflow_repository}")
+                }
+                _ => workflow_repository.to_string(),
+            };
+            return Err(AttestationError::WorkflowMismatch(format!(
+                "SLSA provenance was built in {}, expected {expected}",
+                source.as_deref().unwrap_or("an unknown repository"),
+            )));
+        }
+    }
     Ok(())
+}
+
+/// The `owner/repo` that holds the workflow a GitHub Actions signer identity
+/// (a certificate's URI SAN) names, or `None` for any other identity.
+pub(crate) fn github_workflow_repository(identity: &str) -> Option<&str> {
+    let (repository, _) = identity
+        .strip_prefix("https://github.com/")?
+        .split_once("/.github/workflows/")?;
+    valid_github_repository(repository).then_some(repository)
+}
+
+/// `owner/repo` from `owner/repo`, `github.com/owner/repo` or
+/// `https://github.com/owner/repo`.
+pub(crate) fn normalize_github_repository(repository: &str) -> Option<&str> {
+    let repository = repository.trim_end_matches('/');
+    let repository = repository.strip_prefix("https://").unwrap_or(repository);
+    let repository = repository.strip_prefix("github.com/").unwrap_or(repository);
+    let repository = repository.strip_suffix(".git").unwrap_or(repository);
+    valid_github_repository(repository).then_some(repository)
 }
 
 pub(crate) fn release_statement_repository(payload: &[u8]) -> Option<String> {

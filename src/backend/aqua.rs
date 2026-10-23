@@ -1995,9 +1995,11 @@ impl AquaBackend {
         let (identity, issuer) = self.slsa_signer_identity(pkg, v)?.ok_or_else(|| {
             eyre!("SLSA provenance requires signer_identity and signer_issuer in Aqua registry metadata")
         })?;
+        let source_repository = slsa_source_repository(pkg);
         let signer = crate::github::sigstore::SlsaSignerIdentity {
             identity: &identity,
             issuer: &issuer,
+            source_repository: Some(&source_repository),
         };
         let target = self.verification_target();
         let (provenance_url, url_api) = self
@@ -4478,6 +4480,22 @@ fn go_install_backend(pkg: &AquaPackage, version: &str) -> Result<String> {
 }
 
 /// Resolve repo owner and name from an override config, falling back to pkg defaults.
+/// The repository whose workflow run must have made a package's SLSA
+/// provenance, as slsa-verifier's `--source-uri` took it: the recipe's
+/// `source_uri`, or else the repository the provenance is published in.
+fn slsa_source_repository(pkg: &AquaPackage) -> String {
+    let slsa = pkg.slsa_provenance.as_ref();
+    if let Some(source_uri) = slsa.and_then(|s| s.source_uri.clone()) {
+        return source_uri;
+    }
+    let (owner, name) = resolve_repo_info(
+        slsa.and_then(|s| s.repo_owner.as_ref()),
+        slsa.and_then(|s| s.repo_name.as_ref()),
+        pkg,
+    );
+    format!("{owner}/{name}")
+}
+
 fn resolve_repo_info(
     override_owner: Option<&String>,
     override_name: Option<&String>,
@@ -5178,6 +5196,24 @@ slsa_provenance:
         assert!(
             !AquaBackend::security_features(&pkg, &[])
                 .contains(&SecurityFeature::Slsa { level: None })
+        );
+    }
+
+    #[test]
+    fn slsa_source_repository_follows_the_recipe() {
+        let pkg = |slsa: &str| {
+            pkg_from_yaml(&format!(
+                "type: github_release\nrepo_owner: owner\nrepo_name: tool\nslsa_provenance:\n  type: github_release\n  asset: tool.intoto.jsonl\n{slsa}"
+            ))
+        };
+        assert_eq!(slsa_source_repository(&pkg("")), "owner/tool");
+        assert_eq!(
+            slsa_source_repository(&pkg("  repo_name: releases\n")),
+            "owner/releases"
+        );
+        assert_eq!(
+            slsa_source_repository(&pkg("  source_uri: github.com/owner/source\n")),
+            "github.com/owner/source"
         );
     }
 

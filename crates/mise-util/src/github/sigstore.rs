@@ -894,8 +894,8 @@ pub async fn verify_slsa_provenance(
     let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
     let provenance_digest = mise_sigstore::calculate_file_digest(provenance_path).await?;
     let key = format!(
-        "slsa:{artifact_digest}:{provenance_digest}:{min_level}:{}:{}",
-        signer.identity, signer.issuer
+        "slsa:{artifact_digest}:{provenance_digest}:{min_level}:{}:{}:{:?}",
+        signer.identity, signer.issuer, signer.source_repository
     );
     shared_verification(
         key,
