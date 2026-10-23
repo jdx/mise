@@ -403,7 +403,10 @@ fn keep_file(path: &Path, keep: Keep<'_>, move_in: bool) -> Result<Option<PathBu
     }
     if let Some((algo, hex)) = pin {
         let path = pin_path(&root, algo, &hex);
-        // Add this URL to the ones the same blob was kept from.
+        // Add this URL to the ones the same blob was kept from. Held across the
+        // read and the write, or two downloads of the same file from different
+        // URLs would each write their own list and one URL would be lost.
+        let _lock = crate::lock_file::LockFile::at(&root.join("pins.lock")).lock()?;
         let mut urls = std::fs::read(&path)
             .ok()
             .and_then(|bytes| serde_json::from_slice::<PinEntry>(&bytes).ok())

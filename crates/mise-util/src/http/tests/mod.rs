@@ -672,6 +672,53 @@ async fn test_download_reuses_pinned_file_without_a_request() {
     *cas::TEST_ROOT.lock().unwrap() = None;
 }
 
+/// Downloads of the same file from different URLs, kept at the same time,
+/// each add their URL to the pin entry; none is lost to another's write.
+#[test]
+fn test_concurrent_pinned_keeps_record_every_url() {
+    let _settings = set_test_http_retries(0);
+    let cache = tempfile::tempdir().unwrap();
+    *cas::TEST_ROOT.lock().unwrap() = Some(cache.path().to_path_buf());
+    let dir = tempfile::tempdir().unwrap();
+    let hello = dir.path().join("hello");
+    std::fs::write(&hello, b"hello").unwrap();
+    let pin = format!(
+        "sha256:{}",
+        crate::hash::file_hash_prog::<sha2::Sha256>(&hello, None).unwrap()
+    );
+    let urls: Vec<String> = (0..24)
+        .map(|i| format!("https://mirror-{i}.example.com/artifact"))
+        .collect();
+    let barrier = std::sync::Barrier::new(urls.len());
+    std::thread::scope(|scope| {
+        for (i, url) in urls.iter().enumerate() {
+            let (dir, pin, barrier) = (dir.path(), &pin, &barrier);
+            scope.spawn(move || {
+                let path = dir.join(format!("copy-{i}")).join("artifact");
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(&path, b"hello").unwrap();
+                barrier.wait();
+                cas::store(
+                    &path,
+                    cas::Keep {
+                        request_hash: &format!("request-{i}"),
+                        url,
+                        pin: Some(pin),
+                        validator: None,
+                        effective_filename: None,
+                    },
+                )
+                .unwrap();
+            });
+        }
+    });
+    for url in &urls {
+        assert!(cas::lookup_pin(&pin, url).is_some(), "{url} was lost");
+    }
+
+    *cas::TEST_ROOT.lock().unwrap() = None;
+}
+
 fn stored_blob(cache: &std::path::Path) -> PathBuf {
     let dir = std::fs::read_dir(cache.join("blobs"))
         .unwrap()
