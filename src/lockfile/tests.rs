@@ -4638,3 +4638,29 @@ fn test_lock_options_drop_credentials() {
     // Stripping twice changes nothing, so read and computed options agree.
     assert_eq!(strip_lock_options_credentials(stripped.clone()), stripped);
 }
+
+/// An option that isn't valid shell words has no word boundaries to trust, so
+/// everything from the first credential setting on is masked, and masking again
+/// changes nothing.
+#[test]
+fn test_lock_options_mask_unparseable_credentials_to_the_end() {
+    for value in [
+        "--save-exact --_authToken=\"tok3n second",
+        "--save-exact --//npm.example.com/:_authToken tok3n 'second",
+        "'--save-exact --_password=tok3n second",
+    ] {
+        let options = BTreeMap::from([("npm_args".to_string(), value.to_string())]);
+        let stripped = strip_lock_options_credentials(options);
+        let masked = &stripped["npm_args"];
+        assert!(
+            !masked.contains("tok3n") && !masked.contains("second"),
+            "{value:?} -> {masked:?}"
+        );
+        assert!(masked.contains("[redacted]"), "{value:?} -> {masked:?}");
+        assert_eq!(
+            strip_lock_options_credentials(stripped.clone()),
+            stripped,
+            "{value:?}"
+        );
+    }
+}

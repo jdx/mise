@@ -5544,11 +5544,19 @@ fn strip_lock_option_credentials(value: &str) -> String {
     // does the value of `--_authToken <value>`.
     let setting = regex!(r"^(--(?:\S*:)?_(?:auth|authToken|password))(=.*)?$");
     let Ok(words) = shell_words::split(&value) else {
-        // Not valid shell words, so no installer reads it as arguments; mask
-        // up to the next whitespace.
-        return regex!(r"(--(?:\S*:)?_(?:auth|authToken|password)=)\S+")
-            .replace_all(&value, "${1}[redacted]")
-            .into_owned();
+        // Not valid shell words, so there are no word boundaries to trust (an
+        // unbalanced quote may span the secret); mask everything from the first
+        // credential setting on. If that leaves valid shell words, mask those
+        // too, so a second pass gives the same result.
+        let Some(found) = regex!(r"--(?:\S*:)?_(?:auth|authToken|password)\b").find(&value) else {
+            return value.into_owned();
+        };
+        let masked = format!("{}=[redacted]", &value[..found.end()]);
+        return if shell_words::split(&masked).is_ok() {
+            strip_lock_option_credentials(&masked)
+        } else {
+            masked
+        };
     };
     let mut masked = false;
     let mut mask_next = false;
