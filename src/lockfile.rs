@@ -638,6 +638,19 @@ pub enum ChecksumSource {
     VersionsHost,
 }
 
+/// When two entries being merged hold the same checksum, its source in the
+/// result: unmarked if either copy is, since one of them was confirmed by a
+/// download. `None` when the checksums differ, so the caller keeps the source
+/// of whichever checksum it chose.
+fn same_checksum_source(
+    a: &Option<String>,
+    a_source: Option<ChecksumSource>,
+    b: &Option<String>,
+    b_source: Option<ChecksumSource>,
+) -> Option<Option<ChecksumSource>> {
+    (a.is_some() && a == b).then(|| a_source.and(b_source))
+}
+
 fn merge_provenance_state(
     current: Option<ProvenanceType>,
     current_verified: Option<bool>,
@@ -697,6 +710,13 @@ impl ArtifactInfo {
             (None, Some(checksum)) => (Some(checksum.clone()), other.checksum_source),
             (None, None) => (None, None),
         };
+        let checksum_source = same_checksum_source(
+            &self.checksum,
+            self.checksum_source,
+            &other.checksum,
+            other.checksum_source,
+        )
+        .unwrap_or(checksum_source);
         let (provenance, provenance_verified) = merge_provenance_state(
             self.provenance.clone(),
             self.provenance_verified,
@@ -906,6 +926,17 @@ impl PlatformInfo {
                 (None, Some(cs)) => (Some(cs.clone()), other.checksum_source),
                 (None, None) => (None, None),
             }
+        };
+        let checksum_source = if artifact_changed {
+            checksum_source
+        } else {
+            same_checksum_source(
+                &self.checksum,
+                self.checksum_source,
+                &other.checksum,
+                other.checksum_source,
+            )
+            .unwrap_or(checksum_source)
         };
 
         let size = if artifact_changed {
@@ -2063,9 +2094,17 @@ impl Lockfile {
                             existing.install.clone()
                         }
                     }),
-                    // The source follows whichever checksum is kept.
+                    // The source follows whichever checksum is kept, and a
+                    // checksum both sides hold stays unmarked if either is.
                     checksum_source: if platform_info.checksum.is_some() {
-                        platform_info.checksum_source
+                        same_checksum_source(
+                            &platform_info.checksum,
+                            platform_info.checksum_source,
+                            &existing.checksum,
+                            existing.checksum_source,
+                        )
+                        .filter(|_| preserve_artifact_fields)
+                        .unwrap_or(platform_info.checksum_source)
                     } else if preserve_artifact_fields {
                         existing.checksum_source
                     } else {

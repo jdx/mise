@@ -4242,6 +4242,49 @@ url = "https://github.com/acme/b/releases/download/v1/b.tar.gz"
         Some("sha256:aaaa")
     );
     assert_eq!(confirmed.merge_with(&marked).checksum_source, None);
+    // The same checksum, confirmed on either side, stays a pin.
+    let merged = marked.merge_with(&confirmed);
+    assert_eq!(merged.checksum_source, None);
+    assert_eq!(
+        merged.pin_checksum().map(String::as_str),
+        Some("sha256:aaaa")
+    );
+    let artifact = |source| ArtifactInfo {
+        checksum: Some("sha256:bbbb".to_string()),
+        checksum_source: source,
+        url: "https://github.com/acme/b/releases/download/v1/extra.tar.gz".to_string(),
+        ..Default::default()
+    };
+    let merged = PlatformInfo {
+        additional_artifacts: vec![artifact(Some(ChecksumSource::VersionsHost))],
+        ..marked.clone()
+    }
+    .merge_with(&PlatformInfo {
+        additional_artifacts: vec![artifact(None)],
+        ..confirmed.clone()
+    });
+    assert_eq!(merged.additional_artifacts[0].checksum_source, None);
+    let mut relocked = Lockfile::default();
+    relocked.set_platform_info(
+        "tool",
+        "1",
+        None,
+        &Default::default(),
+        "linux-x64",
+        confirmed.clone(),
+    );
+    relocked.set_platform_info(
+        "tool",
+        "1",
+        None,
+        &Default::default(),
+        "linux-x64",
+        marked.clone(),
+    );
+    assert_eq!(
+        relocked.tools["tool"][0].platforms["linux-x64"].checksum_source,
+        None
+    );
     let unset = PlatformInfo {
         url: marked.url.clone(),
         ..Default::default()
