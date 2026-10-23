@@ -153,8 +153,9 @@ name. So if your configuration already uses the new name, or this machine never
 saw the rename, the old name's pin still applies: the release must match its
 signer, provenance, and attestor. After mise accepts the release, it moves the
 pin and its release-list state to the new name, so each repository keeps one
-pin. Errors name the pin as it is recorded; pass that name to
-`mise packslip forget`.
+pin. The pin remembers the name it left, so a different repository that takes
+that name later is still refused. Errors name the pin as it is recorded; pass
+that name to `mise packslip forget`.
 
 With no pin yet and a release signed under another name, mise asks the forge
 which repository the requested name now belongs to. If it cannot ask, for
