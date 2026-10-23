@@ -2,6 +2,7 @@ mod path;
 mod project;
 
 use crate::plugins::PluginEnum;
+use mise_util::redactions::{redact_json, redact_output};
 use std::collections::HashSet;
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -390,6 +391,11 @@ impl Doctor {
             );
         }
 
+        // Printed to stdout, outside the logger, and meant to be shared.
+        let data: BTreeMap<String, serde_json::Value> = data
+            .into_iter()
+            .map(|(k, v)| (redact_output(&k), redact_json(v)))
+            .collect();
         let out = serde_json::to_string_pretty(&data)?;
         let written = miseprint!("{out}\n");
 
@@ -466,6 +472,7 @@ impl Doctor {
             miseprintln!("{}\n", style(warning_summary).yellow().bold());
             for (i, check) in self.warnings.iter().enumerate() {
                 let num = style::nyellow(format!("{}.", i + 1));
+                let check = redact_output(check);
                 miseprintln!("{num} {}\n", info::indent_by(check, "   ").trim_start());
             }
         }
@@ -478,6 +485,7 @@ impl Doctor {
             miseprintln!("{}\n", style(error_summary).red().bold());
             for (i, check) in self.errors.iter().enumerate() {
                 let num = style::nred(format!("{}.", i + 1));
+                let check = redact_output(check);
                 miseprintln!("{num} {}\n", info::indent_by(check, "   ").trim_start());
             }
             return Err(crate::request_exit(1));
@@ -1594,19 +1602,15 @@ fn mise_dirs() -> Vec<(String, PathBuf)> {
 }
 
 fn mise_env_vars() -> Vec<(String, String)> {
-    const REDACT_KEYS: &[&str] = &[
-        "MISE_GITHUB_TOKEN",
-        "MISE_GITLAB_TOKEN",
-        "MISE_GITHUB_ENTERPRISE_TOKEN",
-        "MISE_GITLAB_ENTERPRISE_TOKEN",
-    ];
     env::vars_safe()
         .filter(|(k, _)| k.starts_with("MISE_"))
         .map(|(k, v)| {
-            let v = if REDACT_KEYS.contains(&k.as_str()) {
+            // By the shape of the name, so a credential variable added later
+            // (`MISE_SOPS_AGE_KEY`, `MISE_FORGEJO_TOKEN`, ...) is hidden too.
+            let v = if mise_settings::is_secret_name(&k) {
                 style::ndim("REDACTED").to_string()
             } else {
-                v
+                mise_util::redactions::redact_output(&v)
             };
             (k, v)
         })
@@ -1829,6 +1833,7 @@ fn install_dir_is_empty(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{install_dir_is_empty, sync_failure_duration};
+
     use crate::system::history::sync::run::SyncStatus;
 
     fn ago(now: chrono::DateTime<chrono::Utc>, secs: i64) -> Option<String> {

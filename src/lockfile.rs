@@ -1422,11 +1422,15 @@ impl Lockfile {
         self.lockfile_version > 0
     }
 
+    /// The key `short`'s entries are recorded under: its spelling without the
+    /// credentials of a URL in it, so a credentialed request finds them.
     fn tool_key(&self, short: &str) -> Option<&String> {
-        self.tools.get_key_value(short).map(|(key, _)| key)
+        self.tools
+            .get_key_value(&*crate::toolset::install_state::state_short(short))
+            .map(|(key, _)| key)
     }
 
-    pub(crate) fn tools_for(&self, short: &str) -> Option<&Vec<LockfileTool>> {
+    pub fn tools_for(&self, short: &str) -> Option<&Vec<LockfileTool>> {
         self.tool_key(short).and_then(|key| self.tools.get(key))
     }
 
@@ -1584,6 +1588,10 @@ impl Lockfile {
                     if let Some(graph) = &mut entry.aube {
                         graph.resolve_path(path)?;
                     }
+                    // A lockfile records a URL-named tool without its credentials.
+                    if let Some(backend) = &mut entry.backend {
+                        *backend = crate::toolset::install_state::state_short(backend).into_owned();
+                    }
                     Ok(entry)
                 })
                 .collect::<Result<Vec<_>>>()?
@@ -1606,7 +1614,11 @@ impl Lockfile {
             if versions.is_empty() {
                 continue;
             }
-            lockfile.tools.entry(short).or_default().extend(versions);
+            lockfile
+                .tools
+                .entry(crate::toolset::install_state::state_short(&short).into_owned())
+                .or_default()
+                .extend(versions);
         }
 
         // A lockfile does not record whether GitHub or mise-versions chose a
@@ -1679,6 +1691,7 @@ impl Lockfile {
     }
 
     pub fn prepare_write(&self, path: &Path) -> Result<Option<PreparedWrite>> {
+        self.ensure_no_credential_queries()?;
         // Resolve the lockfile target before choosing sidecar locations and pointers.
         let mut source_symlink = None;
         let target = if path.is_symlink() {
@@ -2029,8 +2042,9 @@ impl Lockfile {
         keep_shorts: &BTreeSet<String>,
         keep_backends: &BTreeSet<String>,
     ) {
+        let (keep_shorts, keep_backends) = (stored_form(keep_shorts), stored_form(keep_backends));
         self.tools.retain(|short, versions| {
-            Self::should_keep_tool(short, versions, keep_shorts, keep_backends)
+            Self::should_keep_tool(short, versions, &keep_shorts, &keep_backends)
         });
         self.cleanup_unreferenced_conda_packages();
     }
@@ -2072,10 +2086,11 @@ impl Lockfile {
         keep_shorts: &BTreeSet<String>,
         keep_backends: &BTreeSet<String>,
     ) -> BTreeSet<String> {
+        let (keep_shorts, keep_backends) = (stored_form(keep_shorts), stored_form(keep_backends));
         self.tools
             .iter()
             .filter_map(|(short, versions)| {
-                (!Self::should_keep_tool(short, versions, keep_shorts, keep_backends))
+                (!Self::should_keep_tool(short, versions, &keep_shorts, &keep_backends))
                     .then_some(short.clone())
             })
             .collect()
@@ -2111,7 +2126,7 @@ impl Lockfile {
         let key = self
             .tool_key(short)
             .cloned()
-            .unwrap_or_else(|| short.to_owned());
+            .unwrap_or_else(|| crate::toolset::install_state::state_short(short).into_owned());
         let tools = self.tools.entry(key).or_default();
         // Platform option migration is handled while merging freshly resolved
         // entries. Writes here always target the exact resolved option variant.
@@ -2354,7 +2369,7 @@ impl Lockfile {
                 self.entry_lockfile_versions
                     .iter()
                     .find(|((key_short, version, backend, options), _)| {
-                        key_short == short
+                        *key_short == crate::toolset::install_state::state_short(short)
                             && version == &entry.version
                             && backend == &entry.backend
                             && options.is_empty()
@@ -2364,15 +2379,85 @@ impl Lockfile {
             .unwrap_or(self.lockfile_version)
     }
 
+    /// Refuse to record a URL whose query string carries a credential, in a
+    /// platform's `url`/`url_api` or in a lock option. The lockfile is meant to
+    /// be committed, and a token in a query (`?token={{ env.TOKEN }}`) is
+    /// rendered into the value before it gets here.
+    fn ensure_no_credential_queries(&self) -> Result<()> {
+        let refuse = |what: &str, field: &str, param: &str| {
+            eyre!(
+                "{what}: mise.lock does not record {field}, because the query string of its \
+                 URL carries `{param}`, which looks like a credential. Send the credential \
+                 with the tool's `headers` option or a netrc entry instead of the URL."
+            )
+        };
+        // Every string an entry is written with: platform URLs, additional
+        // artifacts, provenance, options.
+        for (short, entries) in &self.tools {
+            for entry in entries {
+                let value = entry.clone().into_toml_value(true);
+                if let Some((field, param)) = find_credential_query(&value, String::new()) {
+                    return Err(refuse(
+                        &format!("{short}@{}", entry.version),
+                        &field,
+                        &param,
+                    ));
+                }
+            }
+        }
+        for (platform, packages) in &self.conda_packages {
+            for (basename, info) in packages {
+                if let Some(param) = credential_query_param(&info.url) {
+                    return Err(refuse(
+                        &format!("conda package {basename} on {platform}"),
+                        "url",
+                        &param,
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Save the lockfile to disk (public for mise lock command)
     pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         self.save(path)
     }
 }
 
+/// The dotted path and parameter name of the first string in `value` with a
+/// URL whose query carries a credential.
+fn find_credential_query(value: &toml::Value, path: String) -> Option<(String, String)> {
+    match value {
+        toml::Value::String(s) => credential_query_param(s).map(|param| (path, param)),
+        toml::Value::Array(values) => values
+            .iter()
+            .enumerate()
+            .find_map(|(i, v)| find_credential_query(v, format!("{path}[{i}]"))),
+        toml::Value::Table(table) => table.iter().find_map(|(key, v)| {
+            let path = if path.is_empty() {
+                key.clone()
+            } else {
+                format!("{path}.{key}")
+            };
+            find_credential_query(v, path)
+        }),
+        _ => None,
+    }
+}
+
+/// Tool selectors or backends from config in the form a lockfile records them
+/// in: without the credentials of a URL in them.
+pub(crate) fn stored_form(selectors: &BTreeSet<String>) -> BTreeSet<String> {
+    selectors
+        .iter()
+        .map(|s| crate::toolset::install_state::state_short(s).into_owned())
+        .collect()
+}
+
 fn lockfile_entry_key(short: &str, entry: &LockfileTool) -> LockfileEntryKey {
     (
-        short.to_owned(),
+        crate::toolset::install_state::state_short(short).into_owned(),
         entry.version.clone(),
         entry.backend.clone(),
         entry.options.clone(),
@@ -3089,7 +3174,10 @@ fn merge_lockfile_for_lookup(root: &mut Lockfile, other: Lockfile) {
 
 fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
     for (short, tools) in other.tools {
-        let key = root.tool_key(&short).cloned().unwrap_or(short);
+        let key = root
+            .tool_key(&short)
+            .cloned()
+            .unwrap_or_else(|| crate::toolset::install_state::state_short(&short).into_owned());
         let root_tools = root.tools.entry(key).or_default();
         let mut keys: HashSet<(String, BTreeMap<String, String>)> = root_tools
             .iter()
@@ -3424,14 +3512,14 @@ pub(crate) fn update_lockfiles(
                     let options = dependency
                         .backend()
                         .and_then(|backend| {
-                            backend.resolve_lockfile_options(
-                                &dependency,
-                                &PlatformTarget::new(platform),
-                            )
+                            backend.lockfile_options(&dependency, &PlatformTarget::new(platform))
                         })
                         .unwrap_or_default();
                     selected_python_specifiers
-                        .entry(dependency.ba().short.clone())
+                        .entry(
+                            crate::toolset::install_state::state_short(&dependency.ba().short)
+                                .into_owned(),
+                        )
                         .or_default()
                         .insert((dependency.version(), options));
                 }
@@ -3510,7 +3598,9 @@ pub(crate) fn update_lockfiles(
                     &consumed_keys,
                 );
             }
-            if let Some(specifiers) = selected_python_specifiers.get(&short) {
+            if let Some(specifiers) =
+                selected_python_specifiers.get(&*crate::toolset::install_state::state_short(&short))
+            {
                 preserve_selected_python_entries(
                     &mut merged_tools,
                     existing_lockfile.tools_for(&short),
@@ -3523,7 +3613,10 @@ pub(crate) fn update_lockfiles(
             // gone before auto-lock runs, letting a genuine regression slip through. The
             // stale baseline self-heals on the next update once the new version is locked.
             reinsert_deferred_baselines(&mut merged_tools, &deferred_baselines, &short);
-            existing_lockfile.tools.insert(short.clone(), merged_tools);
+            existing_lockfile.tools.insert(
+                crate::toolset::install_state::state_short(&short).into_owned(),
+                merged_tools,
+            );
             if existing_lockfile.uses_request_bindings() {
                 for (specifier, version, options) in bindings {
                     existing_lockfile.bind_request(&short, &specifier, &version, &options);
@@ -3938,7 +4031,7 @@ where
     for platform in target_platforms {
         for variant in backend.platform_variants_for(tv, platform) {
             let target = PlatformTarget::new(variant.clone());
-            let options = backend.resolve_lockfile_options(&tv.request, &target)?;
+            let options = backend.lockfile_options(&tv.request, &target)?;
             let platform_key = variant.to_key();
             if predicate(tools, &tv.version, &platform_key, &options) {
                 return Ok(true);
@@ -4135,7 +4228,7 @@ pub(crate) async fn auto_lock_new_versions(
             .or_default();
         for (short, versions) in tools {
             requested
-                .entry(short)
+                .entry(crate::toolset::install_state::state_short(&short).into_owned())
                 .or_default()
                 .extend(versions.into_iter().map(|tv| tv.version));
         }
@@ -4247,7 +4340,7 @@ pub(crate) async fn auto_lock_new_versions(
                     // Skip complete targets unless a prior provenance-bearing version
                     // means this target still needs authoritative verification.
                     if let Some(ref backend) = backend
-                        && let Ok(options) = backend.resolve_lockfile_options(&tv.request, &target)
+                        && let Ok(options) = backend.lockfile_options(&tv.request, &target)
                         && let Some(tools) = lockfile.tools_for(&ba.short)
                         && !lockfile_target_needs_auto_lock(
                             tools,
@@ -4487,7 +4580,7 @@ pub async fn resolve_tool_lock_info(
     };
 
     let (info, options, conda_packages) = if let Some(backend) = backend {
-        let options = match backend.resolve_lockfile_options(&tv.request, &target) {
+        let options = match backend.lockfile_options(&tv.request, &target) {
             Ok(options) => options,
             Err(e) => {
                 return (
@@ -4708,7 +4801,7 @@ fn build_rekey_decisions(
                     return None;
                 }
                 backend
-                    .resolve_lockfile_options(&tv.request, &PlatformTarget::new(platform))
+                    .lockfile_options(&tv.request, &PlatformTarget::new(platform))
                     .ok()
             });
             record_rekey_decision(
@@ -5364,9 +5457,9 @@ pub(crate) fn get_locked_version(
             // The registry's options are for the backend it chose. Another
             // backend would read them as its own settings and never match.
             let options = if !request.registry_options_are_not_for(full) {
-                backend.resolve_lockfile_options(request, &PlatformTarget::from_current())?
+                backend.lockfile_options(request, &PlatformTarget::from_current())?
             } else {
-                backend.resolve_lockfile_options(
+                backend.lockfile_options(
                     &request.without_registry_options(),
                     &PlatformTarget::from_current(),
                 )?
@@ -5642,6 +5735,88 @@ fn select_unbound_lockfile_tool<'a>(
         .order_by(matching, |tool| tool.version.as_str())
         .last()
         .copied())
+}
+
+/// Lock entry options as a lockfile records them, without credentials.
+///
+/// A lockfile is committed, and the options are rendered config values, so a
+/// token templated in from the environment would otherwise be written in
+/// clear. The userinfo of every URL is removed, as is the value of an npm
+/// credential setting (`--//host/:_authToken=`, `--_auth=`, `--_password=`).
+/// Options read from a lockfile get the same treatment, so an entry an older
+/// mise wrote with credentials still matches, and is rewritten without them.
+pub(crate) fn strip_lock_options_credentials(
+    options: BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    options
+        .into_iter()
+        .map(|(key, value)| {
+            let value = strip_lock_option_credentials(&value);
+            (key, value)
+        })
+        .collect()
+}
+
+/// The name of the first query parameter, of any URL in `text`, whose name
+/// says it carries a credential (`token`, `access_token`, `key`, `sig`,
+/// `X-Amz-Signature`, ...). Names alone decide, so a templated value is caught
+/// whatever it rendered to.
+pub(crate) fn credential_query_param(text: &str) -> Option<String> {
+    // Names are compared decoded: `api%5Fkey` is `api_key`.
+    mise_util::redactions::url_query_param_names(text)
+        .into_iter()
+        .find(|name| mise_util::redactions::is_credential_query_param(name))
+}
+
+fn strip_lock_option_credentials(value: &str) -> String {
+    let value = mise_util::redactions::strip_url_credentials_in_value(value);
+    // An npm credential setting is masked as the installer reads it: split into
+    // shell words the way `npm_args` is, so a value made of quoted and unquoted
+    // parts (`--_authToken="npm_"suffix`) is one word and goes whole, and so
+    // does the value of `--_authToken <value>`.
+    let setting = regex!(r"^(--(?:\S*:)?_(?:auth|authToken|password))(=.*)?$");
+    let Ok(words) = shell_words::split(&value) else {
+        // Not valid shell words, so there are no word boundaries to trust (an
+        // unbalanced quote may span the secret); mask everything from the first
+        // credential setting on. If that leaves valid shell words, mask those
+        // too, so a second pass gives the same result.
+        let Some(found) = regex!(r"--(?:\S*:)?_(?:auth|authToken|password)\b").find(&value) else {
+            return value.into_owned();
+        };
+        let masked = format!("{}=[redacted]", &value[..found.end()]);
+        return if shell_words::split(&masked).is_ok() {
+            strip_lock_option_credentials(&masked)
+        } else {
+            masked
+        };
+    };
+    let mut masked = false;
+    let mut mask_next = false;
+    let words: Vec<String> = words
+        .into_iter()
+        .map(|word| {
+            if std::mem::take(&mut mask_next) {
+                masked = true;
+                return "[redacted]".to_string();
+            }
+            match setting.captures(&word) {
+                Some(captures) if captures.get(2).is_some() => {
+                    masked = true;
+                    format!("{}=[redacted]", &captures[1])
+                }
+                Some(_) => {
+                    mask_next = true;
+                    word
+                }
+                None => word,
+            }
+        })
+        .collect();
+    if masked {
+        shell_words::join(words)
+    } else {
+        value.into_owned()
+    }
 }
 
 fn lockfile_tool_with_request_options(
@@ -6055,7 +6230,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                     let opts_table: toml::Table = opts.try_into()?;
                     for (key, value) in opts_table {
                         if let toml::Value::String(s) = value {
-                            options.insert(key, s);
+                            options.insert(key, strip_lock_option_credentials(&s));
                         }
                     }
                 }
@@ -6143,7 +6318,7 @@ fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> Result<LockfileTool> {
     // Resolve lockfile options from the backend
     let options = if let Ok(backend) = tv.request.backend() {
         let target = PlatformTarget::from_current();
-        backend.resolve_lockfile_options(&tv.request, &target)?
+        backend.lockfile_options(&tv.request, &target)?
     } else {
         BTreeMap::new()
     };

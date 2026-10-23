@@ -2432,7 +2432,7 @@ pub fn raw_write_lock_blocking() -> tokio::sync::RwLockWriteGuard<'static, ()> {
 ///
 /// This rendering is not only for logs. `execute` debug-logs it, but it is also
 /// formatted into `failed to execute command: {self}`, and that error is
-/// printed by the top-level handler, which applies no redaction of its own. An
+/// printed by the top-level handler, outside the logger. An
 /// argument can legitimately carry a credential (a gem `source` authenticates
 /// as basic-auth userinfo on the URL), so redacting where the string is built
 /// covers every consumer instead of asking each one to remember.

@@ -957,14 +957,23 @@ impl Toolset {
             && Settings::get().lockfile_enabled()
             && !ctx.locked
             && !opts.dry_run;
-        if !generate {
-            return backend.install_version(ctx, tv).await;
+        let installed = if generate {
+            let concurrent = crate::jobs::resolve(Settings::get().jobs, opts.jobs) > 1
+                && !opts.raw
+                && !Settings::get().raw;
+            preparations.start(config.clone(), tv.clone(), concurrent)?;
+            backend.install_version(ctx, tv).await
+        } else {
+            backend.install_version(ctx, tv).await
+        };
+        // After the install has released its lock and cleared its incomplete
+        // marker, a copy under a credential-named directory can go.
+        if let Ok(tv) = &installed
+            && !opts.dry_run
+        {
+            crate::toolset::install_state::remove_credential_named_installs(&tv.ba().short);
         }
-        let concurrent = crate::jobs::resolve(Settings::get().jobs, opts.jobs) > 1
-            && !opts.raw
-            && !Settings::get().raw;
-        preparations.start(config.clone(), tv.clone(), concurrent)?;
-        backend.install_version(ctx, tv).await
+        installed
     }
 
     /// The versions in `missing` that provide `bin_name`. A missing version has no bins to list,

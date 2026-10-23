@@ -121,7 +121,11 @@ fn main() -> ExitCode {
                 (code, true)
             }
             None => {
-                eprintln!("Error: {err:?}");
+                // Printed outside the logger, so redacted here as the logger would.
+                eprintln!(
+                    "Error: {}",
+                    mise_util::redactions::redact_output(&format!("{err:?}"))
+                );
                 (1, false)
             }
         },
@@ -198,7 +202,10 @@ fn handle_err(err: Report) -> eyre::Result<()> {
     // Check for miette diagnostic errors and render them specially
     if let Some(diagnostic) = err.downcast_ref::<config::config_file::diagnostic::MiseDiagnostic>()
     {
-        safe_eprintln!("{}", diagnostic.render());
+        safe_eprintln!(
+            "{}",
+            mise_util::redactions::redact_output(diagnostic.render())
+        );
         return Err(request_exit(1));
     }
 

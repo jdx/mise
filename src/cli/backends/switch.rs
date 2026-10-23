@@ -349,7 +349,8 @@ impl BackendsSwitch {
     fn selected(&self, short: &str, version: &str, locked: &str) -> bool {
         self.tool.is_empty()
             || self.tool.iter().any(|t| {
-                (t.ba.short == short || t.ba.short == locked)
+                let configured = crate::toolset::install_state::state_short(&t.ba.short);
+                (configured == short || configured == locked)
                     && t.version.as_ref().is_none_or(|v| v == version)
             })
     }

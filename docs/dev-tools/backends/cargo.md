@@ -61,6 +61,11 @@ mise runs `cargo install --git` with the matching `--tag`, `--branch` or
 `--rev`. A Git source lists only `HEAD` as a version, so `latest`, or no
 version at all, installs the default branch.
 
+For a private repository, keep the credentials in git's credential helper
+rather than in the URL. mise records the tool without URL credentials, but
+cargo writes the `--git` URL it was given, credentials included, to
+`.crates.toml` in the install directory.
+
 ## How mise installs a crate
 
 mise uses the first method that applies:
