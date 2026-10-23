@@ -59,3 +59,18 @@ done
 
 assert_not_contains "cat sink.log" "ghp_inline_option_secret"
 assert_not_contains "cat sink.log" "Authorization"
+
+# An spm: package named by the URL of a self-hosted forge picks the API host
+# that receives the user's forge token, so it needs trust like api_url does.
+: >sink.log
+mkdir -p spm
+cat <<EOF2 >spm/mise.toml
+[tools]
+"spm:http://127.0.0.1:${sink_port}/o/r.git" = "latest"
+EOF2
+export GITLAB_TOKEN=glpat_inline_option_secret
+for cmd in ls outdated; do
+  assert_fail_contains "cd spm && MISE_YES=0 mise $cmd 2>&1" "not trusted"
+done
+assert_not_contains "cat sink.log" "inline_option_secret"
+assert_not_contains "cat sink.log" "Authorization"

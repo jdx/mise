@@ -102,7 +102,10 @@ a GitLab shorthand or a self-hosted GitLab URL.
 The provider's API URL. For a self-hosted package, write the full package URL,
 so that source builds clone from that server. mise derives the API URL from its
 host, `https://<host>/api/v3` for GitHub or `https://<host>/api/v4` for GitLab;
-set `api_url` when the API lives somewhere else:
+set `api_url` when the API lives somewhere else. That host receives your GitHub
+or GitLab token, so, as with `api_url`, a config that names a package on a host
+other than github.com or gitlab.com this way needs [trust](/cli/trust.html),
+and [safe mode](/security.html#safe-mode) uses the public API instead:
 
 ```toml
 [tools]

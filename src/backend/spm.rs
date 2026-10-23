@@ -781,11 +781,17 @@ impl GitProvider {
         let api_url = match opts.api_url(None) {
             Some(api_url) => api_url,
             None => {
-                Self::derive_api_url_from_tool_name(&ba.tool_name, &kind).unwrap_or_else(|| {
-                    match kind {
-                        GitProviderKind::GitHub => github::API_URL.to_string(),
-                        GitProviderKind::GitLab => gitlab::API_URL.to_string(),
-                    }
+                // The derived host gets the user's forge token. A config naming one
+                // needs trust (`tool_key_selects_api_host`), and safe mode, which
+                // waives trust, does not let a tool name pick it.
+                let derived = if Settings::safe_mode() {
+                    None
+                } else {
+                    Self::derive_api_url_from_tool_name(&ba.tool_name, &kind)
+                };
+                derived.unwrap_or_else(|| match kind {
+                    GitProviderKind::GitHub => github::API_URL.to_string(),
+                    GitProviderKind::GitLab => gitlab::API_URL.to_string(),
                 })
             }
         };
@@ -867,6 +873,16 @@ impl GitProvider {
             }
         }
     }
+}
+
+/// Whether an `spm:` tool key names a package by the URL of a host other than
+/// github.com or gitlab.com. mise then derives that host's API from the name and
+/// sends it the user's forge token, as it would for an `api_url` option, so a
+/// config holding such a key needs trust like one with inline options.
+pub(crate) fn tool_key_selects_api_host(tool: &str) -> bool {
+    tool.trim().strip_prefix("spm:").is_some_and(|name| {
+        GitProvider::derive_api_url_from_tool_name(name, &GitProviderKind::GitHub).is_some()
+    })
 }
 
 #[derive(Debug)]
