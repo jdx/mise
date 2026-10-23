@@ -358,13 +358,39 @@ impl ToolRequest {
         self.resolved_options().effective().clone()
     }
 
+    /// Whether this request's `lazy = true` may claim command names: bootstrap shims, the
+    /// shim farms on PATH, and an install when one of those commands runs. Like `[wrappers]`,
+    /// that hands commands such as `git` to whatever the config names, so safe mode honours it
+    /// only in an entry of global or system config (or a CLI argument), and only when that
+    /// entry sets the options itself rather than a project's tool alias or the project entry
+    /// a runtime argument inherits. The tool stays out of automatic installs either way.
+    pub(crate) fn provides_lazy_bins(&self) -> bool {
+        if self.resolved_options().effective().lazy != Some(true) {
+            return false;
+        }
+        if !Settings::safe_mode() {
+            return true;
+        }
+        let set_by_entry = |key| {
+            matches!(
+                self.option_source(key),
+                None | Some(ToolOptionSource::Request | ToolOptionSource::InlineBackendArg)
+            )
+        };
+        self.source()
+            .path()
+            .is_none_or(crate::config::is_global_config)
+            && set_by_entry("lazy")
+            && set_by_entry("lazy_bins")
+    }
+
     /// Command names that should receive bootstrap shims before a lazy tool is installed.
     /// Registry metadata is authoritative when the config does not provide an explicit list.
     pub(crate) fn lazy_bins(&self) -> Result<Option<Vec<String>>> {
-        let options = self.resolved_options().effective();
-        if options.lazy != Some(true) {
+        if !self.provides_lazy_bins() {
             return Ok(None);
         }
+        let options = self.resolved_options().effective();
         if !options.lazy_bins.is_empty() {
             return Ok(Some(options.lazy_bins.clone()));
         }

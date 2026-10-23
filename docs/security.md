@@ -223,6 +223,8 @@ These are skipped without an error, so resolution commands keep working:
 - `_.source` in every config, including global config.
 - Project `[shell_alias]`.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
+- Project [lazy tools](/dev-tools/shims.html#lazy-tools): mise writes no shims
+  for their commands and does not install them on first use.
 - Project `[settings]`, so a repository cannot turn off verification or redirect
   a backend.
 - Remote `include` entries in project config, which mise does not fetch.

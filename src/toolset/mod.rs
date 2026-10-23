@@ -419,11 +419,12 @@ impl Toolset {
 
     /// Whether any configured tool is declared `lazy = true`. Such a tool installs the
     /// first time one of its bootstrap shims runs, so environments mise builds for this
-    /// toolset have to make those shims reachable behind the real tool paths.
+    /// toolset have to make those shims reachable behind the real tool paths. Safe mode
+    /// ignores the declarations of project config (see [`ToolRequest::provides_lazy_bins`]).
     pub fn has_lazy_declarations(&self) -> bool {
         self.list_current_requests()
             .iter()
-            .any(|request| request.options().lazy == Some(true))
+            .any(|request| request.provides_lazy_bins())
     }
 
     pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &ToolVersionList)> {

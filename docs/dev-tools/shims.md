@@ -471,6 +471,10 @@ tool the first time it runs one of its commands. `mise run` does not install
 lazy tools ahead of time. `mise use` rebuilds shims when it changes a lazy
 declaration; run `mise reshim` after editing one by hand.
 
+In [safe mode](/security.html#safe-mode), lazy tools in project config get no
+bootstrap shims and do not install on first use. Neither does a lazy option
+that a project's `[tool_alias]` adds to a tool in global config.
+
 ## Command wrappers {#command-wrappers}
 
 A command wrapper keeps a command's name but runs another program. For example,
