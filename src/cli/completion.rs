@@ -477,6 +477,32 @@ mod shell_name_tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_run_completer_does_not_evaluate_the_words_it_is_given() {
+        // The words arrive with the shell's quoting already removed, and the `run=` they are
+        // rendered into goes to `sh -c`. A mounted task can offer such a word as a choice and
+        // then name its next argument after one of these completers. One line per completer
+        // that reads the words.
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("evaluated");
+        let word = format!("'$(touch {})'", marker.display());
+        for line in [
+            format!("mise tool-alias unset {word} "),
+            format!("mise ls-remote {word} "),
+            format!("mise lock {word}"),
+            format!("mise use {word}"),
+            format!("mise uninstall {word}"),
+        ] {
+            let argv: Vec<OsString> = ["__complete_word__", "--shell", "fish", "--line", &line]
+                .into_iter()
+                .map(OsString::from)
+                .collect();
+            completion_request(&argv);
+            assert!(!marker.exists(), "{line}");
+        }
+    }
+
     #[test]
     fn completion_script_calls_back_into_mise() {
         let script = Cli::completion_script(usage_rs::complete::Shell::Bash);
