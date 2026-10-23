@@ -122,6 +122,32 @@ async fn test_run_blocking_multi_thread_runtime() {
     assert_eq!(run_blocking(|| 42), 42);
 }
 
+/// A pipe in a config file's place is refused without waiting for a writer,
+/// even when nothing checked the name before the open.
+#[cfg(unix)]
+#[test]
+fn open_regular_file_refuses_a_pipe_without_blocking() {
+    let tmp = tempfile::tempdir().unwrap();
+    let fifo = tmp.path().join("mise.toml");
+    nix::unistd::mkfifo(
+        &fifo,
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let probe = fifo.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(read_config_to_string(&probe).is_err());
+    });
+    let refused = rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("opening a pipe blocked");
+    assert!(refused);
+    let dir = tmp.path().join("dir.toml");
+    std::fs::create_dir(&dir).unwrap();
+    assert!(open_regular_file(&dir).is_err());
+}
+
 /// A config file larger than any real one is refused rather than read whole.
 #[test]
 fn config_files_over_the_limit_are_refused() {

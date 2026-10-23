@@ -869,10 +869,8 @@ fn parse_task_script_usage_with_env(
 ) -> usage::Result<usage::Spec> {
     // `file` comes from config that may not be trusted yet, and a pipe or a
     // device would be read without end.
-    if !std::fs::metadata(file)?.is_file() {
-        return Err(std::io::Error::other("not a regular file").into());
-    }
-    let script = std::fs::read_to_string(file)?;
+    let mut script = String::new();
+    std::io::Read::read_to_string(&mut crate::file::open_regular_file(file)?, &mut script)?;
     // Same reason as the `#MISE` header scan: `#USAGE` on line 1 is invisible behind a mark.
     let mut raw = extract_usage_from_comments(crate::file::strip_utf8_bom(&script));
     if !preamble.trim().is_empty() {

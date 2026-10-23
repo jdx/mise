@@ -1011,11 +1011,8 @@ const POINTER_FILE_LIMIT: u64 = 16 * 1024;
 /// other than a regular file of pointer size is skipped instead of read whole.
 fn read_pointer_file(path: &Path) -> Option<String> {
     use std::io::Read;
-    if !path.is_file() {
-        return None;
-    }
     let mut contents = String::new();
-    std::fs::File::open(path)
+    crate::file::open_regular_file(path)
         .ok()?
         .take(POINTER_FILE_LIMIT + 1)
         .read_to_string(&mut contents)

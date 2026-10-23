@@ -731,13 +731,28 @@ fn config_file_too_large(path: &Path) -> eyre::Report {
     )
 }
 
-/// [`read_to_string`] for a config file, refusing one larger than
-/// [`CONFIG_FILE_LIMIT`].
+/// Opens `path` only if it is a regular file, judged from the opened handle so
+/// that nothing swapped in after an earlier check is read instead. On unix the
+/// open does not block, so a pipe put in the file's place cannot hang it.
+pub fn open_regular_file<P: AsRef<Path>>(path: P) -> std::io::Result<File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, nix::libc::O_NONBLOCK);
+    let file = options.open(path.as_ref())?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::other("not a regular file"));
+    }
+    Ok(file)
+}
+
+/// [`read_to_string`] for a config file, refusing one that is not a regular
+/// file or is larger than [`CONFIG_FILE_LIMIT`].
 pub fn read_config_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
     let path = path.as_ref();
     trace!("cat {}", path.display_user());
     let mut body = String::new();
-    File::open(path)
+    open_regular_file(path)
         .and_then(|file| file.take(CONFIG_FILE_LIMIT + 1).read_to_string(&mut body))
         .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))?;
     if body.len() as u64 > CONFIG_FILE_LIMIT {
