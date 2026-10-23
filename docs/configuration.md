@@ -462,6 +462,10 @@ Its JSON schema is
 Relative paths in `ignored_config_paths` resolve from the directory that holds
 the `.miserc.toml` file.
 
+`env` holds names, so mise ignores one that contains a path separator. It also
+ignores an override filename that is absolute or contains `..`: both only select
+files in the directories mise already searches.
+
 ### Where mise looks for .miserc.toml {#miserc-locations}
 
 From highest to lowest precedence:

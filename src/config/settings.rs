@@ -324,7 +324,7 @@ fn warn_deprecated_env_settings() {
 ///
 /// Readiness is read while the queue is held, and the flush sets it while holding the same lock, so
 /// a warning cannot be queued into a set that has just been drained.
-fn warn_settings_file_error(msg: String) {
+pub(crate) fn warn_settings_file_error(msg: String) {
     {
         let mut pending = PENDING_SETTINGS_FILE_ERRORS.lock().unwrap();
         if !WARNINGS_READY.load(Ordering::SeqCst) {

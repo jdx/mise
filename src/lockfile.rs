@@ -2770,6 +2770,7 @@ fn discover_monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf>
             warn_once!(
                 "[monorepo] lockfile = true is set, but [monorepo].config_roots could not be resolved: {err:#}; using root lockfiles without migration"
             );
+            retain_sources_inside_monorepo(&mut source_lockfiles, &monorepo_root);
             return source_lockfiles;
         }
     };
@@ -2790,7 +2791,30 @@ fn discover_monorepo_legacy_lockfile_paths(config: &Config) -> IndexSet<PathBuf>
         }
     }
 
+    retain_sources_inside_monorepo(&mut source_lockfiles, &monorepo_root);
     source_lockfiles
+}
+
+/// Migration deletes its sources, so keep only those that resolve inside the
+/// monorepo, the same test `config_roots` pass. The roots themselves are
+/// contained, but a directory below one, such as `mise` or `.config/mise`,
+/// can be a symlink that leads out of the checkout.
+fn retain_sources_inside_monorepo(sources: &mut IndexSet<PathBuf>, monorepo_root: &Path) {
+    let canonical_root = monorepo_root.canonicalize().ok();
+    sources.retain(|source| {
+        let contained = source
+            .parent()
+            .and_then(|dir| dir.canonicalize().ok())
+            .zip(canonical_root.as_ref())
+            .is_some_and(|(dir, root)| dir.starts_with(root));
+        if !contained {
+            debug!(
+                "skipping lockfile migration source outside the monorepo: {}",
+                display_path(source)
+            );
+        }
+        contained
+    });
 }
 
 pub(crate) fn lockfile_variant_paths_in_dir(dir: &Path) -> Vec<PathBuf> {
