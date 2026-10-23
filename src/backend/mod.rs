@@ -8716,9 +8716,15 @@ pub(crate) fn fuzzy_version_matches(query: &str, version: &str) -> bool {
 }
 
 /// Derive the directory namespace from the configured tool spelling.
-pub(crate) fn tool_directory_name(short: &str) -> String {
+///
+/// A tool named by a URL can carry credentials
+/// (`cargo:https://user:token@host/repo.git`). They are left out of the name:
+/// kebab-casing keeps them readable, no redaction recognizes them there, and
+/// these paths reach logs, error messages and `PATH`. A spelling without
+/// credentials, including `ssh://git@host` URLs, keeps the name it always had.
+pub fn tool_directory_name(short: &str) -> String {
     use heck::ToKebabCase;
-    short.to_kebab_case()
+    mise_util::redactions::strip_url_credentials_in_arg(short).to_kebab_case()
 }
 
 pub(crate) fn canonical_backend_full(backend: &str) -> std::borrow::Cow<'_, str> {
@@ -8747,6 +8753,31 @@ fn test_unalias_backend() {
     assert_eq!(unalias_backend("core:node"), "node");
     assert_eq!(unalias_backend("golang"), "go");
     assert_eq!(unalias_backend("dotnet-core"), "dotnet");
+}
+
+#[test]
+fn test_tool_directory_name_omits_url_credentials() {
+    assert_eq!(tool_directory_name("npm:@antfu/ni"), "npm-antfu-ni");
+    assert_eq!(
+        tool_directory_name("cargo:https://host/acme/tool.git"),
+        "cargo-https-host-acme-tool-git"
+    );
+    // The user of an ssh URL is an account name, and the directory keeps it.
+    assert_eq!(
+        tool_directory_name("cargo:ssh://git@host/acme/tool.git"),
+        "cargo-ssh-git-host-acme-tool-git"
+    );
+    for short in [
+        "cargo:https://bot:t0ken@host/acme/tool.git",
+        "cargo:https://t0ken@host/acme/tool.git",
+        "cargo:https://bot:my t0ken@host/acme/tool.git",
+    ] {
+        assert_eq!(
+            tool_directory_name(short),
+            "cargo-https-host-acme-tool-git",
+            "{short}"
+        );
+    }
 }
 
 impl Display for dyn Backend {

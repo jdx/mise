@@ -1,7 +1,6 @@
 use crate::{env, plugins::PluginEnum, timeout};
 use async_trait::async_trait;
 use eyre::{WrapErr, bail, eyre};
-use heck::ToKebabCase;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
@@ -816,7 +815,7 @@ impl VfoxBackend {
     pub(crate) fn from_arg(ba: BackendArg, backend_plugin_name: Option<String>) -> Self {
         let pathname = match &backend_plugin_name {
             Some(plugin_name) => plugin_name.clone(),
-            None => ba.short.to_kebab_case(),
+            None => crate::backend::tool_directory_name(&ba.short),
         };
 
         let plugin_path = dirs::PLUGINS.join(&pathname);

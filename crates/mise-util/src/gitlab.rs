@@ -1,3 +1,4 @@
+use crate::redactions::strip_url_credentials_in_arg;
 use crate::tokens;
 use crate::yaml::{self, Value};
 use eyre::Result;
@@ -179,7 +180,7 @@ pub async fn list_releases(repo: &str) -> Result<Vec<GitlabRelease>> {
 }
 
 pub async fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<GitlabRelease>> {
-    let key = format!("{api_url}-{repo}").to_kebab_case();
+    let key = format!("{}-{repo}", strip_url_credentials_in_arg(api_url)).to_kebab_case();
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -238,7 +239,7 @@ pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
 }
 
 pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
-    let key = format!("{api_url}-{repo}").to_kebab_case();
+    let key = format!("{}-{repo}", strip_url_credentials_in_arg(api_url)).to_kebab_case();
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -289,7 +290,7 @@ pub async fn get_release(repo: &str, tag: &str) -> Result<GitlabRelease> {
 }
 
 pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRelease> {
-    let key = format!("{api_url}-{repo}-{tag}").to_kebab_case();
+    let key = format!("{}-{repo}-{tag}", strip_url_credentials_in_arg(api_url)).to_kebab_case();
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache

@@ -1,4 +1,5 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
+use crate::redactions::strip_url_credentials_in_arg;
 use crate::tokens;
 use crate::{dirs, env};
 use eyre::Result;
@@ -100,7 +101,7 @@ const MAX_RELEASE_FALLBACK_PAGES: usize = 3;
 fn releases_cache_key(api_url: &str, repo: &str, require_assets: bool) -> String {
     format!(
         "{}-{}",
-        format!("{api_url}-{repo}").to_kebab_case(),
+        format!("{}-{repo}", strip_url_credentials_in_arg(api_url)).to_kebab_case(),
         crate::hash::hash_to_str(&(api_url, repo, require_assets))
     )
 }
@@ -153,7 +154,7 @@ fn is_published_release(release: &ForgejoRelease) -> bool {
 }
 
 pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRelease> {
-    let key = format!("{api_url}-{repo}-{tag}").to_kebab_case();
+    let key = format!("{}-{repo}-{tag}", strip_url_credentials_in_arg(api_url)).to_kebab_case();
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache

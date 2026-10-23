@@ -1,6 +1,15 @@
 use super::*;
 
 #[test]
+fn cache_keys_omit_api_url_credentials() {
+    // The key names a persisted cache file, and its path is logged; a
+    // credential in `api_url` must not be spelled in it.
+    let api = "https://bot:t0ken@ghe.example.com/api/v3";
+    assert!(!releases_cache_key(api, "owner/foo", true).contains("t0ken"));
+    assert!(!release_cache_key(api, "owner/foo", "v1.0.0", false).contains("t0ken"));
+}
+
+#[test]
 fn releases_cache_key_separates_the_suffix_collision() {
     let api = "https://api.github.com";
 
