@@ -1466,6 +1466,10 @@ fn copy_excluded_outputs(
             }
             let to = staging.join(rel);
             ensure_no_symlink_ancestors(staging, rel)?;
+            // The staged node comes from the cache entry; never write through its symlinks.
+            if fs::symlink_metadata(&to).is_ok_and(|staged| staged.file_type().is_symlink()) {
+                file::remove_all(&to)?;
+            }
             if metadata.is_dir() {
                 file::create_dir_all(&to)?;
                 directories.push((
@@ -2075,6 +2079,43 @@ mod tests {
             fs::read_to_string(root.path().join("dist/private/token")).unwrap(),
             "local token"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_does_not_write_excluded_outputs_through_staged_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let staging = tempfile::tempdir_in(root.path()).unwrap();
+        fs::create_dir(root.path().join("dist")).unwrap();
+        fs::write(root.path().join("dist/local.cfg"), "local").unwrap();
+        fs::create_dir(staging.path().join("dist")).unwrap();
+        symlink(
+            outside.path().join("target"),
+            staging.path().join("dist/local.cfg"),
+        )
+        .unwrap();
+        let matcher = build_output_matcher(
+            root.path(),
+            &["dist".to_string(), "!dist/local.cfg".to_string()],
+        )
+        .unwrap();
+
+        install_transactionally(
+            root.path(),
+            staging.path(),
+            &[PathBuf::from("dist")],
+            &[PathBuf::from("dist")],
+            Some(&matcher),
+        )
+        .unwrap();
+
+        assert!(!outside.path().join("target").exists());
+        let restored = root.path().join("dist/local.cfg");
+        assert!(fs::symlink_metadata(&restored).unwrap().is_file());
+        assert_eq!(fs::read_to_string(restored).unwrap(), "local");
     }
 
     #[test]
