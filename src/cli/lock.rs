@@ -4,6 +4,8 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use mise_util::redactions::{redact_json, redact_output};
+
 use crate::config::config_file::trust_check;
 use crate::config::{Config, ConfigMap, SettingsExt};
 use crate::file::display_path;
@@ -724,6 +726,8 @@ impl Lock {
         }
 
         if self.json && installed.is_none() {
+            // Tool names and backends can spell URL credentials.
+            let changes = redact_json(serde_json::to_value(&changes)?);
             miseprintln!("{}", serde_json::to_string_pretty(&changes)?);
         }
 
@@ -1055,7 +1059,7 @@ impl Lock {
             target
                 .tools
                 .iter()
-                .map(|(ba, tv)| format!("{}@{}", ba.short, tv.version))
+                .map(|(ba, tv)| format!("{}@{}", redact_output(&ba.short), tv.version))
                 .collect::<Vec<_>>()
                 .join(", ")
         );
@@ -1353,7 +1357,7 @@ impl Lock {
                     for bump in &bumps {
                         miseprintln!(
                             "Would update {} from {} to {} in {}",
-                            bump.tool_name,
+                            redact_output(&bump.tool_name),
                             bump.old_version,
                             bump.new_version,
                             display_path(&bump.config_path)
@@ -1540,8 +1544,8 @@ impl Lock {
             indexmap::IndexMap::new();
         for (ba, tv) in tools {
             let entry = new_versions
-                .entry(ba.short.clone())
-                .or_insert_with(|| (Some(ba.full()), Vec::new()));
+                .entry(crate::toolset::install_state::state_short(&ba.short).into_owned())
+                .or_insert_with(|| (Some(ba.stored_full()), Vec::new()));
             if !entry.1.contains(&tv.version) {
                 entry.1.push(tv.version.clone());
             }
@@ -1733,7 +1737,7 @@ impl Lock {
             };
             for platform in platforms {
                 for variant in backend.platform_variants_for(tv, platform) {
-                    let Ok(options) = backend.resolve_lockfile_options(
+                    let Ok(options) = backend.lockfile_options(
                         &tv.request,
                         &crate::backend::platform_target::PlatformTarget::new(variant),
                     ) else {
@@ -1791,7 +1795,13 @@ impl Lock {
             // option change).
             let resolved = tools
                 .iter()
-                .map(|(ba, tv)| (ba.short.clone(), ba.stored_full(), tv.version.clone()))
+                .map(|(ba, tv)| {
+                    (
+                        crate::toolset::install_state::state_short(&ba.short).into_owned(),
+                        ba.stored_full(),
+                        tv.version.clone(),
+                    )
+                })
                 .collect::<Vec<_>>();
             lockfile.retain_unsuperseded_unbound_entries(|short, entry| {
                 resolved.iter().any(|(name, backend, version)| {
@@ -1812,10 +1822,10 @@ impl Lock {
                 .iter()
                 .map(|(ba, tv)| {
                     Ok((
-                        ba.short.clone(),
+                        crate::toolset::install_state::state_short(&ba.short).into_owned(),
                         ba.stored_full(),
                         tv.version.clone(),
-                        tv.backend()?.resolve_lockfile_options(
+                        tv.backend()?.lockfile_options(
                             &tv.request,
                             &crate::backend::platform_target::PlatformTarget::from_current(),
                         )?,
@@ -1896,7 +1906,7 @@ impl Lock {
                     return None;
                 }
                 let stale_versions = stale_versions.get(&result.short)?;
-                let locked_tools = lockfile.tools().get(&result.short)?;
+                let locked_tools = lockfile.tools_for(&result.short)?;
                 if locked_tools.iter().any(|tool| {
                     tool.version == result.version
                         && tool.platforms.contains_key(&result.platform)
@@ -2062,7 +2072,7 @@ impl Lock {
         };
         for (ba, tv) in tools.iter().filter(|(ba, _)| named(ba)) {
             current_versions
-                .entry(ba.short.clone())
+                .entry(crate::toolset::install_state::state_short(&ba.short).into_owned())
                 .or_default()
                 .insert(tv.version.clone());
         }
@@ -2834,7 +2844,7 @@ impl Lock {
                     miseprintln!(
                         "  {} {}@{} for {}",
                         style("✓").green(),
-                        style(&ba.short).bold(),
+                        style(redact_output(&ba.short)).bold(),
                         tv.version,
                         style(variant.to_key()).blue()
                     );
@@ -2927,7 +2937,9 @@ impl Lock {
             completed += 1;
             match result {
                 Ok(resolution) => {
-                    let short = resolution.0.clone();
+                    // Named the way the lockfile keys the tool.
+                    let short =
+                        crate::toolset::install_state::state_short(&resolution.0).into_owned();
                     let version = resolution.1.clone();
                     let platform_key = resolution.3.to_key();
                     let resolution_error = resolution.4.as_ref().err().cloned();

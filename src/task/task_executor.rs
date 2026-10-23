@@ -1524,6 +1524,16 @@ impl TaskExecutor {
         }
 
         if script.starts_with("#!") {
+            // The rendered script can hold secrets that templates put there, so
+            // other users must not be able to enter its directory while it runs.
+            #[cfg(unix)]
+            let dir = {
+                use std::os::unix::fs::PermissionsExt;
+                tempfile::Builder::new()
+                    .permissions(std::fs::Permissions::from_mode(0o700))
+                    .tempdir()?
+            };
+            #[cfg(not(unix))]
             let dir = tempfile::tempdir()?;
             let file = dir.path().join("script");
             tokio::fs::write(&file, script.as_bytes()).await?;

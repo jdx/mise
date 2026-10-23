@@ -640,7 +640,7 @@ impl BackendArg {
                 self.registry_version.as_deref(),
             ) && self.locked_backend_serves_registry_version(&backend)
             {
-                return backend;
+                return install_state::with_request_credentials(short, backend);
             }
         }
 
@@ -951,8 +951,14 @@ impl BackendArg {
     /// over dynamic registry resolution. For non-explicit tools, uses `full()` which
     /// respects registry updates, allowing automatic backend migration when registry/
     /// is updated. Used for lockfiles to preserve the actual installed backend when possible.
-    /// Options are stripped since lockfiles have a separate options field.
+    /// Options are stripped since lockfiles have a separate options field, and so
+    /// are the credentials of a URL in it: a lockfile is committed. A request's
+    /// own spelling, credentials included, is what installs use.
     pub fn stored_full(&self) -> String {
+        install_state::state_short(&self.stored_full_with_credentials()).into_owned()
+    }
+
+    fn stored_full_with_credentials(&self) -> String {
         // For non-explicit tools, use full() which respects registry updates.
         // This allows tools to automatically switch backends when the registry changes.
         if !self.resolution.explicit {

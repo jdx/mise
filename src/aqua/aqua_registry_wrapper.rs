@@ -82,7 +82,7 @@ impl RegistrySource {
                 Err(err) if registry.fallback_on_error => {
                     warn_once!(
                         "failed to load floating aqua registry {}, using baked-in fallback: {err}",
-                        registry.registry_url
+                        shown(&registry.registry_url)
                     );
                     Ok(None)
                 }
@@ -92,10 +92,10 @@ impl RegistrySource {
         }
     }
 
-    fn description(&self) -> &str {
+    fn description(&self) -> String {
         match self {
-            Self::Downloaded(registry) => registry.registry_url.as_str(),
-            Self::Baked => "baked-in aqua registry",
+            Self::Downloaded(registry) => shown(&registry.registry_url),
+            Self::Baked => "baked-in aqua registry".to_string(),
         }
     }
 }
@@ -270,11 +270,17 @@ impl DownloadedRegistry {
         {
             Ok(Ok(registry)) => Some(registry),
             Ok(Err(err)) => {
-                log::debug!("compiled aqua registry cache miss for {registry_url}: {err}");
+                log::debug!(
+                    "compiled aqua registry cache miss for {}: {err}",
+                    shown(&registry_url)
+                );
                 None
             }
             Err(err) => {
-                warn!("failed to load compiled aqua registry cache for {registry_url}: {err}");
+                warn!(
+                    "failed to load compiled aqua registry cache for {}: {err}",
+                    shown(&registry_url)
+                );
                 None
             }
         }
@@ -355,19 +361,26 @@ async fn download_registry_source(registry_url: &str) -> aqua_registry::Result<S
     }
 
     Err(AquaRegistryError::RegistryNotAvailable(format!(
-        "failed to download aqua registry from {registry_url}: {}",
+        "failed to download aqua registry from {}: {}",
+        shown(registry_url),
         errors.join("; ")
     )))
 }
 
 async fn download_registry_url(url: &str) -> aqua_registry::Result<String> {
     let parsed = Url::parse(url).map_err(|err| {
-        AquaRegistryError::RegistryNotAvailable(format!("invalid aqua registry URL {url}: {err}"))
+        AquaRegistryError::RegistryNotAvailable(format!(
+            "invalid aqua registry URL {}: {err}",
+            shown(url)
+        ))
     })?;
 
     if parsed.scheme() == "file" {
         let path = parsed.to_file_path().map_err(|_| {
-            AquaRegistryError::RegistryNotAvailable(format!("invalid aqua registry URL {url}"))
+            AquaRegistryError::RegistryNotAvailable(format!(
+                "invalid aqua registry URL {}",
+                shown(url)
+            ))
         })?;
         let path_display = path.display().to_string();
         return tokio::task::spawn_blocking(move || {
@@ -399,7 +412,8 @@ async fn download_registry_url(url: &str) -> aqua_registry::Result<String> {
 
     HTTP.get_text(parsed).await.map_err(|err| {
         AquaRegistryError::RegistryNotAvailable(format!(
-            "failed to download aqua registry source {url}: {err}"
+            "failed to download aqua registry source {}: {err}",
+            shown(url)
         ))
     })
 }
@@ -415,7 +429,8 @@ fn github_registry_file_url(owner: &str, repo: &str, file_name: &str) -> String 
 fn registry_file_url(registry_url: &str, file_name: &str) -> aqua_registry::Result<Url> {
     let mut url = Url::parse(registry_url).map_err(|err| {
         AquaRegistryError::RegistryNotAvailable(format!(
-            "invalid aqua registry URL {registry_url}: {err}"
+            "invalid aqua registry URL {}: {err}",
+            shown(registry_url)
         ))
     })?;
     let path = url.path().trim_end_matches('/');
@@ -430,7 +445,7 @@ async fn parse_registry_source(
     source: String,
 ) -> aqua_registry::Result<Arc<ParsedRegistry>> {
     tokio::task::spawn_blocking(move || {
-        info!("parsing aqua registry from {registry_url}");
+        info!("parsing aqua registry from {}", shown(&registry_url));
         measure!("aqua_registry::parse_yaml", {
             ParsedRegistry::parse_yaml(&source).map(Arc::new)
         })
@@ -461,15 +476,30 @@ fn spawn_compiled_registry_cache_writer(
             return;
         }
 
-        info!("writing compiled aqua registry cache for {registry_url}");
+        info!(
+            "writing compiled aqua registry cache for {}",
+            shown(&registry_url)
+        );
         if let Err(err) = measure!("aqua_registry::write_compiled_cache", {
             cache
                 .write_compiled(&registry_url, &source_hash, registry.as_ref())
                 .map(|_| ())
         }) {
-            warn!("failed to write compiled aqua registry cache for {registry_url}: {err}");
+            warn!(
+                "failed to write compiled aqua registry cache for {}: {err}",
+                shown(&registry_url)
+            );
         }
     });
+}
+
+/// A registry URL as log lines and error messages show it. A private registry
+/// can authenticate with userinfo or a query token (`?token=`), and these
+/// messages reach the final error report as well as the log, so the userinfo is
+/// removed and the query replaced by a digest that still tells two registries
+/// apart. The URL itself is kept for requests and cache keys.
+fn shown(registry_url: &str) -> String {
+    crate::install_layout::resolver::redact_credentials(registry_url)
 }
 
 fn github_repo_slug(registry_url: &str) -> Option<(String, String)> {
@@ -588,6 +618,18 @@ pub(crate) use aqua_registry::{
 mod tests {
     use super::*;
     use std::path::{Path, PathBuf};
+
+    /// A private registry's credentials, in its userinfo or its query, stay
+    /// out of the messages that name it.
+    #[tokio::test]
+    async fn registry_download_error_hides_credentials() {
+        let url = "http://user:pa55word@127.0.0.1:1/registry.yaml?token=s3cret";
+        let err = download_registry_source(url).await.unwrap_err().to_string();
+        assert!(err.contains("127.0.0.1:1/registry.yaml"), "{err}");
+        assert!(!err.contains("pa55word"), "{err}");
+        assert!(!err.contains("s3cret"), "{err}");
+        assert!(!shown(url).contains("s3cret"));
+    }
 
     #[test]
     fn github_slug_only_handles_https_repo_urls() {

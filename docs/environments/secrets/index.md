@@ -109,7 +109,10 @@ run = "./deploy.sh"
 ```
 
 mise matches values, not names: once a value is marked, mise replaces that text
-wherever it appears in the output it processes.
+wherever it appears in the output it processes. Task output is redacted line by
+line, so each line of a multi-line value (a private key, a token read from a
+file that ends in a newline) is replaced on its own; lines shorter than four
+characters are left as they are.
 
 ### What redaction covers {#what-redaction-covers}
 

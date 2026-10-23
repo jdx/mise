@@ -2992,6 +2992,24 @@ pub trait Backend: Debug + Send + Sync {
         Ok(BTreeMap::new()) // Default: no options affect artifact identity
     }
 
+    /// [`Self::resolve_lockfile_options`] as a lock entry records them. Everything that
+    /// writes, looks up or describes a lock entry goes through this, and options read from
+    /// a lockfile get the same treatment, so both sides of a comparison agree.
+    ///
+    /// A lockfile is committed, and these values are already rendered: an index URL in
+    /// `pipx_args` or `npm_args`, or an `api_url`, can carry a token that config only
+    /// templates in from the environment. The options only select the lock entry; an
+    /// install reads the request's own, so it still gets the credential.
+    fn lockfile_options(
+        &self,
+        request: &ToolRequest,
+        target: &PlatformTarget,
+    ) -> Result<BTreeMap<String, String>> {
+        Ok(crate::lockfile::strip_lock_options_credentials(
+            self.resolve_lockfile_options(request, target)?,
+        ))
+    }
+
     /// Options that are not install-affecting: they only change how versions are
     /// listed or how installed files are used, so two requests that differ in
     /// them still share one installation. Everything else a request sets is part
@@ -6306,7 +6324,7 @@ pub trait Backend: Debug + Send + Sync {
     /// `platform_key`, including the options that distinguish artifact variants.
     fn describe_lock_entry(&self, tv: &ToolVersion, platform_key: &str) -> String {
         let options = self
-            .resolve_lockfile_options(&tv.request, &PlatformTarget::from_current())
+            .lockfile_options(&tv.request, &PlatformTarget::from_current())
             .unwrap_or_default();
         let entry = format!("lockfile entry for {} on {platform_key}", tv.style());
         if options.is_empty() {
@@ -8867,9 +8885,15 @@ pub(crate) fn fuzzy_version_matches(query: &str, version: &str) -> bool {
 }
 
 /// Derive the directory namespace from the configured tool spelling.
-pub(crate) fn tool_directory_name(short: &str) -> String {
+///
+/// A tool named by a URL can carry credentials
+/// (`cargo:https://user:token@host/repo.git`). They are left out of the name:
+/// kebab-casing keeps them readable, no redaction recognizes them there, and
+/// these paths reach logs, error messages and `PATH`. A spelling without
+/// credentials, including `ssh://git@host` URLs, keeps the name it always had.
+pub fn tool_directory_name(short: &str) -> String {
     use heck::ToKebabCase;
-    short.to_kebab_case()
+    crate::toolset::install_state::state_short(short).to_kebab_case()
 }
 
 pub(crate) fn canonical_backend_full(backend: &str) -> std::borrow::Cow<'_, str> {
@@ -8898,6 +8922,33 @@ fn test_unalias_backend() {
     assert_eq!(unalias_backend("core:node"), "node");
     assert_eq!(unalias_backend("golang"), "go");
     assert_eq!(unalias_backend("dotnet-core"), "dotnet");
+}
+
+#[test]
+fn test_tool_directory_name_omits_url_credentials() {
+    assert_eq!(tool_directory_name("npm:@antfu/ni"), "npm-antfu-ni");
+    assert_eq!(
+        tool_directory_name("cargo:https://host/acme/tool.git"),
+        "cargo-https-host-acme-tool-git"
+    );
+    // The user of an ssh URL is an account name, and the directory keeps it.
+    assert_eq!(
+        tool_directory_name("cargo:ssh://git@host/acme/tool.git"),
+        "cargo-ssh-git-host-acme-tool-git"
+    );
+    for short in [
+        "cargo:https://bot:t0ken@host/acme/tool.git",
+        "cargo:https://t0ken@host/acme/tool.git",
+        "cargo:https://bot:my t0ken@host/acme/tool.git",
+        "cargo:https://host/acme/tool.git?token=t0ken",
+        "cargo:https://host/acme/tool.git?private_token=t0ken",
+    ] {
+        assert_eq!(
+            tool_directory_name(short),
+            "cargo-https-host-acme-tool-git",
+            "{short}"
+        );
+    }
 }
 
 impl Display for dyn Backend {

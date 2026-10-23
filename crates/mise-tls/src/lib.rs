@@ -15,7 +15,13 @@ use reqwest::{Client, ClientBuilder};
 /// second build fails too.
 ///
 /// `make` runs once per attempt because [`ClientBuilder`] cannot be cloned.
+///
+/// Every client built here leaves out the `Referer` header. reqwest would
+/// otherwise send the previous URL, with any token in its path or query
+/// (`?private_token=`, a signed URL), to every host a request is redirected
+/// to, and mise has no use for the header.
 pub fn build_client(make: impl Fn() -> ClientBuilder) -> reqwest::Result<Client> {
+    let make = || make().referer(false);
     match make().build() {
         Ok(client) => Ok(client),
         Err(err) => with_bundled_roots(make, err),

@@ -754,7 +754,7 @@ impl ToolRequest {
         let (request_options, legacy_options_fallback) = if let Some(backend) = &backend {
             let target = PlatformTarget::from_current();
             (
-                backend.resolve_lockfile_options(self, &target)?,
+                backend.lockfile_options(self, &target)?,
                 backend.lockfile_options_are_host_specific(),
             )
         } else {

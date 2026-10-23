@@ -4674,6 +4674,300 @@ url_api = "https://api.github.com/repos/acme/locked/releases/assets/2"
     }
 }
 
+#[test]
+fn test_credential_query_params_are_found_by_name() {
+    for (text, param) in [
+        (
+            "https://dl.example.com/t.tgz?private_token=x",
+            "private_token",
+        ),
+        ("https://dl.example.com/t.tgz?v=1&token=x", "token"),
+        (
+            "https://b.s3.example.com/t?X-Amz-Signature=x",
+            "X-Amz-Signature",
+        ),
+        ("https://blob.example.com/t?sv=1&sig=x", "sig"),
+        (
+            "--index-url https://h.example/simple?api_key=x --x",
+            "api_key",
+        ),
+        ("https://h.example/t?password", "password"),
+        ("https://h.example/t?api%5Fkey=x", "api_key"),
+    ] {
+        assert_eq!(
+            credential_query_param(text).as_deref(),
+            Some(param),
+            "{text}"
+        );
+    }
+    for text in [
+        "https://dl.example.com/t.tgz",
+        "https://dl.example.com/t.tgz?raw=true&page=2",
+        "https://h.example/t?monkey=1&keys=2",
+        "token=x not a url",
+    ] {
+        assert_eq!(credential_query_param(text), None, "{text}");
+    }
+}
+
+/// A lockfile keys a URL-named tool, and records its backend, without the
+/// URL's credentials. One that holds them is read without them, a credentialed
+/// request still finds the entry, and the file is written back clean.
+#[test]
+fn test_lockfile_keys_and_backends_have_no_credentials() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("mise.lock");
+    fs::write(
+        &path,
+        r#"
+[[tools."cargo:https://ci:t0ken@host/acme/tool.git"]]
+version = "tag:1.0.0"
+backend = "cargo:https://ci:t0ken@host/acme/tool.git"
+"#,
+    )
+    .unwrap();
+    let mut lockfile = Lockfile::read(&path).unwrap();
+    assert_eq!(
+        lockfile.tools.keys().collect::<Vec<_>>(),
+        vec!["cargo:https://host/acme/tool.git"]
+    );
+    for short in [
+        "cargo:https://ci:t0ken@host/acme/tool.git",
+        "cargo:https://host/acme/tool.git",
+    ] {
+        let entries = lockfile.tools_for(short).unwrap();
+        assert_eq!(
+            entries[0].backend.as_deref(),
+            Some("cargo:https://host/acme/tool.git")
+        );
+    }
+    lockfile.set_platform_info(
+        "cargo:https://ci:t0ken@host/acme/tool.git",
+        "tag:2.0.0",
+        Some("cargo:https://host/acme/tool.git"),
+        &BTreeMap::new(),
+        "linux-x64",
+        PlatformInfo::default(),
+    );
+    assert_eq!(lockfile.tools.len(), 1);
+    lockfile.write(&path).unwrap();
+    let written = fs::read_to_string(&path).unwrap();
+    assert!(!written.contains("t0ken"), "{written}");
+}
+
+/// Pruning compares configured tools in the form the lockfile keys them in,
+/// so a tool configured with URL credentials keeps its clean entry.
+#[test]
+fn test_pruning_keeps_a_tool_configured_with_url_credentials() {
+    let mut lockfile = Lockfile::default();
+    lockfile.set_platform_info(
+        "cargo:https://host/acme/tool.git",
+        "tag:1.0.0",
+        Some("cargo:https://host/acme/tool.git"),
+        &BTreeMap::new(),
+        "linux-x64",
+        PlatformInfo {
+            checksum: Some("sha256:abc".to_string()),
+            ..Default::default()
+        },
+    );
+    let configured = "cargo:https://ci:t0ken@host/acme/tool.git";
+    let shorts = BTreeSet::from([configured.to_string()]);
+    let backends = BTreeSet::from([configured.to_string()]);
+    assert!(lockfile.stale_tool_shorts(&shorts, &backends).is_empty());
+    lockfile.retain_tools_by_short_or_backend(&shorts, &backends);
+    assert!(lockfile.tools_for(configured).is_some());
+    // A pypi tool is kept by its short alone.
+    lockfile.set_platform_info(
+        "pypi:git+https://host/acme/py.git",
+        "1.0.0",
+        None,
+        &BTreeMap::new(),
+        "linux-x64",
+        PlatformInfo::default(),
+    );
+    let shorts = BTreeSet::from(["pypi:git+https://u:t0ken@host/acme/py.git".to_string()]);
+    assert!(
+        lockfile
+            .stale_tool_shorts(&shorts, &BTreeSet::new())
+            .contains("cargo:https://host/acme/tool.git")
+    );
+    assert!(
+        !lockfile
+            .stale_tool_shorts(&shorts, &BTreeSet::new())
+            .contains("pypi:git+https://host/acme/py.git")
+    );
+}
+
+#[test]
+fn test_lockfile_write_refuses_credential_queries() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("mise.lock");
+    let mut lockfile = Lockfile::default();
+    let mut tool = LockfileTool {
+        version: "1.0.0".to_string(),
+        backend: Some("http:tool".to_string()),
+        specifiers: Default::default(),
+        options: Default::default(),
+        platforms: BTreeMap::from([(
+            "linux-x64".to_string(),
+            PlatformInfo {
+                url: Some("https://dl.example.com/t.tgz?token=s3cret".to_string()),
+                ..Default::default()
+            },
+        )]),
+        aube: None,
+        uv: None,
+    };
+    lockfile
+        .tools
+        .insert("http:tool".to_string(), vec![tool.clone()]);
+    let err = lockfile.write(&path).unwrap_err().to_string();
+    assert!(err.contains("`token`"), "{err}");
+    assert!(!err.contains("s3cret"), "{err}");
+    assert!(!path.exists());
+
+    tool.platforms.get_mut("linux-x64").unwrap().url =
+        Some("https://dl.example.com/t.tgz".to_string());
+    tool.options.insert(
+        "api_url".to_string(),
+        "https://h.example/api?access_token=s3cret".to_string(),
+    );
+    lockfile
+        .tools
+        .insert("http:tool".to_string(), vec![tool.clone()]);
+    let err = lockfile.write(&path).unwrap_err().to_string();
+    assert!(err.contains("options.api_url"), "{err}");
+
+    // Every URL the entry is written with is checked: additional artifacts
+    // and shared conda packages too.
+    tool.options.clear();
+    tool.platforms
+        .get_mut("linux-x64")
+        .unwrap()
+        .additional_artifacts = vec![ArtifactInfo {
+        checksum: None,
+        size: None,
+        url: "https://dl.example.com/sig.tgz?sig=s3cret".to_string(),
+        url_api: None,
+        provenance: None,
+        provenance_verified: None,
+        checksum_source: None,
+    }];
+    lockfile
+        .tools
+        .insert("http:tool".to_string(), vec![tool.clone()]);
+    let err = lockfile.write(&path).unwrap_err().to_string();
+    assert!(err.contains("`sig`"), "{err}");
+
+    tool.platforms
+        .get_mut("linux-x64")
+        .unwrap()
+        .additional_artifacts = vec![];
+    lockfile.tools.insert("http:tool".to_string(), vec![tool]);
+    lockfile.conda_packages.insert(
+        "linux-x64".to_string(),
+        BTreeMap::from([(
+            "pkg-1.0-0".to_string(),
+            CondaPackageInfo {
+                url: "https://conda.example.com/pkg.conda?token=s3cret".to_string(),
+                checksum: None,
+            },
+        )]),
+    );
+    let err = lockfile.write(&path).unwrap_err().to_string();
+    assert!(err.contains("conda package pkg-1.0-0"), "{err}");
+    assert!(!path.exists());
+}
+
+/// A lockfile is committed, so a token templated into a lock option from the
+/// environment must not reach it, and an entry that already holds one must
+/// still match the request.
+#[test]
+fn test_lock_options_drop_credentials() {
+    let options = BTreeMap::from([
+        (
+            "pipx_args".to_string(),
+            "--pip-args='--index-url https://deploy:tok3n@packages.example.com/simple'"
+                .to_string(),
+        ),
+        (
+            "npm_args".to_string(),
+            "--//npm.example.com/:_authToken=tok3n --_auth=tok3n --registry=https://ci:tok3n@npm.example.com/ --_password=\"tok3n second\""
+                .to_string(),
+        ),
+        (
+            "pnpm_args".to_string(),
+            "--//npm.example.com/:_authToken=\"npm_\"tok3nSuffix --_auth tok3n --save-exact"
+                .to_string(),
+        ),
+        (
+            "api_url".to_string(),
+            "https://ci:my tok3n@ghe.example.com/api/v3".to_string(),
+        ),
+    ]);
+    let stripped = strip_lock_options_credentials(options);
+    assert!(
+        stripped
+            .values()
+            .all(|v| !v.contains("tok3n") && !v.contains("second") && !v.contains("npm_\"")),
+        "{stripped:?}"
+    );
+    assert_eq!(
+        stripped["pipx_args"],
+        "--pip-args='--index-url https://packages.example.com/simple'"
+    );
+    // Each credential is masked as the shell word npm reads, whole.
+    let words = |v: &str| shell_words::split(v).unwrap();
+    assert_eq!(
+        words(&stripped["npm_args"]),
+        [
+            "--//npm.example.com/:_authToken=[redacted]",
+            "--_auth=[redacted]",
+            "--registry=https://npm.example.com/",
+            "--_password=[redacted]",
+        ]
+    );
+    assert_eq!(
+        words(&stripped["pnpm_args"]),
+        [
+            "--//npm.example.com/:_authToken=[redacted]",
+            "--_auth",
+            "[redacted]",
+            "--save-exact",
+        ]
+    );
+    assert_eq!(stripped["api_url"], "https://ghe.example.com/api/v3");
+    // Stripping twice changes nothing, so read and computed options agree.
+    assert_eq!(strip_lock_options_credentials(stripped.clone()), stripped);
+}
+
+/// An option that isn't valid shell words has no word boundaries to trust, so
+/// everything from the first credential setting on is masked, and masking again
+/// changes nothing.
+#[test]
+fn test_lock_options_mask_unparseable_credentials_to_the_end() {
+    for value in [
+        "--save-exact --_authToken=\"tok3n second",
+        "--save-exact --//npm.example.com/:_authToken tok3n 'second",
+        "'--save-exact --_password=tok3n second",
+    ] {
+        let options = BTreeMap::from([("npm_args".to_string(), value.to_string())]);
+        let stripped = strip_lock_options_credentials(options);
+        let masked = &stripped["npm_args"];
+        assert!(
+            !masked.contains("tok3n") && !masked.contains("second"),
+            "{value:?} -> {masked:?}"
+        );
+        assert!(masked.contains("[redacted]"), "{value:?} -> {masked:?}");
+        assert_eq!(
+            strip_lock_options_credentials(stripped.clone()),
+            stripped,
+            "{value:?}"
+        );
+    }
+}
+
 /// Only a regular file is read as a lockfile: a pipe or a link to a device
 /// under that name would be read without end.
 #[test]

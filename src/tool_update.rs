@@ -435,7 +435,9 @@ pub fn record_result(tool_id: &str, result: &Result<()>) {
         Err(err) => {
             let failure = Failure {
                 tool: tool_id.to_string(),
-                error: format!("{err:#}"),
+                // Written to the state directory and printed by `mise doctor`, so
+                // redacted the way the logger would redact it.
+                error: mise_util::redactions::redact_output(&format!("{err:#}")),
             };
             serde_json::to_string(&failure)
                 .map_err(eyre::Report::from)

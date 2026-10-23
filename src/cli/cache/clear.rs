@@ -4,7 +4,6 @@ use crate::file::{display_path, remove_all_with_retry};
 use crate::toolset::env_cache::CachedEnv;
 use eyre::Result;
 use filetime::set_file_times;
-use heck::ToKebabCase;
 use itertools::Itertools;
 use walkdir::WalkDir;
 
@@ -64,7 +63,7 @@ impl CacheClear {
             Some(tools) => tools
                 .iter()
                 .filter_map(|p| {
-                    let kebab = p.to_kebab_case();
+                    let kebab = crate::backend::tool_directory_name(p);
                     if kebab.is_empty() {
                         warn!("invalid tool name: {p}");
                         None

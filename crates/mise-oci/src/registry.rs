@@ -317,18 +317,38 @@ impl AuthSession {
             .await
             .wrap_err_with(|| format!("probing {url}"))?;
         if resp.status() == StatusCode::UNAUTHORIZED {
-            let www_auth = header_str(&resp, "www-authenticate");
-            self.answer_challenge(&www_auth).await?;
+            self.answer_challenge(&resp).await?;
         }
         Ok(())
     }
 
-    /// Negotiate authorization from a `WWW-Authenticate` challenge string,
+    /// Whether `url`, where a request ended up after any redirects, is on the
+    /// registry's own origin.
+    fn is_from_registry(&self, url: &reqwest::Url) -> bool {
+        reqwest::Url::parse(&self.reference.registry_url())
+            .is_ok_and(|registry| registry.origin() == url.origin())
+    }
+
+    /// Negotiate authorization from the `WWW-Authenticate` challenge of `resp`,
     /// storing the resulting header. Returns whether a usable `Authorization`
     /// header was obtained (a Basic challenge with no credentials yields
     /// `false` so the caller can surface an actionable message).
-    async fn answer_challenge(&mut self, www_auth: &str) -> Result<bool> {
-        match parse_auth_challenge(www_auth) {
+    ///
+    /// Only the registry's own challenge is answered. A blob request can be
+    /// redirected to another host (a CDN or object store), and a `401` from
+    /// there names a token `realm` of that host's choosing: answering it would
+    /// send the registry login to whatever URL it named.
+    async fn answer_challenge(&mut self, resp: &reqwest::Response) -> Result<bool> {
+        if !self.is_from_registry(resp.url()) {
+            debug!(
+                "oci: ignoring an authentication challenge from {}, which is not {}",
+                resp.url().origin().ascii_serialization(),
+                self.reference.registry_url()
+            );
+            return Ok(false);
+        }
+        let www_auth = header_str(resp, "www-authenticate");
+        match parse_auth_challenge(&www_auth) {
             Some(AuthChallenge::Bearer { realm, service }) => {
                 let token = fetch_bearer_token(
                     &realm,
@@ -365,8 +385,7 @@ impl AuthSession {
         if resp.status() != StatusCode::UNAUTHORIZED {
             return Ok(resp);
         }
-        let www_auth = header_str(&resp, "www-authenticate");
-        if self.answer_challenge(&www_auth).await? {
+        if self.answer_challenge(&resp).await? {
             return Ok(build(self.header())?.send().await?);
         }
         Ok(resp)
@@ -384,8 +403,7 @@ impl AuthSession {
         if resp.status() != StatusCode::UNAUTHORIZED {
             return Ok(resp);
         }
-        let www_auth = header_str(&resp, "www-authenticate");
-        if self.answer_challenge(&www_auth).await? {
+        if self.answer_challenge(&resp).await? {
             return build(self.header())?.send().await;
         }
         Ok(resp)
@@ -2761,6 +2779,55 @@ mod tests {
         for mock in [probe, manifest_mock, script_mock, toml_mock] {
             mock.assert_async().await;
         }
+    }
+
+    /// A registry may redirect blob downloads to storage on another host. A
+    /// `401` from that host names a token realm of its own choosing, and the
+    /// registry login must not be sent there.
+    #[tokio::test]
+    async fn blob_redirect_target_does_not_get_the_registry_login() {
+        let mut registry = mockito::Server::new_async().await;
+        let mut storage = mockito::Server::new_async().await;
+        let blob = format!("/v2/team/tasks/blobs/sha256:{}", "a".repeat(64));
+        registry
+            .mock("GET", blob.as_str())
+            .with_status(307)
+            .with_header("location", &format!("{}/blobs/a", storage.url()))
+            .create_async()
+            .await;
+        storage
+            .mock("GET", "/blobs/a")
+            .with_status(401)
+            .with_header(
+                "www-authenticate",
+                &format!("Bearer realm=\"{}/token\",service=\"cdn\"", storage.url()),
+            )
+            .create_async()
+            .await;
+        let token = storage
+            .mock("GET", mockito::Matcher::Regex("^/token".to_string()))
+            .with_body(r#"{"token":"stolen"}"#)
+            .expect(0)
+            .create_async()
+            .await;
+        let mut session = AuthSession {
+            reference: Reference::parse(&format!("{}/team/tasks:v1", registry.host_with_port()))
+                .unwrap(),
+            credential: Some(Credential {
+                username: "alice".to_string(),
+                secret: "hunter2".to_string(),
+            }),
+            scopes: vec!["repository:team/tasks:pull".to_string()],
+            authorization: None,
+        };
+
+        let err = download_blob_once(&mut session, &format!("{}{blob}", registry.url()), 8, None)
+            .await
+            .unwrap_err();
+
+        assert!(format!("{err:#}").contains("401"), "{err:#}");
+        assert_eq!(session.authorization, None);
+        token.assert_async().await;
     }
 
     #[tokio::test]

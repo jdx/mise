@@ -360,21 +360,28 @@ fn remove_empty_nested_settings(table: &mut toml::Table, prefix: &str) {
     });
 }
 
-/// Replace secret values in a serialized settings table.
+/// Whether a setting or environment variable named `name` holds a credential,
+/// judged by the shape of the name: it ends in `_token`, `_key`, `_secret` or
+/// `_password`, in any case (`task.cache.remote_token`, `sops.age_key`,
+/// `MISE_FORGEJO_TOKEN`). Deciding by shape rather than by a list keeps a
+/// credential added later hidden by default. Names that hold a path, a flag or
+/// a command (`age_key_file`, `gh_cli_tokens`) do not match.
+pub fn is_secret_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    ["_token", "_key", "_secret", "_password"]
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
+}
+
+/// Replace secret values in a serialized settings table: every string value,
+/// at any depth, whose key [`is_secret_name`].
 pub fn redact_settings_table(table: &mut toml::Table) {
-    let Some(cache) = table
-        .get_mut("task")
-        .and_then(toml::Value::as_table_mut)
-        .and_then(|task| task.get_mut("cache"))
-        .and_then(toml::Value::as_table_mut)
-    else {
-        return;
-    };
-    if cache.contains_key("remote_token") {
-        cache.insert(
-            "remote_token".to_string(),
-            toml::Value::String("[redacted]".to_string()),
-        );
+    for (key, value) in table.iter_mut() {
+        match value {
+            toml::Value::Table(nested) => redact_settings_table(nested),
+            toml::Value::String(s) if is_secret_name(key) => *s = "[redacted]".to_string(),
+            _ => {}
+        }
     }
 }
 

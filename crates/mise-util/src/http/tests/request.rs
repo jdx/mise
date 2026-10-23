@@ -313,6 +313,38 @@ async fn test_download_metadata_uses_redirected_filename() {
     artifact.assert();
 }
 
+/// A token in a download URL's query must not be handed to the host the
+/// download is redirected to, in a `Referer` header or otherwise.
+#[tokio::test]
+async fn test_redirect_target_is_not_told_the_previous_url() {
+    let mut origin = mockito::Server::new_async().await;
+    let mut storage = mockito::Server::new_async().await;
+    let redirect = origin
+        .mock("GET", "/tool.tar.gz?private_token=secret")
+        .with_status(302)
+        .with_header("location", &format!("{}/tool.tar.gz", storage.url()))
+        .expect(1)
+        .create_async()
+        .await;
+    let artifact = storage
+        .mock("GET", "/tool.tar.gz")
+        .match_header("referer", mockito::Matcher::Missing)
+        .with_body("OK")
+        .expect(1)
+        .create_async()
+        .await;
+    let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+
+    let body = client
+        .get_text(format!("{}/tool.tar.gz?private_token=secret", origin.url()))
+        .await
+        .unwrap();
+
+    assert_eq!(body, "OK");
+    redirect.assert();
+    artifact.assert();
+}
+
 #[test]
 fn test_download_filename_hint_excludes_unsafe_or_private_url_parts() {
     let url: Url =
@@ -399,6 +431,45 @@ fn log_url_hides_userinfo() {
     assert_eq!(log_url(&url), "https://[redacted]@git.example.com/");
     let url = Url::parse("https://git.example.com/a@b").unwrap();
     assert_eq!(log_url(&url), "https://git.example.com/a@b");
+}
+
+#[test]
+fn log_url_hides_query_values() {
+    let url =
+        Url::parse("https://dl.example.com/a.tar.gz?private_token=s3cret&page=2&raw").unwrap();
+    assert_eq!(
+        log_url(&url),
+        "https://dl.example.com/a.tar.gz?private_token=[redacted]&page=2&[redacted]"
+    );
+    // A short number is kept only for a paging parameter: a numeric token is
+    // a credential like any other.
+    let url =
+        Url::parse("https://h.example/x?token=123456&access_token=42&per_page=100&limit=50&empty=")
+            .unwrap();
+    assert_eq!(
+        log_url(&url),
+        "https://h.example/x?token=[redacted]&access_token=[redacted]&per_page=100&limit=50&empty="
+    );
+}
+
+/// A status error names the URL it was for. The query there can hold a
+/// token, and the error reaches warnings, progress lines and the final report.
+#[tokio::test]
+async fn status_error_hides_url_query_token() {
+    let mut server = mockito::Server::new_async().await;
+    let _missing = server
+        .mock("GET", "/a.tar.gz?private_token=s3cret")
+        .with_status(404)
+        .create_async()
+        .await;
+    let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+    let err = client
+        .get_text(format!("{}/a.tar.gz?private_token=s3cret", server.url()))
+        .await
+        .unwrap_err();
+    let message = format!("{err:#}");
+    assert!(message.contains("404"), "{message}");
+    assert!(!message.contains("s3cret"), "{message}");
 }
 
 #[tokio::test(flavor = "current_thread")]

@@ -1,4 +1,5 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
+use crate::redactions::strip_url_credentials_in_arg;
 use crate::tokens;
 use crate::{dirs, env};
 use eyre::{Result, WrapErr, bail};
@@ -300,7 +301,7 @@ pub async fn list_releases_including_prereleases_from_url(
 fn releases_cache_key(api_url: &str, repo: &str, require_assets: bool) -> String {
     format!(
         "{}-{}",
-        format!("{api_url}-{repo}").to_kebab_case(),
+        format!("{}-{repo}", strip_url_credentials_in_arg(api_url)).to_kebab_case(),
         crate::hash::hash_to_str(&(
             api_url,
             repo,
@@ -503,7 +504,7 @@ fn tags_mirror_source(api_url: &str, repo: &str) -> bool {
 fn tags_cache_key(api_url: &str, repo: &str) -> String {
     format!(
         "{}-{}",
-        format!("{api_url}-{repo}").to_kebab_case(),
+        format!("{}-{repo}", strip_url_credentials_in_arg(api_url)).to_kebab_case(),
         crate::hash::hash_to_str(&(api_url, repo, tags_mirror_source(api_url, repo)))
     )
 }
@@ -563,7 +564,7 @@ pub async fn list_release_versions(
 ) -> Result<Vec<ReleaseVersion>> {
     let key = format!(
         "{}-versions-{}",
-        format!("{api_url}-{repo}").to_kebab_case(),
+        format!("{}-{repo}", strip_url_credentials_in_arg(api_url)).to_kebab_case(),
         crate::hash::hash_to_str(&(
             api_url,
             repo,
@@ -1421,6 +1422,8 @@ fn release_cache_key(api_url: &str, repo: &str, tag: &str, use_versions_host: bo
     } else {
         "direct"
     };
+    let api_url = strip_url_credentials_in_arg(api_url);
+    let api_url = api_url.as_ref();
     // Kebab-casing alone is lossy (`hasura/graphql-engine` and
     // `hasura-graphql/engine` come out the same), so the exact tuple is hashed in
     // too, or one repository's cached release would answer for another's.

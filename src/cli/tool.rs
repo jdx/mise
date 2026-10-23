@@ -6,8 +6,9 @@ use serde::Serialize;
 
 use crate::args::BackendArg;
 use crate::config::Config;
-use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder};
+use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder, redact_tool_options};
 use crate::ui::table;
+use mise_util::redactions::redact_url_userinfo_in_arg;
 
 /// Show information about a tool
 ///
@@ -108,31 +109,33 @@ impl Tool {
         } else {
             (None, vec![])
         };
+        // Printed outside the logger, and the tool's spelling, its backend and
+        // its options can carry credentials.
+        let redact = |s: &str| config.redact(&redact_url_userinfo_in_arg(s));
+        let redact_all = |v: Vec<String>| v.iter().map(|s| redact(s)).collect::<Vec<_>>();
         let info = ToolInfo {
-            backend: ba.full(),
-            description,
+            backend: redact(&ba.full()),
+            description: description.map(|d| redact(&d)),
             url: ba.registry_tool().and_then(|rt| rt.url).map(str::to_string),
             installed_versions: ts
                 .list_installed_versions(&config)
                 .await?
                 .into_iter()
                 .filter(|(b, _)| b.ba().as_ref() == ba)
-                .map(|(_, tv)| tv.version)
+                .map(|(_, tv)| redact(&tv.version))
                 .unique()
                 .collect::<Vec<_>>(),
             active_versions: tvl.map(|tvl| {
-                tvl.os_supported_versions()
-                    .map(|tv| tv.version.clone())
-                    .collect::<Vec<_>>()
+                redact_all(
+                    tvl.os_supported_versions()
+                        .map(|tv| tv.version.clone())
+                        .collect(),
+                )
             }),
-            requested_versions: tvl.map(|tvl| {
-                tvl.requests
-                    .iter()
-                    .map(|tr| tr.version())
-                    .collect::<Vec<_>>()
-            }),
+            requested_versions: tvl
+                .map(|tvl| redact_all(tvl.requests.iter().map(|tr| tr.version()).collect())),
             config_source: tvl.map(|tvl| tvl.source.clone()),
-            tool_options: ba.opts(),
+            tool_options: redact_tool_options(ba.opts(), &redact),
             security,
         };
 

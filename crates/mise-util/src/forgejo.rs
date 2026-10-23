@@ -1,4 +1,5 @@
 use crate::cache::{CacheManager, CacheManagerBuilder};
+use crate::redactions::strip_url_credentials_in_arg;
 use crate::tokens;
 use crate::{dirs, env};
 use eyre::Result;
@@ -100,7 +101,7 @@ const MAX_RELEASE_FALLBACK_PAGES: usize = 3;
 fn releases_cache_key(api_url: &str, repo: &str, require_assets: bool) -> String {
     format!(
         "{}-{}",
-        format!("{api_url}-{repo}").to_kebab_case(),
+        format!("{}-{repo}", strip_url_credentials_in_arg(api_url)).to_kebab_case(),
         crate::hash::hash_to_str(&(api_url, repo, require_assets))
     )
 }
@@ -156,6 +157,8 @@ fn is_published_release(release: &ForgejoRelease) -> bool {
 /// the exact tuple is hashed in too: `owner/a-b` and `owner-a/b` (or a moved
 /// repo/tag boundary) would otherwise answer for each other.
 fn release_cache_key(api_url: &str, repo: &str, tag: &str) -> String {
+    let api_url = strip_url_credentials_in_arg(api_url);
+    let api_url = api_url.as_ref();
     format!(
         "{}-{}",
         format!("{api_url}-{repo}-{tag}").to_kebab_case(),

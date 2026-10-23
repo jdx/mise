@@ -1435,10 +1435,10 @@ impl NPMBackend {
         };
         // Cheap exit before parsing the config: only a tool the lockfile
         // already records can have had a graph.
-        if !request
+        if request
             .read_lockfile(config)?
-            .tools()
-            .contains_key(&request.ba().short)
+            .tools_for(&request.ba().short)
+            .is_none()
         {
             return Ok(None);
         }

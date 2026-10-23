@@ -5,7 +5,6 @@ use crate::dirs::CACHE;
 use crate::toolset::env_cache::CachedEnv;
 use bytesize::ByteSize;
 use eyre::Result;
-use heck::ToKebabCase;
 
 /// Remove cache files that have not been accessed recently
 ///
@@ -57,7 +56,7 @@ impl CachePrune {
                     Some(tools) => tools
                         .iter()
                         .filter_map(|tool| {
-                            let kebab = tool.to_kebab_case();
+                            let kebab = crate::backend::tool_directory_name(tool);
                             if kebab.is_empty() {
                                 warn!("invalid tool name: {tool}");
                                 None

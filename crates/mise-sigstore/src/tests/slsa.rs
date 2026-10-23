@@ -242,7 +242,6 @@ fn normalize_github_repository_forms() {
 
 #[tokio::test]
 async fn bundle_requires_exact_signer_identity_and_issuer() {
-    let _tuf_root = TUF_ROOT_LOCK.lock().await;
     let bundle = Bundle::from_json(include_str!(
         "../../tests/fixtures/github_build_provenance_jdx_mise.json"
     ))
@@ -255,7 +254,8 @@ async fn bundle_requires_exact_signer_identity_and_issuer() {
         issuer: "https://token.actions.githubusercontent.com",
         source_repository: None,
     };
-    let mut roots = TrustRoots::default();
+    // The embedded root, not a TUF fetch: a unit test must not wait on the network.
+    let mut roots = TrustRoots::with_sigstore_root(embedded_sigstore_root());
     verify_bundle_with_slsa_signer(Artifact::from(&digest), &bundle, signer, &mut roots)
         .await
         .unwrap();
