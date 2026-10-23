@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+# Which backend a dependency such as `pipx` or `uv` resolves to can come from a lockfile or a
+# tool alias, so two tools can end up depending on each other. mise used to follow such a
+# cycle until it ran out of stack, or forever.
+export MISE_OFFLINE=1
+
+graph() {
+  echo "uv = { path = \".mise/locks/$1\", digest = \"sha256:$(printf '0%.0s' {1..64})\" }"
+}
+
+echo "=== collecting the dependencies of a tool ends on a cycle ==="
+cat <<'EOF' >mise.toml
+[tools]
+"pipx:foo" = "1.0"
+EOF
+cat <<EOF >mise.lock
+lockfile_version = 3
+
+[[tools."pipx:foo"]]
+version = "1.0"
+backend = "pipx:foo"
+$(graph foo)
+
+[[tools.pipx]]
+version = "1.0"
+backend = "pipx:a"
+
+[[tools.uv]]
+version = "1.0"
+backend = "pipx:b"
+EOF
+assert_contains "timeout 60 mise ls" "pipx:foo"
+assert_succeed "timeout 60 mise hook-env -s bash >/dev/null"
+
+echo "=== resolving the tools of a cycle ends too ==="
+cat <<'EOF' >mise.toml
+[tools]
+pipx = "1.0"
+uv = "1.0"
+EOF
+cat <<EOF >mise.lock
+lockfile_version = 3
+
+[[tools.pipx]]
+version = "1.0"
+backend = "pipx:a"
+$(graph a)
+
+[[tools.uv]]
+version = "1.0"
+backend = "pipx:b"
+$(graph b)
+EOF
+assert_contains "timeout 60 mise ls" "pipx"
+assert_succeed "timeout 60 mise hook-env -s bash >/dev/null"
+
+echo "=== aliases form the same cycle ==="
+rm mise.lock
+cat <<'EOF' >mise.toml
+[tool_alias]
+pipx = "pipx:a"
+uv = "pipx:b"
+EOF
+assert_contains "timeout 60 mise install --dry-run pipx:foo@1.0 2>&1" "pipx:foo"
