@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# A repository cloned into a trusted directory under the name `mise`, `.mise`
+# or `.config` is a project of its own, not that directory's config folder.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+mkdir -p projects/sibling
+cd projects || exit 1
+cat <<EOF >mise.toml
+[env]
+PARENT_ENV = "1"
+EOF
+mise trust
+
+# a config folder that is part of the directory still loads
+mkdir -p mise/tasks
+cat <<EOF >mise/config.toml
+[env]
+CLONE_ENV = "1"
+EOF
+cat <<EOF >mise/tasks/clonetask
+#!/usr/bin/env bash
+echo clonetask
+EOF
+chmod +x mise/tasks/clonetask
+assert_contains "mise env -s bash" "CLONE_ENV"
+assert_contains "mise tasks ls" "clonetask"
+
+# once it is a checkout of its own, neither its config nor its tasks belong to
+# the directory, here or in a project below it
+git init -q mise
+assert_contains "mise env -s bash" "PARENT_ENV"
+assert_not_contains "mise env -s bash 2>&1" "CLONE_ENV"
+assert_not_contains "mise tasks ls 2>&1" "clonetask"
+cd sibling || exit 1
+assert_not_contains "mise env -s bash 2>&1" "CLONE_ENV"
+
+# the same holds for a checkout named .mise
+cd .. || exit 1
+rm -rf mise
+mkdir .mise
+cat <<EOF >.mise/config.toml
+[env]
+CLONE_ENV = "1"
+EOF
+git init -q .mise
+assert_not_contains "mise env -s bash 2>&1" "CLONE_ENV"

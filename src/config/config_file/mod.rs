@@ -577,6 +577,10 @@ fn looks_like_config_file(path: &Path) -> bool {
 pub fn config_trust_root(path: &Path) -> PathBuf {
     if settings::is_loaded() && Settings::get().paranoid.config() {
         path.to_path_buf()
+    } else if let Some(checkout) = config_root::nested_checkout(path) {
+        // A checkout of its own is trusted on its own, not through the
+        // directory it was cloned into.
+        checkout
     } else {
         config_root::config_root(path)
     }

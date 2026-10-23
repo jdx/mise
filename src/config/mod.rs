@@ -3477,6 +3477,11 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
     if is_default_config_dir_override_filtered(path) {
         return true;
     }
+    // A `mise/`, `.mise/` or `.config/` directory that is a git checkout of
+    // its own is a project, not the config folder of the directory above it.
+    if config_file::config_root::nested_checkout(path).is_some() {
+        return true;
+    }
     if include_ignored {
         return false;
     }
@@ -5008,6 +5013,18 @@ fn default_task_includes() -> Vec<String> {
         ".config/mise/tasks".to_string(),
         "mise/tasks".to_string(),
     ]
+}
+
+/// [`default_task_includes`] for `dir`, without a task directory that sits in
+/// a git checkout of its own below `dir`, such as a repository cloned into
+/// `dir` as `mise`: that checkout's `tasks/` are its own, not `dir`'s.
+fn default_task_includes_for(dir: &Path) -> Vec<String> {
+    default_task_includes()
+        .into_iter()
+        .filter(|include| {
+            config_file::config_root::checkout_between(dir, &dir.join(include)).is_none()
+        })
+        .collect()
 }
 
 /// The default task directories of the user-global scope.
@@ -6814,7 +6831,7 @@ fn task_include_patterns_for_dir(
         })
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
-            (default_task_includes(), dir.to_path_buf(), true)
+            (default_task_includes_for(dir), dir.to_path_buf(), true)
         }))
 }
 
@@ -7359,7 +7376,7 @@ async fn load_task_sources_from_configs(
         })
         .unwrap_or_else(|| {
             (
-                default_includes.unwrap_or_else(default_task_includes),
+                default_includes.unwrap_or_else(|| default_task_includes_for(dir)),
                 dir.to_path_buf(),
                 configs.len(),
             )
