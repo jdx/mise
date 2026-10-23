@@ -205,7 +205,7 @@ impl Backend for SPMBackend {
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = SpmOptions::new(&raw_opts);
-        let provider = GitProvider::from_ba_with_opts(&self.ba, &opts);
+        let provider = GitProvider::from_ba_with_opts(&self.ba, &opts)?;
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
         let versions = match provider.kind {
             GitProviderKind::GitLab => {
@@ -257,7 +257,7 @@ impl Backend for SPMBackend {
         let raw_opts = tv.request.options();
         let opts = SpmOptions::new(&raw_opts);
         let install_command = opts.source_install_command()?;
-        let provider = GitProvider::from_ba_with_opts(&self.ba, &opts);
+        let provider = GitProvider::from_ba_with_opts(&self.ba, &opts)?;
         let repo = SwiftPackageRepo::new(&self.tool_name(), &provider)?;
         let revision = match package_revision(&tv) {
             Some(revision) => revision,
@@ -800,10 +800,14 @@ impl GitProvider {
     fn from_ba(ba: &BackendArg) -> Self {
         let raw_opts = ba.opts();
         let opts = SpmOptions::new(&raw_opts);
-        Self::from_ba_with_opts(ba, &opts)
+        Self::for_mode(ba, &opts, false).unwrap()
     }
 
-    fn from_ba_with_opts(ba: &BackendArg, opts: &SpmOptions<'_>) -> Self {
+    fn from_ba_with_opts(ba: &BackendArg, opts: &SpmOptions<'_>) -> Result<Self> {
+        Self::for_mode(ba, opts, Settings::safe_mode())
+    }
+
+    fn for_mode(ba: &BackendArg, opts: &SpmOptions<'_>, safe_mode: bool) -> Result<Self> {
         let provider = opts.provider(None);
         let kind = if ba.tool_name.contains("gitlab.com") {
             GitProviderKind::GitLab
@@ -816,23 +820,25 @@ impl GitProvider {
 
         let api_url = match opts.api_url(None) {
             Some(api_url) => api_url,
-            None => {
+            None => match Self::derive_api_url_from_tool_name(&ba.tool_name, &kind) {
                 // The derived host gets the user's forge token. A config naming one
                 // needs trust (`tool_key_selects_api_host`), and safe mode, which
-                // waives trust, does not let a tool name pick it.
-                let derived = if Settings::safe_mode() {
-                    None
-                } else {
-                    Self::derive_api_url_from_tool_name(&ba.tool_name, &kind)
-                };
-                derived.unwrap_or_else(|| match kind {
+                // waives trust, does not let a tool name pick it. Nor does it fall
+                // back to the public API, whose `owner/repo` of the same name is
+                // another project with other releases and artifact bundles.
+                Some(_) if safe_mode => bail!(
+                    "{} is on a self-hosted forge, whose API safe mode does not take from the tool name; set its api_url",
+                    ba.tool_name
+                ),
+                Some(derived) => derived,
+                None => match kind {
                     GitProviderKind::GitHub => github::API_URL.to_string(),
                     GitProviderKind::GitLab => gitlab::API_URL.to_string(),
-                })
-            }
+                },
+            },
         };
 
-        Self { api_url, kind }
+        Ok(Self { api_url, kind })
     }
 
     /// The web front end that repositories given as a slug are cloned from,
@@ -1234,6 +1240,49 @@ mod tests {
     use super::*;
     use indexmap::indexmap;
     use pretty_assertions::assert_str_eq;
+
+    /// In safe mode a self-hosted package named by URL is refused rather than
+    /// looked up on the public API, where the same `owner/repo` is another
+    /// project with its own releases and artifact bundles.
+    #[test]
+    fn test_safe_mode_refuses_a_self_hosted_name() {
+        let ba = |tool: &str, opts: Option<ToolVersionOptions>| {
+            BackendArg::new_raw(
+                "spm".to_string(),
+                Some(tool.to_string()),
+                tool.to_string(),
+                opts,
+                BackendResolution::new(true),
+            )
+        };
+        let provider = |ba: &BackendArg| {
+            let raw_opts = ba.opts();
+            GitProvider::for_mode(ba, &SpmOptions::new(&raw_opts), true)
+        };
+        let err = provider(&ba("https://github.acme.com/org/Tool.git", None)).unwrap_err();
+        assert!(err.to_string().contains("api_url"), "{err}");
+        // github.com and an explicit api_url are unaffected.
+        assert_eq!(
+            provider(&ba("https://github.com/org/Tool.git", None))
+                .unwrap()
+                .api_url,
+            github::API_URL
+        );
+        let opts = ToolVersionOptions {
+            opts: indexmap! {
+                "api_url".to_string() =>
+                    toml::Value::String("https://github.acme.com/api/v3".to_string())
+            }
+            .into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            provider(&ba("https://github.acme.com/org/Tool.git", Some(opts)))
+                .unwrap()
+                .api_url,
+            "https://github.acme.com/api/v3"
+        );
+    }
 
     #[tokio::test]
     async fn test_git_provider_from_ba() {
