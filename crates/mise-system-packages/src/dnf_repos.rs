@@ -117,7 +117,7 @@ impl DnfRepo {
         if !status.is_success() {
             bail!("GET {url} returned {status}");
         }
-        let content = resp.text().await?;
+        let content = mise_util::http::buffer_body(resp).await?.text().await?;
         if first_section(&content).as_deref() != Some(self.repo_id().as_str()) {
             bail!("{url} did not return a repo file for {}", self.describe());
         }

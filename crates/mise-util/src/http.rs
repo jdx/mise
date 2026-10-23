@@ -14,7 +14,7 @@ use reqwest::header::{
     HeaderName, HeaderValue, IF_MODIFIED_SINCE, IF_NONE_MATCH, IF_RANGE, LAST_MODIFIED,
     PROXY_AUTHORIZATION, RANGE,
 };
-use reqwest::{ClientBuilder, IntoUrl, Method, Response};
+use reqwest::{ClientBuilder, IntoUrl, Method, Response, ResponseBuilderExt};
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock as Lazy;
 use tokio::io::AsyncWriteExt;
@@ -1079,7 +1079,7 @@ impl Client {
                 retries: crate::network::http_retries(&Settings::get()),
                 error_for_status: true,
             },
-            |resp| async move { Ok(resp.bytes().await?) },
+            |resp| async move { Ok(buffer_body(resp).await?.bytes().await?) },
         )
         .await
     }
@@ -1276,7 +1276,7 @@ impl Client {
         if !is_html {
             bail!("Got non-HTML text from {}", log_url(&url));
         }
-        let html = resp.text().await?;
+        let html = buffer_body(resp).await?.text().await?;
         Ok(html)
     }
 
@@ -1313,7 +1313,7 @@ impl Client {
             },
             |resp| async move {
                 let headers = resp.headers().clone();
-                Ok((resp.json().await?, headers))
+                Ok((buffer_body(resp).await?.json().await?, headers))
             },
         )
         .await
@@ -2481,7 +2481,7 @@ impl TextRequest<'_> {
                     retries: self.retries,
                     error_for_status: true,
                 },
-                |resp| async move { Ok(resp.text().await?) },
+                |resp| async move { Ok(buffer_body(resp).await?.text().await?) },
             )
             .await?;
         if !self.allow_html && text.starts_with("<!DOCTYPE html>") {
@@ -2508,6 +2508,55 @@ fn is_github_unauthorized(url: &Url, resp: &Response) -> bool {
     resp.status() == StatusCode::UNAUTHORIZED && crate::github::is_github_api_url(url)
 }
 
+/// Most decoded bytes a successful response may hold in memory when mise parses
+/// it rather than saving it to a file. The client inflates gzip and zstd
+/// transparently, so neither `Content-Length` nor the bytes on the wire bound
+/// what `json()`, `text()` or `bytes()` collect: a 1 MiB gzip reply can inflate
+/// to 1 GiB. The largest documents read this way, Homebrew's formula list and
+/// GitHub release pages, are a few tens of MiB. Downloads stream to disk and
+/// are not affected; a caller that parses something larger passes its own
+/// limit to [`buffer_body_with_limit`].
+pub const MAX_BODY_BYTES: usize = 128 * 1024 * 1024;
+
+/// [`buffer_body_with_limit`] with [`MAX_BODY_BYTES`].
+pub async fn buffer_body(resp: Response) -> Result<Response> {
+    buffer_body_with_limit(resp, MAX_BODY_BYTES).await
+}
+
+/// Reads the decoded body chunk by chunk, failing once it passes `limit`, and
+/// returns the response with the body buffered, ready for `json()`, `text()`
+/// or `bytes()`. Those collect whatever the server sends, so call this first.
+/// The failure is not a transport error, so it is not retried.
+pub async fn buffer_body_with_limit(mut resp: Response, limit: usize) -> Result<Response> {
+    let too_large = |url: &Url| {
+        eyre!(
+            "response body from {} is larger than {}",
+            log_url(url),
+            bytesize::ByteSize::b(limit as u64).display().iec()
+        )
+    };
+    if resp
+        .content_length()
+        .is_some_and(|length| length > limit as u64)
+    {
+        return Err(too_large(resp.url()));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        if bytes.len() + chunk.len() > limit {
+            return Err(too_large(resp.url()));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let mut buffered = ::http::Response::builder()
+        .status(resp.status())
+        .version(resp.version())
+        .url(resp.url().clone())
+        .body(bytes)?;
+    *buffered.headers_mut() = std::mem::take(resp.headers_mut());
+    Ok(buffered.into())
+}
+
 /// Maximum body bytes buffered when building a GitHub error report, so an
 /// oversized or slow-trickling error response can't exhaust memory. The overall
 /// request timeout bounds the time; this bounds the memory.
@@ -2518,7 +2567,7 @@ const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
 /// and abandoning the read after `deadline` so a slowly-trickling response can't
 /// block indefinitely (the `Http` client has no overall request timeout, only an
 /// idle `read_timeout`). On timeout the partial body is dropped and "" returned.
-async fn read_bounded_error_body(resp: Response, deadline: Duration) -> String {
+pub async fn read_bounded_error_body(resp: Response, deadline: Duration) -> String {
     let read = async move {
         let mut resp = resp;
         let mut bytes = Vec::new();

@@ -1034,7 +1034,9 @@ impl PIPXBackend {
         );
         let (url, auth) = keyring::index_request(registry, &url).await?;
         headers.extend(auth);
-        let resp = HTTP_FETCH.get_async_with_headers(url, &headers).await?;
+        let resp =
+            crate::http::buffer_body(HTTP_FETCH.get_async_with_headers(url, &headers).await?)
+                .await?;
         let content_type = resp
             .headers()
             .get(CONTENT_TYPE)

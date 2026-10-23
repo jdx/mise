@@ -432,3 +432,79 @@ async fn request_timeout_error_hides_url_credentials() {
     );
     assert!(!message.contains("TOKEN"), "{message}");
 }
+
+#[tokio::test]
+async fn test_buffered_bodies_are_bounded_after_decompression() {
+    use std::io::{Read, Write};
+
+    // About 128 KiB on the wire, one byte over the limit once inflated.
+    let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+    let mut padding = std::io::repeat(b' ').take(MAX_BODY_BYTES as u64 - 1);
+    std::io::copy(&mut padding, &mut gzip).unwrap();
+    gzip.write_all(b"[]").unwrap();
+
+    // Retries are on, and each getter is still expected once: the error is not
+    // a transport failure, and the answer would be the same.
+    let _settings = set_test_http_retries(1);
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("GET", "/bomb")
+        .with_status(200)
+        .with_header("content-type", "text/html")
+        .with_header("content-encoding", "gzip")
+        .with_body(gzip.finish().unwrap())
+        .expect(4)
+        .create_async()
+        .await;
+    let url = format!("{}/bomb", server.url());
+
+    let client = Client::new(Duration::from_secs(30), ClientKind::Http).unwrap();
+    for err in [
+        client.json::<Vec<String>, _>(&url).await.unwrap_err(),
+        client.get_text(&url).await.unwrap_err(),
+        client.get_html(&url).await.unwrap_err(),
+        client.get_bytes(&url).await.map(|_| ()).unwrap_err(),
+    ] {
+        assert!(
+            err.to_string().contains("is larger than 128.0 MiB"),
+            "{err}"
+        );
+        assert!(!is_transient(&err));
+    }
+    mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn test_buffer_body_refuses_a_declared_length_over_the_limit() {
+    let resp = Response::from(
+        http::Response::builder()
+            .header(reqwest::header::CONTENT_LENGTH, "9")
+            .body(vec![b' '; 9])
+            .unwrap(),
+    );
+    let err = buffer_body_with_limit(resp, 8).await.unwrap_err();
+    assert!(err.to_string().contains("is larger than 8 B"), "{err}");
+}
+
+#[tokio::test]
+async fn test_buffer_body_keeps_what_decoding_the_body_needs() {
+    let mut server = mockito::Server::new_async().await;
+    server
+        .mock("GET", "/latin1")
+        .with_status(200)
+        .with_header("content-type", "text/plain; charset=iso-8859-1")
+        .with_body(b"caf\xe9")
+        .create_async()
+        .await;
+    let url = format!("{}/latin1", server.url());
+
+    let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+    let unbuffered = client.get_async(&url).await.unwrap().text().await.unwrap();
+    let resp = buffer_body(client.get_async(&url).await.unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(resp.url().as_str(), url);
+    assert_eq!(resp.text().await.unwrap(), unbuffered);
+}

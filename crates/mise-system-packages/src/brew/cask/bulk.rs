@@ -350,7 +350,7 @@ async fn refresh() -> Result<()> {
         .get(LAST_MODIFIED)
         .and_then(|v| v.to_str().ok())
         .map(str::to_string);
-    let body = resp.bytes().await?;
+    let body = mise_util::http::buffer_body(resp).await?.bytes().await?;
 
     // Index BEFORE promoting. A readable but malformed 200 that replaced the
     // cached document would still count as fresh, so every lookup would fall

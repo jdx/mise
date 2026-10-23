@@ -652,7 +652,11 @@ where
         return Ok(None);
     }
     if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
+        let body = http::read_bounded_error_body(
+            resp,
+            crate::network::fetch_remote_versions_timeout(&Settings::get()),
+        )
+        .await;
         let message = versions_host_error_message(status.as_u16(), &body);
         log_versions_host_trace(
             ctx,
@@ -667,11 +671,19 @@ where
     }
     // The body is read first so that a connection lost while reading it is
     // mise-versions being unavailable, like one lost before the status;
-    // only a body that arrived and doesn't parse is a bad answer.
-    let body = resp.bytes().await.map_err(|err| VersionsHostUnavailable {
-        status: None,
-        message: format!("reading {url}: {err:#}"),
-    })?;
+    // only a body that arrived and doesn't parse, or is too large to hold,
+    // is a bad answer.
+    let body = match http::buffer_body(resp).await {
+        Ok(resp) => resp.bytes().await?,
+        Err(err) if err.downcast_ref::<reqwest::Error>().is_some() => {
+            return Err(VersionsHostUnavailable {
+                status: None,
+                message: format!("reading {url}: {err:#}"),
+            }
+            .into());
+        }
+        Err(err) => return Err(err),
+    };
     serde_json::from_slice(&body)
         .map(Some)
         .map_err(|err| eyre::eyre!("invalid response from {url}: {err}"))

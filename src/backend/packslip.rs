@@ -285,7 +285,7 @@ async fn revalidate_policy_text(url: &str, store: &Path) -> Result<Option<String
     // expiry and sequence, before anything trusts it.
     let etag = header(ETAG);
     let last_modified = header(LAST_MODIFIED);
-    let text = resp.text().await?;
+    let text = crate::http::buffer_body(resp).await?.text().await?;
     if etag.is_some() || last_modified.is_some() {
         let stored = StoredPolicy {
             url: url.to_string(),
