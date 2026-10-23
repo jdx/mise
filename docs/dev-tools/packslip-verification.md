@@ -161,6 +161,14 @@ which repository the requested name now belongs to. If it cannot ask, for
 example offline or when rate-limited, it compares names only and refuses the
 release.
 
+A pin or a `mise.lock` entry that recorded no repository ID holds by name.
+Versions of mise from before it recorded IDs left such records, and so do the
+`identity`, `identity_prefix`, and `pubkey` options. The forge's answer says
+which repository has the name today, not which one was pinned, so a release
+signed under another name is a different signer: it is refused until you run
+`mise packslip forget` or remove the lockfile entries. The next release
+accepted under the pinned name with a forge check adds the ID.
+
 This is still trust on first use. The first install on a machine with no pin and
 no lockfile entry accepts whichever repository owns the name at that moment, so
 a name taken over before that install is not detected. Commit `mise.lock` so

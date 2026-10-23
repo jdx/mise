@@ -40,9 +40,11 @@ pub struct Pin {
     /// For a GitHub or GitLab project, the forge's repository ID from the
     /// last accepted release, and the name it was signed under. A rename or a
     /// transfer to another owner keeps the ID, so the pin follows the
-    /// repository rather than the name. Pins written before mise recorded it
-    /// have none, and gain it from the next release accepted. An owner ID
-    /// that older pins recorded is still read, and ignored.
+    /// repository rather than the name. Pins written before mise recorded it,
+    /// or under signer options that skip the forge check, have none: they
+    /// hold by name, and gain it from the next release accepted under that
+    /// name with a forge check. An owner ID that older pins recorded is still
+    /// read, and ignored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forge: Option<ForgePin>,
 }
@@ -197,8 +199,9 @@ pub struct Observed<'a> {
     pub provenance: bool,
     pub logged: bool,
     /// The forge check the release passed, for a GitHub or GitLab project
-    /// verified by repository ID. With it, a signer is the pinned one when it
-    /// is the same workflow of the same repository under a new name.
+    /// verified by repository ID. With it, and a pin that recorded the same
+    /// ID, a signer is the pinned one when it is the same workflow of the
+    /// same repository under a new name.
     pub forge: Option<&'a Check>,
     /// Signers the tool options name together, as a `workflow` list does for
     /// a project that moved its signing workflow: a person's say-so that a
@@ -295,14 +298,16 @@ fn check_against(pin: &Pin, key: &str, project: &str, observed: Observed<'_>) ->
     };
     let signer = signer_of(observed.scheme, observed.key_id);
     let mut problems = Vec::new();
-    // A check made from the pin always holds the workflow; going through
-    // `continues_signer` keeps both arms on mise's one rule regardless.
+    // Only the repository ID the pin itself recorded shows that a signer
+    // under another name is the pinned one. A pin that recorded none holds
+    // by name: the ID `observed.forge` was checked against is what the forge
+    // says the name belongs to today, or what a lockfile recorded, and says
+    // nothing about the repository this pin was set for.
     let listed = |signer: &str| observed.listed.iter().any(|listed| listed == signer);
     let same_signer = pin.signer == signer
         || (listed(&pin.signer) && listed(&signer))
         || by_pin
             .as_ref()
-            .or(observed.forge)
             .is_some_and(|check| continues_signer(check, &pin.signer));
     if pin.scheme != observed.scheme || !same_signer {
         problems.push(format!(

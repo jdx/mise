@@ -2227,11 +2227,11 @@ impl PackslipBackend {
         let platform_key = self.get_platform_key();
         // The signer describes the release, so every platform's lock entry
         // speaks for it, not only this host's. After a rename it is the same
-        // workflow of the same repository, by the forge check, under the
-        // repository's new name.
+        // workflow of the same repository, by the forge check against the
+        // entry's own repository ID, under the repository's new name.
         for info in tv.lock_platforms.values() {
             if let Some(locked) = &info.signer
-                && !packslip_forge::lock_signer_continues(locked, &signer, check)
+                && !packslip_forge::lock_signer_continues(info, &signer, check)
             {
                 bail!(
                     "mise.lock says {} signed {}, but this release is signed by {signer}; remove the entry from mise.lock to accept the new signer",
