@@ -1560,15 +1560,20 @@ fn external_rustup_bin_dir(
 }
 
 fn rustup_proxy_dir_is_usable(bin_dir: &Path) -> bool {
+    const PROBE_TOOLCHAIN: &str = "mise-proxy-probe:invalid";
+    // `rustup --version` also runs the active toolchain's rustc to report its
+    // version. This probe runs from hook-env and shims in directories nobody
+    // trusted, where a rust-toolchain.toml `path` would otherwise pick it.
     if !Command::new(bin_dir.join(RUSTUP_BIN))
         .arg("--version")
+        .env("RUSTUP_TOOLCHAIN", PROBE_TOOLCHAIN)
+        .env("RUSTUP_AUTO_INSTALL", "0")
         .output()
         .is_ok_and(|output| output.status.success())
     {
         return false;
     }
 
-    const PROBE_TOOLCHAIN: &str = "mise-proxy-probe:invalid";
     [CARGO_BIN, RUSTC_BIN].iter().all(|bin| {
         Command::new(bin_dir.join(bin))
             .arg("--version")
@@ -2601,6 +2606,39 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
 
         assert_eq!(runtime.provider, RustProvider::Managed);
         assert_eq!(runtime.bin_dir, homes.cargo_bindir());
+    }
+
+    /// Without an override, rustup resolves (and runs) the toolchain of the
+    /// working directory's rust-toolchain.toml, which a project nobody trusted
+    /// can name.
+    #[cfg(unix)]
+    #[test]
+    fn rustup_proxy_probe_never_uses_the_directory_toolchain() {
+        let root = tempfile::tempdir().unwrap();
+        let bin_dir = root.path().join("external/bin");
+        create_proxy_dir(&bin_dir, &[RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]);
+        let rustup_toolchain = root.path().join("rustup-toolchain");
+        std::fs::write(
+            bin_dir.join(RUSTUP_BIN),
+            format!(
+                "#!/bin/sh\necho \"$RUSTUP_TOOLCHAIN\" > '{}'\n",
+                rustup_toolchain.display()
+            ),
+        )
+        .unwrap();
+        for bin in [CARGO_BIN, RUSTC_BIN] {
+            std::fs::write(
+                bin_dir.join(bin),
+                "#!/bin/sh\necho \"toolchain '$RUSTUP_TOOLCHAIN' is not installed\" >&2\nexit 1\n",
+            )
+            .unwrap();
+        }
+
+        assert!(rustup_proxy_dir_is_usable(&bin_dir));
+        assert_eq!(
+            std::fs::read_to_string(rustup_toolchain).unwrap().trim(),
+            "mise-proxy-probe:invalid"
+        );
     }
 
     /// The lock `lock_rust_state_for_config` takes must be the same lock the rust
