@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Listing tasks in an untrusted checkout checks each task file for templates
+# before loading it. That check must not read an oversized TOML task file
+# whole: it is refused at the size limit first, as the loader refuses it. The
+# address-space limit turns a whole read of the 4 GiB sparse file into a
+# failure, so only the bounded path reaches the size error.
+export MISE_YES=0
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION
+
+mkdir mise-tasks
+truncate -s 4G mise-tasks/big.toml
+
+assert_fail "ulimit -v 3000000 && mise tasks ls" "not reading ~/workdir/mise-tasks/big.toml: it is larger than 16 MiB"

@@ -1008,11 +1008,7 @@ fn worktree_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
 /// For a worktree of an ordinary repository this is `<main>/.git`; for one of a
 /// bare repository it is the bare repo itself.
 fn worktree_common_dir(gitdir: &Path) -> Option<PathBuf> {
-    let common = PathBuf::from(
-        std::fs::read_to_string(gitdir.join("commondir"))
-            .ok()?
-            .trim(),
-    );
+    let common = PathBuf::from(read_pointer_file(&gitdir.join("commondir"))?.trim());
     let common = if common.is_relative() {
         gitdir.join(common)
     } else {
@@ -1061,10 +1057,28 @@ fn is_submodule_gitdir(dotgit_file: &Path) -> bool {
     false
 }
 
+/// Longest pointer file read: any path git records is far shorter.
+const POINTER_FILE_LIMIT: u64 = 16 * 1024;
+
+/// The contents of one of git's pointer files (`.git`, `gitdir`, `commondir`),
+/// each holding a single path. They are followed out of directories mise does
+/// not control, where the name may be a pipe or a link to a device, so anything
+/// other than a regular file of pointer size is skipped instead of read whole.
+fn read_pointer_file(path: &Path) -> Option<String> {
+    use std::io::Read;
+    let mut contents = String::new();
+    crate::file::open_regular_file(path)
+        .ok()?
+        .take(POINTER_FILE_LIMIT + 1)
+        .read_to_string(&mut contents)
+        .ok()?;
+    (contents.len() as u64 <= POINTER_FILE_LIMIT).then_some(contents)
+}
+
 /// The git dir a `.git` *file* names, resolved against that file's own
 /// directory when the recorded path is relative.
 fn read_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
-    let contents = std::fs::read_to_string(dotgit_file).ok()?;
+    let contents = read_pointer_file(dotgit_file)?;
     let gitdir = PathBuf::from(contents.strip_prefix("gitdir:")?.trim());
     Some(if gitdir.is_relative() {
         dotgit_file.parent()?.join(gitdir)
@@ -1099,7 +1113,7 @@ pub fn has_sibling_worktrees(worktree_root: &Path) -> bool {
             // inherit a namespace. Git decides that by the `gitdir` pointer
             // still naming something, so this does too, rather than sending a
             // user off to change a namespace nothing else shares.
-            let Ok(pointer) = std::fs::read_to_string(entry.path().join("gitdir")) else {
+            let Some(pointer) = read_pointer_file(&entry.path().join("gitdir")) else {
                 return false;
             };
             // `worktree.useRelativePaths` writes the pointer relative to the
@@ -1142,7 +1156,7 @@ fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
 /// whatever its `.git` file says.
 fn registered_main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     let gitdir = worktree_gitdir(dotgit_file)?;
-    let pointer = PathBuf::from(std::fs::read_to_string(gitdir.join("gitdir")).ok()?.trim());
+    let pointer = PathBuf::from(read_pointer_file(&gitdir.join("gitdir"))?.trim());
     // `worktree.useRelativePaths` writes the pointer relative to the entry
     // holding it, as `commondir` is written.
     let pointer = if pointer.is_relative() {

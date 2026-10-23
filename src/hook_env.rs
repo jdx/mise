@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::{collections::BTreeSet, sync::Arc};
 
 use base64::prelude::*;
-use eyre::Result;
+use eyre::{Result, bail};
 use flate2::Compression;
 use flate2::write::{ZlibDecoder, ZlibEncoder};
 use indexmap::IndexSet;
@@ -197,10 +197,10 @@ impl From<&Path> for WatchFilePattern {
 
 impl From<PathBuf> for WatchFilePattern {
     fn from(path: PathBuf) -> Self {
-        Self {
-            patterns: vec![path.to_string_lossy().to_string()],
-            root: Some(path),
-        }
+        // A path is a literal file to watch, never a glob: a `root` would make
+        // `get_watch_files` expand it, and a config dir name like `**` (from
+        // `conf.d/*/mise.toml` in an untrusted checkout) then walks forever.
+        path.as_path().into()
     }
 }
 
@@ -503,7 +503,9 @@ pub struct HookEnvSession {
     #[serde(default = "legacy_env_state_version")]
     pub v: u32,
     pub loaded_tools: IndexSet<String>,
+    #[serde(with = "session_paths")]
     pub loaded_configs: IndexSet<PathBuf>,
+    #[serde(with = "session_paths")]
     pub config_paths: IndexSet<PathBuf>,
     /// Env var name to [`hash_env_value`] digest (plaintext in a version 1 session). Values
     /// are only compared, so they are not stored.
@@ -512,12 +514,13 @@ pub struct HookEnvSession {
     pub aliases: indexmap::IndexMap<String, String>,
     /// Files accessed by tera template functions (read_file, hash_file, etc.)
     /// that should be watched for changes.
-    #[serde(default)]
+    #[serde(default, with = "session_paths")]
     pub tera_files: Vec<PathBuf>,
     /// Resolved file paths from [[watch_files]] config patterns and env plugin watch_files.
     /// Stored so the fast-path can detect changes without loading config.
-    #[serde(default)]
+    #[serde(default, with = "session_paths")]
     pub watch_files: Vec<PathBuf>,
+    #[serde(default, with = "session_paths::option")]
     dir: Option<PathBuf>,
     env_var_hash: String,
     latest_update: u128,
@@ -526,6 +529,81 @@ pub struct HookEnvSession {
     /// loading settings. False in sessions from older mise versions.
     #[serde(default)]
     hook_env_shortcuts_unset: bool,
+}
+
+/// A path in `__MISE_SESSION`. serde refuses a path that is not valid UTF-8,
+/// which a file name on unix need not be. It is kept as raw bytes rather than
+/// lossily because the next run has to find the same file again.
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum SessionPath {
+    Utf8(String),
+    Bytes(Vec<u8>),
+}
+
+impl From<&PathBuf> for SessionPath {
+    fn from(path: &PathBuf) -> Self {
+        #[cfg(unix)]
+        use std::os::unix::ffi::OsStrExt;
+        match path.to_str() {
+            Some(path) => Self::Utf8(path.to_string()),
+            #[cfg(unix)]
+            None => Self::Bytes(path.as_os_str().as_bytes().to_vec()),
+            #[cfg(not(unix))]
+            None => Self::Utf8(path.to_string_lossy().to_string()),
+        }
+    }
+}
+
+impl From<SessionPath> for PathBuf {
+    fn from(path: SessionPath) -> Self {
+        #[cfg(unix)]
+        use std::os::unix::ffi::OsStringExt;
+        match path {
+            SessionPath::Utf8(path) => path.into(),
+            #[cfg(unix)]
+            SessionPath::Bytes(path) => std::ffi::OsString::from_vec(path).into(),
+            #[cfg(not(unix))]
+            SessionPath::Bytes(path) => String::from_utf8_lossy(&path).to_string().into(),
+        }
+    }
+}
+
+mod session_paths {
+    use super::*;
+    use serde::{Deserializer, Serializer};
+
+    pub(crate) fn serialize<'a, S: Serializer>(
+        paths: impl IntoIterator<Item = &'a PathBuf>,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        serializer.collect_seq(paths.into_iter().map(SessionPath::from))
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>, T: FromIterator<PathBuf>>(
+        deserializer: D,
+    ) -> std::result::Result<T, D::Error> {
+        let paths = Vec::<SessionPath>::deserialize(deserializer)?;
+        Ok(paths.into_iter().map(PathBuf::from).collect())
+    }
+
+    pub(crate) mod option {
+        use super::*;
+
+        pub(crate) fn serialize<S: Serializer>(
+            path: &Option<PathBuf>,
+            serializer: S,
+        ) -> std::result::Result<S::Ok, S::Error> {
+            path.as_ref().map(SessionPath::from).serialize(serializer)
+        }
+
+        pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+            deserializer: D,
+        ) -> std::result::Result<Option<PathBuf>, D::Error> {
+            let path = Option::<SessionPath>::deserialize(deserializer)?;
+            Ok(path.map(PathBuf::from))
+        }
+    }
 }
 
 pub fn serialize<T: serde::Serialize>(obj: &T) -> Result<String> {
@@ -559,8 +637,10 @@ fn config_search_dir_mtimes() -> Vec<SystemTime> {
             for subdir in &config_subdirs {
                 // `conf.d/*` names the folder fragments: a file added to one
                 // changes that folder's mtime, not conf.d's.
-                let check_dirs = if subdir.contains('*') {
-                    glob::glob(&dir.join(subdir).to_string_lossy())
+                let check_dirs = if subdir.contains(['*', '?', '[']) {
+                    // `dir` is a literal directory: escape its glob metacharacters.
+                    let escaped_dir = glob::Pattern::escape(&dir.to_string_lossy());
+                    glob::glob(&Path::new(&escaped_dir).join(subdir).to_string_lossy())
                         .map(|paths| paths.flatten().collect())
                         .unwrap_or_default()
                 } else if subdir.is_empty() {
@@ -840,6 +920,30 @@ fn compute_deactivated_path() -> String {
         .unwrap_or(pristine_path)
 }
 
+/// Linux refuses every `execve` while one `NAME=value` string of the
+/// environment, with its terminating NUL, is longer than this
+/// (`MAX_ARG_STRLEN`). Other systems cap arguments and environment together
+/// (1 MiB on macOS), which a variable this large eats much of.
+const MAX_ENV_STRING_LEN: usize = 128 * 1024;
+
+/// Refuse patches that would leave the shell unable to start any program,
+/// including the next `mise hook-env` that could replace the variable. Files
+/// that load without trust decide the size of `__MISE_SESSION` (one entry per
+/// config file) and of `PATH` (one entry per requested tool version).
+pub fn ensure_env_fits(patches: &EnvDiffPatches) -> Result<()> {
+    for patch in patches {
+        if let EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) = patch
+            && k.len() + v.len() + 2 > MAX_ENV_STRING_LEN
+        {
+            bail!(
+                "not applying the environment for this directory: {k} would be {} bytes, and no program can be started with an environment variable of {MAX_ENV_STRING_LEN} bytes or more",
+                v.len()
+            );
+        }
+    }
+    Ok(())
+}
+
 pub fn build_env_commands(shell: &dyn Shell, patches: &EnvDiffPatches) -> String {
     let mut output = String::new();
 
@@ -902,6 +1006,45 @@ mod tests {
         values.iter().map(|value| value.to_string()).collect()
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn session_keeps_paths_that_are_not_utf8() {
+        use super::{HookEnvSession, deserialize, serialize};
+        use std::os::unix::ffi::OsStrExt;
+        use std::path::PathBuf;
+
+        let dir = PathBuf::from(std::ffi::OsStr::from_bytes(b"/tmp/caf\xe9"));
+        let session = HookEnvSession {
+            loaded_configs: [dir.join("mise.toml"), "/tmp/mise.toml".into()].into(),
+            config_paths: [dir.join("bin")].into(),
+            tera_files: vec![dir.join("file")],
+            watch_files: vec![dir.join("watched")],
+            dir: Some(dir),
+            ..Default::default()
+        };
+        let back: HookEnvSession = deserialize(serialize(&session).unwrap()).unwrap();
+        assert_eq!(back.loaded_configs, session.loaded_configs);
+        assert_eq!(back.config_paths, session.config_paths);
+        assert_eq!(back.tera_files, session.tera_files);
+        assert_eq!(back.watch_files, session.watch_files);
+        assert_eq!(back.dir, session.dir);
+    }
+
+    #[test]
+    fn ensure_env_fits_rejects_a_variable_execve_would_refuse() {
+        use super::{MAX_ENV_STRING_LEN, ensure_env_fits};
+        use crate::env_diff::EnvDiffOperation::{Add, Change, Remove};
+
+        // `K=` and the terminating NUL count towards the limit
+        let fits = "v".repeat(MAX_ENV_STRING_LEN - 3);
+        let too_long = "v".repeat(MAX_ENV_STRING_LEN - 2);
+        let k = || "K".to_string();
+        let ok = vec![Add(k(), fits.clone()), Change(k(), fits), Remove(k())];
+        assert!(ensure_env_fits(&ok).is_ok());
+        assert!(ensure_env_fits(&vec![Add(k(), too_long.clone())]).is_err());
+        assert!(ensure_env_fits(&vec![Change(k(), too_long)]).is_err());
+    }
+
     #[test]
     fn session_version_decides_how_env_is_compared() {
         use super::{HookEnvSession, deserialize, serialize};
@@ -939,6 +1082,35 @@ mod tests {
         assert_eq!(current.v, ENV_STATE_VERSION);
         assert!(env_value_matches(current.v, &current.env["K"], "secret"));
         assert!(!env_value_matches(current.v, &current.env["K"], "other"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn watched_paths_are_not_expanded_as_globs() {
+        use super::{WatchFilePattern, get_watch_files};
+
+        // `**` follows the link back into the directory, so expanding the path
+        // as a glob finds the lockfile again below it
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("**");
+        std::fs::create_dir(&dir).unwrap();
+        std::os::unix::fs::symlink(".", dir.join("a")).unwrap();
+        let lockfile = dir.join("mise.lock");
+        std::fs::write(&lockfile, "").unwrap();
+
+        assert_eq!(
+            WatchFilePattern::from(lockfile.clone()),
+            WatchFilePattern::from(lockfile.as_path())
+        );
+        let project_pattern = WatchFilePattern {
+            root: Some(dir.clone()),
+            patterns: vec!["*.lock".to_string()],
+        };
+        for pattern in [lockfile.clone().into(), project_pattern] {
+            let watches = get_watch_files([pattern]).unwrap();
+            let below_tmp = watches.iter().filter(|p| p.starts_with(tmp.path()));
+            assert_eq!(below_tmp.collect::<Vec<_>>(), vec![&lockfile]);
+        }
     }
 
     #[test]

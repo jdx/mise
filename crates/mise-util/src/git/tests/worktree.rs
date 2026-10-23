@@ -426,3 +426,66 @@ fn git_commands_ignore_inherited_work_tree() {
     assert!(clone_cache.join("file.txt").exists());
     assert!(!work_tree.join("file.txt").exists());
 }
+
+/// A `.git` pointer file in an unpacked archive can lead to a `commondir`
+/// that is a pipe, which an unbounded read would wait on forever.
+#[cfg(unix)]
+#[test]
+fn worktree_detection_skips_a_commondir_that_is_a_pipe() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path().canonicalize().unwrap();
+    let checkout = base.join("proj");
+    let private = checkout.join("g/worktrees/x");
+    std::fs::create_dir_all(&private).unwrap();
+    std::fs::write(checkout.join(".git"), "gitdir: g/worktrees/x\n").unwrap();
+    nix::unistd::mkfifo(
+        &private.join("commondir"),
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .unwrap();
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let probe = checkout.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(super::in_linked_worktree(&probe));
+    });
+    let linked = rx
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("worktree detection blocked on a commondir pipe");
+    assert!(!linked);
+}
+
+/// The worktree entry's `gitdir` pointer is read while trust is resolved, and
+/// a pipe there must not block it.
+#[cfg(unix)]
+#[test]
+fn main_checkout_equivalent_skips_a_gitdir_pointer_that_is_a_pipe() {
+    let tmp = tempfile::tempdir().unwrap();
+    let base = tmp.path().canonicalize().unwrap();
+    let main = base.join("main");
+    let wt = base.join("wt");
+    std::fs::create_dir_all(main.join(".git/worktrees/wt")).unwrap();
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::write(main.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    std::fs::write(main.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
+    nix::unistd::mkfifo(
+        &main.join(".git/worktrees/wt/gitdir"),
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .unwrap();
+    std::fs::write(
+        wt.join(".git"),
+        format!("gitdir: {}\n", main.join(".git/worktrees/wt").display()),
+    )
+    .unwrap();
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let probe = wt.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(super::main_checkout_equivalent(&probe));
+    });
+    let equivalent = rx
+        .recv_timeout(std::time::Duration::from_millis(500))
+        .expect("worktree trust blocked on a gitdir pipe");
+    assert_eq!(equivalent, None);
+}

@@ -165,8 +165,12 @@ impl TasksInfo {
             "name": task.display_name,
             "aliases": task.aliases,
             "description": task.description,
-            "source": task.config_source,
-            "config_sources": task.config_sources(),
+            "source": task.config_source.to_string_lossy(),
+            "config_sources": task
+                .config_sources()
+                .iter()
+                .map(|source| source.to_string_lossy())
+                .collect::<Vec<_>>(),
             "depends": task.depends,
             "depends_post": task.depends_post,
             "daemons": task.daemons,
@@ -192,7 +196,7 @@ impl TasksInfo {
             "silent": task.silent,
             "tools": task.tools,
             "run": task.run(),
-            "file": task.file,
+            "file": task.file.as_ref().map(|p| p.to_string_lossy()),
             "usage_spec": spec,
         });
         miseprintln!("{}", serde_json::to_string_pretty(&o)?);

@@ -1098,38 +1098,60 @@ fn string_array(values: &[String]) -> toml::Value {
     )
 }
 
+/// Reads `[toolchain].<key>` as a string; a value of another TOML type is an error,
+/// not a panic, since the file comes from the (possibly untrusted) project.
+fn toolchain_str(toolchain: &toml::Value, key: &str) -> Result<Option<String>> {
+    toolchain
+        .get(key)
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| eyre::eyre!("rust-toolchain.toml: toolchain.{key} must be a string"))
+        })
+        .transpose()
+}
+
+/// Reads `[toolchain].<key>` as an array of strings, see [`toolchain_str`].
+fn toolchain_str_array(toolchain: &toml::Value, key: &str) -> Result<Option<Vec<String>>> {
+    toolchain
+        .get(key)
+        .map(|value| {
+            value
+                .as_array()
+                .and_then(|values| {
+                    values
+                        .iter()
+                        .map(|v| v.as_str().map(str::to_string))
+                        .collect::<Option<Vec<_>>>()
+                })
+                .ok_or_else(|| {
+                    eyre::eyre!("rust-toolchain.toml: toolchain.{key} must be an array of strings")
+                })
+        })
+        .transpose()
+}
+
 fn parse_idiomatic_file(path: &Path) -> Result<RustToolchain> {
     let content = file::read_to_string(path)?;
-    let toml: toml::Value = toml::de::from_str(&content)?;
+    let toml: toml::Value = toml::de::from_str(&content).map_err(|err| {
+        crate::config::config_file::diagnostic::hide_linked_source(err, &content, path)
+    })?;
     let mut rt = RustToolchain::default();
     if let Some(toolchain) = toml.get("toolchain") {
-        if let Some(channel) = toolchain.get("channel") {
-            rt.channel = channel.as_str().unwrap().to_string();
+        if let Some(channel) = toolchain_str(toolchain, "channel")? {
+            rt.channel = channel;
         }
-        if let Some(profile) = toolchain.get("profile") {
-            rt.profile = Some(profile.as_str().unwrap().to_string());
+        rt.profile = toolchain_str(toolchain, "profile")?;
+        if let Some(components) = toolchain_str_array(toolchain, "components")?
+            && !components.is_empty()
+        {
+            rt.components = Some(components);
         }
-        if let Some(components) = toolchain.get("components") {
-            let components = components
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|c| c.as_str().unwrap().to_string())
-                .collect::<Vec<_>>();
-            if !components.is_empty() {
-                rt.components = Some(components);
-            }
-        }
-        if let Some(targets) = toolchain.get("targets") {
-            let targets = targets
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|c| c.as_str().unwrap().to_string())
-                .collect::<Vec<_>>();
-            if !targets.is_empty() {
-                rt.targets = Some(targets);
-            }
+        if let Some(targets) = toolchain_str_array(toolchain, "targets")?
+            && !targets.is_empty()
+        {
+            rt.targets = Some(targets);
         }
     }
     Ok(rt)
@@ -2303,6 +2325,28 @@ targets = ["wasm32-wasip1", " wasm32-wasip1 "]
                 .await
                 .unwrap_err();
             assert!(err.to_string().contains("template syntax"), "{err}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn rust_idiomatic_file_rejects_wrongly_typed_fields() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("rust-toolchain.toml");
+        for toolchain in [
+            "channel = 1",
+            "channel = \"1.85.0\"\nprofile = false",
+            "channel = \"1.85.0\"\ncomponents = \"clippy\"",
+            "channel = \"1.85.0\"\ncomponents = [1]",
+            "channel = \"1.85.0\"\ntargets = { a = 1 }",
+        ] {
+            std::fs::write(&path, format!("[toolchain]\n{toolchain}\n"))?;
+            let err = parse_idiomatic_file(&path).unwrap_err();
+            assert!(
+                err.to_string()
+                    .starts_with("rust-toolchain.toml: toolchain."),
+                "{toolchain}: {err}"
+            );
         }
         Ok(())
     }

@@ -56,7 +56,7 @@ where
 
 impl PackageJsonData {
     fn parse(path: &Path) -> Result<Self> {
-        let contents = file::read_to_string(path)?;
+        let contents = file::read_config_to_string(path)?;
         // serde_json rejects a leading byte-order mark outright, which would fail the whole file
         // rather than just the version it declares.
         let pkg: PackageJsonData = serde_json::from_str(file::strip_utf8_bom(&contents))?;

@@ -41,7 +41,7 @@ impl<T: DeserializeOwned> TemplatedExt<T> for Templated<T> {
         let mut ctx = config.bootstrap_tera_ctx(config_path).clone();
         if ctx.get("config_root").is_none() {
             let config_root = crate::host::config_root(config_path);
-            ctx.insert("config_root", &config_root);
+            ctx.insert("config_root", &config_root.to_string_lossy());
         }
         self.render_with(&ctx, config_path)
     }

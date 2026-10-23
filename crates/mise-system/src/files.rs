@@ -423,7 +423,7 @@ fn template_literal(target: &str) -> String {
 fn render_variant_target(target: &str, origin: &ResourceOrigin) -> Result<String> {
     let rendered = if mise_util::tera::contains_template_syntax(target) {
         let mut ctx = mise_util::tera::BASE_CONTEXT.clone();
-        ctx.insert("config_root", &origin.config_root);
+        ctx.insert("config_root", &origin.config_root.to_string_lossy());
         let config_source =
             std::path::absolute(&origin.config).unwrap_or_else(|_| origin.config.clone());
         ctx.insert("config_source", &config_source.to_string_lossy());

@@ -4967,3 +4967,43 @@ fn test_lock_options_mask_unparseable_credentials_to_the_end() {
         );
     }
 }
+
+/// Only a regular file is read as a lockfile: a pipe or a link to a device
+/// under that name would be read without end.
+#[test]
+fn test_read_ignores_a_lockfile_that_is_not_a_regular_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("mise.lock");
+    std::fs::create_dir(&path).unwrap();
+    let lockfile = Lockfile::read(&path).unwrap();
+    assert!(lockfile.tools.is_empty());
+}
+
+/// A pipe at the lockfile's path must not hang the write that compares the
+/// new content with what is there.
+#[cfg(unix)]
+#[test]
+fn test_prepare_write_does_not_block_on_a_pipe() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("mise.lock");
+    nix::unistd::mkfifo(
+        &path,
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(
+            Lockfile::default()
+                .prepare_write(&path)
+                .map(|w| w.is_some()),
+        );
+    });
+    let prepared = rx
+        .recv_timeout(std::time::Duration::from_millis(500))
+        .expect("preparing the lockfile write blocked on a pipe");
+    assert!(
+        prepared.unwrap(),
+        "a pipe was taken for an up-to-date lockfile"
+    );
+}
