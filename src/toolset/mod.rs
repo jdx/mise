@@ -1427,6 +1427,15 @@ fn keep_uv_python_variants(
                 .into_iter()
                 .find(|(name, python_dir)| {
                     python.starts_with(python_dir) || (*name == version && in_dir(python_dir))
+                })
+                // The receipt can name a runtime through the `python/3.14` minor-version link
+                // while its identity records another patch (the link had not moved yet when
+                // the environment was built). Whatever the interpreter resolves into is what
+                // keeps the environment working, so retain that installation.
+                .or_else(|| {
+                    crate::install_layout::resolver::installs_of(&python_ba)
+                        .into_iter()
+                        .find(|(_, python_dir)| in_dir(python_dir))
                 });
             if let Some((_, python_dir)) = identity_install {
                 let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&python_dir)
@@ -1448,6 +1457,14 @@ fn keep_uv_python_variants(
             if in_dir(&legacy_dir) {
                 needed
                     .entry((python_ba.short.to_string(), version.to_string()))
+                    .or_default()
+                    .insert(source.to_path_buf());
+                continue;
+            }
+
+            if let Some(name) = receipt_legacy_install_name(&resolved, python_ba.installs_path()) {
+                needed
+                    .entry((python_ba.short.to_string(), name))
                     .or_default()
                     .insert(source.to_path_buf());
                 continue;
@@ -1492,6 +1509,17 @@ fn resolve_receipt_python(python: &Path) -> PathBuf {
         (Some(dir), Some(name)) => dir.join(name),
         _ => python.to_path_buf(),
     }
+}
+
+/// The legacy installation directory (`python/<version>`) that `python` resolves into, for a
+/// receipt whose recorded version no longer names the directory its path leads to.
+fn receipt_legacy_install_name(resolved: &Path, installs: &Path) -> Option<String> {
+    let root = installs
+        .canonicalize()
+        .unwrap_or_else(|_| installs.to_path_buf());
+    let name = resolved.strip_prefix(&root).ok()?.components().next()?;
+    let name = name.as_os_str().to_str()?;
+    root.join(name).is_dir().then(|| name.to_string())
 }
 
 fn selected_python_receipt(contents: &str, receipt: &Path) -> Result<(PathBuf, String)> {
@@ -1648,6 +1676,22 @@ mod tests {
                 .to_string()
                 .contains("does not name a mise core Python runtime")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn receipt_legacy_install_name_follows_the_link_to_the_current_install() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path().join("python");
+        std::fs::create_dir_all(installs.join("3.14.8/bin")).unwrap();
+        std::os::unix::fs::symlink("./3.14.8", installs.join("3.14")).unwrap();
+        let resolved = resolve_receipt_python(&installs.join("3.14/bin/python"));
+        assert_eq!(
+            receipt_legacy_install_name(&resolved, &installs).as_deref(),
+            Some("3.14.8")
+        );
+        let elsewhere = tmp.path().join("other/bin/python");
+        assert_eq!(receipt_legacy_install_name(&elsewhere, &installs), None);
     }
 
     #[cfg(unix)]
