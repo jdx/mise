@@ -1460,9 +1460,9 @@ impl Client {
     ) -> Result<()> {
         let url = url.into_url()?;
         let headers = host_auth_headers(&url)?;
-        self.download_file_with_pin_limited(url, path, &headers, None, pr, Some(max_bytes))
-            .await
-            .map(|_| ())
+        self.download_file_with_pin_limited(url.clone(), path, &headers, None, pr, Some(max_bytes))
+            .await?;
+        ensure_download_within(path, &url, max_bytes)
     }
 
     pub async fn download_file_with_metadata<U: IntoUrl>(
@@ -1695,6 +1695,24 @@ impl Client {
         max_bytes: Option<u64>,
     ) -> Result<DownloadFileMetadata> {
         let url = url.into_url()?;
+        let metadata = self
+            .download_file_linked_inner(url.clone(), dest, headers, pin, pr, max_bytes)
+            .await?;
+        if let Some(max_bytes) = max_bytes {
+            ensure_download_within(dest, &url, max_bytes)?;
+        }
+        Ok(metadata)
+    }
+
+    async fn download_file_linked_inner(
+        &self,
+        url: Url,
+        dest: &Path,
+        headers: &HeaderMap,
+        pin: Option<&str>,
+        pr: Option<&dyn SingleReport>,
+        max_bytes: Option<u64>,
+    ) -> Result<DownloadFileMetadata> {
         let name = dest
             .file_name()
             .ok_or_else(|| eyre!("download destination has no filename: {}", dest.display()))?
@@ -2713,6 +2731,23 @@ fn is_github_forbidden(url: &Url, resp: &Response) -> bool {
 
 fn is_github_unauthorized(url: &Url, resp: &Response) -> bool {
     resp.status() == StatusCode::UNAUTHORIZED && crate::github::is_github_api_url(url)
+}
+
+/// Fails, removing `path`, when a download capped at `max_bytes` came out
+/// larger. The transfer enforces the cap as bytes arrive, but a download can
+/// also be satisfied without a transfer: a stored copy the server says is
+/// still current, a pinned copy, or a partial download that was already
+/// complete, any of which an uncapped download of the same URL may have left.
+fn ensure_download_within(path: &Path, url: &Url, max_bytes: u64) -> Result<()> {
+    if std::fs::metadata(path)?.len() > max_bytes {
+        let _ = std::fs::remove_file(path);
+        bail!(
+            "download from {} is larger than {}",
+            log_url(url),
+            bytesize::ByteSize::b(max_bytes).display().iec()
+        );
+    }
+    Ok(())
 }
 
 /// Awaits `read`, which reads a response body, for at most `timeout`. Only
