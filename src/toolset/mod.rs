@@ -1417,57 +1417,36 @@ fn keep_uv_python_variants(
                 }
             };
             let (python, version) = selected_python_receipt(&contents, &receipt)?;
-            // The receipt may reach the interpreter through a minor-version symlink
-            // (`python/3.14 -> ./3.14.9`), and the data dir may itself be a symlink; compare both
-            // spellings.
-            let resolved = resolve_receipt_python(&python);
-            let in_dir = |dir: &Path| receipt_python_in_dir(&python, &resolved, dir);
-
-            let identity_install = crate::install_layout::resolver::installs_of(&python_ba)
-                .into_iter()
-                .find(|(name, python_dir)| {
-                    python.starts_with(python_dir) || (*name == version && in_dir(python_dir))
-                })
-                // The receipt can name a runtime through the `python/3.14` minor-version link
-                // while its identity records another patch (the link had not moved yet when
-                // the environment was built). Whatever the interpreter resolves into is what
-                // keeps the environment working, so retain that installation.
-                .or_else(|| {
-                    crate::install_layout::resolver::installs_of(&python_ba)
-                        .into_iter()
-                        .find(|(_, python_dir)| in_dir(python_dir))
-                });
-            if let Some((_, python_dir)) = identity_install {
-                let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&python_dir)
-                else {
-                    bail!(
-                        "cannot safely prune: Python receipt {} points to an unkeyable identity installation {}",
-                        receipt.display(),
-                        python_dir.display()
-                    );
-                };
-                needed
-                    .entry((String::new(), dir_name))
-                    .or_default()
-                    .insert(source.to_path_buf());
-                continue;
-            }
-
-            let legacy_dir = python_ba.installs_path().join(&version);
-            if in_dir(&legacy_dir) {
-                needed
-                    .entry((python_ba.short.to_string(), version.to_string()))
-                    .or_default()
-                    .insert(source.to_path_buf());
-                continue;
-            }
-
-            if let Some(name) = receipt_legacy_install_name(&resolved, python_ba.installs_path()) {
-                needed
-                    .entry((python_ba.short.to_string(), name))
-                    .or_default()
-                    .insert(source.to_path_buf());
-                continue;
+            let identity_installs = crate::install_layout::resolver::installs_of(&python_ba);
+            match receipt_python_install(
+                &python,
+                &version,
+                &identity_installs,
+                python_ba.installs_path(),
+            ) {
+                Some(ReceiptPython::Identity(python_dir)) => {
+                    let Some(dir_name) = crate::install_layout::resolver::dir_name_of(&python_dir)
+                    else {
+                        bail!(
+                            "cannot safely prune: Python receipt {} points to an unkeyable identity installation {}",
+                            receipt.display(),
+                            python_dir.display()
+                        );
+                    };
+                    needed
+                        .entry((String::new(), dir_name))
+                        .or_default()
+                        .insert(source.to_path_buf());
+                    continue;
+                }
+                Some(ReceiptPython::Legacy(name)) => {
+                    needed
+                        .entry((python_ba.short.to_string(), name))
+                        .or_default()
+                        .insert(source.to_path_buf());
+                    continue;
+                }
+                None => {}
             }
 
             bail!(
@@ -1509,6 +1488,43 @@ fn resolve_receipt_python(python: &Path) -> PathBuf {
         (Some(dir), Some(name)) => dir.join(name),
         _ => python.to_path_buf(),
     }
+}
+
+/// The mise Python installation a receipt's interpreter belongs to.
+#[derive(Debug, PartialEq)]
+enum ReceiptPython {
+    /// An identity-layout installation directory.
+    Identity(PathBuf),
+    /// A legacy `python/<name>` installation.
+    Legacy(String),
+}
+
+/// Map a receipt's interpreter to the installation that keeps it working.
+///
+/// The receipt may reach the interpreter through a minor-version symlink
+/// (`python/3.14 -> ./3.14.9`), and the data dir may itself be a symlink, so both spellings
+/// are compared. The recorded `version` is preferred, but the link can lag the identity (it had
+/// not moved yet when the environment was built), so otherwise whatever the interpreter
+/// resolves into is retained.
+fn receipt_python_install(
+    python: &Path,
+    version: &str,
+    identity_installs: &[(String, PathBuf)],
+    legacy_root: &Path,
+) -> Option<ReceiptPython> {
+    let resolved = resolve_receipt_python(python);
+    let in_dir = |dir: &Path| receipt_python_in_dir(python, &resolved, dir);
+    let identity = identity_installs
+        .iter()
+        .find(|(name, dir)| python.starts_with(dir) || (name == version && in_dir(dir)))
+        .or_else(|| identity_installs.iter().find(|(_, dir)| in_dir(dir)));
+    if let Some((_, dir)) = identity {
+        return Some(ReceiptPython::Identity(dir.clone()));
+    }
+    if in_dir(&legacy_root.join(version)) {
+        return Some(ReceiptPython::Legacy(version.to_string()));
+    }
+    receipt_legacy_install_name(&resolved, legacy_root).map(ReceiptPython::Legacy)
 }
 
 /// The legacy installation directory (`python/<version>`) that `python` resolves into, for a
@@ -1675,6 +1691,41 @@ mod tests {
             foreign_runtime
                 .to_string()
                 .contains("does not name a mise core Python runtime")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn receipt_python_install_keeps_what_a_lagging_link_resolves_into() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("python");
+        std::fs::create_dir_all(root.join("3.14.8/bin")).unwrap();
+        std::fs::create_dir_all(root.join("hash-3149/bin")).unwrap();
+        std::os::unix::fs::symlink("./3.14.8", root.join("3.14")).unwrap();
+        let python = root.join("3.14/bin/python");
+
+        // Legacy layout: the receipt records 3.14.7, but the link leads into 3.14.8.
+        assert_eq!(
+            receipt_python_install(&python, "3.14.7", &[], &root),
+            Some(ReceiptPython::Legacy("3.14.8".into()))
+        );
+        // Identity layout: the installation the link resolves into is kept, not an
+        // unrelated one.
+        std::fs::remove_file(root.join("3.14")).unwrap();
+        std::os::unix::fs::symlink("./hash-3149", root.join("3.14")).unwrap();
+        let installs = vec![
+            ("3.14.8".to_string(), root.join("3.14.8")),
+            ("3.14.9".to_string(), root.join("hash-3149")),
+        ];
+        assert_eq!(
+            receipt_python_install(&python, "3.14.7", &installs, &root),
+            Some(ReceiptPython::Identity(root.join("hash-3149")))
+        );
+        // An interpreter outside every mise installation still fails closed.
+        let elsewhere = tmp.path().join("other/bin/python");
+        assert_eq!(
+            receipt_python_install(&elsewhere, "3.14.7", &installs, &root),
+            None
         );
     }
 
