@@ -335,7 +335,10 @@ impl AttestationClient {
 
         let parsed: AttestationsResponse = serde_json::from_slice(&response.body)?;
         let mut attestations = Vec::new();
-        for attestation in parsed.attestations {
+        // Hold the answer to the `per_page` asked for: each entry without an
+        // inline bundle costs another request, with its own timeout and
+        // retries, so an oversized list could stall the lookup indefinitely.
+        for attestation in parsed.attestations.into_iter().take(params.limit) {
             if attestation.bundle.is_some() {
                 attestations.push(attestation);
             } else if let Some(bundle_url) = &attestation.bundle_url {

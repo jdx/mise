@@ -190,6 +190,37 @@ async fn fetch_attestations_retries_on_429_with_retry_after() {
     );
 }
 
+#[tokio::test]
+async fn fetch_attestations_ignores_entries_beyond_limit() {
+    // The server lists more `bundle_url` entries than the `per_page` it was
+    // asked for; only `limit` of them may be followed.
+    let (bundle_base_url, bundle_hits) = flaky_server(vec![], "{}");
+    let entries = (0..5)
+        .map(|i| format!(r#"{{"bundle_url":"{bundle_base_url}/{i}"}}"#))
+        .collect::<Vec<_>>()
+        .join(",");
+    let body = format!(r#"{{"attestations":[{entries}]}}"#);
+    let (base_url, _) = flaky_server(vec![], body.leak());
+    let client = test_client(&base_url);
+    let attestations = client
+        .fetch_attestations(FetchParams {
+            owner: "EarthBuild".to_string(),
+            repo: Some("EarthBuild/earthbuild".to_string()),
+            digest: "sha256:abc".to_string(),
+            limit: 2,
+            predicate_type: None,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(attestations.len(), 2);
+    assert_eq!(
+        bundle_hits.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "should fetch no more bundles than the requested limit"
+    );
+}
+
 #[test]
 fn retry_after_parses_delta_seconds_and_caps() {
     fn headers_with(value: Option<&str>) -> HeaderMap {
