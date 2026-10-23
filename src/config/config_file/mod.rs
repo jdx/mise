@@ -23,7 +23,9 @@ use crate::hash::hash_to_str;
 use crate::hooks::Hook;
 use crate::redactions::Redactions;
 use crate::task::{Task, TaskTemplate};
-use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
+use crate::toolset::{
+    ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, ToolVersionOptions, Toolset,
+};
 use crate::ui::prompt::Confirmation;
 use crate::ui::{prompt, style};
 use crate::watch_files::WatchFile;
@@ -162,6 +164,10 @@ pub trait ConfigFile: Debug + Send + Sync {
     /// The tools with a template in their version (`node = "{{ vars.node }}"`) or
     /// options that this platform resolves, each once.
     fn templated_tool_backends(&self) -> Vec<String> {
+        vec![]
+    }
+    /// The options, unrendered, of this config's entries for `ba` that have a template in them.
+    fn templated_tool_options(&self, _ba: &BackendArg) -> Vec<ToolVersionOptions> {
         vec![]
     }
     /// A hash of the text this config was parsed from, for a config that keeps one,
