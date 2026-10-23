@@ -110,6 +110,26 @@ pub fn strip_url_credentials(text: &str) -> Cow<'_, str> {
     rewrite_userinfo(text, true, Userinfo::Strip)
 }
 
+/// [`strip_url_credentials`] for a stored value. A value that is itself a URL
+/// (`source = "https://user:my pass@host/"`) is read as one argument, where
+/// whitespace can be part of the userinfo; anything else, an argument list such
+/// as `npm_args` for one, is free text.
+pub fn strip_url_credentials_in_value(value: &str) -> Cow<'_, str> {
+    let scheme = value
+        .split_once("://")
+        .map(|(scheme, _)| scheme)
+        .unwrap_or_default();
+    let is_url = scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+    if is_url {
+        strip_url_credentials_in_arg(value)
+    } else {
+        strip_url_credentials(value)
+    }
+}
+
 /// [`strip_url_credentials`] for one command-line argument or tool name, where
 /// only `/`, `?` or `#` ends the authority.
 pub fn strip_url_credentials_in_arg(arg: &str) -> Cow<'_, str> {
@@ -432,6 +452,23 @@ fn replace_spans(input: &str, mut spans: Vec<(usize, usize)>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_strip_url_credentials_in_value() {
+        // A value that is one URL may hold a raw space in its password.
+        assert_eq!(
+            strip_url_credentials_in_value("https://user:my password@gems.example.com/"),
+            "https://gems.example.com/"
+        );
+        // An argument list is free text: whitespace ends each URL.
+        assert_eq!(
+            strip_url_credentials_in_value(
+                "--index-url https://u:p@h.example/x --other https://h2/y"
+            ),
+            "--index-url https://h.example/x --other https://h2/y"
+        );
+        assert_eq!(strip_url_credentials_in_value("plain value"), "plain value");
+    }
 
     #[test]
     fn test_strip_credential_query_params() {

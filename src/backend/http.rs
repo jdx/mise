@@ -28,7 +28,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, hash};
 use async_trait::async_trait;
 use eyre::{Result, WrapErr, bail};
-use mise_util::redactions::strip_url_credentials;
+use mise_util::redactions::strip_url_credentials_in_value;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -921,7 +921,7 @@ impl HttpBackend {
         opts: &HttpOptions<'_>,
     ) -> Result<()> {
         let metadata = CacheMetadata {
-            url: strip_url_credentials(url).into_owned(),
+            url: strip_url_credentials_in_value(url).into_owned(),
             checksum: opts.checksum(),
             size: file_path.metadata()?.len(),
             extracted_at: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
@@ -1491,7 +1491,7 @@ impl Backend for HttpBackend {
 
         // The lockfile is committed, so it names the artifact without the
         // credentials that fetch it. Installs take the URL from config.
-        let lock_url = strip_url_credentials(&url).into_owned();
+        let lock_url = strip_url_credentials_in_value(&url).into_owned();
         if checksum.is_none() && lock_url != url && Settings::get().generate_lockfiles() {
             // `generate` would otherwise hash what the recorded URL serves,
             // which without the credentials is an authentication error.
@@ -1548,7 +1548,7 @@ impl Backend for HttpBackend {
         tv.lock_platforms
             .entry(platform_key.clone())
             .or_default()
-            .url = Some(strip_url_credentials(&url).into_owned());
+            .url = Some(strip_url_credentials_in_value(&url).into_owned());
 
         // For lockfile checksum verification
         let settings = Settings::get();

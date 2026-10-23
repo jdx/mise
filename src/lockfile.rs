@@ -5661,7 +5661,7 @@ pub(crate) fn credential_query_param(text: &str) -> Option<String> {
 }
 
 fn strip_lock_option_credentials(value: &str) -> String {
-    let value = mise_util::redactions::strip_url_credentials(value);
+    let value = mise_util::redactions::strip_url_credentials_in_value(value);
     // An npm credential setting is masked as the installer reads it: split into
     // shell words the way `npm_args` is, so a value made of quoted and unquoted
     // parts (`--_authToken="npm_"suffix`) is one word and goes whole, and so

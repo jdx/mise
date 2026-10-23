@@ -49,7 +49,7 @@ fn is_flat_platform_opt(key: &str, name: &str) -> bool {
 pub(crate) fn strip_option_credentials(value: &toml::Value) -> toml::Value {
     match value {
         toml::Value::String(raw) => {
-            let raw = mise_util::redactions::strip_url_credentials(raw);
+            let raw = mise_util::redactions::strip_url_credentials_in_value(raw);
             toml::Value::String(
                 mise_util::redactions::strip_credential_query_params(&raw).into_owned(),
             )

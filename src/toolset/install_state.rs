@@ -2453,6 +2453,11 @@ mod credential_tests {
             stripped("https://user:s3cret@gems.example.com/"),
             "https://gems.example.com/"
         );
+        // A value that is one URL may hold a raw space in its password.
+        assert_eq!(
+            stripped("https://user:my s3cret@gems.example.com/"),
+            "https://gems.example.com/"
+        );
         // Identity worth keeping is kept, and non-URL options are untouched.
         assert_eq!(
             stripped("https://gems.example.com/acme"),

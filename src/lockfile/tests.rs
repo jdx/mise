@@ -4768,7 +4768,7 @@ fn test_lock_options_drop_credentials() {
         ),
         (
             "api_url".to_string(),
-            "https://ghe.example.com/api/v3".to_string(),
+            "https://ci:my tok3n@ghe.example.com/api/v3".to_string(),
         ),
     ]);
     let stripped = strip_lock_options_credentials(options);
