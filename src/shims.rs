@@ -33,6 +33,7 @@ const GENERATED_WINDOWS_CMD_SHIM_HEADER: &str = "@echo off\r\nrem mise generated
 #[cfg(any(windows, test))]
 const GENERATED_WINDOWS_BASH_SHIM_HEADER: &str = "#!/bin/bash\n# mise generated shim\n";
 const SHIM_SCRIPT_INSPECTION_LIMIT: u64 = 16 * 1024;
+const WRAPPER_STAGING_PREFIX: &str = ".mise-wrappers-stage-";
 
 pub const TASK_TOOL_ARGS_ENV: &str = "__MISE_TASK_TOOL_ARGS";
 
@@ -270,21 +271,34 @@ pub async fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
     }
 }
 
+/// The lock every writer of `shims_dir` takes. The wrapper directory is shared
+/// by every mise process using this data directory, whatever its cache
+/// directory, so its lock sits beside it rather than in the cache, and outside
+/// it because a reshim removes the directory once no wrapper is wanted.
+fn shim_dir_lock(shims_dir: &Path) -> LockFile {
+    let wrappers_dir = &*dirs::COMMAND_WRAPPERS;
+    match wrappers_dir.parent() {
+        Some(parent) if shims_dir == wrappers_dir => LockFile::at(&parent.join("bin.lock")),
+        _ => LockFile::new(shims_dir),
+    }
+}
+
 fn write_bootstrap_shims(
     mise_bin: &Path,
     shims_dir: &Path,
     shims: &BTreeSet<String>,
     _prune_stale_windows_variants: bool,
 ) -> Result<Option<eyre::Report>> {
+    // Lock failures come from outside the target farm and must remain visible
+    // to the user. The lock is taken first because a reshim may remove an
+    // emptied wrapper directory while it holds it.
+    let _lock = shim_dir_lock(shims_dir).lock()?;
     if let Err(err) = file::create_dir_all(shims_dir) {
         if is_permission_denied(&err) {
             return Ok(Some(err));
         }
         return Err(err);
     }
-    // Lock failures come from the cache rather than the target farm and must
-    // remain visible to the user.
-    let _lock = LockFile::new(shims_dir).lock()?;
 
     #[cfg(windows)]
     if _prune_stale_windows_variants {
@@ -1015,44 +1029,130 @@ async fn sync_command_wrapper_shims(
         }
         wrappers.insert(name, wrapper);
     }
-    if wrappers.is_empty() {
-        if cfg!(windows) {
-            remove_shims_individually(&dirs::COMMAND_WRAPPERS)?;
-        } else {
-            file::remove_all(&*dirs::COMMAND_WRAPPERS)?;
-        }
+    // Every mise process on the machine execs wrappers from this one
+    // directory, so it is never removed or emptied while a wrapper is still
+    // wanted: writers take its lock, a forced rebuild replaces each wanted
+    // shim with a rename, and only unwanted shims are deleted.
+    let wrappers_dir = &*dirs::COMMAND_WRAPPERS;
+    if wrappers.is_empty() && !wrappers_dir.is_dir() {
         return Ok(());
     }
-    if force {
-        if cfg!(windows) {
-            remove_shims_individually(&dirs::COMMAND_WRAPPERS)?;
-        } else {
-            file::remove_all(&*dirs::COMMAND_WRAPPERS)?;
-        }
-    }
-    file::create_dir_all(&*dirs::COMMAND_WRAPPERS)?;
+    let _lock = shim_dir_lock(wrappers_dir).lock()?;
+    file::create_dir_all(wrappers_dir)?;
+    remove_stale_wrapper_staging(wrappers_dir);
 
     let mut desired = HashSet::new();
     for name in wrappers.keys() {
         desired.extend(platform_shim_names(mise_bin, name));
     }
-    let actual = list_shims_in(&dirs::COMMAND_WRAPPERS)?;
-    for shim in desired.difference(&actual) {
-        let path = dirs::COMMAND_WRAPPERS.join(shim);
-        if cfg!(windows) && path.exists() {
-            remove_shim_with_rename_fallback(&path)?;
+    let actual = list_shims_in(wrappers_dir)?;
+    let to_publish: BTreeSet<&String> = if force {
+        desired.iter().collect()
+    } else {
+        desired.difference(&actual).collect()
+    };
+    if !to_publish.is_empty() {
+        let staging = tempfile::Builder::new()
+            .prefix(WRAPPER_STAGING_PREFIX)
+            .tempdir_in(wrappers_dir)
+            .wrap_err_with(|| {
+                format!(
+                    "failed to create wrapper staging directory in {}",
+                    display_path(wrappers_dir)
+                )
+            })?;
+        for shim in to_publish {
+            let source = staging.path().join(shim);
+            add_shim(mise_bin, &source, shim)?;
+            let destination = wrappers_dir.join(shim);
+            // Rename replaces a same-named wrapper atomically, so a concurrent
+            // exec finds either the old wrapper or the new one. Windows refuses
+            // to replace a wrapper that is running; only then is it moved
+            // aside first.
+            let publish = || fs::rename(&source, &destination);
+            let mut published = publish();
+            if published.is_err() && cfg!(windows) && destination.exists() {
+                remove_shim_with_rename_fallback(&destination)?;
+                published = publish();
+            }
+            published.wrap_err_with(|| {
+                format!(
+                    "failed to publish wrapper {} to {}",
+                    display_path(&source),
+                    display_path(&destination)
+                )
+            })?;
         }
-        add_shim(mise_bin, &path, shim)?;
+        if let Err(err) = staging.close() {
+            warn!("failed to remove wrapper staging directory: {err}");
+        }
     }
     for shim in actual.difference(&desired) {
-        let path = dirs::COMMAND_WRAPPERS.join(shim);
+        let path = wrappers_dir.join(shim);
         if cfg!(windows) {
             remove_shim_with_rename_fallback(&path)?;
         } else {
             file::remove_all(&path)?;
         }
     }
+    // With no wrapper wanted, drop the directory so activation stops putting it
+    // on PATH. Writers create it under the same lock, so none is mid-write. On
+    // Unix it goes whole, with any hidden wrapper the listing skips; on Windows
+    // a running wrapper's `.old` copy cannot be deleted and keeps it.
+    if !desired.is_empty() {
+        return Ok(());
+    }
+    if !cfg!(windows) {
+        return file::remove_all(wrappers_dir);
+    }
+    // The shim listing skips `.old` copies, so drop them here; one whose
+    // wrapper is still running stays locked and is left.
+    if let Ok(entries) = wrappers_dir.read_dir() {
+        for entry in entries.flatten() {
+            if entry.path().extension().is_some_and(|ext| ext == "old") {
+                let _ = fs::remove_file(entry.path()); // best-effort
+            }
+        }
+    }
+    if let Err(err) = fs::remove_dir(wrappers_dir)
+        && !matches!(
+            err.kind(),
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
+        )
+    {
+        return Err(err).wrap_err_with(|| {
+            format!(
+                "failed to remove wrapper directory: {}",
+                display_path(wrappers_dir)
+            )
+        });
+    }
     Ok(())
+}
+
+/// Only a reshim holding the wrapper directory's lock stages wrappers, so a
+/// staging directory found under that lock was left by a reshim that died
+/// mid-publish. Left alone it would also keep the directory from ever being
+/// removed once no wrapper is wanted.
+fn remove_stale_wrapper_staging(wrappers_dir: &Path) {
+    let Ok(entries) = fs::read_dir(wrappers_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        // A wrapper may itself be named with the prefix; only a directory is
+        // staging.
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(WRAPPER_STAGING_PREFIX)
+            || !entry.file_type().is_ok_and(|kind| kind.is_dir())
+        {
+            continue;
+        }
+        if let Err(err) = file::remove_all(entry.path()) {
+            warn!("failed to remove stale wrapper staging directory: {err:#}");
+        }
+    }
 }
 
 pub fn command_names_eq(a: &str, b: &str) -> bool {
@@ -1144,36 +1244,6 @@ fn snap_mise_bin(mise_bin: &Path, snap: &Path) -> Option<PathBuf> {
         .ok()?;
     let snap_mount = snap.parent()?;
     Some(snap_mount.join("current").join(relative))
-}
-
-/// Remove all shim files from a directory individually, skipping dotfiles like
-/// `.mode`. Uses [`remove_shim_with_rename_fallback`] for each entry so locked
-/// `.exe` files on Windows are renamed out of the way instead of causing a
-/// hard error.
-fn remove_shims_individually(shims_dir: &Path) -> Result<()> {
-    let entries = match shims_dir.read_dir() {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => {
-            return Err(e).wrap_err_with(|| {
-                format!(
-                    "failed to read shims directory: {}",
-                    display_path(shims_dir)
-                )
-            });
-        }
-    };
-    for entry in entries {
-        let entry = entry?;
-        let name = entry.file_name();
-        // skip dotfiles (e.g. .mode) — these are metadata, not shims
-        if is_hidden_shim_name(&name) {
-            continue;
-        }
-        let path = entry.path();
-        remove_shim_with_rename_fallback(&path)?;
-    }
-    Ok(())
 }
 
 /// Remove a single shim file. On Windows, if deletion fails (e.g. because the
