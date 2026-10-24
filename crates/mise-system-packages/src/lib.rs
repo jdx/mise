@@ -209,6 +209,19 @@ pub trait SystemPackageManager: Send + Sync {
         Ok(())
     }
 
+    /// Reconcile packages that are already installed with the manager's options,
+    /// after installed state is queried and before anything is installed.
+    ///
+    /// Never called for status or dry-run operations. brew-cask uses it to hand
+    /// casks installed earlier to Homebrew when `homebrew_metadata` is set.
+    async fn reconcile_installed(
+        &self,
+        _statuses: &[PackageStatus],
+        _manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        Ok(())
+    }
+
     /// Whether each name exists as an installable package, positionally.
     ///
     /// This is *availability*, not installed state — [`Self::installed`]

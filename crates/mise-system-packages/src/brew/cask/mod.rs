@@ -711,32 +711,14 @@ impl BrewCaskManager {
         // Re-read under the lock: another process may have installed or
         // retargeted this token while the archive was downloading.
         let locked_ownership = previous_receipt(&cask)?;
-        let mise_version = mise_installed_cask_version(&cask)?;
         if let Some(reason) = installed_skip_reason(
             &cask,
             &artifacts,
             locked_ownership.as_ref(),
-            mise_version.as_deref(),
+            mise_installed_cask_version(&cask)?.as_deref(),
             mode,
         )? {
             file::remove_all(stage)?;
-            // A cask installed before the setting was on, or whose metadata write failed,
-            // still gets handed to Homebrew on the next run.
-            if cask.manager.uses_homebrew_caskroom()
-                && manager_options.brew_cask_homebrew_metadata()
-                && let Some(version) = mise_version
-                && matches!(homebrew_metadata_present(&cask.token), Ok(false))
-                && let Err(err) = write_homebrew_metadata(
-                    &caskroom_token_dir(cask.manager, &cask.token),
-                    &cask.token,
-                    &version,
-                )
-            {
-                warn!(
-                    "brew-cask:{}: failed to write Homebrew metadata: {err:#}",
-                    cask.token
-                );
-            }
             info!("brew-cask:{}: {reason}", cask.token);
             return Ok(reason.to_string());
         }
@@ -1223,6 +1205,43 @@ impl SystemPackageManager for BrewCaskManager {
             });
         }
         Ok(statuses)
+    }
+
+    async fn reconcile_installed(
+        &self,
+        statuses: &[PackageStatus],
+        manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        if !self.manager.uses_homebrew_caskroom() || !manager_options.brew_cask_homebrew_metadata()
+        {
+            return Ok(());
+        }
+        for status in statuses {
+            if !status.state.is_installed()
+                || status.request.desired != crate::PackageDesiredState::Present
+            {
+                continue;
+            }
+            let cask = self
+                .resolve_cask(&status.request, manager_options, false)
+                .await?;
+            let _caskroom_lock = lock_caskroom(cask.manager)?;
+            // Re-read under the lock: Homebrew may have taken the cask meanwhile.
+            if let Some(version) = mise_installed_cask_version(&cask)?
+                && matches!(homebrew_metadata_present(&cask.token), Ok(false))
+                && let Err(err) = write_homebrew_metadata(
+                    &caskroom_token_dir(cask.manager, &cask.token),
+                    &cask.token,
+                    &version,
+                )
+            {
+                warn!(
+                    "brew-cask:{}: failed to write Homebrew metadata: {err:#}",
+                    cask.token
+                );
+            }
+        }
+        Ok(())
     }
 
     /// Installs casks with default manager options, preserving installed self-updaters.

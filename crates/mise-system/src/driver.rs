@@ -221,6 +221,11 @@ async fn run_manager(
     if let Some(reason) = unavailable_package_reason(d, &statuses) {
         bail!("{reason}");
     }
+    if !d.dry_run {
+        mp.manager
+            .reconcile_installed(&statuses, &mp.options)
+            .await?;
+    }
     let remove_targets = if action == Action::Install {
         statuses
             .iter()
