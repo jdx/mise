@@ -1,0 +1,46 @@
+bins = ["pi-bolt"]
+description = "Pi coding agent, compiled ahead of time to native code"
+os = ["linux", "macos", "windows"]
+test = { cmd = "pi-bolt --version", expected = "Pi-Bolt {{version}}" }
+version_order = "semver"
+
+[[backends]]
+full = "github:opensec-git/Pi-Bolt"
+min_version = "0.8.8"
+# The four platforms each release builds for (no Intel macOS), plus Windows on Arm, which runs the x64 build.
+platforms = [
+  "linux-arm64",
+  "linux-x64",
+  "macos-arm64",
+  "windows-arm64",
+  "windows-x64",
+]
+
+[backends.options]
+# The default build per platform: not the -jit, -baseline, runtime or kit archives.
+asset_pattern = 'pi-bolt-{{ os(macos="darwin", windows="win32") }}-{{ arch() }}.tar.gz'
+version_prefix = "bolt-v"
+
+# On macOS and Linux the archive's launcher is `pi` (beside pi-bin and pi-spawn on macOS): it is installed as `pi-bolt`,
+# so it does not shadow Pi's own `pi`, and only it goes on PATH.
+[backends.options.platforms.linux-arm64]
+filter_bins = "pi-bolt"
+rename_exe = { pi = "pi-bolt" }
+
+[backends.options.platforms.linux-x64]
+filter_bins = "pi-bolt"
+rename_exe = { pi = "pi-bolt" }
+
+[backends.options.platforms.macos-arm64]
+filter_bins = "pi-bolt"
+rename_exe = { pi = "pi-bolt" }
+
+# On Windows the archive is a .zip whose only executable is pi-bolt.exe. (No filter_bins: on Windows it would put a copy of
+# the executable in .mise-bins, away from the files it reads beside it.)
+# Windows on Arm gets the x64 build on purpose: it runs under x64 emulation (on CPUs without AVX2 the executable runs
+# bytecode).
+[backends.options.platforms.windows-arm64]
+asset_pattern = "pi-bolt-win32-x64.zip"
+
+[backends.options.platforms.windows-x64]
+asset_pattern = "pi-bolt-win32-x64.zip"
