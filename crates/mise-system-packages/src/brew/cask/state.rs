@@ -143,6 +143,19 @@ pub(super) fn write_homebrew_metadata(token_dir: &Path, token: &str, version: &s
     published
 }
 
+/// Whether a requested name resolves from Homebrew's official cask tap.
+///
+/// The `{}` metadata record names only the token, so Homebrew would look it up
+/// in `homebrew/cask`. A third-party tap cask that shares the token must stay
+/// mise-owned.
+pub(super) fn is_official_cask_request(name: &str) -> bool {
+    match name.split('/').collect::<Vec<_>>()[..] {
+        [token] => !token.is_empty(),
+        ["homebrew", "cask", token] => !token.is_empty(),
+        _ => false,
+    }
+}
+
 pub(super) fn homebrew_metadata_present(token: &str) -> Result<bool> {
     let path = caskroom_token_dir(CaskManager::BrewCask, token).join(".metadata");
     match path.symlink_metadata() {

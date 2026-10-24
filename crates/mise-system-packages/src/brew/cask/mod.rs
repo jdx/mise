@@ -1021,6 +1021,7 @@ impl BrewCaskManager {
         file::remove_all(stage)?;
         if cask.manager.uses_homebrew_caskroom()
             && manager_options.brew_cask_homebrew_metadata()
+            && is_official_cask_request(&req.name)
             && let Err(err) = write_homebrew_metadata(&caskroom_token, &cask.token, &cask.version)
         {
             warn!(
@@ -1219,6 +1220,7 @@ impl SystemPackageManager for BrewCaskManager {
         for status in statuses {
             if !status.state.is_installed()
                 || status.request.desired != crate::PackageDesiredState::Present
+                || !is_official_cask_request(&status.request.name)
             {
                 continue;
             }

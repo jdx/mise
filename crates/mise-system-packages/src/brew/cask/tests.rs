@@ -390,6 +390,14 @@ fn detects_any_foreign_homebrew_metadata_object() -> Result<()> {
 }
 
 #[test]
+fn only_official_tap_casks_get_homebrew_metadata() {
+    assert!(is_official_cask_request("foo"));
+    assert!(is_official_cask_request("homebrew/cask/foo"));
+    assert!(!is_official_cask_request("vendor/tools/foo"));
+    assert!(!is_official_cask_request("homebrew/cask/"));
+}
+
+#[test]
 fn written_homebrew_metadata_hands_the_cask_to_homebrew() -> Result<()> {
     let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
