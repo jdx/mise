@@ -4,6 +4,8 @@
 //! also needs `ssh`. A fresh machine may have neither, and the repository's
 //! own `[bootstrap.packages]` cannot install them because it has not been
 //! cloned yet.
+use std::ffi::{OsStr, OsString};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use eyre::{Result, bail};
@@ -62,42 +64,74 @@ fn uses_ssh(origin: &str) -> bool {
     host_part.contains(':')
 }
 
-/// Whether `binary` is on PATH and usable.
+/// Whether `binary` is on PATH, or in one of `extra_dirs`, and usable.
 ///
 /// Looked up fresh each time, since `ensure` checks again after installing and
-/// `file::which` would serve the earlier miss from its cache. On macOS,
-/// `/usr/bin/git` is a stub that opens the Xcode Command Line Tools installer
-/// until they are installed, so it does not count.
-fn is_installed(binary: &str) -> bool {
-    let Some(path) = mise_util::file::which_spawnable(binary) else {
-        return false;
-    };
-    if cfg!(target_os = "macos") && binary == "git" && path == std::path::Path::new("/usr/bin/git")
-    {
-        // `xcode-select -p` only proves a developer directory is selected, and
-        // running the stub without one opens the installer, so ask it second
-        let succeeds = |program: &str, arg: &str| {
-            std::process::Command::new(program)
-                .arg(arg)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .is_ok_and(|status| status.success())
-        };
-        return succeeds("xcode-select", "-p") && succeeds("/usr/bin/git", "--version");
-    }
-    true
+/// `file::which` would serve the earlier miss from its cache. The PATH behind
+/// the lookup is the one we started with, so a directory the install added
+/// has to be named in `extra_dirs` to be seen.
+fn is_installed(binary: &str, extra_dirs: &[PathBuf]) -> bool {
+    [
+        mise_util::file::which_spawnable(binary),
+        mise_util::file::which_spawnable_in(binary, extra_dirs),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|path| is_usable(binary, &path))
 }
 
-fn missing_for(origin: &str) -> Vec<&'static Prerequisite> {
+/// On macOS, `/usr/bin/git` is a stub that opens the Xcode Command Line Tools
+/// installer until they are installed, so it does not count.
+fn is_usable(binary: &str, path: &Path) -> bool {
+    if !(cfg!(target_os = "macos") && binary == "git" && path == Path::new("/usr/bin/git")) {
+        return true;
+    }
+    // `xcode-select -p` only proves a developer directory is selected, and
+    // running the stub without one opens the installer, so ask it second
+    let succeeds = |program: &str, arg: &str| {
+        std::process::Command::new(program)
+            .arg(arg)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    };
+    succeeds("xcode-select", "-p") && succeeds("/usr/bin/git", "--version")
+}
+
+fn missing_for(origin: &str, extra_dirs: &[PathBuf]) -> Vec<&'static Prerequisite> {
     let mut needed = vec![&GIT];
     if uses_ssh(origin) {
         needed.push(&SSH);
     }
     needed
         .into_iter()
-        .filter(|p| !is_installed(p.binary))
+        .filter(|p| !is_installed(p.binary, extra_dirs))
         .collect()
+}
+
+/// Where `manager` installs binaries, when PATH need not list it already.
+/// Homebrew is the case that matters: its prefix is not in PATH by default.
+fn manager_bin_dir(manager: &str) -> Option<PathBuf> {
+    (manager == "brew").then(|| mise_util::env::system_brew_prefix().join("bin"))
+}
+
+/// `current` with `dir` first and any later copy of it dropped, so a directory
+/// already listed behind a shadowing one still wins. Other entries keep their
+/// order.
+fn path_with_dir_first(current: &OsStr, dir: &Path) -> Option<OsString> {
+    let rest = mise_util::env::split_paths(current).filter(|p| p != dir);
+    mise_util::env::join_paths(std::iter::once(dir.to_path_buf()).chain(rest)).ok()
+}
+
+/// Put `dir` first on the PATH child processes inherit, so the clone runs the
+/// `git` that was just installed rather than one the old PATH shadows it with.
+fn prepend_to_path(dir: &Path) {
+    let key = &*mise_util::env::PATH_KEY;
+    let current = mise_util::env::var_os(key).unwrap_or_default();
+    if let Some(joined) = path_with_dir_first(&current, dir) {
+        mise_util::env::set_var(key, joined);
+    }
 }
 
 /// Managers in the order to try them. A distribution's own manager comes
@@ -148,7 +182,7 @@ fn pick_manager(
 /// asking. A dry run changes nothing, so it
 /// reports the missing binaries instead.
 pub async fn ensure(origin: &str, yes: bool, dry_run: bool) -> Result<()> {
-    let missing = missing_for(origin);
+    let missing = missing_for(origin, &[]);
     if missing.is_empty() {
         return Ok(());
     }
@@ -198,10 +232,18 @@ pub async fn ensure(origin: &str, yes: bool, dry_run: bool) -> Result<()> {
             },
         )
         .await?;
-    let still_missing = missing_for(origin);
+    // The manager may have installed into a directory PATH does not list,
+    // so make it reachable before the check below
+    let installed_into: Vec<PathBuf> = manager_bin_dir(manager.name()).into_iter().collect();
+    for dir in &installed_into {
+        prepend_to_path(dir);
+    }
+    let still_missing = missing_for(origin, &installed_into);
     if !still_missing.is_empty() {
         bail!(
-            "installed {packages} with {}, but {} is still not on PATH",
+            "installed {packages} with {}, but {} is still not on PATH. An installer that \
+             extends PATH for new shells only, such as winget, needs a new shell before this \
+             command can see it",
             manager.name(),
             still_missing
                 .iter()
@@ -239,6 +281,28 @@ mod tests {
         ] {
             assert!(!uses_ssh(origin), "{origin}");
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn path_moves_an_already_listed_dir_to_the_front() {
+        let current = OsString::from("/usr/bin:/opt/homebrew/bin:/bin");
+        let joined = path_with_dir_first(&current, Path::new("/opt/homebrew/bin")).unwrap();
+        assert_eq!(joined, OsString::from("/opt/homebrew/bin:/usr/bin:/bin"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn finds_a_binary_only_in_an_extra_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let name = "mise-git-prerequisite-probe";
+        let binary = dir.path().join(name);
+        std::fs::write(&binary, "#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        std::fs::set_permissions(&binary, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        assert!(!is_installed(name, &[]));
+        assert!(is_installed(name, &[dir.path().to_path_buf()]));
     }
 
     #[test]
