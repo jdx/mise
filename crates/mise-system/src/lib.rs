@@ -557,7 +557,7 @@ fn merge_manager_packages(
         let requests = by_mgr.entry(manager_name.clone()).or_default();
         for request in mp.requests {
             let adopt = mp.options.brew_cask_adopt(&request.name);
-            let homebrew_metadata = mp.options.brew_cask_homebrew_metadata(&request.name);
+            let homebrew_metadata = mp.options.brew_cask_homebrew_metadata();
             let appdir = mp
                 .options
                 .brew_cask_appdir(&request.name)
@@ -582,7 +582,7 @@ fn merge_manager_packages(
                                 .or_insert_with(|| ManagerPackageOptions::BrewCask {
                                     adopt: BTreeSet::new(),
                                     appdirs: BTreeMap::new(),
-                                    homebrew_metadata: BTreeSet::new(),
+                                    homebrew_metadata: false,
                                 });
                             if let ManagerPackageOptions::BrewCask {
                                 adopt: cask_adopt,
@@ -593,9 +593,7 @@ fn merge_manager_packages(
                                 if adopt {
                                     cask_adopt.insert(request.name.clone());
                                 }
-                                if homebrew_metadata {
-                                    cask_homebrew_metadata.insert(request.name.clone());
-                                }
+                                *cask_homebrew_metadata |= homebrew_metadata;
                                 if let Some(appdir) = appdir {
                                     appdirs.entry(request.name.clone()).or_insert(appdir);
                                 }
@@ -682,7 +680,7 @@ fn package_requests_from_config_files(
     #[cfg(unix)]
     let mut cask_adopt = BTreeSet::new();
     #[cfg(unix)]
-    let mut cask_homebrew_metadata = BTreeSet::new();
+    let mut cask_homebrew_metadata = false;
     #[cfg(unix)]
     let mut cask_appdirs = BTreeMap::new();
     #[cfg(unix)]
@@ -730,7 +728,7 @@ fn package_requests_from_config_files(
                 }
                 #[cfg(unix)]
                 if mgr == "brew-cask" && brew_homebrew_metadata {
-                    cask_homebrew_metadata.insert(name.clone());
+                    cask_homebrew_metadata = true;
                 }
                 #[cfg(unix)]
                 if mgr == "brew-cask"
@@ -815,8 +813,7 @@ fn package_requests_from_config_files(
     #[cfg(unix)]
     let mut options = {
         let mut options = IndexMap::new();
-        if !cask_adopt.is_empty() || !cask_appdirs.is_empty() || !cask_homebrew_metadata.is_empty()
-        {
+        if !cask_adopt.is_empty() || !cask_appdirs.is_empty() || cask_homebrew_metadata {
             options.insert(
                 "brew-cask".to_string(),
                 ManagerPackageOptions::BrewCask {
@@ -2019,7 +2016,7 @@ fn packages_from_specs_with_config_files(
     #[cfg(unix)]
     let mut cask_adopt = BTreeSet::new();
     #[cfg(unix)]
-    let mut cask_homebrew_metadata = BTreeSet::new();
+    let mut cask_homebrew_metadata = false;
     #[cfg(unix)]
     let mut cask_appdirs = BTreeMap::new();
     #[cfg(unix)]
@@ -2114,7 +2111,7 @@ fn packages_from_specs_with_config_files(
                 cask_adopt.insert(name.clone());
             }
             if brew_homebrew_metadata {
-                cask_homebrew_metadata.insert(name.clone());
+                cask_homebrew_metadata = true;
             }
             if let Some(appdir) = configured.and_then(PackageTomlConfig::appdir) {
                 match crate::packages::brew::package_app_dir(appdir) {
@@ -2151,8 +2148,7 @@ fn packages_from_specs_with_config_files(
     #[cfg(unix)]
     let mut options = {
         let mut options = IndexMap::new();
-        if !cask_adopt.is_empty() || !cask_appdirs.is_empty() || !cask_homebrew_metadata.is_empty()
-        {
+        if !cask_adopt.is_empty() || !cask_appdirs.is_empty() || cask_homebrew_metadata {
             options.insert(
                 "brew-cask".to_string(),
                 ManagerPackageOptions::BrewCask {
@@ -2825,8 +2821,7 @@ mod tests {
             .into_iter()
             .find(|packages| packages.manager.name() == "brew-cask")
             .unwrap();
-        assert!(casks.options.brew_cask_homebrew_metadata("1password-cli"));
-        assert!(!casks.options.brew_cask_homebrew_metadata("other"));
+        assert!(casks.options.brew_cask_homebrew_metadata());
         Ok(())
     }
 

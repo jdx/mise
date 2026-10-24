@@ -1020,7 +1020,7 @@ impl BrewCaskManager {
         remove_cask_journals(cask.manager, &cask.token)?;
         file::remove_all(stage)?;
         if cask.manager.uses_homebrew_caskroom()
-            && manager_options.brew_cask_homebrew_metadata(&req.name)
+            && manager_options.brew_cask_homebrew_metadata()
             && let Err(err) = write_homebrew_metadata(&caskroom_token, &cask.token, &cask.version)
         {
             warn!(

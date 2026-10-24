@@ -123,13 +123,24 @@ pub(super) fn ensure_homebrew_did_not_take_ownership(token: &str, stage: &Path) 
 /// Homebrew's (see [`homebrew_metadata_present`]), so `brew upgrade` takes over.
 pub(super) fn write_homebrew_metadata(token_dir: &Path, token: &str, version: &str) -> Result<()> {
     let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S%.3f").to_string();
-    let path = token_dir
-        .join(".metadata")
+    // Built beside `.metadata` and renamed into place, so a failed write never
+    // leaves a bare `.metadata` that would read as Homebrew ownership.
+    let stage = token_dir.join(format!(
+        ".mise-metadata-{}",
+        hash::hash_to_str(&format!("{token}-{version}"))
+    ));
+    file::remove_all(&stage)?;
+    let record = stage
         .join(version)
         .join(timestamp)
         .join("Casks")
         .join(format!("{token}.json"));
-    write_durable_file(&path, b"{}")
+    let published = write_durable_file(&record, b"{}")
+        .and_then(|()| file::rename(&stage, token_dir.join(".metadata")));
+    if published.is_err() {
+        let _ = file::remove_all(&stage);
+    }
+    published
 }
 
 pub(super) fn homebrew_metadata_present(token: &str) -> Result<bool> {

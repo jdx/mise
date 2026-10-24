@@ -23,8 +23,9 @@ pub enum ManagerPackageOptions {
     BrewCask {
         adopt: BTreeSet<String>,
         appdirs: BTreeMap<String, PathBuf>,
-        /// Casks that get Homebrew's `.metadata` after install, so `brew upgrade` owns them.
-        homebrew_metadata: BTreeSet<String>,
+        /// Write Homebrew's `.metadata` after every install, dependencies included, so
+        /// `brew upgrade` owns the casks.
+        homebrew_metadata: bool,
     },
     /// Inline app declarations, keyed by package name. `macos-app` resolves no
     /// metadata of its own, so the declaration reaches the installer here.
@@ -50,13 +51,14 @@ impl ManagerPackageOptions {
     }
 
     #[cfg(unix)]
-    pub fn brew_cask_homebrew_metadata(&self, name: &str) -> bool {
-        match self {
+    pub fn brew_cask_homebrew_metadata(&self) -> bool {
+        matches!(
+            self,
             Self::BrewCask {
-                homebrew_metadata, ..
-            } => homebrew_metadata.contains(name),
-            _ => false,
-        }
+                homebrew_metadata: true,
+                ..
+            }
+        )
     }
 
     #[cfg(unix)]

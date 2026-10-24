@@ -8517,7 +8517,7 @@ fn dependency_appdir_uses_its_own_package_setting() {
     let options = ManagerPackageOptions::BrewCask {
         adopt: BTreeSet::new(),
         appdirs: BTreeMap::from([("dependency".to_string(), dependency.clone())]),
-        homebrew_metadata: BTreeSet::new(),
+        homebrew_metadata: false,
     };
     let request = PackageRequest {
         name: "dependency".to_string(),
