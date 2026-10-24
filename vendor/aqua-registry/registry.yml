@@ -3804,6 +3804,54 @@ packages:
           - linux/amd64
           - darwin/arm64
   - type: github_release
+    repo_owner: Future-Element
+    repo_name: pinset
+    description: A predictable, local-first runtime version manager for multilingual projects
+    files:
+      - name: pinset
+      - name: pinset-shim
+    github_artifact_attestations:
+      signer_workflow: Future-Element/pinset/.github/workflows/release.yml
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 2.15.0")
+        no_asset: true
+      - version_constraint: semver("<= 2.16.2")
+        asset: pinset-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: false
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+      - version_constraint: "true"
+        asset: pinset-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: false
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
+  - type: github_release
     repo_owner: Gaurav-Gosain
     repo_name: tuios
     description: Terminal UI OS (Terminal Multiplexer)
@@ -13958,6 +14006,8 @@ packages:
     aliases:
       - name: sst/opencode
     description: The AI coding agent built for the terminal
+    version_source: github_tag
+    version_filter: Version matches "^v\\d+\\.\\d+\\.\\d+$"
     version_constraint: "false"
     version_overrides:
       - version_constraint: Version in ["v0.1.84", "v0.1.92", "v0.1.115", "v0.1.124"]
@@ -14076,10 +14126,19 @@ packages:
         windows_arm_emulation: true
         replacements:
           amd64: x64
-      - version_constraint: "true"
+      - version_constraint: semver("< 2.0.0")
         asset: opencode-{{.OS}}-{{.Arch}}.{{.Format}}
         format: zip
         windows_arm_emulation: true
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: linux
+            format: tar.gz
+      - version_constraint: "true"
+        type: http
+        url: https://opencode.ai/files/bin/{{trimV .Version}}/opencode-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
         replacements:
           amd64: x64
         overrides:
@@ -22674,6 +22733,44 @@ packages:
       - darwin
       - linux
       - amd64
+  - type: github_release
+    repo_owner: bronto-community
+    repo_name: bronto-cli
+    description: "A community command-line client for the Bronto observability platform. It wraps Bronto's REST and ingestion APIs in a single scriptable binary: search and tail logs, explore OpenTelemetry traces, send events, and manage resources (datasets, monitors, dashboards, parsers, exports, API keys)"
+    files:
+      - name: bronto
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.1")
+        asset: bronto_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: bronto_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate
+              - https://github.com/bronto-community/bronto-cli/releases/download/{{.Version}}/checksums.txt.pem
+              - --certificate-identity-regexp
+              - "^https://github\\.com/bronto-community/bronto-cli/\\.github/workflows/.+\\.ya?ml@refs/tags/\\Q{{.Version}}\\E$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+              - --signature
+              - https://github.com/bronto-community/bronto-cli/releases/download/{{.Version}}/checksums.txt.sig
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: bronze1man
     repo_name: yaml2json
@@ -37495,7 +37592,7 @@ packages:
               arm64: aarch64
           - goos: darwin
             asset: duckdb_cli-{{.OS}}-universal.{{.Format}}
-      - version_constraint: "true"
+      - version_constraint: semver("< 2.0.0")
         asset: duckdb_cli-{{.OS}}-{{.Arch}}.{{.Format}}
         format: zip
         replacements:
@@ -37503,6 +37600,11 @@ packages:
         overrides:
           - goos: darwin
             asset: duckdb_cli-{{.OS}}-universal.{{.Format}}
+      - version_constraint: "true"
+        asset: duckdb-cli-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          darwin: osx
   - type: github_release
     repo_owner: dundee
     repo_name: gdu
@@ -39699,6 +39801,35 @@ packages:
               linux: unknown-linux-gnu
           - goos: windows
             asset: eza.exe_{{.Arch}}-{{.OS}}.{{.Format}}
+  - type: github_release
+    repo_owner: faberlang
+    repo_name: releases
+    name: faberlang/releases/faber
+    description: Faber (Faber Romanus), an experimental programming language designed to be written by language models and read by people
+    version_prefix: faber-v
+    asset: faber-v{{.SemVer}}-{{.Arch}}-{{.OS}}.tar.gz
+    format: tar.gz
+    files:
+      - name: faber
+        src: bin/faber
+    replacements:
+      amd64: x86_64
+      arm64: aarch64
+      darwin: apple-darwin
+      linux: unknown-linux-gnu
+    checksum:
+      type: github_release
+      asset: "{{.Asset}}.sha256"
+      algorithm: sha256
+    supported_envs:
+      - darwin/arm64
+      - linux/amd64
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: SemVer == "1.5.1"
+        supported_envs:
+          - darwin/arm64
+      - version_constraint: "true"
   - type: github_release
     repo_owner: fabpot
     repo_name: local-php-security-checker
@@ -48485,6 +48616,16 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: semver("< 1.7.0")
+        asset: gcx_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: gcx_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
       - version_constraint: "true"
         asset: gcx_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -48492,6 +48633,15 @@ packages:
           type: github_release
           asset: gcx_{{trimV .Version}}_checksums.txt
           algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: gcx_{{trimV .Version}}_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/grafana/gcx/.github/workflows/release.yaml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
         overrides:
           - goos: windows
             format: zip
@@ -48594,20 +48744,47 @@ packages:
     repo_owner: grafana
     repo_name: mcp-grafana
     description: MCP server for Grafana
-    asset: mcp-grafana_{{.OS}}_{{.Arch}}.{{.Format}}
-    format: tar.gz
-    replacements:
-      amd64: x86_64
-      darwin: Darwin
-      linux: Linux
-      windows: Windows
-    checksum:
-      type: github_release
-      asset: mcp-grafana_{{trimV .Version}}_checksums.txt
-      algorithm: sha256
-    overrides:
-      - goos: windows
-        format: zip
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 2.1.0")
+        asset: mcp-grafana_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: mcp-grafana_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: mcp-grafana_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: mcp-grafana_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: mcp-grafana_{{trimV .Version}}_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/grafana/mcp-grafana/.github/workflows/release.yml@refs/tags/{{.Version}}
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+        overrides:
+          - goos: windows
+            format: zip
   - name: grafana/mimir/metaconvert
     type: github_release
     repo_owner: grafana
@@ -66202,6 +66379,26 @@ packages:
         overrides:
           - goos: windows
             format: zip
+      - version_constraint: semver("<= 1.16.0")
+        asset: mage_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        replacements:
+          amd64: 64bit
+          darwin: macOS
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: mage_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              arm64: ARM64
+          - goos: windows
+            format: zip
       - version_constraint: Version == "v1.17.0"
         asset: mage_{{trimV .Version}}_{{.OS}}_{{.Arch}}Linux-64bit.{{.Format}}
         format: tar.gz
@@ -66230,10 +66427,9 @@ packages:
       - version_constraint: "true"
         asset: mage_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
         replacements:
           amd64: 64bit
+          arm64: ARM64
           darwin: macOS
           linux: Linux
           windows: Windows
@@ -66242,9 +66438,6 @@ packages:
           asset: mage_{{trimV .Version}}_checksums.txt
           algorithm: sha256
         overrides:
-          - goos: linux
-            replacements:
-              arm64: ARM64
           - goos: windows
             format: zip
   - type: go_install
@@ -71213,6 +71406,24 @@ packages:
       type: github_release
       asset: SHA256SUMS
       algorithm: sha256
+  - type: github_release
+    repo_owner: muvon
+    repo_name: octomind
+    description: "Open-source AI coding agent and agent runtime: one binary, any model, MCP-native. Runs in terminal, CI, or as a daemon"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: octomind-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: mvdan
     repo_name: gofumpt
@@ -79749,6 +79960,27 @@ packages:
           - goos: windows
             format: zip
             asset: witr-{{.OS}}-{{.Arch}}.{{.Format}}
+  - type: github_release
+    repo_owner: pratyay360
+    repo_name: ensor
+    description: A fast, interactive CLI for finding and redacting secrets in your codebase
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: ensor_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+          windows: Windows
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: pre-commit
     repo_name: pre-commit
