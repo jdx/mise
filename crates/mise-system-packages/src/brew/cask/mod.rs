@@ -1245,6 +1245,16 @@ impl SystemPackageManager for BrewCaskManager {
             if !matches!(homebrew_metadata_present(&cask.token), Ok(false)) {
                 continue;
             }
+            // The current appdir setting says nothing about where an existing install
+            // went; its receipt does. Homebrew would reinstall into /Applications.
+            if previous_receipt(&cask)?.is_some_and(|receipt| {
+                receipt
+                    .apps
+                    .iter()
+                    .any(|app| !app.starts_with(DEFAULT_APP_DIR))
+            }) {
+                continue;
+            }
             if let Some(version) = mise_installed_cask_version(&cask)?
                 && let Err(err) = write_homebrew_metadata(
                     &caskroom_token_dir(cask.manager, &cask.token),
