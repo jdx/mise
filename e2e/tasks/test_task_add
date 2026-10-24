@@ -16,3 +16,13 @@ assert "cat mise-tasks/pre-commit" '#!/usr/bin/env bash
 set -euxo pipefail
 
 echo pre-commit'
+
+mkdir src
+mise tasks add --file where --dir src --description $'Print\n"where"' -- pwd
+assert "cat mise-tasks/where" '#!/usr/bin/env bash
+#MISE description="Print\n\"where\""
+#MISE dir="src"
+set -euxo pipefail
+
+pwd'
+assert "mise run where" "$PWD/src"

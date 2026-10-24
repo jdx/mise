@@ -115,7 +115,14 @@ impl HookEnv {
                 _ => None,
             })
             .collect();
-        miseprint!("{}", hook_env::build_env_commands(&*shell, &old_patches))?;
+        // Printed only after the new environment is known to fit, together with
+        // it, so a refused update leaves the shell as it was rather than half
+        // undone. These undo commands are not size-checked themselves: they put
+        // back values the shell held before mise changed them, and a PATH no
+        // longer than the current one, so they fit wherever the shell's
+        // environment already does. Refusing them over a variable the user set
+        // would instead keep mise's old variables in the shell indefinitely.
+        let old_output = hook_env::build_env_commands(&*shell, &old_patches);
 
         // Use env_with_path_and_split which handles caching internally
         let (mut mise_env, env_remove, user_paths, tool_paths, env_watch_files) =
@@ -223,8 +230,9 @@ impl HookEnv {
             hook_env::clear_untrusted_config_warning(&mut patches);
         }
 
+        hook_env::ensure_env_fits(&patches)?;
         let output = hook_env::build_env_commands(&*shell, &patches);
-        miseprint!("{output}")?;
+        miseprint!("{old_output}{output}")?;
         if !untrusted_configs.is_empty()
             && hook_env::should_show_untrusted_config_warning(&untrusted_configs)
         {

@@ -248,8 +248,8 @@ impl SecretValues {
         {
             context.insert("vars", &config.vars());
         }
-        context.insert("config_root", base);
-        context.insert("target", target);
+        context.insert("config_root", &base.to_string_lossy());
+        context.insert("target", &target.to_string_lossy());
         let rendered = match config {
             Some((_, config_path)) => crate::host::render_config_str(
                 &mut TeraEngine::V2(Box::new(tera)),

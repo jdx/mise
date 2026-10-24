@@ -166,6 +166,43 @@ fn test_collect_task_files_skips_links_back_into_the_walk() -> Result<()> {
     Ok(())
 }
 
+/// Links that only ever lead forward are not loops to walkdir, but each level of
+/// four links to the next one multiplies the paths to the last level by four.
+/// The walk stops at its entry limit instead of following every route.
+#[test]
+fn test_collect_task_files_stops_at_the_entry_limit() -> Result<()> {
+    fn maze(base: &Path, links_per_level: usize) -> Result<PathBuf> {
+        let root = base.join("mise-tasks");
+        fs::create_dir_all(&root)?;
+        let levels = 8;
+        for n in 0..=levels {
+            fs::create_dir_all(base.join(format!("maze/{n}")))?;
+        }
+        std::os::unix::fs::symlink(base.join("maze/0"), root.join("all"))?;
+        for n in 0..levels {
+            for l in 0..links_per_level {
+                std::os::unix::fs::symlink(
+                    base.join(format!("maze/{}", n + 1)),
+                    base.join(format!("maze/{n}/{l}")),
+                )?;
+            }
+        }
+        fs::write(base.join(format!("maze/{levels}/task")), "echo ok")?;
+        Ok(root)
+    }
+
+    let control = TempDir::new()?;
+    let root = maze(control.path(), 1)?;
+    assert_eq!(collect_task_files_with_limit(&root, &[], 1_000)?.len(), 1);
+
+    let hostile = TempDir::new()?;
+    let root = maze(hostile.path(), 4)?;
+    let err = collect_task_files_with_limit(&root, &[], 1_000).unwrap_err();
+    assert!(err.to_string().contains("more than 1000 entries"), "{err}");
+
+    Ok(())
+}
+
 #[test]
 fn test_collect_task_files_preserves_unresolvable_symlink_errors() -> Result<()> {
     // Renamed from `..._preserves_symlink_loop_errors`: what it pins is a link that cannot be
@@ -451,6 +488,38 @@ fn test_project_visible_mise_conf_d_precedence() -> Result<()> {
         ]
     );
 
+    Ok(())
+}
+
+/// A checkout can ship a config name that links to a device, which would be
+/// read without end. Discovery only keeps regular files, through a link or not.
+#[cfg(unix)]
+#[test]
+fn test_config_discovery_skips_non_regular_files() -> Result<()> {
+    let tmp = TempDir::new()?;
+    let dir = tmp.path();
+    std::os::unix::fs::symlink("/dev/zero", dir.join("mise.toml"))?;
+    std::os::unix::fs::symlink("/dev/zero", dir.join(".tool-versions"))?;
+    fs::create_dir_all(dir.join(".mise/conf.d"))?;
+    std::os::unix::fs::symlink("/dev/zero", dir.join(".mise/conf.d/a.toml"))?;
+    fs::write(dir.join("real.toml"), "[env]\n")?;
+    std::os::unix::fs::symlink(dir.join("real.toml"), dir.join(".mise.toml"))?;
+
+    let filenames = vec![
+        ".tool-versions".to_string(),
+        ".mise/conf.d/*.toml".to_string(),
+        "mise.toml".to_string(),
+        ".mise.toml".to_string(),
+    ];
+    assert_eq!(
+        config_paths_in_dir_with_filenames(dir, &filenames),
+        vec![dir.join(".mise.toml")]
+    );
+    assert!(load_config_glob(dir, "mise.toml").is_empty());
+    assert!(!has_config_file_with_filenames(
+        dir,
+        &["mise.toml".to_string()]
+    ));
     Ok(())
 }
 
@@ -1603,6 +1672,50 @@ fn test_env_config_patterns_escape_glob_characters() -> Result<()> {
         .unwrap();
     let matches = glob(tmp.path(), &pattern)?;
     assert_eq!(matches, vec![confd.join("tools.qa*.toml")]);
+
+    Ok(())
+}
+
+#[test]
+fn test_glob_treats_directory_as_literal() -> Result<()> {
+    let tmp = TempDir::new()?;
+    for dir in ["[ab]", "a", "**"] {
+        let confd = tmp.path().join(dir).join(".mise/conf.d");
+        fs::create_dir_all(&confd)?;
+        fs::write(confd.join("tools.toml"), "")?;
+    }
+    // `[ab]` is the directory of that name, not a character class matching `a`.
+    assert_eq!(
+        glob(&tmp.path().join("[ab]"), ".mise/conf.d/*.toml")?,
+        vec![tmp.path().join("[ab]/.mise/conf.d/tools.toml")]
+    );
+    // `**` is the directory of that name, not a recursive walk of `tmp`.
+    assert_eq!(
+        glob(&tmp.path().join("**"), ".mise/conf.d/*.toml")?,
+        vec![tmp.path().join("**/.mise/conf.d/tools.toml")]
+    );
+    Ok(())
+}
+
+/// Override filenames come from a project `.miserc.toml` that loads without
+/// trust, and are looked up in every ancestor directory: they are names, not
+/// patterns.
+#[test]
+fn test_shared_config_filenames_escape_glob_characters() -> Result<()> {
+    let tmp = TempDir::new()?;
+    fs::write(tmp.path().join("**"), "[env]\n")?;
+    fs::write(tmp.path().join("mise.toml"), "[env]\n")?;
+    fs::write(tmp.path().join("tools.toml"), "[env]\n")?;
+
+    let overrides: IndexSet<String> = ["**".to_string()].into();
+    let filenames = shared_config_filenames(Some(&overrides), &overrides)
+        .into_iter()
+        .collect_vec();
+    assert_eq!(filenames, vec!["[*][*]".to_string()]);
+    assert_eq!(
+        config_paths_in_dir_with_filenames(tmp.path(), &filenames),
+        vec![tmp.path().join("**")]
+    );
 
     Ok(())
 }

@@ -54,10 +54,6 @@ impl SettingsLoadPolicy {
         source: SettingsSourcePolicy::EnvironmentOnly,
         trust: SettingsTrustPolicy::AsDiscovered,
     };
-    pub(crate) const HIERARCHY: Self = Self {
-        source: SettingsSourcePolicy::Hierarchy,
-        trust: SettingsTrustPolicy::AsDiscovered,
-    };
     pub(crate) const TRUSTED_HIERARCHY: Self = Self {
         source: SettingsSourcePolicy::Hierarchy,
         trust: SettingsTrustPolicy::TrustedOnly,
@@ -756,19 +752,19 @@ fn settings_path_resolver<'a>(
     let mut tera = crate::tera::get_miserc_tera();
     let mut context = tera::Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
-    context.insert("config_root", &config_root);
+    context.insert("config_root", &config_root.to_string_lossy());
     context.insert(
         "config_source",
         &crate::config::config_file::config_root::config_source(path),
     );
     if let Ok(cwd) = std::env::current_dir() {
-        context.insert("cwd", &cwd);
+        context.insert("cwd", &cwd.to_string_lossy());
     }
-    context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
-    context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
-    context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
-    context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
-    context.insert("mise_config_dir", &*env::MISE_CONFIG_DIR);
+    context.insert("xdg_cache_home", &env::XDG_CACHE_HOME.to_string_lossy());
+    context.insert("xdg_config_home", &env::XDG_CONFIG_HOME.to_string_lossy());
+    context.insert("xdg_data_home", &env::XDG_DATA_HOME.to_string_lossy());
+    context.insert("xdg_state_home", &env::XDG_STATE_HOME.to_string_lossy());
+    context.insert("mise_config_dir", &env::MISE_CONFIG_DIR.to_string_lossy());
     context.insert("system_brew_prefix", &env::system_brew_prefix());
 
     move |label: &str, target: &mut toml::Value| -> Result<()> {
@@ -1157,8 +1153,10 @@ impl SettingsExt for Settings {
     }
 
     fn parse_settings_file(path: &Path) -> Result<SettingsPartial> {
-        let raw = file::read_to_string(path)?;
-        let mut raw: toml::Value = toml::from_str(&raw)?;
+        let raw = file::read_config_to_string(path)?;
+        let mut raw: toml::Value = toml::from_str(&raw).map_err(|err| {
+            crate::config::config_file::diagnostic::hide_linked_source(err, &raw, path)
+        })?;
         let tera_v1_from_env = tera_v1_from_env_config(&raw);
         if let Some(settings) = raw.get_mut("settings").and_then(toml::Value::as_table_mut) {
             strip_local_only_settings(settings, path, crate::config::is_global_config(path));

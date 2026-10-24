@@ -48,6 +48,14 @@ whether it needs trust, so an untrusted file with a syntax error fails with
 `TOML parse error at line <N>, column <M>` warning above that error shows the
 real problem.
 
+A project file that is a symlink, or that mise reaches through a linked config
+directory such as `.config`, is not quoted, because the text belongs to
+whatever the link points at rather than to the project. mise prints the
+position and the parser's message on their own:
+`Invalid TOML in config file <path>:<line>:<column>: <message>`. Links inside
+the global and system config directories are the user's own and keep the
+excerpt.
+
 ### `Config files in <path> are not trusted` {#untrusted-config}
 
 mise found a project config file that needs trust before it can load: one with

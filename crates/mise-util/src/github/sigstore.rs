@@ -960,8 +960,8 @@ pub async fn verify_slsa_provenance(
     let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
     let provenance_digest = mise_sigstore::calculate_file_digest(provenance_path).await?;
     let key = format!(
-        "slsa:{artifact_digest}:{provenance_digest}:{min_level}:{}:{}:{:?}",
-        signer.identity, signer.issuer, signer.source_repository
+        "slsa:{artifact_digest}:{provenance_digest}:{min_level}:{}:{}:{:?}:{:?}",
+        signer.identity, signer.issuer, signer.source_repository, signer.source_tag
     );
     shared_verification(key, verify).await
 }
@@ -1516,6 +1516,7 @@ mod tests {
         identity: "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@refs/tags/v2.0.0",
         issuer: "https://token.actions.githubusercontent.com",
         source_repository: Some("mozilla/sops"),
+        source_tag: None,
     };
 
     /// Verifies the sops provenance against `SOPS_SIGNER_BEFORE_TRANSFER`,
@@ -1554,6 +1555,41 @@ mod tests {
             (owner, repo, other) == ("mozilla", "sops", "getsops/sops")
         });
         assert!(confirmed.unwrap());
+    }
+
+    fn verify_sops_v3_9_0_as(tag: &str) -> AttestationResult<bool> {
+        let _settings = SettingsGuard::new(None);
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(verify_slsa_provenance_artifacts(
+                sops_provenance(),
+                &[sops_artifact()],
+                1,
+                SlsaSignerIdentity {
+                    source_repository: Some("getsops/sops"),
+                    source_tag: Some(tag),
+                    ..SOPS_SIGNER_BEFORE_TRANSFER
+                },
+            ))
+    }
+
+    #[test]
+    fn test_slsa_rejects_provenance_of_another_release() {
+        // A host serving sops v3.9.0's genuine artifact and provenance as
+        // v3.10.0: the generator signs every release with one identity.
+        let err = verify_sops_v3_9_0_as("v3.10.0").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("built from refs/tags/v3.9.0, expected refs/tags/v3.10.0"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn test_slsa_accepts_provenance_of_its_release() {
+        assert!(verify_sops_v3_9_0_as("v3.9.0").unwrap());
     }
 
     #[test]

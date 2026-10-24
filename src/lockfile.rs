@@ -1400,7 +1400,7 @@ fn existing_lockfile_doc_url(content: &str) -> Option<String> {
 }
 
 fn existing_lockfile_doc_url_from_path(path: &Path) -> Option<String> {
-    file::read_to_string(path)
+    file::read_config_to_string(path)
         .ok()
         .and_then(|content| existing_lockfile_doc_url(&content))
 }
@@ -1527,7 +1527,9 @@ impl Lockfile {
 
     pub fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
-        if !path.exists() {
+        // A lockfile name that is a pipe or links to a device is not a
+        // lockfile, and reading one whole would never end.
+        if !path.is_file() {
             return Ok(Lockfile::default());
         }
         trace!("reading lockfile {}", path.display_user());
@@ -1537,10 +1539,14 @@ impl Lockfile {
             .is_symlink()
             .then(|| fs::canonicalize(path))
             .transpose()?;
+        let link = path;
         let path = target.as_deref().unwrap_or(path);
-        let content = file::read_to_string(path)?;
+        let content = file::read_config_to_string(path)?;
         let generated_header_url = existing_lockfile_doc_url(&content);
-        let mut table: toml::Table = toml::from_str(&content)?;
+        // Named by the link, not its target: the link decides whether to quote.
+        let mut table: toml::Table = toml::from_str(&content).map_err(|err| {
+            crate::config::config_file::diagnostic::hide_linked_source(err, &content, link)
+        })?;
         if table.is_empty() {
             return Ok(Lockfile {
                 generated_header_url,
@@ -1860,7 +1866,9 @@ impl Lockfile {
             .unwrap_or_else(|| DEFAULT_LOCKFILE_DOC_URL.to_string());
         let content = format!("{LOCKFILE_HEADER_PREFIX}{doc_url}\n\n{content}");
         sidecars.collect_garbage();
-        if fs::read(path).ok().as_deref() == Some(content.as_bytes()) {
+        // Bounded and non-blocking: a pipe or oversized file at the lockfile's
+        // path reads as different, so it is replaced rather than read.
+        if file::read_config_to_string(path).ok().as_deref() == Some(content.as_str()) {
             if !sidecars.has_changes() {
                 return Ok(None);
             }

@@ -336,8 +336,12 @@ impl TasksLs {
                 "name": task.display_name,
                 "aliases": task.aliases,
                 "description": task.description,
-                "source": task.config_source,
-                "config_sources": task.config_sources(),
+                "source": task.config_source.to_string_lossy(),
+                "config_sources": task
+                    .config_sources()
+                    .iter()
+                    .map(|source| source.to_string_lossy())
+                    .collect::<Vec<_>>(),
                 "depends": task.depends,
                 "daemons": task.daemons,
                 "secrets": task.secret_names(),
@@ -359,7 +363,7 @@ impl TasksLs {
                 "timeout": task.timeout,
                 "run": task.run(),
                 "args": task.args,
-                "file": task.file,
+                "file": task.file.as_ref().map(|p| p.to_string_lossy()),
             }));
         }
         miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);

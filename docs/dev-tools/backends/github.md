@@ -541,6 +541,11 @@ api.github.com whether the two names are the same repository. A
 [`url_replacements`](/url-replacements.html) mirror for the API cannot confirm a
 rename.
 
+The provenance must also have been built from the tag of the release being
+installed. Without that check, a reusable workflow's provenance for an older
+release would pass for a newer one. A tool whose releases are built from a
+branch rather than a tag cannot be verified this way.
+
 With both options set, a release that has no SLSA provenance mise can verify
 for the asset, because it publishes none or the file is empty or unreadable,
 fails to install and to lock, unless GitHub artifact attestations verify it

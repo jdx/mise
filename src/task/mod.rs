@@ -867,7 +867,10 @@ fn parse_task_script_usage_with_env(
     env: Option<&EnvMap>,
     preamble: &str,
 ) -> usage::Result<usage::Spec> {
-    let script = std::fs::read_to_string(file)?;
+    // `file` comes from config that may not be trusted yet, so it is read like
+    // a config file: only a regular file, and only up to the size limit.
+    let script = crate::file::read_config_to_string(file)
+        .map_err(|err| std::io::Error::other(format!("{err:#}")))?;
     // Same reason as the `#MISE` header scan: `#USAGE` on line 1 is invisible behind a mark.
     let mut raw = extract_usage_from_comments(crate::file::strip_utf8_bom(&script));
     if !preamble.trim().is_empty() {
@@ -1270,7 +1273,7 @@ impl Task {
         // Stripped before scanning: the header patterns anchor at the start of a line, so a
         // byte-order mark would hide a `#MISE` written on line 1 -- which is where a task with
         // an executable extension rather than a shebang puts it.
-        let body = file::read_to_string(path)?;
+        let body = file::read_config_to_string(path)?;
         let info = parse_mise_header_toml(file::strip_utf8_bom(&body))?
             .into_iter()
             .filter_map(|toml| toml.as_table().cloned())
@@ -2304,7 +2307,10 @@ impl Task {
         let mut tera_ctx = config.tera_ctx.clone();
         tera_ctx.insert("env", &EnvMap::new());
         tera_ctx.insert("vars", &IndexMap::<String, String>::new());
-        tera_ctx.insert("config_root", &self.config_root);
+        tera_ctx.insert(
+            "config_root",
+            &self.config_root.as_ref().map(|p| p.to_string_lossy()),
+        );
         tera_ctx
     }
 
@@ -2331,7 +2337,10 @@ impl Task {
         // Re-insert with task-level vars merged in so callers see the final combined map,
         // with task-level values taking precedence over config-level ones.
         tera_ctx.insert("vars", &vars);
-        tera_ctx.insert("config_root", &self.config_root);
+        tera_ctx.insert(
+            "config_root",
+            &self.config_root.as_ref().map(|p| p.to_string_lossy()),
+        );
         Ok(tera_ctx)
     }
 
@@ -2429,7 +2438,7 @@ impl Task {
             .collect();
         let mut env: EnvMap = env::PRISTINE_ENV.clone();
         let mut resolve_ctx = tera_ctx.clone();
-        resolve_ctx.insert("config_root", &task_project_root);
+        resolve_ctx.insert("config_root", &task_project_root.to_string_lossy());
         let results = EnvResults::resolve(
             config,
             resolve_ctx,
@@ -3033,7 +3042,7 @@ impl Task {
         let (mut env, mut env_remove, mut mise_keys) =
             ts.full_env_with_removals_and_keys(config).await?;
         if let Some(root) = &config.project_root {
-            tera_ctx.insert("config_root", &root);
+            tera_ctx.insert("config_root", &root.to_string_lossy());
         }
 
         // Convert task env directives to (EnvDirective, PathBuf) pairs
@@ -4875,6 +4884,32 @@ exec shapeme "$@"
             assert_eq!(spec.cmd.flags.len(), 1, "{label}");
             assert_eq!(&spec.cmd.flags[0].name, "force", "{label}");
         }
+    }
+
+    /// A task `file` from config may name a device or a pipe, which would be
+    /// read without end, so only regular files are read for a usage spec.
+    #[cfg(unix)]
+    #[test]
+    fn test_parse_task_script_usage_rejects_a_device() {
+        let err = super::parse_task_script_usage(Path::new("/dev/null")).unwrap_err();
+        assert!(err.to_string().contains("not a regular file"), "{err}");
+    }
+
+    /// A task `file` from untrusted config is read for its usage spec by
+    /// `mise tasks ls` and completion, so it stops at the config size limit.
+    #[test]
+    fn test_parse_task_script_usage_refuses_an_oversized_file() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(tmp.path(), "#!/bin/sh\n#USAGE flag \"--verbose\"\n").unwrap();
+        // Sparse padding past the limit after a valid header.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(tmp.path())
+            .unwrap()
+            .set_len(crate::file::CONFIG_FILE_LIMIT + 1)
+            .unwrap();
+        let err = super::parse_task_script_usage(tmp.path()).unwrap_err();
+        assert!(err.to_string().contains("larger than 16 MiB"), "{err}");
     }
 
     #[test]

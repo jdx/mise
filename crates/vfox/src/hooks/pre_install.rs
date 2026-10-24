@@ -132,6 +132,9 @@ pub struct PreInstallAttestation {
     /// `owner/repo` whose workflow run made the provenance, when the signer
     /// is a reusable workflow from another repository (slsa-github-generator).
     pub slsa_source_repository: Option<String>,
+    /// The git tag this version's release was built from. Without it, mise
+    /// can't tell this release's provenance from another release's.
+    pub slsa_source_tag: Option<String>,
 }
 
 impl FromLua for PreInstallAttestation {
@@ -163,6 +166,7 @@ impl FromLua for PreInstallAttestation {
                     slsa_signer_issuer: table.get::<Option<String>>("slsa_signer_issuer")?,
                     slsa_source_repository: table
                         .get::<Option<String>>("slsa_source_repository")?,
+                    slsa_source_tag: table.get::<Option<String>>("slsa_source_tag")?,
                 })
             }
             _ => Err(LuaError::FromLuaConversionError {

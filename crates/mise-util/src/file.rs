@@ -783,6 +783,74 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
         .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))
 }
 
+/// Largest config file mise reads: `mise.toml`, `.tool-versions`, idiomatic
+/// version files, `mise.lock`, `.miserc.toml` and task TOML. These are found in
+/// whatever directory mise runs in, before anything is trusted, and are read
+/// whole, so without a limit a checkout could make every prompt allocate as much
+/// as the file holds. Real files are kilobytes: mise's own lockfile, covering
+/// dozens of tools on every platform, is about 70 KiB, and a config file a
+/// person writes is a few KiB. 16 MiB leaves more than two hundred times that
+/// while keeping the cost of a hostile file small.
+pub const CONFIG_FILE_LIMIT: u64 = 16 * 1024 * 1024;
+
+fn config_file_too_large(path: &Path) -> eyre::Report {
+    eyre::eyre!(
+        "not reading {}: it is larger than {} MiB, the most mise reads from a config file",
+        path.display_user(),
+        CONFIG_FILE_LIMIT / 1024 / 1024
+    )
+}
+
+/// Opens `path` only if it is a regular file, judged from the opened handle so
+/// that nothing swapped in after an earlier check is read instead. On unix the
+/// open does not block, so a pipe put in the file's place cannot hang it.
+pub fn open_regular_file<P: AsRef<Path>>(path: P) -> std::io::Result<File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, nix::libc::O_NONBLOCK);
+    let file = options.open(path.as_ref())?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::other("not a regular file"));
+    }
+    Ok(file)
+}
+
+/// [`read_to_string`] for a config file, refusing one that is not a regular
+/// file or is larger than [`CONFIG_FILE_LIMIT`].
+pub fn read_config_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref();
+    trace!("cat {}", path.display_user());
+    let mut body = String::new();
+    open_regular_file(path)
+        .and_then(|file| file.take(CONFIG_FILE_LIMIT + 1).read_to_string(&mut body))
+        .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))?;
+    if body.len() as u64 > CONFIG_FILE_LIMIT {
+        return Err(config_file_too_large(path));
+    }
+    Ok(body)
+}
+
+/// Fails when `path` is a config file larger than [`CONFIG_FILE_LIMIT`], for
+/// readers that open the file themselves. A file that cannot be inspected is
+/// left to the reader to report.
+pub fn ensure_config_file_size<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.len() > CONFIG_FILE_LIMIT => Err(config_file_too_large(path)),
+        _ => Ok(()),
+    }
+}
+
+/// [`read_config_to_string`] on the blocking pool, for async callers: the same
+/// regular-file check and size limit, judged on the opened handle.
+pub async fn read_config_to_string_async<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref().to_path_buf();
+    tokio::task::spawn_blocking(move || read_config_to_string(&path))
+        .await
+        .wrap_err("config file read was cancelled")?
+}
+
 /// The bytes of a UTF-8 byte-order mark, as [`decode_text`] matches them below.
 #[cfg(windows)]
 pub const UTF8_BOM_BYTES: [u8; 3] = [0xef, 0xbb, 0xbf];
