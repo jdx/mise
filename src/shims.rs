@@ -271,16 +271,28 @@ pub async fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
     }
 }
 
+/// The lock every writer of `shims_dir` takes. The wrapper directory is shared
+/// by every mise process using this data directory, whatever its cache
+/// directory, so its lock sits beside it rather than in the cache, and outside
+/// it because a reshim removes the directory once no wrapper is wanted.
+fn shim_dir_lock(shims_dir: &Path) -> LockFile {
+    let wrappers_dir = &*dirs::COMMAND_WRAPPERS;
+    match wrappers_dir.parent() {
+        Some(parent) if shims_dir == wrappers_dir => LockFile::at(&parent.join("bin.lock")),
+        _ => LockFile::new(shims_dir),
+    }
+}
+
 fn write_bootstrap_shims(
     mise_bin: &Path,
     shims_dir: &Path,
     shims: &BTreeSet<String>,
     _prune_stale_windows_variants: bool,
 ) -> Result<Option<eyre::Report>> {
-    // Lock failures come from the cache rather than the target farm and must
-    // remain visible to the user. The lock is taken first because a reshim may
-    // remove an emptied wrapper directory while it holds it.
-    let _lock = LockFile::new(shims_dir).lock()?;
+    // Lock failures come from outside the target farm and must remain visible
+    // to the user. The lock is taken first because a reshim may remove an
+    // emptied wrapper directory while it holds it.
+    let _lock = shim_dir_lock(shims_dir).lock()?;
     if let Err(err) = file::create_dir_all(shims_dir) {
         if is_permission_denied(&err) {
             return Ok(Some(err));
@@ -1025,7 +1037,7 @@ async fn sync_command_wrapper_shims(
     if wrappers.is_empty() && !wrappers_dir.is_dir() {
         return Ok(());
     }
-    let _lock = LockFile::new(wrappers_dir).lock()?;
+    let _lock = shim_dir_lock(wrappers_dir).lock()?;
     file::create_dir_all(wrappers_dir)?;
     remove_stale_wrapper_staging(wrappers_dir);
 
@@ -1106,10 +1118,13 @@ fn remove_stale_wrapper_staging(wrappers_dir: &Path) {
         return;
     };
     for entry in entries.flatten() {
+        // A wrapper may itself be named with the prefix; only a directory is
+        // staging.
         if !entry
             .file_name()
             .to_string_lossy()
             .starts_with(WRAPPER_STAGING_PREFIX)
+            || !entry.file_type().is_ok_and(|kind| kind.is_dir())
         {
             continue;
         }

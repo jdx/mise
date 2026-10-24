@@ -11,6 +11,9 @@ mise trust mise.toml
 mise reshim
 wrapper="$MISE_DATA_DIR/command-wrappers/bin/uname"
 assert_succeed "test -e '$wrapper'"
+# The lock lives beside the shared directory, not in the cache, so processes
+# with different cache directories still exclude each other.
+assert_succeed "test -e '$MISE_DATA_DIR/command-wrappers/bin.lock'"
 
 reshim_count=10
 (for _ in $(seq "$reshim_count"); do mise reshim --force; done) &
@@ -32,6 +35,14 @@ mkdir -p "$stale"
 touch "$stale/uname"
 mise reshim
 assert_fail "test -e '$stale'"
+
+# Only a directory is staging: a file whose name carries the prefix, such as a
+# wrapper named that way, is left alone.
+kept="$MISE_DATA_DIR/command-wrappers/bin/.mise-wrappers-stage-kept"
+touch "$kept"
+mise reshim
+assert_succeed "test -f '$kept'"
+rm "$kept"
 
 mkdir -p "$stale"
 printf '[settings]\nexperimental = true\n' >mise.toml
