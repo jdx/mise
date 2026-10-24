@@ -1,5 +1,87 @@
 # Changelog
 
+## [2026.10.19](https://github.com/jdx/mise/releases/tag/v2026.10.19) - 2026-10-24
+
+### 🚀 Features
+
+- **(config)** expose mise_config_dir to templates by @jdx in [#14886](https://github.com/jdx/mise/pull/14886)
+- **(lsp)** send semantic tokens for tasks, tools, env vars and templates by @jdx in [#14918](https://github.com/jdx/mise/pull/14918)
+
+### 🐛 Bug Fixes
+
+- **(lock)** rebuild lockfiles completely by default by @jdx in [#14893](https://github.com/jdx/mise/pull/14893)
+- **(pipx)** list git+ssh github.com sources over ssh when GitHub can't see them by @jdx in [#14905](https://github.com/jdx/mise/pull/14905)
+- **(python)** stop uv_venv_auto from fork-bombing through python shims by @jdx in [#14927](https://github.com/jdx/mise/pull/14927)
+- **(task)** apply extended template usage to file tasks by @jdx in [#14888](https://github.com/jdx/mise/pull/14888)
+- **(task)** quote and escape header values written by tasks add --file by @xucian in [#14925](https://github.com/jdx/mise/pull/14925)
+- **(uninstall)** remove installs whose directories deny their owner writes by @HengYangDS in [#14883](https://github.com/jdx/mise/pull/14883)
+- **(upgrade)** don't downgrade date-versioned tools with leading zeros by @jdx in [#14923](https://github.com/jdx/mise/pull/14923)
+
+### 📚 Documentation
+
+- tell agents not to edit the vendored aqua registry by @jdx in [#14910](https://github.com/jdx/mise/pull/14910)
+
+### 🧪 Testing
+
+- update e2e expectations after version validation moved earlier by @jdx in [#14920](https://github.com/jdx/mise/pull/14920)
+- pin java relock e2e to a fully published Temurin line by @jdx in [#14940](https://github.com/jdx/mise/pull/14940)
+
+### 📦️ Dependency Updates
+
+- bump ctutils to 0.4.5 by @jdx in [#14887](https://github.com/jdx/mise/pull/14887)
+- update aube to v2.8.2 by @renovate[bot] in [#14889](https://github.com/jdx/mise/pull/14889)
+- update rust crate clx to v3.0.5 by @renovate[bot] in [#14890](https://github.com/jdx/mise/pull/14890)
+- ignore RUSTSEC-2026-0387 in cargo-deny by @jdx in [#14939](https://github.com/jdx/mise/pull/14939)
+
+### Ci
+
+- retry snapcraft upload on transient store errors by @jdx in [#14909](https://github.com/jdx/mise/pull/14909)
+
+### Security
+
+- **(backend)** keep untrusted values out of subprocess arguments and the project directory by @jdx in [#14896](https://github.com/jdx/mise/pull/14896)
+- **(backend)** keep archive contents and release asset names inside the install directory by @jdx in [#14895](https://github.com/jdx/mise/pull/14895)
+- **(backend)** validate versions and names that become paths or URL segments by @jdx in [#14901](https://github.com/jdx/mise/pull/14901)
+- **(backend)** tighten SLSA signer and GitHub attestation checks by @jdx in [#14904](https://github.com/jdx/mise/pull/14904)
+- **(backend)** make SLSA, attestation and signed-checksum checks fail closed by @jdx in [#14908](https://github.com/jdx/mise/pull/14908)
+- **(backend)** reject SLSA provenance built from another tag by @jdx in [#14924](https://github.com/jdx/mise/pull/14924)
+- **(completion)** stop shell completion from running untrusted task code by @jdx in [#14898](https://github.com/jdx/mise/pull/14898)
+- **(config)** tie trust to the right files for worktrees, symlinks and config dirs by @jdx in [#14902](https://github.com/jdx/mise/pull/14902)
+- **(config)** close safe-mode gaps for lazy tools, deps, S3, bin_path and templates by @jdx in [#14900](https://github.com/jdx/mise/pull/14900)
+- **(config)** stop treating help, shims, hooks and config writes as consent to trust by @jdx in [#14903](https://github.com/jdx/mise/pull/14903)
+- **(config)** keep untrusted repo content from hanging or crashing hook-env by @jdx in [#14916](https://github.com/jdx/mise/pull/14916)
+- **(github)** send forge tokens only to their API host and harden release caches by @jdx in [#14913](https://github.com/jdx/mise/pull/14913)
+- **(hooks)** render hook commands once and keep templates out of written versions by @jdx in [#14897](https://github.com/jdx/mise/pull/14897)
+- **(http)** bound response, download and archive sizes and slow response bodies by @jdx in [#14915](https://github.com/jdx/mise/pull/14915)
+- **(install)** enforce pinned checksums and node signatures instead of falling back by @jdx in [#14899](https://github.com/jdx/mise/pull/14899)
+- **(lockfile)** stop lockfiles, tool stubs and the task cache from reaching outside the repo by @jdx in [#14906](https://github.com/jdx/mise/pull/14906)
+- **(packslip)** pin signers by repository ID and stop release-age backdating by @jdx in [#14912](https://github.com/jdx/mise/pull/14912)
+- **(task)** close sandbox escapes in --allow-write, --deny-net and --deny-write, and OCI whiteouts by @jdx in [#14911](https://github.com/jdx/mise/pull/14911)
+- keep credentials out of install paths, lockfiles, logs and redirects by @jdx in [#14917](https://github.com/jdx/mise/pull/14917)
+
+### New Contributors
+
+- @xucian made their first contribution in [#14925](https://github.com/jdx/mise/pull/14925)
+- @HengYangDS made their first contribution in [#14883](https://github.com/jdx/mise/pull/14883)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (5)
+
+- [`Future-Element/pinset`](https://github.com/Future-Element/pinset)
+- [`bronto-community/bronto-cli`](https://github.com/bronto-community/bronto-cli)
+- [`faberlang/releases/faber`](https://github.com/faberlang/releases)
+- [`muvon/octomind`](https://github.com/muvon/octomind)
+- [`pratyay360/ensor`](https://github.com/pratyay360/ensor)
+
+#### Updated Packages (5)
+
+- [`anomalyco/opencode`](https://github.com/anomalyco/opencode)
+- [`duckdb/duckdb`](https://github.com/duckdb/duckdb)
+- [`grafana/gcx`](https://github.com/grafana/gcx)
+- [`grafana/mcp-grafana`](https://github.com/grafana/mcp-grafana)
+- [`magefile/mage`](https://github.com/magefile/mage)
+
 ## [2026.10.18](https://github.com/jdx/mise/releases/tag/v2026.10.18) - 2026-10-23
 
 ### 🚀 Features
