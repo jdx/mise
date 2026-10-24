@@ -198,6 +198,10 @@ function __enable_mise_prompt {
     if (-not (Test-Path variable:global:__mise_pwsh_previous_prompt_function)){
         $Global:__mise_pwsh_previous_prompt_function=$function:prompt
         function global:prompt {
+            # Read first: every command below sets $?, and hook-env is a native
+            # command. _mise_hook puts $LASTEXITCODE back; $? cannot be assigned,
+            # but an ignored error makes it false again for the prompt it wraps.
+            $previousSucceeded = $?
             if (Test-Path -Path Function:\_mise_hook){
                 # Skip only when the chpwd handler already ran hook-env for this
                 # exact directory and the MISE_* state has not changed since.
@@ -221,6 +225,7 @@ function __enable_mise_prompt {
                     _mise_hook
                 }
             }
+            if (-not $previousSucceeded) { Write-Error '' -ErrorAction Ignore }
             & $__mise_pwsh_previous_prompt_function
         }
     }
