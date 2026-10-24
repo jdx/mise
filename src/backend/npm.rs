@@ -675,25 +675,6 @@ fn virtual_store_entry_links_dependencies(entry: &Path) -> bool {
     true
 }
 
-/// Whether `path` is the running mise binary: a symlink to it, or a hard link that shares
-/// its file identity (which `file::same_file` does not see, as it compares paths).
-#[cfg(unix)]
-fn is_mise_binary(path: &Path) -> bool {
-    if crate::file::same_file(path, &crate::env::MISE_BIN) {
-        return true;
-    }
-    same_inode(path, &crate::env::MISE_BIN)
-}
-
-#[cfg(unix)]
-fn same_inode(a: &Path, b: &Path) -> bool {
-    use std::os::unix::fs::MetadataExt;
-    match (a.metadata(), b.metadata()) {
-        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
-        _ => false,
-    }
-}
-
 /// The `npm` that `npm view` should run, resolved from the child PATH on unix.
 ///
 /// `dependency_env` already drops this mise's own shims dir, but it recognizes shims by
@@ -731,7 +712,7 @@ fn npm_view_program_in(env: &BTreeMap<String, String>, cwd: &Path) -> eyre::Resu
         if !candidate.is_file() || !crate::file::is_spawnable(&candidate) {
             continue;
         }
-        if is_mise_binary(&candidate) {
+        if super::is_mise_binary(&candidate) {
             skipped_mise_shim.get_or_insert(candidate);
             continue;
         }
@@ -3191,21 +3172,6 @@ mod tests {
         let env = npm_view_env(&[shims.path()]);
         let err = npm_view_program(&env).unwrap_err().to_string();
         assert!(err.contains("only npm on PATH is a mise shim"), "{err}");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn same_inode_recognizes_a_hard_link() {
-        let dir = tempfile::tempdir().unwrap();
-        let original = dir.path().join("mise");
-        std::fs::write(&original, "x").unwrap();
-        let link = dir.path().join("npm");
-        std::fs::hard_link(&original, &link).unwrap();
-        let other = dir.path().join("other");
-        std::fs::write(&other, "x").unwrap();
-        assert!(!crate::file::same_file(&link, &original));
-        assert!(same_inode(&link, &original));
-        assert!(!same_inode(&other, &original));
     }
 
     #[cfg(unix)]
