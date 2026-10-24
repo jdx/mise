@@ -1105,6 +1105,15 @@ async fn sync_command_wrapper_shims(
     if !cfg!(windows) {
         return file::remove_all(wrappers_dir);
     }
+    // The shim listing skips `.old` copies, so drop them here; one whose
+    // wrapper is still running stays locked and is left.
+    if let Ok(entries) = wrappers_dir.read_dir() {
+        for entry in entries.flatten() {
+            if entry.path().extension().is_some_and(|ext| ext == "old") {
+                let _ = fs::remove_file(entry.path()); // best-effort
+            }
+        }
+    }
     if let Err(err) = fs::remove_dir(wrappers_dir)
         && !matches!(
             err.kind(),
