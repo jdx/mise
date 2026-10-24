@@ -216,9 +216,8 @@ installed.
 
 This hands the cask to Homebrew, as [casks installed by
 Homebrew](#casks-installed-by-homebrew) describes: mise leaves it alone from then
-on, and `apply`, `upgrade` and `prune` skip it. It applies to casks mise
-installs after you set it. For a cask mise already installed, run
-`brew reinstall --cask --force <token>`.
+on, and `apply`, `upgrade` and `prune` skip it. A cask mise installed earlier
+gets the metadata on the next `apply`.
 
 A cask counts as installed while its app, font, binary, and completion files
 are in place. Changes inside an installed app, such as a self-update, do not
