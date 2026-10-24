@@ -1019,6 +1019,15 @@ impl BrewCaskManager {
         remove_stale_versions(&caskroom_token, &cask.version)?;
         remove_cask_journals(cask.manager, &cask.token)?;
         file::remove_all(stage)?;
+        if cask.manager.uses_homebrew_caskroom()
+            && manager_options.brew_cask_homebrew_metadata(&req.name)
+            && let Err(err) = write_homebrew_metadata(&caskroom_token, &cask.token, &cask.version)
+        {
+            warn!(
+                "brew-cask:{}: installed, but failed to write Homebrew metadata: {err:#}",
+                cask.token
+            );
+        }
         Ok(cask.version)
     }
 }

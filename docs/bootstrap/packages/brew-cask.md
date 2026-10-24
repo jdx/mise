@@ -192,8 +192,33 @@ with an error that tells you how to repair them in Homebrew.
 ## Casks mise installed
 
 mise records these casks in its own receipt in the Caskroom and does not write
-Homebrew's cask metadata, so they stay mise-owned. Use mise, not Homebrew, to
-upgrade or prune them.
+Homebrew's cask metadata by default, so they stay mise-owned. Use mise, not
+Homebrew, to upgrade or prune them. Homebrew does not see them: `brew upgrade`
+and `brew outdated` skip them, and `brew doctor` reports their Caskroom
+directory as having no valid metadata.
+
+### Let Homebrew upgrade them {#let-homebrew-upgrade-them}
+
+If you keep Homebrew and want `brew upgrade` to handle every cask, set
+`homebrew_metadata` under `[bootstrap.brew]`:
+
+```toml
+[bootstrap.brew]
+homebrew_metadata = true
+```
+
+After mise installs a cask, it then writes the metadata file Homebrew looks for
+(`.metadata/<version>/<timestamp>/Casks/<token>.json`, containing `{}` as for a
+cask Homebrew loaded from its API). Homebrew reads the cask definition from its
+API and takes the installed version from the Caskroom folder name, so
+`brew upgrade`, `brew outdated` and `brew doctor` treat the cask like one it
+installed.
+
+This hands the cask to Homebrew, as [casks installed by
+Homebrew](#casks-installed-by-homebrew) describes: mise leaves it alone from then
+on, and `apply`, `upgrade` and `prune` skip it. It applies to casks mise
+installs after you set it. For a cask mise already installed, run
+`brew reinstall --cask --force <token>`.
 
 A cask counts as installed while its app, font, binary, and completion files
 are in place. Changes inside an installed app, such as a self-update, do not

@@ -390,6 +390,33 @@ fn detects_any_foreign_homebrew_metadata_object() -> Result<()> {
 }
 
 #[test]
+fn written_homebrew_metadata_hands_the_cask_to_homebrew() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let token_dir = tmp.path().join("Caskroom/example");
+    file::create_dir_all(token_dir.join("2.40.0"))?;
+    assert_eq!(homebrew_installed_version("example")?, None);
+
+    write_homebrew_metadata(&token_dir, "example", "2.40.0")?;
+
+    let versions = token_dir.join(".metadata/2.40.0");
+    let stamps = std::fs::read_dir(&versions)?.collect::<Result<Vec<_>, _>>()?;
+    assert_eq!(stamps.len(), 1);
+    let stamp = stamps[0].file_name().into_string().unwrap();
+    // Homebrew's own format: YYYYMMDDHHMMSS.mmm
+    assert_eq!(stamp.len(), 18);
+    assert_eq!(stamp.as_bytes()[14], b'.');
+    let record = versions.join(&stamp).join("Casks/example.json");
+    assert_eq!(mise_util::file::read_to_string(record)?, "{}");
+    assert_eq!(
+        homebrew_installed_version("example")?.as_deref(),
+        Some("2.40.0")
+    );
+    Ok(())
+}
+
+#[test]
 fn homebrew_version_ignores_mise_working_directories() -> Result<()> {
     let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
@@ -8490,6 +8517,7 @@ fn dependency_appdir_uses_its_own_package_setting() {
     let options = ManagerPackageOptions::BrewCask {
         adopt: BTreeSet::new(),
         appdirs: BTreeMap::from([("dependency".to_string(), dependency.clone())]),
+        homebrew_metadata: BTreeSet::new(),
     };
     let request = PackageRequest {
         name: "dependency".to_string(),

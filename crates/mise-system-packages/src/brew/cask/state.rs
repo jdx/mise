@@ -115,6 +115,23 @@ pub(super) fn ensure_homebrew_did_not_take_ownership(token: &str, stage: &Path) 
     Ok(())
 }
 
+/// Write the `.metadata` record Homebrew requires before it counts a Caskroom
+/// version as installed: `.metadata/<version>/<timestamp>/Casks/<token>.json`.
+///
+/// Homebrew writes `{}` here for a cask it loaded from its API and reads the
+/// definition from the API on demand. Once this exists mise treats the cask as
+/// Homebrew's (see [`homebrew_metadata_present`]), so `brew upgrade` takes over.
+pub(super) fn write_homebrew_metadata(token_dir: &Path, token: &str, version: &str) -> Result<()> {
+    let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S%.3f").to_string();
+    let path = token_dir
+        .join(".metadata")
+        .join(version)
+        .join(timestamp)
+        .join("Casks")
+        .join(format!("{token}.json"));
+    write_durable_file(&path, b"{}")
+}
+
 pub(super) fn homebrew_metadata_present(token: &str) -> Result<bool> {
     let path = caskroom_token_dir(CaskManager::BrewCask, token).join(".metadata");
     match path.symlink_metadata() {
