@@ -1135,28 +1135,9 @@ fn parse_matching_registry_idiomatic_file(
     }
 }
 
-/// Whether `path` is the running mise binary, including symlinks and unix hard links.
+/// Whether `path` is the running mise binary, including symlinks and hard links.
 fn is_mise_binary(path: &Path) -> bool {
-    if file::same_file(path, &env::MISE_BIN) {
-        return true;
-    }
-    #[cfg(unix)]
-    {
-        same_inode(path, &env::MISE_BIN)
-    }
-    #[cfg(not(unix))]
-    {
-        false
-    }
-}
-
-#[cfg(unix)]
-fn same_inode(a: &Path, b: &Path) -> bool {
-    use std::os::unix::fs::MetadataExt;
-    match (a.metadata(), b.metadata()) {
-        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
-        _ => false,
-    }
+    same_file::is_same_file(path, env::MISE_BIN.as_path()).unwrap_or(false)
 }
 
 /// Internal commands must not re-enter mise through its dispatch directories or binary.
@@ -1170,7 +1151,7 @@ fn which_non_pristine_executable_in(bin: &str, dirs: &[PathBuf]) -> Option<PathB
             .filter(|dir| !file::is_mise_dispatch_dir(dir))
             .filter_map(|dir| std::path::absolute(dir.join(&name)).ok())
             .find(|candidate| {
-                candidate.is_file() && file::is_executable(candidate) && !is_mise_binary(candidate)
+                candidate.is_file() && file::is_spawnable(candidate) && !is_mise_binary(candidate)
             })
     })
 }
@@ -1343,6 +1324,70 @@ mod tests {
         std::os::unix::fs::symlink(&*env::MISE_BIN, outer_shims.path().join("sops")).unwrap();
         assert_eq!(
             which_non_pristine_executable_in("sops", &[outer_shims.path().to_path_buf()]),
+            None
+        );
+    }
+
+    #[test]
+    fn internal_lookup_skips_a_foreign_mise_hard_link() {
+        let dir = tempfile::tempdir_in(env::MISE_BIN.parent().unwrap()).unwrap();
+        let outer_shims = dir.path().join("outer-shims");
+        let real_bin = dir.path().join("real-bin");
+        fs::create_dir_all(&outer_shims).unwrap();
+        fs::create_dir_all(&real_bin).unwrap();
+        let name = format!("sops{}", std::env::consts::EXE_SUFFIX);
+        fs::hard_link(env::MISE_BIN.as_path(), outer_shims.join(&name)).unwrap();
+        let sops = real_bin.join(&name);
+        fs::write(&sops, "#!/bin/sh\n").unwrap();
+        file::make_executable(&sops).unwrap();
+
+        assert_eq!(
+            which_non_pristine_executable_in("sops", &[outer_shims.clone(), real_bin]),
+            Some(sops)
+        );
+        assert_eq!(
+            which_non_pristine_executable_in("sops", &[outer_shims]),
+            None
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn internal_lookup_rejects_interpreter_only_extensions() {
+        for name in ["sops.ps1", "sops.vbs"] {
+            let dir = tempfile::tempdir().unwrap();
+            let script = dir.path().join(name);
+            fs::write(&script, "exit 42\n").unwrap();
+            assert!(file::is_executable(&script));
+            assert_eq!(
+                which_non_pristine_executable_in("sops", &[dir.path().to_path_buf()]),
+                None
+            );
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn internal_lookup_skips_a_bare_script_for_native_fallback() {
+        let scripts = tempfile::tempdir().unwrap();
+        let native = tempfile::tempdir().unwrap();
+        fs::write(
+            scripts.path().join("sops"),
+            "#!/usr/bin/env bash\nexit 42\n",
+        )
+        .unwrap();
+        let sops = native.path().join("sops.cmd");
+        fs::write(&sops, "@echo off\r\n").unwrap();
+
+        assert_eq!(
+            which_non_pristine_executable_in(
+                "sops",
+                &[scripts.path().to_path_buf(), native.path().to_path_buf()]
+            ),
+            Some(sops)
+        );
+        assert_eq!(
+            which_non_pristine_executable_in("sops", &[scripts.path().to_path_buf()]),
             None
         );
     }

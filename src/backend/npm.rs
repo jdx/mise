@@ -3067,21 +3067,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn same_inode_recognizes_a_hard_link() {
-        let dir = tempfile::tempdir().unwrap();
-        let original = dir.path().join("mise");
-        std::fs::write(&original, "x").unwrap();
-        let link = dir.path().join("npm");
-        std::fs::hard_link(&original, &link).unwrap();
-        let other = dir.path().join("other");
-        std::fs::write(&other, "x").unwrap();
-        assert!(!crate::file::same_file(&link, &original));
-        assert!(crate::backend::same_inode(&link, &original));
-        assert!(!crate::backend::same_inode(&other, &original));
-    }
-
-    #[cfg(unix)]
-    #[test]
     fn npm_view_program_skips_a_directory_named_npm() {
         let first = tempfile::tempdir().unwrap();
         let node_bin = tempfile::tempdir().unwrap();
