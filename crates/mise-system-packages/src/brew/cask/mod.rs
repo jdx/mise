@@ -1227,8 +1227,12 @@ impl SystemPackageManager for BrewCaskManager {
                 .await?;
             let _caskroom_lock = lock_caskroom(cask.manager)?;
             // Re-read under the lock: Homebrew may have taken the cask meanwhile.
+            // Ownership first: a Homebrew-owned cask may keep a stale or malformed mise
+            // receipt that must not be read.
+            if !matches!(homebrew_metadata_present(&cask.token), Ok(false)) {
+                continue;
+            }
             if let Some(version) = mise_installed_cask_version(&cask)?
-                && matches!(homebrew_metadata_present(&cask.token), Ok(false))
                 && let Err(err) = write_homebrew_metadata(
                     &caskroom_token_dir(cask.manager, &cask.token),
                     &cask.token,
