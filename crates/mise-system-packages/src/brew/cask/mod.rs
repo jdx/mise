@@ -1019,9 +1019,8 @@ impl BrewCaskManager {
         remove_stale_versions(&caskroom_token, &cask.version)?;
         remove_cask_journals(cask.manager, &cask.token)?;
         file::remove_all(stage)?;
-        if cask.manager.uses_homebrew_caskroom()
-            && manager_options.brew_cask_homebrew_metadata()
-            && is_official_cask_request(&req.name)
+        if manager_options.brew_cask_homebrew_metadata()
+            && homebrew_handoff_applies(&cask, &req.name)
             && let Err(err) = write_homebrew_metadata(&caskroom_token, &cask.token, &cask.version)
         {
             warn!(
@@ -1220,13 +1219,15 @@ impl SystemPackageManager for BrewCaskManager {
         for status in statuses {
             if !status.state.is_installed()
                 || status.request.desired != crate::PackageDesiredState::Present
-                || !is_official_cask_request(&status.request.name)
             {
                 continue;
             }
             let cask = self
                 .resolve_cask(&status.request, manager_options, false)
                 .await?;
+            if !homebrew_handoff_applies(&cask, &status.request.name) {
+                continue;
+            }
             let _caskroom_lock = lock_caskroom(cask.manager)?;
             // Re-read under the lock: Homebrew may have taken the cask meanwhile.
             // Ownership first: a Homebrew-owned cask may keep a stale or malformed mise

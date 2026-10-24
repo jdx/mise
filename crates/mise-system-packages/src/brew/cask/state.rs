@@ -156,6 +156,20 @@ pub(super) fn is_official_cask_request(name: &str) -> bool {
     }
 }
 
+/// Whether the Homebrew metadata handoff applies to this cask.
+///
+/// Homebrew only reads a Caskroom that is its own, and mise records casks under
+/// `/opt/homebrew`, which is a real Homebrew prefix only on Apple Silicon. A
+/// cask installed outside the default application directory is excluded
+/// because `brew upgrade` would reinstall it into `/Applications`.
+pub(super) fn homebrew_handoff_applies(cask: &Cask, requested_name: &str) -> bool {
+    cfg!(all(target_os = "macos", target_arch = "aarch64"))
+        && cask.manager.uses_homebrew_caskroom()
+        && is_official_cask_request(requested_name)
+        && cask.appdir.is_none()
+        && mise_util::env::var(APP_DIR_ENV).map_or(true, |dir| dir.is_empty())
+}
+
 pub(super) fn homebrew_metadata_present(token: &str) -> Result<bool> {
     let path = caskroom_token_dir(CaskManager::BrewCask, token).join(".metadata");
     match path.symlink_metadata() {

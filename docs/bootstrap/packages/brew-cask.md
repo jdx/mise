@@ -219,7 +219,10 @@ Homebrew](#casks-installed-by-homebrew) describes: mise leaves it alone from the
 on, and `apply`, `upgrade` and `prune` skip it. A cask mise installed earlier
 gets the metadata on the next `apply`. Casks from third-party taps stay with
 mise, because Homebrew's record names only the token and would look it up in
-`homebrew/cask`.
+`homebrew/cask`. So do casks installed outside the default application
+directory (an `appdir` entry or `MISE_BREW_CASK_OPT_APPDIR`), which
+`brew upgrade` would reinstall into `/Applications`. The setting applies on
+Apple Silicon Macs only, where mise's Caskroom is Homebrew's.
 
 A cask counts as installed while its app, font, binary, and completion files
 are in place. Changes inside an installed app, such as a self-update, do not
