@@ -44,6 +44,14 @@ mise reshim
 assert_succeed "test -f '$kept'"
 rm "$kept"
 
+# Once no wrapper is wanted the directory goes, even holding a hidden wrapper,
+# which the shim listing skips, and a stale staging directory.
+cat >mise.toml <<'EOF2'
+[wrappers.".hidden"]
+command = "echo"
+EOF2
+mise reshim
+assert_succeed "test -e '$MISE_DATA_DIR/command-wrappers/bin/.hidden'"
 mkdir -p "$stale"
 printf '[settings]\nexperimental = true\n' >mise.toml
 mise reshim

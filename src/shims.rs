@@ -1065,12 +1065,17 @@ async fn sync_command_wrapper_shims(
             let source = staging.path().join(shim);
             add_shim(mise_bin, &source, shim)?;
             let destination = wrappers_dir.join(shim);
-            if cfg!(windows) && destination.exists() {
-                remove_shim_with_rename_fallback(&destination)?;
-            }
             // Rename replaces a same-named wrapper atomically, so a concurrent
-            // exec finds either the old wrapper or the new one.
-            fs::rename(&source, &destination).wrap_err_with(|| {
+            // exec finds either the old wrapper or the new one. Windows refuses
+            // to replace a wrapper that is running; only then is it moved
+            // aside first.
+            let publish = || fs::rename(&source, &destination);
+            let mut published = publish();
+            if published.is_err() && cfg!(windows) && destination.exists() {
+                remove_shim_with_rename_fallback(&destination)?;
+                published = publish();
+            }
+            published.wrap_err_with(|| {
                 format!(
                     "failed to publish wrapper {} to {}",
                     display_path(&source),
@@ -1091,9 +1096,16 @@ async fn sync_command_wrapper_shims(
         }
     }
     // With no wrapper wanted, drop the directory so activation stops putting it
-    // on PATH. Writers create it under the same lock, so none is mid-write.
-    if desired.is_empty()
-        && let Err(err) = fs::remove_dir(wrappers_dir)
+    // on PATH. Writers create it under the same lock, so none is mid-write. On
+    // Unix it goes whole, with any hidden wrapper the listing skips; on Windows
+    // a running wrapper's `.old` copy cannot be deleted and keeps it.
+    if !desired.is_empty() {
+        return Ok(());
+    }
+    if !cfg!(windows) {
+        return file::remove_all(wrappers_dir);
+    }
+    if let Err(err) = fs::remove_dir(wrappers_dir)
         && !matches!(
             err.kind(),
             std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
