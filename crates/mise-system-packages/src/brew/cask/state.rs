@@ -115,6 +115,62 @@ pub(super) fn ensure_homebrew_did_not_take_ownership(token: &str, stage: &Path) 
     Ok(())
 }
 
+/// Write the `.metadata` record Homebrew requires before it counts a Caskroom
+/// version as installed: `.metadata/<version>/<timestamp>/Casks/<token>.json`.
+///
+/// Homebrew writes `{}` here for a cask it loaded from its API and reads the
+/// definition from the API on demand. Once this exists mise treats the cask as
+/// Homebrew's (see [`homebrew_metadata_present`]), so `brew upgrade` takes over.
+pub(super) fn write_homebrew_metadata(token_dir: &Path, token: &str, version: &str) -> Result<()> {
+    let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S%.3f").to_string();
+    // Built beside `.metadata` and renamed into place, so a failed write never
+    // leaves a bare `.metadata` that would read as Homebrew ownership.
+    let stage = token_dir.join(format!(
+        ".mise-metadata-{}",
+        hash::hash_to_str(&format!("{token}-{version}"))
+    ));
+    file::remove_all(&stage)?;
+    let record = stage
+        .join(version)
+        .join(timestamp)
+        .join("Casks")
+        .join(format!("{token}.json"));
+    let published = write_durable_file(&record, b"{}")
+        .and_then(|()| file::rename(&stage, token_dir.join(".metadata")));
+    if published.is_err() {
+        let _ = file::remove_all(&stage);
+    }
+    published
+}
+
+/// Whether a requested name resolves from Homebrew's official cask tap.
+///
+/// The `{}` metadata record names only the token, so Homebrew would look it up
+/// in `homebrew/cask`. A third-party tap cask that shares the token must stay
+/// mise-owned.
+pub(super) fn is_official_cask_request(name: &str) -> bool {
+    match name.split('/').collect::<Vec<_>>()[..] {
+        [token] => !token.is_empty(),
+        ["homebrew", "cask", token] => !token.is_empty(),
+        _ => false,
+    }
+}
+
+/// Whether the Homebrew metadata handoff applies to this cask.
+///
+/// Homebrew only reads a Caskroom that is its own, and mise records casks under
+/// `/opt/homebrew`, which is a real Homebrew prefix only on Apple Silicon. A
+/// cask installed outside the default application directory is excluded
+/// because `brew upgrade` would reinstall it into `/Applications`.
+pub(super) fn homebrew_handoff_applies(cask: &Cask, request: &PackageRequest) -> bool {
+    cfg!(all(target_os = "macos", target_arch = "aarch64"))
+        && cask.manager.uses_homebrew_caskroom()
+        && request.tap_url.is_none()
+        && is_official_cask_request(&request.name)
+        && cask.appdir.is_none()
+        && mise_util::env::var(APP_DIR_ENV).map_or(true, |dir| dir.is_empty())
+}
+
 pub(super) fn homebrew_metadata_present(token: &str) -> Result<bool> {
     let path = caskroom_token_dir(CaskManager::BrewCask, token).join(".metadata");
     match path.symlink_metadata() {

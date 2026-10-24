@@ -9534,6 +9534,10 @@
               "type": "boolean",
               "description": "adopt existing app artifacts by default for configured brew-cask packages"
             },
+            "homebrew_metadata": {
+              "type": "boolean",
+              "description": "write Homebrew's cask metadata after mise installs a brew-cask package, so `brew upgrade` and `brew outdated` manage it afterwards"
+            },
             "taps": {
               "type": "object",
               "description": "Homebrew tap names mapped to custom git URLs",
