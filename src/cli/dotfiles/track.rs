@@ -366,14 +366,19 @@ impl DotfilesTrack {
                 .iter()
                 .find(|req| req.target == target && req.mode != FileMode::Track)
             {
-                alongside.insert(
-                    target_key.clone(),
-                    (other.origin.config.clone(), other.mode.name()),
-                );
-                global
+                let tracking = global
                     .parent()
                     .unwrap_or(Path::new("."))
-                    .join("conf.d/dotfiles-tracking.toml")
+                    .join("conf.d/dotfiles-tracking.toml");
+                // the entry is replaced, not kept, when it lives in the
+                // tracking file itself
+                if other.origin.config != tracking {
+                    alongside.insert(
+                        target_key.clone(),
+                        (other.origin.config.clone(), other.mode.name()),
+                    );
+                }
+                tracking
             } else {
                 global.clone()
             };

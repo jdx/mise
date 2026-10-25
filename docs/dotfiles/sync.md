@@ -367,7 +367,7 @@ the default branch is untouched. First find the history repository with
 `mise dot status`, then:
 
 ```sh
-git --git-dir=<local-history> push <url> HEAD:refs/heads/mise-history
+git --git-dir=<local-history> push <url> refs/heads/main:refs/heads/mise-history
 mise dot origin set <url> --branch mise-history
 ```
 
