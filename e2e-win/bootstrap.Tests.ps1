@@ -191,6 +191,6 @@ config_roots = ["service-root"]
 
         $out = mise bootstrap packages apply --manager choco --dry-run --yes 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0
-        $out | Should -BeLike '*choco install mise-does-not-exist-0123456789 --version 0.0-preview --yes*'
+        $out | Should -BeLike '*choco install mise-does-not-exist-0123456789 --version 0.0-preview --allow-downgrade --yes*'
     }
 }
