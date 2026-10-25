@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+# `version` in an http url must work with Tera filters (#14953)
+mkdir -p "$HOME/srv/tool_1.2.3"
+cat >"$HOME/srv/tool_1.2.3/tool" <<'SH'
+#!/usr/bin/env bash
+echo ok
+SH
+chmod +x "$HOME/srv/tool_1.2.3/tool"
+tar -czf "$HOME/srv/tool_1.2.3.tar.gz" -C "$HOME/srv/tool_1.2.3" tool
+
+cat >mise.toml <<TOML
+[tools."http:filtered"]
+version = "1.2.3--4--foobar"
+url = "file://$HOME/srv/tool_{{ version | replace(from='--4--foobar', to='') }}.tar.gz"
+bin_path = "."
+TOML
+
+assert_contains "mise install -f 2>&1" "filtered"
+assert "mise x -- tool" "ok"

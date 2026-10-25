@@ -55,6 +55,7 @@ The URL is a [Tera template](/templates.html). Write values in double braces:
 ::: v-pre
 
 - `{{ version }}`: the version being installed
+  Tera filters work on it, for example `{{ version | replace(from='-build1', to='') }}`.
 - `{{ os() }}`: `linux`, `macos` or `windows`
 - `{{ arch() }}`: `x64` or `arm64`
 - `{{ os_family() }}`: `unix` or `windows`
