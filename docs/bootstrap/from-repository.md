@@ -180,8 +180,8 @@ repository. The repository can create that link itself:
 
 ```toml [~/.dotfiles/mise.toml]
 [settings]
-# `mise dot add` writes new entries here, not to ~/.config/mise/config.toml
-write_targets.dotfiles = "~/.config/mise/conf.d/dotfiles/mise.toml"
+# `mise dot add` writes new entries to this file, not to ~/.config/mise/config.toml
+write_targets.dotfiles = "mise.toml"
 
 [dotfiles]
 # Link this repository into conf.d so it loads as global config
@@ -189,10 +189,10 @@ write_targets.dotfiles = "~/.config/mise/conf.d/dotfiles/mise.toml"
 "~/.zshrc" = {}
 ```
 
-Both `conf.d` paths assume the default config directory. If you set
-`MISE_CONFIG_DIR` or `XDG_CONFIG_HOME`, use the `conf.d` directory under your
-actual config directory in both places, or mise does not load the link as
-global config.
+The relative `write_targets.dotfiles` resolves inside the linked folder. The
+link's target assumes the default config directory: if you set
+`MISE_CONFIG_DIR` or `XDG_CONFIG_HOME`, put the link in the `conf.d` directory
+under your actual config directory, or mise does not load it as global config.
 
 An entry without a `source`, such as `~/.zshrc`, reads `~/.dotfiles/.zshrc`,
 because `~/.dotfiles` is the default
