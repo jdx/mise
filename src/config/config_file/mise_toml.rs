@@ -1563,6 +1563,9 @@ static VERSION_EXPRESSION: std::sync::LazyLock<regex::Regex> =
 static VERSION_WORD: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"(^|[^.\w])version\b").unwrap());
 
+static QUOTED_LITERAL: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r#""[^"]*"|'[^']*'"#).unwrap());
+
 const VERSION_SHIELD: &str = "__mise_deferred_version_expression_";
 
 /// `version` is not known at config load, so a bare `{{ version }}` renders to itself through a
@@ -1577,7 +1580,8 @@ fn shield_version_expressions(input: &str) -> (String, Vec<String>) {
             .trim_start_matches("{{")
             .trim_end_matches("}}")
             .trim_matches(['-', ' ']);
-        if inner == "version" || !VERSION_WORD.is_match(inner) {
+        let code = QUOTED_LITERAL.replace_all(inner, "");
+        if inner == "version" || !VERSION_WORD.is_match(&code) {
             return expr.to_string();
         }
         deferred.push(expr.to_string());
@@ -3775,6 +3779,14 @@ mod tests {
                 "https://example.com/{{ version }}/{{ version | replace(from='--4--foobar', to='') }}.tgz"
             )
         );
+    }
+
+    #[test]
+    fn test_shield_ignores_quoted_version() {
+        let (out, deferred) =
+            shield_version_expressions("{{ vars['version'] }}/{{ version | upper }}");
+        assert_eq!(deferred, vec!["{{ version | upper }}"]);
+        assert!(out.starts_with("{{ vars['version'] }}/"));
     }
 
     #[tokio::test]
