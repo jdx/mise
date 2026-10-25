@@ -105,6 +105,8 @@ pub struct ToolOptions {
 pub struct ToolForgeOptions {
     /// release tag prefix stripped from versions and re-added when resolving tags
     pub version_prefix: Option<String>,
+    /// regex a release tag must match to be listed; versions are still derived from the tag as usual
+    pub version_regex: Option<String>,
     /// glob (* and ?) matched against release asset names, tera templated; replaces autodetection
     pub asset_pattern: Option<String>,
     /// extra archives from the same release extracted over the primary asset, in order

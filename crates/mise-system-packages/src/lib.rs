@@ -1,4 +1,4 @@
-//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, macos-app, mas, scoop, snap, winget, zypper) for the `[bootstrap.packages]` config section.
+//! Host package managers (apk, apt, aur, brew, brew-cask, choco, flatpak, flatpak-user, macos-app, mas, scoop, snap, winget, zypper) for the `[bootstrap.packages]` config section.
 //!
 //! These are host-owned, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -19,6 +19,7 @@ pub mod apt_sources;
 pub(crate) mod aur;
 #[cfg(unix)]
 pub mod brew;
+pub(crate) mod choco;
 pub mod dnf;
 pub mod dnf_repos;
 pub(crate) mod flatpak;
@@ -396,6 +397,7 @@ pub fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         Arc::new(brew::BrewCaskManager::new()),
         #[cfg(unix)]
         Arc::new(brew::BrewCaskManager::new_macos_app()),
+        Arc::new(choco::ChocoManager::new()),
         Arc::new(dnf::DnfManager::new()),
         Arc::new(flatpak::FlatpakManager::new()),
         Arc::new(flatpak::FlatpakManager::new_user()),
@@ -462,7 +464,7 @@ mod tests {
         }
     }
 
-    /// Stands in for winget/scoop, where names fold to one package.
+    /// Stands in for winget/scoop/choco, where names fold to one package.
     struct FoldingManager;
 
     #[async_trait(?Send)]

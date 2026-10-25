@@ -372,12 +372,22 @@ pub fn normalize_arch(arch: &str) -> &str {
 /// Whether an `os` or `os/arch` selector matches the current platform.
 /// Besides an OS name, the OS family `unix` matches every non-Windows platform.
 pub fn os_selector_matches(entry: &str) -> bool {
+    os_selector_matches_target(entry, OS.as_str(), ARCH.as_str())
+}
+
+/// Like [`os_selector_matches`], for a platform other than the current one.
+/// `os` and `arch` are the target's normalized names (`macos`, `arm64`).
+pub fn os_selector_matches_target(entry: &str, target_os: &str, target_arch: &str) -> bool {
     let (os, arch) = entry
         .split_once('/')
         .map_or((entry, None), |(os, arch)| (os, Some(arch)));
     let os = normalize_os(os);
-    (os == OS.as_str() || os == env::consts::FAMILY)
-        && arch.is_none_or(|arch| normalize_arch(arch) == ARCH.as_str())
+    let family = if target_os == "windows" {
+        "windows"
+    } else {
+        "unix"
+    };
+    (os == target_os || os == family) && arch.is_none_or(|arch| normalize_arch(arch) == target_arch)
 }
 
 /// Whether a selector names the OS family (`unix`, `unix/arm64`) rather than one OS.
@@ -397,6 +407,17 @@ mod tests {
         assert_eq!(normalize_os("windows"), "windows");
         assert_eq!(normalize_os("win"), "windows");
         assert_eq!(normalize_os("freebsd"), "freebsd");
+    }
+
+    #[test]
+    fn test_os_selector_matches_target() {
+        assert!(os_selector_matches_target("linux", "linux", "x64"));
+        assert!(!os_selector_matches_target("linux", "macos", "arm64"));
+        assert!(os_selector_matches_target("darwin", "macos", "arm64"));
+        assert!(os_selector_matches_target("unix", "macos", "arm64"));
+        assert!(!os_selector_matches_target("unix", "windows", "x64"));
+        assert!(os_selector_matches_target("linux/amd64", "linux", "x64"));
+        assert!(!os_selector_matches_target("linux/arm64", "linux", "x64"));
     }
 
     #[test]

@@ -1953,6 +1953,10 @@
           "type": "string",
           "description": "release tag prefix stripped from versions and re-added when resolving tags"
         },
+        "version_regex": {
+          "type": "string",
+          "description": "regex a release tag must match to be listed; versions are still derived from the tag as usual"
+        },
         "asset_pattern": {
           "type": "string",
           "description": "glob (* and ?) matched against release asset names, tera templated; replaces autodetection"

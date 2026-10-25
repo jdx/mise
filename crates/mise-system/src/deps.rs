@@ -629,6 +629,7 @@ fn install_prefix(mgr: &str) -> &'static str {
         "apk" => "sudo apk add ",
         "mas" => "mas install ",
         "scoop" => "scoop install ",
+        "choco" => "choco install ",
         _ => "",
     }
 }

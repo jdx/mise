@@ -235,9 +235,13 @@ fn select_version_hint(
     auto_update: bool,
     homebrew: bool,
     windows: bool,
+    winget: bool,
 ) -> Option<VersionHint> {
     if self_update_available {
         (!auto_update).then_some(VersionHint::AutoUpdate)
+    } else if winget {
+        // WinGet installs the official build, and `upgrade_instructions_or_hint` already says how to update it.
+        None
     } else if homebrew {
         Some(VersionHint::Homebrew)
     } else if windows {
@@ -256,6 +260,7 @@ pub(crate) fn show_auto_update_hint() {
         settings.self_update.auto.is_on(),
         false,
         cfg!(windows),
+        false,
     ) == Some(VersionHint::AutoUpdate)
     {
         hint!(
@@ -276,6 +281,7 @@ pub(crate) fn show_version_hint() {
         settings.self_update.auto.is_on(),
         is_homebrew_install(),
         cfg!(windows),
+        crate::upgrade_hint::installed_by_winget(),
     ) {
         Some(VersionHint::AutoUpdate) => show_auto_update_hint(),
         Some(VersionHint::Homebrew) => hint!(
@@ -710,25 +716,30 @@ mod tests {
     #[test]
     fn version_hint_promotes_auto_update_for_official_binaries() {
         assert_eq!(
-            select_version_hint(true, false, false, false),
+            select_version_hint(true, false, false, false, false),
             Some(VersionHint::AutoUpdate)
         );
-        assert_eq!(select_version_hint(true, true, false, false), None);
+        assert_eq!(select_version_hint(true, true, false, false, false), None);
     }
 
     #[test]
     fn version_hint_promotes_optimized_binaries_for_package_installs() {
         assert_eq!(
-            select_version_hint(false, false, true, false),
+            select_version_hint(false, false, true, false, false),
             Some(VersionHint::Homebrew)
         );
         assert_eq!(
-            select_version_hint(false, false, false, false),
+            select_version_hint(false, false, false, false, false),
             Some(VersionHint::OptimizedBinary)
         );
         assert_eq!(
-            select_version_hint(false, false, false, true),
+            select_version_hint(false, false, false, true, false),
             Some(VersionHint::OptimizedBinaryWindows)
         );
+    }
+
+    #[test]
+    fn version_hint_stays_quiet_for_winget_installs() {
+        assert_eq!(select_version_hint(false, false, false, true, true), None);
     }
 }

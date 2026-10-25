@@ -171,3 +171,19 @@ assert_fail_contains "MISE_GLOBAL_CONFIG_FILE=$PWD/invalid-directory.toml mise b
 mkdir -p no-defaults
 MISE_CONFIG_DIR="$PWD/no-defaults" mise use --global dummy@system
 assert_contains "cat no-defaults/config.toml" 'dummy = "system"'
+
+# A project config's write target is ignored, and mise warns only when a write would have used it.
+mkdir -p project-write-target
+cat >project-write-target/mise.toml <<'EOF'
+[settings]
+write_targets.dotfiles = "mise.toml"
+EOF
+printf 'project dotfile\n' >"$HOME/.project-write-target"
+(
+  cd project-write-target
+  export MISE_CONFIG_DIR="$PWD/../no-defaults"
+  assert_not_contains "mise config ls 2>&1" "write_targets"
+  assert_contains "mise dot add --global --no-apply --yes $HOME/.project-write-target 2>&1" "write_targets.dotfiles in"
+  assert_not_contains "cat mise.toml" "project-write-target"
+)
+assert_contains "cat no-defaults/config.toml" '"~/.project-write-target"'

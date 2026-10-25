@@ -70,7 +70,7 @@ pub enum ServiceChangeAction {
     None,
 }
 
-/// Linux systemd system unit that mise starts, stops, enables, or masks, or a user service mise defines from command or builtin
+/// Linux systemd unit that mise starts, stops, enables, or masks (a system unit, or with scope user an existing user unit), or a user service mise defines from command or builtin
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, JsonSchema)]
 #[schemars(extend("not" = {"required": ["builtin", "command"]}))]
 pub struct ServiceTomlConfig {
@@ -146,6 +146,13 @@ impl ServiceTomlConfig {
         })
     }
 
+    /// A `scope = "user"` entry with neither `command` nor `builtin` manages a unit that already
+    /// exists in the systemd user manager, such as one a package installed, rather than defining
+    /// a service of its own.
+    pub fn adopts_existing_unit(&self) -> bool {
+        self.scope() == ServiceScope::User && self.builtin.is_none() && self.command.is_none()
+    }
+
     /// Fields that only apply to user-scope services, when set.
     pub fn user_only_fields(&self) -> Vec<&'static str> {
         [
@@ -166,4 +173,22 @@ impl ServiceTomlConfig {
 
 fn default_true() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(toml: &str) -> ServiceTomlConfig {
+        toml::from_str(toml).unwrap()
+    }
+
+    #[test]
+    fn user_scope_without_a_definition_adopts_an_existing_unit() {
+        assert!(parse("scope = \"user\"").adopts_existing_unit());
+        assert!(parse("scope = \"user\"\nmasked = true").adopts_existing_unit());
+        assert!(!parse("scope = \"user\"\ncommand = \"sleep 1\"").adopts_existing_unit());
+        assert!(!parse("builtin = \"history-watch\"").adopts_existing_unit());
+        assert!(!parse("state = \"running\"").adopts_existing_unit());
+    }
 }

@@ -126,7 +126,7 @@ async fn set_inner(
                 "This repository has content but no mise enrollment metadata. Connecting does not import its files.\n\
                  A machine with no checkpoints adopts branch `{branch}` as its history. Existing checkpoints can synchronize only if they share Git ancestry with that branch.\n\
                  To keep unrelated local checkpoints, connect an empty repository with `mise dot origin set <url>`. \
-                 Alternatively, use Git to push the local history to a new remote branch, then connect it with `mise dot origin set <url> --branch <name>`.\n\
+                 Alternatively, use Git to push the local history (the repository `mise dot status` lists as Local history) to a new remote branch, then connect it with `mise dot origin set <url> --branch <name>`.\n\
                  To use the repository as bootstrap configuration without enabling history sharing, use `mise bootstrap --from <url>` or `mise bootstrap --adopt <url>`."
             );
         }

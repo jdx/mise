@@ -169,6 +169,53 @@ version of each.
 adopting a setup repository, including files that already exist. For
 synchronization after that, see [Sync across machines](/dotfiles/sync.html).
 
+## Global config in another directory {#global-config-elsewhere}
+
+`--adopt` clones global config into the directory mise reads it from,
+normally `~/.config/mise`. To keep a dotfiles repository somewhere else, such
+as `~/.dotfiles`, and still use it as global config, link it into
+`~/.config/mise/conf.d/` as a
+[conf.d folder](/configuration.html#conf-d-folders). Its `mise.toml` then
+loads as global config, and relative paths in it resolve inside the
+repository. The repository can create that link itself:
+
+```toml [~/.dotfiles/mise.toml]
+[settings]
+# `mise dot add` writes new entries to this file, not to ~/.config/mise/config.toml
+write_targets.dotfiles = "mise.toml"
+
+[dotfiles]
+# Link this repository into conf.d so it loads as global config
+"~/.config/mise/conf.d/dotfiles" = { source = ".", mode = "symlink" }
+"~/.zshrc" = {}
+```
+
+The relative `write_targets.dotfiles` resolves inside the linked folder. The
+link's path, the entry's key, assumes the default config directory: if you set
+`MISE_CONFIG_DIR` or `XDG_CONFIG_HOME`, put the link in the `conf.d` directory
+under your actual config directory, or mise does not load it as global config.
+
+An entry without a `source`, such as `~/.zshrc`, reads `~/.dotfiles/.zshrc`,
+because `~/.dotfiles` is the default
+[`dotfiles.root`](/configuration/settings.html#dotfiles.root).
+
+On a new machine, one command clones the repository and applies it:
+
+```sh
+mise bootstrap --from https://github.com/you/dotfiles.git --from-dir ~/.dotfiles
+```
+
+That first run creates the link, so every later mise command loads the
+repository as global config, and updating needs no `--from`:
+
+```sh
+git -C ~/.dotfiles pull
+mise bootstrap
+```
+
+`mise dot add ~/.gitconfig` saves the source as `~/.dotfiles/.gitconfig` and
+adds its entry to the repository's `mise.toml`. Commit both there.
+
 ## On other machines
 
 To adopt a repository on another machine over SSH, see

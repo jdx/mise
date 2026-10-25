@@ -74,19 +74,48 @@ pub(crate) fn compose_system_declarations(
     Ok(out)
 }
 
-/// The user-scope entries of `[bootstrap.services]`.
+/// The `scope = "user"` entries that manage a unit already present in the systemd user manager
+/// instead of defining a service: fields that configure a definition are rejected, since there
+/// is none to configure.
+pub(crate) fn compose_existing_user_unit_declarations(
+    config: &Config,
+) -> Result<IndexMap<String, (ServiceTomlConfig, ResourceOrigin)>> {
+    let mut out = IndexMap::new();
+    for (name, (declaration, origin)) in compose_declarations(config)? {
+        if !declaration.adopts_existing_unit() {
+            continue;
+        }
+        let defined = declaration.user_only_fields();
+        if !defined.is_empty() {
+            bail!(
+                "bootstrap service '{name}' sets {} without `command` or `builtin`, so it manages an existing systemd user unit, which has no definition for mise to change; set `command` to define the service",
+                defined.join(", ")
+            );
+        }
+        out.insert(name, (declaration, origin));
+    }
+    Ok(out)
+}
+
+/// The user-scope entries of `[bootstrap.services]` that mise defines.
 pub fn compose_user_declarations(
     config: &Config,
 ) -> Result<IndexMap<String, (ServiceTomlConfig, ResourceOrigin)>> {
     Ok(compose_declarations(config)?
         .into_iter()
-        .filter(|(_, (declaration, _))| declaration.scope() == ServiceScope::User)
+        .filter(|(_, (declaration, _))| {
+            declaration.scope() == ServiceScope::User && !declaration.adopts_existing_unit()
+        })
         .collect())
 }
 
 /// Names of every user-scope service, for notification validation.
 pub fn user_service_names(config: &Config) -> Result<Vec<String>> {
-    Ok(compose_user_declarations(config)?.into_keys().collect())
+    Ok(compose_declarations(config)?
+        .into_iter()
+        .filter(|(_, (declaration, _))| declaration.scope() == ServiceScope::User)
+        .map(|(name, _)| name)
+        .collect())
 }
 
 /// `[bootstrap.services]` from every config map, rejecting redeclarations that

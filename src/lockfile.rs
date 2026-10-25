@@ -4037,6 +4037,9 @@ where
     let backend = tv.request.backend()?;
 
     for platform in target_platforms {
+        if !tv.request.is_os_supported_on(platform) {
+            continue;
+        }
         for variant in backend.platform_variants_for(tv, platform) {
             let target = PlatformTarget::new(variant.clone());
             let options = backend.lockfile_options(&tv.request, &target)?;
@@ -4334,6 +4337,9 @@ pub(crate) async fn auto_lock_new_versions(
             let backend = crate::backend::get(&ba);
 
             for platform in &target_platforms {
+                if !tv.request.is_os_supported_on(platform) {
+                    continue;
+                }
                 // Expand platform variants from the backend
                 let variants = if let Some(ref backend) = backend {
                     backend.platform_variants_for(tv, platform)
