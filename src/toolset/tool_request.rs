@@ -280,6 +280,14 @@ impl ToolRequest {
         }
     }
 
+    /// The source whose lockfile this request reads: the one it borrows, else its own.
+    pub fn lockfile_owner_source(&self) -> &ToolSource {
+        match self.lockfile_scope() {
+            LockfileScope::Source(source) => source,
+            _ => self.source(),
+        }
+    }
+
     pub fn set_lockfile_scope(&mut self, scope: LockfileScope) {
         match self {
             Self::Version { lockfile_scope, .. }

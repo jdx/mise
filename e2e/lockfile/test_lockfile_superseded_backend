@@ -206,3 +206,8 @@ EOF2
 mise lock --global --platform "$MISE_PLATFORM" 2>stderr
 assert_contains "cat stderr" 'mise backends switch --global hk'
 assert_contains "mise backends switch --global --dry-run hk 2>&1" 'would switch hk@'
+# A runtime request borrows the global config's lockfile, so it names --global too.
+# The earlier steps installed hk; the warning is emitted on install.
+mise uninstall --all hk
+mise exec hk@1 -- true 2>stderr
+assert_contains "cat stderr" 'mise backends switch --global hk'
