@@ -7346,7 +7346,7 @@ dependencies = [
  "mise-sigstore",
  "mise-tls",
  "mockito",
- "netrc-rs",
+ "netrc-jdx",
  "nix 0.31.3",
  "nodejs-semver",
  "nucleo-matcher",
@@ -7526,10 +7526,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "netrc-rs"
-version = "0.1.2"
+name = "netrc-jdx"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea2970fbbc8c785e8246234a7bd004ed66cd1ed1a35ec73669a92545e419b836"
+checksum = "7abde3070a8927a0a613a9bb369f1a22ac288663eb2f928e841f3708f9d4cffa"
 
 [[package]]
 name = "nix"
