@@ -821,6 +821,31 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Render templates in `dotfiles.root`, such as `{{ mise_config_dir }}/home`, so a dotfiles
+/// repository adopted as the global config can keep its sources beside it. A plain path is left
+/// as written, keeping the process-relative behavior of a root without a template.
+fn resolve_dotfiles_root_path(settings: &mut toml::Table, path: &Path) {
+    let Some(root) = settings
+        .get_mut("dotfiles")
+        .and_then(toml::Value::as_table_mut)
+        .and_then(|dotfiles| dotfiles.get_mut("root"))
+    else {
+        return;
+    };
+    if !root
+        .as_str()
+        .is_some_and(crate::tera::contains_template_syntax)
+    {
+        return;
+    }
+    let config_root = crate::config::config_file::config_root::config_root(path);
+    // A render error must not drop the file's other settings. The unrendered template is left in
+    // place, so the dotfiles sources fail to resolve and name it.
+    if let Err(err) = settings_path_resolver(path, config_root)("settings.dotfiles.root", root) {
+        warn!("{err}");
+    }
+}
+
 /// Resolve `write_targets` paths against the config root of the declaring settings file, for the
 /// same reason as [`resolve_age_paths`]. Templates such as `{{ xdg_config_home }}` let dotfiles
 /// shared between machines name a global fragment without hardcoding the config directory.
@@ -1165,6 +1190,7 @@ impl SettingsExt for Settings {
             // never rewritten.
             resolve_aqua_registry_paths(settings, path);
             resolve_age_paths(settings, path)?;
+            resolve_dotfiles_root_path(settings, path);
             resolve_write_target_paths(settings, path);
             resolve_task_disable_paths(settings, path);
         }
@@ -2979,6 +3005,40 @@ mod tests {
         assert_eq!(
             settings["write_targets"]["dotfiles"].as_str(),
             Some("~/dotfiles.toml")
+        );
+    }
+
+    #[test]
+    fn dotfiles_root_renders_templates_and_keeps_plain_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("mise.toml");
+        let mut settings = toml::from_str::<toml::Table>(
+            r#"
+            [dotfiles]
+            root = "{{ mise_config_dir }}/home"
+            "#,
+        )
+        .unwrap();
+
+        resolve_dotfiles_root_path(&mut settings, &config_path);
+
+        assert_eq!(
+            Path::new(settings["dotfiles"]["root"].as_str().unwrap()),
+            env::MISE_CONFIG_DIR.join("home")
+        );
+
+        let mut settings =
+            toml::from_str::<toml::Table>("[dotfiles]\nroot = \"dotfiles\"\n").unwrap();
+        resolve_dotfiles_root_path(&mut settings, &config_path);
+        assert_eq!(settings["dotfiles"]["root"].as_str(), Some("dotfiles"));
+
+        let mut settings =
+            toml::from_str::<toml::Table>("[dotfiles]\nroot = \"{{ missing_variable }}\"\n")
+                .unwrap();
+        resolve_dotfiles_root_path(&mut settings, &config_path);
+        assert_eq!(
+            settings["dotfiles"]["root"].as_str(),
+            Some("{{ missing_variable }}")
         );
     }
 
