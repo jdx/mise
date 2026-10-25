@@ -2227,7 +2227,7 @@ pub fn resolve_source_arg(source: &Path) -> Result<PathBuf> {
             std::path::Component::CurDir => {}
             std::path::Component::ParentDir => {
                 if resolved.is_symlink() {
-                    resolved = resolved.canonicalize()?;
+                    resolved = dunce::canonicalize(&resolved)?;
                 }
                 resolved.pop();
             }
