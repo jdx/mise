@@ -1379,21 +1379,19 @@ impl Doctor {
             // one the registry has moved. Strip options for comparison
             // (e.g., "github:repo[exe=bin]" -> "github:repo").
             let stored_stripped = stored_full.split('[').next().unwrap_or(stored_full);
-            let recommended: Vec<&str> = if ist.versions.is_empty() {
-                rt.backends().into_iter().take(1).collect()
+            let per_version: Vec<Vec<&str>> = if ist.versions.is_empty() {
+                vec![rt.backends()]
             } else {
                 ist.versions
                     .iter()
-                    .filter_map(|v| rt.backends_for_version(Some(v)).into_iter().next())
+                    .map(|v| rt.backends_for_version(Some(v)))
                     .collect()
             };
-            // The install state records one backend per tool, so versions installed
-            // on either side of a cutover cannot all match it. Only warn when none do.
-            // Only a change of backend kind counts; a repo or org rename within one does not.
-            if recommended.iter().any(|full| {
-                let stripped = full.split('[').next().unwrap_or(full);
-                crate::args::same_backend_kind(stripped, stored_stripped)
-            }) {
+            let recommended: Vec<&str> = per_version
+                .iter()
+                .filter_map(|backends| backends.first().copied())
+                .collect();
+            if backend_matches_registry(&per_version, stored_stripped, ist.explicit_backend) {
                 continue;
             }
             let Some(registry_full) = recommended.first() else {
@@ -1830,9 +1828,47 @@ fn install_dir_is_empty(path: &Path) -> bool {
     }
 }
 
+/// Whether the stored backend agrees with the registry for the installed versions.
+///
+/// `per_version` holds, for each installed version, the registry backends in
+/// priority order. The install state records one backend per tool, so versions
+/// installed on either side of a cutover cannot all match it: only warn when none
+/// do. Only a change of backend kind counts; a repo or org rename within one does
+/// not. An explicit backend is a deliberate choice, so any backend the registry
+/// lists for the tool is acceptable; otherwise it must be the recommended one.
+fn backend_matches_registry(
+    per_version: &[Vec<&str>],
+    stored_stripped: &str,
+    explicit: bool,
+) -> bool {
+    per_version.iter().any(|backends| {
+        let candidates = if explicit { backends.len() } else { 1 };
+        backends.iter().take(candidates).any(|full| {
+            let stripped = full.split('[').next().unwrap_or(full);
+            crate::args::same_backend_kind(stripped, stored_stripped)
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{install_dir_is_empty, sync_failure_duration};
+    use super::{backend_matches_registry, install_dir_is_empty, sync_failure_duration};
+
+    #[test]
+    fn explicit_backend_may_be_any_registry_backend() {
+        let neovim = vec![vec!["vfox:jdx/vfox-neovim", "aqua:neovim/neovim"]];
+        assert!(backend_matches_registry(
+            &neovim,
+            "aqua:neovim/neovim",
+            true
+        ));
+        assert!(!backend_matches_registry(
+            &neovim,
+            "aqua:neovim/neovim",
+            false
+        ));
+        assert!(!backend_matches_registry(&neovim, "cargo:neovim", true));
+    }
 
     use crate::system::history::sync::run::SyncStatus;
 
