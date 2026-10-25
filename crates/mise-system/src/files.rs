@@ -2226,6 +2226,13 @@ pub fn resolve_source_arg(source: &Path) -> Result<PathBuf> {
         match component {
             std::path::Component::CurDir => {}
             std::path::Component::ParentDir => {
+                if !resolved.is_dir() {
+                    bail!(
+                        "cannot resolve {}: {} is not a directory",
+                        source.display(),
+                        resolved.display()
+                    );
+                }
                 if resolved.is_symlink() {
                     resolved = dunce::canonicalize(&resolved)?;
                 }

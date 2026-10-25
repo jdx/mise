@@ -48,3 +48,9 @@ echo bs >~/.rel-bs
 mise dotfiles add --local --yes --source 'dotfiles/a\b' ~/.rel-bs
 assert_contains "cat mise.toml" "source = 'dotfiles/a\\b'"
 assert "cat '$project/dotfiles/a\\b'" "bs"
+
+# a `..` after something that is not a directory is an error, not a shortcut
+echo nodir >~/.rel-nodir
+assert_fail "mise dotfiles add --local --yes --source missing-dir/../nodirsrc ~/.rel-nodir"
+assert_fail "mise dotfiles add --local --yes --source mise.toml/../nodirsrc ~/.rel-nodir"
+assert "cat ~/.rel-nodir" "nodir"
