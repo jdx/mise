@@ -3189,6 +3189,34 @@ mod tests {
         assert!(!settings.prefer_offline);
     }
 
+    /// Settings that name a program, repository or patch mise runs or fetches while
+    /// installing or elevating. A project config must not choose them, trusted or not, so
+    /// each has to be `global_only`: `strip_local_only_settings` only drops marked keys.
+    #[test]
+    fn test_program_selecting_settings_are_global_only() {
+        let keys = [
+            "node.apply_patches",
+            "node.make",
+            "python.patch_url",
+            "python.patches_directory",
+            "python.pyenv_repo",
+            "ruby.apply_patches",
+            "ruby.ruby_build_repo",
+            "ruby.ruby_install_repo",
+            "system_packages.elevate_with",
+            "unix_default_file_shell_args",
+            "unix_default_inline_shell_args",
+            "windows_default_file_shell_args",
+            "windows_default_inline_shell_args",
+        ];
+        for key in keys {
+            let meta = SETTINGS_META
+                .get(key)
+                .unwrap_or_else(|| panic!("{key} setting should exist"));
+            assert!(meta.global_only, "{key} must be global_only");
+        }
+    }
+
     #[test]
     fn test_cargo_binstall_quickinstall_setting() {
         let settings = Settings::builder().load().unwrap();
