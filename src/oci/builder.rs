@@ -1553,7 +1553,7 @@ fn value_refers_to_dir(value: &str, dir: &std::path::Path) -> bool {
 /// camelCase boundaries. Mismatching would mean files land at a path mise
 /// can't resolve inside the container.
 fn tool_in_image_path(mount_point: &str, tv: &ToolVersion) -> String {
-    let plugin_dir = tv.ba().tool_dir_name();
+    let plugin_dir = tv.ba().standalone_dir_name();
     let version_dir = tv.tv_pathname();
     // `mount_point` is guaranteed absolute and trimmed of trailing slashes
     // by the validation in Builder::build (empty + must-start-with-/

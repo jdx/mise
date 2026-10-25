@@ -395,6 +395,17 @@ impl BackendArg {
             .to_string()
     }
 
+    /// The install directory name a mise reading `standalone_key` would use,
+    /// so files can be packaged where that mise looks for them.
+    pub(crate) fn standalone_dir_name(&self) -> String {
+        let key = self.standalone_key();
+        if key == self.short {
+            self.tool_dir_name()
+        } else {
+            backend::tool_directory_name(&key)
+        }
+    }
+
     pub fn backend(&self) -> Result<ABackend> {
         // TODO: see above about hash key
         // let backend = self.backend.get_or_try_init(|| {

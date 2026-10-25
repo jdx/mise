@@ -23,5 +23,8 @@ done
 assert_contains "cat rootfs/etc/mise/config.toml" '"aqua:jqlang/jq" = "1.8.1"'
 assert_not_contains "cat rootfs/etc/mise/config.toml" "myjq"
 
-# A mise that only sees the image's files finds the tool without the alias.
-assert_contains "env MISE_DATA_DIR=$PWD/rootfs/mise MISE_CONFIG_DIR=$PWD/rootfs/etc/mise MISE_CACHE_DIR=$PWD/rootfs-cache MISE_STATE_DIR=$PWD/rootfs-state mise x -C / -- jq --version" "jq-1.8.1"
+# The tool is packaged where a mise reading that config looks for it, and
+# that mise finds it without installing anything.
+assert_succeed "test -d rootfs/mise/installs/aqua-jqlang-jq/1.8.1"
+image_mise="env MISE_AUTO_INSTALL=0 MISE_DATA_DIR=$PWD/rootfs/mise MISE_CONFIG_DIR=$PWD/rootfs/etc/mise MISE_CACHE_DIR=$PWD/rootfs-cache MISE_STATE_DIR=$PWD/rootfs-state mise"
+assert_contains "$image_mise which -C / jq" "$PWD/rootfs/mise/installs/aqua-jqlang-jq/1.8.1"
