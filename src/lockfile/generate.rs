@@ -261,7 +261,12 @@ pub fn is_current(
 ) -> Result<bool> {
     if tools.is_empty()
         || platforms.is_empty()
-        || (auto_prune && previous.tools.len() != tools.len())
+        || (auto_prune
+            && previous.tools.len()
+                != tools
+                    .iter()
+                    .filter(|(_, tv)| platforms.iter().any(|p| tv.request.is_os_supported_on(p)))
+                    .count())
         || !previous.conda_packages.is_empty()
         || Settings::get().force_provenance_verify()
     {
@@ -271,6 +276,14 @@ pub fn is_current(
     for (ba, tv) in tools {
         if !shorts.insert(&ba.short) {
             return Ok(false);
+        }
+        // A tool the `os` option excludes from every target has nothing to
+        // lock; it is current as long as the lockfile holds no entry for it.
+        if !platforms.iter().any(|p| tv.request.is_os_supported_on(p)) {
+            if previous.tools_for(&ba.short).is_some() {
+                return Ok(false);
+            }
+            continue;
         }
         let Some(entries) = previous.tools_for(&ba.short) else {
             return Ok(false);
@@ -286,6 +299,9 @@ pub fn is_current(
         let specifier = tv.request.version();
         let mut covered: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
         for platform in platforms {
+            if !tv.request.is_os_supported_on(platform) {
+                continue;
+            }
             for platform in backend.platform_variants_for(tv, platform) {
                 let options = backend
                     .lockfile_options(&tv.request, &PlatformTarget::new(platform.clone()))?;
@@ -406,6 +422,17 @@ pub async fn generate(
     for (ba, tv) in tools {
         let backend = tv.backend()?;
         for platform in platforms {
+            if !tv.request.is_os_supported_on(platform) {
+                // Nothing is locked here, but an explicit selection still owns
+                // these keys, so rows an earlier `os` option allowed are dropped.
+                for platform in backend.platform_variants_for(tv, platform) {
+                    keys.insert((
+                        crate::toolset::install_state::state_short(&ba.short).into_owned(),
+                        platform.to_key(),
+                    ));
+                }
+                continue;
+            }
             for platform in backend.platform_variants_for(tv, platform) {
                 let options = backend
                     .lockfile_options(&tv.request, &PlatformTarget::new(platform.clone()))?;
@@ -639,9 +666,17 @@ pub async fn generate(
                 .and_then(|old| old.uv.clone());
         }
     }
+    // A tool the `os` option excludes from every target has no graph to
+    // resolve. Without embedded aube the full list stays, so stale graphs are
+    // still cleared.
+    let aube_tools = if crate::backend::npm::NPMBackend::uses_embedded_aube() {
+        tools_on_platforms(tools, platforms)
+    } else {
+        tools.to_vec()
+    };
     Box::pin(populate_aube_locks(
         &mut candidate,
-        tools,
+        &aube_tools,
         Some(report.as_ref()),
         false,
     ))
@@ -650,6 +685,16 @@ pub async fn generate(
     report.finish_with_message(format!("{completed} targets checked"));
     progress.finished = true;
     Ok(candidate)
+}
+
+/// The tools whose `os` option allows at least one of `platforms`. The others
+/// get no lockfile entry, so graph passes that bind to an entry must skip them.
+pub fn tools_on_platforms(tools: &[Tool], platforms: &[Platform]) -> Vec<Tool> {
+    tools
+        .iter()
+        .filter(|(_, tv)| platforms.iter().any(|p| tv.request.is_os_supported_on(p)))
+        .cloned()
+        .collect()
 }
 
 pub async fn populate_aube_locks(
@@ -1330,6 +1375,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tool_excluded_from_every_platform_by_os_is_current() {
+        crate::backend::load_tools().await.unwrap();
+        let ba = BackendArg::new("fixture".into(), Some("http:fixture".into()));
+        let mut options = ToolVersionOptions::default();
+        options.core.os = Some(vec!["windows".into()]);
+        let request =
+            ToolRequest::new_with_options(Arc::new(ba.clone()), "1", options, ToolSource::Argument)
+                .unwrap();
+        let tools = vec![(ba, ToolVersion::new(request, "1.0".into()))];
+        let platforms = vec![
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("macos-arm64").unwrap(),
+        ];
+        for auto_prune in [false, true] {
+            assert!(is_current(&Lockfile::default(), &tools, &platforms, auto_prune).unwrap());
+        }
+        // A stale entry for the excluded tool must still be pruned.
+        for auto_prune in [false, true] {
+            assert!(!is_current(&previous(), &tools, &platforms, auto_prune).unwrap());
+        }
+    }
+
+    #[tokio::test]
     async fn current_check_requires_exact_scope_and_bindings() {
         crate::backend::load_tools().await.unwrap();
         let platforms = vec![
@@ -1459,6 +1527,36 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(old.tools, generated.tools);
+    }
+
+    #[tokio::test]
+    async fn explicit_generation_drops_rows_for_os_excluded_platforms() {
+        crate::backend::load_tools().await.unwrap();
+        let ba = BackendArg::new("fixture".into(), Some("http:fixture".into()));
+        let mut options = ToolVersionOptions::default();
+        options.core.os = Some(vec!["linux".into()]);
+        let request =
+            ToolRequest::new_with_options(Arc::new(ba.clone()), "1", options, ToolSource::Argument)
+                .unwrap();
+        let tools = vec![(ba, ToolVersion::new(request, "1.0".into()))];
+        let platforms = [
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("macos-arm64").unwrap(),
+        ];
+        let generated = generate(
+            &previous(),
+            &tools,
+            &platforms,
+            false,
+            PlatformSelection::Explicit(BTreeSet::new()),
+            2,
+            &[],
+        )
+        .await
+        .unwrap();
+        let platforms = &generated.tools_for("fixture").unwrap()[0].platforms;
+        assert!(platforms.contains_key("linux-x64"));
+        assert!(!platforms.contains_key("macos-arm64"));
     }
 
     /// A tool configured with URL credentials is selected under its

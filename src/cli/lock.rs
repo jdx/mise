@@ -1242,10 +1242,11 @@ impl Lock {
         } else {
             self.bind_requests(&mut lockfile, tools, target_platforms);
         }
+        let graph_tools = lockfile::generate::tools_on_platforms(tools, target_platforms);
         Box::pin(lockfile::generate::populate_uv_locks(
             run.setup.config,
             &mut lockfile,
-            tools,
+            &graph_tools,
             self.bump,
             run.setup.installed.is_some(),
         ))
@@ -1253,7 +1254,7 @@ impl Lock {
         if !generate || self.bump || format_changed {
             Box::pin(lockfile::generate::populate_aube_locks(
                 &mut lockfile,
-                tools,
+                &graph_tools,
                 None,
                 self.bump,
             ))
@@ -1739,6 +1740,9 @@ impl Lock {
                 continue;
             };
             for platform in platforms {
+                if !tv.request.is_os_supported_on(platform) {
+                    continue;
+                }
                 for variant in backend.platform_variants_for(tv, platform) {
                     let Ok(options) = backend.lockfile_options(
                         &tv.request,
@@ -2837,6 +2841,9 @@ impl Lock {
         for (ba, tv) in tools {
             let backend = crate::backend::get(ba);
             for platform in platforms {
+                if !tv.request.is_os_supported_on(platform) {
+                    continue;
+                }
                 // Expand platform variants just like process_tools does
                 let variants = if let Some(ref backend) = backend {
                     backend.platform_variants_for(tv, platform)
@@ -2898,6 +2905,9 @@ impl Lock {
         for (ba, tv) in tools {
             let backend = crate::backend::get(ba);
             for platform in platforms {
+                if !tv.request.is_os_supported_on(platform) {
+                    continue;
+                }
                 // Get all variants for this platform from the backend
                 let variants = if let Some(ref backend) = backend {
                     backend.platform_variants_for(tv, platform)
