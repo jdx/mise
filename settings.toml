@@ -3168,6 +3168,7 @@ mise applies them through ruby-build, or ruby-install when
 patched.
 """
 env = "MISE_RUBY_APPLY_PATCHES"
+global_only = true
 optional = true
 type = "String"
 
@@ -3852,6 +3853,7 @@ elevation off entirely. See
 [Root privileges and sudo](/bootstrap/packages/#sudo).
 """
 env = "MISE_SYSTEM_PACKAGES_ELEVATE_WITH"
+global_only = true
 optional = true
 type = "String"
 

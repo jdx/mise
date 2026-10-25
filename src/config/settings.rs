@@ -3249,6 +3249,26 @@ mod tests {
         assert!(!settings.prefer_offline);
     }
 
+    /// Settings that name the program mise runs for a step it did not get from the user's own
+    /// config. A project config must not choose them, trusted or not, so each has to be
+    /// `global_only`: `strip_local_only_settings` only drops marked keys.
+    #[test]
+    fn test_command_selecting_settings_are_global_only() {
+        let keys = [
+            "system_packages.elevate_with",
+            "unix_default_file_shell_args",
+            "unix_default_inline_shell_args",
+            "windows_default_file_shell_args",
+            "windows_default_inline_shell_args",
+        ];
+        for key in keys {
+            let meta = SETTINGS_META
+                .get(key)
+                .unwrap_or_else(|| panic!("{key} setting should exist"));
+            assert!(meta.global_only, "{key} must be global_only");
+        }
+    }
+
     #[test]
     fn test_cargo_binstall_quickinstall_setting() {
         let settings = Settings::builder().load().unwrap();
