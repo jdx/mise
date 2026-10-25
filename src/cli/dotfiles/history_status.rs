@@ -39,6 +39,10 @@ pub(crate) struct HistoryReport {
     /// The setup repository, when one is connected.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sync: Option<SyncReport>,
+    /// The bare Git repository holding the local checkpoints, which is the
+    /// one to push when the origin's history is unrelated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history_repo: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -148,6 +152,7 @@ pub(crate) async fn report() -> Result<HistoryReport> {
             unavailable: None,
             health: None,
             sync: None,
+            history_repo: None,
         });
     }
     let (store, tracked, entries) = super::history::open().await?;
@@ -210,6 +215,11 @@ pub(crate) async fn report() -> Result<HistoryReport> {
         unavailable: store.unavailable().map(str::to_string),
         health: crate::system::history::health::read(store.state_dir()),
         sync: sync_report(&store)?,
+        history_repo: store.repo().map(|_| {
+            crate::file::display_path(crate::system::history::shadow::HistoryRepo::path_in(
+                store.state_dir(),
+            ))
+        }),
     })
 }
 
@@ -238,12 +248,15 @@ pub(crate) fn print(report: &HistoryReport) -> Result<()> {
     let mut next: Vec<String> = vec![];
     print_tracking(report, &mut next)?;
     if let Some(sync) = &report.sync {
-        print_repository(sync, &mut next)?;
+        print_repository(sync, report.history_repo.as_deref(), &mut next)?;
         print_conflicts(sync, &mut next)?;
     } else {
         miseprintln!();
         miseprintln!("Repository");
         miseprintln!("  none (`mise dot origin set <url>` synchronizes committed history).");
+        if let Some(path) = &report.history_repo {
+            miseprintln!("  Local history: {path}");
+        }
     }
     print_capture(report, &mut next)?;
     if let Some(sync) = &report.sync
@@ -347,7 +360,11 @@ fn print_tracking(report: &HistoryReport, next: &mut Vec<String>) -> Result<()> 
     Ok(())
 }
 
-fn print_repository(sync: &SyncReport, next: &mut Vec<String>) -> Result<()> {
+fn print_repository(
+    sync: &SyncReport,
+    history_repo: Option<&str>,
+    next: &mut Vec<String>,
+) -> Result<()> {
     let when = |at: &Option<String>| {
         at.as_deref()
             .map(local_time)
@@ -357,6 +374,9 @@ fn print_repository(sync: &SyncReport, next: &mut Vec<String>) -> Result<()> {
     miseprintln!("Repository");
     miseprintln!("  {}", sync.origin);
     miseprintln!("  Branch: {} · Mode: {}", sync.branch, sync.mode);
+    if let Some(path) = history_repo {
+        miseprintln!("  Local history: {path}");
+    }
     miseprintln!("  ↑ Last published: {}", when(&sync.last_publish));
     miseprintln!("  ↓ Last fetched: {}", when(&sync.last_fetch));
     miseprintln!("  ↓ Last pulled: {}", when(&sync.last_apply));
