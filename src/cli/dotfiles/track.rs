@@ -370,9 +370,9 @@ impl DotfilesTrack {
                     .parent()
                     .unwrap_or(Path::new("."))
                     .join("conf.d/dotfiles-tracking.toml");
-                // the entry is replaced, not kept, when it lives in the
-                // tracking file itself
-                if other.origin.config != tracking {
+                // the entry is replaced, not kept, only when it lives in the
+                // tracking file under the very key this run writes
+                if other.origin.config != tracking || other.target_raw != target_key {
                     alongside.insert(
                         target_key.clone(),
                         (other.origin.config.clone(), other.mode.name()),
