@@ -45,6 +45,9 @@ pub(crate) struct HistoryReport {
 pub(crate) struct SyncReport {
     pub origin: String,
     pub branch: String,
+    /// The bare Git repository holding the local checkpoints, which is the
+    /// one to push when the origin's history is unrelated.
+    pub history_repo: String,
     pub mode: String,
     pub last_publish: Option<String>,
     pub last_fetch: Option<String>,
@@ -80,6 +83,9 @@ pub(crate) fn sync_report(
     Ok(Some(SyncReport {
         origin: origin.url,
         branch: origin.branch,
+        history_repo: crate::file::display_path(
+            crate::system::history::shadow::HistoryRepo::path_in(store.state_dir()),
+        ),
         mode: SyncMode::current()?.as_str().to_string(),
         last_publish: status.last_publish.clone(),
         last_fetch: status.last_fetch.clone(),
@@ -357,6 +363,7 @@ fn print_repository(sync: &SyncReport, next: &mut Vec<String>) -> Result<()> {
     miseprintln!("Repository");
     miseprintln!("  {}", sync.origin);
     miseprintln!("  Branch: {} · Mode: {}", sync.branch, sync.mode);
+    miseprintln!("  Local history: {}", sync.history_repo);
     miseprintln!("  ↑ Last published: {}", when(&sync.last_publish));
     miseprintln!("  ↓ Last fetched: {}", when(&sync.last_fetch));
     miseprintln!("  ↓ Last pulled: {}", when(&sync.last_apply));

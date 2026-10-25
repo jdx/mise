@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Tracking a file that a copy entry already declares leaves that entry alone
+# and says where the tracking entry went and how to fold the two together.
+# `mise dot status` names the local history repository, so an unrelated-histories
+# error can be acted on.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+
+mkdir -p ~/dev/dotfiles
+echo 'export A=1' >~/dev/dotfiles/bashrc
+cat >"$MISE_CONFIG_DIR/config.toml" <<TOML
+[dotfiles]
+"~/.bashrc" = { mode = "copy", source = "$HOME/dev/dotfiles/bashrc" }
+TOML
+assert_succeed 'mise dot apply --yes'
+
+assert_contains 'mise dot track ~/.bashrc 2>&1' 'is also declared with mode = "copy" in'
+assert_contains 'mise dot track ~/.bashrc 2>&1' 'dotfiles-tracking.toml'
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/dotfiles-tracking.toml" 'mode = "track"'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'mode = "copy"'
+
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+assert_contains 'mise dot status' 'Local history: '
+assert_contains 'mise dot status' 'repo.git'

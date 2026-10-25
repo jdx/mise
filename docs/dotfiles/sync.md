@@ -334,6 +334,46 @@ also applies to the watcher's commits and to merge commits that mise makes.
 The value can also be a fixed email address. It affects new commits only;
 existing commits keep their identity.
 
+## Move from a symlinked dotfiles repository {#move-from-a-symlinked-repository}
+
+A Git repository of dotfiles that `mise` links into place (`mode = "symlink"`)
+and the history `mise dot track` keeps are two separate Git repositories. Your
+checkout, such as `~/dev/dotfiles`, holds the files themselves. The history is a
+bare repository mise owns, which `mise dot status` lists as Local history under
+Repository. Pointing `mise dot origin set` at the checkout's remote therefore
+connects two unrelated histories, which mise refuses to combine.
+
+To switch a file from a link to tracking:
+
+1. Replace the symlink with a regular copy of the file it points to. Tracking a
+   symlink saves the link, not the file's contents.
+2. In the entry that declares it, change the mode in place:
+
+   ```toml
+   [dotfiles]
+   "~/.bashrc" = { mode = "track" }
+   ```
+
+   Running `mise dot track ~/.bashrc` instead leaves the existing entry alone
+   and adds a tracking entry to `~/.config/mise/conf.d/dotfiles-tracking.toml`.
+   If you do that, remove the duplicate from the file you edit by hand.
+
+3. Run `mise dot paths` to check which config file each entry comes from, then
+   `mise dot save`.
+
+To keep using the same remote, publish the local history to its own branch so
+the default branch is untouched. First find the history repository with
+`mise dot status`, then:
+
+```sh
+git --git-dir=<local-history> push <url> HEAD:refs/heads/mise-history
+mise dot origin set <url> --branch mise-history
+```
+
+A separate, empty private repository is simpler if you do not need the two in
+one place. See [resolve unrelated histories](#resolve-unrelated-histories) for
+the other ways to connect an origin that already has commits.
+
 ## Resolve unrelated histories {#resolve-unrelated-histories}
 
 If your local checkpoints and the origin branch share no Git ancestry,
@@ -350,7 +390,8 @@ mise dot origin set <empty-repository-url>
 ```
 
 To use the existing repository instead, first push your local history to a
-new branch there with Git, then connect that branch:
+new branch there with Git (`mise dot status` lists its path as Local history),
+then connect that branch:
 
 ```sh
 mise dot origin set <url> --branch <name>
