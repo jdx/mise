@@ -272,6 +272,10 @@ pub struct SystemBrewTomlConfig {
     // reported as having an unknown field.
     #[serde(default)]
     pub adopt: Option<bool>,
+    /// write Homebrew's cask metadata after mise installs a brew-cask package, so `brew upgrade` and `brew outdated` manage it afterwards
+    // Parsed on every platform for the same reason as `adopt`.
+    #[serde(default)]
+    pub homebrew_metadata: Option<bool>,
     /// Homebrew tap names mapped to custom git URLs
     // Like `[plugins]`, this lets shared config name tap remotes while package entries stay
     // focused on formulae and casks.
