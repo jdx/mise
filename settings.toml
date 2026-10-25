@@ -612,6 +612,11 @@ docs = """
 sources here. Relative `[dotfile_groups]` roots and the relative keys of
 destination-variant entries also resolve against it. See
 [Whole-file entries](/dotfiles/managed.html#whole-file-entries).
+
+In a config file, the value may be a template such as
+`{{ mise_config_dir }}/home`, which keeps the sources beside a dotfiles
+repository adopted as the global config. A relative result resolves against
+the config root.
 """
 env = "MISE_DOTFILES_ROOT"
 type = "Path"
