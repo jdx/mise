@@ -30,7 +30,9 @@ activated shell at its next prompt, and immediately in `mise exec` commands.
 ## Arguments
 - **`<TOOL@VERSION>`** — Tool to add to the config file, such as node@24, cargo:ripgrep@latest, or npm:prettier@3
 
-  Without a version, mise requests `latest`; with --pin it writes the resolved version.
+  Without a version, mise requests `latest` but reuses the newest installed version.
+  Write `@latest` to install the newest release; in locked mode the lockfile still decides.
+  With --pin it writes the resolved version.
   Tool options can also be set inline:
 
   ```
