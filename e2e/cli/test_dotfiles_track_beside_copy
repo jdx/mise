@@ -16,8 +16,8 @@ assert_succeed 'mise dot apply --yes'
 
 assert_contains 'mise dot track ~/.bashrc 2>&1' 'is also declared with mode = "copy" in'
 assert_contains 'mise dot track ~/.bashrc 2>&1' 'dotfiles-tracking.toml'
-assert_contains "cat $MISE_CONFIG_DIR/conf.d/dotfiles-tracking.toml" 'mode = "track"'
-assert_contains "cat $MISE_CONFIG_DIR/config.toml" 'mode = "copy"'
+assert_contains "cat $MISE_CONFIG_DIR/conf.d/dotfiles-tracking.toml" '"~/.bashrc" = { mode = "track" }'
+assert_contains "cat $MISE_CONFIG_DIR/config.toml" "\"~/.bashrc\" = { mode = \"copy\", source = \"$HOME/dev/dotfiles/bashrc\" }"
 
 # the path is there before any origin is connected
 assert_contains 'mise dot status' 'Local history: '
