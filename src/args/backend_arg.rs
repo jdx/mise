@@ -402,7 +402,7 @@ impl BackendArg {
         if key == self.short {
             self.tool_dir_name()
         } else {
-            backend::tool_directory_name(&key)
+            backend::tool_directory_name(&unalias_backend(&key))
         }
     }
 
