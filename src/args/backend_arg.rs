@@ -6,8 +6,8 @@ use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
 use crate::toolset::{
-    ResolvedToolOptions, ToolOptionSource, ToolVersionOptions, install_state, parse_tool_options,
-    try_parse_tool_options,
+    ResolvedToolOptions, ToolOptionSource, ToolSource, ToolVersionOptions, install_state,
+    parse_tool_options, try_parse_tool_options,
 };
 use crate::{backend, config, dirs, file, lockfile, registry};
 use contracts::requires;
@@ -829,13 +829,17 @@ impl BackendArg {
     }
 
     /// Warn that the lockfile keeps this tool on a backend the registry has
-    /// replaced, and how to adopt the new one.
-    pub fn warn_if_locked_backend_superseded(&self, version: &str) {
+    /// replaced, and how to adopt the new one. `source` is where the tool is
+    /// configured: `mise backends switch` only reads the global config's
+    /// lockfile with `--global`.
+    pub fn warn_if_locked_backend_superseded(&self, version: &str, source: &ToolSource) {
         if let Some((locked, registry)) = self.superseded_locked_backend(version) {
+            let global = source.path().is_some_and(config::is_global_config);
             warn_once!(
                 "{short} is locked to {locked}, but the registry now installs it from {registry}. \
-                 Run `mise backends switch {short}` to switch.",
+                 Run `mise backends switch{flag} {short}` to switch.",
                 short = self.short,
+                flag = if global { " --global" } else { "" },
             );
         }
     }
