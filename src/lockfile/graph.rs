@@ -273,10 +273,15 @@ pub(crate) fn absolute(path: &Path) -> PathBuf {
 
 pub fn sidecar_root(lockfile: &Path) -> PathBuf {
     let dir = lockfile.parent().unwrap_or(Path::new("."));
-    let mut root = match dir.file_name().and_then(|s| s.to_str()) {
+    // Choose the layout from the physical directory, so a symlinked config
+    // dir (`~/.config/mise` -> a dotfiles repo) gets the same sidecar location
+    // however it is reached. The root itself stays under the given path.
+    let physical = dunce::canonicalize(absolute(dir)).ok();
+    let layout = physical.as_deref().unwrap_or(dir);
+    let mut root = match layout.file_name().and_then(|s| s.to_str()) {
         Some(".mise") => dir.join("locks"),
         Some("mise")
-            if dir
+            if layout
                 .parent()
                 .and_then(Path::file_name)
                 .is_some_and(|s| s == ".config") =>
