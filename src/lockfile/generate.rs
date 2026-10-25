@@ -261,7 +261,12 @@ pub fn is_current(
 ) -> Result<bool> {
     if tools.is_empty()
         || platforms.is_empty()
-        || (auto_prune && previous.tools.len() != tools.len())
+        || (auto_prune
+            && previous.tools.len()
+                != tools
+                    .iter()
+                    .filter(|(_, tv)| platforms.iter().any(|p| tv.request.is_os_supported_on(p)))
+                    .count())
         || !previous.conda_packages.is_empty()
         || Settings::get().force_provenance_verify()
     {
@@ -1357,9 +1362,13 @@ mod tests {
             Platform::parse("linux-x64").unwrap(),
             Platform::parse("macos-arm64").unwrap(),
         ];
-        assert!(is_current(&Lockfile::default(), &tools, &platforms, false).unwrap());
+        for auto_prune in [false, true] {
+            assert!(is_current(&Lockfile::default(), &tools, &platforms, auto_prune).unwrap());
+        }
         // A stale entry for the excluded tool must still be pruned.
-        assert!(!is_current(&previous(), &tools, &platforms, false).unwrap());
+        for auto_prune in [false, true] {
+            assert!(!is_current(&previous(), &tools, &platforms, auto_prune).unwrap());
+        }
     }
 
     #[tokio::test]
