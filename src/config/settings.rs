@@ -1850,12 +1850,17 @@ fn load() -> Result<Arc<Settings>> {
     let previous = mise_settings::is_loaded()
         .then(mise_settings::last_cached)
         .flatten();
+    // The files parsed below record their ignored write targets again, so a reload forgets one a
+    // project no longer sets. A failed load keeps the records that match the kept settings.
+    let previous_ignored_write_targets =
+        std::mem::take(&mut *IGNORED_WRITE_TARGETS.lock().unwrap());
     LOAD_PARSE_CACHE.set(Some(ParseCache::new()));
     let bootstrap = Settings::load_sources_from(None, SettingsLoadPolicy::GLOBAL_HIERARCHY);
     let bootstrap = match bootstrap {
         Ok(bootstrap) => bootstrap,
         Err(err) => {
             LOAD_PARSE_CACHE.set(None);
+            *IGNORED_WRITE_TARGETS.lock().unwrap() = previous_ignored_write_targets;
             return Err(err);
         }
     };
@@ -1872,6 +1877,7 @@ fn load() -> Result<Arc<Settings>> {
                 Some(previous) => mise_settings::store(previous),
                 None => mise_settings::clear(),
             }
+            *IGNORED_WRITE_TARGETS.lock().unwrap() = previous_ignored_write_targets;
             return Err(err);
         }
     };
