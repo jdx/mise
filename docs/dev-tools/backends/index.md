@@ -148,6 +148,8 @@ the registry's current backend and reinstalls the affected versions.
 that identifier as an available backend for at least one installed version,
 even if it is not first in the list. Implicitly selected backends still warn
 when the registry's preferred backend kind differs for all installed versions.
+An existing lockfile entry for a bare tool name also keeps that migration
+warning; an explicit backend alias continues to express a deliberate choice.
 
 ### Version-specific backends {#version-specific-backends}
 

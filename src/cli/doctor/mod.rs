@@ -1410,7 +1410,14 @@ impl Doctor {
                             .any(matches_stored)
                     })
                 };
-                if registered {
+                // A lock entry also marks a backend explicit. Keep migration
+                // advice for a bare shorthand pinned by its current lockfile.
+                let backend = crate::args::BackendArg::from(ist.clone());
+                let locked_migration = ist
+                    .versions
+                    .iter()
+                    .any(|version| backend.superseded_locked_backend(version).is_some());
+                if registered && !locked_migration {
                     continue;
                 }
             }

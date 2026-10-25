@@ -2,6 +2,8 @@
 # An explicit registry alternative is intentional; an implicit stale backend still needs a warning.
 export MISE_INSTALL_LAYOUT=legacy
 export MISE_DISABLE_UPDATE_WARNING=1
+export MISE_LOCKFILE=1
+export MISE_OFFLINE=1
 
 eval "$(mise activate bash)" && _mise_hook
 
@@ -21,9 +23,33 @@ TOML
 
 write_backend true
 assert_not_contains "mise doctor" "tool 'neovim' installed with"
-assert_succeed "set -o pipefail; mise doctor -J | jq -e '.warnings | map(contains(\"neovim\")) | any | not'"
+assert_succeed "set -o pipefail; mise doctor -J | jq -e '(.warnings // []) | map(contains(\"neovim\")) | any | not'"
 
 write_backend false
 assert_contains "mise doctor" "tool 'neovim' installed with backend 'aqua:neovim/neovim'"
 assert_contains "mise doctor" "but registry now recommends 'vfox:jdx/vfox-neovim'"
 assert_succeed "set -o pipefail; mise doctor -J | jq -e '.warnings | map(contains(\"neovim\") and contains(\"registry now recommends\")) | any'"
+
+# Restoring a lock also records explicit_backend=true without a deliberate choice.
+write_backend true
+cat >mise.toml <<'TOML'
+[tools]
+neovim = "0.12.6"
+TOML
+cat >mise.lock <<'TOML'
+lockfile_version = 2
+[[tools.neovim]]
+version = "0.12.6"
+backend = "aqua:neovim/neovim"
+specifiers = ["0.12.6"]
+TOML
+assert_contains "mise doctor" "tool 'neovim' installed with explicit backend 'aqua:neovim/neovim'"
+assert_succeed "set -o pipefail; mise doctor -J | jq -e '.warnings | map(contains(\"neovim\") and contains(\"differs from registry recommendation\")) | any'"
+
+# The same lock and installation remain a deliberate choice with a configured alias.
+cat >>mise.toml <<'TOML'
+[tool_alias]
+neovim = "aqua:neovim/neovim"
+TOML
+assert_not_contains "mise doctor" "tool 'neovim' installed with"
+assert_succeed "set -o pipefail; mise doctor -J | jq -e '(.warnings // []) | map(contains(\"neovim\")) | any | not'"

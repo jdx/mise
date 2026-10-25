@@ -791,7 +791,7 @@ impl BackendArg {
 
     /// [`Self::superseded_backend`], when it is a lock entry that keeps the
     /// tool on the replaced backend.
-    pub(crate) fn superseded_locked_backend(&self, version: &str) -> Option<(String, String)> {
+    pub fn superseded_locked_backend(&self, version: &str) -> Option<(String, String)> {
         let (current, registry) = self.superseded_backend(version)?;
         let locked =
             lockfile::get_locked_backend_for_version(&Config::get_(), &self.short, Some(version))?;
