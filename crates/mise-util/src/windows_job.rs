@@ -6,12 +6,18 @@
 //! left a grandchild outside the job, and that grandchild would survive the
 //! job being closed.
 //!
+//! [`Job::tracking`] and [`resume`] are the same thing in pieces, for a caller
+//! that spawns the child itself: a job that only records membership, so a task
+//! command can be ended with everything it started, however the process tree
+//! reports its parents (a Cygwin or MSYS2 `fork` does not leave `taskkill /T`
+//! a chain to follow).
+//!
 //! Used for the history description command, which must not outlive its
 //! timeout, and for a Windows user service, whose whole lifecycle promise is
 //! that Task Scheduler tracks one process whose death takes the service —
 //! and everything the service started — with it.
 
-use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
 use std::os::windows::process::CommandExt;
 use std::process::{Child, Command};
 
@@ -32,7 +38,7 @@ use windows_sys::Win32::System::Threading::{
 pub struct Job(OwnedHandle);
 
 impl Job {
-    fn new() -> Result<Self> {
+    fn new(kill_on_close: bool) -> Result<Self> {
         // SAFETY: no borrowed pointers or inherited handle are supplied.
         let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
         if handle.is_null() {
@@ -40,6 +46,9 @@ impl Job {
         }
         // SAFETY: this newly created valid handle has exactly one owner.
         let job = Self(unsafe { OwnedHandle::from_raw_handle(handle) });
+        if !kill_on_close {
+            return Ok(job);
+        }
         let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         // SAFETY: the initialized information buffer is valid for its stated size.
@@ -57,45 +66,29 @@ impl Job {
         Ok(job)
     }
 
+    /// A job that records the processes started inside it and ends them only
+    /// when [`Job::kill`] is called: closing it leaves them running.
+    pub fn tracking() -> Result<Self> {
+        Self::new(false)
+    }
+
+    /// Put a process that was created suspended into the job.
+    ///
+    /// # Safety
+    ///
+    /// `process` must be a valid process handle that stays open for the call.
+    pub unsafe fn assign(&self, process: RawHandle) -> Result<()> {
+        // SAFETY: the job handle is owned and alive, and the caller vouches for `process`.
+        if unsafe { AssignProcessToJobObject(self.0.as_raw_handle(), process) } == 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(())
+    }
+
     fn start(&self, child: &Child) -> Result<()> {
-        // SAFETY: both handles remain owned and alive throughout assignment.
-        if unsafe { AssignProcessToJobObject(self.0.as_raw_handle(), child.as_raw_handle()) } == 0 {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        // std does not expose the primary thread handle. The suspended child
-        // has not executed and cannot have created additional threads yet.
-        // SAFETY: no pointer arguments; validate the returned snapshot handle.
-        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
-        if snapshot == INVALID_HANDLE_VALUE {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        // SAFETY: the valid snapshot handle is newly created and uniquely owned.
-        let snapshot = unsafe { OwnedHandle::from_raw_handle(snapshot) };
-        let mut entry = THREADENTRY32 {
-            dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
-            ..Default::default()
-        };
-        // SAFETY: the snapshot is live and entry is initialized and writable.
-        let mut found = unsafe { Thread32First(snapshot.as_raw_handle(), &mut entry) } != 0;
-        while found {
-            if entry.th32OwnerProcessID == child.id() {
-                // SAFETY: request only resume access to the child's thread.
-                let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
-                if thread.is_null() {
-                    return Err(std::io::Error::last_os_error().into());
-                }
-                // SAFETY: the returned handle is valid and uniquely owned.
-                let thread = unsafe { OwnedHandle::from_raw_handle(thread) };
-                // SAFETY: the child is already assigned to our kill-on-close job.
-                if unsafe { ResumeThread(thread.as_raw_handle()) } == u32::MAX {
-                    return Err(std::io::Error::last_os_error().into());
-                }
-                return Ok(());
-            }
-            // SAFETY: the snapshot and writable entry remain valid.
-            found = unsafe { Thread32Next(snapshot.as_raw_handle(), &mut entry) } != 0;
-        }
-        bail!("could not find the suspended child's primary thread")
+        // SAFETY: `child` owns its process handle for the duration of the call.
+        unsafe { self.assign(child.as_raw_handle())? };
+        resume(child.id())
     }
 
     pub fn kill(&self) {
@@ -104,12 +97,50 @@ impl Job {
     }
 }
 
+/// Resume the primary thread of a process created with `CREATE_SUSPENDED`.
+pub fn resume(pid: u32) -> Result<()> {
+    // std does not expose the primary thread handle. The suspended child
+    // has not executed and cannot have created additional threads yet.
+    // SAFETY: no pointer arguments; validate the returned snapshot handle.
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    // SAFETY: the valid snapshot handle is newly created and uniquely owned.
+    let snapshot = unsafe { OwnedHandle::from_raw_handle(snapshot) };
+    let mut entry = THREADENTRY32 {
+        dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: the snapshot is live and entry is initialized and writable.
+    let mut found = unsafe { Thread32First(snapshot.as_raw_handle(), &mut entry) } != 0;
+    while found {
+        if entry.th32OwnerProcessID == pid {
+            // SAFETY: request only resume access to the child's thread.
+            let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
+            if thread.is_null() {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            // SAFETY: the returned handle is valid and uniquely owned.
+            let thread = unsafe { OwnedHandle::from_raw_handle(thread) };
+            // SAFETY: the thread belongs to the suspended process being started.
+            if unsafe { ResumeThread(thread.as_raw_handle()) } == u32::MAX {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            return Ok(());
+        }
+        // SAFETY: the snapshot and writable entry remain valid.
+        found = unsafe { Thread32Next(snapshot.as_raw_handle(), &mut entry) } != 0;
+    }
+    bail!("could not find the suspended child's primary thread")
+}
+
 /// Start `command` in a job object that ends its process tree when the
 /// returned `Job` is dropped. `creation_flags` are the caller's own, which
 /// the suspend flag is added to rather than replacing — `Command`'s setter
 /// overwrites, and a caller that needs `CREATE_NO_WINDOW` needs both.
 pub fn spawn(command: &mut Command, creation_flags: u32) -> Result<(Child, Job)> {
-    let job = Job::new()?;
+    let job = Job::new(true)?;
     command.creation_flags(creation_flags | CREATE_SUSPENDED);
     let mut child = command.spawn()?;
     if let Err(error) = job.start(&child) {

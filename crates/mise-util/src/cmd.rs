@@ -340,8 +340,74 @@ fn alive_process_trees_procfs(pids: &HashSet<u32>) -> Option<HashSet<u32>> {
     Some(alive)
 }
 
+/// Commands running in a job object, by the PID of their first process.
+///
+/// A job holds everything the command starts, however the process tree reports
+/// its parents: a Cygwin or MSYS2 `fork` can leave a descendant that `taskkill
+/// /T` cannot reach through the parent chain, and that keeps the output pipe
+/// open. Ending the job ends it. Closing a job does not end the processes in
+/// it, so a command that finishes leaves whatever it started running.
+#[cfg(windows)]
+static RUNNING_JOBS: Lazy<Mutex<std::collections::HashMap<u32, crate::windows_job::Job>>> =
+    Lazy::new(Default::default);
+
+/// Start `cmd` suspended, so [`join_job`] can put it in a job before it can
+/// start a process the job would miss. `leader` is whether `cmd` is a Ctrl+C
+/// group leader, which already has its own creation flag.
+#[cfg(windows)]
+fn suspend_for_job(cmd: &mut std::process::Command, leader: bool) {
+    use std::os::windows::process::CommandExt;
+    use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED};
+    let flags = if leader { CREATE_NEW_PROCESS_GROUP } else { 0 };
+    cmd.creation_flags(flags | CREATE_SUSPENDED);
+}
+
+/// Put a command started by [`suspend_for_job`] in a job, then let it run. A
+/// command that cannot join one (it may already be in a job that forbids it)
+/// runs outside, and is ended by `taskkill` as before.
+///
+/// # Safety
+///
+/// `process` must be the handle of the command with ID `pid`, open for the call.
+#[cfg(windows)]
+unsafe fn join_job(pid: u32, process: std::os::windows::io::RawHandle) -> std::io::Result<()> {
+    use crate::windows_job::{Job, resume};
+    // SAFETY: the caller vouches for `process`.
+    match Job::tracking().and_then(|job| unsafe { job.assign(process) }.map(|()| job)) {
+        Ok(job) => {
+            RUNNING_JOBS.lock().unwrap().insert(pid, job);
+        }
+        Err(err) => debug!("not tracking {pid} in a job: {err}"),
+    }
+    resume(pid).map_err(|err| {
+        // The caller kills the command and never registers it, so nothing else frees the job.
+        forget_job(pid);
+        std::io::Error::other(err)
+    })
+}
+
+#[cfg(windows)]
+fn forget_job(pid: u32) {
+    RUNNING_JOBS.lock().unwrap().remove(&pid);
+}
+
+/// End the job a command runs in, returning whether it had one.
+#[cfg(windows)]
+fn kill_job(pid: u32) -> bool {
+    match RUNNING_JOBS.lock().unwrap().get(&pid) {
+        Some(job) => {
+            job.kill();
+            true
+        }
+        None => false,
+    }
+}
+
 #[cfg(windows)]
 fn kill_process_tree(pid: u32) {
+    if kill_job(pid) {
+        return;
+    }
     let _ = std::process::Command::new("taskkill")
         .args(["/F", "/T", "/PID", &pid.to_string()])
         .stdout(Stdio::null())
@@ -509,6 +575,13 @@ fn kill_pids_immediately(pids: &HashSet<u32>) {
 #[cfg(all(panic = "abort", windows))]
 fn kill_pids_immediately(pids: &HashSet<u32>) {
     for pid in pids {
+        // Not blocking on the registry, for the reason `kill_all_on_panic` gives.
+        if let Ok(jobs) = RUNNING_JOBS.try_lock()
+            && let Some(job) = jobs.get(pid)
+        {
+            job.kill();
+            continue;
+        }
         let _ = std::process::Command::new("taskkill")
             .args(["/F", "/T", "/PID", &pid.to_string()])
             .stdout(Stdio::null())
@@ -533,6 +606,13 @@ pub fn kill_all_on_panic() {
     kill_pids_immediately(&pids);
 }
 
+/// Stop tracking a command that has finished.
+fn unregister_running_pid(pid: u32) {
+    RUNNING_PIDS.lock().unwrap().remove(&pid);
+    #[cfg(windows)]
+    forget_job(pid);
+}
+
 pub struct RunningPidGuard(Option<u32>);
 
 impl RunningPidGuard {
@@ -547,7 +627,7 @@ impl RunningPidGuard {
 impl Drop for RunningPidGuard {
     fn drop(&mut self) {
         if let Some(pid) = self.0 {
-            RUNNING_PIDS.lock().unwrap().remove(&pid);
+            unregister_running_pid(pid);
         }
     }
 }
@@ -868,6 +948,7 @@ impl<'a> CmdLineRunner<'a> {
         let killers: Vec<_> = {
             let pids = RUNNING_PIDS.lock().unwrap();
             pids.iter()
+                .filter(|pid| !kill_job(**pid))
                 .filter_map(|pid| {
                     std::process::Command::new("taskkill")
                         .arg("/F")
@@ -1350,7 +1431,7 @@ impl<'a> CmdLineRunner<'a> {
         }
         // Removed after rx loop drains (not inside ExitStatus arm) so kill_all
         // can still reach this PID while output is being processed.
-        RUNNING_PIDS.lock().unwrap().remove(&id);
+        unregister_running_pid(id);
         if let Some(g) = &timeout_guard {
             g.cancel();
         }
@@ -1590,7 +1671,7 @@ impl<'a> CmdLineRunner<'a> {
                 ChildProcessOutput::Signal(_) => {}
             }
         }
-        RUNNING_PIDS.lock().unwrap().remove(&id);
+        unregister_running_pid(id);
         if let Some(g) = &timeout_guard {
             g.cancel();
         }
@@ -1952,6 +2033,8 @@ impl<'a> CmdLineRunner<'a> {
             .timeout
             .map(|t| TimeoutGuard::new(t, cp.id(), self.interruptible()));
         let status = cp.wait()?;
+        #[cfg(windows)]
+        forget_job(cp.id());
         let timed_out_by_exit = timed_out_at_exit(timeout_guard.as_ref());
         if let Some(g) = &timeout_guard {
             g.cancel();
@@ -1987,6 +2070,8 @@ impl<'a> CmdLineRunner<'a> {
             .timeout
             .map(|t| TimeoutGuard::new(t, id, self.interruptible()));
         let status = cp.wait().await?;
+        #[cfg(windows)]
+        forget_job(id);
         let timed_out_by_exit = timed_out_at_exit(timeout_guard.as_ref());
         if let Some(g) = &timeout_guard {
             g.cancel();
@@ -2045,10 +2130,29 @@ impl<'a> CmdLineRunner<'a> {
     /// as the file descriptor may not be fully closed yet.
     fn spawn_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
         let mut leader = self.prepare_spawn();
+        #[cfg(windows)]
+        {
+            let is_leader = leader.is_some();
+            suspend_for_job(
+                leader.as_mut().unwrap_or(&mut self.cmd).as_std_mut(),
+                is_leader,
+            );
+        }
         let mut attempt = 0;
         loop {
             let cmd = leader.as_mut().unwrap_or(&mut self.cmd);
             match cmd.as_std_mut().spawn() {
+                #[cfg(windows)]
+                Ok(mut child) => {
+                    use std::os::windows::io::AsRawHandle;
+                    // SAFETY: `child` owns the handle, and is the process with this ID.
+                    if let Err(err) = unsafe { join_job(child.id(), child.as_raw_handle()) } {
+                        let _ = child.kill();
+                        return Err(err);
+                    }
+                    return Ok(child);
+                }
+                #[cfg(not(windows))]
                 Ok(child) => return Ok(child),
                 Err(err) if Self::is_etxtbsy(&err) && attempt < 3 => {
                     attempt += 1;
@@ -2063,10 +2167,30 @@ impl<'a> CmdLineRunner<'a> {
 
     async fn spawn_async_with_etxtbsy_retry(&mut self) -> std::io::Result<tokio::process::Child> {
         let mut leader = self.prepare_spawn();
+        #[cfg(windows)]
+        {
+            let is_leader = leader.is_some();
+            suspend_for_job(
+                leader.as_mut().unwrap_or(&mut self.cmd).as_std_mut(),
+                is_leader,
+            );
+        }
         let mut attempt = 0;
         loop {
             let cmd = leader.as_mut().unwrap_or(&mut self.cmd);
             match cmd.spawn() {
+                #[cfg(windows)]
+                Ok(mut child) => {
+                    // SAFETY: `child` owns the handle, and is the process with this ID.
+                    if let (Some(pid), Some(handle)) = (child.id(), child.raw_handle())
+                        && let Err(err) = unsafe { join_job(pid, handle) }
+                    {
+                        let _ = child.start_kill();
+                        return Err(err);
+                    }
+                    return Ok(child);
+                }
+                #[cfg(not(windows))]
                 Ok(child) => return Ok(child),
                 Err(err) if Self::is_etxtbsy(&err) && attempt < 3 => {
                     attempt += 1;
