@@ -1566,8 +1566,21 @@ mod tests {
             src.join("etc/alternatives/arptables"),
         )
         .unwrap();
+        // An absolute target that happens to match the build directory is
+        // still an image path, so the old rebase would have made it relative.
+        let canonical = std::fs::canonicalize(src).unwrap();
+        fs::write(src.join("etc/real"), b"x").unwrap();
+        symlink(canonical.join("etc/real"), src.join("etc/inside")).unwrap();
 
         let entries = collect_sorted_entries(src, true, LayerOwner::default(), None).unwrap();
+        let inside = entries
+            .iter()
+            .find(|e| e.rel == Path::new("etc/inside"))
+            .unwrap();
+        match &inside.kind {
+            EntryKind::Symlink(t) => assert_eq!(t, &canonical.join("etc/real")),
+            k => panic!("expected symlink, got {k:?}"),
+        }
         let link = entries
             .iter()
             .find(|e| e.rel == Path::new("etc/alternatives/arptables"))
