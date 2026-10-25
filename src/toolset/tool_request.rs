@@ -807,6 +807,16 @@ impl ToolRequest {
         Ok(opts)
     }
 
+    /// Whether the tool's `os` option allows `platform`, for platforms other
+    /// than the current one (such as `mise lock` targets).
+    pub fn is_os_supported_on(&self, platform: &crate::platform::Platform) -> bool {
+        self.os().as_ref().is_none_or(|os_list| {
+            os_list.iter().any(|entry| {
+                crate::platform::os_selector_matches_target(entry, &platform.os, &platform.arch)
+            })
+        })
+    }
+
     pub fn is_os_supported(&self) -> bool {
         if let Some(os_list) = self.os() {
             let matched = os_list
