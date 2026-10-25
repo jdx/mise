@@ -8377,7 +8377,7 @@
           "description": "System services and portable user services managed by mise bootstrap, keyed by service name",
           "additionalProperties": {
             "type": "object",
-            "description": "Linux systemd system unit that mise starts, stops, enables, or masks, or a user service mise defines from command or builtin",
+            "description": "Linux systemd unit that mise starts, stops, enables, or masks (a system unit, or with scope user an existing user unit), or a user service mise defines from command or builtin",
             "properties": {
               "state": {
                 "type": "string",

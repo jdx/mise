@@ -18,6 +18,9 @@ pub struct ServiceRequest {
     pub enabled: bool,
     pub masked: bool,
     pub on_change: ServiceChangeAction,
+    /// Whether the unit lives in the systemd user manager (`systemctl --user`) rather than the
+    /// system manager.
+    pub user: bool,
     pub origin: Option<ResourceOrigin>,
     inspection: Option<ServiceInspection>,
 }
@@ -60,6 +63,8 @@ struct ServiceAction {
     enabled: bool,
     masked: bool,
     on_change: ServiceChangeAction,
+    #[serde(default)]
+    user: bool,
     dependency_changed: bool,
     notified: bool,
     active: bool,
@@ -71,10 +76,16 @@ struct ServicePlan {
 }
 
 pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
-    compose_system_declarations(config)?
+    let system = compose_system_declarations(config)?
         .into_iter()
-        .map(|(name, (config, origin))| {
-            ServiceRequest::from_toml_with_origin(name, config, Some(origin))
+        .map(|(name, (config, origin))| (name, config, origin, false));
+    let user = compose_existing_user_unit_declarations(config)?
+        .into_iter()
+        .map(|(name, (config, origin))| (name, config, origin, true));
+    system
+        .chain(user)
+        .map(|(name, config, origin, user)| {
+            ServiceRequest::from_toml_with_origin(name, config, Some(origin), user)
         })
         .collect()
 }
@@ -102,20 +113,21 @@ pub fn inspect_requests(requests: &mut [ServiceRequest]) {
         return;
     };
     for request in requests {
-        request.inspection = Some(inspect_service(&systemctl, &request.unit));
+        request.inspection = Some(inspect_service(&systemctl, &request.unit, request.user));
     }
 }
 
 impl ServiceRequest {
     #[cfg(test)]
     fn from_toml(name: String, config: ServiceTomlConfig) -> Result<Self> {
-        Self::from_toml_with_origin(name, config, None)
+        Self::from_toml_with_origin(name, config, None, false)
     }
 
     fn from_toml_with_origin(
         name: String,
         config: ServiceTomlConfig,
         origin: Option<ResourceOrigin>,
+        user: bool,
     ) -> Result<Self> {
         let unit = normalize_unit_name(&name)?;
         if config.masked && config.state == ServiceState::Running {
@@ -131,6 +143,7 @@ impl ServiceRequest {
             enabled: config.enabled,
             masked: config.masked,
             on_change: config.on_change,
+            user,
             origin,
             inspection: None,
         })
@@ -249,6 +262,7 @@ impl ServiceRequest {
                 enabled: self.enabled,
                 masked: self.masked,
                 on_change: self.on_change,
+                user: self.user,
                 dependency_changed,
                 notified,
                 active: self.is_active(),
@@ -259,6 +273,7 @@ impl ServiceRequest {
                 enabled: self.enabled,
                 masked: self.masked,
                 on_change: self.on_change,
+                user: self.user,
                 dependency_changed,
                 notified,
                 active: false,
@@ -281,6 +296,7 @@ impl ServiceRequest {
             enabled: action.enabled,
             masked: action.masked,
             on_change: action.on_change,
+            user: action.user,
             origin: None,
             inspection: None,
         }
@@ -401,12 +417,20 @@ pub fn apply_with_notifications(
     }
     if dry_run {
         let has_unknown = !unknown.is_empty();
-        if !actions.is_empty() {
-            miseprintln!("would run systemctl daemon-reload");
+        for user in [false, true] {
+            if actions.iter().any(|action| action.user == user) {
+                miseprintln!(
+                    "would run systemctl {}",
+                    shell_words::join(scoped(user, vec!["daemon-reload".to_string()]))
+                );
+            }
         }
         for action in &actions {
             for command in action.commands() {
-                miseprintln!("would run systemctl {}", shell_words::join(command));
+                miseprintln!(
+                    "would run systemctl {}",
+                    shell_words::join(scoped(action.user, command))
+                );
             }
         }
         for resource in unknown {
@@ -443,6 +467,14 @@ pub fn apply_with_notifications(
         }
         info!("services: skipped {independent_actions} independent change(s)");
     }
+    // A user manager needs no privileges, so those units are driven from this process.
+    let (user_actions, actions): (Vec<_>, Vec<_>) =
+        actions.into_iter().partition(|action| action.user);
+    apply_actions(&user_actions)?;
+    if actions.is_empty() {
+        info!("services: applied changes");
+        return Ok(());
+    }
     let input = serde_json::to_vec(&ServicePlan { actions })?;
     let executable = std::env::current_exe()?.to_string_lossy().to_string();
     crate::sudo::run_with_input(
@@ -462,24 +494,51 @@ pub fn apply_with_notifications(
 
 pub fn apply_privileged_plan_from_stdin() -> Result<()> {
     let plan: ServicePlan = serde_json::from_reader(std::io::stdin().lock())?;
-    if plan.actions.is_empty() {
-        return Ok(());
+    // The privileged plan never carries a user unit: `systemctl --user` would address root's
+    // manager, not the caller's.
+    if plan.actions.iter().any(|action| action.user) {
+        bail!("refusing to apply a user service plan with elevated privileges");
     }
+    apply_actions(&plan.actions)
+}
+
+/// Run the planned changes against one manager; every action targets the same one.
+fn apply_actions(actions: &[ServiceAction]) -> Result<()> {
+    let Some(first) = actions.first() else {
+        return Ok(());
+    };
     let systemctl =
         systemctl_path().ok_or_else(|| eyre!("required command 'systemctl' was not found"))?;
-    run_systemctl(&systemctl, &["daemon-reload".to_string()])?;
+    apply_actions_with(&systemctl, actions, first.user)
+}
+
+fn apply_actions_with(
+    systemctl: &std::path::Path,
+    actions: &[ServiceAction],
+    user: bool,
+) -> Result<()> {
+    run_systemctl(systemctl, &["daemon-reload".to_string()], user)?;
     let mut commands = vec![];
-    for action in &plan.actions {
+    for action in actions {
         let mut request = ServiceRequest::from_action(action);
-        request.inspection = Some(inspect_service(&systemctl, &request.unit));
+        request.inspection = Some(inspect_service(systemctl, &request.unit, user));
         commands.push(request.commands_after_reload(action.notified)?);
     }
     for service_commands in commands {
         for command in service_commands {
-            run_systemctl(&systemctl, &command)?;
+            run_systemctl(systemctl, &command, user)?;
         }
     }
     Ok(())
+}
+
+/// `args` for `systemctl`, addressed to the user manager when `user` is set.
+fn scoped(user: bool, args: Vec<String>) -> Vec<String> {
+    if user {
+        std::iter::once("--user".to_string()).chain(args).collect()
+    } else {
+        args
+    }
 }
 
 impl ServiceAction {
@@ -521,17 +580,20 @@ impl ServiceAction {
     }
 }
 
-fn inspect_service(systemctl: &std::path::Path, unit: &str) -> ServiceInspection {
-    let args = [
-        "show".to_string(),
-        "--no-pager".to_string(),
-        "--property=LoadState".to_string(),
-        "--property=ActiveState".to_string(),
-        "--property=UnitFileState".to_string(),
-        "--property=NeedDaemonReload".to_string(),
-        "--".to_string(),
-        unit.to_string(),
-    ];
+fn inspect_service(systemctl: &std::path::Path, unit: &str, user: bool) -> ServiceInspection {
+    let args = scoped(
+        user,
+        vec![
+            "show".to_string(),
+            "--no-pager".to_string(),
+            "--property=LoadState".to_string(),
+            "--property=ActiveState".to_string(),
+            "--property=UnitFileState".to_string(),
+            "--property=NeedDaemonReload".to_string(),
+            "--".to_string(),
+            unit.to_string(),
+        ],
+    );
     let output = match systemctl_output(systemctl, &args) {
         Ok(output) => output,
         Err(error) => return ServiceInspection::Unavailable(error.to_string()),
@@ -566,7 +628,8 @@ fn parse_inspection(output: &str) -> ServiceInspection {
     }
 }
 
-fn run_systemctl(systemctl: &std::path::Path, args: &[String]) -> Result<()> {
+fn run_systemctl(systemctl: &std::path::Path, args: &[String], user: bool) -> Result<()> {
+    let args = &scoped(user, args.to_vec());
     info!("$ {} {}", systemctl.display(), shell_words::join(args));
     let output = systemctl_output(systemctl, args)?;
     if !output.status.success() {
@@ -670,6 +733,66 @@ mod tests {
     }
 
     #[test]
+    fn scopes_commands_to_the_user_manager() {
+        let args = vec![
+            "enable".to_string(),
+            "gnome-keyring-daemon.service".to_string(),
+        ];
+        assert_eq!(scoped(false, args.clone()), args);
+        assert_eq!(
+            scoped(true, args),
+            ["--user", "enable", "gnome-keyring-daemon.service"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn applies_a_user_unit_through_the_user_manager() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("calls");
+        let systemctl = dir.path().join("systemctl");
+        std::fs::write(
+            &systemctl,
+            format!(
+                "#!/bin/sh\necho \"$*\" >> '{}'\nif [ \"$2\" = show ]; then\n  printf 'LoadState=loaded\\nActiveState=inactive\\nUnitFileState=disabled\\nNeedDaemonReload=no\\n'\nfi\n",
+                log.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&systemctl, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let action = ServiceAction {
+            unit: "gnome-keyring-daemon.service".to_string(),
+            state: ServiceState::Running,
+            enabled: true,
+            masked: false,
+            on_change: ServiceChangeAction::default(),
+            user: true,
+            dependency_changed: false,
+            notified: false,
+            active: false,
+        };
+        apply_actions_with(&systemctl, &[action], true).unwrap();
+        let calls = std::fs::read_to_string(&log).unwrap();
+        let calls = calls.lines().collect::<Vec<_>>();
+        assert_eq!(calls.len(), 5, "{calls:?}");
+        assert!(
+            calls.iter().all(|call| call.starts_with("--user ")),
+            "{calls:?}"
+        );
+        assert_eq!(calls[0], "--user daemon-reload");
+        assert!(calls[1].starts_with("--user show "), "{calls:?}");
+        assert_eq!(
+            calls[2..],
+            [
+                "--user unmask gnome-keyring-daemon.service",
+                "--user enable gnome-keyring-daemon.service",
+                "--user start gnome-keyring-daemon.service",
+            ]
+        );
+    }
+
+    #[test]
     fn validates_and_normalizes_service_names() {
         assert_eq!(normalize_unit_name("docker").unwrap(), "docker.service");
         assert_eq!(
@@ -762,6 +885,7 @@ mod tests {
             enabled: false,
             masked: true,
             on_change: ServiceChangeAction::default(),
+            user: false,
             dependency_changed: false,
             notified: false,
             active: false,
@@ -780,6 +904,7 @@ mod tests {
             enabled: true,
             masked: false,
             on_change: ServiceChangeAction::default(),
+            user: false,
             dependency_changed: false,
             notified: false,
             active: false,
