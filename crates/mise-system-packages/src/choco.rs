@@ -19,18 +19,16 @@ impl ChocoManager {
     }
 }
 
-/// Builds a side-effect-free exact-name installed-state query.
-fn list_args(request: &PackageRequest) -> Vec<String> {
-    [
-        "list",
-        "--local-only",
-        "--exact",
-        "--limit-output",
-        request.name.as_str(),
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
+/// Builds a side-effect-free exact-name installed-state query. Chocolatey 1.x
+/// searches the remote feed unless `--local-only` is given; 2.x lists only
+/// local packages and may reject the flag, so it is optional.
+fn list_args(request: &PackageRequest, local_only: bool) -> Vec<String> {
+    let mut args = vec!["list".to_string()];
+    if local_only {
+        args.push("--local-only".to_string());
+    }
+    args.extend(["--exact", "--limit-output", request.name.as_str()].map(str::to_string));
+    args
 }
 
 /// Builds non-interactive install or upgrade arguments for a package request.
@@ -38,6 +36,10 @@ fn package_args(command: &str, request: &PackageRequest) -> Vec<String> {
     let mut args = vec![command.to_string(), request.name.clone()];
     if let Some(version) = &request.version {
         args.extend(["--version".to_string(), version.clone()]);
+    }
+    if request.version.is_some() {
+        // a pin below the installed version is a downgrade
+        args.push("--allow-downgrade".to_string());
     }
     args.extend(["--yes".to_string(), "--no-progress".to_string()]);
     args
@@ -62,15 +64,11 @@ fn package_state(request: &PackageRequest, installed: String) -> PackageState {
 
 /// Queries one package without changing Chocolatey state.
 async fn query_package(request: &PackageRequest) -> Result<PackageStatus> {
-    let args = list_args(request);
-    debug!("$ choco {}", args.join(" "));
-    let output = tokio::process::Command::new("choco")
-        .args(&args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await?;
+    let mut output = run_list(request, true).await?;
+    if !output.status.success() {
+        // Chocolatey 2.x may reject --local-only
+        output = run_list(request, false).await?;
+    }
     let stdout = String::from_utf8_lossy(&output.stdout);
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -90,6 +88,19 @@ async fn query_package(request: &PackageRequest) -> Result<PackageStatus> {
         state,
         display_name: None,
     })
+}
+
+/// Runs one `choco list` query.
+async fn run_list(request: &PackageRequest, local_only: bool) -> Result<std::process::Output> {
+    let args = list_args(request, local_only);
+    debug!("$ choco {}", args.join(" "));
+    Ok(tokio::process::Command::new("choco")
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await?)
 }
 
 /// Returns whether an exit code means the command did its work.
@@ -223,8 +234,12 @@ mod tests {
     #[test]
     fn list_queries_only_local_packages() {
         assert_eq!(
-            list_args(&req("git", None)),
+            list_args(&req("git", None), true),
             vec!["list", "--local-only", "--exact", "--limit-output", "git"]
+        );
+        assert_eq!(
+            list_args(&req("git", None), false),
+            vec!["list", "--exact", "--limit-output", "git"]
         );
     }
 
@@ -237,6 +252,7 @@ mod tests {
                 "git",
                 "--version",
                 "2.47.1",
+                "--allow-downgrade",
                 "--yes",
                 "--no-progress"
             ]
