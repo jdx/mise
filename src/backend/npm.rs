@@ -786,16 +786,20 @@ fn aube_health_marker(install_path: &Path) -> PathBuf {
 fn aube_virtual_store_stamp(install_path: &Path) -> Option<String> {
     let mut stamp = String::new();
     for name in [".mise", ".aube"] {
-        let modified = install_path
-            .join("node_modules")
-            .join(name)
-            .symlink_metadata()
-            .ok()
-            .and_then(|meta| meta.modified().ok())
-            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok());
-        match modified {
-            Some(duration) => stamp.push_str(&format!("{name}={};", duration.as_nanos())),
-            None if install_path.join("node_modules").join(name).exists() => return None,
+        let store = install_path.join("node_modules").join(name);
+        let nanos = |time: std::io::Result<std::time::SystemTime>| {
+            time.ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |duration| duration.as_nanos())
+        };
+        let meta = store.symlink_metadata().ok();
+        // The creation time is when this copy of the directory was made: an archive
+        // restore keeps the stored mtimes but creates the directories anew.
+        match meta.map(|meta| (nanos(meta.modified()), nanos(meta.created()))) {
+            Some((modified, created)) => {
+                stamp.push_str(&format!("{name}={modified}/{created};"));
+            }
+            None if store.exists() => return None,
             None => {}
         }
     }
@@ -4961,10 +4965,7 @@ pkg@1.2.0 '1.2.0'
         // A reinstall adds or removes entries, which moves the store's mtime.
         std::fs::create_dir_all(store.join("other@1.0.0")).unwrap();
         let later = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
-        std::fs::File::open(&store)
-            .unwrap()
-            .set_modified(later)
-            .unwrap();
+        filetime::set_file_mtime(&store, filetime::FileTime::from_system_time(later)).unwrap();
         assert!(!aube_health_marker_matches(tmp.path()));
 
         write_aube_health_marker(tmp.path());
