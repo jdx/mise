@@ -39,10 +39,16 @@ fn is_winget_path(exe: &std::path::Path) -> bool {
     path.contains("/microsoft/winget/packages/") || path.contains("/microsoft/winget/links/")
 }
 
+/// Whether this mise was installed by WinGet, which is the official build.
 #[cfg(feature = "self_update")]
-fn installed_by_winget() -> bool {
+pub fn installed_by_winget() -> bool {
     is_winget_path(&env::MISE_BIN)
         || std::fs::canonicalize(&*env::MISE_BIN).is_ok_and(|p| is_winget_path(&p))
+}
+
+#[cfg(not(feature = "self_update"))]
+pub fn installed_by_winget() -> bool {
+    false
 }
 
 #[derive(Debug, Default, serde::Deserialize)]
