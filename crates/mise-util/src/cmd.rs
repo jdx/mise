@@ -379,7 +379,11 @@ unsafe fn join_job(pid: u32, process: std::os::windows::io::RawHandle) -> std::i
         }
         Err(err) => debug!("not tracking {pid} in a job: {err}"),
     }
-    resume(pid).map_err(std::io::Error::other)
+    resume(pid).map_err(|err| {
+        // The caller kills the command and never registers it, so nothing else frees the job.
+        forget_job(pid);
+        std::io::Error::other(err)
+    })
 }
 
 #[cfg(windows)]

@@ -34,8 +34,11 @@ Describe 'task fail-fast with Git Bash' {
         $out = & mise run fail ::: slow 2>&1 | Out-String
         $watch.Stop()
         $LASTEXITCODE | Should -Not -Be 0
+        # Without this the case could pass because `slow` never started.
+        $out | Should -Match '\[slow\] \$ sleep'
         # The command line is echoed, so only a computed value shows the task ran to the end.
         $out | Should -Not -Match '(?m)^42\s*$'
-        $watch.Elapsed.TotalSeconds | Should -BeLessThan 15
+        # Under mise's 10 s pipe-drain timeout, which is when the old behavior gave up waiting.
+        $watch.Elapsed.TotalSeconds | Should -BeLessThan 5
     }
 }
