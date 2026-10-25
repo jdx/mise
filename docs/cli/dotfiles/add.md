@@ -32,6 +32,8 @@ A target inside the tree of a dotfile group is captured into that group's source
 - **`--no-apply`** — Add the entry without applying it
 - **`-p --path <PATH>`** — Write to this config file or directory
 - **`-s --source <PATH>`** — Source path to use for a single target
+
+  A relative path starts from the current directory. The entry records it relative to the config file's directory when it lies inside it, and as an absolute path otherwise.
 - **`-y --yes`** — Skip the confirmation prompt
 - **`--prompt-secrets`** — Prompt for `[bootstrap.secrets]` values that templates need and the environment does not set
 - **`--group <NAME>`** — Capture into the tree of this dotfile group

@@ -4251,6 +4251,8 @@ Write to this config file or directory
 .TP
 \fB\-s, \-\-source\fR \fI<PATH>\fR
 Source path to use for a single target
+
+A relative path starts from the current directory. The entry records it relative to the config file's directory when it lies inside it, and as an absolute path otherwise.
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt

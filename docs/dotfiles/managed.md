@@ -527,7 +527,10 @@ file. When the source is on another filesystem, mise copies the file, keeping
 symlinks and permissions, instead of moving it.
 
 - `--mode copy` keeps a regular file at the target; `--mode` takes any mode.
-- `--source <path>` uses that source instead of one under `dotfiles.root`.
+- `--source <path>` uses that source instead of one under `dotfiles.root`. A
+  relative path starts from the current directory; the entry records it
+  relative to the config file's directory when it lies inside it, and as an
+  absolute path otherwise.
 - `--no-apply` copies the file to its source and writes the entry without
   changing the original file, so you can review both first. It still writes
   the source: when the source already exists with different contents, `add`

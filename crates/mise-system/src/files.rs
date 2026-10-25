@@ -2204,6 +2204,22 @@ pub fn resolve_target_arg(target: &str) -> PathBuf {
     lexical_normalize(&file::replace_path(target))
 }
 
+/// Resolve a source path given on the command line: `~/` expands and a
+/// relative path starts from the current directory, as in a shell.
+pub fn resolve_source_arg(source: &Path) -> Result<PathBuf> {
+    let source = file::replace_path(source);
+    if source.is_absolute() {
+        return Ok(lexical_normalize(&source));
+    }
+    let Some(cwd) = dirs::CWD.as_ref() else {
+        bail!(
+            "cannot resolve {}: the current directory is unavailable",
+            source.display()
+        );
+    };
+    Ok(lexical_normalize(&cwd.join(source)))
+}
+
 fn lexical_normalize(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.components() {
