@@ -1344,6 +1344,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tool_excluded_from_every_platform_by_os_is_current() {
+        crate::backend::load_tools().await.unwrap();
+        let ba = BackendArg::new("fixture".into(), Some("http:fixture".into()));
+        let mut options = ToolVersionOptions::default();
+        options.core.os = Some(vec!["windows".into()]);
+        let request =
+            ToolRequest::new_with_options(Arc::new(ba.clone()), "1", options, ToolSource::Argument)
+                .unwrap();
+        let tools = vec![(ba, ToolVersion::new(request, "1.0".into()))];
+        let platforms = vec![
+            Platform::parse("linux-x64").unwrap(),
+            Platform::parse("macos-arm64").unwrap(),
+        ];
+        assert!(is_current(&Lockfile::default(), &tools, &platforms, false).unwrap());
+        // A stale entry for the excluded tool must still be pruned.
+        assert!(!is_current(&previous(), &tools, &platforms, false).unwrap());
+    }
+
+    #[tokio::test]
     async fn current_check_requires_exact_scope_and_bindings() {
         crate::backend::load_tools().await.unwrap();
         let platforms = vec![
