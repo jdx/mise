@@ -1,12 +1,17 @@
-backends = [
-  { full = "github:indexable-inc/blaze", platforms = [
-    "linux-x64",
-    "linux-arm64",
-    "macos-arm64",
-  ] },
-]
 bins = ["blaze", "cargo-blaze", "ra-jit", "cargo-ra-jit"]
 description = "Incremental Rust build daemon that recompiles only the functions an edit changed (formerly ra-jit)"
 os = ["linux", "macos"]
-test = { cmd = "ra-jit --version", expected = "{{version}}" }
-version_order = "semver"
+# The nightly prints `ra-jit 0.0.0`, not its version, so the test reads the
+# usage line every build shares.
+test = { cmd = "ra-jit --help", expected = "usage: ra-jit" }
+version_order = "source"
+
+[[backends]]
+full = "github:indexable-inc/blaze"
+platforms = ["linux-x64", "linux-arm64", "macos-arm64"]
+
+[backends.options]
+# blaze has no tagged release yet, only the `nightly` prerelease. The
+# `pgo-profiles` prerelease holds profile data, not a build.
+prerelease = true
+version_regex = '^(v\d+\.\d+\.\d+|nightly)$'
