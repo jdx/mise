@@ -36,7 +36,13 @@ const WINGET_UPGRADE_HINT: &str =
 #[cfg(feature = "self_update")]
 fn is_winget_path(exe: &std::path::Path) -> bool {
     let path = exe.to_string_lossy().replace('\\', "/").to_lowercase();
-    path.contains("/microsoft/winget/packages/") || path.contains("/microsoft/winget/links/")
+    // Per-user installs live under `AppData\Local\Microsoft\WinGet`, machine-scope
+    // ones under `Program Files\WinGet`.
+    ["/microsoft/winget", "/program files/winget"]
+        .iter()
+        .any(|root| {
+            path.contains(&format!("{root}/packages/")) || path.contains(&format!("{root}/links/"))
+        })
 }
 
 /// Whether this mise was installed by WinGet, which is the official build.
@@ -125,6 +131,8 @@ mod tests {
             r"C:\Users\me\AppData\Local\Microsoft\WinGet\Packages\jdx.mise_Microsoft.Winget.Source_8wekyb3d8bbwe\mise\bin\mise.exe",
             r"C:\Users\me\AppData\Local\Microsoft\WinGet\Links\mise.exe",
             "c:/users/me/appdata/local/microsoft/winget/packages/jdx.mise/mise.exe",
+            r"C:\Program Files\WinGet\Packages\jdx.mise_Microsoft.Winget.Source_8wekyb3d8bbwe\mise.exe",
+            r"C:\Program Files\WinGet\Links\mise.exe",
         ] {
             assert!(is_winget_path(Path::new(p)), "{p}");
         }

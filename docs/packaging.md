@@ -73,7 +73,7 @@ prefix:
 ## WinGet
 
 mise recognizes a WinGet install by its executable path
-(`...\Microsoft\WinGet\Packages\` or `...\Microsoft\WinGet\Links\`) and turns
+(`...\Microsoft\WinGet\Packages\` or `...\Microsoft\WinGet\Links\` for a per-user install, `C:\Program Files\WinGet\Packages\` or `...\Links\` for a machine-scope one) and turns
 self-update off, since replacing a WinGet-managed binary stops WinGet from
 updating or removing the package. mise tells the user to run
 `winget upgrade jdx.mise` instead. `MISE_SELF_UPDATE_AVAILABLE=true` turns
