@@ -272,6 +272,14 @@ pub fn is_current(
         if !shorts.insert(&ba.short) {
             return Ok(false);
         }
+        // A tool the `os` option excludes from every target has nothing to
+        // lock; it is current as long as the lockfile holds no entry for it.
+        if !platforms.iter().any(|p| tv.request.is_os_supported_on(p)) {
+            if previous.tools_for(&ba.short).is_some() {
+                return Ok(false);
+            }
+            continue;
+        }
         let Some(entries) = previous.tools_for(&ba.short) else {
             return Ok(false);
         };
