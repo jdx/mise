@@ -1396,6 +1396,24 @@ impl Doctor {
             }) {
                 continue;
             }
+            // An explicit choice can use any registered backend eligible for one
+            // of the installed versions, even if it is not the preferred backend.
+            if ist.explicit_backend {
+                let matches_stored =
+                    |full: &str| full.split('[').next().unwrap_or(full) == stored_stripped;
+                let registered = if ist.versions.is_empty() {
+                    rt.backends().into_iter().any(matches_stored)
+                } else {
+                    ist.versions.iter().any(|version| {
+                        rt.backends_for_version(Some(version))
+                            .into_iter()
+                            .any(matches_stored)
+                    })
+                };
+                if registered {
+                    continue;
+                }
+            }
             let Some(registry_full) = recommended.first() else {
                 continue;
             };
@@ -1832,9 +1850,102 @@ fn install_dir_is_empty(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{install_dir_is_empty, sync_failure_duration};
+    use super::{Doctor, install_dir_is_empty, sync_failure_duration};
 
     use crate::system::history::sync::run::SyncStatus;
+    use crate::toolset::install_state;
+
+    struct ResetInstallState;
+
+    impl Drop for ResetInstallState {
+        fn drop(&mut self) {
+            install_state::reset_tools();
+        }
+    }
+
+    fn backend_warnings(short: &str, full: &str, explicit: bool, versions: &[&str]) -> Vec<String> {
+        let installs = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("test/data/installs");
+        assert_eq!(*crate::dirs::INSTALLS, installs.as_path());
+        std::fs::create_dir_all(&installs).unwrap();
+        let _reset = ResetInstallState;
+        let fixture = tempfile::Builder::new()
+            .prefix("doctor-backend-")
+            .tempdir_in(&installs)
+            .unwrap();
+        std::fs::write(
+            fixture.path().join(".mise.backend.toml"),
+            format!("short = {short:?}\nfull = {full:?}\nexplicit_backend = {explicit}\n"),
+        )
+        .unwrap();
+        for version in versions {
+            std::fs::create_dir_all(fixture.path().join(version)).unwrap();
+        }
+        install_state::reset_tools();
+        let tools = install_state::list_tools();
+        let installed = &tools[short];
+        assert_eq!(installed.installs_path.as_deref(), Some(fixture.path()));
+        assert_eq!(installed.full.as_deref(), Some(full));
+        assert_eq!(installed.explicit_backend, explicit);
+        assert_eq!(
+            installed.versions,
+            versions.iter().map(ToString::to_string).collect::<Vec<_>>()
+        );
+
+        let mut doctor = Doctor {
+            subcommand: None,
+            errors: vec![],
+            warnings: vec![],
+            json: false,
+        };
+        doctor.analyze_backend_mismatches();
+        doctor
+            .warnings
+            .into_iter()
+            .filter(|warning| warning.starts_with(&format!("tool '{short}' installed with")))
+            .collect()
+    }
+
+    #[test]
+    fn backend_mismatch_accepts_an_explicit_registry_alternative() {
+        assert!(backend_warnings("neovim", "aqua:neovim/neovim", true, &["0.12.6"]).is_empty());
+    }
+
+    #[test]
+    fn backend_mismatch_accepts_an_explicit_alternative_after_a_cutover() {
+        assert!(backend_warnings("hk", "aqua:jdx/hk", true, &["1.58.1"]).is_empty());
+    }
+
+    #[test]
+    fn backend_mismatch_keeps_implicit_recommendations() {
+        let warnings = backend_warnings("neovim", "aqua:neovim/neovim", false, &["0.12.6"]);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("but registry now recommends 'vfox:jdx/vfox-neovim'"));
+        assert!(backend_warnings("hk", "aqua:jdx/hk", false, &["1.58.0"]).is_empty());
+        assert!(backend_warnings("hk", "aqua:jdx/hk", false, &["1.58.0", "1.58.1"]).is_empty());
+    }
+
+    #[test]
+    fn backend_mismatch_rejects_unregistered_or_ineligible_kinds() {
+        let warnings = backend_warnings("neovim", "github:example/neovim", true, &["0.12.6"]);
+        assert_eq!(warnings.len(), 1);
+        assert!(
+            warnings[0].contains("differs from registry recommendation 'vfox:jdx/vfox-neovim'")
+        );
+        let warnings = backend_warnings("neovim", "aqua:example/neovim", true, &["0.12.6"]);
+        assert_eq!(warnings.len(), 1);
+        assert!(
+            warnings[0].contains("differs from registry recommendation 'vfox:jdx/vfox-neovim'")
+        );
+        let warnings = backend_warnings("hk", "packslip:github.com/jdx/hk", true, &["1.58.0"]);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("differs from registry recommendation 'aqua:jdx/hk'"));
+    }
+
+    #[test]
+    fn backend_mismatch_ignores_same_kind_renames() {
+        assert!(backend_warnings("neovim", "vfox:renamed/neovim", true, &["0.12.6"]).is_empty());
+        assert!(backend_warnings("neovim", "vfox:renamed/neovim", false, &["0.12.6"]).is_empty());
+    }
 
     fn ago(now: chrono::DateTime<chrono::Utc>, secs: i64) -> Option<String> {
         Some((now - chrono::Duration::seconds(secs)).to_rfc3339())

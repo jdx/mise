@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# An explicit registry alternative is intentional; an implicit stale backend still needs a warning.
+export MISE_INSTALL_LAYOUT=legacy
+export MISE_DISABLE_UPDATE_WARNING=1
+
+eval "$(mise activate bash)" && _mise_hook
+
+install_dir="$MISE_DATA_DIR/installs/neovim"
+mkdir -p "$install_dir/0.12.6/bin"
+printf 'fixture payload\n' >"$install_dir/0.12.6/bin/nvim"
+
+write_backend() {
+  local explicit="$1"
+  # schema: skip
+  cat >"$install_dir/.mise.backend.toml" <<TOML
+short = "neovim"
+full = "aqua:neovim/neovim"
+explicit_backend = $explicit
+TOML
+}
+
+write_backend true
+assert_not_contains "mise doctor" "tool 'neovim' installed with"
+assert_succeed "set -o pipefail; mise doctor -J | jq -e '.warnings | map(contains(\"neovim\")) | any | not'"
+
+write_backend false
+assert_contains "mise doctor" "tool 'neovim' installed with backend 'aqua:neovim/neovim'"
+assert_contains "mise doctor" "but registry now recommends 'vfox:jdx/vfox-neovim'"
+assert_succeed "set -o pipefail; mise doctor -J | jq -e '.warnings | map(contains(\"neovim\") and contains(\"registry now recommends\")) | any'"

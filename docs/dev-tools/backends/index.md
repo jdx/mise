@@ -144,6 +144,11 @@ the backend it recorded, and mise warns that the registry has a newer one.
 [`mise backends switch`](/cli/backends/switch.html) moves those lock entries to
 the registry's current backend and reinstalls the affected versions.
 
+`mise doctor` accepts an explicitly selected backend when the registry lists
+that identifier as an available backend for at least one installed version,
+even if it is not first in the list. Implicitly selected backends still warn
+when the registry's preferred backend kind differs for all installed versions.
+
 ### Version-specific backends {#version-specific-backends}
 
 A registry entry can limit a backend to part of a tool's version range. hk's
