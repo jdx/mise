@@ -111,7 +111,16 @@ fn rejected_local_only(output: &std::process::Output) -> bool {
         String::from_utf8_lossy(&output.stderr)
     )
     .to_ascii_lowercase();
-    text.contains("local-only") || text.contains("localonly") || text.contains("unknown option")
+    let names_option = text.contains("local-only") || text.contains("localonly");
+    let rejects = [
+        "unknown option",
+        "unrecognized",
+        "not a valid option",
+        "invalid option",
+    ]
+    .iter()
+    .any(|phrase| text.contains(phrase));
+    names_option && rejects
 }
 
 /// Runs one `choco list` query.
@@ -320,6 +329,14 @@ mod tests {
         assert!(!rejected_local_only(&output(
             1,
             "The source is unreachable"
+        )));
+        assert!(!rejected_local_only(&output(
+            1,
+            "Unknown option: --verbose"
+        )));
+        assert!(!rejected_local_only(&output(
+            1,
+            "--local-only query timed out"
         )));
         assert!(!rejected_local_only(&output(2, "no results")));
         assert!(!rejected_local_only(&output(0, "")));
