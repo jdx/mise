@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+# A forced reshim replaces each wanted wrapper in place: a concurrent exec of it
+# never finds the path missing.
+cat >mise.toml <<'EOF2'
+[wrappers.uname]
+command = "echo"
+args = ["wrapped uname"]
+EOF2
+mise trust mise.toml
+mise reshim
+wrapper="$MISE_DATA_DIR/command-wrappers/bin/uname"
+assert_succeed "test -e '$wrapper'"
+# The lock lives beside the shared directory, not in the cache, so processes
+# with different cache directories still exclude each other.
+assert_succeed "test -e '$MISE_DATA_DIR/command-wrappers/bin.lock'"
+
+reshim_count=10
+(for _ in $(seq "$reshim_count"); do mise reshim --force; done) &
+reshims=$!
+polls=0
+misses=0
+while kill -0 "$reshims" 2>/dev/null; do
+  [[ -e $wrapper ]] || misses=$((misses + 1))
+  polls=$((polls + 1))
+done
+wait "$reshims"
+echo "polled the wrapper $polls times during $reshim_count forced reshims"
+assert "echo $misses" "0"
+
+# A staging directory left by a reshim that died mid-publish is removed by the
+# next reshim, and does not keep the directory alive once no wrapper is wanted.
+stale="$MISE_DATA_DIR/command-wrappers/bin/.mise-wrappers-stage-stale"
+mkdir -p "$stale"
+touch "$stale/uname"
+mise reshim
+assert_fail "test -e '$stale'"
+
+# Only a directory is staging: a file whose name carries the prefix, such as a
+# wrapper named that way, is left alone.
+kept="$MISE_DATA_DIR/command-wrappers/bin/.mise-wrappers-stage-kept"
+touch "$kept"
+mise reshim
+assert_succeed "test -f '$kept'"
+rm "$kept"
+
+# Once no wrapper is wanted the directory goes, even holding a hidden wrapper,
+# which the shim listing skips, and a stale staging directory.
+cat >mise.toml <<'EOF2'
+[wrappers.".hidden"]
+command = "echo"
+EOF2
+mise reshim
+assert_succeed "test -e '$MISE_DATA_DIR/command-wrappers/bin/.hidden'"
+mkdir -p "$stale"
+printf '[settings]\nexperimental = true\n' >mise.toml
+mise reshim
+assert_fail "test -e '$MISE_DATA_DIR/command-wrappers/bin'"
