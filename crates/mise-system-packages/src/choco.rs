@@ -65,11 +65,19 @@ fn package_state(request: &PackageRequest, installed: String) -> PackageState {
 /// Queries one package without changing Chocolatey state.
 async fn query_package(request: &PackageRequest) -> Result<PackageStatus> {
     let mut output = run_list(request, true).await?;
-    if !output.status.success() {
+    if !output.status.success() && output.status.code() != Some(2) {
         // Chocolatey 2.x may reject --local-only
         output = run_list(request, false).await?;
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
+    // with useEnhancedExitCodes, a query with no results exits 2
+    if output.status.code() == Some(2) {
+        return Ok(PackageStatus {
+            request: request.clone(),
+            state: PackageState::Missing,
+            display_name: None,
+        });
+    }
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let detail = [stdout.trim(), stderr.trim()]
