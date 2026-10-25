@@ -215,9 +215,11 @@ pub(crate) async fn report() -> Result<HistoryReport> {
         unavailable: store.unavailable().map(str::to_string),
         health: crate::system::history::health::read(store.state_dir()),
         sync: sync_report(&store)?,
-        history_repo: Some(crate::file::display_path(
-            crate::system::history::shadow::HistoryRepo::path_in(store.state_dir()),
-        )),
+        history_repo: store.repo().map(|_| {
+            crate::file::display_path(crate::system::history::shadow::HistoryRepo::path_in(
+                store.state_dir(),
+            ))
+        }),
     })
 }
 
