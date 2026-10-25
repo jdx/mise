@@ -15,7 +15,7 @@ use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     sync::atomic::{AtomicBool, Ordering},
 };
 
@@ -153,6 +153,12 @@ static TRUSTED_PATHS_RESOLVED: Lazy<Mutex<std::collections::HashMap<PathBuf, Opt
     Lazy::new(Default::default);
 
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
+    Lazy::new(Default::default);
+/// `write_targets.*` keys a non-global config set, with the first file that set each one.
+///
+/// A write target only matters to a command that writes global config, so instead of warning
+/// whenever such a file loads, the write path asks [`ignored_write_target`] and warns there.
+static IGNORED_WRITE_TARGETS: Lazy<Mutex<BTreeMap<&'static str, PathBuf>>> =
     Lazy::new(Default::default);
 /// Settings files that failed to parse, held until warnings can be printed.
 ///
@@ -570,12 +576,26 @@ fn strip_local_only_settings(settings: &mut toml::Table, path: &Path, is_global:
         if let Some(value) = remove_nested_toml_value(settings, key)
             && should_warn_ignored_global_only_value(&value)
         {
-            warn!(
-                "{key} in non-global config {} is ignored for security reasons",
-                path.display()
-            );
+            if key.starts_with("write_targets.") {
+                IGNORED_WRITE_TARGETS
+                    .lock()
+                    .unwrap()
+                    .entry(key)
+                    .or_insert_with(|| path.to_path_buf());
+            } else {
+                warn!(
+                    "{key} in non-global config {} is ignored for security reasons",
+                    path.display()
+                );
+            }
         }
     }
+}
+
+/// The non-global config file that set `key` (such as `write_targets.dotfiles`), which mise
+/// ignored because write targets apply only from global config.
+pub(crate) fn ignored_write_target(key: &str) -> Option<PathBuf> {
+    IGNORED_WRITE_TARGETS.lock().unwrap().get(key).cloned()
 }
 
 /// Drop settings the config loader consumes *before* any config file is read — the config
@@ -1856,12 +1876,17 @@ fn load() -> Result<Arc<Settings>> {
     let previous = mise_settings::is_loaded()
         .then(mise_settings::last_cached)
         .flatten();
+    // The files parsed below record their ignored write targets again, so a reload forgets one a
+    // project no longer sets. A failed load keeps the records that match the kept settings.
+    let previous_ignored_write_targets =
+        std::mem::take(&mut *IGNORED_WRITE_TARGETS.lock().unwrap());
     LOAD_PARSE_CACHE.set(Some(ParseCache::new()));
     let bootstrap = Settings::load_sources_from(None, SettingsLoadPolicy::GLOBAL_HIERARCHY);
     let bootstrap = match bootstrap {
         Ok(bootstrap) => bootstrap,
         Err(err) => {
             LOAD_PARSE_CACHE.set(None);
+            *IGNORED_WRITE_TARGETS.lock().unwrap() = previous_ignored_write_targets;
             return Err(err);
         }
     };
@@ -1878,6 +1903,7 @@ fn load() -> Result<Arc<Settings>> {
                 Some(previous) => mise_settings::store(previous),
                 None => mise_settings::clear(),
             }
+            *IGNORED_WRITE_TARGETS.lock().unwrap() = previous_ignored_write_targets;
             return Err(err);
         }
     };
@@ -2705,6 +2731,26 @@ mod tests {
             partial.history.describe_command.as_deref(),
             Some("cat dotfiles")
         );
+    }
+
+    #[test]
+    fn test_local_config_records_ignored_write_targets() {
+        let path = Path::new("/tmp/project-with-write-target/mise.toml");
+        let mut settings = toml::from_str::<toml::Value>(
+            r#"
+            [write_targets]
+            packages = "mise.toml"
+            "#,
+        )
+        .unwrap()
+        .as_table()
+        .unwrap()
+        .clone();
+        strip_local_only_settings(&mut settings, path, false);
+        let partial = settings_partial_from_table(settings);
+
+        assert_eq!(partial.write_targets.packages, None);
+        assert!(ignored_write_target("write_targets.packages").is_some());
     }
 
     #[test]
