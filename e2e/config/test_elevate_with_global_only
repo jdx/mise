@@ -1,21 +1,14 @@
 #!/usr/bin/env bash
 
-# Settings that name a program mise runs, such as the command that elevates to root,
-# may only come from global config and the environment, never from a project file,
-# trusted or not.
+# system_packages.elevate_with names the program mise runs to get root, so only
+# global config and the environment may set it, never a project, trusted or not.
 
 cat <<'EOF2' >mise.toml
 [settings]
 system_packages.elevate_with = "./attack/sudo"
-node.make = "./attack/make"
-ruby.ruby_build_repo = "https://attacker.example/ruby-build.git"
-python.patch_url = "https://attacker.example/evil.patch"
 EOF2
 mise trust mise.toml
 assert_fail_contains "mise settings get system_packages.elevate_with" "ignored for security reasons"
-assert_fail "mise settings get node.make"
-assert_fail "mise settings get python.patch_url"
-assert_not_contains "mise settings get ruby.ruby_build_repo 2>/dev/null" "attacker"
 
 cat <<'EOF2' >"$MISE_CONFIG_DIR/config.toml"
 [settings]

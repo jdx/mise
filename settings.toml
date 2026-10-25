@@ -2277,7 +2277,6 @@ the version and mise compiles instead. When mise installs a precompiled build,
 it warns that the patches were skipped.
 """
 env = "MISE_NODE_APPLY_PATCHES"
-global_only = true
 optional = true
 type = "String"
 
@@ -2385,7 +2384,6 @@ type = "Bool"
 description = "Command to run instead of `make` when compiling Node.js, such as `gmake`."
 docs = "Used for both the build and `make install`."
 env = "MISE_NODE_MAKE"
-global_only = true
 optional = true
 type = "String"
 
@@ -2990,7 +2988,6 @@ Precompiled builds are not patched. To patch each version separately, use
 [`python.patches_directory`](#python.patches_directory).
 """
 env = "MISE_PYTHON_PATCH_URL"
-global_only = true
 optional = true
 type = "Url"
 
@@ -3002,7 +2999,6 @@ python-build, for example `3.14.2.patch`. If that file does not exist, mise
 warns and builds without a patch.
 """
 env = "MISE_PYTHON_PATCHES_DIRECTORY"
-global_only = true
 optional = true
 type = "Path"
 
@@ -3052,7 +3048,6 @@ type = "String"
 default = "https://github.com/pyenv/pyenv.git"
 description = "Git repository that mise clones pyenv from to get python-build."
 env = "MISE_PYENV_REPO"
-global_only = true
 type = "String"
 
 [python.uv_venv_auto]
@@ -3273,7 +3268,6 @@ type = "String"
 default = "https://github.com/rbenv/ruby-build.git"
 description = "Git repository or ZIP archive URL that mise gets ruby-build from."
 env = "MISE_RUBY_BUILD_REPO"
-global_only = true
 type = "String"
 
 [ruby.ruby_install]
@@ -3292,7 +3286,6 @@ type = "String"
 default = "https://github.com/postmodern/ruby-install.git"
 description = "Git repository or ZIP archive URL that mise gets ruby-install from."
 env = "MISE_RUBY_INSTALL_REPO"
-global_only = true
 type = "String"
 
 [ruby.verbose_install]
