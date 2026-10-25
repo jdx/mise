@@ -862,7 +862,8 @@ impl Lock {
                 .collect();
             reject_unverified_versions(&tools, &cli_versions)?;
             for (_, tv) in &tools {
-                tv.ba().warn_if_locked_backend_superseded(&tv.version);
+                tv.ba()
+                    .warn_if_locked_backend_superseded(&tv.version, tv.request.source());
             }
             let configured_selectors = self.configured_tool_selectors_for_target(
                 config,
