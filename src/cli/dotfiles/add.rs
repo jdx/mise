@@ -824,7 +824,12 @@ fn config_relative_source(
     if rel.as_os_str().is_empty() {
         return None;
     }
-    Some(rel.to_string_lossy().replace('\\', "/"))
+    let rel = rel.to_string_lossy();
+    if cfg!(windows) {
+        Some(rel.replace('\\', "/"))
+    } else {
+        Some(rel.into_owned())
+    }
 }
 
 fn normalized_target_raw(target: &std::path::Path) -> String {

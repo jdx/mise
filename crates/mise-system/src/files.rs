@@ -2208,16 +2208,33 @@ pub fn resolve_target_arg(target: &str) -> PathBuf {
 /// relative path starts from the current directory, as in a shell.
 pub fn resolve_source_arg(source: &Path) -> Result<PathBuf> {
     let source = file::replace_path(source);
-    if source.is_absolute() {
-        return Ok(lexical_normalize(&source));
-    }
-    let Some(cwd) = dirs::CWD.as_ref() else {
-        bail!(
-            "cannot resolve {}: the current directory is unavailable",
-            source.display()
-        );
+    let source = if source.is_absolute() {
+        source
+    } else {
+        let Some(cwd) = dirs::CWD.as_ref() else {
+            bail!(
+                "cannot resolve {}: the current directory is unavailable",
+                source.display()
+            );
+        };
+        cwd.join(source)
     };
-    Ok(lexical_normalize(&cwd.join(source)))
+    // `..` follows the real parent of a symlinked directory, so resolve that
+    // link before dropping the component
+    let mut resolved = PathBuf::new();
+    for component in source.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if resolved.is_symlink() {
+                    resolved = resolved.canonicalize()?;
+                }
+                resolved.pop();
+            }
+            component => resolved.push(component.as_os_str()),
+        }
+    }
+    Ok(resolved)
 }
 
 fn lexical_normalize(path: &Path) -> PathBuf {

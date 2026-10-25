@@ -35,3 +35,16 @@ echo relative >~/.rel-link
 MISE_DOTFILES_RELATIVE_SYMLINKS=1 mise dotfiles add --local --yes --source dotfiles/rel-link ~/.rel-link
 assert "cat ~/.rel-link" "relative"
 assert "realpath ~/.rel-link" "$(realpath "$project/dotfiles/rel-link")"
+
+# `..` after a symlinked directory follows the link's real parent
+mkdir -p real/dots
+ln -s real/dots alias
+echo link >~/.rel-dots
+mise dotfiles add --path "$project/mise.toml" --yes --source alias/../dotsrc ~/.rel-dots
+assert "cat $project/real/dotsrc" "link"
+
+# a backslash in a source name is kept as part of the name
+echo bs >~/.rel-bs
+mise dotfiles add --local --yes --source 'dotfiles/a\b' ~/.rel-bs
+assert_contains "cat mise.toml" "source = 'dotfiles/a\\b'"
+assert "cat '$project/dotfiles/a\\b'" "bs"
