@@ -11,9 +11,9 @@ pub struct ServiceRequest {
 }
 
 pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
+    reject_existing_user_units(config)?;
     Ok(compose_system_declarations(config)?
         .into_keys()
-        .chain(compose_existing_user_unit_declarations(config)?.into_keys())
         .map(|name| ServiceRequest { name })
         .collect())
 }
@@ -58,10 +58,15 @@ fn reject_configured(config: &Config) -> Result<Vec<ServiceRequest>> {
     if !compose_system_declarations(config)?.is_empty() {
         bail!("bootstrap system services are only supported on Linux");
     }
+    reject_existing_user_units(config)?;
+    Ok(vec![])
+}
+
+fn reject_existing_user_units(config: &Config) -> Result<()> {
     if !compose_existing_user_unit_declarations(config)?.is_empty() {
         bail!(
             "managing an existing systemd user unit is only supported on Linux; set `command` to define a user service"
         );
     }
-    Ok(vec![])
+    Ok(())
 }

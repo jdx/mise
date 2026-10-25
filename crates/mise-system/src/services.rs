@@ -507,19 +507,26 @@ fn apply_actions(actions: &[ServiceAction]) -> Result<()> {
     let Some(first) = actions.first() else {
         return Ok(());
     };
-    let user = first.user;
     let systemctl =
         systemctl_path().ok_or_else(|| eyre!("required command 'systemctl' was not found"))?;
-    run_systemctl(&systemctl, &["daemon-reload".to_string()], user)?;
+    apply_actions_with(&systemctl, actions, first.user)
+}
+
+fn apply_actions_with(
+    systemctl: &std::path::Path,
+    actions: &[ServiceAction],
+    user: bool,
+) -> Result<()> {
+    run_systemctl(systemctl, &["daemon-reload".to_string()], user)?;
     let mut commands = vec![];
     for action in actions {
         let mut request = ServiceRequest::from_action(action);
-        request.inspection = Some(inspect_service(&systemctl, &request.unit, user));
+        request.inspection = Some(inspect_service(systemctl, &request.unit, user));
         commands.push(request.commands_after_reload(action.notified)?);
     }
     for service_commands in commands {
         for command in service_commands {
-            run_systemctl(&systemctl, &command, user)?;
+            run_systemctl(systemctl, &command, user)?;
         }
     }
     Ok(())
@@ -735,6 +742,53 @@ mod tests {
         assert_eq!(
             scoped(true, args),
             ["--user", "enable", "gnome-keyring-daemon.service"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn applies_a_user_unit_through_the_user_manager() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("calls");
+        let systemctl = dir.path().join("systemctl");
+        std::fs::write(
+            &systemctl,
+            format!(
+                "#!/bin/sh\necho \"$*\" >> '{}'\nif [ \"$2\" = show ]; then\n  printf 'LoadState=loaded\\nActiveState=inactive\\nUnitFileState=disabled\\nNeedDaemonReload=no\\n'\nfi\n",
+                log.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&systemctl, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let action = ServiceAction {
+            unit: "gnome-keyring-daemon.service".to_string(),
+            state: ServiceState::Running,
+            enabled: true,
+            masked: false,
+            on_change: ServiceChangeAction::default(),
+            user: true,
+            dependency_changed: false,
+            notified: false,
+            active: false,
+        };
+        apply_actions_with(&systemctl, &[action], true).unwrap();
+        let calls = std::fs::read_to_string(&log).unwrap();
+        let calls = calls.lines().collect::<Vec<_>>();
+        assert_eq!(calls.len(), 5, "{calls:?}");
+        assert!(
+            calls.iter().all(|call| call.starts_with("--user ")),
+            "{calls:?}"
+        );
+        assert_eq!(calls[0], "--user daemon-reload");
+        assert!(calls[1].starts_with("--user show "), "{calls:?}");
+        assert_eq!(
+            calls[2..],
+            [
+                "--user unmask gnome-keyring-daemon.service",
+                "--user enable gnome-keyring-daemon.service",
+                "--user start gnome-keyring-daemon.service",
+            ]
         );
     }
 
