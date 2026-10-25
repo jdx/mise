@@ -4118,9 +4118,16 @@ fn resolve_global_write_path(opts: &ConfigPathOptions) -> Result<PathBuf> {
             }
             return Ok(path.clone());
         }
-        if let Some(path) = configured_global_write_path(section)? {
-            return Ok(path);
+        let path = configured_global_write_path(section)?.unwrap_or_else(global_config_path);
+        let key = section.setting_name().trim_start_matches("settings.");
+        if let Some(ignored) = settings::ignored_write_target(key) {
+            warn!(
+                "{key} in {} is ignored because it only applies from global config; writing to {}",
+                display_path(&ignored),
+                display_path(&path)
+            );
         }
+        return Ok(path);
     }
     Ok(global_config_path())
 }

@@ -205,10 +205,8 @@ On a new machine, one command clones the repository and applies it:
 mise bootstrap --from https://github.com/you/dotfiles.git --from-dir ~/.dotfiles
 ```
 
-That first run reads the repository as a bootstrap project, so mise warns that
-`write_targets.dotfiles` is ignored; the link it creates fixes that. Every
-later mise command loads the repository as global config, so updating needs no
-`--from`:
+That first run creates the link, so every later mise command loads the
+repository as global config, and updating needs no `--from`:
 
 ```sh
 git -C ~/.dotfiles pull
