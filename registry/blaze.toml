@@ -1,0 +1,12 @@
+backends = [
+  { full = "github:indexable-inc/blaze", platforms = [
+    "linux-x64",
+    "linux-arm64",
+    "macos-arm64",
+  ] },
+]
+bins = ["blaze", "cargo-blaze", "ra-jit", "cargo-ra-jit"]
+description = "Incremental Rust build daemon that recompiles only the functions an edit changed (formerly ra-jit)"
+os = ["linux", "macos"]
+test = { cmd = "ra-jit --version", expected = "{{version}}" }
+version_order = "semver"
