@@ -12,6 +12,7 @@ use crate::config::doctor::DoctorCheck;
 use crate::config::{Config, Settings, SettingsExt};
 use crate::env_diff::EnvMap;
 use crate::toolset::{ResolveOptions, ToolsetBuilder};
+use crate::ui::style;
 use mise_util::redactions::redact_output;
 
 /// Run the project's diagnostic checks
@@ -101,29 +102,50 @@ impl Project {
                 Ok(())
             };
             for error in &report.errors {
-                print(format!("ERROR {error}"))?;
+                print(format!("{} {error}", style::nred("ERROR").bold()))?;
             }
             for check in &report.checks {
                 let status = match check.status {
-                    Status::Pass => "PASS",
-                    Status::Fail => "FAIL",
-                    Status::Error => "ERROR",
-                    Status::Skipped => "SKIP",
-                    Status::Blocked => "BLOCKED",
+                    Status::Pass => style::nstyle("PASS").green().bold(),
+                    Status::Fail => style::nred("FAIL").bold(),
+                    Status::Error => style::nred("ERROR").bold(),
+                    Status::Skipped => style::ndim("SKIP"),
+                    Status::Blocked => style::nyellow("BLOCKED").bold(),
                 };
                 print(format!(
                     "{status} {}: {}",
-                    check.name,
+                    style::nbold(&check.name),
                     check.description.as_deref().unwrap_or(&check.name)
                 ))?;
                 if let Some(message) = &check.message {
-                    print(format!("  {message}"))?;
+                    print(format!("  {}", style::ndim(message)))?;
                 }
                 if matches!(check.status, Status::Fail | Status::Error)
                     && let Some(hint) = &check.hint
                 {
-                    print(format!("  {hint}"))?;
+                    print(format!("  {} {hint}", style::nyellow("hint:")))?;
                 }
+            }
+            let failed = report
+                .checks
+                .iter()
+                .filter(|c| matches!(c.status, Status::Fail | Status::Error))
+                .count();
+            let passed = report
+                .checks
+                .iter()
+                .filter(|c| matches!(c.status, Status::Pass))
+                .count();
+            let skipped = report.checks.len() - passed - failed;
+            let mut summary = format!("{passed} passed, {failed} failed");
+            if skipped > 0 {
+                summary.push_str(&format!(", {skipped} skipped"));
+            }
+            miseprintln!();
+            if failed > 0 || !report.errors.is_empty() {
+                miseprintln!("{}", style::nred(summary).bold());
+            } else {
+                miseprintln!("{}", style::nstyle(summary).green());
             }
         }
         if !report.errors.is_empty()
