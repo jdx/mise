@@ -768,6 +768,65 @@ fn forget_aube_install_health(install_path: &Path) {
         .lock()
         .unwrap()
         .remove(install_path);
+    let _ = std::fs::remove_file(aube_health_marker(install_path));
+}
+
+/// Where a self-contained verdict for `install_path` is remembered across
+/// processes. It lives in the state dir rather than the install prefix so a CI
+/// cache that restores only the installs dir cannot carry a stale verdict
+/// along with a tree that lost its Windows junctions.
+fn aube_health_marker(install_path: &Path) -> PathBuf {
+    crate::dirs::STATE
+        .join("npm-tree-health")
+        .join(crate::hash::hash_to_str(&install_path.to_string_lossy()))
+}
+
+/// Identifies the state of the virtual stores: their modification times change
+/// whenever an entry is added or removed, which is what a reinstall does.
+fn aube_virtual_store_stamp(install_path: &Path) -> Option<String> {
+    let mut stamp = String::new();
+    for name in [".mise", ".aube"] {
+        let modified = install_path
+            .join("node_modules")
+            .join(name)
+            .symlink_metadata()
+            .ok()
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok());
+        match modified {
+            Some(duration) => stamp.push_str(&format!("{name}={};", duration.as_nanos())),
+            None if install_path.join("node_modules").join(name).exists() => return None,
+            None => {}
+        }
+    }
+    Some(stamp)
+}
+
+/// Whether an earlier mise process found this prefix self-contained and its
+/// virtual stores have not changed since. On Windows the check behind it reads
+/// every package manifest in the tree, which takes seconds on a large tool and
+/// would otherwise run in every `hook-env`.
+fn aube_health_marker_matches(install_path: &Path) -> bool {
+    let Some(stamp) = aube_virtual_store_stamp(install_path) else {
+        return false;
+    };
+    std::fs::read_to_string(aube_health_marker(install_path)).is_ok_and(|saved| saved == stamp)
+}
+
+fn write_aube_health_marker(install_path: &Path) {
+    let Some(stamp) = aube_virtual_store_stamp(install_path) else {
+        return;
+    };
+    let marker = aube_health_marker(install_path);
+    if let Some(parent) = marker.parent()
+        && let Err(err) = std::fs::create_dir_all(parent)
+    {
+        trace!("failed to create npm tree health dir: {err}");
+        return;
+    }
+    if let Err(err) = std::fs::write(&marker, stamp) {
+        trace!("failed to write npm tree health marker: {err}");
+    }
 }
 
 fn aube_install_tree_is_healthy_cached(install_path: &Path) -> bool {
@@ -778,6 +837,13 @@ fn aube_install_tree_is_healthy_cached(install_path: &Path) -> bool {
     {
         return true;
     }
+    if cfg!(windows) && aube_health_marker_matches(install_path) {
+        SELF_CONTAINED_AUBE_INSTALLS
+            .lock()
+            .unwrap()
+            .insert(install_path.to_path_buf());
+        return true;
+    }
     match aube_install_tree_health(install_path) {
         AubeTreeHealth::Broken => false,
         AubeTreeHealth::Linked => true,
@@ -786,6 +852,9 @@ fn aube_install_tree_is_healthy_cached(install_path: &Path) -> bool {
                 .lock()
                 .unwrap()
                 .insert(install_path.to_path_buf());
+            if cfg!(windows) {
+                write_aube_health_marker(install_path);
+            }
             true
         }
     }
@@ -4877,6 +4946,31 @@ pkg@1.2.0 '1.2.0'
                 .unwrap()
                 .contains(tmp.path())
         );
+    }
+
+    #[test]
+    fn aube_health_marker_tracks_virtual_store_changes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("node_modules/.mise");
+        std::fs::create_dir_all(store.join("pkg@1.0.0/node_modules/pkg")).unwrap();
+
+        assert!(!aube_health_marker_matches(tmp.path()));
+        write_aube_health_marker(tmp.path());
+        assert!(aube_health_marker_matches(tmp.path()));
+
+        // A reinstall adds or removes entries, which moves the store's mtime.
+        std::fs::create_dir_all(store.join("other@1.0.0")).unwrap();
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+        std::fs::File::open(&store)
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
+        assert!(!aube_health_marker_matches(tmp.path()));
+
+        write_aube_health_marker(tmp.path());
+        assert!(aube_health_marker_matches(tmp.path()));
+        forget_aube_install_health(tmp.path());
+        assert!(!aube_health_marker_matches(tmp.path()));
     }
 
     #[test]
