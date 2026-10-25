@@ -30,6 +30,7 @@ Describe 'task fail-fast with Git Bash' {
     }
 
     It 'stops a sibling task whose children Git Bash forked' {
+        $before = @(Get-Process -Name sleep -ErrorAction SilentlyContinue | ForEach-Object Id)
         $watch = [System.Diagnostics.Stopwatch]::StartNew()
         $out = & mise run fail ::: slow 2>&1 | Out-String
         $watch.Stop()
@@ -40,5 +41,8 @@ Describe 'task fail-fast with Git Bash' {
         $out | Should -Not -Match '(?m)^42\s*$'
         # Under mise's 10 s pipe-drain timeout, which is when the old behavior gave up waiting.
         $watch.Elapsed.TotalSeconds | Should -BeLessThan 5
+        # The symptom itself: the forked `sleep.exe` outliving the failed run.
+        $left = @(Get-Process -Name sleep -ErrorAction SilentlyContinue | Where-Object { $before -notcontains $_.Id })
+        $left | Should -BeNullOrEmpty
     }
 }
