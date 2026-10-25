@@ -89,7 +89,7 @@ import { data as showreel } from "./.vitepress/showreel.data";
         </div>
         <div class="bootstrap-connector"><span aria-hidden="true">↓</span> <code>mise bootstrap</code></div>
         <div class="bootstrap-resources">
-          <div><strong>Packages</strong><span>brew · apt · scoop · winget</span></div>
+          <div><strong>Packages</strong><span>brew · apt · scoop · winget · choco</span></div>
           <div><strong>Repositories</strong><span>Project checkouts</span></div>
           <div><strong>Dotfiles</strong><span>Track · link · template</span></div>
           <div><strong>Services</strong><span>Background processes</span></div>
@@ -106,7 +106,7 @@ import { data as showreel } from "./.vitepress/showreel.data";
           in your global config or in a repository of your own.
         </p>
         <ul class="landing-checklist">
-          <li><a href="/bootstrap/packages/">Packages</a> from apt, dnf, pacman, AUR, zypper, apk, nix, flatpak, snap, Homebrew formulae and casks, direct macOS app downloads, mas, scoop, winget, and package manager plugins</li>
+          <li><a href="/bootstrap/packages/">Packages</a> from apt, dnf, pacman, AUR, zypper, apk, nix, flatpak, snap, Homebrew formulae and casks, direct macOS app downloads, mas, scoop, winget, Chocolatey, and package manager plugins</li>
           <li>Dotfiles tracked in place with history you can roll back and sync between machines, or applied as symlinks, copies, templates, and line or block edits</li>
           <li>Remote hosts over SSH with <code>mise bootstrap remote</code></li>
         </ul>

@@ -228,6 +228,7 @@ export const sidebar: SidebarItem[] = [
           { text: "aur", link: "/bootstrap/packages/aur" },
           { text: "brew", link: "/bootstrap/packages/brew" },
           { text: "brew-cask", link: "/bootstrap/packages/brew-cask" },
+          { text: "choco", link: "/bootstrap/packages/choco" },
           { text: "dnf", link: "/bootstrap/packages/dnf" },
           { text: "flatpak", link: "/bootstrap/packages/flatpak" },
           { text: "macos-app", link: "/bootstrap/packages/macos-app" },
