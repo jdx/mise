@@ -207,3 +207,7 @@ os = ["windows"]
 run = "true"
 TOML
 assert 'mise doctor project --json | jq -r ".checks[] | select(.name==\"b\").status"' "skipped"
+
+# The text report colors status labels when color is forced and ends with a summary.
+assert_contains "CLICOLOR_FORCE=1 mise doctor project 2>&1 || true" $'\e[31m\e[1mFAIL'
+assert_contains "mise doctor project 2>&1 || true" "1 failed, 1 skipped"
