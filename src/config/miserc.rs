@@ -434,6 +434,11 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
     let mut tera: Option<TeraEngine> = None;
 
     for path in files.into_iter().rev() {
+        // Every file here is optional and most do not exist. Skip those without
+        // building (and discarding) an error report for each.
+        if !path.exists() {
+            continue;
+        }
         file::ensure_config_file_size(&path)?;
         if let Ok(content) = file::read_config_to_string(&path) {
             let config_root = path.parent().unwrap_or(Path::new("."));

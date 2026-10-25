@@ -57,6 +57,16 @@ fn raise_nofile_limit() {
 }
 
 fn main() -> ExitCode {
+    // First, before anything that can build an `eyre::Report`. eyre's `auto-install` feature
+    // registers its default handler on the first report, after which `install` fails with
+    // "a hook has already been installed". The hook-env fast path below decodes `__MISE_SESSION`
+    // and may load settings, and either can report an error it then swallows — so a shell still
+    // exporting a session from an older mise used to fail every prompt with that message instead
+    // of the real diagnostic (or no diagnostic at all).
+    if let Err(err) = install_error_hooks() {
+        eprintln!("Error: {err:?}");
+        return exit::status(1);
+    }
     #[cfg(unix)]
     raise_nofile_limit();
     cli::register_frontend();
@@ -144,9 +154,8 @@ fn main() -> ExitCode {
     }
 }
 
-async fn main_() -> eyre::Result<()> {
-    let _downloads = http::InvocationDownloads;
-    // Configure color-eyre based on color preferences
+/// Configure color-eyre based on color preferences and install both of its hooks.
+fn install_error_hooks() -> eyre::Result<()> {
     let hook_builder = if *env::CLICOLOR == Some(false) {
         // Use blank theme (no colors) when colors are disabled
         color_eyre::config::HookBuilder::new().theme(color_eyre::config::Theme::new())
@@ -156,6 +165,11 @@ async fn main_() -> eyre::Result<()> {
     let (panic_hook, eyre_hook) = hook_builder.into_hooks();
     eyre_hook.install()?;
     install_panic_hook(panic_hook);
+    Ok(())
+}
+
+async fn main_() -> eyre::Result<()> {
+    let _downloads = http::InvocationDownloads;
     measure!("main", {
         let args = env::args_safe();
         match Cli::run(&args)

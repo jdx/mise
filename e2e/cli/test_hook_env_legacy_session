@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+# A shell that was activated by an older mise keeps exporting that version's
+# __MISE_SESSION. The fast-path in `main` reads it before the error reporter is
+# installed, and any error raised there (a blob that does not decode, or a
+# swallowed error while loading settings for a session without
+# `hook_env_shortcuts_unset`) used to make the later install fail with
+# "cannot install provided ErrorHook, a hook has already been installed".
+
+# A blob that is not a session at all: decoding it is the error.
+output=$(__MISE_SESSION=not-a-session mise hook-env -s bash 2>&1) || fail "hook-env failed with an undecodable __MISE_SESSION: $output"
+assert_not_contains_text "$output" "ErrorHook"
+assert_contains_text "$output" "__MISE_SESSION"
+
+# A session written before 2026.9.26 (no `v`, no `hook_env_shortcuts_unset`),
+# with `dir` set so the fast-path proceeds to load settings. The load only
+# consults the miserc files, whose absence is the swallowed error, when there
+# is a config file to check against the ignore list, so give it one.
+mkdir -p "$MISE_CONFIG_DIR"
+echo '[tools]' >"$MISE_CONFIG_DIR/config.toml"
+legacy_session="$(python3 - <<'PY'
+import base64, zlib
+
+def fixstr(s):
+    b = s.encode()
+    return bytes([0xA0 | len(b)]) + b
+
+fields = [
+    (fixstr("loaded_tools"), b"\x90"),
+    (fixstr("loaded_configs"), b"\x90"),
+    (fixstr("config_paths"), b"\x90"),
+    (fixstr("env"), b"\x80"),
+    (fixstr("dir"), fixstr("/")),
+    (fixstr("env_var_hash"), fixstr("")),
+    (fixstr("latest_update"), b"\xc4\x10" + bytes(16)),
+]
+blob = bytes([0x80 | len(fields)]) + b"".join(k + v for k, v in fields)
+print(base64.b64encode(zlib.compress(blob)).decode().rstrip("="))
+PY
+)"
+output=$(__MISE_SESSION="$legacy_session" mise hook-env -s bash 2>&1) || fail "hook-env failed with a legacy __MISE_SESSION: $output"
+assert_not_contains_text "$output" "ErrorHook"
+assert_contains_text "$output" "__MISE_SESSION"
