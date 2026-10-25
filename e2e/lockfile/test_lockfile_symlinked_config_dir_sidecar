@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# A global config dir that is a symlink into a dotfiles repo must keep one
+# sidecar location whatever the working directory is.
+export MISE_LOCKFILE=1 MISE_EXPERIMENTAL=1
+unset MISE_LOCKFILE_MODE
+
+repo="$PWD/repo/mise"
+home="$PWD/home"
+mkdir -p "$repo" "$home/.config" elsewhere
+ln -s "$repo" "$home/.config/mise"
+cat >"$repo/config.toml" <<'TOML'
+[tools]
+"npm:inflight" = "1.0.6"
+TOML
+
+export MISE_CONFIG_DIR="$home/.config/mise"
+export MISE_GLOBAL_CONFIG_FILE="$MISE_CONFIG_DIR/config.toml"
+
+mise -C "$PWD/repo" lock --global
+first="$(grep '^aube = ' "$repo/mise.lock")"
+mise -C "$PWD/elsewhere" lock --global
+assert "grep '^aube = ' $repo/mise.lock" "$first"
+mise -C "$PWD/repo" lock --global
+assert "grep '^aube = ' $repo/mise.lock" "$first"
+assert "find $repo -name aube-lock.yaml | wc -l | tr -d ' '" "1"
