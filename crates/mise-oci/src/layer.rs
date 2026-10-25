@@ -545,8 +545,14 @@ fn collect_sorted_entries(
             (EntryKind::Dir, mode, 0u64)
         } else if file_type.is_symlink() {
             let raw_target = std::fs::read_link(entry.path())?;
-            let target =
-                rebase_symlink_target(&raw_target, &abs, &canonical_src, src_dir, relocation);
+            // A preserved-metadata layer is a rootfs overlay extracted at `/`
+            // (system packages), so its absolute targets are already image
+            // paths and must not be rebased against the build directory.
+            let target = if preserve_metadata {
+                raw_target
+            } else {
+                rebase_symlink_target(&raw_target, &abs, &canonical_src, src_dir, relocation)
+            };
             let mode = if preserve_metadata {
                 mode_from_metadata(&md)
             } else {
@@ -1545,6 +1551,31 @@ mod tests {
         }
 
         panic!("expected layer entry {expected_path}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preserved_metadata_layers_keep_absolute_symlink_targets() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let src = dir.path();
+        fs::create_dir_all(src.join("etc/alternatives")).unwrap();
+        symlink(
+            "/usr/sbin/arptables-nft",
+            src.join("etc/alternatives/arptables"),
+        )
+        .unwrap();
+
+        let entries = collect_sorted_entries(src, true, LayerOwner::default(), None).unwrap();
+        let link = entries
+            .iter()
+            .find(|e| e.rel == Path::new("etc/alternatives/arptables"))
+            .unwrap();
+        match &link.kind {
+            EntryKind::Symlink(t) => assert_eq!(t, Path::new("/usr/sbin/arptables-nft")),
+            k => panic!("expected symlink, got {k:?}"),
+        }
     }
 
     #[cfg(unix)]
