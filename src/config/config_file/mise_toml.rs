@@ -1564,7 +1564,7 @@ static VERSION_WORD: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"(^|[^.\w])version\b").unwrap());
 
 static QUOTED_LITERAL: std::sync::LazyLock<regex::Regex> =
-    std::sync::LazyLock::new(|| regex::Regex::new(r#""[^"]*"|'[^']*'"#).unwrap());
+    std::sync::LazyLock::new(|| regex::Regex::new(r#""[^"]*"|'[^']*'|`[^`]*`"#).unwrap());
 
 const VERSION_SHIELD: &str = "__mise_deferred_version_expression_";
 
@@ -3787,6 +3787,9 @@ mod tests {
             shield_version_expressions("{{ vars['version'] }}/{{ version | upper }}");
         assert_eq!(deferred, vec!["{{ version | upper }}"]);
         assert!(out.starts_with("{{ vars['version'] }}/"));
+
+        let (_, deferred) = shield_version_expressions("{{ (`'` ~ version ~ `'`) | upper }}");
+        assert_eq!(deferred.len(), 1);
     }
 
     #[tokio::test]
