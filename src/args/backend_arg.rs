@@ -580,6 +580,25 @@ impl BackendArg {
         self.resolution.explicit && self.short.contains(':')
     }
 
+    /// The key to write for this tool in a config that must stand on its own.
+    ///
+    /// A `[tool_alias]` only exists in the config that defines it, so a short
+    /// that an alias supplies the backend for is written as the resolved
+    /// backend. Anything else keeps the short the user typed, which resolves
+    /// the same way wherever it is read.
+    pub fn standalone_key(&self) -> String {
+        let aliased = config::is_loaded()
+            && Config::get_()
+                .all_aliases
+                .get(unalias_backend(&self.short).as_ref())
+                .is_some_and(|a| a.backend.is_some());
+        if aliased {
+            self.full()
+        } else {
+            self.short.clone()
+        }
+    }
+
     pub fn full(&self) -> String {
         let short = unalias_backend(&self.short);
         let short = short.as_ref();
