@@ -1529,11 +1529,13 @@ impl MiseToml {
         match value {
             toml::Value::String(s) => {
                 let preserve_os_arch = defer_os_arch && matches!(key, Some("url" | "checksum_url"));
-                *s = if preserve_os_arch {
-                    self.parse_tool_option_template(context, s)?
+                let (shielded, deferred) = shield_version_expressions(s);
+                let rendered = if preserve_os_arch {
+                    self.parse_tool_option_template(context, &shielded)?
                 } else {
-                    self.parse_template_with_context(context, s)?
+                    self.parse_template_with_context(context, &shielded)?
                 };
+                *s = restore_version_expressions(rendered, &deferred);
             }
             toml::Value::Array(values) => {
                 for value in values {
@@ -1554,6 +1556,41 @@ impl MiseToml {
         }
         Ok(())
     }
+}
+
+static VERSION_EXPRESSION: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"\{\{.*?\}\}").unwrap());
+static VERSION_WORD: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"(^|[^.\w])version\b").unwrap());
+
+const VERSION_SHIELD: &str = "__mise_deferred_version_expression_";
+
+/// `version` is not known at config load, so a bare `{{ version }}` renders to itself through a
+/// placeholder. A filter or function on it (`{{ version | replace(..) }}`) would instead act on
+/// that placeholder text, so every other `{{ }}` expression that reads `version` is swapped for
+/// a marker here and put back verbatim afterwards, to be rendered once the version is known.
+fn shield_version_expressions(input: &str) -> (String, Vec<String>) {
+    let mut deferred = vec![];
+    let shielded = VERSION_EXPRESSION.replace_all(input, |caps: &regex::Captures| {
+        let expr = &caps[0];
+        let inner = expr
+            .trim_start_matches("{{")
+            .trim_end_matches("}}")
+            .trim_matches(['-', ' ']);
+        if inner == "version" || !VERSION_WORD.is_match(inner) {
+            return expr.to_string();
+        }
+        deferred.push(expr.to_string());
+        format!("{VERSION_SHIELD}{}__", deferred.len() - 1)
+    });
+    (shielded.into_owned(), deferred)
+}
+
+fn restore_version_expressions(mut rendered: String, deferred: &[String]) -> String {
+    for (i, expr) in deferred.iter().enumerate() {
+        rendered = rendered.replace(&format!("{VERSION_SHIELD}{i}__"), expr);
+    }
+    rendered
 }
 
 /// Whether anything that selects or configures a tool is a template: its version,
@@ -3715,6 +3752,29 @@ mod tests {
 
         assert_eq!(opts.get("fixture_version"), Some("2.0.0"));
         assert_eq!(opts.get("vars.fixture_version"), Some("1.0.0"));
+    }
+
+    #[tokio::test]
+    async fn test_http_url_defers_version_filters() {
+        crate::toolset::install_state::init().await.unwrap();
+        let cf = MiseToml::from_str(
+            r#"
+            [tools."http:foo"]
+            version = "1.2.3--4--foobar"
+            url = "https://example.com/{{ version }}/{{ version | replace(from='--4--foobar', to='') }}.tgz"
+            "#,
+            std::path::Path::new("mise.toml"),
+        )
+        .unwrap();
+        let trs = cf.to_tool_request_set().unwrap();
+        let (_, requests, _) = trs.iter().next().unwrap();
+
+        assert_eq!(
+            requests[0].options().get("url"),
+            Some(
+                "https://example.com/{{ version }}/{{ version | replace(from='--4--foobar', to='') }}.tgz"
+            )
+        );
     }
 
     #[tokio::test]
