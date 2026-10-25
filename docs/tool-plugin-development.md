@@ -584,7 +584,7 @@ Each entry sets exactly one check:
 - `packages`: the package that provides the dependency, for each package
   manager that has one. Keys are any package manager mise knows, such as
   `brew`, `brew-cask`, `apt`, `dnf`, `zypper`, `pacman`, `aur`, `apk`, `nix`,
-  `flatpak`, `flatpak-user`, `mas`, `scoop`, `snap`, `winget`, or an installed package
+  `choco`, `flatpak`, `flatpak-user`, `mas`, `scoop`, `snap`, `winget`, or an installed package
   manager plugin's name. mise uses the first available manager that has an
   entry. For a list of names, `apt` installs the first one it offers, and the
   other managers use the first entry.

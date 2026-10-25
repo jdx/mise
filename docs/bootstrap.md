@@ -209,7 +209,7 @@ These flags change what the selected parts do:
 The metadata refresh depends on the manager: apk adds `--update-cache`; apt runs
 `apt-get update`; dnf, nix, and AUR helpers add `--refresh`; pacman runs
 `pacman -Sy`; zypper runs `zypper refresh`; scoop runs `scoop update`; and
-winget runs `winget source update`. Homebrew, Flatpak, `macos-app`, and mas
+winget runs `winget source update`. Homebrew, Chocolatey, Flatpak, `macos-app`, and mas
 have no separate refresh.
 
 ## Preview and inspect {#previewing-changes}

@@ -27,6 +27,7 @@ const GIT: Prerequisite = Prerequisite {
         ("apk", "git"),
         ("apt", "git"),
         ("brew", "git"),
+        ("choco", "git"),
         ("dnf", "git"),
         ("pacman", "git"),
         ("scoop", "git"),
@@ -35,7 +36,7 @@ const GIT: Prerequisite = Prerequisite {
     ],
 };
 
-// brew, scoop and winget are absent: macOS and Windows ship an SSH client
+// brew, choco, scoop and winget are absent: macOS and Windows ship an SSH client
 const SSH: Prerequisite = Prerequisite {
     binary: "ssh",
     packages: &[
@@ -137,7 +138,7 @@ fn prepend_to_path(dir: &Path) {
 /// Managers in the order to try them. A distribution's own manager comes
 /// before Homebrew, which also runs on Linux, and before the Windows ones.
 const MANAGER_ORDER: &[&str] = &[
-    "apt", "dnf", "pacman", "zypper", "apk", "brew", "winget", "scoop",
+    "apt", "dnf", "pacman", "zypper", "apk", "brew", "winget", "scoop", "choco",
 ];
 
 /// The first available package manager that can supply every missing binary.
@@ -312,11 +313,11 @@ mod tests {
         if let Some(manager) = manager {
             assert_eq!(requests.len(), 1, "{}", manager.name());
         }
-        // winget and scoop have no OpenSSH package, so neither may be picked
+        // winget, scoop and choco have no OpenSSH package, so none may be picked
         // when ssh is missing
         if let Some((manager, requests)) = pick_manager(&[&GIT, &SSH]) {
             assert_eq!(requests.len(), 2);
-            assert!(!["brew", "scoop", "winget"].contains(&manager.name()));
+            assert!(!["brew", "choco", "scoop", "winget"].contains(&manager.name()));
         }
     }
 }
