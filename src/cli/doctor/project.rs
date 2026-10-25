@@ -126,26 +126,29 @@ impl Project {
                     print(format!("  {} {hint}", style::nyellow("hint:")))?;
                 }
             }
-            let failed = report
-                .checks
-                .iter()
-                .filter(|c| matches!(c.status, Status::Fail | Status::Error))
-                .count();
-            let passed = report
-                .checks
-                .iter()
-                .filter(|c| matches!(c.status, Status::Pass))
-                .count();
-            let skipped = report.checks.len() - passed - failed;
-            let mut summary = format!("{passed} passed, {failed} failed");
-            if skipped > 0 {
-                summary.push_str(&format!(", {skipped} skipped"));
-            }
-            miseprintln!();
-            if failed > 0 || !report.errors.is_empty() {
-                miseprintln!("{}", style::nred(summary).bold());
-            } else {
-                miseprintln!("{}", style::nstyle(summary).green());
+            // Setup errors leave no checks to count; their ERROR lines are the report.
+            if !report.checks.is_empty() {
+                let failed = report
+                    .checks
+                    .iter()
+                    .filter(|c| matches!(c.status, Status::Fail | Status::Error))
+                    .count();
+                let passed = report
+                    .checks
+                    .iter()
+                    .filter(|c| matches!(c.status, Status::Pass))
+                    .count();
+                let skipped = report.checks.len() - passed - failed;
+                let mut summary = format!("{passed} passed, {failed} failed");
+                if skipped > 0 {
+                    summary.push_str(&format!(", {skipped} skipped"));
+                }
+                miseprintln!();
+                if failed > 0 || !report.errors.is_empty() {
+                    miseprintln!("{}", style::nred(summary).bold());
+                } else {
+                    miseprintln!("{}", style::nstyle(summary).green());
+                }
             }
         }
         if !report.errors.is_empty()
