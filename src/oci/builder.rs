@@ -1553,7 +1553,7 @@ fn value_refers_to_dir(value: &str, dir: &std::path::Path) -> bool {
 /// camelCase boundaries. Mismatching would mean files land at a path mise
 /// can't resolve inside the container.
 fn tool_in_image_path(mount_point: &str, tv: &ToolVersion) -> String {
-    let plugin_dir = tv.ba().tool_dir_name();
+    let plugin_dir = tv.ba().standalone_dir_name();
     let version_dir = tv.tv_pathname();
     // `mount_point` is guaranteed absolute and trimmed of trailing slashes
     // by the validation in Builder::build (empty + must-start-with-/
@@ -1731,7 +1731,9 @@ fn synthesize_embedded_config_toml(
     render_config_toml(&group_versions(versions.iter().map(|(_, tv)| tv)))
 }
 
-/// Groups tool versions by backend short name. Preserves both the order in
+/// Groups tool versions by the key the image config writes for them: the
+/// backend short name, or the resolved backend when a `[tool_alias]` named it
+/// (the image does not carry the alias table). Preserves both the order in
 /// which tools were first seen and the order of versions within a tool —
 /// mise resolves PATH precedence by array position, so this is not cosmetic.
 fn group_versions<'a>(
@@ -1739,7 +1741,7 @@ fn group_versions<'a>(
 ) -> IndexMap<String, Vec<String>> {
     let mut grouped: IndexMap<String, Vec<String>> = IndexMap::new();
     for tv in versions {
-        let entry = grouped.entry(tv.ba().short.clone()).or_default();
+        let entry = grouped.entry(tv.ba().standalone_key()).or_default();
         if !entry.iter().any(|v| v == &tv.version) {
             entry.push(tv.version.clone());
         }

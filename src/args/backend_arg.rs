@@ -395,6 +395,17 @@ impl BackendArg {
             .to_string()
     }
 
+    /// The install directory name a mise reading `standalone_key` would use,
+    /// so files can be packaged where that mise looks for them.
+    pub(crate) fn standalone_dir_name(&self) -> String {
+        let key = self.standalone_key();
+        if key == self.short {
+            self.tool_dir_name()
+        } else {
+            backend::tool_directory_name(&unalias_backend(&key))
+        }
+    }
+
     pub fn backend(&self) -> Result<ABackend> {
         // TODO: see above about hash key
         // let backend = self.backend.get_or_try_init(|| {
@@ -578,6 +589,25 @@ impl BackendArg {
 
     fn has_explicit_backend_identifier(&self) -> bool {
         self.resolution.explicit && self.short.contains(':')
+    }
+
+    /// The key to write for this tool in a config that must stand on its own.
+    ///
+    /// A `[tool_alias]` only exists in the config that defines it, so a short
+    /// that an alias supplies the backend for is written as the resolved
+    /// backend. Anything else keeps the short the user typed, which resolves
+    /// the same way wherever it is read.
+    pub fn standalone_key(&self) -> String {
+        let aliased = config::is_loaded()
+            && Config::get_()
+                .all_aliases
+                .get(unalias_backend(&self.short).as_ref())
+                .is_some_and(|a| a.backend.is_some());
+        if aliased {
+            self.full()
+        } else {
+            self.short.clone()
+        }
     }
 
     pub fn full(&self) -> String {
