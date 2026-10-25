@@ -63,7 +63,7 @@ if test "${1:-}" = rm; then
   exit 0
 fi
 hash=$(cat "$root/applied-hash")
-printf '{"com.docker.compose.config-hash":"%s"}\n' "$hash"
+printf 'full-id {"com.docker.compose.config-hash":"%s"}\n' "$hash"
 EOF
 
 echo hash-v1 >"hash"
@@ -182,7 +182,7 @@ EOF
 
 cat >"$template_engine" <<'EOF'
 #!/bin/sh
-printf '%s\n' '{"com.docker.compose.config-hash":"template-hash"}'
+printf '%s\n' 'full-id {"com.docker.compose.config-hash":"template-hash"}'
 EOF
 
 cat >mise.toml <<'EOF'
@@ -239,7 +239,7 @@ case " $* " in
   done
   case " $* " in *refs-project/compose.yaml*) ;; *) exit 3 ;; esac
   printf 'vpn vpn-hash\n'
-  if grep -q 'container:vpn-1' "$override"; then
+  if grep -q 'container:vpn-full-id' "$override"; then
     echo 'app app-hash'
   else
     echo 'app unresolved-hash'
@@ -259,7 +259,8 @@ for id in "$@"; do
   vpn-1) h=vpn-hash ;;
   *) continue ;;
   esac
-  printf '{"com.docker.compose.config-hash":"%s"}\n' "$h"
+  # ps reports truncated ids; inspect resolves the full id
+  printf '%s-full-id {"com.docker.compose.config-hash":"%s"}\n' "${id%-1}" "$h"
 done
 EOF
 cat >mise.toml <<EOF

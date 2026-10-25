@@ -568,7 +568,7 @@ impl ComposeRequest {
         let mut args = vec![
             "inspect".to_string(),
             "--format".to_string(),
-            "{{json .Config.Labels}}".to_string(),
+            "{{.Id}} {{json .Config.Labels}}".to_string(),
         ];
         args.extend(ids);
         let output = self.engine_output(&args)?;
@@ -577,7 +577,13 @@ impl ComposeRequest {
             bail!("container inspection returned an unexpected number of rows");
         }
         for (container, line) in containers.iter_mut().zip(lines) {
-            let labels: HashMap<String, String> = serde_json::from_str(line)?;
+            // `compose ps` truncates ids to 12 characters, but compose hashes
+            // `container:<id>` references from the full id.
+            let (id, labels) = line
+                .split_once(' ')
+                .ok_or_else(|| eyre!("unexpected container inspection row"))?;
+            container.id = id.to_string();
+            let labels: HashMap<String, String> = serde_json::from_str(labels)?;
             container.config_hash = labels.get("com.docker.compose.config-hash").cloned();
             container.one_off = labels
                 .get("com.docker.compose.oneoff")
