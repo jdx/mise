@@ -595,7 +595,7 @@ impl DotfilesTrack {
             }
             if let Some((other, mode)) = alongside.get(key) {
                 info!(
-                    "dotfiles: {key} is also declared with mode = \"{mode}\" in {}, which was left as it is. To track it from that entry instead, set mode = \"track\" there and remove the entry from {}",
+                    "dotfiles: {key} is also declared with mode = \"{mode}\" in {}, which was left as it is. To track it from that entry instead, replace it with {{ mode = \"track\" }} (dropping source, content, and manifest) and remove the entry from {}",
                     display_path(other),
                     display_path(&locations[key])
                 );

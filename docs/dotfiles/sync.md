@@ -347,7 +347,8 @@ To switch a file from a link to tracking:
 
 1. Replace the symlink with a regular copy of the file it points to. Tracking a
    symlink saves the link, not the file's contents.
-2. In the entry that declares it, change the mode in place:
+2. Replace the entry that declares it with a tracking entry. A tracking entry
+   takes no `source`, `content`, or `manifest`, so drop those too:
 
    ```toml
    [dotfiles]
