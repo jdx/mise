@@ -171,9 +171,10 @@ synchronization after that, see [Sync across machines](/dotfiles/sync.html).
 
 ## Global config in another directory {#global-config-elsewhere}
 
-`--adopt` always clones global config into `$MISE_CONFIG_DIR`. To keep a
-dotfiles repository somewhere else, such as `~/.dotfiles`, and still use it as
-global config, link it into `~/.config/mise/conf.d/` as a
+`--adopt` clones global config into the directory mise reads it from,
+normally `~/.config/mise`. To keep a dotfiles repository somewhere else, such
+as `~/.dotfiles`, and still use it as global config, link it into
+`~/.config/mise/conf.d/` as a
 [conf.d folder](/configuration.html#conf-d-folders). Its `mise.toml` then
 loads as global config, and relative paths in it resolve inside the
 repository. The repository can create that link itself:
@@ -190,7 +191,7 @@ write_targets.dotfiles = "mise.toml"
 ```
 
 The relative `write_targets.dotfiles` resolves inside the linked folder. The
-link's target assumes the default config directory: if you set
+link's path, the entry's key, assumes the default config directory: if you set
 `MISE_CONFIG_DIR` or `XDG_CONFIG_HOME`, put the link in the `conf.d` directory
 under your actual config directory, or mise does not load it as global config.
 
