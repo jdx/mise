@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+# A __MISE_SESSION that cannot be decoded (e.g. left by an older mise) must not
+# make the hook-env fast path trip over color-eyre's hook installation (mise#14954)
+export __MISE_SESSION=not-a-session
+assert_not_contains "mise hook-env -s bash 2>&1" "cannot install provided ErrorHook"
+assert_succeed "mise hook-env -s bash"
