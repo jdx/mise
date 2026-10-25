@@ -65,7 +65,7 @@ fn package_state(request: &PackageRequest, installed: String) -> PackageState {
 /// Queries one package without changing Chocolatey state.
 async fn query_package(request: &PackageRequest) -> Result<PackageStatus> {
     let mut output = run_list(request, true).await?;
-    if !output.status.success() && output.status.code() != Some(2) {
+    if rejected_local_only(&output) {
         // Chocolatey 2.x may reject --local-only
         output = run_list(request, false).await?;
     }
@@ -96,6 +96,22 @@ async fn query_package(request: &PackageRequest) -> Result<PackageStatus> {
         state,
         display_name: None,
     })
+}
+
+/// Whether a `--local-only` query failed because Chocolatey does not accept
+/// the option. Any other failure must not be retried without it: on 1.x that
+/// would search the remote feed, and a remote match would look installed.
+fn rejected_local_only(output: &std::process::Output) -> bool {
+    if output.status.success() || output.status.code() == Some(2) {
+        return false;
+    }
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
+    .to_ascii_lowercase();
+    text.contains("local-only") || text.contains("localonly") || text.contains("unknown option")
 }
 
 /// Runs one `choco list` query.
@@ -282,5 +298,30 @@ mod tests {
         assert!(command_succeeded(Some(3010)));
         assert!(!command_succeeded(Some(1)));
         assert!(!command_succeeded(None));
+    }
+
+    #[cfg(unix)]
+    fn output(code: i32, stderr: &str) -> std::process::Output {
+        use std::os::unix::process::ExitStatusExt;
+        std::process::Output {
+            status: std::process::ExitStatus::from_raw(code << 8),
+            stdout: Vec::new(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retries_only_when_local_only_is_rejected() {
+        assert!(rejected_local_only(&output(
+            1,
+            "Unknown option: --local-only"
+        )));
+        assert!(!rejected_local_only(&output(
+            1,
+            "The source is unreachable"
+        )));
+        assert!(!rejected_local_only(&output(2, "no results")));
+        assert!(!rejected_local_only(&output(0, "")));
     }
 }
