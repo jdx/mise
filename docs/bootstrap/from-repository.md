@@ -189,6 +189,11 @@ write_targets.dotfiles = "~/.config/mise/conf.d/dotfiles/mise.toml"
 "~/.zshrc" = {}
 ```
 
+Both `conf.d` paths assume the default config directory. If you set
+`MISE_CONFIG_DIR` or `XDG_CONFIG_HOME`, use the `conf.d` directory under your
+actual config directory in both places, or mise does not load the link as
+global config.
+
 An entry without a `source`, such as `~/.zshrc`, reads `~/.dotfiles/.zshrc`,
 because `~/.dotfiles` is the default
 [`dotfiles.root`](/configuration/settings.html#dotfiles.root).
