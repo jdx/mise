@@ -35,7 +35,7 @@ static NETRC: LazyLock<Option<Netrc>> = LazyLock::new(|| {
     }
 
     match std::fs::read_to_string(&path) {
-        Ok(content) => match Netrc::parse(content, false) {
+        Ok(content) => match Netrc::parse(strip_comments(&content), false) {
             Ok(netrc) => {
                 debug!("Loaded netrc from {}", path.display());
                 Some(netrc)
@@ -51,6 +51,26 @@ static NETRC: LazyLock<Option<Netrc>> = LazyLock::new(|| {
         }
     }
 });
+
+/// Remove comment lines (lines that start with `#`) from netrc content
+///
+/// curl and Python accept these lines, but netrc-rs 0.1.2 does not.
+/// Each comment line becomes an empty line, so parse errors keep the
+/// correct line numbers. A `#` that is not at the start of a line stays,
+/// because it can be part of a password.
+fn strip_comments(content: &str) -> String {
+    content
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with('#') {
+                ""
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 /// Get the path to the netrc file
 ///
@@ -102,4 +122,26 @@ pub fn get_credentials(host: &str) -> Option<(String, String)> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_netrc_with_comment_lines() {
+        let content = "#stepsecurity-package-config-credential-dmg-begin
+machine example.com
+  # indented comment
+  login user
+  password pa#ss
+#stepsecurity-package-config-credential-dmg-end
+";
+        let netrc = Netrc::parse(strip_comments(content), false).unwrap();
+        assert_eq!(netrc.machines.len(), 1);
+        let machine = &netrc.machines[0];
+        assert_eq!(machine.name.as_deref(), Some("example.com"));
+        assert_eq!(machine.login.as_deref(), Some("user"));
+        assert_eq!(machine.password.as_deref(), Some("pa#ss"));
+    }
 }
