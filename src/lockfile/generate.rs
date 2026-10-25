@@ -669,12 +669,8 @@ pub async fn generate(
     // A tool the `os` option excludes from every target has no graph to
     // resolve. Without embedded aube the full list stays, so stale graphs are
     // still cleared.
-    let aube_tools: Vec<Tool> = if crate::backend::npm::NPMBackend::uses_embedded_aube() {
-        tools
-            .iter()
-            .filter(|(_, tv)| platforms.iter().any(|p| tv.request.is_os_supported_on(p)))
-            .cloned()
-            .collect()
+    let aube_tools = if crate::backend::npm::NPMBackend::uses_embedded_aube() {
+        tools_on_platforms(tools, platforms)
     } else {
         tools.to_vec()
     };
@@ -689,6 +685,16 @@ pub async fn generate(
     report.finish_with_message(format!("{completed} targets checked"));
     progress.finished = true;
     Ok(candidate)
+}
+
+/// The tools whose `os` option allows at least one of `platforms`. The others
+/// get no lockfile entry, so graph passes that bind to an entry must skip them.
+pub fn tools_on_platforms(tools: &[Tool], platforms: &[Platform]) -> Vec<Tool> {
+    tools
+        .iter()
+        .filter(|(_, tv)| platforms.iter().any(|p| tv.request.is_os_supported_on(p)))
+        .cloned()
+        .collect()
 }
 
 pub async fn populate_aube_locks(

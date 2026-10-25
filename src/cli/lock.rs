@@ -1239,10 +1239,11 @@ impl Lock {
         } else {
             self.bind_requests(&mut lockfile, tools, target_platforms);
         }
+        let graph_tools = lockfile::generate::tools_on_platforms(tools, target_platforms);
         Box::pin(lockfile::generate::populate_uv_locks(
             run.setup.config,
             &mut lockfile,
-            tools,
+            &graph_tools,
             self.bump,
             run.setup.installed.is_some(),
         ))
@@ -1250,7 +1251,7 @@ impl Lock {
         if !generate || self.bump || format_changed {
             Box::pin(lockfile::generate::populate_aube_locks(
                 &mut lockfile,
-                tools,
+                &graph_tools,
                 None,
                 self.bump,
             ))
