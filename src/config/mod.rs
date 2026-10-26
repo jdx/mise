@@ -1138,14 +1138,14 @@ impl Config {
                 .chain(DEFAULT_CONFIG_FILENAMES.iter())
                 .cloned()
                 .collect_vec();
-            let root_paths = config_paths_in_dir_with_filenames(&root, &root_config_filenames);
-            let mut root_config_files =
+            // The root's full hierarchy (ancestors up to the filesystem
+            // ceiling, then global and system config), as if mise ran there.
+            // Siblings are never ancestors, so their overrides cannot leak.
+            let root_paths = load_config_paths_from(&root, &root_config_filenames, false);
+            let root_config_files =
                 load_config_files_from_paths(&root_paths, &root_idiomatic_filenames).await?;
             for (path, cf) in root_config_files.clone() {
                 config_files.entry(path).or_insert(cf);
-            }
-            for (path, cf) in base_config_files.clone() {
-                root_config_files.entry(path).or_insert(cf);
             }
 
             let root_trs = ToolRequestSetBuilder::new()
