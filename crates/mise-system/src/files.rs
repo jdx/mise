@@ -2887,6 +2887,16 @@ fn folded_source_links(req: &FileRequest) -> Result<Vec<(PathBuf, bool)>> {
 fn unfold_source_links(req: &FileRequest, written: &mut Vec<PathBuf>) -> Result<()> {
     let folded = folded_source_links(req)?;
     misplaced_source_link(req, &folded)?;
+    // a link Windows refuses must fail the entry while the folded link
+    // still shows the application its configuration
+    if !folded.is_empty()
+        && windows_symlinks()
+        && let Some((source, _)) = walk_source_files(req)?
+            .into_iter()
+            .find(|(source, _)| source.is_file())
+    {
+        ensure_windows_link_possible(&source, &req.target)?;
+    }
     for (link, _) in folded {
         let item = link.display_user().to_string();
         let pending =

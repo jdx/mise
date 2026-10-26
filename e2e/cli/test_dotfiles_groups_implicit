@@ -54,6 +54,7 @@ assert_fail "test -e $HOME/.zshrc"
 
 # A table that cannot be expanded still owns its name: the directory is not
 # deployed with defaults in its place.
+# schema: invalid
 cat <<EOF >mise.toml
 [dotfile_groups.alacritty]
 root = "alacritty"

@@ -206,10 +206,11 @@ mise bootstrap --from https://github.com/you/dotfiles.git --from-dir ~/.dotfiles
 From then on, `config.toml`, `config.<env>.toml`, `conf.d/`, and
 `miserc.toml` in that directory are your global config, and
 `{{ mise_config_dir }}` is `~/.config/mise` on this run and every later one.
-mise links the directory it reads its config from, so `XDG_CONFIG_HOME` and
-`MISE_CONFIG_DIR` move the link too. That directory must be missing, empty, or
-already this link; move an existing config aside first. The rest of the
-checkout deploys through ordinary entries:
+The directory `--config-dir` names must exist in the checkout. The link goes
+where mise reads its config from, so `XDG_CONFIG_HOME` and `MISE_CONFIG_DIR`
+move it too, and that path must be missing, an empty directory, or already
+this link; move an existing config aside first. The rest of the checkout
+deploys through ordinary entries:
 
 ```toml [~/.dotfiles/.config/mise/config.toml]
 [dotfiles]

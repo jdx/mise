@@ -153,9 +153,10 @@ pub(crate) struct Bootstrap {
     /// mise links its config directory, normally ~/.config/mise, to the
     /// directory, then bootstraps from it, so its `config.toml`,
     /// `config.<env>.toml`, `conf.d/`, and `miserc.toml` are the global config
-    /// from this run on. The config directory must be missing, empty, or
-    /// already this link. The path is relative to the checkout and must stay
-    /// inside it; `.` is the checkout itself. See
+    /// from this run on. The directory must exist in the checkout, and the
+    /// path to it is relative to the checkout and must stay inside it; `.` is
+    /// the checkout itself. mise's config directory, where the link goes,
+    /// must be missing, empty, or already this link. See
     /// https://mise.jdx.dev/bootstrap/from-repository.html#global-config-elsewhere.
     #[usage(long, value_name = "DIR", requires = "from")]
     config_dir: Option<PathBuf>,
