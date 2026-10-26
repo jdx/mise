@@ -196,6 +196,47 @@ fn release_url_tag(url: &str) -> Option<String> {
 /// answer reuses it. The text is verified by the caller either way, exactly
 /// as a fresh download would be.
 pub(crate) async fn fetch_policy_text(url: &str) -> Result<Option<String>> {
+    fetch_policy_text_via(url, None).await
+}
+
+/// [`fetch_policy_text`] for the list of a github.com repository's project
+/// (`sub` is its path in the repository, if any), which mise-versions answers
+/// before `url` on raw.githubusercontent.com is asked.
+async fn fetch_github_policy_text(
+    repo: &str,
+    sub: Option<&str>,
+    url: &str,
+) -> Result<Option<String>> {
+    fetch_policy_text_via(url, Some((repo, sub))).await
+}
+
+/// What mise-versions says about a repository's list: `Some` when it knows,
+/// `None` when the caller has to read the file from GitHub. The mirror
+/// answers for public repositories, and a list is nearly always absent, so
+/// asking raw.githubusercontent.com every time is what a shared CI runner's
+/// rate limit fails on. A rule in `url_replacements` for `url` makes the
+/// replacement the source, and any trouble with the mirror is the same as it
+/// not knowing: GitHub still has the file, and a private repository's is
+/// readable only with the user's token.
+async fn mirrored_policy_text(url: &str, repo: &str, sub: Option<&str>) -> Option<Option<String>> {
+    if crate::versions_host::github_api_url_is_replaced(url) {
+        return None;
+    }
+    match crate::versions_host::github_packslip_list(repo, sub).await {
+        Ok(Some(crate::versions_host::PackslipList::Present(text))) => Some(Some(text)),
+        Ok(Some(crate::versions_host::PackslipList::Absent)) => Some(None),
+        Ok(None) => None,
+        Err(err) => {
+            debug!("mise-versions did not answer for the release list of {repo}: {err:#}");
+            None
+        }
+    }
+}
+
+async fn fetch_policy_text_via(
+    url: &str,
+    mirror: Option<(&str, Option<&str>)>,
+) -> Result<Option<String>> {
     type Fetched = Arc<tokio::sync::OnceCell<(std::time::Instant, Option<String>)>>;
     const REUSE: std::time::Duration = std::time::Duration::from_secs(30);
     static FETCHED: std::sync::LazyLock<std::sync::Mutex<BTreeMap<String, Fetched>>> =
@@ -215,8 +256,17 @@ pub(crate) async fn fetch_policy_text(url: &str) -> Result<Option<String>> {
     };
     let (_, text) = cell
         .get_or_try_init(|| async {
-            let store = dirs::CACHE.join("packslip").join("policy");
-            let text = revalidate_policy_text(url, &store).await?;
+            let mirrored = match mirror {
+                Some((repo, sub)) => mirrored_policy_text(url, repo, sub).await,
+                None => None,
+            };
+            let text = match mirrored {
+                Some(text) => text,
+                None => {
+                    let store = dirs::CACHE.join("packslip").join("policy");
+                    revalidate_policy_text(url, &store).await?
+                }
+            };
             Ok::<_, eyre::Report>((std::time::Instant::now(), text))
         })
         .await?;
@@ -1590,12 +1640,14 @@ impl PackslipBackend {
             Some(sub) => format!(".well-known/packslip/{sub}.json"),
             None => ".well-known/packslip.json".to_string(),
         };
-        // The CDN, not the contents API: the list has to be read on every
-        // resolution, and api.github.com's rate limit is what fails first for
-        // users without a token. The CDN serves the default branch for `HEAD`
-        // and takes the same token for a private repository.
+        // mise-versions first, which tells a repository with no list from one
+        // whose list it could not read. Then the CDN, not the contents API:
+        // the list has to be read on every resolution, and api.github.com's
+        // rate limit is what fails first for users without a token. The CDN
+        // serves the default branch for `HEAD` and takes the same token for a
+        // private repository.
         let url = format!("https://raw.githubusercontent.com/{repo}/HEAD/{path}");
-        let Some(text) = fetch_policy_text(&url)
+        let Some(text) = fetch_github_policy_text(repo, repository_subpath(project), &url)
             .await
             .wrap_err_with(|| format!("fetching the release list of packslip:{project}"))?
         else {
@@ -3151,6 +3203,146 @@ mod tests {
         for fetched in [a, b, c, fetch_policy_text(&url).await] {
             assert_eq!(fetched.unwrap().as_deref(), Some("{}"));
         }
+        list.assert_async().await;
+    }
+
+    /// Points mise-versions at `server`, so a release list lookup for a
+    /// github.com repository can be answered, or failed, by the test.
+    fn mirror_at(server: &mockito::ServerGuard) {
+        use confique::Layer;
+        let mut replacements = indexmap::IndexMap::new();
+        replacements.insert("https://mise-versions.jdx.dev".to_string(), server.url());
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.url_replacements = Some(replacements);
+        settings.http_retries = Some(0);
+        Settings::reset(Some(settings));
+    }
+
+    #[tokio::test]
+    async fn the_mirror_answers_for_a_repository_before_raw_is_asked() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        mirror_at(&server);
+        let base = server.url();
+        let raw = |name: &str| format!("{base}/{name}/HEAD/.well-known/packslip.json");
+
+        // No list at the mirror: raw, which would only say 404 too, is not asked.
+        let absent = server
+            .mock("GET", "/api/github/repos/o/mirror-absent/packslip-list")
+            .with_body(r#"{"present":false,"fetched_at":"2026-10-26T12:00:00Z"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let absent_raw = server
+            .mock("GET", "/mirror-absent/HEAD/.well-known/packslip.json")
+            .expect(0)
+            .create_async()
+            .await;
+        assert_eq!(
+            fetch_github_policy_text("o/mirror-absent", None, &raw("mirror-absent"))
+                .await
+                .unwrap(),
+            None
+        );
+        absent.assert_async().await;
+        absent_raw.assert_async().await;
+
+        // A list at the mirror is its exact text.
+        let present = server
+            .mock(
+                "GET",
+                "/api/github/repos/o/mirror-present/packslip-list/tools/x",
+            )
+            .with_body(r#"{"present":true,"text":"{\"a\":1}","fetched_at":"2026-10-26T12:00:00Z"}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        assert_eq!(
+            fetch_github_policy_text("o/mirror-present", Some("tools/x"), &raw("mirror-present"))
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("{\"a\":1}")
+        );
+        present.assert_async().await;
+
+        // A mirror that cannot tell (rate limited, down) or does not serve the
+        // repository (private) sends mise to GitHub, which still has the file.
+        for (name, status) in [
+            ("mirror-503", 503),
+            ("mirror-429", 429),
+            ("mirror-404", 404),
+        ] {
+            let mirror = server
+                .mock(
+                    "GET",
+                    format!("/api/github/repos/o/{name}/packslip-list").as_str(),
+                )
+                .with_status(status)
+                .expect(1)
+                .create_async()
+                .await;
+            let list = server
+                .mock(
+                    "GET",
+                    format!("/{name}/HEAD/.well-known/packslip.json").as_str(),
+                )
+                .with_body("{}")
+                .expect(1)
+                .create_async()
+                .await;
+            assert_eq!(
+                fetch_github_policy_text(&format!("o/{name}"), None, &raw(name))
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some("{}"),
+                "{name}"
+            );
+            mirror.assert_async().await;
+            list.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn a_url_replacement_for_the_list_keeps_the_mirror_out_of_it() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let _config = Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        {
+            use confique::Layer;
+            let mut replacements = indexmap::IndexMap::new();
+            replacements.insert("https://mise-versions.jdx.dev".to_string(), server.url());
+            replacements.insert(
+                "https://raw.githubusercontent.com".to_string(),
+                server.url(),
+            );
+            let mut settings = mise_settings::SettingsPartial::empty();
+            settings.url_replacements = Some(replacements);
+            settings.http_retries = Some(0);
+            Settings::reset(Some(settings));
+        }
+        let mirror = server
+            .mock("GET", "/api/github/repos/o/replaced/packslip-list")
+            .expect(0)
+            .create_async()
+            .await;
+        let list = server
+            .mock("GET", "/o/replaced/HEAD/.well-known/packslip.json")
+            .with_body("{}")
+            .expect(1)
+            .create_async()
+            .await;
+        let url = "https://raw.githubusercontent.com/o/replaced/HEAD/.well-known/packslip.json";
+        assert_eq!(
+            fetch_github_policy_text("o/replaced", None, url)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("{}")
+        );
+        mirror.assert_async().await;
         list.assert_async().await;
     }
 

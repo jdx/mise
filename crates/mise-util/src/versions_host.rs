@@ -548,6 +548,71 @@ fn github_contents_url(owner: &str, repo: &str, commit: &str, path: &str) -> Str
     )
 }
 
+/// What mise-versions says about a packslip project's signed release list.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PackslipList {
+    /// The repository's default branch has no list at that path.
+    Absent,
+    /// The list's exact text, which the caller verifies as it would the file
+    /// from GitHub.
+    Present(String),
+}
+
+#[derive(serde::Deserialize)]
+struct PackslipListResponse {
+    present: bool,
+    text: Option<String>,
+}
+
+/// A packslip project's signed release list, from mise-versions rather than
+/// raw.githubusercontent.com, which rate-limits by IP address and so fails
+/// on shared CI runners even though nearly every repository has no list at
+/// all. `sub` is the project's path inside its repository, if it has one.
+/// `Ok(None)` is a 404, a private or unknown repository the mirror does not
+/// serve, or a mirror turned off: the caller reads the file from GitHub with
+/// the user's credentials. Errors as in [`github_release`].
+pub async fn github_packslip_list(
+    repo: &str,
+    sub: Option<&str>,
+) -> eyre::Result<Option<PackslipList>> {
+    if !enabled_for_github_repo(repo) {
+        return Ok(None);
+    }
+    let Some((owner, repo_name)) = split_github_repo(repo) else {
+        return Ok(None);
+    };
+    let url = github_packslip_list_url(owner, repo_name, sub);
+    let ctx = VersionsHostLogContext::github_repo("github_packslip_list", repo);
+    let Some(response) = fetch_json_unless_not_found::<PackslipListResponse>(&url, ctx).await?
+    else {
+        return Ok(None);
+    };
+    let list = match (response.present, response.text) {
+        (false, _) => PackslipList::Absent,
+        (true, Some(text)) => PackslipList::Present(text),
+        (true, None) => bail!("invalid response from {url}: a list with no text"),
+    };
+    log_versions_host_trace(
+        ctx,
+        "success",
+        &format!("present={}", matches!(list, PackslipList::Present(_))),
+    );
+    Ok(Some(list))
+}
+
+fn github_packslip_list_url(owner: &str, repo: &str, sub: Option<&str>) -> String {
+    let mut url = format!(
+        "https://mise-versions.jdx.dev/api/github/repos/{}/{}/packslip-list",
+        encode_path_segment(owner),
+        encode_path_segment(repo),
+    );
+    for segment in sub.into_iter().flat_map(|sub| sub.split('/')) {
+        url.push('/');
+        url.push_str(&encode_path_segment(segment));
+    }
+    url
+}
+
 fn github_releases_url(owner: &str, repo: &str, page: u32) -> String {
     format!(
         "https://mise-versions.jdx.dev/api/github/repos/{}/{}/releases?page={page}",
@@ -1251,6 +1316,30 @@ mod tests {
     }
 
     #[test]
+    fn test_github_packslip_list_url() {
+        assert_eq!(
+            github_packslip_list_url("jdx", "hk", None),
+            "https://mise-versions.jdx.dev/api/github/repos/jdx/hk/packslip-list"
+        );
+        assert_eq!(
+            github_packslip_list_url("o", "r", Some("tools/my tool")),
+            "https://mise-versions.jdx.dev/api/github/repos/o/r/packslip-list/tools/my%20tool"
+        );
+    }
+
+    #[test]
+    fn test_packslip_list_response_deserialize() {
+        let absent: PackslipListResponse =
+            serde_json::from_str(r#"{"present":false,"fetched_at":"2026-10-26T12:00:00Z"}"#)
+                .unwrap();
+        assert!(!absent.present && absent.text.is_none());
+        let present: PackslipListResponse =
+            serde_json::from_str(r#"{"present":true,"text":"{}\n","fetched_at":"x"}"#).unwrap();
+        assert!(present.present);
+        assert_eq!(present.text.as_deref(), Some("{}\n"));
+    }
+
+    #[test]
     fn test_github_contents_deserialize() {
         let entries: Vec<GithubContentsEntry> = serde_json::from_str(
             r#"[{"name":"SKILL.md","path":"skills/fnox/SKILL.md","type":"file","size":12,"sha":"a"},{"name":"refs","path":"skills/fnox/refs","type":"dir","sha":"b"}]"#,
@@ -1318,6 +1407,80 @@ mod tests {
         let err = result.unwrap_err();
         assert!(is_temporarily_unavailable(&err), "{err:#}");
         assert!(retries_on_github(&err), "{err:#}");
+    }
+
+    /// The mirror's three answers to a packslip list lookup, and the failures
+    /// that send a caller on to raw.githubusercontent.com.
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_github_packslip_list_answers() {
+        use confique::Layer;
+
+        struct SettingsGuard {
+            _lock: std::sync::MutexGuard<'static, ()>,
+        }
+        impl Drop for SettingsGuard {
+            fn drop(&mut self) {
+                crate::testing::reset_settings(None);
+            }
+        }
+        let _settings = SettingsGuard {
+            _lock: crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK),
+        };
+        let mut server = mockito::Server::new_async().await;
+        let mut replacements = indexmap::IndexMap::new();
+        replacements.insert("https://mise-versions.jdx.dev".to_string(), server.url());
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.url_replacements = Some(replacements);
+        settings.http_retries = Some(0);
+        crate::testing::reset_settings(Some(settings));
+
+        let route = |path: &str| format!("/api/github/repos/o/{path}");
+        server
+            .mock("GET", route("none/packslip-list").as_str())
+            .with_body(r#"{"present":false,"fetched_at":"2026-10-26T12:00:00Z"}"#)
+            .create_async()
+            .await;
+        server
+            .mock("GET", route("listed/packslip-list/tools/x").as_str())
+            .with_body(
+                r#"{"present":true,"text":"{\"a\":1}\n","fetched_at":"2026-10-26T12:00:00Z"}"#,
+            )
+            .create_async()
+            .await;
+        server
+            .mock("GET", route("private/packslip-list").as_str())
+            .with_status(404)
+            .create_async()
+            .await;
+        server
+            .mock("GET", route("limited/packslip-list").as_str())
+            .with_status(503)
+            .create_async()
+            .await;
+        server
+            .mock("GET", route("empty/packslip-list").as_str())
+            .with_body(r#"{"present":true,"fetched_at":"x"}"#)
+            .create_async()
+            .await;
+
+        assert_eq!(
+            github_packslip_list("o/none", None).await.unwrap(),
+            Some(PackslipList::Absent)
+        );
+        assert_eq!(
+            github_packslip_list("o/listed", Some("tools/x"))
+                .await
+                .unwrap(),
+            Some(PackslipList::Present("{\"a\":1}\n".to_string()))
+        );
+        // Not served here: the caller asks GitHub with the user's token.
+        assert_eq!(github_packslip_list("o/private", None).await.unwrap(), None);
+        // The mirror could not tell, which is not "no list".
+        let err = github_packslip_list("o/limited", None).await.unwrap_err();
+        assert!(retries_on_github(&err), "{err:#}");
+        // A list with no text is a bad answer, not an absent list.
+        let err = github_packslip_list("o/empty", None).await.unwrap_err();
+        assert!(!retries_on_github(&err), "{err:#}");
     }
 
     #[test]
