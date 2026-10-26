@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+# --config-dir makes a directory inside a --from checkout the global config
+# directory for the bootstrap, so a dotfiles repository can keep mise's config
+# beside the other applications' and link it into place.
+
+repo="$PWD/dotfiles-source"
+checkout="$HOME/.dotfiles"
+
+mkdir -p "$repo/.config/mise/conf.d" "$repo/.config/kitty"
+git -C "$repo" init -q -b main
+git -C "$repo" config user.email test@example.com
+git -C "$repo" config user.name "mise test"
+
+cat <<'EOF' >"$repo/.config/mise/config.toml"
+[dotfiles]
+"~/.config/mise" = { mode = "symlink" }
+"~/.config/kitty" = { mode = "symlink" }
+EOF
+cat <<'EOF' >"$repo/.config/mise/miserc.toml"
+env = ["work"]
+EOF
+cat <<'EOF' >"$repo/.config/mise/config.work.toml"
+[dotfiles]
+"~/.work-marker" = {}
+EOF
+cat <<'EOF' >"$repo/.config/mise/conf.d/zsh.toml"
+[dotfiles]
+"~/.zshrc" = {}
+EOF
+echo work >"$repo/.work-marker"
+echo 'export ZSH=1' >"$repo/.zshrc"
+echo 'font_size 12' >"$repo/.config/kitty/kitty.conf"
+git -C "$repo" add .
+git -C "$repo" commit -qm initial
+
+# The path must name a directory inside the checkout.
+assert_fail "mise bootstrap --config-dir .config/mise --dry-run"
+assert_fail "mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir ../mise --dry-run" "must be a path inside the checkout"
+assert_fail "test -e '$checkout'"
+
+# The harness creates an empty config directory; the repository links its own.
+rmdir "$MISE_CONFIG_DIR"
+
+# The first run reads the directory as global config: its miserc.toml selects
+# the work environment, and its conf.d fragments load.
+assert_succeed "mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir .config/mise --yes --only dotfiles"
+assert "readlink '$MISE_CONFIG_DIR'" "$checkout/.config/mise"
+assert "cat ~/.config/kitty/kitty.conf" "font_size 12"
+assert "cat ~/.work-marker" "work"
+assert "cat ~/.zshrc" "export ZSH=1"
+
+# From then on the link is the global config, with no --from.
+assert_contains "mise config ls" "config.work.toml"
+assert_succeed "mise bootstrap --yes --only dotfiles"
+assert "readlink '$MISE_CONFIG_DIR'" "$checkout/.config/mise"
+assert "cat ~/.zshrc" "export ZSH=1"
+
+# Commands that write global config write to the checkout through the link.
+echo '[user]' >~/.gitconfig
+assert_succeed "mise dot add ~/.gitconfig --yes"
+assert "cat '$checkout/.gitconfig'" "[user]"
+assert_contains "cat '$checkout/.config/mise/config.toml'" '"~/.gitconfig"'
+
+# Missing directories and symlinks that leave the checkout are refused.
+assert_fail "mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir missing --dry-run" "is not a directory in the checkout"
+ln -s "$HOME" "$checkout/escape"
+assert_fail "mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir escape --dry-run" "outside the checkout"

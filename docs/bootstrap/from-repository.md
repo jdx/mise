@@ -33,6 +33,12 @@ and keeps in sync with your other machines.
 | Global mise config: `config.toml`, `conf.d/`, `tasks/` | `mise bootstrap --adopt <url>` | A Git checkout at `~/.config/mise`               | Every later mise command reads it as your global config             |
 | A setup repository created with `mise dot origin set`  | `mise bootstrap --adopt <url>` | mise's history store; files go to their paths    | Later changes arrive through the history watcher or `mise dot pull` |
 
+To share your own setup between machines, start with a setup repository: track
+`~/.config/mise` and the files you edit, and connect an origin, as
+[Set up a machine](/bootstrap/setup.html) shows. To keep mise's config in a
+dotfiles checkout of your own, see
+[Global config in another directory](#global-config-elsewhere).
+
 `--adopt` detects a setup repository by the `.mise-history/format.toml` file
 that `mise dot origin set` writes on the branch it adopts, so the same flag
 covers both kinds. `--from`
@@ -171,50 +177,62 @@ synchronization after that, see [Sync across machines](/dotfiles/sync.html).
 
 ## Global config in another directory {#global-config-elsewhere}
 
-`--adopt` clones global config into the directory mise reads it from,
-normally `~/.config/mise`. To keep a dotfiles repository somewhere else, such
-as `~/.dotfiles`, and still use it as global config, link it into
-`~/.config/mise/conf.d/` as a
-[conf.d folder](/configuration.html#conf-d-folders). Its `mise.toml` then
-loads as global config, and relative paths in it resolve inside the
-repository. The repository can create that link itself:
+The simplest way to share your global config is to track it: run
+`mise dot track ~/.config/mise`, connect an origin, and adopt it on other
+machines, as [Set up a machine](/bootstrap/setup.html) shows.
 
-```toml [~/.dotfiles/mise.toml]
-[settings]
-# `mise dot add` writes new entries to this file, not to ~/.config/mise/config.toml
-write_targets.dotfiles = "mise.toml"
+If you keep a dotfiles checkout of your own instead, mise's config can be one
+directory in it, beside the other applications' config:
 
+```text
+~/.dotfiles/
+├── .zshrc
+└── .config/
+    ├── kitty/kitty.conf
+    └── mise/
+        ├── config.toml
+        ├── config.work.toml
+        ├── miserc.toml
+        └── conf.d/
+```
+
+Its `config.toml` links that directory to `~/.config/mise`, along with the
+rest:
+
+```toml [~/.dotfiles/.config/mise/config.toml]
 [dotfiles]
-# Link this repository into conf.d so it loads as global config
-"~/.config/mise/conf.d/dotfiles" = { source = ".", mode = "symlink" }
+"~/.config/mise" = { mode = "symlink" }
+"~/.config/kitty" = { mode = "symlink" }
 "~/.zshrc" = {}
 ```
 
-The relative `write_targets.dotfiles` resolves inside the linked folder. The
-link's path, the entry's key, assumes the default config directory: if you set
-`MISE_CONFIG_DIR` or `XDG_CONFIG_HOME`, put the link in the `conf.d` directory
-under your actual config directory, or mise does not load it as global config.
+An entry without a `source` reads the same path under
+[`dotfiles.root`](/configuration/settings.html#dotfiles.root), which defaults
+to `~/.dotfiles`, so `~/.config/mise` links to `~/.dotfiles/.config/mise`. If
+you keep the checkout elsewhere, set `dotfiles.root` to it. The link's key
+assumes the default config directory; if you set `XDG_CONFIG_HOME` or
+`MISE_CONFIG_DIR`, use that directory instead.
 
-An entry without a `source`, such as `~/.zshrc`, reads `~/.dotfiles/.zshrc`,
-because `~/.dotfiles` is the default
-[`dotfiles.root`](/configuration/settings.html#dotfiles.root).
-
-On a new machine, one command clones the repository and applies it:
+On a new machine, `--config-dir` names the directory in the checkout to use as
+global config for the first run:
 
 ```sh
-mise bootstrap --from https://github.com/you/dotfiles.git --from-dir ~/.dotfiles
+mise bootstrap --from https://github.com/you/dotfiles.git --from-dir ~/.dotfiles --config-dir .config/mise
 ```
 
-That first run creates the link, so every later mise command loads the
-repository as global config, and updating needs no `--from`:
+That run reads `config.toml`, `config.<env>.toml`, `conf.d/`, and
+`miserc.toml` as global config, as later runs will, and does not read a global
+config this machine already has. Move an existing `~/.config/mise` aside first,
+so the link can take its place. The first run creates the link, so updating
+needs no `--from`:
 
 ```sh
 git -C ~/.dotfiles pull
 mise bootstrap
 ```
 
-`mise dot add ~/.gitconfig` saves the source as `~/.dotfiles/.gitconfig` and
-adds its entry to the repository's `mise.toml`. Commit both there.
+`mise use -g`, `mise dot add`, and the other commands that write global config
+now write to the checkout, through the link. Commit their changes there.
 
 ## On other machines
 

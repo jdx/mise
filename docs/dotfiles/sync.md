@@ -112,8 +112,9 @@ repository can put mise's history on its default branch, and from then on
 it into `~/.config/mise`. To keep the history in that repository anyway, put it
 on a branch of its own as in [Keep your local checkpoints](#keep-local-checkpoints),
 and adopt it on other machines with `mise bootstrap --adopt '<url>?ref=<branch>'`.
-To share your global config through the origin instead, track it:
-`mise dot track ~/.config/mise/config.toml`.
+To share your global config through the origin instead, track its directory:
+`mise dot track ~/.config/mise`. Files ending in `.local.toml` stay on each
+machine.
 
 ### Repository authentication {#repository-authentication}
 

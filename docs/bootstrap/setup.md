@@ -156,12 +156,18 @@ too.
 ### Connect a private repository {#share-your-setup-optional}
 
 To share your setup, connect a private Git repository, called an origin. First,
-track your mise configuration, so the next machine also gets your tools,
-packages, shell activation, and the watcher:
+track your mise configuration directory, so the next machine also gets your
+tools, packages, shell activation, and the watcher:
 
 ```sh
-mise dot track ~/.config/mise/config.toml
+mise dot track ~/.config/mise
 ```
+
+Tracking the directory also shares the files you add to it later, such as
+`config.work.toml`, `conf.d/` fragments, and `miserc.toml`. Files ending in
+`.local.toml` are never shared, so each machine can keep its own
+`miserc.local.toml` to choose its [config environments](/configuration/environments.html),
+and `config.local.toml` for settings that only apply there.
 
 Authenticate with your repository host. For GitHub:
 

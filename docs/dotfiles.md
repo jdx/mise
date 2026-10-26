@@ -27,10 +27,14 @@ Then track your files and your mise configuration, start the watcher, and
 connect the repository:
 
 ```sh
-mise dot track ~/.zshrc ~/.config/nvim ~/.config/mise/config.toml
+mise dot track ~/.zshrc ~/.config/nvim ~/.config/mise
 mise bootstrap services apply
 mise dot origin set https://github.com/you/dotfiles.git --sync sync
 ```
+
+Track the whole `~/.config/mise` directory, so that environment files such as
+`config.work.toml`, `conf.d/`, and `miserc.toml` travel with `config.toml`.
+Files ending in `.local.toml` stay on each machine.
 
 On another machine, `mise bootstrap --adopt you/dotfiles` restores them.
 [Set up a machine](/bootstrap/setup.html) walks through each step. The rest of

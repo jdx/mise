@@ -1482,6 +1482,11 @@ The replaced versions are saved first, so `mise dot undo` restores them.
 \fB\-\-from\-dir\fR \fI<DIR>\fR
 Directory for the `\-\-from` checkout (default: `$MISE_DATA_DIR/bootstrap\-repo`)
 .TP
+\fB\-\-config\-dir\fR \fI<DIR>\fR
+Use this directory of the `\-\-from` checkout as the global config directory
+
+The bootstrap runs with `MISE_CONFIG_DIR` set to it, so its `config.toml`, `config.<env>.toml`, `conf.d/`, and `miserc.toml` load as global config instead of the global config this machine has. The path is relative to the checkout and must stay inside it; `.` is the checkout itself. To keep using it as global config afterwards, link it to your config directory with a `[dotfiles]` entry. See https://mise.jdx.dev/bootstrap/from\-repository.html#global\-config\-elsewhere.
+.TP
 \fB\-n, \-\-dry\-run\fR
 Show what would change without changing anything
 
@@ -1573,6 +1578,12 @@ Do the same and also load the project's mise.work.toml
 .PP
 .RS 4
 mise \-E work bootstrap \-\-from git@github.com:example/workstation.git
+.RE
+.PP
+Clone a dotfiles repository and use its .config/mise as global config
+.PP
+.RS 4
+mise bootstrap \-\-from https://github.com/example/dotfiles.git \-\-from\-dir ~/.dotfiles \-\-config\-dir .config/mise
 .RE
 .PP
 Clone global config into ~/.config/mise, then apply it
