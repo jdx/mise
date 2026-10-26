@@ -1557,17 +1557,17 @@ pub fn is_mise_toml_filename(path: &Path) -> bool {
     )
 }
 
-/// Whether config loading skips `path` because it is a version file
-/// (`.tool-versions` or an idiomatic one) linked to a file of another name,
-/// see [`diagnostic::links_to_another_name`]. A `.toml` file that is not a
-/// registry idiomatic file parses as mise TOML, which that rule does not cover.
-pub(crate) fn is_skipped_version_file_link(path: &Path) -> bool {
-    let is_version_file = !is_mise_toml_filename(path)
-        && (path_matches_registry_idiomatic(path)
-            || path
-                .file_name()
-                .and_then(|f| f.to_str())
-                .is_some_and(|f| !f.ends_with(".toml")));
+/// Whether config loading skips `path` because it is a version file linked to
+/// a file of another name, see [`diagnostic::links_to_another_name`]. A
+/// version file is a tool-versions file by name, as loading decides it, or a
+/// file found under one of `idiomatic_filenames`. Discovery finds everything
+/// else under a mise TOML filename, which that rule does not cover.
+pub(crate) fn is_skipped_version_file_link(path: &Path, idiomatic_filenames: &[&str]) -> bool {
+    let is_version_file = match detect_config_file_type_by_filename(path) {
+        Some(ConfigFileType::ToolVersions) => true,
+        Some(_) => false,
+        None => idiomatic_filenames.iter().any(|f| path.ends_with(f)),
+    };
     is_version_file && diagnostic::links_to_another_name(path)
 }
 
@@ -1935,6 +1935,37 @@ mod tests {
 
         assert_eq!(versions[0].version(), "2");
         Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skipped_version_file_link_is_told_apart_from_mise_toml() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let dir = dir.path();
+        let tool_versions = dir.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
+        std::fs::write(dir.join(".foo-version"), "1\n").unwrap();
+        std::fs::write(dir.join("mise.toml"), "").unwrap();
+        // A plugin may declare an idiomatic filename that ends in `.toml`.
+        symlink(dir.join(".foo-version"), dir.join("foo.toml")).unwrap();
+        symlink(dir.join(".foo-version"), &tool_versions).unwrap();
+        symlink(dir.join("mise.toml"), dir.join(".mise.toml")).unwrap();
+
+        assert!(is_skipped_version_file_link(
+            &dir.join("foo.toml"),
+            &["foo.toml"]
+        ));
+        assert!(!is_skipped_version_file_link(&dir.join("foo.toml"), &[]));
+        assert!(is_skipped_version_file_link(&tool_versions, &[]));
+        assert!(!is_skipped_version_file_link(
+            &dir.join(".mise.toml"),
+            &["foo.toml"]
+        ));
+        assert!(!is_skipped_version_file_link(
+            &dir.join(".foo-version"),
+            &[".foo-version"]
+        ));
     }
 
     #[test]

@@ -3091,6 +3091,7 @@ fn load_config_paths_from_dirs(
     config_files.extend(global_config_files().into_iter().rev());
     config_files.extend(system_config_files().into_iter().rev());
 
+    let idiomatic_filenames = idiomatic_filenames_in(config_filenames);
     config_files
         .into_iter()
         .filter(|p| !config_path_is_ignored(p, include_ignored))
@@ -3106,7 +3107,18 @@ fn load_config_paths_from_dirs(
             discovered_global_config(p)
                 .is_none_or(|global| global == *p || p.canonicalize().is_ok_and(|real| real == *p))
         })
-        .unique_by(|p| config_path_identity(p))
+        .unique_by(|p| config_path_identity(p, &idiomatic_filenames))
+        .collect()
+}
+
+/// The entries of a discovery filename list that name idiomatic version files.
+/// Callers pass mise's own config filenames, with the idiomatic filenames
+/// added when they look for those too, so every other entry is idiomatic.
+fn idiomatic_filenames_in(config_filenames: &[String]) -> Vec<&str> {
+    config_filenames
+        .iter()
+        .filter(|f| !DEFAULT_CONFIG_FILENAMES.contains(f))
+        .map(String::as_str)
         .collect()
 }
 
@@ -3115,8 +3127,8 @@ fn load_config_paths_from_dirs(
 /// a file of another name is its own entry instead. Loading skips it, so it
 /// must not take the place of a spelling that loads: a `.nvmrc` linked to the
 /// `.node-version` beside it would otherwise hide that `.node-version`.
-fn config_path_identity(path: &Path) -> PathBuf {
-    if config_file::is_skipped_version_file_link(path) {
+fn config_path_identity(path: &Path, idiomatic_filenames: &[&str]) -> PathBuf {
+    if config_file::is_skipped_version_file_link(path, idiomatic_filenames) {
         return path.to_path_buf();
     }
     file::desymlink_path(path)
@@ -3420,10 +3432,11 @@ pub async fn load_config_hierarchy_from_dir(
     config_files.extend(global_config_files().into_iter().rev());
     config_files.extend(system_config_files().into_iter().rev());
 
+    let idiomatic_filenames = idiomatic_files.keys().map(String::as_str).collect_vec();
     let paths = config_files
         .into_iter()
         .filter(|p| !config_path_is_ignored(p, false))
-        .unique_by(|p| config_path_identity(p))
+        .unique_by(|p| config_path_identity(p, &idiomatic_filenames))
         .collect();
 
     Ok((paths, idiomatic_files))
