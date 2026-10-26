@@ -1130,7 +1130,6 @@ impl Config {
         });
 
         let mut union = ToolRequestSet::new();
-        let all_roots = roots.clone();
         for root in roots {
             let root_idiomatic_filenames =
                 idiomatic_filenames_for_root(&root, &idiomatic_filenames).await?;
@@ -1139,30 +1138,14 @@ impl Config {
                 .chain(DEFAULT_CONFIG_FILENAMES.iter())
                 .cloned()
                 .collect_vec();
-            let root_paths = config_paths_in_dir_with_filenames(&root, &root_config_filenames);
-            let mut root_config_files =
+            // The root's full hierarchy (ancestors up to the filesystem
+            // ceiling, then global and system config), as if mise ran there.
+            // Siblings are never ancestors, so their overrides cannot leak.
+            let root_paths = load_config_paths_from(&root, &root_config_filenames, false);
+            let root_config_files =
                 load_config_files_from_paths(&root_paths, &root_idiomatic_filenames).await?;
             for (path, cf) in root_config_files.clone() {
                 config_files.entry(path).or_insert(cf);
-            }
-            // Keep the base hierarchy's order (closest config first). A declared
-            // root's own configs are normally dropped so siblings do not leak,
-            // except those of a declared root that is an ancestor of this one
-            // (e.g. `.` for `child`): they belong to its normal hierarchy.
-            for (path, cf) in &self.config_files {
-                let is_base = base_config_files.contains_key(path);
-                let owner = all_roots
-                    .iter()
-                    .filter(|r| path.starts_with(r))
-                    .max_by_key(|r| r.components().count());
-                let is_ancestor = owner
-                    .is_some_and(|owner| *owner != root && root.starts_with(owner))
-                    && root.starts_with(cf.config_root());
-                if is_base || is_ancestor {
-                    root_config_files
-                        .entry(path.clone())
-                        .or_insert_with(|| cf.clone());
-                }
             }
 
             let root_trs = ToolRequestSetBuilder::new()

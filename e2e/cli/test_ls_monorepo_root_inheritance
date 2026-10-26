@@ -40,3 +40,21 @@ cat >monorepo/scratch/mise.toml <<'TOML'
 tiny = "3.0.1"
 TOML
 assert "cd monorepo/scratch && mise ls --current --monorepo tiny --json | jq -r '[.[].version] | sort | join(\",\")'" "2.1.0,3.1.0"
+
+# an intermediate directory between the root and a nested config root
+mkdir -p monorepo/packages/app
+cat >monorepo/packages/mise.toml <<'TOML'
+[tools]
+tiny = "3.0.1"
+TOML
+touch monorepo/packages/app/mise.toml
+cat >monorepo/mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = [".", "child", "sibling", "packages/app"]
+
+[tools]
+tiny = "2.1.0"
+TOML
+assert "cd monorepo && mise ls --current --monorepo tiny --json | jq -r '[.[].version] | sort | join(\",\")'" "2.1.0,3.0.1,3.1.0"
