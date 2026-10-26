@@ -287,6 +287,18 @@ impl DotfilesAdd {
                     req.source.display_user()
                 );
             }
+            // capturing copies the rendered target over the source, which
+            // drops the template code and stores any `exec()` output in it
+            if let Some(req) = existing
+                && req.mode == FileMode::Template
+                && !self.force
+            {
+                bail!(
+                    "{target_raw}: declared as a template in {}; edit its source {} directly, or pass --force to overwrite it with the rendered file",
+                    req.origin.config.display_user(),
+                    req.source.display_user()
+                );
+            }
             // a path inside a group's tree is captured into its source
             let routed = match existing {
                 Some(_) => {
