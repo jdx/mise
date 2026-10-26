@@ -1559,15 +1559,17 @@ pub fn is_mise_toml_filename(path: &Path) -> bool {
 
 /// Whether config loading skips `path` because it is a version file linked to
 /// a file of another name, see [`diagnostic::links_to_another_name`]. A
-/// version file is a tool-versions file by name, as loading decides it, or a
-/// file found under one of `idiomatic_filenames`. Discovery finds everything
+/// version file is a file found under one of `idiomatic_filenames`, or a
+/// tool-versions file by name, as loading decides it. Discovery finds everything
 /// else under a mise TOML filename, which that rule does not cover.
 pub(crate) fn is_skipped_version_file_link(path: &Path, idiomatic_filenames: &[&str]) -> bool {
-    let is_version_file = match detect_config_file_type_by_filename(path) {
-        Some(ConfigFileType::ToolVersions) => true,
-        Some(_) => false,
-        None => idiomatic_filenames.iter().any(|f| path.ends_with(f)),
-    };
+    // Idiomatic filenames first: `parse_config_file` hands a path that matches
+    // one to the idiomatic parser even when a mise TOML filename matches too.
+    let is_version_file = idiomatic_filenames.iter().any(|f| path.ends_with(f))
+        || matches!(
+            detect_config_file_type_by_filename(path),
+            Some(ConfigFileType::ToolVersions)
+        );
     is_version_file && diagnostic::links_to_another_name(path)
 }
 
