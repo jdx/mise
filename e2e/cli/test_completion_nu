@@ -3,3 +3,9 @@
 assert_contains "mise completion nu" "__usage_complete_mise"
 assert "mise completion nushell" "$(mise completion nu)"
 assert_contains "mise __complete_word__ --shell nu --line 'mise inst'" "install"
+
+export XDG_CONFIG_HOME="$HOME/nu-config"
+install_out="$(mise completion nu --install 2>&1)"
+assert_contains_text "$install_out" "completions/mise.nu"
+assert_contains_text "$install_out" "source '"
+assert_contains "cat $XDG_CONFIG_HOME/nushell/completions/mise.nu" "__usage_complete_mise"
