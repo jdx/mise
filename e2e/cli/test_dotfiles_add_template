@@ -13,3 +13,9 @@ echo 'export EXTRA=1' >>"$HOME/.private.sh"
 assert_fail_contains "mise dot add ~/.private.sh" "declared as a template"
 assert_contains "cat private.sh" "exec(command"
 assert_not_contains "cat private.sh" "EXTRA"
+
+# --force still captures the rendered file.
+assert_succeed "mise dot add ~/.private.sh --force"
+assert_contains "cat private.sh" "s3cret"
+assert_contains "cat private.sh" "EXTRA"
+assert_not_contains "cat private.sh" "exec(command"
