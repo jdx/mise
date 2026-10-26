@@ -1964,4 +1964,29 @@ mod tests {
         new.additional_artifacts.pop();
         assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_err());
     }
+
+    #[tokio::test]
+    async fn artifact_checksum_sends_plugin_headers() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/artifact.zip")
+            .match_header("authorization", "Bearer secret")
+            .with_body("artifact")
+            .create_async()
+            .await;
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("authorization", "Bearer secret".parse().unwrap());
+        let mut info = PlatformInfo {
+            url: Some(format!("{}/artifact.zip", server.url())),
+            download_headers: Some(headers),
+            ..Default::default()
+        };
+        complete_artifact_checksums(&mut info).await.unwrap();
+        mock.assert_async().await;
+        let checksum = info.checksum.clone().unwrap();
+        assert!(checksum.starts_with("sha256:"));
+        // The headers are never persisted.
+        let written = toml::to_string(&info).unwrap();
+        assert!(!written.contains("secret"), "{written}");
+    }
 }

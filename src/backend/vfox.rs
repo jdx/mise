@@ -1137,7 +1137,12 @@ pub(crate) async fn download_with_plugin_headers(
     let mut vfox = vfox::Vfox::new();
     vfox.set_url_rewriter(crate::http::apply_url_replacements);
     vfox.set_http_headers_resolver(crate::http::netrc_headers);
-    vfox.download_to(&url, path, Some(headers)).await?;
+    // The vfox client has no timeouts of its own; bound the whole download
+    // by `http_download_timeout`, as the default download path does.
+    let limit = Settings::get().http_download_timeout();
+    tokio::time::timeout(limit, vfox.download_to(&url, path, Some(headers)))
+        .await
+        .map_err(|_| eyre!("timed out downloading {url} after {limit:?}"))??;
     Ok(())
 }
 
