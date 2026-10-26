@@ -7268,6 +7268,32 @@ fn cask_prune_keeps_an_app_a_macos_app_entry_owns() -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn cask_claims_match_other_spellings_and_ignore_the_asking_cask() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let state_dir = tmp.path().join("state");
+    let app = write_test_app_receipt(&test_cask("plain", "1.0.0"), "Plain.app")?;
+    let alias = tmp.path().join("alias");
+    std::os::unix::fs::symlink(app.parent().unwrap(), &alias)?;
+    let spelled = alias.join(app.file_name().unwrap());
+    write_macos_app_claim(&state_dir, "plain", &spelled)?;
+
+    let claims = CaskClaims::read_in(&state_dir)?;
+    assert!(claims.claimed_by_another(CaskManager::BrewCask, "plain", &app));
+    assert!(claims.claimed_by_another(CaskManager::MacosApp, "plain", &spelled));
+    assert!(claims.claimed_by_another(CaskManager::BrewCask, "other", &spelled));
+
+    file::remove_all(state_dir.join("macos-apps"))?;
+    let claims = CaskClaims::read_in(&state_dir)?;
+    assert!(!claims.claimed_by_another(CaskManager::BrewCask, "plain", &app));
+    assert!(!claims.claimed_by_another(CaskManager::BrewCask, "plain", &spelled));
+    assert!(claims.claimed_by_another(CaskManager::MacosApp, "plain", &spelled));
+    Ok(())
+}
+
 #[test]
 fn cask_prune_force_rechecks_macos_app_claims_before_removal() -> Result<()> {
     let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);

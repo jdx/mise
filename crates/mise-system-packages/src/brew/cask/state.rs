@@ -1389,15 +1389,22 @@ pub(super) fn cask_prune_plan_from_tokens(
         candidates.push(candidate);
     }
 
+    let all_claims = if claims_complete {
+        CaskClaims::read_in(state_dir)
+            .inspect_err(|err| debug!("brew-cask: failed to index cask claims: {err:#}"))
+            .ok()
+    } else {
+        None
+    };
     for candidate in candidates {
-        if !claims_complete {
+        let Some(all_claims) = &all_claims else {
             plan.skipped.push(CaskPruneSkip {
                 token: candidate.token,
                 reason: "cask ownership receipts could not be indexed completely".to_string(),
                 forceable: false,
             });
             continue;
-        }
+        };
         let shared = candidate
             .receipt
             .targets
@@ -1424,7 +1431,7 @@ pub(super) fn cask_prune_plan_from_tokens(
             });
             continue;
         }
-        if let Err(reason) = validate_cask_prune_claims(&candidate, state_dir) {
+        if let Err(reason) = validate_cask_prune_claims(&candidate, all_claims) {
             plan.skipped.push(CaskPruneSkip {
                 token: candidate.token,
                 reason: format!("{reason:#}"),
@@ -1467,6 +1474,7 @@ pub(super) fn apply_cask_prune_plan_in(
     // macos-app reports that it does not support it.
     let _app_lock = lock_app_mutations()?;
     let _caskroom_lock = lock_caskroom(CaskManager::BrewCask)?;
+    let all_claims = CaskClaims::read_in(state_dir)?;
     let mut removed = 0;
     for candidate in &plan.remove {
         let validated = if candidate.forced.is_some() {
@@ -1475,7 +1483,7 @@ pub(super) fn apply_cask_prune_plan_in(
             validate_cask_prune_candidate(candidate)
         };
         if let Err(reason) =
-            validated.and_then(|_| validate_cask_prune_claims(candidate, state_dir))
+            validated.and_then(|_| validate_cask_prune_claims(candidate, &all_claims))
         {
             warn!(
                 "brew-cask:{}: skipped because recorded artifacts changed after planning: {reason:#}",
@@ -1583,15 +1591,10 @@ pub(super) fn lock_caskroom(manager: CaskManager) -> Result<fslock::LockFile> {
 /// `brew-cask` receipt recorded, so the Caskroom alone is not enough.
 pub(super) fn validate_cask_prune_claims(
     candidate: &CaskPruneCandidate,
-    state_dir: &Path,
+    claims: &CaskClaims,
 ) -> Result<()> {
     for target in &candidate.receipt.targets {
-        if cask_target_claimed_by_another_in(
-            state_dir,
-            CaskManager::BrewCask,
-            &candidate.token,
-            &target.path,
-        )? {
+        if claims.claimed_by_another(CaskManager::BrewCask, &candidate.token, &target.path) {
             bail!(
                 "artifact target is claimed by another cask: {}",
                 target.path.display()
@@ -1610,54 +1613,83 @@ pub(super) fn cask_target_claimed_by_another(
     token: &str,
     target: &Path,
 ) -> Result<bool> {
-    cask_target_claimed_by_another_in(&mise_util::dirs::STATE, manager, token, target)
+    Ok(CaskClaims::read_in(&mise_util::dirs::STATE)?.claimed_by_another(manager, token, target))
 }
 
-pub(super) fn cask_target_claimed_by_another_in(
-    state_dir: &Path,
+/// Every path a receipt claims, across both managers.
+///
+/// Reading every receipt is the expensive part of a claim check, so a prune
+/// reads them once and checks all its candidates against the result. Each
+/// path is canonicalised up front too, which keeps a check against it from
+/// touching the filesystem again.
+pub(super) struct CaskClaims(Vec<CaskClaim>);
+
+struct CaskClaim {
     manager: CaskManager,
-    token: &str,
-    target: &Path,
-) -> Result<bool> {
-    for other_manager in [CaskManager::BrewCask, CaskManager::MacosApp] {
-        let root = cask_state_root_in(state_dir, other_manager);
-        let entries = match std::fs::read_dir(&root) {
-            Ok(entries) => entries,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(err) => {
-                return Err(err)
-                    .wrap_err_with(|| format!("failed to read cask state {}", root.display()));
-            }
-        };
-        for entry in entries {
-            let entry = entry?;
-            if !entry.file_type()?.is_dir()
-                || (other_manager == manager && entry.file_name() == token)
-            {
-                continue;
-            }
-            for version in std::fs::read_dir(entry.path())? {
-                let version = version?;
-                if !version.file_type()?.is_dir() {
+    token: String,
+    path: PathBuf,
+    canonical: Option<PathBuf>,
+}
+
+impl CaskClaims {
+    pub(super) fn read_in(state_dir: &Path) -> Result<Self> {
+        let mut claims = Vec::new();
+        for manager in [CaskManager::BrewCask, CaskManager::MacosApp] {
+            let root = cask_state_root_in(state_dir, manager);
+            let entries = match std::fs::read_dir(&root) {
+                Ok(entries) => entries,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(err) => {
+                    return Err(err)
+                        .wrap_err_with(|| format!("failed to read cask state {}", root.display()));
+                }
+            };
+            for entry in entries {
+                let entry = entry?;
+                if !entry.file_type()?.is_dir() {
                     continue;
                 }
-                if let Some(receipt) = read_receipt(&version.path())?
-                    && (receipt
+                let token = entry.file_name().to_string_lossy().to_string();
+                for version in std::fs::read_dir(entry.path())? {
+                    let version = version?;
+                    if !version.file_type()?.is_dir() {
+                        continue;
+                    }
+                    let Some(receipt) = read_receipt(&version.path())? else {
+                        continue;
+                    };
+                    let paths = receipt
                         .apps
-                        .iter()
-                        .chain(&receipt.metadata_only_apps)
-                        .any(|path| paths_resolve_to_same_target(path, target))
-                        || receipt
-                            .targets
-                            .iter()
-                            .any(|record| paths_resolve_to_same_target(&record.path, target)))
-                {
-                    return Ok(true);
+                        .into_iter()
+                        .chain(receipt.metadata_only_apps)
+                        .chain(receipt.targets.into_iter().map(|record| record.path));
+                    claims.extend(paths.map(|path| CaskClaim {
+                        manager,
+                        token: token.clone(),
+                        canonical: path.canonicalize().ok(),
+                        path,
+                    }));
                 }
             }
         }
+        Ok(Self(claims))
     }
-    Ok(false)
+
+    /// Whether a cask other than `manager:token` claims `target`, with the
+    /// same matching as [`paths_resolve_to_same_target`].
+    pub(super) fn claimed_by_another(
+        &self,
+        manager: CaskManager,
+        token: &str,
+        target: &Path,
+    ) -> bool {
+        let canonical = target.canonicalize().ok();
+        self.0.iter().any(|claim| {
+            !(claim.manager == manager && claim.token == token)
+                && (claim.path == target
+                    || claim.canonical.is_some() && claim.canonical == canonical)
+        })
+    }
 }
 
 /// The checks `--force` never overrides: mise, not Homebrew, still owns the
