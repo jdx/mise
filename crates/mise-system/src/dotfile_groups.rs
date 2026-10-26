@@ -43,7 +43,7 @@ use mise_util::path::PathExt;
 
 pub use mise_config::dotfiles::DotfileGroupsTomlConfig;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GroupToml {
     /// the group's directory tree (required); relative paths resolve
@@ -115,7 +115,8 @@ pub(crate) fn warn_unknown_selection(selection: &[String], requests: &[FileReque
     for name in selection {
         if !known.contains(name.as_str()) {
             warn_once!(
-                "[bootstrap] dotfile_groups selects {name:?}, but no [dotfile_groups] table declares it"
+                "[bootstrap] dotfile_groups selects {name:?}, but no [dotfile_groups] table declares it and {} has no directory of that name",
+                file::display_path(files::dotfiles_root())
             );
         }
     }
@@ -178,6 +179,52 @@ pub(crate) fn group_requests(config_files: &ConfigMap) -> Vec<FileRequest> {
             Err(err) => {
                 unexpanded().insert(name.clone());
                 warn_once!("[dotfile_groups].{name}: {err}, ignoring group")
+            }
+        }
+    }
+    out
+}
+
+/// Groups the selection names that no `[dotfile_groups]` table declares, but
+/// that name a directory under `dotfiles.root`: like a Stow package, each
+/// deploys that directory into `~` file by file, with no table to write.
+/// `declared` holds the names the tables declare; a table always wins.
+pub(crate) fn implicit_group_requests(
+    config_files: &ConfigMap,
+    selection: &[String],
+    declared: &HashSet<&str>,
+) -> Vec<FileRequest> {
+    // the file whose list selected them owns the groups they become
+    let Some((path, cf)) = config_files.iter().find(|(_, cf)| {
+        cf.bootstrap_config()
+            .is_some_and(|b| b.dotfile_groups.is_some())
+    }) else {
+        return vec![];
+    };
+    let origin = ResourceOrigin {
+        config: path.clone(),
+        config_root: cf.config_root(),
+        environment: crate::host::environments_for_config_path(path),
+        source: None,
+    };
+    let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+    let mut out = vec![];
+    for name in selection {
+        if declared.contains(name.as_str())
+            || !valid_group_name(name)
+            || !files::dotfiles_root().join(name).is_dir()
+        {
+            continue;
+        }
+        let group = GroupToml {
+            root: Some(name.clone()),
+            ..Default::default()
+        };
+        match expand_group(name, group, &base, &origin) {
+            Ok(requests) => out.extend(requests),
+            Err(err) => {
+                unexpanded().insert(name.clone());
+                warn_once!("[bootstrap] dotfile_groups: {name}: {err}, ignoring group")
             }
         }
     }

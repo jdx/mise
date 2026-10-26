@@ -113,8 +113,32 @@ dotfile_groups = ["home", "zsh"]
 ```
 
 A more local config file's list replaces the others. `[dotfiles]` entries
-apply on every machine, whichever groups it selects. mise warns when the list
-names a group that nothing declares.
+apply on every machine, whichever groups it selects.
+
+### Groups without a table {#groups-without-a-table}
+
+A selected name that no `[dotfile_groups]` table declares, but that names a
+directory under [`dotfiles.root`](/configuration/settings.html#dotfiles.root),
+is a group with the defaults: its directory is the root, deployed into `~`
+file by file. A directory of packages then needs no tables at all:
+
+```text
+~/.dotfiles/
+├── kitty/.config/kitty/kitty.conf
+├── nvim/.config/nvim/init.lua
+└── zsh/.zshrc
+```
+
+```toml
+[bootstrap]
+dotfile_groups = ["kitty", "nvim", "zsh"]
+```
+
+`~/.config/kitty/kitty.conf` links to `~/.dotfiles/kitty/.config/kitty/kitty.conf`,
+and so on. Write a table only for a group that needs more, such as
+`entries`, `dot_prefix`, or another `target`; a table replaces the defaults
+for its name. These groups exist only while a list selects them. mise warns
+when the list names something that is neither declared nor a directory.
 
 Two selected groups cannot deploy the same target file, and one group cannot
 link a directory as a whole while another places files inside it. mise
@@ -184,15 +208,23 @@ index, so `add` refuses to capture into it; copy the file into the root and
 
 Groups cover the same ground as Stow packages:
 
-| GNU Stow                        | mise                                                                                                         |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| A package directory             | A group, `[dotfile_groups.<name>]`, with that directory as `root`                                            |
-| `stow --dotfiles`               | `dot_prefix = true`                                                                                          |
-| Relative links (Stow's default) | [`dotfiles.relative_symlinks`](/configuration/settings.html#dotfiles.relative_symlinks) or `relative = true` |
-| `stow -D <package>`             | `mise dot unapply --group <name>`                                                                            |
-| `stow --adopt`                  | `mise dot add --group <name> <file>`                                                                         |
-| Choosing which packages to stow | `[bootstrap] dotfile_groups`                                                                                 |
+| GNU Stow                        | mise                                                                                                                             |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| A package directory             | A directory under `dotfiles.root` that `[bootstrap] dotfile_groups` names; see [Groups without a table](#groups-without-a-table) |
+| `stow --dotfiles`               | `dot_prefix = true`                                                                                                              |
+| Relative links (Stow's default) | [`dotfiles.relative_symlinks`](/configuration/settings.html#dotfiles.relative_symlinks) or `relative = true`                     |
+| `stow -D <package>`             | `mise dot unapply --group <name>`                                                                                                |
+| `stow --adopt`                  | `mise dot add --group <name> <file>`                                                                                             |
+| Choosing which packages to stow | `[bootstrap] dotfile_groups`                                                                                                     |
 
 Stow links a whole directory when nothing else lives in it. A `symlink-each`
 group always links file by file; to link a directory as a whole, add a
 `symlink` [group entry](#group-entries) for it.
+
+To switch a machine from Stow, select the same packages and run
+`mise dot apply`; there is no need to unstow first. Where Stow linked a whole
+directory, such as `~/.config/kitty` to `~/.dotfiles/kitty/.config/kitty`,
+`mise dot status` reports the link, and apply replaces it with a real
+directory that links each file. A link into the group's root that does not
+point at the directory belonging there is refused, even with `--force`,
+because writing through it would change the files in the root.
