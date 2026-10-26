@@ -1808,19 +1808,9 @@ impl HistoryRepo {
     /// `Permission denied`. The object is then written by the other process,
     /// and a second attempt finds it already there.
     fn write_tree_retrying(&self, index: &Path) -> Result<String> {
-        const ATTEMPTS: u32 = 5;
-        let mut attempt = 1;
-        loop {
-            match self.output_str(PlumbingCall::new(["write-tree"]).index_file(index)) {
-                Err(err)
-                    if attempt < ATTEMPTS && format!("{err:#}").contains("Permission denied") =>
-                {
-                    std::thread::sleep(std::time::Duration::from_millis(25 * u64::from(attempt)));
-                    attempt += 1;
-                }
-                result => return result,
-            }
-        }
+        retry_on_permission_denied(|| {
+            self.output_str(PlumbingCall::new(["write-tree"]).index_file(index))
+        })
     }
 
     /// [`Self::compose`] as Git applies it, one overlay at a time: the
@@ -2245,6 +2235,22 @@ pub(crate) fn unavailable_reason() -> String {
         "Xcode Command Line Tools are not installed (run `xcode-select --install`)".into()
     } else {
         "git not found".into()
+    }
+}
+
+/// Runs `run`, again after a short pause while it fails with `Permission
+/// denied`, up to five attempts in all; any other error is returned at once.
+fn retry_on_permission_denied<T>(mut run: impl FnMut() -> Result<T>) -> Result<T> {
+    const ATTEMPTS: u32 = 5;
+    let mut attempt = 1;
+    loop {
+        match run() {
+            Err(err) if attempt < ATTEMPTS && format!("{err:#}").contains("Permission denied") => {
+                std::thread::sleep(std::time::Duration::from_millis(25 * u64::from(attempt)));
+                attempt += 1;
+            }
+            result => return result,
+        }
     }
 }
 
@@ -3329,6 +3335,41 @@ mod tests {
                 .is_none()
         );
         assert!(repo.object_at(&without, "home/.zshrc").unwrap().is_some());
+    }
+
+    #[test]
+    fn permission_denied_is_retried_until_it_clears() {
+        let mut calls = 0;
+        let result = retry_on_permission_denied(|| {
+            calls += 1;
+            if calls < 3 {
+                bail!("unable to write file: Permission denied");
+            }
+            Ok(calls)
+        });
+        assert_eq!(result.unwrap(), 3);
+    }
+
+    #[test]
+    fn permission_denied_gives_up_after_five_attempts() {
+        let mut calls = 0;
+        let result: Result<()> = retry_on_permission_denied(|| {
+            calls += 1;
+            bail!("unable to write file: Permission denied")
+        });
+        assert!(result.is_err());
+        assert_eq!(calls, 5);
+    }
+
+    #[test]
+    fn other_errors_are_not_retried() {
+        let mut calls = 0;
+        let result: Result<()> = retry_on_permission_denied(|| {
+            calls += 1;
+            bail!("fatal: not a git repository")
+        });
+        assert!(result.is_err());
+        assert_eq!(calls, 1);
     }
 
     #[test]
