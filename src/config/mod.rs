@@ -2987,7 +2987,7 @@ fn loadable_config_files_in_dir(dir: &Path, filenames: &[String]) -> IndexSet<Pa
         .iter()
         .flat_map(|f| load_config_glob(dir, f))
         .filter(|p| !config_path_is_ignored(p, false))
-        .unique_by(|p| config_identity(p))
+        .unique_by(|p| file::desymlink_path(p))
         .collect()
 }
 
@@ -3042,7 +3042,7 @@ fn nearest_local_config_file(start: &Path, filenames: &[String]) -> Option<PathB
             .iter()
             .flat_map(|f| glob(&dir, f).unwrap_or_default())
             .filter(|p| !config_path_is_ignored(p, false))
-            .unique_by(|p| config_identity(p))
+            .unique_by(|p| file::desymlink_path(p))
             .collect();
         if let Some(cf) = first_config_file(&files)
             && !is_global_config(cf)
@@ -3091,6 +3091,7 @@ fn load_config_paths_from_dirs(
     config_files.extend(global_config_files().into_iter().rev());
     config_files.extend(system_config_files().into_iter().rev());
 
+    let idiomatic_filenames = idiomatic_filenames_in(config_filenames);
     config_files
         .into_iter()
         .filter(|p| !config_path_is_ignored(p, include_ignored))
@@ -3106,19 +3107,28 @@ fn load_config_paths_from_dirs(
             discovered_global_config(p)
                 .is_none_or(|global| global == *p || p.canonicalize().is_ok_and(|real| real == *p))
         })
-        .unique_by(|p| config_identity(p))
+        .unique_by(|p| config_path_identity(p, &idiomatic_filenames))
         .collect()
 }
 
-/// What makes two discovered config paths the same file. Spellings that reach
-/// one file collapse, but a version file mise does not read because it links to
-/// another name (`.nvmrc -> .node-version`) is not that file: if it claimed the
-/// target's identity, the real `.node-version` next to it would be dropped as
-/// its duplicate.
-fn config_identity(path: &Path) -> PathBuf {
-    let toml = path.extension().is_some_and(|ext| ext == "toml")
-        || config_file::is_mise_toml_filename(path);
-    if !toml && config_file::diagnostic::links_to_another_name(path) {
+/// The entries of a discovery filename list that name idiomatic version files.
+/// Callers pass mise's own config filenames, with the idiomatic filenames
+/// added when they look for those too, so every other entry is idiomatic.
+fn idiomatic_filenames_in(config_filenames: &[String]) -> Vec<&str> {
+    config_filenames
+        .iter()
+        .filter(|f| !DEFAULT_CONFIG_FILENAMES.contains(f))
+        .map(String::as_str)
+        .collect()
+}
+
+/// What discovered config paths are deduplicated by, so that two spellings of
+/// one file load once: the file the path resolves to. A version file linked to
+/// a file of another name is its own entry instead. Loading skips it, so it
+/// must not take the place of a spelling that loads: a `.nvmrc` linked to the
+/// `.node-version` beside it would otherwise hide that `.node-version`.
+fn config_path_identity(path: &Path, idiomatic_filenames: &[&str]) -> PathBuf {
+    if config_file::is_skipped_version_file_link(path, idiomatic_filenames) {
         return path.to_path_buf();
     }
     file::desymlink_path(path)
@@ -3422,10 +3432,11 @@ pub async fn load_config_hierarchy_from_dir(
     config_files.extend(global_config_files().into_iter().rev());
     config_files.extend(system_config_files().into_iter().rev());
 
+    let idiomatic_filenames = idiomatic_files.keys().map(String::as_str).collect_vec();
     let paths = config_files
         .into_iter()
         .filter(|p| !config_path_is_ignored(p, false))
-        .unique_by(|p| config_identity(p))
+        .unique_by(|p| config_path_identity(p, &idiomatic_filenames))
         .collect();
 
     Ok((paths, idiomatic_files))
