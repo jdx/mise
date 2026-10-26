@@ -51,6 +51,14 @@ branch at `.well-known/packslip.json`, or `.well-known/packslip/<tool>.json` for
 a monorepo tool. The list can withdraw a version, supply a bundle URL and
 digest, or add a version that the release API does not show.
 
+mise asks mise-versions for the list first, because most repositories have none
+and `raw.githubusercontent.com` rate-limits shared CI runners. It reads the file
+from GitHub itself when mise-versions is unavailable or does not serve the
+repository, as for a private one, or when
+[`use_versions_host`](/configuration/settings.html#use_versions_host) is off. A
+list or its absence reaches mise within about ten minutes of a change on the
+default branch; the list is verified either way.
+
 Versions the list omits can still come from GitHub releases; omission does not
 withdraw them. For a domain project, the signed list is the entire release
 index. A vendor withdrawal excludes a version even if a trusted stamper approved
