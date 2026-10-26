@@ -247,7 +247,9 @@ every other tag. The pattern can match anywhere in the tag, so anchor it with
 `^` and `$` to match the whole tag. It only filters: mise names each listed
 version as it would without it, so the tag `v1.2.3` is still listed as `1.2.3`.
 With `version_prefix` also set, a tag must start with the prefix and match the
-pattern.
+pattern. Installing never uses a tag the pattern leaves out, so in a repository
+with both `1.2.3` and `v1.2.3`, `version_regex = '^\d'` installs `1.2.3` from
+the `1.2.3` release.
 
 #### `prerelease`
 
