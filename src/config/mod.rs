@@ -3106,8 +3106,20 @@ fn load_config_paths_from_dirs(
             discovered_global_config(p)
                 .is_none_or(|global| global == *p || p.canonicalize().is_ok_and(|real| real == *p))
         })
-        .unique_by(|p| file::desymlink_path(p))
+        .unique_by(|p| config_path_identity(p))
         .collect()
+}
+
+/// What discovered config paths are deduplicated by, so that two spellings of
+/// one file load once: the file the path resolves to. A version file linked to
+/// a file of another name is its own entry instead. Loading skips it, so it
+/// must not take the place of a spelling that loads: a `.nvmrc` linked to the
+/// `.node-version` beside it would otherwise hide that `.node-version`.
+fn config_path_identity(path: &Path) -> PathBuf {
+    if config_file::is_skipped_version_file_link(path) {
+        return path.to_path_buf();
+    }
+    file::desymlink_path(path)
 }
 
 pub(crate) fn load_config_paths_from(
@@ -3411,7 +3423,7 @@ pub async fn load_config_hierarchy_from_dir(
     let paths = config_files
         .into_iter()
         .filter(|p| !config_path_is_ignored(p, false))
-        .unique_by(|p| file::desymlink_path(p))
+        .unique_by(|p| config_path_identity(p))
         .collect();
 
     Ok((paths, idiomatic_files))

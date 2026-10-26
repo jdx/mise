@@ -1557,6 +1557,20 @@ pub fn is_mise_toml_filename(path: &Path) -> bool {
     )
 }
 
+/// Whether config loading skips `path` because it is a version file
+/// (`.tool-versions` or an idiomatic one) linked to a file of another name,
+/// see [`diagnostic::links_to_another_name`]. A `.toml` file that is not a
+/// registry idiomatic file parses as mise TOML, which that rule does not cover.
+pub(crate) fn is_skipped_version_file_link(path: &Path) -> bool {
+    let is_version_file = !is_mise_toml_filename(path)
+        && (path_matches_registry_idiomatic(path)
+            || path
+                .file_name()
+                .and_then(|f| f.to_str())
+                .is_some_and(|f| !f.ends_with(".toml")));
+    is_version_file && diagnostic::links_to_another_name(path)
+}
+
 /// Detect a config file while preserving disabled and backend-discovery outcomes.
 pub(super) async fn detect_config_file_with_settings(
     path: &Path,

@@ -35,6 +35,17 @@ assert_contains "mise ls dummy" "1.0.0"
 
 rm .tool-versions
 
+# A skipped link does not hide the file it points to. A project that keeps
+# `.nvmrc` for nvm as a link to `.node-version` still gets that Node version.
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node
+echo "20.0.0" >.node-version
+ln -s .node-version .nvmrc
+assert_contains "mise ls 2>&1" "not reading ~/workdir/.nvmrc"
+assert "mise ls --current --json | jq -r '.node[0].requested_version'" "20.0.0"
+assert_contains "mise ls --current node" "~/workdir/.node-version"
+rm .nvmrc .node-version
+unset MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS
+
 # The user's own global `~/.tool-versions` may link to a file of any name, as
 # a dotfiles manager sets it up.
 mkdir -p "$HOME/dotfiles"
