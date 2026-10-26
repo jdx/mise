@@ -108,11 +108,18 @@ if [[ $os == "linux" ]] && command -v docker >/dev/null 2>&1; then
 	# client but not its container, which keeps compiling and holds the target
 	# directory lock against the next attempt. Each attempt runs on a
 	# single-job runner, so any cross container still up is left over.
-	stale=$(docker ps --format '{{.ID}} {{.Image}}' | awk '$2 ~ /cross-rs\/|^cross-custom/ {print $1}')
+	stale_containers() {
+		docker ps --format '{{.ID}} {{.Image}}' | awk '$2 ~ /cross-rs\/|^cross-custom/ {print $1}'
+	}
+	stale=$(stale_containers)
 	if [[ -n $stale ]]; then
 		echo "killing stale cross containers: $stale" >&2
 		# shellcheck disable=SC2086
-		docker kill $stale >/dev/null || true
+		docker kill $stale >/dev/null 2>&1 || true
+		# One may have exited on its own before the kill; only a survivor
+		# still holds the lock.
+		stale=$(stale_containers)
+		[[ -z $stale ]] || error "failed to stop stale cross containers: $stale"
 	fi
 fi
 
