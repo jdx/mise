@@ -38,8 +38,8 @@ rm .tool-versions
 
 # A link to a file of another name inside the project is read too.
 mkdir -p client
-echo "dummy 3.0.0" >client/.tool-versions
-ln -s client/.tool-versions alias-versions
+echo "dummy 3.0.0" >client/versions
+ln -s client/versions alias-versions
 ln -s alias-versions .tool-versions
 assert_contains "mise ls dummy 2>&1" "3.0.0"
 assert_not_contains "mise ls dummy 2>&1" "not reading"
