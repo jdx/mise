@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Regression test for https://github.com/jdx/mise/issues/15005: a task's config
+# hierarchy must still read a version file when a link to it of another name is
+# skipped. `.dummyrc` sorts before `.dummy-version` in discovery, as `.nvmrc`
+# does before `.node-version`.
+export MISE_EXPERIMENTAL=1
+
+cat <<EOF >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+
+# Only the config root enables the idiomatic files, so the task reads them
+# through the config root's own idiomatic filenames.
+mkdir -p packages/app
+cat <<EOF >packages/app/mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["dummy"]
+
+[tasks.check]
+run = 'dummy'
+EOF
+echo "1.0.0" >packages/app/.dummy-version
+ln -s .dummy-version packages/app/.dummyrc
+
+mise -C packages/app install
+
+assert_contains "mise run //packages/app:check 2>&1" "not reading ~/workdir/packages/app/.dummyrc"
+assert_contains "mise run //packages/app:check" "This is Dummy 1.0.0!"
