@@ -90,8 +90,10 @@ jobs:
     name: build-tarball-${{matrix.name}}
     runs-on: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev')) && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-xlarge' }}
     # PGO and cross-built release tarballs can exceed 90 minutes on
-    # loaded runners, especially once archive generation is included.
-    timeout-minutes: 150
+    # loaded runners, especially once archive generation is included. The
+    # linux-x64 PGO build normally takes about 82 minutes. The job limit
+    # leaves room for a full retry after an attempt hangs until its timeout.
+    timeout-minutes: 300
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
       MINIO_AWS_SECRET_ACCESS_KEY: ${{ secrets.MINIO_AWS_SECRET_ACCESS_KEY }}
@@ -143,7 +145,7 @@ jobs:
           LLVM_BOLT: llvm-bolt-19
           MERGE_FDATA: merge-fdata-19
         with:
-          timeout_minutes: 140
+          timeout_minutes: 120
           max_attempts: 3
           command: scripts/build-tarball.sh ${{matrix.target}}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

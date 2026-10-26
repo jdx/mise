@@ -103,6 +103,19 @@ case "$RUST_TRIPLE" in
 	;;
 esac
 
+if [[ $os == "linux" ]] && command -v docker >/dev/null 2>&1; then
+	# When the retry action's timeout kills a hung attempt it stops the cross
+	# client but not its container, which keeps compiling and holds the target
+	# directory lock against the next attempt. Each attempt runs on a
+	# single-job runner, so any cross container still up is left over.
+	stale=$(docker ps --format '{{.ID}} {{.Image}}' | awk '$2 ~ /cross-rs\/|^cross-custom/ {print $1}')
+	if [[ -n $stale ]]; then
+		echo "killing stale cross containers: $stale" >&2
+		# shellcheck disable=SC2086
+		docker kill $stale >/dev/null || true
+	fi
+fi
+
 if [[ -n ${MISE_BOLT:-} ]] && [[ -z ${MISE_PGO:-} ]]; then
 	error "MISE_BOLT requires MISE_PGO so BOLT optimizes the PGO release binary"
 fi
