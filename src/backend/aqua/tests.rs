@@ -97,6 +97,41 @@ fn aqua_uses_go_arch_name_for_32_bit_arm() {
     assert_eq!(to_aqua_arch("arm64"), "arm64");
 }
 
+#[cfg(unix)]
+#[test]
+fn smolvm_guest_rootfs_marker_rejects_symlinked_components() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let install = tmp.path().join("install");
+    let rootfs = install.join("smolvm/agent-rootfs");
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir_all(outside.join("local/bin")).unwrap();
+    std::fs::write(outside.join("local/bin/smolvm-agent"), "agent").unwrap();
+    std::fs::create_dir_all(&rootfs).unwrap();
+    symlink(&outside, rootfs.join("usr")).unwrap();
+
+    assert!(!AquaBackend::is_smolvm_agent_rootfs(&rootfs));
+    assert!(file::ensure_symlinks_stay_within(&install).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn smolvm_guest_rootfs_marker_rejects_symlinked_agent_binary() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let install = tmp.path().join("install");
+    let rootfs = install.join("smolvm/agent-rootfs");
+    let outside = tmp.path().join("outside-agent");
+    std::fs::create_dir_all(rootfs.join("usr/local/bin")).unwrap();
+    std::fs::write(&outside, "agent").unwrap();
+    symlink(&outside, rootfs.join("usr/local/bin/smolvm-agent")).unwrap();
+
+    assert!(!AquaBackend::is_smolvm_agent_rootfs(&rootfs));
+    assert!(file::ensure_symlinks_stay_within(&install).is_err());
+}
+
 // `--dry-run` reaches `validate` through `resolve_validated_package`, and this is the sentence
 // it has to be able to produce before the install starts. Pinned here because
 // `e2e/cli/test_install_dry_run_feasibility` greps for it: aqua marks specific versions
