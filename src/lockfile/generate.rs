@@ -1012,18 +1012,24 @@ async fn complete_artifact_checksums(info: &mut PlatformInfo) -> Result<()> {
     if info.checksum.is_none()
         && let Some(url) = &info.url
     {
-        info.checksum = Some(artifact_checksum(url, info.url_api.as_deref()).await?);
+        info.checksum = Some(
+            artifact_checksum(url, info.url_api.as_deref(), info.download_headers.as_ref()).await?,
+        );
     }
     for artifact in &mut info.additional_artifacts {
         if artifact.checksum.is_none() {
             artifact.checksum =
-                Some(artifact_checksum(&artifact.url, artifact.url_api.as_deref()).await?);
+                Some(artifact_checksum(&artifact.url, artifact.url_api.as_deref(), None).await?);
         }
     }
     Ok(())
 }
 
-async fn artifact_checksum(url: &str, api_url: Option<&str>) -> Result<String> {
+async fn artifact_checksum(
+    url: &str,
+    api_url: Option<&str>,
+    headers: Option<&reqwest::header::HeaderMap>,
+) -> Result<String> {
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("artifact");
     let url = if let Some(api_url) = api_url {
@@ -1031,7 +1037,12 @@ async fn artifact_checksum(url: &str, api_url: Option<&str>) -> Result<String> {
     } else {
         url.to_owned()
     };
-    crate::http::HTTP.download_file(&url, &path, None).await?;
+    match headers.filter(|headers| !headers.is_empty()) {
+        Some(headers) => {
+            crate::backend::vfox::download_with_plugin_headers(&url, &path, headers).await?
+        }
+        None => crate::http::HTTP.download_file(&url, &path, None).await?,
+    }
     Ok(format!(
         "sha256:{}",
         crate::hash::file_hash_sha256(&path, None)?

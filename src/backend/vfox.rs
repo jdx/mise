@@ -669,7 +669,7 @@ impl Backend for VfoxBackend {
             .await
             .into_backend_options()
             .into_map();
-        let (url, att) = vfox
+        let (url, att, download_headers) = vfox
             .pre_install_provenance_for_platform_with_options(
                 &self.pathname,
                 &tv.version,
@@ -683,6 +683,7 @@ impl Backend for VfoxBackend {
 
         Ok(PlatformInfo {
             url,
+            download_headers,
             provenance,
             ..Default::default()
         })
@@ -1123,6 +1124,21 @@ fn valid_created_at(plugin: &str, created_at: Option<String>) -> Option<String> 
         return None;
     }
     Some(ts)
+}
+
+/// Download `url` with the request headers a plugin's `PreInstall` returned,
+/// as an install does, so `mise lock` can hash an artifact that needs them.
+pub(crate) async fn download_with_plugin_headers(
+    url: &str,
+    path: &Path,
+    headers: &reqwest::header::HeaderMap,
+) -> eyre::Result<()> {
+    let url = Url::parse(url)?;
+    let mut vfox = vfox::Vfox::new();
+    vfox.set_url_rewriter(crate::http::apply_url_replacements);
+    vfox.set_http_headers_resolver(crate::http::netrc_headers);
+    vfox.download_to(&url, path, Some(headers)).await?;
+    Ok(())
 }
 
 #[cfg(test)]

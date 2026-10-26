@@ -25,7 +25,7 @@ impl Vfox {
             .await
     }
 
-    /// Returns the download URL and the highest-priority verified attestation type
+    /// Returns the download URL, the request headers and the highest-priority verified attestation type
     /// declared by the plugin for the given platform, without performing actual
     /// verification or installation.
     pub async fn pre_install_provenance_for_platform(
@@ -34,7 +34,11 @@ impl Vfox {
         version: &str,
         os: &str,
         arch: &str,
-    ) -> Result<(Option<String>, Option<VerifiedAttestation>)> {
+    ) -> Result<(
+        Option<String>,
+        Option<VerifiedAttestation>,
+        Option<HeaderMap>,
+    )> {
         self.pre_install_provenance_for_platform_with_options(
             sdk,
             version,
@@ -52,14 +56,19 @@ impl Vfox {
         os: &str,
         arch: &str,
         options: IndexMap<String, toml::Value>,
-    ) -> Result<(Option<String>, Option<VerifiedAttestation>)> {
+    ) -> Result<(
+        Option<String>,
+        Option<VerifiedAttestation>,
+        Option<HeaderMap>,
+    )> {
         let pre = self
             .pre_install_for_platform_with_options(sdk, version, os, arch, options)
             .await?;
         let att = pre.attestation.and_then(attestation_to_verified);
         // Note: pre.sha256 / pre.sha512 are intentionally not returned here;
         // checksum verification only happens during `mise install`, not `mise lock`.
-        Ok((pre.url, att))
+        // The headers are: the artifact may need them to be downloaded at all.
+        Ok((pre.url, att, pre.headers))
     }
 
     pub async fn metadata(&self, sdk: &str) -> Result<Metadata> {
