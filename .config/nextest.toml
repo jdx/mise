@@ -78,9 +78,13 @@ slow-timeout = { period = "1s", terminate-after = 3 }
 # This profile keeps the reporting but drops `terminate-after`, so a slow test is
 # logged and not killed. The period is the trusted ceiling (250ms x 4), which
 # makes the first SLOW line mark exactly the tests that would have failed there.
-# Per-test overrides are deliberately not repeated: nextest does not inherit
-# `overrides`, and without `terminate-after` they would only shift log lines.
+# nextest does inherit `overrides` from `ci`, so the catch-all override below is
+# what keeps those per-test ceilings from killing tests on this profile.
 # A genuine hang is still bounded by the job's `timeout-minutes`.
 [profile.ci-shared]
 inherits = "ci"
+slow-timeout = { period = "1s" }
+
+[[profile.ci-shared.overrides]]
+filter = 'all()'
 slow-timeout = { period = "1s" }
