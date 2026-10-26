@@ -14,7 +14,9 @@ pub use mise_config::launchd::{
 };
 use plist::{Dictionary, Value};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use crate::defaults::DefaultsValue;
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct LaunchdRequest {
     pub name: String,
     pub label: String,
@@ -29,6 +31,7 @@ pub struct LaunchdRequest {
     pub process_type: Option<String>,
     pub start_calendar_interval: Option<LaunchdCalendarIntervals>,
     pub queue_directories: Vec<String>,
+    pub launch_events: Dictionary,
     pub environment: IndexMap<String, String>,
     pub working_directory: Option<String>,
     pub stdout_path: Option<String>,
@@ -44,7 +47,7 @@ pub enum LaunchdState {
     Missing,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LaunchdStatus {
     pub request: LaunchdRequest,
     pub path: PathBuf,
@@ -95,6 +98,21 @@ impl LaunchdRequest {
                 );
             }
         }
+        let mut launch_events = Dictionary::new();
+        for (stream, events) in config.launch_events {
+            let mut event_dict = Dictionary::new();
+            for (event, properties) in events {
+                let value = DefaultsValue::from_toml(&toml::Value::Table(properties))
+                    .ok_or_else(|| {
+                        eyre::eyre!(
+                            "agent '{name}' `launch_events.{stream}.{event}` contains an unsupported \
+                             datetime value; use strings, booleans, numbers, arrays, or tables"
+                        )
+                    })?;
+                event_dict.insert(event, value.to_plist());
+            }
+            launch_events.insert(stream, Value::Dictionary(event_dict));
+        }
         Ok(Self {
             label: format!("dev.mise.{name}"),
             name,
@@ -109,6 +127,7 @@ impl LaunchdRequest {
             process_type,
             start_calendar_interval: config.start_calendar_interval,
             queue_directories: config.queue_directories,
+            launch_events,
             environment: config.environment,
             working_directory: config.working_directory,
             stdout_path: config.stdout_path,
@@ -353,6 +372,12 @@ fn plist_value(request: &LaunchdRequest) -> Value {
                     .map(|path| Value::String(expand_path_string(path)))
                     .collect(),
             ),
+        );
+    }
+    if !request.launch_events.is_empty() {
+        dict.insert(
+            "LaunchEvents".into(),
+            Value::Dictionary(request.launch_events.clone()),
         );
     }
     if !request.environment.is_empty() {
@@ -748,6 +773,7 @@ mod tests {
                 },
             )),
             queue_directories: vec!["~/Library/Queues/sync".to_string()],
+            launch_events: Dictionary::new(),
             environment,
             working_directory: Some("~".to_string()),
             stdout_path: Some("~/Library/Logs/sync.log".to_string()),
@@ -866,6 +892,7 @@ mod tests {
                 },
             ])),
             queue_directories: vec![],
+            launch_events: Dictionary::new(),
             environment: IndexMap::new(),
             working_directory: None,
             stdout_path: None,
@@ -942,6 +969,96 @@ mod tests {
             ]))
         );
         assert!(plist_matches(&plist, &request));
+    }
+
+    #[test]
+    fn launch_events_preserve_typed_properties_and_detect_changes() {
+        let config: LaunchdTomlConfig = toml::from_str(
+            r#"
+            program = "/usr/local/bin/device-handler"
+
+            [launch_events."com.apple.iokit.matching".usb]
+            IOProviderClass = "IOUSBHostDevice"
+            idVendor = 1452
+            IOMatchLaunchStream = true
+            Nested = { Names = ["one", "two"], Ratio = 1.5 }
+
+            [launch_events."com.apple.notifyd.matching".notification]
+            Notification = "com.example.changed"
+            "#,
+        )
+        .unwrap();
+        let mut request = LaunchdRequest::from_toml("events".into(), config).unwrap();
+        let plist = render_plist(&request).unwrap();
+        let value = Value::from_reader_xml(Cursor::new(&plist)).unwrap();
+        let events = value
+            .as_dictionary()
+            .unwrap()
+            .get("LaunchEvents")
+            .unwrap()
+            .as_dictionary()
+            .unwrap();
+        let usb = events["com.apple.iokit.matching"].as_dictionary().unwrap()["usb"]
+            .as_dictionary()
+            .unwrap();
+        assert_eq!(
+            usb["IOProviderClass"],
+            Value::String("IOUSBHostDevice".into())
+        );
+        assert_eq!(usb["idVendor"], Value::Integer(1452.into()));
+        assert_eq!(usb["IOMatchLaunchStream"], Value::Boolean(true));
+        let nested = usb["Nested"].as_dictionary().unwrap();
+        assert_eq!(
+            nested["Names"],
+            Value::Array(vec![
+                Value::String("one".into()),
+                Value::String("two".into())
+            ])
+        );
+        assert_eq!(nested["Ratio"], Value::Real(1.5));
+        let notification = events["com.apple.notifyd.matching"]
+            .as_dictionary()
+            .unwrap()["notification"]
+            .as_dictionary()
+            .unwrap();
+        assert_eq!(
+            notification["Notification"],
+            Value::String("com.example.changed".into())
+        );
+        assert!(plist_matches(&plist, &request));
+        request.launch_events.remove("com.apple.notifyd.matching");
+        assert!(!plist_matches(&plist, &request));
+        request.launch_events.clear();
+        assert!(
+            !plist_value(&request)
+                .as_dictionary()
+                .unwrap()
+                .contains_key("LaunchEvents")
+        );
+    }
+
+    #[test]
+    fn launch_events_reject_invalid_shapes_and_datetime_values() {
+        for events in [
+            r#"launch_events = "invalid""#,
+            r#"launch_events = { stream = { event = true } }"#,
+        ] {
+            let config = format!("program = '/bin/echo'\n{events}");
+            assert!(toml::from_str::<LaunchdTomlConfig>(&config).is_err());
+        }
+        let config = toml::from_str(
+            r#"
+            program = "/bin/echo"
+            [launch_events.stream.event]
+            Nested = { Date = 2026-10-26 }
+            "#,
+        )
+        .unwrap();
+        let error = LaunchdRequest::from_toml("events".into(), config)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("launch_events.stream.event"), "{error}");
+        assert!(error.contains("datetime"), "{error}");
     }
 
     #[test]
