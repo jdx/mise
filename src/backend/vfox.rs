@@ -1142,7 +1142,12 @@ pub(crate) async fn download_with_plugin_headers(
     let limit = Settings::get().http_download_timeout();
     tokio::time::timeout(limit, vfox.download_to(&url, path, Some(headers)))
         .await
-        .map_err(|_| eyre!("timed out downloading {url} after {limit:?}"))??;
+        .map_err(|_| {
+            eyre!(
+                "timed out downloading from {} after {limit:?}",
+                url.origin().ascii_serialization()
+            )
+        })??;
     Ok(())
 }
 
