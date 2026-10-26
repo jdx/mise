@@ -177,7 +177,7 @@ contribute one.
 | `mise shell` and `mise deactivate`   | Yes  | Yes | Yes  | Yes                | Yes    | Yes   | Yes         |
 | Update on directory change           | Yes  | Yes | Yes  | At the next prompt | Yes    | Yes   | 7 and newer |
 | [Shell aliases](/shell-aliases.html) | Yes  | Yes | Yes  | No                 | No     | No    | No          |
-| `mise completion`                    | Yes  | Yes | Yes  | No                 | No     | No    | Yes         |
+| `mise completion`                    | Yes  | Yes | Yes  | Yes                | No     | No    | Yes         |
 
 Elvish needs the `mise` alias from [its section](#elvish) for `mise shell` and
 `mise deactivate`. PowerShell 5.1 and Nushell update the environment at the next
