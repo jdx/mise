@@ -2674,13 +2674,10 @@ impl Bootstrap {
             &crate::env::ARGS.read().unwrap(),
         ));
         if let Some(dir) = self.config_dir.as_deref() {
-            let config_dir = checkout_config_dir(&checkout, dir)?;
-            let name = crate::env::MISE_GLOBAL_CONFIG_FILE
-                .as_deref()
-                .and_then(Path::file_name)
-                .unwrap_or(std::ffi::OsStr::new("config.toml"));
-            command.env("MISE_GLOBAL_CONFIG_FILE", config_dir.join(name));
-            command.env("MISE_CONFIG_DIR", config_dir);
+            // MISE_GLOBAL_CONFIG_FILE would make that one file the whole global
+            // config, skipping the directory's conf.d/ and config.<env>.toml
+            command.env("MISE_CONFIG_DIR", checkout_config_dir(&checkout, dir)?);
+            command.env_remove("MISE_GLOBAL_CONFIG_FILE");
         }
         if self.adopt.is_some() {
             if self.dry_run {
