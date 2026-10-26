@@ -850,6 +850,16 @@ pub async fn populate_uv_locks(
             );
             continue;
         }
+        if let Err(error) = backend.validate_lock_options(tv) {
+            if best_effort {
+                debug!(
+                    "{} dependency graph skipped during automatic locking: {error:#}",
+                    ba.short
+                );
+                continue;
+            }
+            return Err(error);
+        }
         let graph = match backend.resolve_uv_lock(config, tv).await {
             Ok(graph) => graph,
             Err(error) if best_effort => {
@@ -859,7 +869,21 @@ pub async fn populate_uv_locks(
                 );
                 continue;
             }
-            Err(error) => return Err(error),
+            Err(error) => {
+                warn!(
+                    "{} dependency graph unavailable; keeping a version-only lock entry: {error:#}",
+                    ba.short
+                );
+                if let Some(entries) = lockfile.tools_for_mut(&ba.short) {
+                    for entry in entries
+                        .iter_mut()
+                        .filter(|entry| entry.version == tv.version && entry.options == options)
+                    {
+                        entry.uv = None;
+                    }
+                }
+                continue;
+            }
         };
         lockfile.set_uv_lock(&ba.short, &tv.version, &backend_name, &options, graph)?;
     }
