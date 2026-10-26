@@ -9,7 +9,9 @@ EOF
 
 assert_not_contains "mise doctor 2>&1 || true" "tool dummy@1.0.0 is not installed"
 assert_contains "mise doctor 2>&1 || true" "(lazy)"
-assert_not_contains "mise doctor --json 2>&1 || true" "is not installed"
+doctor_json=$(mise doctor --json 2>/dev/null || true)
+assert_not_contains_text "$doctor_json" "is not installed"
+assert "echo '$doctor_json' | jq -c '.toolset.dummy[0] | [.missing, .lazy]'" "[true,true]"
 
 # Ordinary missing tools are still reported.
 cat >mise.toml <<'EOF'
