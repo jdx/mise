@@ -555,6 +555,10 @@ $EDITOR ~/.config/starship.toml
 mise dot add ~/.config/starship.toml
 ```
 
+`mise dot add` refuses to capture a `template` target, because the rendered file
+would replace the template code in the source, and any `exec()` output with it;
+edit the source instead. `--force` overwrites the source anyway.
+
 `mise dot add --changed` updates the sources of every changed regular file
 managed in `copy` mode, including the files a copy-mode
 [group](/dotfiles/groups.html) discovers in its tree. Each file's config must
