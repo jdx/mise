@@ -1155,8 +1155,9 @@ impl Config {
                     .iter()
                     .filter(|r| path.starts_with(r))
                     .max_by_key(|r| r.components().count());
-                let is_ancestor =
-                    owner.is_some_and(|owner| *owner != root && root.starts_with(owner));
+                let is_ancestor = owner
+                    .is_some_and(|owner| *owner != root && root.starts_with(owner))
+                    && root.starts_with(cf.config_root());
                 if is_base || is_ancestor {
                     root_config_files
                         .entry(path.clone())

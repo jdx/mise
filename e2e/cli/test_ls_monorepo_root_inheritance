@@ -31,3 +31,12 @@ TOML
 # the empty child inherits the root's pin, not the global one; the sibling's
 # override still contributes its own version
 assert "cd monorepo && mise ls --current --monorepo tiny --json | jq -r '[.[].version] | sort | join(\",\")'" "2.1.0,3.1.0"
+
+# an undeclared directory under the root is not an ancestor of child, so its
+# config must not leak into child's hierarchy
+mkdir -p monorepo/scratch
+cat >monorepo/scratch/mise.toml <<'TOML'
+[tools]
+tiny = "3.0.1"
+TOML
+assert "cd monorepo/scratch && mise ls --current --monorepo tiny --json | jq -r '[.[].version] | sort | join(\",\")'" "2.1.0,3.1.0"
