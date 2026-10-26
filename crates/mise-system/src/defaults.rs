@@ -114,8 +114,7 @@ impl DefaultsValue {
         }
     }
 
-    #[cfg(any(target_os = "macos", test))]
-    fn to_plist(&self) -> plist::Value {
+    pub(crate) fn to_plist(&self) -> plist::Value {
         match self {
             Self::Bool(value) => plist::Value::Boolean(*value),
             Self::Int(value) => plist::Value::Integer((*value).into()),

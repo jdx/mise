@@ -14,7 +14,7 @@ it into your login session.
 To run one program in the background on macOS, Linux, and Windows from a
 single declaration, use a [user service](/bootstrap/services.html#user-services)
 instead. Use a LaunchAgent when you need launchd features such as calendar
-schedules, queue directories, or a process type. A name cannot be declared in
+schedules, launch events, queue directories, or a process type. A name cannot be declared in
 both places, because both write the same plist.
 
 ## Example
@@ -73,6 +73,32 @@ This runs at 03:00 every day and at 12:00 on Mondays. If you set both
 `queue_directories` starts the agent whenever one of the listed directories is
 not empty, and launchd expects the agent to empty them. Each entry must be an
 absolute path, `~`, or a path starting with `~/`.
+
+## Start on launch events
+
+`launch_events` writes launchd's `LaunchEvents` dictionary. Nest tables by
+event stream, then by a name you choose for the event. Properties inside each
+event use launchd's original, case-sensitive names:
+
+```toml
+[bootstrap.macos.launchd.agents.usb-handler]
+program = "~/.local/bin/device-handler"
+
+[bootstrap.macos.launchd.agents.usb-handler.launch_events."com.apple.iokit.matching".apple-usb]
+IOProviderClass = "IOUSBHostDevice"
+idVendor = 1452
+IOMatchLaunchStream = true
+```
+
+This subscribes to matching Apple USB devices. The program must consume the
+event stream using `xpc_set_event_stream_handler`; `LaunchEvents` is not a
+general-purpose way to run an arbitrary command on a notification. Use a
+handler that supports the selected stream.
+
+Event properties preserve strings, booleans, integers, reals, arrays, and
+nested tables. TOML datetime values are not supported. Quote stream names
+containing dots so TOML treats each as one key. String values support templates,
+but `~` in event properties is passed through unchanged.
 
 ## Keep a program running
 
@@ -178,24 +204,25 @@ Unloading stops the agent's running process.
 
 ## Reference
 
-| Key                       | plist key                                | Notes                                                                     |
-| ------------------------- | ---------------------------------------- | ------------------------------------------------------------------------- |
-| `program`                 | `ProgramArguments[0]`                    | Required; `~` expanded                                                    |
-| `args`                    | `ProgramArguments[1..]`                  | Passed as written                                                         |
-| `run_at_load`             | `RunAtLoad`                              | Start when loaded                                                         |
-| `keep_alive`              | `KeepAlive`                              | Restart after any exit                                                    |
-| `keep_alive_on_failure`   | `KeepAlive = { SuccessfulExit = false }` | Restart after a failure; not with `keep_alive`                            |
-| `start_interval`          | `StartInterval`                          | Seconds                                                                   |
-| `start_calendar_interval` | `StartCalendarInterval`                  | Table or array of tables with `minute`, `hour`, `day`, `weekday`, `month` |
-| `queue_directories`       | `QueueDirectories`                       | Absolute paths or `~/` paths                                              |
-| `throttle_interval`       | `ThrottleInterval`                       | Minimum seconds between launches                                          |
-| `process_type`            | `ProcessType`                            | `Background`, `Standard`, `Adaptive`, or `Interactive`                    |
-| `nice`                    | `Nice`                                   | -20 to 20                                                                 |
-| `environment`             | `EnvironmentVariables`                   | Table of variables                                                        |
-| `working_directory`       | `WorkingDirectory`                       | `~` expanded                                                              |
-| `stdout_path`             | `StandardOutPath`                        | `~` expanded                                                              |
-| `stderr_path`             | `StandardErrorPath`                      | `~` expanded                                                              |
-| `kickstart`               | Not written to the plist                 | Run `launchctl kickstart` after loading                                   |
+| Key                       | plist key                                | Notes                                                                      |
+| ------------------------- | ---------------------------------------- | -------------------------------------------------------------------------- |
+| `program`                 | `ProgramArguments[0]`                    | Required; `~` expanded                                                     |
+| `args`                    | `ProgramArguments[1..]`                  | Passed as written                                                          |
+| `run_at_load`             | `RunAtLoad`                              | Start when loaded                                                          |
+| `keep_alive`              | `KeepAlive`                              | Restart after any exit                                                     |
+| `keep_alive_on_failure`   | `KeepAlive = { SuccessfulExit = false }` | Restart after a failure; not with `keep_alive`                             |
+| `start_interval`          | `StartInterval`                          | Seconds                                                                    |
+| `start_calendar_interval` | `StartCalendarInterval`                  | Table or array of tables with `minute`, `hour`, `day`, `weekday`, `month`  |
+| `queue_directories`       | `QueueDirectories`                       | Absolute paths or `~/` paths                                               |
+| `launch_events`           | `LaunchEvents`                           | Tables keyed by stream and event name; properties keep their original case |
+| `throttle_interval`       | `ThrottleInterval`                       | Minimum seconds between launches                                           |
+| `process_type`            | `ProcessType`                            | `Background`, `Standard`, `Adaptive`, or `Interactive`                     |
+| `nice`                    | `Nice`                                   | -20 to 20                                                                  |
+| `environment`             | `EnvironmentVariables`                   | Table of variables                                                         |
+| `working_directory`       | `WorkingDirectory`                       | `~` expanded                                                               |
+| `stdout_path`             | `StandardOutPath`                        | `~` expanded                                                               |
+| `stderr_path`             | `StandardErrorPath`                      | `~` expanded                                                               |
+| `kickstart`               | Not written to the plist                 | Run `launchctl kickstart` after loading                                    |
 
 Agent names may contain letters, numbers, `.`, `_`, and `-`. Each agent's label
 is `dev.mise.<name>`.

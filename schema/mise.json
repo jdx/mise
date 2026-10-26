@@ -8907,6 +8907,19 @@
                           "pattern": "^(?:/|~$|~/|\\{[{%])"
                         }
                       },
+                      "launch_events": {
+                        "type": "object",
+                        "description": "write LaunchEvents, keyed by event stream, then event name, with launchd's case-sensitive property names",
+                        "additionalProperties": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "$ref": "#/$defs/macos_defaults_value"
+                            }
+                          }
+                        }
+                      },
                       "environment": {
                         "type": "object",
                         "description": "environment variables for EnvironmentVariables",
