@@ -717,12 +717,30 @@ pub fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     // a deselected group is kept, disabled, out of the conflict checks: only
     // the groups a machine applies have to agree with each other
     let mut deselected = vec![];
-    for config_files in config.bootstrap_config_maps() {
-        for mut request in
-            files_from_config_files_with_tracking_roots(&config_files, Some(&trusted_roots))
+    let maps = config.bootstrap_config_maps();
+    let mut layers = maps
+        .iter()
+        .map(|config_files| {
+            files_from_config_files_with_tracking_roots(config_files, Some(&trusted_roots))
                 .into_iter()
-                .chain(crate::dotfile_groups::group_requests(&config_files))
-        {
+                .chain(crate::dotfile_groups::group_requests(config_files))
+                .collect_vec()
+        })
+        .collect_vec();
+    if let Some(selection) = &selection {
+        let declared = maps
+            .iter()
+            .flat_map(crate::dotfile_groups::declared_names)
+            .collect::<HashSet<_>>();
+        let implicit = crate::dotfile_groups::implicit_group_requests(
+            &config.config_files(),
+            selection,
+            &declared,
+        );
+        layers.push(implicit);
+    }
+    for layer in layers {
+        for mut request in layer {
             if !crate::dotfile_groups::is_selected(&request, selection.as_deref()) {
                 request.enabled = false;
                 deselected.push(request);
@@ -2819,6 +2837,91 @@ fn points_at_same_file(target: &Path, source: &Path) -> bool {
     }
 }
 
+/// Directory links at or beneath a symlink-each entry's target that resolve
+/// into the entry's own source tree, outermost first. GNU Stow leaves these
+/// when it folds a directory: `~/.config/kitty -> <package>/.config/kitty`.
+/// Each is paired with whether it reaches the source directory at its own
+/// place in the tree, which apply replaces with a real directory of links
+/// (as Stow unfolds). Writing a link through one would replace the source
+/// file it reaches with a link to itself.
+fn folded_source_links(req: &FileRequest) -> Result<Vec<(PathBuf, bool)>> {
+    let Ok(source_root) = dunce::canonicalize(&req.source) else {
+        return Ok(vec![]);
+    };
+    let mut seen = HashSet::new();
+    let mut found: Vec<(PathBuf, bool)> = vec![];
+    for (source, target) in walk_source_files(req)? {
+        // the source path has as many components as the target path beneath
+        // the entry (dot_prefix renames, never adds or drops one)
+        for (target_dir, source_dir) in target.ancestors().zip(source.ancestors()).skip(1) {
+            if !target_dir.starts_with(&req.target) || !seen.insert(target_dir.to_path_buf()) {
+                break;
+            }
+            if file::is_symlink_or_junction(target_dir)
+                && let Ok(resolved) = dunce::canonicalize(target_dir)
+                && resolved.starts_with(&source_root)
+            {
+                let at_its_place = dunce::canonicalize(source_dir).is_ok_and(|dir| dir == resolved);
+                found.push((target_dir.to_path_buf(), at_its_place));
+            }
+            if target_dir == req.target {
+                break;
+            }
+        }
+    }
+    // a link beneath another one is reached through it, and goes with it
+    found.sort();
+    let mut outermost: Vec<(PathBuf, bool)> = vec![];
+    for (link, at_its_place) in found {
+        if !outermost.iter().any(|(outer, _)| link.starts_with(outer)) {
+            outermost.push((link, at_its_place));
+        }
+    }
+    Ok(outermost)
+}
+
+/// Replaces each folded link to `req`'s source with an empty directory, each
+/// journaled as a step of its own before the entry's: the step ends with the
+/// directory still empty, so recovery can always put the link back, and the
+/// links the entry then writes into it are journaled with the entry.
+fn unfold_source_links(req: &FileRequest, written: &mut Vec<PathBuf>) -> Result<()> {
+    let folded = folded_source_links(req)?;
+    misplaced_source_link(req, &folded)?;
+    // a link Windows refuses must fail the entry while the folded link
+    // still shows the application its configuration
+    if !folded.is_empty()
+        && windows_symlinks()
+        && let Some((source, _)) = walk_source_files(req)?
+            .into_iter()
+            .find(|(source, _)| source.is_file())
+    {
+        ensure_windows_link_possible(&source, &req.target)?;
+    }
+    for (link, _) in folded {
+        let item = link.display_user().to_string();
+        let pending =
+            journal::begin_changes_with(DOTFILES_PART, &item, vec![(link.clone(), Capture::Full)])?;
+        file::remove_symlink_or_junction(&link)?;
+        file::create_dir_all(&link)?;
+        written.push(link);
+        journal::commit_changes(pending);
+    }
+    Ok(())
+}
+
+/// A folded link that reaches the source somewhere other than its own place
+/// would make apply rewrite source files, so it is never `--force`-able.
+fn misplaced_source_link(req: &FileRequest, links: &[(PathBuf, bool)]) -> Result<()> {
+    if let Some((link, _)) = links.iter().find(|(_, at_its_place)| !at_its_place) {
+        bail!(
+            "{} is a link into {}, but not to the directory that belongs there; remove it so mise can link the files beneath it",
+            link.display_user(),
+            req.source.display_user()
+        );
+    }
+    Ok(())
+}
+
 fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
     if !req.source.is_dir() {
         // callers add the entry's context (status row / apply error list)
@@ -2826,6 +2929,14 @@ fn check_symlink_each(req: &FileRequest) -> Result<FileState> {
             "mode symlink-each requires the source to be a directory: {}",
             req.source.display_user()
         );
+    }
+    let folded = folded_source_links(req)?;
+    misplaced_source_link(req, &folded)?;
+    if let Some((link, _)) = folded.first() {
+        return Ok(FileState::Differs(format!(
+            "{} is a link to its source directory; apply replaces it with a directory of links",
+            link.display_user()
+        )));
     }
     let stale = stale_links(req)?;
     let stale_reason = || format!("{} stale link(s)", stale.len());
@@ -4528,6 +4639,9 @@ pub fn execute_apply(
         for (req, rendered) in &plan.todo {
             current = Some((*req, written.len()));
             recheck_removal(req, rendered.as_deref(), opts.force)?;
+            if req.mode == FileMode::SymlinkEach {
+                unfold_source_links(req, written)?;
+            }
             let pending =
                 journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
             apply_one(req, rendered.as_deref(), written)?;
@@ -5415,7 +5529,13 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
                     out.push(dir);
                 }
             }
+            // a file seen through a folded link is the source itself, and
+            // apply unfolds the link before it links anything there
+            let folded = folded_source_links(req)?;
             for (_source, target) in walk_source_files(req)? {
+                if folded.iter().any(|(link, _)| target.starts_with(link)) {
+                    continue;
+                }
                 if file_link_conflicts(&target)? {
                     out.push(target);
                 }
@@ -6040,6 +6160,17 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
                     .find(|(source, _)| source.is_file())
             {
                 ensure_windows_link_possible(&source, &req.target)?;
+            }
+            // `unfold_source_links` has replaced every folded link by now; a
+            // link written beneath one that remained would land in the source
+            let folded = folded_source_links(req)?;
+            misplaced_source_link(req, &folded)?;
+            if let Some((link, _)) = folded.first() {
+                bail!(
+                    "{} still links into {}; refusing to write through it",
+                    link.display_user(),
+                    req.source.display_user()
+                );
             }
             // conflicts were vetted (or --force given): clear anything
             // blocking a directory we need

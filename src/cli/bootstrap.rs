@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 
@@ -89,6 +89,10 @@ use crate::ui::table::MiseTable;
         help = "Do the same and also load the project's mise.work.toml"
     ),
     example(
+        "mise bootstrap --from https://github.com/example/dotfiles.git --from-dir ~/.dotfiles --config-dir .config/mise",
+        help = "Clone a dotfiles repository and link ~/.config/mise to its .config/mise"
+    ),
+    example(
         "mise bootstrap --adopt example/mise-config",
         help = "Clone global config into ~/.config/mise, then apply it"
     ),
@@ -143,6 +147,19 @@ pub(crate) struct Bootstrap {
     /// Directory for the `--from` checkout (default: `$MISE_DATA_DIR/bootstrap-repo`)
     #[usage(long, value_name = "DIR", requires = "from")]
     from_dir: Option<PathBuf>,
+
+    /// Link the global config directory to this directory of the `--from` checkout
+    ///
+    /// mise links its config directory, normally ~/.config/mise, to the
+    /// directory, then bootstraps from it, so its `config.toml`,
+    /// `config.<env>.toml`, `conf.d/`, and `miserc.toml` are the global config
+    /// from this run on. The directory must exist in the checkout, and the
+    /// path to it is relative to the checkout and must stay inside it; `.` is
+    /// the checkout itself. mise's config directory, where the link goes,
+    /// must be missing, empty, or already this link. See
+    /// https://mise.jdx.dev/bootstrap/from-repository.html#global-config-elsewhere.
+    #[usage(long, value_name = "DIR", requires = "from")]
+    config_dir: Option<PathBuf>,
 
     /// Show what would change without changing anything
     ///
@@ -2525,6 +2542,9 @@ impl Bootstrap {
             }
             None => (None, None),
         };
+        if let Some(dir) = self.config_dir.as_deref() {
+            validate_config_dir_arg(dir)?;
+        }
         if let Some(url) = expanded.as_deref() {
             system::git_prerequisites::ensure(url, self.yes, self.dry_run).await?;
             if let Some(branch) = adopt_branch.as_deref() {
@@ -2654,29 +2674,43 @@ impl Bootstrap {
             &checkout,
             &crate::env::ARGS.read().unwrap(),
         ));
+        if let Some(dir) = self.config_dir.as_deref() {
+            let selected = checkout_config_dir(&checkout, dir)?;
+            // a dry run changes nothing, so it previews from the directory itself
+            let config_dir = if self.dry_run {
+                selected
+            } else {
+                link_config_dir(&selected)?
+            };
+            command.env("MISE_CONFIG_DIR", config_dir);
+            // MISE_GLOBAL_CONFIG_FILE, or its MISE_CONFIG_FILE fallback, would
+            // make one file the whole global config, skipping the directory's
+            // conf.d/ and config.<env>.toml
+            command.env_remove("MISE_GLOBAL_CONFIG_FILE");
+            command.env_remove("MISE_CONFIG_FILE");
+        }
         if self.adopt.is_some() {
-            if self.dry_run {
-                command.env("MISE_CONFIG_DIR", &checkout);
-                let name = crate::env::MISE_GLOBAL_CONFIG_FILE
-                    .as_deref()
-                    .and_then(Path::file_name)
-                    .unwrap_or(std::ffi::OsStr::new("config.toml"));
-                command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(name));
+            // a dry run previews from `checkout` itself, which may be a staged
+            // copy of a setup repository's configuration
+            let config_dir = if self.dry_run {
+                checkout.clone()
             } else {
                 let config_dir = crate::env::MISE_CONFIG_DIR.as_path();
-                let config_dir = if config_dir.is_absolute() {
+                if config_dir.is_absolute() {
                     config_dir.to_path_buf()
                 } else {
                     std::env::current_dir()?.join(config_dir)
-                };
-                command.env("MISE_CONFIG_DIR", config_dir);
-
-                if let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
-                    .as_deref()
-                    .and_then(Path::file_name)
-                {
-                    command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
                 }
+            };
+            command.env("MISE_CONFIG_DIR", config_dir);
+
+            // only a global config file the user chose: setting one otherwise
+            // would hide the directory's conf.d/ and config.<env>.toml
+            if let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
+                .as_deref()
+                .and_then(Path::file_name)
+            {
+                command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
             }
         }
 
@@ -2854,12 +2888,13 @@ fn bootstrap_from_child_args(checkout: &Path, args: &[String]) -> Vec<OsString> 
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--replace-history" | "--take-remote-all" => {}
-            "--from" | "--adopt" | "--from-dir" | "--cd" | "-C" => {
+            "--from" | "--adopt" | "--from-dir" | "--config-dir" | "--cd" | "-C" => {
                 args.next();
             }
             _ if arg.starts_with("--from=")
                 || arg.starts_with("--adopt=")
                 || arg.starts_with("--from-dir=")
+                || arg.starts_with("--config-dir=")
                 || arg.starts_with("--cd=")
                 || arg.starts_with("-C") && arg.len() > 2 => {}
             _ => {
@@ -2873,6 +2908,97 @@ fn bootstrap_from_child_args(checkout: &Path, args: &[String]) -> Vec<OsString> 
         }
     }
     forwarded
+}
+
+/// `--config-dir` names a directory of the checkout, so it must be relative and
+/// never climb out of it. Checked before cloning, so a typo costs no clone.
+fn validate_config_dir_arg(dir: &Path) -> Result<()> {
+    let inside = dir
+        .components()
+        .all(|component| matches!(component, Component::Normal(_) | Component::CurDir));
+    if !inside {
+        bail!(
+            "--config-dir {} must be a path inside the checkout, relative to it",
+            dir.display()
+        );
+    }
+    Ok(())
+}
+
+/// The global config directory `--config-dir` selects in `checkout`. A symlink
+/// inside the repository must not point the global config outside it.
+fn checkout_config_dir(checkout: &Path, dir: &Path) -> Result<PathBuf> {
+    let joined = checkout.join(dir);
+    if !joined.is_dir() {
+        bail!(
+            "--config-dir {} is not a directory in the checkout {}",
+            dir.display(),
+            checkout.display()
+        );
+    }
+    let resolved = dunce::canonicalize(&joined)?;
+    if !resolved.starts_with(checkout) {
+        bail!(
+            "--config-dir {} resolves to {}, outside the checkout {}",
+            dir.display(),
+            resolved.display(),
+            checkout.display()
+        );
+    }
+    Ok(resolved)
+}
+
+/// Links mise's config directory to `selected`, as `--adopt` clones into it,
+/// so this bootstrap and every later command read it there, and
+/// `{{ mise_config_dir }}` names the same place on every run. Whatever is
+/// there already must be missing, an empty directory, or this link; anything
+/// else is left alone.
+fn link_config_dir(selected: &Path) -> Result<PathBuf> {
+    let link = dirs::CONFIG.to_path_buf();
+    let link = if link.is_absolute() {
+        link
+    } else {
+        std::env::current_dir()?.join(link)
+    };
+    if crate::file::is_symlink_or_junction(&link) {
+        if dunce::canonicalize(&link).is_ok_and(|resolved| resolved == selected) {
+            return Ok(link);
+        }
+        bail!(
+            "{} is already a link; remove it to use --config-dir {}",
+            link.display_user(),
+            selected.display_user()
+        );
+    }
+    match link.read_dir() {
+        Ok(mut entries) => {
+            if entries.next().is_some() {
+                bail!(
+                    "{} already holds a global config; move it aside to use --config-dir {}",
+                    link.display_user(),
+                    selected.display_user()
+                );
+            }
+            std::fs::remove_dir(&link)?;
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) if link.exists() => bail!(
+            "{} is not a directory; move it aside to use --config-dir {}",
+            link.display_user(),
+            selected.display_user()
+        ),
+        Err(err) => return Err(err.into()),
+    }
+    if let Some(parent) = link.parent() {
+        crate::file::create_dir_all(parent)?;
+    }
+    crate::file::make_dir_link(selected, &link)?;
+    info!(
+        "bootstrap: linked {} to {}",
+        link.display_user(),
+        selected.display_user()
+    );
+    Ok(link)
 }
 
 /// Re-run this invocation with `environments` selected, preserving every other
@@ -6268,6 +6394,7 @@ mod tests {
 
     use super::{
         bootstrap_from_child_args, parse_adopt_source, select_remote_inventory, unapply_child_args,
+        validate_config_dir_arg,
     };
     use crate::cli::{Cli, Commands};
     use crate::system::remote;
@@ -6548,6 +6675,9 @@ mod tests {
             "--adopt=git@example.com:dotfiles.git",
             "--from-dir",
             "/old-checkout",
+            "--config-dir",
+            "mise",
+            "--config-dir=other",
             "--yes",
             "--only",
             "dotfiles",
@@ -6569,6 +6699,16 @@ mod tests {
             ]
             .map(OsString::from)
         );
+    }
+
+    #[test]
+    fn config_dir_must_stay_inside_the_checkout() {
+        for dir in [".", "mise", "dotfiles/Mise/.config/mise", "./mise"] {
+            assert!(validate_config_dir_arg(Path::new(dir)).is_ok(), "{dir}");
+        }
+        for dir in ["..", "../mise", "mise/../..", "/etc/mise"] {
+            assert!(validate_config_dir_arg(Path::new(dir)).is_err(), "{dir}");
+        }
     }
 
     #[test]

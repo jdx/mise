@@ -599,6 +599,14 @@ The replaced versions are saved first, so `mise dot undo` restores them.
     flag --from-dir help="Directory for the `--from` checkout (default: `$MISE_DATA_DIR/bootstrap-repo`)" requires=--from {
         arg <DIR>
     }
+    flag --config-dir help="Link the global config directory to this directory of the `--from` checkout" requires=--from {
+        long_help #"""
+Link the global config directory to this directory of the `--from` checkout
+
+mise links its config directory, normally ~/.config/mise, to the directory, then bootstraps from it, so its `config.toml`, `config.<env>.toml`, `conf.d/`, and `miserc.toml` are the global config from this run on. The directory must exist in the checkout, and the path to it is relative to the checkout and must stay inside it; `.` is the checkout itself. mise's config directory, where the link goes, must be missing, empty, or already this link. See https://mise.jdx.dev/bootstrap/from-repository.html#global-config-elsewhere.
+"""#
+        arg <DIR>
+    }
     flag "-n --dry-run" help="Show what would change without changing anything" {
         long_help #"""
 Show what would change without changing anything
@@ -2368,6 +2376,7 @@ future logins, not to the shell running this command.
     example "mise bootstrap --force-dotfiles" help="Replace files that conflict with whole-file dotfile entries"
     example "mise bootstrap --from git@github.com:example/workstation.git" help="Clone a bootstrap project and apply it"
     example "mise -E work bootstrap --from git@github.com:example/workstation.git" help="Do the same and also load the project's mise.work.toml"
+    example "mise bootstrap --from https://github.com/example/dotfiles.git --from-dir ~/.dotfiles --config-dir .config/mise" help="Clone a dotfiles repository and link ~/.config/mise to its .config/mise"
     example "mise bootstrap --adopt example/mise-config" help="Clone global config into ~/.config/mise, then apply it"
     example "mise bootstrap --adopt example/setup --replace-history --yes" help="Use a setup repository's dotfile history instead of this machine's"
     example "mise bootstrap --update" help="Refresh package metadata and fast-forward repositories first"
