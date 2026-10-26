@@ -1796,7 +1796,31 @@ impl HistoryRepo {
                 .index_file(index)
                 .stdin(&info),
         )?;
-        self.output_str(PlumbingCall::new(["write-tree"]).index_file(index))
+        self.write_tree_retrying(index)
+    }
+
+    /// `git write-tree` over `index`, tried again when Windows refuses a loose
+    /// object write.
+    ///
+    /// **Two writers of one object collide on Windows.** Composing trees at
+    /// the same time writes the same blobs and subtrees, and Git cannot
+    /// replace a loose object another process holds open, so it fails with
+    /// `Permission denied`. The object is then written by the other process,
+    /// and a second attempt finds it already there.
+    fn write_tree_retrying(&self, index: &Path) -> Result<String> {
+        const ATTEMPTS: u32 = 5;
+        let mut attempt = 1;
+        loop {
+            match self.output_str(PlumbingCall::new(["write-tree"]).index_file(index)) {
+                Err(err)
+                    if attempt < ATTEMPTS && format!("{err:#}").contains("Permission denied") =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(25 * u64::from(attempt)));
+                    attempt += 1;
+                }
+                result => return result,
+            }
+        }
     }
 
     /// [`Self::compose`] as Git applies it, one overlay at a time: the
