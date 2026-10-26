@@ -3594,10 +3594,15 @@ fn warn_if_template_target_edited(req: &FileRequest) {
     if req.target.is_symlink() || !req.target.is_file() {
         return;
     }
-    let Ok(current) = file::read_to_string(&req.target) else {
+    let Ok(bytes) = file::read(&req.target) else {
         return;
     };
-    if content_digest(&current) != recorded {
+    // what mise wrote was a string, so bytes that are not UTF-8 are an edit
+    let edited = match String::from_utf8(bytes) {
+        Ok(current) => content_digest(&current) != recorded,
+        Err(_) => true,
+    };
+    if edited {
         warn!(
             "files: {} was edited since mise last wrote it; applying overwrites the edit. Move it into {} to keep it",
             req.target.display_user(),

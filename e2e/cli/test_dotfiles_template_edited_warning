@@ -27,3 +27,8 @@ cat <<EOT >>mise.toml
 EOT
 assert_not_contains "mise dot apply --yes 2>&1" "was edited since"
 assert "cat $HOME/.preexisting" "name=other"
+
+# Bytes that are not UTF-8 are an edit too.
+echo 'name={{ "four" }}' >tmpl
+printf '\xff' >>"$HOME/.rendered"
+assert_contains "mise dot apply --yes 2>&1" "was edited since mise last wrote it"
