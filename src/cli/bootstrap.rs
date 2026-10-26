@@ -2674,10 +2674,12 @@ impl Bootstrap {
             &crate::env::ARGS.read().unwrap(),
         ));
         if let Some(dir) = self.config_dir.as_deref() {
-            // MISE_GLOBAL_CONFIG_FILE would make that one file the whole global
-            // config, skipping the directory's conf.d/ and config.<env>.toml
+            // MISE_GLOBAL_CONFIG_FILE, or its MISE_CONFIG_FILE fallback, would
+            // make one file the whole global config, skipping the directory's
+            // conf.d/ and config.<env>.toml
             command.env("MISE_CONFIG_DIR", checkout_config_dir(&checkout, dir)?);
             command.env_remove("MISE_GLOBAL_CONFIG_FILE");
+            command.env_remove("MISE_CONFIG_FILE");
         }
         if self.adopt.is_some() {
             // a dry run previews from `checkout` itself, which may be a staged

@@ -46,9 +46,9 @@ rmdir "$MISE_CONFIG_DIR"
 
 # The first run reads the directory as global config: its miserc.toml selects
 # the work environment, and its conf.d fragments load. An inherited
-# MISE_GLOBAL_CONFIG_FILE would narrow global config to one file, so the
-# selected directory replaces it.
-assert_succeed "MISE_GLOBAL_CONFIG_FILE='$HOME/elsewhere.toml' mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir setup/mise --yes --only dotfiles"
+# MISE_GLOBAL_CONFIG_FILE or MISE_CONFIG_FILE would narrow global config to
+# one file, so the selected directory replaces both.
+assert_succeed "MISE_GLOBAL_CONFIG_FILE='$HOME/elsewhere.toml' MISE_CONFIG_FILE='$HOME/other.toml' mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir setup/mise --yes --only dotfiles"
 assert "readlink '$MISE_CONFIG_DIR'" "$checkout/setup/mise"
 assert "cat ~/.config/kitty/kitty.conf" "font_size 12"
 assert "cat ~/.work-marker" "work"
