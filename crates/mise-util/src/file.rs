@@ -3002,21 +3002,25 @@ pub fn rebase_guest_rootfs_absolute_symlinks(root: &Path) -> Result<()> {
             } else if kind.is_symlink() {
                 let target = fs::read_link(&path)?;
                 if target.is_absolute() {
-                    let target = target.strip_prefix(Path::new("/")).unwrap();
-                    let target = target.to_str().ok_or_else(|| {
-                        eyre::eyre!(
-                            "absolute symlink target is not valid UTF-8: {}",
-                            path.display()
-                        )
-                    })?;
-                    if !is_safe_relative_path(target) {
-                        bail!(
-                            "absolute symlink target escapes guest rootfs: {} -> /{}",
-                            display_path(&path),
-                            target
-                        );
-                    }
-                    let replacement = relative_path(path.parent().unwrap(), &root.join(target));
+                    let replacement = if target == Path::new("/") {
+                        relative_path(path.parent().unwrap(), root)
+                    } else {
+                        let target = target.strip_prefix(Path::new("/")).unwrap();
+                        let target = target.to_str().ok_or_else(|| {
+                            eyre::eyre!(
+                                "absolute symlink target is not valid UTF-8: {}",
+                                path.display()
+                            )
+                        })?;
+                        if !is_safe_relative_path(target) {
+                            bail!(
+                                "absolute symlink target escapes guest rootfs: {} -> /{}",
+                                display_path(&path),
+                                target
+                            );
+                        }
+                        relative_path(path.parent().unwrap(), &root.join(target))
+                    };
                     make_symlink(&replacement, &path)?;
                 }
             }

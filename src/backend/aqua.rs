@@ -3922,9 +3922,7 @@ impl AquaBackend {
         }
         for entry in fs::read_dir(install_path)? {
             let entry = entry?;
-            if !fs::symlink_metadata(entry.path())
-                .is_ok_and(|metadata| metadata.file_type().is_dir())
-            {
+            if !entry.file_type()?.is_dir() {
                 continue;
             }
             let rootfs = entry.path().join("agent-rootfs");

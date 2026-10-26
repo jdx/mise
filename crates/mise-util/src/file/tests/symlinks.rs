@@ -290,6 +290,23 @@ fn test_rebase_guest_rootfs_absolute_symlinks_rebases_owning_directory_to_dot() 
 
 #[cfg(unix)]
 #[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_rebases_guest_root_to_dot() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    let rootfs = root.join("agent-rootfs");
+    fs::create_dir_all(&rootfs).unwrap();
+    symlink("/", rootfs.join("root")).unwrap();
+
+    rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
+
+    assert_eq!(fs::read_link(rootfs.join("root")).unwrap(), PathBuf::from("."));
+    ensure_symlinks_stay_within(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
 fn test_rebase_guest_rootfs_absolute_symlinks_leaves_chained_escapes_for_containment_check() {
     use std::os::unix::fs::symlink;
 
