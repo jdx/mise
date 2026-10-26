@@ -1,5 +1,92 @@
 # Changelog
 
+## [2026.10.20](https://github.com/jdx/mise/releases/tag/v2026.10.20) - 2026-10-26
+
+### 🚀 Features
+
+- **(bootstrap)** let Homebrew upgrade casks mise installs by @jdx in [#14929](https://github.com/jdx/mise/pull/14929)
+- **(bootstrap)** manage existing systemd user units from bootstrap.services by @jdx in [#14980](https://github.com/jdx/mise/pull/14980)
+- **(bootstrap)** install Windows packages with Chocolatey by @jdx in [#14978](https://github.com/jdx/mise/pull/14978)
+- **(bootstrap)** support launchd launch events by @deecewan in [#14992](https://github.com/jdx/mise/pull/14992)
+- **(completion)** add nushell support to mise completion by @jdx in [#14999](https://github.com/jdx/mise/pull/14999)
+- **(dotfiles)** render templates in dotfiles.root by @jdx in [#14969](https://github.com/jdx/mise/pull/14969)
+- **(github)** add version_regex to list only matching release tags by @jdx in [#14984](https://github.com/jdx/mise/pull/14984)
+
+### 🐛 Bug Fixes
+
+- **(backends)** name --global in the switch warning for global lock entries by @jdx in [#14976](https://github.com/jdx/mise/pull/14976)
+- **(bootstrap)** find a just-installed git outside startup PATH by @pmmmwh in [#14919](https://github.com/jdx/mise/pull/14919)
+- **(bootstrap)** pin full container ids when hashing compose service references by @jdx in [#14958](https://github.com/jdx/mise/pull/14958)
+- **(bootstrap)** stage cask apps in a hidden directory by @jdx in [#15001](https://github.com/jdx/mise/pull/15001)
+- **(config)** warn about an ignored write_targets only when a write uses it by @jdx in [#14973](https://github.com/jdx/mise/pull/14973)
+- **(doctor)** accept any registry-listed backend for an explicit install by @jdx in [#14965](https://github.com/jdx/mise/pull/14965)
+- **(doctor)** color mise doctor project output by @jdx in [#14970](https://github.com/jdx/mise/pull/14970)
+- **(dot)** show the local history path in status and explain split track entries by @jdx in [#14979](https://github.com/jdx/mise/pull/14979)
+- **(dot)** resolve a relative dot add --source from the current directory by @jdx in [#14983](https://github.com/jdx/mise/pull/14983)
+- **(dot)** retry git write-tree when Windows refuses a loose object write by @jdx in [#15000](https://github.com/jdx/mise/pull/15000)
+- **(env)** avoid sops CLI recursion through mise shims by @shuaiyafei in [#14801](https://github.com/jdx/mise/pull/14801)
+- **(hook-env)** install error hooks before the hook-env fast path by @jdx in [#14963](https://github.com/jdx/mise/pull/14963)
+- **(http)** accept # comment lines in netrc files by @jdx in [#14964](https://github.com/jdx/mise/pull/14964)
+- **(http)** apply Tera filters to {{ version }} in tool option templates by @jdx in [#14967](https://github.com/jdx/mise/pull/14967)
+- **(lock)** keep npm sidecars in one place for a symlinked config dir by @jdx in [#14961](https://github.com/jdx/mise/pull/14961)
+- **(lock)** skip platforms excluded by a tool's os option by @jdx in [#14959](https://github.com/jdx/mise/pull/14959)
+- **(lock)** let mise lock add tools missing from the lockfile under tool_config.locked by @jdx in [#15003](https://github.com/jdx/mise/pull/15003)
+- **(npm)** skip the aube tree health walk in repeated hook-env runs on Windows by @jdx in [#14960](https://github.com/jdx/mise/pull/14960)
+- **(oci)** keep absolute symlink targets in system package layers by @jdx in [#14968](https://github.com/jdx/mise/pull/14968)
+- **(oci)** write aliased tools by their resolved backend in the image config by @jdx in [#14971](https://github.com/jdx/mise/pull/14971)
+- **(self-update)** leave WinGet-managed installs to winget by @jdx in [#14977](https://github.com/jdx/mise/pull/14977)
+- **(shim)** keep command wrappers in place during a concurrent reshim by @HackingGate in [#14931](https://github.com/jdx/mise/pull/14931)
+- **(task)** stop sibling tasks run through Git Bash when a task fails on Windows by @jdx in [#14966](https://github.com/jdx/mise/pull/14966)
+- **(vfox)** send PreInstall headers when locking downloads artifacts by @jdx in [#15002](https://github.com/jdx/mise/pull/15002)
+
+### 📚 Documentation
+
+- **(ide)** add mise-zed, and screenshots of mise-vscode and mise-zed by @hverlin in [#14988](https://github.com/jdx/mise/pull/14988)
+- **(templates)** list the settings that render templates by @jdx in [#15004](https://github.com/jdx/mise/pull/15004)
+- **(use)** explain that a bare tool reuses the newest installed version by @sahidvelji in [#14949](https://github.com/jdx/mise/pull/14949)
+
+### 📦️ Dependency Updates
+
+- update aube to v2.8.3 by @renovate[bot] in [#14957](https://github.com/jdx/mise/pull/14957)
+- update jdx crates to v7.1.2 by @renovate[bot] in [#14934](https://github.com/jdx/mise/pull/14934)
+- ignore zstd-safe 7 advisories from zstd 0.13 dependents by @jdx in [#15012](https://github.com/jdx/mise/pull/15012)
+
+### 📦 Registry
+
+- add packslip and aqua backends to jactionlint by @sahidvelji in [#14947](https://github.com/jdx/mise/pull/14947)
+
+### Security
+
+- **(config)** make elevate_with a global-only setting by @jdx in [#14972](https://github.com/jdx/mise/pull/14972)
+
+### New Contributors
+
+- @deecewan made their first contribution in [#14992](https://github.com/jdx/mise/pull/14992)
+- @HackingGate made their first contribution in [#14931](https://github.com/jdx/mise/pull/14931)
+- @shuaiyafei made their first contribution in [#14801](https://github.com/jdx/mise/pull/14801)
+- @sahidvelji made their first contribution in [#14949](https://github.com/jdx/mise/pull/14949)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (3)
+
+- [`glsec/glsec`](https://github.com/glsec/glsec)
+- [`home-operations/flate`](https://github.com/home-operations/flate)
+- [`yashikota/tlc-static`](https://github.com/yashikota/tlc-static)
+
+#### Updated Packages (10)
+
+- [`cloudposse/atmos`](https://github.com/cloudposse/atmos)
+- [`jdx/mise`](https://github.com/jdx/mise)
+- [`suzuki-shunsuke/ci-info`](https://github.com/suzuki-shunsuke/ci-info)
+- [`suzuki-shunsuke/cmdx`](https://github.com/suzuki-shunsuke/cmdx)
+- [`suzuki-shunsuke/disable-checkout-persist-credentials`](https://github.com/suzuki-shunsuke/disable-checkout-persist-credentials)
+- [`suzuki-shunsuke/ghalint`](https://github.com/suzuki-shunsuke/ghalint)
+- [`suzuki-shunsuke/ghatm`](https://github.com/suzuki-shunsuke/ghatm)
+- [`suzuki-shunsuke/ghomfc`](https://github.com/suzuki-shunsuke/ghomfc)
+- [`suzuki-shunsuke/mkghtag`](https://github.com/suzuki-shunsuke/mkghtag)
+- [`twpayne/chezmoi`](https://github.com/twpayne/chezmoi)
+
 ## [2026.10.19](https://github.com/jdx/mise/releases/tag/v2026.10.19) - 2026-10-24
 
 ### 🚀 Features
