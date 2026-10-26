@@ -52,6 +52,19 @@ assert_contains "mise dot status --json" '"group": "zsh"'
 assert_succeed "mise dot unapply --group zsh --yes"
 assert_fail "test -e $HOME/.zshrc"
 
+# A table that cannot be expanded still owns its name: the directory is not
+# deployed with defaults in its place.
+cat <<EOF >mise.toml
+[dotfile_groups.alacritty]
+root = "alacritty"
+mode = "symlinks"
+
+[bootstrap]
+dotfile_groups = ["kitty", "alacritty"]
+EOF
+assert_contains "mise dot apply --yes 2>&1" "ignoring group"
+assert_fail "test -e $HOME/.config/alacritty"
+
 # A name with neither a table nor a directory is still reported.
 cat <<EOF >mise.toml
 [bootstrap]

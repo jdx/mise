@@ -717,8 +717,8 @@ pub fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     // a deselected group is kept, disabled, out of the conflict checks: only
     // the groups a machine applies have to agree with each other
     let mut deselected = vec![];
-    let mut layers = config
-        .bootstrap_config_maps()
+    let maps = config.bootstrap_config_maps();
+    let mut layers = maps
         .iter()
         .map(|config_files| {
             files_from_config_files_with_tracking_roots(config_files, Some(&trusted_roots))
@@ -728,10 +728,9 @@ pub fn composed_files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
         })
         .collect_vec();
     if let Some(selection) = &selection {
-        let declared = layers
+        let declared = maps
             .iter()
-            .flatten()
-            .filter_map(|request| request.group.as_deref())
+            .flat_map(crate::dotfile_groups::declared_names)
             .collect::<HashSet<_>>();
         let implicit = crate::dotfile_groups::implicit_group_requests(
             &config.config_files(),
@@ -2881,6 +2880,25 @@ fn folded_source_links(req: &FileRequest) -> Result<Vec<(PathBuf, bool)>> {
     Ok(outermost)
 }
 
+/// Replaces each folded link to `req`'s source with an empty directory, each
+/// journaled as a step of its own before the entry's: the step ends with the
+/// directory still empty, so recovery can always put the link back, and the
+/// links the entry then writes into it are journaled with the entry.
+fn unfold_source_links(req: &FileRequest, written: &mut Vec<PathBuf>) -> Result<()> {
+    let folded = folded_source_links(req)?;
+    misplaced_source_link(req, &folded)?;
+    for (link, _) in folded {
+        let item = link.display_user().to_string();
+        let pending =
+            journal::begin_changes_with(DOTFILES_PART, &item, vec![(link.clone(), Capture::Full)])?;
+        file::remove_symlink_or_junction(&link)?;
+        file::create_dir_all(&link)?;
+        written.push(link);
+        journal::commit_changes(pending);
+    }
+    Ok(())
+}
+
 /// A folded link that reaches the source somewhere other than its own place
 /// would make apply rewrite source files, so it is never `--force`-able.
 fn misplaced_source_link(req: &FileRequest, links: &[(PathBuf, bool)]) -> Result<()> {
@@ -4579,6 +4597,9 @@ pub fn execute_apply(
         for (req, rendered) in &plan.todo {
             current = Some((*req, written.len()));
             recheck_removal(req, rendered.as_deref(), opts.force)?;
+            if req.mode == FileMode::SymlinkEach {
+                unfold_source_links(req, written)?;
+            }
             let pending =
                 journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
             apply_one(req, rendered.as_deref(), written)?;
@@ -5915,24 +5936,12 @@ fn touched_paths(req: &FileRequest) -> Result<Vec<(PathBuf, Capture)>> {
             }
         }
         FileMode::SymlinkEach => {
-            // a folded link apply unfolds is captured as the link it is, so
-            // recovery restores it; what lies beneath it is the source
-            let folded = folded_source_links(req)?;
-            let beneath_fold = |path: &Path| folded.iter().any(|(link, _)| path.starts_with(link));
-            for (link, _) in &folded {
-                paths.insert(link.clone(), Capture::Full);
-            }
             for dir in needed_dirs(req)? {
-                if beneath_fold(&dir) {
-                    continue;
-                }
                 let capture = dir_capture(&dir);
                 paths.insert(dir, capture);
             }
             for (_, target) in walk_source_files(req)? {
-                if !beneath_fold(&target) {
-                    paths.insert(target, Capture::Full);
-                }
+                paths.insert(target, Capture::Full);
             }
             let stale = stale_links(req)?;
             for path in &stale {
@@ -6110,16 +6119,16 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             {
                 ensure_windows_link_possible(&source, &req.target)?;
             }
-            // a folded link to the source becomes a real directory before
-            // any link is written beneath it, so none is written into the
-            // source; one pointing elsewhere in the source is refused even
-            // with --force
+            // `unfold_source_links` has replaced every folded link by now; a
+            // link written beneath one that remained would land in the source
             let folded = folded_source_links(req)?;
             misplaced_source_link(req, &folded)?;
-            for (link, _) in folded {
-                file::remove_symlink_or_junction(&link)?;
-                file::create_dir_all(&link)?;
-                written.push(link);
+            if let Some((link, _)) = folded.first() {
+                bail!(
+                    "{} still links into {}; refusing to write through it",
+                    link.display_user(),
+                    req.source.display_user()
+                );
             }
             // conflicts were vetted (or --force given): clear anything
             // blocking a directory we need

@@ -185,14 +185,25 @@ pub(crate) fn group_requests(config_files: &ConfigMap) -> Vec<FileRequest> {
     out
 }
 
+/// Every name a `[dotfile_groups]` table declares, including tables that
+/// fail to expand or expand to nothing.
+pub(crate) fn declared_names(config_files: &ConfigMap) -> Vec<String> {
+    config_files
+        .values()
+        .filter_map(|cf| cf.dotfile_groups_config())
+        .flat_map(|declared| declared.0.into_keys())
+        .collect()
+}
+
 /// Groups the selection names that no `[dotfile_groups]` table declares, but
 /// that name a directory under `dotfiles.root`: like a Stow package, each
 /// deploys that directory into `~` file by file, with no table to write.
-/// `declared` holds the names the tables declare; a table always wins.
+/// `declared` holds the names the tables declare; a table always wins, even
+/// a broken one, so a typo in it never deploys the directory with defaults.
 pub(crate) fn implicit_group_requests(
     config_files: &ConfigMap,
     selection: &[String],
-    declared: &HashSet<&str>,
+    declared: &HashSet<String>,
 ) -> Vec<FileRequest> {
     // the file whose list selected them owns the groups they become
     let Some((path, cf)) = config_files.iter().find(|(_, cf)| {
@@ -210,7 +221,7 @@ pub(crate) fn implicit_group_requests(
     let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
     let mut out = vec![];
     for name in selection {
-        if declared.contains(name.as_str())
+        if declared.contains(name)
             || !valid_group_name(name)
             || !files::dotfiles_root().join(name).is_dir()
         {
