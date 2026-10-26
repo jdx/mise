@@ -3937,9 +3937,7 @@ impl AquaBackend {
     fn is_smolvm_agent_rootfs(rootfs: &Path) -> bool {
         let mut path = rootfs.to_path_buf();
         for component in ["usr", "local", "bin"] {
-            if !fs::symlink_metadata(&path)
-                .is_ok_and(|metadata| metadata.file_type().is_dir())
-            {
+            if !fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.file_type().is_dir()) {
                 return false;
             }
             path.push(component);

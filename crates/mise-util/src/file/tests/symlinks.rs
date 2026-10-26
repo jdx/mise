@@ -284,7 +284,10 @@ fn test_rebase_guest_rootfs_absolute_symlinks_rebases_owning_directory_to_dot() 
 
     rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
 
-    assert_eq!(fs::read_link(rootfs.join("usr/bin/X11")).unwrap(), PathBuf::from("."));
+    assert_eq!(
+        fs::read_link(rootfs.join("usr/bin/X11")).unwrap(),
+        PathBuf::from(".")
+    );
     ensure_symlinks_stay_within(&root).unwrap();
 }
 
@@ -301,7 +304,10 @@ fn test_rebase_guest_rootfs_absolute_symlinks_rebases_guest_root_to_dot() {
 
     rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
 
-    assert_eq!(fs::read_link(rootfs.join("root")).unwrap(), PathBuf::from("."));
+    assert_eq!(
+        fs::read_link(rootfs.join("root")).unwrap(),
+        PathBuf::from(".")
+    );
     ensure_symlinks_stay_within(&root).unwrap();
 }
 

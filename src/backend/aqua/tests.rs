@@ -151,7 +151,10 @@ fn smolvm_guest_rootfs_rebases_only_real_smolvm_trees() {
     smolvm.repo_name = "smolvm".to_string();
     AquaBackend::rebase_embedded_guest_rootfs_links(&install, &smolvm).unwrap();
 
-    assert_eq!(fs::read_link(rootfs.join("bin/sh")).unwrap(), PathBuf::from("busybox"));
+    assert_eq!(
+        fs::read_link(rootfs.join("bin/sh")).unwrap(),
+        PathBuf::from("busybox")
+    );
     file::ensure_symlinks_stay_within(&install).unwrap();
 
     let other_install = tmp.path().join("other-install");
