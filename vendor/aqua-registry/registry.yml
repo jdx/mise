@@ -28420,7 +28420,7 @@ packages:
           type: github_release
           asset: atmos_{{trimV .Version}}_SHA256SUMS
           algorithm: sha256
-      - version_constraint: "true"
+      - version_constraint: semver("< 1.233.2-0")
         asset: atmos_{{trimV .Version}}_{{.OS}}_{{.Arch}}
         format: raw
         checksum:
@@ -28434,6 +28434,22 @@ packages:
             opts:
               - --certificate-identity-regexp
               - ^https://github\.com/cloudposse/\.github/\.github/workflows/shared-go-auto-release\.yml@
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+      - version_constraint: "true"
+        asset: atmos_{{trimV .Version}}_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: atmos_{{trimV .Version}}_SHA256SUMS
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: atmos_{{trimV .Version}}_SHA256SUMS.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/cloudposse/atmos/.github/workflows/release-pipeline.yml@refs/heads/main
               - --certificate-oidc-issuer
               - https://token.actions.githubusercontent.com
   - type: github_release
@@ -44994,6 +45010,46 @@ packages:
           url: https://releases.glossia.ai/cli/{{.Version}}/SHA256SUMS
           algorithm: sha256
   - type: github_release
+    repo_owner: glsec
+    repo_name: glsec
+    description: Static security scanner and linter for GitLab CI. Finds .gitlab-ci.yml misconfigurations, supply-chain risks, and leaked secrets. Offline, SARIF output, OWASP CICD-SEC and CWE mappings
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.10.0")
+        asset: glsec_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 1.20.0")
+        asset: glsec_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: glsec/glsec/.github/workflows/release.yml
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: glsec_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        github_artifact_attestations:
+          signer_workflow: glsec/glsec/.github/workflows/build-release.yml
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: go-acme
     repo_name: lego
     description: Let's Encrypt/ACME client and library written in Go
@@ -51624,6 +51680,88 @@ packages:
           - linux
           - darwin
   - type: github_release
+    repo_owner: home-operations
+    repo_name: flate
+    description: Render and diff Flux GitOps repositories offline, without a cluster
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version in ["0.1.23", "v0.4.13"]
+        no_asset: true
+      - version_constraint: semver("<= 0.1.2")
+        no_asset: true
+      - version_constraint: semver("<= 0.2.12")
+        asset: flate_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        cosign:
+          bundle:
+            type: github_release
+            asset: "{{.Asset}}.sigstore.json"
+          opts:
+            - --certificate-identity
+            - https://github.com/home-operations/flate/.github/workflows/release.yaml@refs/tags/{{.Version}}
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
+            - --certificate-github-workflow-repository
+            - home-operations/flate
+            - --certificate-github-workflow-ref
+            - refs/tags/{{.Version}}
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.4.12")
+        asset: flate_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        cosign:
+          bundle:
+            type: github_release
+            asset: "{{.Asset}}.sigstore.json"
+          opts:
+            - --certificate-identity
+            - https://github.com/home-operations/flate/.github/workflows/release.yaml@refs/tags/{{.Version}}
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
+            - --certificate-github-workflow-repository
+            - home-operations/flate
+            - --certificate-github-workflow-ref
+            - refs/tags/{{.Version}}
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: flate_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        cosign:
+          bundle:
+            type: github_release
+            asset: "{{.Asset}}.sigstore.json"
+          opts:
+            - --certificate-identity
+            - https://github.com/home-operations/flate/.github/workflows/goreleaser.yaml@refs/tags/{{.Version}}
+            - --certificate-oidc-issuer
+            - https://token.actions.githubusercontent.com
+            - --certificate-github-workflow-repository
+            - home-operations/flate
+            - --certificate-github-workflow-ref
+            - refs/tags/{{.Version}}
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: homeport
     repo_name: dyff
     description: "/ˈdʏf/ - diff tool for YAML files, and sometimes JSON"
@@ -54767,12 +54905,12 @@ packages:
         overrides:
           - goos: darwin
             asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: windows
+            asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+            format: zip
         replacements:
           amd64: x64
           darwin: macos
-        supported_envs:
-          - linux
-          - darwin
         checksum:
           type: github_release
           asset: SHASUMS512.txt
@@ -54791,12 +54929,12 @@ packages:
         overrides:
           - goos: darwin
             asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+          - goos: windows
+            asset: mise-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+            format: zip
         replacements:
           amd64: x64
           darwin: macos
-        supported_envs:
-          - linux
-          - darwin
         checksum:
           type: github_release
           asset: SHASUMS512.txt
@@ -93948,7 +94086,7 @@ packages:
           cosign:
             bundle:
               type: github_release
-              asset: ci-info_{{trimV .Version}}_checksums.txt.bundle
+              asset: ci-info_{{trimV .Version}}_checksums.txt.sigstore.json
             opts:
               - --certificate-identity-regexp
               - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
@@ -93958,6 +94096,8 @@ packages:
               - suzuki-shunsuke/ci-info
               - --certificate-github-workflow-ref
               - refs/tags/{{.Version}}
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
   - type: github_content
     repo_owner: suzuki-shunsuke
     repo_name: ci-renovate-config-validator
@@ -94290,27 +94430,26 @@ packages:
       - version_constraint: "true"
         asset: cmdx_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
+        overrides:
+          - goos: windows
+            format: zip
         checksum:
           type: github_release
           asset: cmdx_{{trimV .Version}}_checksums.txt
           algorithm: sha256
           cosign:
+            bundle:
+              type: github_release
+              asset: cmdx_{{trimV .Version}}_checksums.txt.sigstore.json
             opts:
               - --certificate-identity-regexp
-              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - "^https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.+$"
               - --certificate-oidc-issuer
-              - "https://token.actions.githubusercontent.com"
-              - --signature
-              - https://github.com/suzuki-shunsuke/cmdx/releases/download/{{.Version}}/cmdx_{{trimV .Version}}_checksums.txt.sig
-              - --certificate
-              - https://github.com/suzuki-shunsuke/cmdx/releases/download/{{.Version}}/cmdx_{{trimV .Version}}_checksums.txt.pem
+              - https://token.actions.githubusercontent.com
               - --certificate-github-workflow-repository
               - suzuki-shunsuke/cmdx
               - --certificate-github-workflow-ref
               - refs/tags/{{.Version}}
-        overrides:
-          - goos: windows
-            format: zip
   - type: github_release
     repo_owner: suzuki-shunsuke
     repo_name: dd-time
@@ -94428,15 +94567,14 @@ packages:
           asset: disable-checkout-persist-credentials_{{trimV .Version}}_checksums.txt
           algorithm: sha256
           cosign:
+            bundle:
+              type: github_release
+              asset: disable-checkout-persist-credentials_{{trimV .Version}}_checksums.txt.sigstore.json
             opts:
               - --certificate-identity-regexp
-              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - "^https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.+$"
               - --certificate-oidc-issuer
-              - "https://token.actions.githubusercontent.com"
-              - --signature
-              - https://github.com/suzuki-shunsuke/disable-checkout-persist-credentials/releases/download/{{.Version}}/disable-checkout-persist-credentials_{{trimV .Version}}_checksums.txt.sig
-              - --certificate
-              - https://github.com/suzuki-shunsuke/disable-checkout-persist-credentials/releases/download/{{.Version}}/disable-checkout-persist-credentials_{{trimV .Version}}_checksums.txt.pem
+              - https://token.actions.githubusercontent.com
               - --certificate-github-workflow-repository
               - suzuki-shunsuke/disable-checkout-persist-credentials
               - --certificate-github-workflow-ref
@@ -94643,7 +94781,7 @@ packages:
         overrides:
           - goos: windows
             format: zip
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.5.6")
         asset: ghalint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         checksum:
@@ -94660,6 +94798,29 @@ packages:
               - https://token.actions.githubusercontent.com
               - --signature
               - https://github.com/suzuki-shunsuke/ghalint/releases/download/{{.Version}}/ghalint_{{trimV .Version}}_checksums.txt.sig
+              - --certificate-github-workflow-repository
+              - suzuki-shunsuke/ghalint
+              - --certificate-github-workflow-ref
+              - refs/tags/{{.Version}}
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: ghalint_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: ghalint_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: ghalint_{{trimV .Version}}_checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.+$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
               - --certificate-github-workflow-repository
               - suzuki-shunsuke/ghalint
               - --certificate-github-workflow-ref
@@ -94801,15 +94962,14 @@ packages:
           asset: ghatm_{{trimV .Version}}_checksums.txt
           algorithm: sha256
           cosign:
+            bundle:
+              type: github_release
+              asset: ghatm_{{trimV .Version}}_checksums.txt.sigstore.json
             opts:
               - --certificate-identity-regexp
-              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - "^https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.+$"
               - --certificate-oidc-issuer
-              - "https://token.actions.githubusercontent.com"
-              - --signature
-              - https://github.com/suzuki-shunsuke/ghatm/releases/download/{{.Version}}/ghatm_{{trimV .Version}}_checksums.txt.sig
-              - --certificate
-              - https://github.com/suzuki-shunsuke/ghatm/releases/download/{{.Version}}/ghatm_{{trimV .Version}}_checksums.txt.pem
+              - https://token.actions.githubusercontent.com
               - --certificate-github-workflow-repository
               - suzuki-shunsuke/ghatm
               - --certificate-github-workflow-ref
@@ -95033,15 +95193,14 @@ packages:
           asset: ghomfc_{{trimV .Version}}_checksums.txt
           algorithm: sha256
           cosign:
+            bundle:
+              type: github_release
+              asset: ghomfc_{{trimV .Version}}_checksums.txt.sigstore.json
             opts:
               - --certificate-identity-regexp
-              - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
+              - "^https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.+$"
               - --certificate-oidc-issuer
-              - "https://token.actions.githubusercontent.com"
-              - --signature
-              - https://github.com/suzuki-shunsuke/ghomfc/releases/download/{{.Version}}/ghomfc_{{trimV .Version}}_checksums.txt.sig
-              - --certificate
-              - https://github.com/suzuki-shunsuke/ghomfc/releases/download/{{.Version}}/ghomfc_{{trimV .Version}}_checksums.txt.pem
+              - https://token.actions.githubusercontent.com
               - --certificate-github-workflow-repository
               - suzuki-shunsuke/ghomfc
               - --certificate-github-workflow-ref
@@ -95505,19 +95664,20 @@ packages:
           asset: mkghtag_{{trimV .Version}}_checksums.txt
           algorithm: sha256
           cosign:
+            bundle:
+              type: github_release
+              asset: mkghtag_{{trimV .Version}}_checksums.txt.sigstore.json
             opts:
               - --certificate-identity-regexp
               - "https://github\\.com/suzuki-shunsuke/go-release-workflow/\\.github/workflows/release\\.yaml@.*"
               - --certificate-oidc-issuer
               - "https://token.actions.githubusercontent.com"
-              - --signature
-              - https://github.com/suzuki-shunsuke/mkghtag/releases/download/{{.Version}}/mkghtag_{{trimV .Version}}_checksums.txt.sig
-              - --certificate
-              - https://github.com/suzuki-shunsuke/mkghtag/releases/download/{{.Version}}/mkghtag_{{trimV .Version}}_checksums.txt.pem
               - --certificate-github-workflow-repository
               - suzuki-shunsuke/mkghtag
               - --certificate-github-workflow-ref
               - refs/tags/{{.Version}}
+        github_artifact_attestations:
+          signer_workflow: suzuki-shunsuke/go-release-workflow/.github/workflows/release.yaml
   - type: github_release
     repo_owner: suzuki-shunsuke
     repo_name: nllint
@@ -102356,6 +102516,17 @@ packages:
         overrides:
           - goos: windows
             format: zip
+          - goos: linux
+            goarch: amd64
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            goarch: amd64
+            variants:
+              - key: libc
+                value: musl
+            asset: chezmoi_{{trimV .Version}}_{{.OS}}-musl_{{.Arch}}.{{.Format}}
   - type: github_release
     repo_owner: txn2
     repo_name: kubefwd
@@ -107709,6 +107880,35 @@ packages:
       - version_constraint: "true"
         asset: genenv-{{.OS}}-{{.Arch}}
         format: raw
+  - type: github_release
+    repo_owner: yashikota
+    repo_name: tlc-static
+    description: Native, JVM-free TLA+ TLC. Fully static on Linux
+    files:
+      - name: tlc
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: tlc-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        replacements:
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            format: tar.gz
+          - goos: darwin
+            format: tar.gz
+          - goos: windows
+            goarch: arm64
+            asset: tlc-{{.OS}}-{{.Arch}}-emulated.{{.Format}}
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows
   - type: github_release
     repo_owner: yassinebenaid
     repo_name: bunster
