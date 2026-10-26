@@ -8555,10 +8555,12 @@ fn failed_app_activation_preserves_caskroom_copy() -> Result<()> {
     file::create_dir_all(&caskroom_app)?;
     file::write(caskroom_app.join("version"), "staged")?;
 
+    // The stage holds no staged bundle, so the swap has nothing to rename.
+    let stage = create_stage_dir_at(&parent.fd, std::ffi::OsStr::new(".mise-tmp-test"))?;
     let result = activate_app_at(
         &parent,
         std::ffi::OsStr::new("Example.app"),
-        std::ffi::OsStr::new("missing.mise-tmp"),
+        &stage,
         std::ffi::OsStr::new("Example.mise-old-test"),
         &caskroom_app,
         &target,
@@ -8592,7 +8594,7 @@ fn upgrades_app_with_protected_existing_contents() -> Result<()> {
         .status()?;
     assert!(status.success());
 
-    let tmp_target = base.join("Docker.mise-tmp-test");
+    let tmp_target = base.join(".mise-tmp-test/Docker.app");
     file::create_dir_all(&tmp_target)?;
     mise_util::file::write(tmp_target.join("version"), "new")?;
 
@@ -8601,10 +8603,11 @@ fn upgrades_app_with_protected_existing_contents() -> Result<()> {
     let parent = ensure_trusted_appdir(&base)?;
     let old_name = std::ffi::OsString::from("Docker.mise-old-test");
     let old_target = base.join(&old_name);
+    let stage = open_dir_nofollow_at(&parent.fd, ".mise-tmp-test")?;
     let result = swap_app_at(
         &parent,
         std::ffi::OsStr::new("Docker.app"),
-        std::ffi::OsStr::new("Docker.mise-tmp-test"),
+        &stage,
         &old_name,
         // This repro replaces an app it owns; the no-replace path is covered
         // by activation_refuses_an_app_that_appeared_during_staging.
@@ -10650,7 +10653,7 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
     let parent = open_trusted_directory(&root, Path::new(""), true, false)?;
 
     // mise's staged replacement, ready to activate.
-    let staged = root.join("Example.mise-tmp-test");
+    let staged = root.join(".mise-tmp-test/Example.app");
     file::create_dir_all(staged.join("Contents"))?;
     mise_util::file::write(staged.join("Contents/marker"), "ours")?;
 
@@ -10660,10 +10663,11 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
     mise_util::file::write(target.join("Contents/marker"), "theirs")?;
     let before = target.symlink_metadata()?;
 
+    let stage = open_dir_nofollow_at(&parent.fd, ".mise-tmp-test")?;
     let err = swap_app_at(
         &parent,
         std::ffi::OsStr::new("Example.app"),
-        std::ffi::OsStr::new("Example.mise-tmp-test"),
+        &stage,
         std::ffi::OsStr::new("Example.mise-old-test"),
         false,
     )
@@ -10686,12 +10690,12 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
     // A rename failure must not leave the placeholder behind: a later apply
     // would read that empty bundle as a foreign app and refuse forever.
     file::remove_all(&target)?;
-    let missing_tmp = std::ffi::OsStr::new("Example.absent-tmp");
+    let empty_stage = create_stage_dir_at(&parent.fd, std::ffi::OsStr::new(".mise-empty"))?;
     assert!(
         swap_app_at(
             &parent,
             std::ffi::OsStr::new("Example.app"),
-            missing_tmp,
+            &empty_stage,
             std::ffi::OsStr::new("Example.mise-old-test"),
             false,
         )
@@ -10708,13 +10712,17 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
     swap_app_at(
         &parent,
         std::ffi::OsStr::new("Example.app"),
-        std::ffi::OsStr::new("Example.mise-tmp-test"),
+        &stage,
         std::ffi::OsStr::new("Example.mise-old-test"),
         true,
     )?;
     assert_eq!(
         mise_util::file::read_to_string(target.join("Contents/marker"))?,
         "ours"
+    );
+    assert!(
+        !staged.exists(),
+        "the staged bundle was copied rather than moved out of the stage"
     );
     Ok(())
 }
