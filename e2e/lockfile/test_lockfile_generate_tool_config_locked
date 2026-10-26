@@ -3,6 +3,7 @@
 # `mise lock` creates the entry that `tool_config.locked` demands, so a tool
 # missing from the lockfile must not stop it in the default generate mode.
 export MISE_LOCKFILE=1
+export MISE_LOCKFILE_MODE=generate
 mise plugin install tiny
 
 cat <<'EOT' >mise.toml
