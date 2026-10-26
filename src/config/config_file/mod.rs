@@ -1557,6 +1557,22 @@ pub fn is_mise_toml_filename(path: &Path) -> bool {
     )
 }
 
+/// Whether config loading skips `path` because it is a version file linked to
+/// a file of another name, see [`diagnostic::links_to_another_name`]. A
+/// version file is a file found under one of `idiomatic_filenames`, or a
+/// tool-versions file by name, as loading decides it. Discovery finds everything
+/// else under a mise TOML filename, which that rule does not cover.
+pub(crate) fn is_skipped_version_file_link(path: &Path, idiomatic_filenames: &[&str]) -> bool {
+    // Idiomatic filenames first: `parse_config_file` hands a path that matches
+    // one to the idiomatic parser even when a mise TOML filename matches too.
+    let is_version_file = idiomatic_filenames.iter().any(|f| path.ends_with(f))
+        || matches!(
+            detect_config_file_type_by_filename(path),
+            Some(ConfigFileType::ToolVersions)
+        );
+    is_version_file && diagnostic::links_to_another_name(path)
+}
+
 /// Detect a config file while preserving disabled and backend-discovery outcomes.
 pub(super) async fn detect_config_file_with_settings(
     path: &Path,
@@ -1921,6 +1937,37 @@ mod tests {
 
         assert_eq!(versions[0].version(), "2");
         Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skipped_version_file_link_is_told_apart_from_mise_toml() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempfile::tempdir().unwrap();
+        let dir = dir.path();
+        let tool_versions = dir.join(env::MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
+        std::fs::write(dir.join(".foo-version"), "1\n").unwrap();
+        std::fs::write(dir.join("mise.toml"), "").unwrap();
+        // A plugin may declare an idiomatic filename that ends in `.toml`.
+        symlink(dir.join(".foo-version"), dir.join("foo.toml")).unwrap();
+        symlink(dir.join(".foo-version"), &tool_versions).unwrap();
+        symlink(dir.join("mise.toml"), dir.join(".mise.toml")).unwrap();
+
+        assert!(is_skipped_version_file_link(
+            &dir.join("foo.toml"),
+            &["foo.toml"]
+        ));
+        assert!(!is_skipped_version_file_link(&dir.join("foo.toml"), &[]));
+        assert!(is_skipped_version_file_link(&tool_versions, &[]));
+        assert!(!is_skipped_version_file_link(
+            &dir.join(".mise.toml"),
+            &["foo.toml"]
+        ));
+        assert!(!is_skipped_version_file_link(
+            &dir.join(".foo-version"),
+            &[".foo-version"]
+        ));
     }
 
     #[test]
