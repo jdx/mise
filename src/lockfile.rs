@@ -2596,32 +2596,68 @@ fn lockfile_path_for_tool_source_with_root(
         ToolSource::MiseToml(path) | ToolSource::MiseTomlDaemon(path) => {
             Some(lockfile_path_for_config(path, monorepo_root))
         }
-        ToolSource::IdiomaticVersionFile(path) => config
-            .config_files
-            .iter()
-            .enumerate()
-            .filter(|(_, (_, cf))| cf.source().is_mise_toml())
-            .filter_map(|(idx, (config_path, cf))| {
-                let root = cf.project_root().unwrap_or_else(|| cf.config_root());
-                let is_base = !is_local_config(config_path)
-                    && extract_env_from_config_path(config_path).is_none();
-                path.starts_with(&root).then(|| {
-                    (
-                        root.components().count(),
-                        is_base,
-                        // Tie-break same-root base configs by config_files order.
-                        idx,
-                        lockfile_path_for_config(config_path, monorepo_root),
-                    )
+        ToolSource::IdiomaticVersionFile(path) => {
+            let loaded = config
+                .config_files
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, cf))| cf.source().is_mise_toml())
+                .filter_map(|(idx, (config_path, cf))| {
+                    let root = cf.project_root().unwrap_or_else(|| cf.config_root());
+                    let is_base = !is_local_config(config_path)
+                        && extract_env_from_config_path(config_path).is_none();
+                    path.starts_with(&root).then(|| {
+                        (
+                            root.components().count(),
+                            is_base,
+                            // Tie-break same-root base configs by config_files order.
+                            idx,
+                            lockfile_path_for_config(config_path, monorepo_root),
+                        )
+                    })
                 })
-            })
-            .max_by_key(|(root_depth, is_base, idx, _)| (*root_depth, *is_base, *idx))
-            .map(|(_, _, _, lockfile)| lockfile),
+                .max_by_key(|(root_depth, is_base, idx, _)| (*root_depth, *is_base, *idx));
+            // From a monorepo root, a sub-project's mise.toml is not loaded, but its
+            // lockfile still owns the version files beneath it.
+            let unloaded = config.monorepo_root().and_then(|root| {
+                let (config_path, depth) = unloaded_monorepo_config(path, &root)?;
+                Some((depth, lockfile_path_for_config(&config_path, monorepo_root)))
+            });
+            match (loaded, unloaded) {
+                (Some((depth, _, _, _)), Some((unloaded_depth, lockfile)))
+                    if unloaded_depth > depth =>
+                {
+                    Some(lockfile)
+                }
+                (Some((_, _, _, lockfile)), _) => Some(lockfile),
+                (None, Some((_, lockfile))) => Some(lockfile),
+                (None, None) => None,
+            }
+        }
         // The current directory's monorepo root does not apply to a stub
         // that lives elsewhere; it derives its own.
         ToolSource::ToolStub(path) => lockfile_path_for_tool_stub(path),
         _ => None,
     }
+}
+
+/// The nearest base mise.toml above `version_file` and below `monorepo_root`,
+/// with the depth of its directory.
+fn unloaded_monorepo_config(version_file: &Path, monorepo_root: &Path) -> Option<(PathBuf, usize)> {
+    version_file
+        .ancestors()
+        .skip(1)
+        .take_while(|dir| *dir != monorepo_root && dir.starts_with(monorepo_root))
+        .find_map(|dir| {
+            let config_path = crate::config::config_paths_in_dir(dir)
+                .into_iter()
+                .find(|path| {
+                    path.extension().is_some_and(|ext| ext == "toml")
+                        && !is_local_config(path)
+                        && extract_env_from_config_path(path).is_none()
+                })?;
+            Some((config_path, dir.components().count()))
+        })
 }
 
 /// The mise.lock a tool stub reads from: the lockfile of the nearest project

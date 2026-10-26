@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# A locked task run from the monorepo root reads the sub-project's lockfile for
+# its idiomatic version files, not the root's.
+export MISE_TRUSTED_CONFIG_PATHS="$PWD"
+export MISE_EXPERIMENTAL=1
+
+cat >mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["app"]
+TOML
+mkdir app
+echo 24.21.0 >app/.node-version
+cat >app/mise.toml <<'TOML'
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+
+[tasks.t]
+run = "echo ran"
+TOML
+
+(cd app && mise lock --platform linux-x64)
+assert_contains "cd app && MISE_LOCKED=1 mise run t 2>&1" "ran"
+assert_not_contains "MISE_LOCKED=1 mise run //app:t 2>&1" "not in the lockfile"
