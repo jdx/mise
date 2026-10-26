@@ -93,6 +93,7 @@ These community plugins integrate with mise:
 | JetBrains IDEs | [intellij-mise](https://github.com/134130/intellij-mise)                               | Configures the IDE's SDKs from mise, runs mise tasks, and loads environment variables in run configurations.                        |
 | Neovim         | [miser.nvim](https://github.com/carldaws/miser.nvim)                                   | Starts language servers and formatters for the tools in `mise.toml`, and runs mise tasks from Neovim.                               |
 | Emacs          | [mise.el](https://github.com/eki3z/mise.el)                                            | Loads the mise environment for each buffer.                                                                                         |
+| Zed            | [mise-zed](https://github.com/hverlin/mise-zed)                                        | Runs `mise lsp` for mise config files, highlights the scripts of tasks, and runs mise tasks and tools.                              |
 
 ## Language server {#language-server}
 
@@ -247,8 +248,9 @@ vim.lsp.config("mise", {
 vim.lsp.enable("mise")
 ```
 
-Other editors with a generic LSP client, such as Helix and Emacs, take the same
-command. See the [`mise lsp`](/cli/lsp.html) reference.
+In Zed, the [mise-zed](#zed) extension starts it. Other editors with a generic
+LSP client, such as Helix and Emacs, take the same command. See the
+[`mise lsp`](/cli/lsp.html) reference.
 
 If another TOML server, such as Tombi or Even Better TOML, runs on the same
 files, hover, completion and formatting show up twice. A client can turn them
@@ -276,6 +278,8 @@ to use mise tools. That is off by default; enable
 [`mise.configureExtensionsAutomatically`](https://hverlin.github.io/mise-vscode/reference/settings/#miseconfigureextensionsautomatically)
 to turn it on. See the extension's documentation for its environment and task
 settings.
+
+![mise-vscode in VS Code](./mise-vscode.png)
 
 Install mise on the machine that runs the extension. A local installation does
 not provide tools inside an SSH host, a WSL distribution or a
@@ -410,6 +414,28 @@ it:
 ```lisp
 (require 'mise)
 (add-hook 'after-init-hook #'global-mise-mode)
+```
+
+## Zed {#zed}
+
+The [mise-zed extension](https://github.com/hverlin/mise-zed) runs
+[`mise lsp`](#language-server) for mise config files, highlights the scripts of
+tasks in their language, and adds run buttons for tasks and tools. Zed loads
+your shell's environment for the project, so the tools that `mise activate`
+puts on `PATH` are found without shims.
+
+::: tip
+`mise lsp` needs mise 2026.10.18 or later. Semantic tokens need mise 2026.10.19
+or later.
+:::
+
+![mise-zed in Zed](./mise-zed.webp)
+
+Zed asks for the [semantic tokens](#language-server) of `mise lsp` only once
+they are turned on for the language, in Zed's settings:
+
+```json
+{ "languages": { "mise": { "semantic_tokens": "combined" } } }
 ```
 
 ## Xcode {#xcode}
