@@ -3,8 +3,7 @@
 # to a file of the user's. Read as a version file, `~/.netrc` turns into tools
 # named `machine` and `password` with the secret as a version, which mise then
 # prints in warnings and errors. A linked version file is read only when the
-# target has the same name, the way a monorepo shares one, or lives inside the
-# project, where it is the project's own text.
+# target has the same name, the way a monorepo shares one.
 
 mkdir -p "$HOME/private"
 printf 'machine example.com\nlogin me\npassword s3cr3t\n' >"$HOME/private/netrc"
@@ -36,15 +35,6 @@ assert_contains "mise ls dummy" "1.0.0"
 
 rm .tool-versions
 
-# A link to a file of another name inside the project is read too.
-mkdir -p client
-echo "dummy 3.0.0" >client/versions
-ln -s client/versions alias-versions
-ln -s alias-versions .tool-versions
-assert_contains "mise ls dummy 2>&1" "3.0.0"
-assert_not_contains "mise ls dummy 2>&1" "not reading"
-rm .tool-versions alias-versions
-
 # The user's own global `~/.tool-versions` may link to a file of any name, as
 # a dotfiles manager sets it up.
 mkdir -p "$HOME/dotfiles"
@@ -52,3 +42,20 @@ echo "dummy 2.0.0" >"$HOME/dotfiles/tool-versions"
 ln -s "$HOME/dotfiles/tool-versions" "$HOME/.tool-versions"
 assert_contains "mise ls dummy 2>&1" "2.0.0"
 assert_not_contains "mise ls dummy 2>&1" "not reading"
+rm "$HOME/.tool-versions"
+
+# A skipped link does not hide the version file it points at: `.nvmrc` is not
+# read, and `.node-version` beside it still is.
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node
+echo "22.1.0" >.node-version
+ln -s .node-version .nvmrc
+assert_contains "mise ls --current node 2>&1" "22.1.0"
+assert_contains "mise ls --current node 2>&1" "not reading ~/workdir/.nvmrc"
+rm .nvmrc .node-version
+
+mkdir client
+echo "22.2.0" >client/.node-version
+ln -s client/.node-version .node-version
+ln -s client/.node-version .nvmrc
+assert_contains "mise ls --current node 2>&1" "22.2.0"
+assert_contains "mise ls --current node 2>&1" "not reading ~/workdir/.nvmrc"

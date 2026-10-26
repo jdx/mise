@@ -2987,7 +2987,7 @@ fn loadable_config_files_in_dir(dir: &Path, filenames: &[String]) -> IndexSet<Pa
         .iter()
         .flat_map(|f| load_config_glob(dir, f))
         .filter(|p| !config_path_is_ignored(p, false))
-        .unique_by(|p| file::desymlink_path(p))
+        .unique_by(|p| config_identity(p))
         .collect()
 }
 
@@ -3042,7 +3042,7 @@ fn nearest_local_config_file(start: &Path, filenames: &[String]) -> Option<PathB
             .iter()
             .flat_map(|f| glob(&dir, f).unwrap_or_default())
             .filter(|p| !config_path_is_ignored(p, false))
-            .unique_by(|p| file::desymlink_path(p))
+            .unique_by(|p| config_identity(p))
             .collect();
         if let Some(cf) = first_config_file(&files)
             && !is_global_config(cf)
@@ -3106,8 +3106,22 @@ fn load_config_paths_from_dirs(
             discovered_global_config(p)
                 .is_none_or(|global| global == *p || p.canonicalize().is_ok_and(|real| real == *p))
         })
-        .unique_by(|p| file::desymlink_path(p))
+        .unique_by(|p| config_identity(p))
         .collect()
+}
+
+/// What makes two discovered config paths the same file. Spellings that reach
+/// one file collapse, but a version file mise does not read because it links to
+/// another name (`.nvmrc -> .node-version`) is not that file: if it claimed the
+/// target's identity, the real `.node-version` next to it would be dropped as
+/// its duplicate.
+fn config_identity(path: &Path) -> PathBuf {
+    if path.extension().is_none_or(|ext| ext != "toml")
+        && config_file::diagnostic::links_to_another_name(path)
+    {
+        return path.to_path_buf();
+    }
+    file::desymlink_path(path)
 }
 
 pub(crate) fn load_config_paths_from(
@@ -3411,7 +3425,7 @@ pub async fn load_config_hierarchy_from_dir(
     let paths = config_files
         .into_iter()
         .filter(|p| !config_path_is_ignored(p, false))
-        .unique_by(|p| file::desymlink_path(p))
+        .unique_by(|p| config_identity(p))
         .collect();
 
     Ok((paths, idiomatic_files))
