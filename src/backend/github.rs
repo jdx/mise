@@ -325,6 +325,9 @@ impl<'a> GitBackendOptions<'a> {
         if let Some(value) = self.version_prefix() {
             result.insert("version_prefix".to_string(), value.to_string());
         }
+        if let Some(value) = self.values.str("version_regex") {
+            result.insert("version_regex".to_string(), value.to_string());
+        }
         if let Some(value) = self.asset_pattern_for_target(target) {
             result.insert("asset_pattern".to_string(), value);
         }
@@ -542,6 +545,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "additional_asset_patterns".into(),
         "url".into(),
         "version_prefix".into(),
+        "version_regex".into(),
         "no_app".into(),
         "matching".into(),
         "matching_regex".into(),
@@ -4083,6 +4087,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         // Each of these selects a different release or a different layout.
         for (key, value) in [
             ("version_prefix", "release-"),
+            ("version_regex", "^v"),
             ("api_url", "https://ghe.example.com/api/v3"),
             ("asset_pattern", "tool-*.tar.gz"),
             ("bin_path", "tool/bin"),
@@ -4830,6 +4835,10 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
             "version_prefix".to_string(),
             toml::Value::String("release-".to_string()),
         );
+        opts.opts.insert(
+            "version_regex".to_string(),
+            toml::Value::String(r"^release-\d".to_string()),
+        );
         // matching/matching_regex are top-level (not per-platform) options; they
         // must round-trip into lockfile_options for every target so a relock on
         // another OS reproduces the same asset selection.
@@ -4875,6 +4884,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 ("matching".to_string(), "tool".to_string()),
                 ("matching_regex".to_string(), "^tool-".to_string()),
                 ("version_prefix".to_string(), "release-".to_string()),
+                ("version_regex".to_string(), r"^release-\d".to_string()),
             ])
         );
         assert_eq!(
@@ -4892,6 +4902,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 ("matching_regex".to_string(), "^tool-".to_string()),
                 ("no_app".to_string(), "true".to_string()),
                 ("version_prefix".to_string(), "release-".to_string()),
+                ("version_regex".to_string(), r"^release-\d".to_string()),
             ])
         );
     }
