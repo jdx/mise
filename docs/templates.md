@@ -16,6 +16,7 @@ share task definitions through `extends`.
 | File or section                                             | What is rendered                                                                                                                                                | Extra context                                                 |
 | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | `mise.toml`                                                 | String values in most sections, such as `[env]`, `[tools]`, `[vars]`, `[hooks]`, and `[plugins]`. Keys are not rendered, and the file must be valid TOML first. | `config_source`                                               |
+| `[settings]`                                                | Only `dotfiles.root`, the `write_targets` paths, and the `age` key and identity files; see [settings](#settings-templates)                                      | Limited, like `.miserc.toml`                                  |
 | `[bootstrap]`                                               | Some values only; see [bootstrap templates](/bootstrap.html#templates)                                                                                          | None                                                          |
 | Task fields, such as `run`                                  | When the task runs                                                                                                                                              | `usage`, `tools`, [`task_source_files()`](#task-source-files) |
 | [Dotfiles](/dotfiles/managed.html) with `mode = "template"` | The source file's content                                                                                                                                       | See the dotfiles page                                         |
@@ -449,6 +450,33 @@ config loads, not when the task runs (see
 share a whole task, use a [task template](/tasks/templates.html); to share shell
 logic across scripts, source a shell file. Components need the default Tera v2
 engine and do not work with `tera_v1`.
+
+## Templates in settings {#settings-templates}
+
+Most settings are taken literally: a template in their value is not
+rendered. A few path settings render templates because they have to resolve
+against the file that sets them:
+
+- [`dotfiles.root`](/configuration/settings.html#dotfiles.root)
+- [`write_targets`](/configuration/settings.html#write_targets) paths
+- [`age.key_file`](/configuration/settings.html#age.key_file),
+  [`age.identity_files`](/configuration/settings.html#age.identity_files) and
+  [`age.ssh_identity_files`](/configuration/settings.html#age.ssh_identity_files)
+
+These render while mise reads settings, so they get the limited context of a
+global [`.miserc.toml`](#miserc-template-support), plus `config_source`. Unlike
+a project `.miserc.toml`, a project `mise.toml` gets `env` here too.
+`config_root` is the [config root](/configuration.html#config-root) of the file
+that sets them, and a relative result resolves against it.
+
+<div v-pre>
+
+```toml [~/.dotfiles/mise.toml]
+[settings]
+dotfiles.root = "{{ mise_config_dir }}/home"
+```
+
+</div>
 
 ## Templates in .miserc.toml {#miserc-template-support}
 
