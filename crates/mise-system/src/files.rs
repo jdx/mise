@@ -4456,6 +4456,11 @@ pub fn execute_apply(
         }
         return Ok(true);
     }
+    for (req, rendered) in &plan.todo {
+        if req.mode == FileMode::Template && rendered.is_some() {
+            warn_if_template_target_edited(req);
+        }
+    }
     if !opts.yes && console::user_attended_stderr() {
         let list = plan
             .todo
@@ -6126,7 +6131,6 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
         }
         FileMode::Template => {
             let rendered = rendered.expect("rendered template content");
-            warn_if_template_target_edited(req);
             replace_recorded(&req.target, written, || file::write(&req.target, rendered))?;
             #[cfg(unix)]
             match req.permissions {
