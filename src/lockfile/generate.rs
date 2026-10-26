@@ -374,10 +374,10 @@ fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
             .as_deref()
             .is_some_and(|url| super::url_contradicts_version(version, url).is_none())
         && info.signer.is_none()
-        && info
-            .additional_artifacts
-            .iter()
-            .all(|artifact| artifact.checksum.is_some())
+        && info.additional_artifacts.iter().all(|artifact| {
+            artifact.checksum.is_some()
+                && super::url_contradicts_version(version, &artifact.url).is_none()
+        })
         && !Settings::get().force_provenance_verify()
 }
 
@@ -1415,6 +1415,14 @@ mod tests {
         assert!(!can_reuse(&info, "2.2.2"));
         info.url = Some("https://example.invalid/never-download".into());
         assert!(can_reuse(&info, "2.2.2"));
+        info.additional_artifacts
+            .push(crate::lockfile::ArtifactInfo {
+                checksum: Some("sha256:old".into()),
+                url: "https://github.com/o/r/releases/download/v2.1.17/r.sig".into(),
+                ..Default::default()
+            });
+        assert!(can_reuse(&info, "2.1.17"));
+        assert!(!can_reuse(&info, "2.2.2"));
     }
 
     #[tokio::test]
