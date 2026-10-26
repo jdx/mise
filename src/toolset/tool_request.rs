@@ -407,7 +407,7 @@ impl ToolRequest {
 
     /// Command names that should receive bootstrap shims before a lazy tool is installed.
     /// Registry metadata is authoritative when the config does not provide an explicit list.
-    pub(crate) fn lazy_bins(&self) -> Result<Option<Vec<String>>> {
+    pub fn lazy_bins(&self) -> Result<Option<Vec<String>>> {
         if !self.provides_lazy_bins() {
             return Ok(None);
         }

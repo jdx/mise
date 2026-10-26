@@ -354,9 +354,14 @@ impl Doctor {
                         false => {
                             tool.insert("version".into(), tv.version.to_string().into());
                             tool.insert("missing".into(), true.into());
-                            self.errors.push(format!(
-                                "tool {tv} is not installed, install with `mise install`"
-                            ));
+                            if tv.request.options().lazy == Some(true) {
+                                tool.insert("lazy".into(), true.into());
+                                self.errors.extend(lazy_config_error(tv));
+                            } else {
+                                self.errors.push(format!(
+                                    "tool {tv} is not installed, install with `mise install`"
+                                ));
+                            }
                         }
                     }
                     serde_json::Value::from(tool)
@@ -1256,6 +1261,11 @@ impl Doctor {
                     (tv.to_string(), style::ndim("(empty)"))
                 }
                 true => (tv.to_string(), style::nstyle("")),
+                // lazy tools are installed on first use, so not being installed yet is expected
+                false if tv.request.options().lazy == Some(true) => {
+                    self.errors.extend(lazy_config_error(&tv));
+                    (tv.to_string(), style::ndim("(lazy)"))
+                }
                 false => {
                     self.errors.push(format!(
                         "tool {tv} is not installed, install with `mise install`"
@@ -1807,6 +1817,12 @@ fn install_is_empty(tv: &ToolVersion) -> bool {
 }
 
 /// One wording for an empty install, so the text and JSON paths cannot drift.
+/// A lazy tool that is not installed yet is expected, but one that cannot name the
+/// commands that trigger its install is a configuration error.
+fn lazy_config_error(tv: &ToolVersion) -> Option<String> {
+    tv.request.lazy_bins().err().map(|err| err.to_string())
+}
+
 fn empty_install_error(tv: &ToolVersion) -> String {
     format!(
         "tool {tv} is installed but its directory is empty, reinstall with \
