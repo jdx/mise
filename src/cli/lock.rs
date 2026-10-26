@@ -93,6 +93,25 @@ fn selected_python_requests<'a>(
         .collect()
 }
 
+/// Resolves a request for the lockfile. Generating a lockfile is how a tool gets
+/// its entry, so `tool_config.locked` must not reject one that has none yet.
+async fn resolve_for_lock(
+    config: &Arc<Config>,
+    request: &ToolRequest,
+    resolve_options: &mut ResolveOptions,
+) -> Result<ToolVersion> {
+    let resolved = request.resolve(config, resolve_options).await;
+    if resolved
+        .as_ref()
+        .err()
+        .is_some_and(crate::errors::Error::is_not_in_lockfile)
+    {
+        resolve_options.use_locked_version = false;
+        return request.resolve(config, resolve_options).await;
+    }
+    resolved
+}
+
 fn push_unique_lock_tool(tools: &mut Vec<LockTool>, mut tool: LockTool) {
     // Installed-version resolution can yield an install directory name such
     // as `3.9.6~aube~<digest>`; lock the npm/PyPI version it stands for.
@@ -2422,7 +2441,8 @@ impl Lock {
                                 if resolve_options.before_date.is_some() {
                                     resolve_options.latest_versions = true;
                                 }
-                                match request.resolve(config, &resolve_options).await {
+                                match resolve_for_lock(config, request, &mut resolve_options).await
+                                {
                                     Ok(tv) => {
                                         push_unique_lock_tool(
                                             &mut all_tools,
@@ -2503,9 +2523,8 @@ impl Lock {
                 }
                 continue;
             }
-            let resolve_options = request.resolve_options(context.resolve_options)?;
-            let tv = request
-                .resolve(config, &resolve_options)
+            let mut resolve_options = request.resolve_options(context.resolve_options)?;
+            let tv = resolve_for_lock(config, &request, &mut resolve_options)
                 .await
                 .wrap_err_with(|| {
                     format!(
@@ -2778,8 +2797,7 @@ impl Lock {
                     resolve_options.use_locked_version = false;
                     resolve_options.latest_versions = true;
                 }
-                let tv = request
-                    .resolve(config, &resolve_options)
+                let tv = resolve_for_lock(config, &request, &mut resolve_options)
                     .await
                     .map_err(|err| {
                         err.wrap_err(format!(

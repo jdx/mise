@@ -353,6 +353,9 @@ impl Completion {
 enum Shell {
     Bash,
     Fish,
+    #[strum(serialize = "nu")]
+    #[usage(name = "nu", visible_alias = "nushell")]
+    Nu,
     #[strum(serialize = "powershell")]
     #[usage(name = "powershell", visible_alias = "pwsh")]
     Powershell,
@@ -365,6 +368,7 @@ impl Shell {
         match self {
             Shell::Bash => "bash",
             Shell::Fish => "fish",
+            Shell::Nu => "nu",
             Shell::Powershell => "powershell",
             Shell::Zsh => "zsh",
         }
@@ -376,6 +380,7 @@ impl From<Shell> for usage_rs::complete::Shell {
         match shell {
             Shell::Bash => Self::Bash,
             Shell::Fish => Self::Fish,
+            Shell::Nu => Self::Nu,
             Shell::Powershell => Self::PowerShell,
             Shell::Zsh => Self::Zsh,
         }
@@ -463,11 +468,23 @@ mod shell_name_tests {
     }
 
     #[test]
+    fn nushell_is_accepted_as_nu() {
+        assert!(matches!(
+            <Shell as ValueEnum>::from_choice("nu"),
+            Some(Shell::Nu)
+        ));
+        assert!(matches!(
+            <Shell as ValueEnum>::from_choice("nushell"),
+            Some(Shell::Nu)
+        ));
+    }
+
+    #[test]
     fn the_primary_names_are_unchanged() {
         // Only the *names* -- the alias is rendered into the CLI docs, so asserting it absent
         // here would state something false. This pins that adding it renamed nothing.
         let listed: Vec<&str> = Shell::DETAILS.iter().map(|choice| choice.value).collect();
-        assert_eq!(listed, ["bash", "fish", "powershell", "zsh"]);
+        assert_eq!(listed, ["bash", "fish", "nu", "powershell", "zsh"]);
     }
 
     #[test]

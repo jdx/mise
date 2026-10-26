@@ -158,6 +158,19 @@ impl Vfox {
         plugin_headers: Option<&HeaderMap>,
     ) -> Result<PathBuf> {
         let path = Self::download_path_for(download_dir, &sdk.name, version, url)?;
+        self.download_to(url, &path, plugin_headers).await?;
+        Ok(path)
+    }
+
+    /// Download `url` to `path` the way an install does: the plugin's headers
+    /// go only to the origin of `url`, never to a rewritten mirror or a
+    /// redirect to another origin.
+    pub async fn download_to(
+        &self,
+        url: &Url,
+        path: &Path,
+        plugin_headers: Option<&HeaderMap>,
+    ) -> Result<()> {
         let mut request_url = url.clone();
         self.rewrite_url(&mut request_url);
         self.log_emit(format!("Downloading {request_url}"));
@@ -166,7 +179,7 @@ impl Vfox {
         let no_redirect_client = no_redirect_client()?;
         file::mkdirp(path.parent().unwrap())?;
         // Streamed to the file, so an archive is never held in memory whole.
-        download_to_file(&url_str, &path, || async {
+        download_to_file(&url_str, path, || async {
             let resp = match plugin_headers.filter(|h| !h.is_empty()) {
                 Some(plugin_headers) => {
                     // The headers belong to the plugin's own `url`; a rewritten
@@ -196,7 +209,7 @@ impl Vfox {
         })
         .await??
         .ok_or_else(|| format!("too many redirects downloading {request_url}"))?;
-        Ok(path)
+        Ok(())
     }
 
     /// GET `url` with the plugin's headers, following redirects by hand so the

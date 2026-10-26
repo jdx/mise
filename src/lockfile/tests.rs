@@ -5007,3 +5007,19 @@ fn test_prepare_write_does_not_block_on_a_pipe() {
         "a pipe was taken for an up-to-date lockfile"
     );
 }
+
+#[test]
+fn same_persisted_data_ignores_download_headers() {
+    let stored = PlatformInfo {
+        url: Some("https://example.com/a.zip".into()),
+        checksum: Some("sha256:ab".into()),
+        ..Default::default()
+    };
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("authorization", "Bearer secret".parse().unwrap());
+    let resolved = PlatformInfo {
+        download_headers: Some(headers),
+        ..stored.clone()
+    };
+    assert!(stored.same_persisted_data(&resolved));
+}

@@ -2452,6 +2452,9 @@ https://mise.jdx.dev/shell-setup.html#autocompletion.
             choices {
                 choice bash
                 choice fish
+                choice nu {
+                    alias nushell
+                }
                 choice powershell {
                     alias pwsh
                 }
@@ -2490,6 +2493,9 @@ changes without being rewritten.
         choices {
             choice bash
             choice fish
+            choice nu {
+                alias nushell
+            }
             choice powershell {
                 alias pwsh
             }

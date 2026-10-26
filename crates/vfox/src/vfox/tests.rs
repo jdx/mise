@@ -678,3 +678,30 @@ fn empty_cache_root_gets_no_plugin_cache_dir() {
     vfox.configure_plugin(&mut plugin);
     assert_eq!(plugin.cache_dir_path, None);
 }
+
+#[tokio::test]
+async fn test_download_to_sends_plugin_headers() {
+    use reqwest::header::HeaderValue;
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/artifact.zip"))
+        .and(header("Authorization", "Bearer secret"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"artifact"))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let temp = TempDir::new().unwrap();
+    let dest = temp.path().join("artifact");
+    let mut headers = HeaderMap::new();
+    headers.insert("authorization", HeaderValue::from_static("Bearer secret"));
+    let url = Url::parse(&format!("{}/artifact.zip", server.uri())).unwrap();
+    Vfox::test()
+        .download_to(&url, &dest, Some(&headers))
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(dest).unwrap(), b"artifact");
+}
