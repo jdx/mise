@@ -2422,7 +2422,15 @@ impl Lock {
                                 if resolve_options.before_date.is_some() {
                                     resolve_options.latest_versions = true;
                                 }
-                                match request.resolve(config, &resolve_options).await {
+                                let mut resolved =
+                                    request.resolve(config, &resolve_options).await;
+                                // Generating a lockfile is how a tool gets its entry, so
+                                // `tool_config.locked` must not reject one that has none yet.
+                                if resolved.as_ref().err().is_some_and(crate::errors::Error::is_not_in_lockfile) {
+                                    resolve_options.use_locked_version = false;
+                                    resolved = request.resolve(config, &resolve_options).await;
+                                }
+                                match resolved {
                                     Ok(tv) => {
                                         push_unique_lock_tool(
                                             &mut all_tools,

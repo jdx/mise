@@ -178,7 +178,7 @@ impl Error {
         })
     }
 
-    pub(crate) fn is_not_in_lockfile(err: &Report) -> bool {
+    pub fn is_not_in_lockfile(err: &Report) -> bool {
         err.chain().any(|source| {
             matches!(
                 source.downcast_ref::<Error>(),
