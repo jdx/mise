@@ -3584,6 +3584,28 @@ fn content_digest(content: &str) -> String {
     hash_sha256_to_str(content)
 }
 
+/// Warn before an apply replaces a template target that differs from what mise
+/// last wrote there, so the edit can be moved into the source first. Without a
+/// record nothing is known about the file, so it stays quiet.
+fn warn_if_template_target_edited(req: &FileRequest) {
+    let Some(recorded) = load_target_state(req).and_then(|state| state.content_digest) else {
+        return;
+    };
+    if req.target.is_symlink() || !req.target.is_file() {
+        return;
+    }
+    let Ok(current) = file::read_to_string(&req.target) else {
+        return;
+    };
+    if content_digest(&current) != recorded {
+        warn!(
+            "files: {} was edited since mise last wrote it; applying overwrites the edit. Move it into {} to keep it",
+            req.target.display_user(),
+            req.source.display_user()
+        );
+    }
+}
+
 /// Whether the record already holds `rendered` as the target's content.
 fn target_state_matches(req: &FileRequest, rendered: &str) -> bool {
     load_target_state(req)
@@ -6104,6 +6126,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
         }
         FileMode::Template => {
             let rendered = rendered.expect("rendered template content");
+            warn_if_template_target_edited(req);
             replace_recorded(&req.target, written, || file::write(&req.target, rendered))?;
             #[cfg(unix)]
             match req.permissions {

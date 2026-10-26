@@ -586,6 +586,8 @@ A `copy`, `template`, or inline `content` entry overwrites the target's
 content without `--force`, and replaces a symlink at the target with a file.
 A directory where a copied, templated, or inline file should go, or a file
 where a directory copy should go, is still a conflict and needs `--force`.
+When `apply` is about to overwrite a `template` target that you edited since mise
+last wrote it, it warns first, so you can move the edit into the source.
 Check `mise dot diff` before you change which source a target uses.
 
 [Edit entries](/dotfiles/edits.html#conflicts) apply without `--force`.

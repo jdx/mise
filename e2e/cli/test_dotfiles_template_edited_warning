@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+echo 'name={{ "one" }}' >tmpl
+cat <<EOT >mise.toml
+[dotfiles]
+"~/.rendered" = { source = "tmpl", mode = "template" }
+EOT
+
+assert_succeed "mise dot apply --yes"
+assert_not_contains "mise dot apply --yes" "was edited since"
+
+# A new render over an untouched target is the normal case.
+echo 'name={{ "two" }}' >tmpl
+assert_not_contains "mise dot apply --yes 2>&1" "was edited since"
+assert "cat $HOME/.rendered" "name=two"
+
+# Editing the rendered target first warns, then overwrites.
+echo 'extra=1' >>"$HOME/.rendered"
+echo 'name={{ "three" }}' >tmpl
+assert_contains "mise dot apply --yes 2>&1" "was edited since mise last wrote it"
+assert "cat $HOME/.rendered" "name=three"
