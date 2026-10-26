@@ -1694,8 +1694,7 @@ fn install_app_in(
     let stage_name = std::ffi::OsString::from(format!(".mise-tmp-{name_hash}"));
     remove_all_at(&parent.fd, &stage_name)?;
     let stage = create_stage_dir_at(&parent.fd, &stage_name)?;
-    let tmp_name = name.clone();
-    ditto_into(&caskroom_app, &stage, &tmp_name)?;
+    ditto_into(&caskroom_app, &stage, &name)?;
     if defer_if_running && app_is_running(&logical_target) {
         remove_all_at(&parent.fd, &stage_name)?;
         file::remove_all(&caskroom_app)?;
@@ -1708,7 +1707,6 @@ fn install_app_in(
         &parent,
         &name,
         &stage,
-        &tmp_name,
         &old_name,
         &caskroom_app,
         &logical_target,
@@ -1976,7 +1974,6 @@ fn activate_app_at(
     parent: &TrustedOperationParent,
     name: &std::ffi::OsStr,
     stage: impl std::os::fd::AsFd,
-    tmp_name: &std::ffi::OsStr,
     old_name: &std::ffi::OsStr,
     caskroom_app: &Path,
     logical_target: &Path,
@@ -1994,7 +1991,7 @@ fn activate_app_at(
             logical_target.display()
         );
     }
-    swap_app_at(parent, name, stage, tmp_name, old_name, allow_replace)?;
+    swap_app_at(parent, name, stage, old_name, allow_replace)?;
     replace_caskroom_app_with_symlink(caskroom_app, logical_target)
 }
 
@@ -2045,7 +2042,6 @@ fn swap_app_at(
     parent: &TrustedOperationParent,
     name: &std::ffi::OsStr,
     stage: impl std::os::fd::AsFd,
-    tmp_name: &std::ffi::OsStr,
     old_name: &std::ffi::OsStr,
     allow_replace: bool,
 ) -> Result<()> {
@@ -2070,7 +2066,7 @@ fn swap_app_at(
             Err(nix::errno::Errno::EEXIST) => return Err(AppTargetCollision.into()),
             Err(err) => return Err(err.into()),
         }
-        if let Err(err) = nix::fcntl::renameat(&stage, tmp_name, &parent.fd, name) {
+        if let Err(err) = nix::fcntl::renameat(&stage, name, &parent.fd, name) {
             // Drop the placeholder, or a later apply reads the empty bundle
             // left behind as a foreign app and refuses.
             let _ = nix::unistd::unlinkat(&parent.fd, name, nix::unistd::UnlinkatFlags::RemoveDir);
@@ -2089,7 +2085,7 @@ fn swap_app_at(
     if exists_at(&parent.fd, name)? {
         nix::fcntl::renameat(&parent.fd, name, &parent.fd, old_name)?;
     }
-    if let Err(e) = nix::fcntl::renameat(&stage, tmp_name, &parent.fd, name) {
+    if let Err(e) = nix::fcntl::renameat(&stage, name, &parent.fd, name) {
         // Restore the old app if the swap failed.
         if exists_at(&parent.fd, old_name)? {
             let _ = nix::fcntl::renameat(&parent.fd, old_name, &parent.fd, name);
