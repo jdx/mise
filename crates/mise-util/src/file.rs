@@ -2981,6 +2981,77 @@ pub fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Rewrites absolute symlinks in a guest root filesystem to relative links.
+///
+/// A guest root filesystem is later mounted as `/`, so `/bin/tool` in it
+/// means `<root>/bin/tool`, not the host's `/bin/tool`. Rebase those links
+/// before checking the enclosing archive with [`ensure_symlinks_stay_within`]
+/// so the installed tree never contains a link that resolves outside it.
+#[cfg(unix)]
+pub fn rebase_guest_rootfs_absolute_symlinks(root: &Path) -> Result<()> {
+    if fs::symlink_metadata(root)?.file_type().is_symlink() {
+        bail!("{} is a symlink", display_path(root));
+    }
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in fs::read_dir(&dir)? {
+            let path = entry?.path();
+            let kind = fs::symlink_metadata(&path)?.file_type();
+            if kind.is_dir() {
+                dirs.push(path);
+            } else if kind.is_symlink() {
+                let target = fs::read_link(&path)?;
+                if target.is_absolute() {
+                    let replacement = if target == Path::new("/") {
+                        relative_path(path.parent().unwrap(), root)
+                    } else {
+                        let target = target.strip_prefix(Path::new("/")).unwrap();
+                        let target = target.to_str().ok_or_else(|| {
+                            eyre::eyre!(
+                                "absolute symlink target is not valid UTF-8: {}",
+                                path.display()
+                            )
+                        })?;
+                        if !is_safe_relative_path(target) {
+                            bail!(
+                                "absolute symlink target escapes guest rootfs: {} -> /{}",
+                                display_path(&path),
+                                target
+                            );
+                        }
+                        relative_path(path.parent().unwrap(), &root.join(target))
+                    };
+                    make_symlink(&replacement, &path)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn relative_path(from: &Path, to: &Path) -> PathBuf {
+    use std::path::Component;
+
+    let from = from.components().collect::<Vec<_>>();
+    let to = to.components().collect::<Vec<_>>();
+    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    let mut relative = PathBuf::new();
+    for component in &from[common..] {
+        if matches!(component, Component::Normal(_)) {
+            relative.push("..");
+        }
+    }
+    for component in &to[common..] {
+        relative.push(component.as_os_str());
+    }
+    if relative.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        relative
+    }
+}
+
 /// Resolves `target` as seen from the directory `base` (already real), following
 /// every link on the way, and reports whether each step stays under `root` (the
 /// real path of the tree, which is `given_root` as the caller spelled it).

@@ -3831,6 +3831,8 @@ impl AquaBackend {
                 extraction_format,
                 &extract_opts,
             )?;
+            #[cfg(unix)]
+            Self::rebase_embedded_guest_rootfs_links(&install_path, pkg)?;
             file::ensure_symlinks_stay_within(&install_path)?;
             make_executable = true;
         } else if let AquaPackageType::GithubContent = pkg.package_type() {
@@ -3859,6 +3861,8 @@ impl AquaBackend {
                 extraction_format,
                 &extract_opts,
             )?;
+            #[cfg(unix)]
+            Self::rebase_embedded_guest_rootfs_links(&install_path, pkg)?;
             // The bins are chmodded and linked by name below, which would
             // follow a link the archive shipped out of the install directory.
             file::ensure_symlinks_stay_within(&install_path)?;
@@ -3906,6 +3910,43 @@ impl AquaBackend {
             }
         }
         Ok(())
+    }
+
+    /// Rebase the guest-rootfs links shipped by SmolVM-style sidecars before
+    /// applying the archive containment check. The marker is the guest agent
+    /// binary, which is mounted with this directory as the guest's `/`.
+    #[cfg(unix)]
+    fn rebase_embedded_guest_rootfs_links(install_path: &Path, pkg: &AquaPackage) -> Result<()> {
+        if pkg.repo_owner != "smol-machines" || pkg.repo_name != "smolvm" {
+            return Ok(());
+        }
+        for entry in fs::read_dir(install_path)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let rootfs = entry.path().join("agent-rootfs");
+            if Self::is_smolvm_agent_rootfs(&rootfs) {
+                file::rebase_guest_rootfs_absolute_symlinks(&rootfs)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn is_smolvm_agent_rootfs(rootfs: &Path) -> bool {
+        let mut path = rootfs.to_path_buf();
+        for component in ["usr", "local", "bin"] {
+            if !fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.file_type().is_dir()) {
+                return false;
+            }
+            path.push(component);
+        }
+        if !fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.file_type().is_dir()) {
+            return false;
+        }
+        fs::symlink_metadata(path.join("smolvm-agent"))
+            .is_ok_and(|metadata| metadata.file_type().is_file())
     }
 
     /// Creates a `.mise-bins` directory with symlinks only to the binaries defined in the aqua registry.

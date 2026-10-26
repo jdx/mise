@@ -97,6 +97,110 @@ fn aqua_uses_go_arch_name_for_32_bit_arm() {
     assert_eq!(to_aqua_arch("arm64"), "arm64");
 }
 
+#[cfg(unix)]
+#[test]
+fn smolvm_guest_rootfs_marker_rejects_symlinked_components() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let install = tmp.path().join("install");
+    let rootfs = install.join("smolvm/agent-rootfs");
+    let outside = tmp.path().join("outside");
+    std::fs::create_dir_all(outside.join("local/bin")).unwrap();
+    std::fs::write(outside.join("local/bin/smolvm-agent"), "agent").unwrap();
+    std::fs::create_dir_all(&rootfs).unwrap();
+    symlink(&outside, rootfs.join("usr")).unwrap();
+
+    assert!(!AquaBackend::is_smolvm_agent_rootfs(&rootfs));
+    assert!(file::ensure_symlinks_stay_within(&install).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn smolvm_guest_rootfs_marker_rejects_symlinked_agent_binary() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let install = tmp.path().join("install");
+    let rootfs = install.join("smolvm/agent-rootfs");
+    let outside = tmp.path().join("outside-agent");
+    std::fs::create_dir_all(rootfs.join("usr/local/bin")).unwrap();
+    std::fs::write(&outside, "agent").unwrap();
+    symlink(&outside, rootfs.join("usr/local/bin/smolvm-agent")).unwrap();
+
+    assert!(!AquaBackend::is_smolvm_agent_rootfs(&rootfs));
+    assert!(file::ensure_symlinks_stay_within(&install).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn smolvm_guest_rootfs_rebases_only_real_smolvm_trees() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let install = tmp.path().join("install");
+    let rootfs = install.join("smolvm/agent-rootfs");
+    std::fs::create_dir_all(rootfs.join("usr/local/bin")).unwrap();
+    std::fs::create_dir_all(rootfs.join("bin")).unwrap();
+    std::fs::write(rootfs.join("usr/local/bin/smolvm-agent"), "agent").unwrap();
+    std::fs::write(rootfs.join("bin/busybox"), "busybox").unwrap();
+    symlink("/bin/busybox", rootfs.join("bin/sh")).unwrap();
+
+    let mut smolvm = AquaPackage::default();
+    smolvm.repo_owner = "smol-machines".to_string();
+    smolvm.repo_name = "smolvm".to_string();
+    AquaBackend::rebase_embedded_guest_rootfs_links(&install, &smolvm).unwrap();
+
+    assert_eq!(
+        fs::read_link(rootfs.join("bin/sh")).unwrap(),
+        PathBuf::from("busybox")
+    );
+    file::ensure_symlinks_stay_within(&install).unwrap();
+
+    let other_install = tmp.path().join("other-install");
+    let other_rootfs = other_install.join("smolvm/agent-rootfs");
+    std::fs::create_dir_all(other_rootfs.join("usr/local/bin")).unwrap();
+    std::fs::create_dir_all(other_rootfs.join("bin")).unwrap();
+    std::fs::write(other_rootfs.join("usr/local/bin/smolvm-agent"), "agent").unwrap();
+    symlink("/bin/busybox", other_rootfs.join("bin/sh")).unwrap();
+    let mut other = AquaPackage::default();
+    other.repo_owner = "example".to_string();
+    other.repo_name = "other".to_string();
+    AquaBackend::rebase_embedded_guest_rootfs_links(&other_install, &other).unwrap();
+    assert_eq!(
+        fs::read_link(other_rootfs.join("bin/sh")).unwrap(),
+        PathBuf::from("/bin/busybox")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn smolvm_guest_rootfs_does_not_rebase_through_a_top_level_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let install = tmp.path().join("install");
+    let outside = tmp.path().join("outside");
+    let rootfs = outside.join("agent-rootfs");
+    std::fs::create_dir_all(rootfs.join("usr/local/bin")).unwrap();
+    std::fs::create_dir_all(rootfs.join("bin")).unwrap();
+    std::fs::write(rootfs.join("usr/local/bin/smolvm-agent"), "agent").unwrap();
+    symlink("/bin/busybox", rootfs.join("bin/sh")).unwrap();
+    std::fs::create_dir_all(&install).unwrap();
+    symlink(&outside, install.join("smolvm")).unwrap();
+
+    let mut smolvm = AquaPackage::default();
+    smolvm.repo_owner = "smol-machines".to_string();
+    smolvm.repo_name = "smolvm".to_string();
+    AquaBackend::rebase_embedded_guest_rootfs_links(&install, &smolvm).unwrap();
+
+    assert_eq!(
+        fs::read_link(rootfs.join("bin/sh")).unwrap(),
+        PathBuf::from("/bin/busybox")
+    );
+    assert!(file::ensure_symlinks_stay_within(&install).is_err());
+}
+
 // `--dry-run` reaches `validate` through `resolve_validated_package`, and this is the sentence
 // it has to be able to produce before the install starts. Pinned here because
 // `e2e/cli/test_install_dry_run_feasibility` greps for it: aqua marks specific versions

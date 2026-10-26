@@ -195,6 +195,144 @@ fn test_ensure_symlinks_stay_within_refuses_links_out_of_the_tree() {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_keeps_the_tree_contained() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    let rootfs = root.join("agent-rootfs");
+    fs::create_dir_all(rootfs.join("var")).unwrap();
+    fs::create_dir_all(rootfs.join("bin")).unwrap();
+    fs::write(rootfs.join("bin/busybox"), "busybox").unwrap();
+    symlink("/run", rootfs.join("var/run")).unwrap();
+    symlink("/bin/busybox", rootfs.join("bin/sh")).unwrap();
+
+    rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
+
+    assert_eq!(
+        fs::read_link(rootfs.join("var/run")).unwrap(),
+        PathBuf::from("../run")
+    );
+    assert_eq!(
+        fs::read_link(rootfs.join("bin/sh")).unwrap(),
+        PathBuf::from("busybox")
+    );
+    ensure_symlinks_stay_within(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_refuses_traversal() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let rootfs = tmp.path().join("agent-rootfs");
+    fs::create_dir_all(rootfs.join("bin")).unwrap();
+    symlink("/../outside", rootfs.join("bin/tool")).unwrap();
+
+    let err = rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap_err();
+    assert!(format!("{err:#}").contains("escapes guest rootfs"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_refuses_a_symlinked_root() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let rootfs = tmp.path().join("agent-rootfs");
+    let outside = tmp.path().join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    symlink(&outside, &rootfs).unwrap();
+
+    let err = rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap_err();
+    assert!(format!("{err:#}").contains("is a symlink"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_preserves_dangling_guest_link() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    let rootfs = root.join("agent-rootfs");
+    fs::create_dir_all(rootfs.join("bin")).unwrap();
+    symlink("/run/missing", rootfs.join("bin/missing")).unwrap();
+
+    rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
+
+    assert_eq!(
+        fs::read_link(rootfs.join("bin/missing")).unwrap(),
+        PathBuf::from("../run/missing")
+    );
+    ensure_symlinks_stay_within(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_rebases_owning_directory_to_dot() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    let rootfs = root.join("agent-rootfs");
+    fs::create_dir_all(rootfs.join("usr/bin")).unwrap();
+    symlink("/usr/bin", rootfs.join("usr/bin/X11")).unwrap();
+
+    rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
+
+    assert_eq!(
+        fs::read_link(rootfs.join("usr/bin/X11")).unwrap(),
+        PathBuf::from(".")
+    );
+    ensure_symlinks_stay_within(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_rebases_guest_root_to_dot() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    let rootfs = root.join("agent-rootfs");
+    fs::create_dir_all(&rootfs).unwrap();
+    symlink("/", rootfs.join("root")).unwrap();
+
+    rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
+
+    assert_eq!(
+        fs::read_link(rootfs.join("root")).unwrap(),
+        PathBuf::from(".")
+    );
+    ensure_symlinks_stay_within(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_leaves_chained_escapes_for_containment_check() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    let rootfs = root.join("agent-rootfs");
+    fs::create_dir_all(rootfs.join("etc")).unwrap();
+    symlink("../../outside", rootfs.join("chain")).unwrap();
+    symlink("/chain", rootfs.join("etc/config")).unwrap();
+
+    rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
+
+    assert_eq!(
+        fs::read_link(rootfs.join("etc/config")).unwrap(),
+        PathBuf::from("../chain")
+    );
+    let err = ensure_symlinks_stay_within(&root).unwrap_err();
+    assert!(format!("{err:#}").contains("points outside of"));
+}
+
 #[test]
 fn test_retry_remove_all_retries_directory_not_empty() {
     let mut attempts = 0;
