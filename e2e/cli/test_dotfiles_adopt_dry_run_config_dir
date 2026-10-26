@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# `mise bootstrap --adopt <setup repository> --dry-run` previews the bootstrap
+# from the whole shared configuration directory: its miserc.toml selects
+# environments, and conf.d/ fragments and config.<env>.toml load, as they do
+# in the real run.
+
+require_cmd git
+
+origin="$PWD/origin.git"
+git init -q --bare -b main "$origin"
+
+# ---- machine A shares its whole configuration directory
+mkdir -p "$MISE_CONFIG_DIR/conf.d" "$MISE_CONFIG_DIR/markers"
+echo work >"$MISE_CONFIG_DIR/markers/work"
+echo confd >"$MISE_CONFIG_DIR/markers/confd"
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[env]
+FROM_BASE = "base"
+EOF
+cat <<'EOF' >"$MISE_CONFIG_DIR/miserc.toml"
+env = ["work"]
+EOF
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.work.toml"
+[dotfiles]
+"~/.work-marker" = { source = "markers/work" }
+EOF
+cat <<'EOF' >"$MISE_CONFIG_DIR/conf.d/extra.toml"
+[dotfiles]
+"~/.confd-marker" = { source = "../markers/confd" }
+EOF
+assert_succeed "mise bootstrap dotfiles track $MISE_CONFIG_DIR"
+assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync manual --yes"
+
+# ---- machine B: a fresh HOME previews the adoption
+B="$(dirname "$HOME")/b-home"
+mkdir -p "$B"
+cat <<EOF >"$PWD/b"
+#!/usr/bin/env bash
+export HOME="$B" XDG_CONFIG_HOME="$B/.config" MISE_CONFIG_DIR="$B/.config/mise" \\
+  MISE_STATE_DIR="$B/.local/state/mise" MISE_DATA_DIR="$B/.local/share/mise" \\
+  MISE_CACHE_DIR="$B/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$B"
+cd "\$HOME" && exec mise "\$@"
+EOF
+chmod +x "$PWD/b"
+
+preview="$("$PWD/b" bootstrap --adopt "file://$origin" --dry-run --only dotfiles 2>&1)"
+[[ $preview == *'~/.work-marker'* ]] || fail "preview skips config.work.toml selected by miserc.toml: $preview"
+[[ $preview == *'~/.confd-marker'* ]] || fail "preview skips conf.d/: $preview"
+assert_fail "test -e $B/.work-marker"
+assert_fail "test -e $B/.config/mise/config.toml"
+
+# the real adoption deploys what the preview showed
+assert_succeed "$PWD/b bootstrap --adopt file://$origin --yes --only dotfiles"
+assert "cat $B/.work-marker" "work"
+assert "cat $B/.confd-marker" "confd"

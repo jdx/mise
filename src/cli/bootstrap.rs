@@ -2680,28 +2680,27 @@ impl Bootstrap {
             command.env_remove("MISE_GLOBAL_CONFIG_FILE");
         }
         if self.adopt.is_some() {
-            if self.dry_run {
-                command.env("MISE_CONFIG_DIR", &checkout);
-                let name = crate::env::MISE_GLOBAL_CONFIG_FILE
-                    .as_deref()
-                    .and_then(Path::file_name)
-                    .unwrap_or(std::ffi::OsStr::new("config.toml"));
-                command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(name));
+            // a dry run previews from `checkout` itself, which may be a staged
+            // copy of a setup repository's configuration
+            let config_dir = if self.dry_run {
+                checkout.clone()
             } else {
                 let config_dir = crate::env::MISE_CONFIG_DIR.as_path();
-                let config_dir = if config_dir.is_absolute() {
+                if config_dir.is_absolute() {
                     config_dir.to_path_buf()
                 } else {
                     std::env::current_dir()?.join(config_dir)
-                };
-                command.env("MISE_CONFIG_DIR", config_dir);
-
-                if let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
-                    .as_deref()
-                    .and_then(Path::file_name)
-                {
-                    command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
                 }
+            };
+            command.env("MISE_CONFIG_DIR", config_dir);
+
+            // only a global config file the user chose: setting one otherwise
+            // would hide the directory's conf.d/ and config.<env>.toml
+            if let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
+                .as_deref()
+                .and_then(Path::file_name)
+            {
+                command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
             }
         }
 
