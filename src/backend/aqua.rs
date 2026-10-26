@@ -3921,7 +3921,13 @@ impl AquaBackend {
             return Ok(());
         }
         for entry in fs::read_dir(install_path)? {
-            let rootfs = entry?.path().join("agent-rootfs");
+            let entry = entry?;
+            if !fs::symlink_metadata(entry.path())
+                .is_ok_and(|metadata| metadata.file_type().is_dir())
+            {
+                continue;
+            }
+            let rootfs = entry.path().join("agent-rootfs");
             if Self::is_smolvm_agent_rootfs(&rootfs) {
                 file::rebase_guest_rootfs_absolute_symlinks(&rootfs)?;
             }

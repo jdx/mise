@@ -273,6 +273,23 @@ fn test_rebase_guest_rootfs_absolute_symlinks_preserves_dangling_guest_link() {
 
 #[cfg(unix)]
 #[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_rebases_owning_directory_to_dot() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    let rootfs = root.join("agent-rootfs");
+    fs::create_dir_all(rootfs.join("usr/bin")).unwrap();
+    symlink("/usr/bin", rootfs.join("usr/bin/X11")).unwrap();
+
+    rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
+
+    assert_eq!(fs::read_link(rootfs.join("usr/bin/X11")).unwrap(), PathBuf::from("."));
+    ensure_symlinks_stay_within(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
 fn test_rebase_guest_rootfs_absolute_symlinks_leaves_chained_escapes_for_containment_check() {
     use std::os::unix::fs::symlink;
 

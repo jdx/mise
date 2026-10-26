@@ -3041,7 +3041,11 @@ fn relative_path(from: &Path, to: &Path) -> PathBuf {
     for component in &to[common..] {
         relative.push(component.as_os_str());
     }
-    relative
+    if relative.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        relative
+    }
 }
 
 /// Resolves `target` as seen from the directory `base` (already real), following
