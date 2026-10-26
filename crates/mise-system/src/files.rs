@@ -3584,6 +3584,33 @@ fn content_digest(content: &str) -> String {
     hash_sha256_to_str(content)
 }
 
+/// Warn before an apply replaces a template target that differs from what mise
+/// last wrote there, so the edit can be moved into the source first. Without a
+/// record nothing is known about the file, so it stays quiet.
+fn warn_if_template_target_edited(req: &FileRequest) {
+    let Some(recorded) = load_target_state(req).and_then(|state| state.content_digest) else {
+        return;
+    };
+    if req.target.is_symlink() || !req.target.is_file() {
+        return;
+    }
+    let Ok(bytes) = file::read(&req.target) else {
+        return;
+    };
+    // what mise wrote was a string, so bytes that are not UTF-8 are an edit
+    let edited = match String::from_utf8(bytes) {
+        Ok(current) => content_digest(&current) != recorded,
+        Err(_) => true,
+    };
+    if edited {
+        warn!(
+            "files: {} was edited since mise last wrote it; applying overwrites the edit. Move it into {} to keep it",
+            req.target.display_user(),
+            req.source.display_user()
+        );
+    }
+}
+
 /// Whether the record already holds `rendered` as the target's content.
 fn target_state_matches(req: &FileRequest, rendered: &str) -> bool {
     load_target_state(req)
@@ -4433,6 +4460,11 @@ pub fn execute_apply(
             }
         }
         return Ok(true);
+    }
+    for (req, rendered) in &plan.todo {
+        if req.mode == FileMode::Template && rendered.is_some() {
+            warn_if_template_target_edited(req);
+        }
     }
     if !opts.yes && console::user_attended_stderr() {
         let list = plan
