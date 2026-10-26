@@ -425,7 +425,8 @@ your shell's environment for the project, so the tools that `mise activate`
 puts on `PATH` are found without shims.
 
 ::: tip
-`mise lsp` needs mise 2026.10.18 or later, and its semantic tokens 2026.10.19.
+`mise lsp` needs mise 2026.10.18 or later. Semantic tokens need mise 2026.10.19
+or later.
 :::
 
 ![mise-zed in Zed](./mise-zed.webp)
