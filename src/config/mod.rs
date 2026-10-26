@@ -3116,9 +3116,9 @@ fn load_config_paths_from_dirs(
 /// target's identity, the real `.node-version` next to it would be dropped as
 /// its duplicate.
 fn config_identity(path: &Path) -> PathBuf {
-    if path.extension().is_none_or(|ext| ext != "toml")
-        && config_file::diagnostic::links_to_another_name(path)
-    {
+    let toml = path.extension().is_some_and(|ext| ext == "toml")
+        || config_file::is_mise_toml_filename(path);
+    if !toml && config_file::diagnostic::links_to_another_name(path) {
         return path.to_path_buf();
     }
     file::desymlink_path(path)

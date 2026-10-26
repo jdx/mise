@@ -59,3 +59,14 @@ ln -s client/.node-version .node-version
 ln -s client/.node-version .nvmrc
 assert_contains "mise ls --current node 2>&1" "22.2.0"
 assert_contains "mise ls --current node 2>&1" "not reading ~/workdir/.nvmrc"
+rm .nvmrc .node-version
+unset MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS
+
+# A TOML config under a custom filename linked to another name is one config,
+# not two.
+export MISE_OVERRIDE_CONFIG_FILENAMES=config:mise.toml
+echo '[tools]
+dummy = "1.0.0"' >mise.toml
+ln -s mise.toml config
+assert_not_contains "mise ls dummy 2>&1" "not reading"
+assert "mise config ls --no-header | wc -l | tr -d ' '" "1"
