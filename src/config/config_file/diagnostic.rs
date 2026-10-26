@@ -171,7 +171,7 @@ fn reached_through_link(path: &Path, root: &Path) -> bool {
 
 /// Whether a project version file (`.tool-versions`, `.node-version`, ...)
 /// is reached through a symlink, as [`may_quote`] decides, to a file of
-/// another name. Such a file is not read: a version file links to another
+/// another name outside the directory the link is in. Such a file is not read: a version file links to another
 /// version file, while a link to `~/.netrc` or a token file would put that
 /// file's text into tool names and versions, which mise prints in warnings,
 /// `mise ls` and install errors, and puts into download URLs.
@@ -187,8 +187,18 @@ pub(crate) fn links_to_another_name(path: &Path) -> bool {
     {
         return false;
     }
-    let target = path.canonicalize().ok();
-    target.as_deref().and_then(Path::file_name) != path.file_name()
+    let Ok(target) = path.canonicalize() else {
+        return false;
+    };
+    if target.file_name() == path.file_name() {
+        return false;
+    }
+    // A link to another name inside the project holds the project's own text.
+    let local = path
+        .parent()
+        .and_then(|dir| dir.canonicalize().ok())
+        .is_some_and(|dir| target.starts_with(dir));
+    !local
 }
 
 /// The warning for a version file [`links_to_another_name`] skips.
@@ -383,5 +393,19 @@ mod tests {
         assert!(links_to_another_name(&project.join("ok")));
         assert!(!links_to_another_name(&project.join("sub/.tool-versions")));
         assert!(!links_to_another_name(&project.join(".node-version")));
+    }
+
+    #[test]
+    fn a_version_file_linked_to_another_name_in_the_project_is_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(project.join("client")).unwrap();
+        std::fs::write(project.join("client/.node-version"), "22\n").unwrap();
+        symlink("client/.node-version", project.join(".nvmrc")).unwrap();
+        std::fs::write(project.join(".tool-versions"), "node 22\n").unwrap();
+        symlink(".tool-versions", project.join("alias")).unwrap();
+
+        assert!(!links_to_another_name(&project.join(".nvmrc")));
+        assert!(!links_to_another_name(&project.join("alias")));
     }
 }
