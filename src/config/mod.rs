@@ -1130,6 +1130,7 @@ impl Config {
         });
 
         let mut union = ToolRequestSet::new();
+        let all_roots = roots.clone();
         for root in roots {
             let root_idiomatic_filenames =
                 idiomatic_filenames_for_root(&root, &idiomatic_filenames).await?;
@@ -1144,8 +1145,23 @@ impl Config {
             for (path, cf) in root_config_files.clone() {
                 config_files.entry(path).or_insert(cf);
             }
-            for (path, cf) in base_config_files.clone() {
-                root_config_files.entry(path).or_insert(cf);
+            // Keep the base hierarchy's order (closest config first). A declared
+            // root's own configs are normally dropped so siblings do not leak,
+            // except those of a declared root that is an ancestor of this one
+            // (e.g. `.` for `child`): they belong to its normal hierarchy.
+            for (path, cf) in &self.config_files {
+                let is_base = base_config_files.contains_key(path);
+                let owner = all_roots
+                    .iter()
+                    .filter(|r| path.starts_with(r))
+                    .max_by_key(|r| r.components().count());
+                let is_ancestor =
+                    owner.is_some_and(|owner| *owner != root && root.starts_with(owner));
+                if is_base || is_ancestor {
+                    root_config_files
+                        .entry(path.clone())
+                        .or_insert_with(|| cf.clone());
+                }
             }
 
             let root_trs = ToolRequestSetBuilder::new()
