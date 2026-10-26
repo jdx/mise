@@ -1268,6 +1268,7 @@ impl Lock {
             &graph_tools,
             self.bump,
             run.setup.installed.is_some(),
+            !self.tool.is_empty(),
         ))
         .await?;
         if !generate || self.bump || format_changed {
