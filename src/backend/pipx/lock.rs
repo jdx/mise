@@ -142,7 +142,7 @@ impl PIPXBackend {
             .all(|s| s.trim().is_empty())
     }
 
-    pub(super) fn validate_lock_options(&self, tv: &ToolVersion) -> Result<()> {
+    pub(crate) fn validate_lock_options(&self, tv: &ToolVersion) -> Result<()> {
         if !self.uv_lock_options_supported(tv) {
             bail!(
                 "{} dependency locking does not support uvx_args or pipx_args",
@@ -505,9 +505,13 @@ impl PIPXBackend {
             ])
             .env("UV_PROJECT_ENVIRONMENT", temp.path().join(".venv"))
             .env_remove("UV_EXCLUDE_NEWER");
-        if let Some((python, _)) = &tv.uv_python
-            && !python.as_os_str().is_empty()
-        {
+        // Install binds the interpreter explicitly, so replay the same one rather
+        // than whichever Python uv finds first.
+        let python = match &tv.uv_python {
+            Some((python, _)) if !python.as_os_str().is_empty() => Some(python.clone()),
+            _ => self.spawnable_dependency(config, None, "python").await,
+        };
+        if let Some(python) = python {
             replay = replay.arg("--python").arg(python);
         }
         replay

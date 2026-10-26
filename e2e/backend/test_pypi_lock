@@ -191,10 +191,11 @@ source_path=$(mise where pipx:mise-source-cli)
 assert_not_contains "echo '$source_path'" '~uv~'
 assert_contains 'mise install 2>&1' 'already installed'
 assert "mise where pipx:mise-source-cli" "$source_path"
-assert_fail 'mise lock --bump pipx:mise-source-cli' 'no usable wheels'
+assert_contains 'mise lock --bump pipx:mise-source-cli 2>&1' 'keeping a version-only lock entry'
 
 cp original.toml mise.toml
 cp first.lock mise.lock
+mkdir -p .mise/locks/pipx-mise-lock-cli/1.0.0
 cp first-sidecars/pipx-mise-lock-cli/1.0.0/* .mise/locks/pipx-mise-lock-cli/1.0.0/
 mise uninstall --all pipx:mise-lock-cli
 export UV_CACHE_DIR="$PWD/corrupt-cache"

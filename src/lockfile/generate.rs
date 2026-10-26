@@ -829,6 +829,7 @@ pub async fn populate_uv_locks(
             );
             continue;
         }
+        backend.validate_lock_options(tv)?;
         let graph = match backend.resolve_uv_lock(config, tv).await {
             Ok(graph) => graph,
             Err(error) if best_effort => {
@@ -843,6 +844,14 @@ pub async fn populate_uv_locks(
                     "{} dependency graph unavailable; keeping a version-only lock entry: {error:#}",
                     ba.short
                 );
+                if let Some(entries) = lockfile.tools_for_mut(&ba.short) {
+                    for entry in entries
+                        .iter_mut()
+                        .filter(|entry| entry.version == tv.version && entry.options == options)
+                    {
+                        entry.uv = None;
+                    }
+                }
                 continue;
             }
         };
