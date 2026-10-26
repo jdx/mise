@@ -196,35 +196,31 @@ directory in it, beside the other applications' config:
         └── conf.d/
 ```
 
-Its `config.toml` links that directory to `~/.config/mise`, along with the
-rest:
+On a new machine, one command clones the checkout, links `~/.config/mise` to
+the directory `--config-dir` names in it, and bootstraps from there:
+
+```sh
+mise bootstrap --from https://github.com/you/dotfiles.git --from-dir ~/.dotfiles --config-dir .config/mise
+```
+
+From then on, `config.toml`, `config.<env>.toml`, `conf.d/`, and
+`miserc.toml` in that directory are your global config, and
+`{{ mise_config_dir }}` is `~/.config/mise` on this run and every later one.
+mise links the directory it reads its config from, so `XDG_CONFIG_HOME` and
+`MISE_CONFIG_DIR` move the link too. That directory must be missing, empty, or
+already this link; move an existing config aside first. The rest of the
+checkout deploys through ordinary entries:
 
 ```toml [~/.dotfiles/.config/mise/config.toml]
 [dotfiles]
-"~/.config/mise" = { mode = "symlink" }
 "~/.config/kitty" = { mode = "symlink" }
 "~/.zshrc" = {}
 ```
 
 An entry without a `source` reads the same path under
 [`dotfiles.root`](/configuration/settings.html#dotfiles.root), which defaults
-to `~/.dotfiles`, so `~/.config/mise` links to `~/.dotfiles/.config/mise`. If
-you keep the checkout elsewhere, set `dotfiles.root` to it. The link's key
-assumes the default config directory; if you set `XDG_CONFIG_HOME` or
-`MISE_CONFIG_DIR`, use that directory instead.
-
-On a new machine, `--config-dir` names the directory in the checkout to use as
-global config for the first run:
-
-```sh
-mise bootstrap --from https://github.com/you/dotfiles.git --from-dir ~/.dotfiles --config-dir .config/mise
-```
-
-That run reads `config.toml`, `config.<env>.toml`, `conf.d/`, and
-`miserc.toml` as global config, as later runs will, and does not read a global
-config this machine already has. Move an existing `~/.config/mise` aside first,
-so the link can take its place. The first run creates the link, so updating
-needs no `--from`:
+to `~/.dotfiles`. If you keep the checkout elsewhere, set `dotfiles.root` to
+it. Updating needs no `--from`:
 
 ```sh
 git -C ~/.dotfiles pull

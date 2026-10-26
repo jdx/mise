@@ -52,9 +52,9 @@ resource-level changes.
 
   The replaced versions are saved first, so `mise dot undo` restores them.
 - **`--from-dir <DIR>`** — Directory for the `--from` checkout (default: `$MISE_DATA_DIR/bootstrap-repo`)
-- **`--config-dir <DIR>`** — Use this directory of the `--from` checkout as the global config directory
+- **`--config-dir <DIR>`** — Link the global config directory to this directory of the `--from` checkout
 
-  The bootstrap runs with `MISE_CONFIG_DIR` set to it, so its `config.toml`, `config.<env>.toml`, `conf.d/`, and `miserc.toml` load as global config instead of the global config this machine has. The path is relative to the checkout and must stay inside it; `.` is the checkout itself. To keep using it as global config afterwards, link it to your config directory with a `[dotfiles]` entry. See <https://mise.jdx.dev/bootstrap/from-repository.html#global-config-elsewhere>.
+  mise links its config directory, normally ~/.config/mise, to the directory, then bootstraps from it, so its `config.toml`, `config.<env>.toml`, `conf.d/`, and `miserc.toml` are the global config from this run on. The config directory must be missing, empty, or already this link. The path is relative to the checkout and must stay inside it; `.` is the checkout itself. See <https://mise.jdx.dev/bootstrap/from-repository.html#global-config-elsewhere>.
 - **`-n --dry-run`** — Show what would change without changing anything
 
   Hooks and the `bootstrap` task are printed instead of run.
@@ -130,7 +130,7 @@ Do the same and also load the project's mise.work.toml
 mise -E work bootstrap --from git@github.com:example/workstation.git
 ```
 
-Clone a dotfiles repository and use its .config/mise as global config
+Clone a dotfiles repository and link ~/.config/mise to its .config/mise
 
 ```
 mise bootstrap --from https://github.com/example/dotfiles.git --from-dir ~/.dotfiles --config-dir .config/mise

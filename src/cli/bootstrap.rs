@@ -90,7 +90,7 @@ use crate::ui::table::MiseTable;
     ),
     example(
         "mise bootstrap --from https://github.com/example/dotfiles.git --from-dir ~/.dotfiles --config-dir .config/mise",
-        help = "Clone a dotfiles repository and use its .config/mise as global config"
+        help = "Clone a dotfiles repository and link ~/.config/mise to its .config/mise"
     ),
     example(
         "mise bootstrap --adopt example/mise-config",
@@ -148,14 +148,14 @@ pub(crate) struct Bootstrap {
     #[usage(long, value_name = "DIR", requires = "from")]
     from_dir: Option<PathBuf>,
 
-    /// Use this directory of the `--from` checkout as the global config directory
+    /// Link the global config directory to this directory of the `--from` checkout
     ///
-    /// The bootstrap runs with `MISE_CONFIG_DIR` set to it, so its
-    /// `config.toml`, `config.<env>.toml`, `conf.d/`, and `miserc.toml` load as
-    /// global config instead of the global config this machine has. The path is
-    /// relative to the checkout and must stay inside it; `.` is the checkout
-    /// itself. To keep using it as global config afterwards, link it to your
-    /// config directory with a `[dotfiles]` entry. See
+    /// mise links its config directory, normally ~/.config/mise, to the
+    /// directory, then bootstraps from it, so its `config.toml`,
+    /// `config.<env>.toml`, `conf.d/`, and `miserc.toml` are the global config
+    /// from this run on. The config directory must be missing, empty, or
+    /// already this link. The path is relative to the checkout and must stay
+    /// inside it; `.` is the checkout itself. See
     /// https://mise.jdx.dev/bootstrap/from-repository.html#global-config-elsewhere.
     #[usage(long, value_name = "DIR", requires = "from")]
     config_dir: Option<PathBuf>,
@@ -2674,10 +2674,17 @@ impl Bootstrap {
             &crate::env::ARGS.read().unwrap(),
         ));
         if let Some(dir) = self.config_dir.as_deref() {
+            let selected = checkout_config_dir(&checkout, dir)?;
+            // a dry run changes nothing, so it previews from the directory itself
+            let config_dir = if self.dry_run {
+                selected
+            } else {
+                link_config_dir(&selected)?
+            };
+            command.env("MISE_CONFIG_DIR", config_dir);
             // MISE_GLOBAL_CONFIG_FILE, or its MISE_CONFIG_FILE fallback, would
             // make one file the whole global config, skipping the directory's
             // conf.d/ and config.<env>.toml
-            command.env("MISE_CONFIG_DIR", checkout_config_dir(&checkout, dir)?);
             command.env_remove("MISE_GLOBAL_CONFIG_FILE");
             command.env_remove("MISE_CONFIG_FILE");
         }
@@ -2938,6 +2945,59 @@ fn checkout_config_dir(checkout: &Path, dir: &Path) -> Result<PathBuf> {
         );
     }
     Ok(resolved)
+}
+
+/// Links mise's config directory to `selected`, as `--adopt` clones into it,
+/// so this bootstrap and every later command read it there, and
+/// `{{ mise_config_dir }}` names the same place on every run. Whatever is
+/// there already must be missing, an empty directory, or this link; anything
+/// else is left alone.
+fn link_config_dir(selected: &Path) -> Result<PathBuf> {
+    let link = dirs::CONFIG.to_path_buf();
+    let link = if link.is_absolute() {
+        link
+    } else {
+        std::env::current_dir()?.join(link)
+    };
+    if crate::file::is_symlink_or_junction(&link) {
+        if dunce::canonicalize(&link).is_ok_and(|resolved| resolved == selected) {
+            return Ok(link);
+        }
+        bail!(
+            "{} is already a link; remove it to use --config-dir {}",
+            link.display_user(),
+            selected.display_user()
+        );
+    }
+    match link.read_dir() {
+        Ok(mut entries) => {
+            if entries.next().is_some() {
+                bail!(
+                    "{} already holds a global config; move it aside to use --config-dir {}",
+                    link.display_user(),
+                    selected.display_user()
+                );
+            }
+            std::fs::remove_dir(&link)?;
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) if link.exists() => bail!(
+            "{} is not a directory; move it aside to use --config-dir {}",
+            link.display_user(),
+            selected.display_user()
+        ),
+        Err(err) => return Err(err.into()),
+    }
+    if let Some(parent) = link.parent() {
+        crate::file::create_dir_all(parent)?;
+    }
+    crate::file::make_dir_link(selected, &link)?;
+    info!(
+        "bootstrap: linked {} to {}",
+        link.display_user(),
+        selected.display_user()
+    );
+    Ok(link)
 }
 
 /// Re-run this invocation with `environments` selected, preserving every other
