@@ -133,7 +133,7 @@ impl PIPXBackend {
         ))
     }
 
-    pub(super) fn uv_lock_options_supported(&self, tv: &ToolVersion) -> bool {
+    pub(crate) fn uv_lock_options_supported(&self, tv: &ToolVersion) -> bool {
         let raw = tv.request.options();
         let opts = PipxOptions::new(&raw);
         [opts.uvx_args(), opts.pipx_args()]

@@ -202,6 +202,7 @@ pub(crate) async fn prepare_install(config: &Arc<Config>, tv: &ToolVersion) -> R
         &[(tv.ba().clone(), tv.clone())],
         false,
         true,
+        false,
     ))
     .await?;
     Ok(())
@@ -773,6 +774,7 @@ pub async fn populate_uv_locks(
     tools: &[Tool],
     force: bool,
     best_effort: bool,
+    strict_options: bool,
 ) -> Result<()> {
     if lockfile.lockfile_version() < 2 {
         return Ok(());
@@ -784,7 +786,16 @@ pub async fn populate_uv_locks(
         let backend = crate::backend::pipx::PIPXBackend::from_arg(ba.clone());
         let options = backend.lockfile_options(&tv.request, &PlatformTarget::from_current())?;
         let backend_name = ba.stored_full();
-        if !backend.uv_lock_allowed(tv) {
+        // Tools the user named explicitly still fail on installer arguments uv
+        // cannot lock; a sweep over every tool degrades to version-only.
+        let options_supported = strict_options || backend.uv_lock_options_supported(tv);
+        if !options_supported || !backend.uv_lock_allowed(tv) {
+            if !options_supported && !best_effort {
+                warn!(
+                    "{} dependency graph skipped because uvx_args or pipx_args are configured; locking with version-only resolution",
+                    ba.short
+                );
+            }
             if let Some(entries) = lockfile.tools_for_mut(&ba.short) {
                 for entry in entries
                     .iter_mut()
