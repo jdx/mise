@@ -788,7 +788,10 @@ pub async fn populate_uv_locks(
         let backend_name = ba.stored_full();
         // Tools the user named explicitly still fail on installer arguments uv
         // cannot lock; a sweep over every tool degrades to version-only.
-        let options_supported = strict_options || backend.uv_lock_options_supported(tv);
+        let options_supported = backend.uv_lock_options_supported(tv);
+        if strict_options && !options_supported {
+            backend.validate_lock_options(tv)?;
+        }
         if !options_supported || !backend.uv_lock_allowed(tv) {
             if !options_supported && !best_effort {
                 warn!(
