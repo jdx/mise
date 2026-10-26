@@ -2649,13 +2649,16 @@ fn unloaded_monorepo_config(version_file: &Path, monorepo_root: &Path) -> Option
         .skip(1)
         .take_while(|dir| *dir != monorepo_root && dir.starts_with(monorepo_root))
         .find_map(|dir| {
-            let config_path = crate::config::config_paths_in_dir(dir)
-                .into_iter()
-                .find(|path| {
-                    path.extension().is_some_and(|ext| ext == "toml")
-                        && !is_local_config(path)
-                        && extract_env_from_config_path(path).is_none()
-                })?;
+            // The last one wins, as among loaded configs sharing a root.
+            let config_path =
+                crate::config::config_paths_in_dir(dir)
+                    .into_iter()
+                    .rfind(|path| {
+                        path.extension().is_some_and(|ext| ext == "toml")
+                            && !is_local_config(path)
+                            && extract_env_from_config_path(path).is_none()
+                            && !crate::config::config_file::is_config_ignored_via_setting(path)
+                    })?;
             Some((config_path, dir.components().count()))
         })
 }
@@ -2782,17 +2785,32 @@ pub(crate) fn lockfile_is_trusted(config: &Config, lockfile: &Path) -> bool {
         return true;
     }
     let monorepo_root = config.monorepo_lockfile_root();
-    config.config_files.keys().any(|path| {
-        // `is_global_config` resolves symlinks, so it also holds for a
-        // project config linked to the global one; the global lockfile
-        // itself was matched by location above.
-        !crate::config::is_global_config(path)
+    // A sub-project config that is not loaded, such as `app/mise.toml` from the
+    // monorepo root, still owns its lockfile.
+    let owned_by_unloaded_config = lockfile.parent().is_some_and(|dir| {
+        [Some(dir), dir.parent()]
+            .into_iter()
+            .flatten()
+            .flat_map(crate::config::config_paths_in_dir)
+            .any(|path| {
+                path.extension().is_some_and(|ext| ext == "toml")
+                    && !crate::config::is_global_config(&path)
+                    && same_file_path(&lockfile_path_for_config(&path, None).0, lockfile)
+                    && crate::config::config_file::is_path_trusted(&path)
+            })
+    });
+    owned_by_unloaded_config
+        || config.config_files.keys().any(|path| {
+            // `is_global_config` resolves symlinks, so it also holds for a
+            // project config linked to the global one; the global lockfile
+            // itself was matched by location above.
+            !crate::config::is_global_config(path)
             // A legacy monorepo lockfile still belongs to the config beside it.
             && [monorepo_root.as_deref(), None]
                 .into_iter()
                 .any(|root| same_file_path(&lockfile_path_for_config(path, root).0, lockfile))
             && crate::config::config_file::is_path_trusted(path)
-    })
+        })
 }
 
 /// Whether writing the lockfile symlink `link` may replace `target`, the

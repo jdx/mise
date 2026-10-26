@@ -18,9 +18,11 @@ cat >app/mise.toml <<'TOML'
 idiomatic_version_file_enable_tools = ["node"]
 
 [tasks.t]
-run = "echo ran"
+run = "node --version"
 TOML
 
-(cd app && mise lock --platform linux-x64)
-assert_contains "cd app && MISE_LOCKED=1 mise run t 2>&1" "ran"
+mise install node@24.21.0
+(cd app && mise lock)
+assert_contains "cd app && MISE_LOCKED=1 mise run t 2>&1" "v24.21.0"
+assert_contains "MISE_LOCKED=1 mise run //app:t 2>&1" "v24.21.0"
 assert_not_contains "MISE_LOCKED=1 mise run //app:t 2>&1" "not in the lockfile"
