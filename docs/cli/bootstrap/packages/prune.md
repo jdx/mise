@@ -27,6 +27,9 @@ trusted config mise has tracked, still declares it.
   **Default:** `brew`
 - **`-n --dry-run`** — Show what would be removed without removing anything
 - **`-y --yes`** — Skip the confirmation prompt
+- **`--force`** — Remove `brew-cask` casks that mise installed even when it cannot prove they are unchanged, such as self-updating apps or casks with install scripts
+
+  mise removes the files it recorded installing that are still in place, but not what a cask's own install scripts created.
 - **`-h --help`** — Print help
 
 ## Examples

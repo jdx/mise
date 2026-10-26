@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Linux" ]]; then
+  exit 0
+fi
+
+prefix="$PWD/brew-prefix"
+version_dir="$prefix/Caskroom/example/1.0.0"
+binary="$version_dir/bin/example"
+target="$prefix/bin/example"
+state="$PWD/state"
+env="MISE_SYSTEM_BREW_PREFIX=$prefix MISE_STATE_DIR=$state"
+
+mkdir -p "$version_dir/bin" "$prefix/bin"
+printf '#!/bin/sh\n' >"$binary"
+ln -s "$binary" "$target"
+digest="$(printf %s "$binary" | sha256sum | cut -d' ' -f1)"
+
+cat >"$version_dir/.mise-cask.toml" <<EOF
+schema_version = 3
+version = "1.0.0"
+binaries = ["$target"]
+prune_safe = false
+prune_blocker = "install lifecycle actions may have untracked side effects"
+
+[[targets]]
+path = "$target"
+
+[targets.fingerprint]
+kind = "symlink"
+digest = "$digest"
+EOF
+
+cat >mise.toml <<EOF
+[bootstrap.packages]
+EOF
+
+assert_contains \
+  "$env mise bootstrap packages prune --manager brew-cask --yes 2>&1" \
+  "brew-cask: to remove example anyway, run again with --force"
+assert_succeed "test -L $target"
+
+assert_fail_contains \
+  "$env mise bootstrap packages prune --manager brew --force" \
+  "--force only applies to --manager brew-cask"
+
+assert_contains \
+  "$env mise bootstrap packages prune --manager brew-cask --force --dry-run" \
+  "remove brew-cask:example@1.0.0"
+assert_succeed \
+  "$env mise bootstrap packages prune --manager brew-cask --force --yes"
+assert_fail "test -e $target"
+assert_fail "test -e $prefix/Caskroom/example"

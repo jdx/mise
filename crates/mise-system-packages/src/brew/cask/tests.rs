@@ -967,8 +967,11 @@ fn self_updating_receipt_accepts_app_bundle_drift() -> Result<()> {
         caskroom.join(".mise-cask.toml"),
         toml::to_string_pretty(&legacy_receipt)?,
     )?;
-    let plan =
-        cask_prune_plan_from_tokens(&BTreeSet::new(), &prefix::prefix().join(".mise-test-state"))?;
+    let plan = cask_prune_plan_from_tokens(
+        &BTreeSet::new(),
+        &prefix::prefix().join(".mise-test-state"),
+        false,
+    )?;
     assert!(plan.remove.is_empty());
     assert!(plan.skipped.iter().any(|skip| {
         skip.token == "self-updating" && skip.reason.contains("metadata-only app ownership")
@@ -6702,7 +6705,7 @@ fn cask_prune_removes_only_receipt_owned_direct_artifacts() -> Result<()> {
         &[],
     )?;
 
-    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, false)?;
     assert_eq!(plan.remove.len(), 1);
     assert!(plan.skipped.is_empty());
     assert_eq!(apply_cask_prune_plan_in(&plan, true, &state_dir)?, 0);
@@ -6730,7 +6733,7 @@ fn cask_prune_keeps_nonempty_token_directory_and_continues() -> Result<()> {
     let staged_token_dir = caskroom_token_dir(CaskManager::BrewCask, "a-staged");
     file::create_dir_all(staged_token_dir.join(".mise-tmp-interrupted"))?;
 
-    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, false)?;
     assert_eq!(plan.remove.len(), 2);
 
     assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 2);
@@ -6828,8 +6831,11 @@ fn cask_prune_skips_configured_drifted_and_legacy_casks() -> Result<()> {
         })?,
     )?;
 
-    let plan =
-        cask_prune_plan_from_tokens(&BTreeSet::from([configured.token.clone()]), &state_dir)?;
+    let plan = cask_prune_plan_from_tokens(
+        &BTreeSet::from([configured.token.clone()]),
+        &state_dir,
+        false,
+    )?;
     assert!(plan.remove.is_empty());
     assert_eq!(
         plan.skipped
@@ -6858,7 +6864,7 @@ fn cask_prune_skips_shared_targets_and_pending_transactions() -> Result<()> {
     file::create_dir_all(&journal_dir)?;
     file::write(journal_dir.join("1.0.0.json"), "{}")?;
 
-    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, false)?;
     assert!(plan.remove.is_empty());
     assert_eq!(plan.skipped.len(), 5);
     for token in ["shared-a", "shared-b"] {
@@ -6890,7 +6896,7 @@ fn cask_prune_rechecks_shared_targets_before_removal() -> Result<()> {
     let _guard = BrewPrefixGuard::set(tmp.path());
     let state_dir = tmp.path().join("state");
     let target = write_test_app_receipt(&test_cask("planned", "1.0.0"), "Shared.app")?;
-    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, false)?;
     assert_eq!(plan.remove.len(), 1);
 
     write_test_app_receipt(&test_cask("late-claim", "1.0.0"), "Shared.app")?;
@@ -6908,7 +6914,7 @@ fn cask_prune_rechecks_homebrew_ownership_before_removal() -> Result<()> {
     let _guard = BrewPrefixGuard::set(tmp.path());
     let state_dir = tmp.path().join("state");
     let target = write_test_app_receipt(&test_cask("claimed", "1.0.0"), "Claimed.app")?;
-    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, false)?;
     assert_eq!(plan.remove.len(), 1);
 
     file::create_dir_all(caskroom_token_dir(CaskManager::BrewCask, "claimed").join(".metadata"))?;
@@ -6941,7 +6947,7 @@ fn cask_prune_fails_closed_when_a_receipt_is_corrupt() -> Result<()> {
     file::create_dir_all(&corrupt_dir)?;
     file::write(corrupt_dir.join(".mise-cask.toml"), "not = [valid")?;
 
-    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, false)?;
 
     assert!(plan.remove.is_empty());
     assert!(plan.skipped.iter().any(|skip| {
@@ -6967,7 +6973,7 @@ fn cask_prune_fails_closed_when_a_token_directory_is_unreadable() -> Result<()> 
     file::create_dir_all(&unreadable)?;
     std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000))?;
 
-    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir);
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, false);
     std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o755))?;
     let plan = plan?;
 
@@ -7029,6 +7035,199 @@ fn cask_prune_receipt_rejects_pkg_and_lifecycle_casks() -> Result<()> {
         cask_prune_blocker(&cask, &wrapper).as_deref(),
         Some("command wrapper artifacts are not supported for pruning")
     );
+    Ok(())
+}
+
+/// Install a self-updating cask with an app and a binary link, the shape of
+/// OrbStack, whose receipt never permits a plain prune.
+fn write_self_updating_receipt(token: &str) -> Result<(PathBuf, PathBuf)> {
+    let mut cask = test_cask(token, "1.0.0");
+    cask.auto_updates = true;
+    let app = AppArtifact {
+        source: "Updater.app".to_string(),
+        target: Some("$HOMEBREW_PREFIX/Applications/Updater.app".to_string()),
+    };
+    let binary = BinaryArtifact {
+        source: "bin/updater".to_string(),
+        target: Some("$HOMEBREW_PREFIX/bin/updater".to_string()),
+    };
+    let app_target = app_target_path(app.target_name()?)?;
+    file::create_dir_all(&app_target)?;
+    file::write(app_target.join("version"), "1.0.0")?;
+    let version_dir = caskroom_version_dir(CaskManager::BrewCask, &cask.token, &cask.version);
+    file::create_dir_all(version_dir.join("bin"))?;
+    file::write(version_dir.join("bin/updater"), "#!/bin/sh\n")?;
+    let binary_target = binary.target_path(Path::new("/Applications"))?;
+    file::create_dir_all(binary_target.parent().unwrap())?;
+    std::os::unix::fs::symlink(version_dir.join("bin/updater"), &binary_target)?;
+    write_receipt_with_flight_targets(
+        &version_dir,
+        &cask,
+        &CaskArtifacts {
+            apps: vec![app],
+            binaries: vec![binary],
+            ..Default::default()
+        },
+        &[],
+        &BTreeMap::new(),
+        &[],
+        &[],
+    )?;
+    Ok((app_target, binary_target))
+}
+
+#[test]
+fn cask_prune_force_removes_a_self_updated_cask() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let state_dir = tmp.path().join("state");
+    let (app_target, binary_target) = write_self_updating_receipt("updater")?;
+    file::write(app_target.join("version"), "2.0.0")?;
+
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, false)?;
+    assert!(plan.remove.is_empty());
+    assert_eq!(plan.skipped.len(), 1);
+    assert!(plan.skipped[0].forceable);
+    assert!(
+        plan.skipped[0]
+            .reason
+            .contains("metadata-only app ownership")
+    );
+
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, true)?;
+    assert!(plan.skipped.is_empty());
+    assert_eq!(plan.remove.len(), 1);
+    assert!(
+        plan.remove[0]
+            .forced
+            .as_deref()
+            .is_some_and(|reason| reason.contains("metadata-only app ownership"))
+    );
+
+    assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 1);
+    assert!(!app_target.exists());
+    assert!(binary_target.symlink_metadata().is_err());
+    assert!(!caskroom_token_dir(CaskManager::BrewCask, "updater").exists());
+    assert!(!cask_journal_pending_in(
+        &state_dir,
+        CaskManager::BrewCask,
+        "updater"
+    ));
+    Ok(())
+}
+
+#[test]
+fn cask_prune_force_keeps_a_link_that_now_points_elsewhere() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let state_dir = tmp.path().join("state");
+    let (app_target, binary_target) = write_self_updating_receipt("updater")?;
+    let other = tmp.path().join("other/updater");
+    file::create_dir_all(other.parent().unwrap())?;
+    file::write(&other, "#!/bin/sh\n")?;
+    std::fs::remove_file(&binary_target)?;
+    std::os::unix::fs::symlink(&other, &binary_target)?;
+
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, true)?;
+    assert_eq!(plan.remove.len(), 1);
+
+    assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 1);
+    assert!(!app_target.exists());
+    assert_eq!(std::fs::read_link(&binary_target)?, other);
+    assert!(!caskroom_token_dir(CaskManager::BrewCask, "updater").exists());
+    Ok(())
+}
+
+#[test]
+fn cask_prune_force_removes_a_receipt_without_prune_metadata() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let state_dir = tmp.path().join("state");
+    let target = write_test_app_receipt(&test_cask("legacy", "1.0.0"), "Legacy.app")?;
+    let version_dir = caskroom_version_dir(CaskManager::BrewCask, "legacy", "1.0.0");
+    let mut receipt = read_receipt(&version_dir)?.unwrap();
+    receipt.schema_version = 2;
+    receipt.prune_safe = false;
+    file::write(
+        version_dir.join(".mise-cask.toml"),
+        toml::to_string_pretty(&receipt)?,
+    )?;
+
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, false)?;
+    assert!(plan.remove.is_empty());
+    assert!(plan.skipped[0].forceable);
+
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, true)?;
+    assert_eq!(plan.remove.len(), 1);
+    assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 1);
+    assert!(!target.exists());
+    assert!(!caskroom_token_dir(CaskManager::BrewCask, "legacy").exists());
+    Ok(())
+}
+
+#[test]
+fn cask_prune_force_still_refuses_casks_it_cannot_attribute() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let state_dir = tmp.path().join("state");
+
+    write_test_app_receipt(&test_cask("homebrew", "1.0.0"), "Homebrew.app")?;
+    file::create_dir_all(caskroom_token_dir(CaskManager::BrewCask, "homebrew").join(".metadata"))?;
+    file::create_dir_all(caskroom_version_dir(
+        CaskManager::BrewCask,
+        "unrecorded",
+        "1.0.0",
+    ))?;
+    write_test_app_receipt(&test_cask("pending", "1.0.0"), "Pending.app")?;
+    let journal_dir = state_dir.join("brew-cask/pending");
+    file::create_dir_all(&journal_dir)?;
+    file::write(journal_dir.join("1.0.0.json"), "{}")?;
+    write_test_app_receipt(&test_cask("shared-a", "1.0.0"), "Shared.app")?;
+    write_test_app_receipt(&test_cask("shared-b", "1.0.0"), "Shared.app")?;
+    let ancient_dir = caskroom_version_dir(CaskManager::BrewCask, "ancient", "1.0.0");
+    file::create_dir_all(&ancient_dir)?;
+    file::write(
+        ancient_dir.join(".mise-cask.toml"),
+        "schema_version = 1\nversion = \"1.0.0\"\n",
+    )?;
+
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, true)?;
+    assert!(plan.remove.is_empty());
+    assert_eq!(
+        plan.skipped
+            .iter()
+            .map(|skip| (skip.token.as_str(), skip.forceable))
+            .collect::<Vec<_>>(),
+        vec![
+            ("ancient", false),
+            ("homebrew", false),
+            ("pending", false),
+            ("shared-a", false),
+            ("shared-b", false),
+            ("unrecorded", false),
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn cask_prune_force_rechecks_homebrew_ownership_before_removal() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let state_dir = tmp.path().join("state");
+    let (app_target, _) = write_self_updating_receipt("updater")?;
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, true)?;
+    assert_eq!(plan.remove.len(), 1);
+
+    file::create_dir_all(caskroom_token_dir(CaskManager::BrewCask, "updater").join(".metadata"))?;
+
+    assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 0);
+    assert!(app_target.exists());
     Ok(())
 }
 

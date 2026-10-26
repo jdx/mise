@@ -1073,10 +1073,10 @@ pub(super) fn read_receipt(caskroom: &Path) -> Result<Option<CaskReceipt>> {
         .wrap_err_with(|| format!("failed to parse {}", path.display()))
 }
 
-pub async fn cask_prune_plan(configured: &[PackageRequest]) -> Result<CaskPrunePlan> {
+pub async fn cask_prune_plan(configured: &[PackageRequest], force: bool) -> Result<CaskPrunePlan> {
     let closure = resolve_cask_dependency_closure(configured).await?;
     let keep = closure.casks.into_values().collect();
-    cask_prune_plan_from_tokens(&keep, &mise_util::dirs::STATE)
+    cask_prune_plan_from_tokens(&keep, &mise_util::dirs::STATE, force)
 }
 
 pub async fn cask_formula_dependencies(
@@ -1175,6 +1175,7 @@ pub(super) fn dependency_tap_url(parent: &PackageRequest, dependency: &str) -> O
 pub(super) fn cask_prune_plan_from_tokens(
     keep: &BTreeSet<String>,
     state_dir: &Path,
+    force: bool,
 ) -> Result<CaskPrunePlan> {
     let mut plan = CaskPrunePlan::default();
     let mut candidates = Vec::new();
@@ -1193,6 +1194,7 @@ pub(super) fn cask_prune_plan_from_tokens(
                 plan.skipped.push(CaskPruneSkip {
                     token: "Caskroom".to_string(),
                     reason: format!("Caskroom entry could not be read: {err}"),
+                    forceable: false,
                 });
                 continue;
             }
@@ -1204,6 +1206,7 @@ pub(super) fn cask_prune_plan_from_tokens(
                 plan.skipped.push(CaskPruneSkip {
                     token: entry.file_name().to_string_lossy().to_string(),
                     reason: format!("Caskroom entry type could not be read: {err}"),
+                    forceable: false,
                 });
                 continue;
             }
@@ -1216,6 +1219,7 @@ pub(super) fn cask_prune_plan_from_tokens(
             plan.skipped.push(CaskPruneSkip {
                 token: entry.file_name().to_string_lossy().to_string(),
                 reason: "Caskroom token name is not valid UTF-8".to_string(),
+                forceable: false,
             });
             continue;
         };
@@ -1229,6 +1233,7 @@ pub(super) fn cask_prune_plan_from_tokens(
                 plan.skipped.push(CaskPruneSkip {
                     token,
                     reason: "Caskroom directory could not be read".to_string(),
+                    forceable: false,
                 });
             }
             continue;
@@ -1261,7 +1266,11 @@ pub(super) fn cask_prune_plan_from_tokens(
         }
         if let Some(reason) = version_error {
             if !configured {
-                plan.skipped.push(CaskPruneSkip { token, reason });
+                plan.skipped.push(CaskPruneSkip {
+                    token,
+                    reason,
+                    forceable: false,
+                });
             }
             continue;
         }
@@ -1288,7 +1297,11 @@ pub(super) fn cask_prune_plan_from_tokens(
         }
         if let Some(reason) = receipt_error {
             if !configured {
-                plan.skipped.push(CaskPruneSkip { token, reason });
+                plan.skipped.push(CaskPruneSkip {
+                    token,
+                    reason,
+                    forceable: false,
+                });
             }
             continue;
         }
@@ -1297,6 +1310,7 @@ pub(super) fn cask_prune_plan_from_tokens(
                 plan.skipped.push(CaskPruneSkip {
                     token,
                     reason: "Homebrew owns this cask".to_string(),
+                    forceable: false,
                 });
             }
             continue;
@@ -1306,6 +1320,7 @@ pub(super) fn cask_prune_plan_from_tokens(
                 plan.skipped.push(CaskPruneSkip {
                     token,
                     reason: "expected exactly one installed Caskroom version".to_string(),
+                    forceable: false,
                 });
             }
             continue;
@@ -1316,6 +1331,7 @@ pub(super) fn cask_prune_plan_from_tokens(
                 plan.skipped.push(CaskPruneSkip {
                     token,
                     reason: "mise ownership receipt is missing".to_string(),
+                    forceable: false,
                 });
             }
             continue;
@@ -1327,38 +1343,46 @@ pub(super) fn cask_prune_plan_from_tokens(
             plan.skipped.push(CaskPruneSkip {
                 token,
                 reason: "an incomplete cask transaction is pending".to_string(),
+                forceable: false,
             });
             continue;
         }
-        if receipt.schema_version != 3 {
-            plan.skipped.push(CaskPruneSkip {
-                token,
-                reason: "receipt predates safe prune metadata; upgrade or reinstall first"
-                    .to_string(),
-            });
-            continue;
-        }
-        if !receipt.prune_safe {
-            let reason = receipt
-                .prune_blocker
-                .clone()
-                .unwrap_or_else(|| "receipt does not permit pruning".to_string());
-            plan.skipped.push(CaskPruneSkip { token, reason });
-            continue;
-        }
+        // Schema 2 is the first to record every target with its fingerprint,
+        // which a forced removal needs to tell what is still the cask's.
+        let schema_records_targets = matches!(receipt.schema_version, 2 | 3);
         let version = version.file_name().to_string_lossy().to_string();
-        let candidate = CaskPruneCandidate {
+        let mut candidate = CaskPruneCandidate {
             token,
             version,
+            forced: None,
             version_dir,
             receipt,
         };
-        if let Err(reason) = validate_cask_prune_candidate(&candidate) {
-            plan.skipped.push(CaskPruneSkip {
-                token: candidate.token,
-                reason: format!("recorded artifacts cannot be removed safely: {reason:#}"),
-            });
-            continue;
+        let blocker = if candidate.receipt.schema_version != 3 {
+            Some("receipt predates safe prune metadata; upgrade or reinstall first".to_string())
+        } else if !candidate.receipt.prune_safe {
+            Some(
+                candidate
+                    .receipt
+                    .prune_blocker
+                    .clone()
+                    .unwrap_or_else(|| "receipt does not permit pruning".to_string()),
+            )
+        } else {
+            validate_cask_prune_candidate(&candidate)
+                .err()
+                .map(|reason| format!("recorded artifacts cannot be removed safely: {reason:#}"))
+        };
+        if let Some(reason) = blocker {
+            if !force || !schema_records_targets {
+                plan.skipped.push(CaskPruneSkip {
+                    token: candidate.token,
+                    reason,
+                    forceable: schema_records_targets,
+                });
+                continue;
+            }
+            candidate.forced = Some(reason);
         }
         candidates.push(candidate);
     }
@@ -1368,6 +1392,7 @@ pub(super) fn cask_prune_plan_from_tokens(
             plan.skipped.push(CaskPruneSkip {
                 token: candidate.token,
                 reason: "cask ownership receipts could not be indexed completely".to_string(),
+                forceable: false,
             });
             continue;
         }
@@ -1395,6 +1420,7 @@ pub(super) fn cask_prune_plan_from_tokens(
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
+                forceable: false,
             });
         }
     }
@@ -1426,9 +1452,12 @@ pub(super) fn apply_cask_prune_plan_in(
     let _caskroom_lock = lock_caskroom(CaskManager::BrewCask)?;
     let mut removed = 0;
     for candidate in &plan.remove {
-        if let Err(reason) = validate_cask_prune_candidate(candidate)
-            .and_then(|_| validate_cask_prune_claims(candidate))
-        {
+        let validated = if candidate.forced.is_some() {
+            validate_cask_prune_ownership(candidate)
+        } else {
+            validate_cask_prune_candidate(candidate)
+        };
+        if let Err(reason) = validated.and_then(|_| validate_cask_prune_claims(candidate)) {
             warn!(
                 "brew-cask:{}: skipped because recorded artifacts changed after planning: {reason:#}",
                 candidate.token
@@ -1444,7 +1473,15 @@ pub(super) fn apply_cask_prune_plan_in(
             };
             write_cask_journal_in(state_dir, CaskManager::BrewCask, &journal)?;
             for (index, target) in candidate.receipt.targets.iter().enumerate() {
-                remove_artifact_target_elevating(&target.path)?;
+                if candidate.forced.is_none() || forced_prune_target_removable(candidate, target)? {
+                    remove_artifact_target_elevating(&target.path)?;
+                } else {
+                    warn!(
+                        "brew-cask:{}: kept {} because mise cannot confirm it belongs to the cask",
+                        candidate.token,
+                        target.path.display()
+                    );
+                }
                 record_cask_action_in(
                     state_dir,
                     CaskManager::BrewCask,
@@ -1609,14 +1646,64 @@ pub(super) fn cask_target_claimed_by_another(
     Ok(false)
 }
 
-pub(super) fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
+/// The checks `--force` never overrides: mise, not Homebrew, still owns the
+/// cask, and its receipt is the one the plan was made from.
+pub(super) fn validate_cask_prune_ownership(candidate: &CaskPruneCandidate) -> Result<()> {
     if homebrew_metadata_present(&candidate.token)? {
         bail!("Homebrew now owns this cask");
     }
-    let receipt = &candidate.receipt;
-    if read_receipt(&candidate.version_dir)?.as_ref() != Some(receipt) {
+    if read_receipt(&candidate.version_dir)?.as_ref() != Some(&candidate.receipt) {
         bail!("ownership receipt has changed");
     }
+    Ok(())
+}
+
+/// Whether a forced prune may remove `record`.
+///
+/// Forcing accepts that a target's contents changed, such as an app that
+/// updated itself, but not that something else took its place. So an app or
+/// font must still be a directory or file in its install location, and a
+/// binary or completion link must still point where mise left it. Targets a
+/// cask's install scripts recorded are never removed, because mise cannot
+/// tell what they are.
+fn forced_prune_target_removable(
+    candidate: &CaskPruneCandidate,
+    record: &CaskTargetRecord,
+) -> Result<bool> {
+    let path = &record.path;
+    let Ok(metadata) = path.symlink_metadata() else {
+        return Ok(true);
+    };
+    let receipt = &candidate.receipt;
+    if receipt.apps.contains(path) {
+        return Ok(metadata.is_dir()
+            && allowed_appdir_roots()?
+                .iter()
+                .any(|root| path_is_below(path, root)));
+    }
+    if receipt.fonts.contains(path) {
+        return Ok(metadata.is_file() && path_is_below(path, &font_dir()));
+    }
+    let roots = if receipt.binaries.contains(path) {
+        allowed_binary_target_roots()
+    } else if receipt.completions.contains(path) {
+        [
+            CompletionShell::Bash,
+            CompletionShell::Fish,
+            CompletionShell::Zsh,
+            CompletionShell::Pwsh,
+        ]
+        .map(default_completion_dir)
+        .to_vec()
+    } else {
+        return Ok(false);
+    };
+    Ok(roots.iter().any(|root| path_is_below(path, root)) && cask_target_record_matches(record)?)
+}
+
+pub(super) fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
+    validate_cask_prune_ownership(candidate)?;
+    let receipt = &candidate.receipt;
     if receipt.schema_version != 3 || !receipt.prune_safe || !receipt.pkg_ids.is_empty() {
         bail!("receipt is not marked safe for direct-artifact pruning");
     }

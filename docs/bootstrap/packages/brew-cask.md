@@ -255,6 +255,22 @@ interrupted installs; and casks installed by a mise version that did not record
 prune information, until an upgrade refreshes them. Prune never runs a cask's
 `zap` cleanup. Casks cannot be imported.
 
+To remove a cask that prune skipped only because mise cannot prove it is
+unchanged, such as a self-updating app or a cask with install steps, pass
+`--force`:
+
+```sh
+mise bootstrap packages prune --manager brew-cask --force
+```
+
+Prune names the casks `--force` would remove when it skips them. A forced prune
+removes the app, binary, font, and completion files mise recorded installing,
+except a link that now points elsewhere, and the cask's Caskroom directory.
+Anything a cask's own install steps created, such as a privileged helper or a
+launch agent, stays in place. `--force` never removes a cask Homebrew installed,
+a cask with no mise receipt, an interrupted install, or files shared with
+another cask.
+
 Deleting a `brew-cask:` entry does not uninstall the cask until you prune.
 
 ## Troubleshooting

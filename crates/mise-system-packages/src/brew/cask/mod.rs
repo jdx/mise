@@ -442,6 +442,10 @@ struct CaskTransactionJournal<'a> {
 pub struct CaskPruneCandidate {
     pub token: String,
     pub version: String,
+    /// Why a plain prune would have skipped this cask, when `--force` overrode
+    /// it. A forced removal deletes only the recorded targets mise can still
+    /// attribute to the cask, so anything the cask's own scripts set up stays.
+    pub forced: Option<String>,
     version_dir: PathBuf,
     receipt: CaskReceipt,
 }
@@ -450,6 +454,10 @@ pub struct CaskPruneCandidate {
 pub struct CaskPruneSkip {
     pub token: String,
     pub reason: String,
+    /// Whether `--force` would remove the cask anyway. Only skips that mean
+    /// "cannot prove it is unchanged" qualify; a cask mise cannot attribute
+    /// to itself is never forced.
+    pub forceable: bool,
 }
 
 #[derive(Debug, Default, Clone)]
