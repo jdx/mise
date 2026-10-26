@@ -90,10 +90,10 @@ These community plugins integrate with mise:
 | Editor         | Plugin                                                                                 | What it does                                                                                                                        |
 | -------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | VS Code        | [mise-vscode](https://marketplace.visualstudio.com/items?itemName=hverlin.mise-vscode) | Manages tools and tasks, loads the project environment, helps edit config, and can configure language extensions to use mise tools. |
-| Zed            | [mise-zed](https://github.com/hverlin/mise-zed)                                        | Runs `mise lsp` for mise config files, highlights the scripts of tasks, and runs mise tasks and tools.                              |
 | JetBrains IDEs | [intellij-mise](https://github.com/134130/intellij-mise)                               | Configures the IDE's SDKs from mise, runs mise tasks, and loads environment variables in run configurations.                        |
 | Neovim         | [miser.nvim](https://github.com/carldaws/miser.nvim)                                   | Starts language servers and formatters for the tools in `mise.toml`, and runs mise tasks from Neovim.                               |
 | Emacs          | [mise.el](https://github.com/eki3z/mise.el)                                            | Loads the mise environment for each buffer.                                                                                         |
+| Zed            | [mise-zed](https://github.com/hverlin/mise-zed)                                        | Runs `mise lsp` for mise config files, highlights the scripts of tasks, and runs mise tasks and tools.                              |
 
 ## Language server {#language-server}
 
@@ -343,23 +343,6 @@ its absolute path. This example is for macOS and Linux:
 }
 ```
 
-## Zed {#zed}
-
-The [mise-zed extension](https://github.com/hverlin/mise-zed) runs
-[`mise lsp`](#language-server) for mise config files, highlights the scripts of
-tasks in their language, and adds run buttons for tasks and tools. Zed loads
-your shell's environment for the project, so the tools that `mise activate`
-puts on `PATH` are found without shims.
-
-![mise-zed in Zed](./mise-zed.webp)
-
-Zed asks for the [semantic tokens](#language-server) of `mise lsp` only once
-they are turned on for the language, in Zed's settings:
-
-```json
-{ "languages": { "mise": { "semantic_tokens": "combined" } } }
-```
-
 ## JetBrains IDEs {#jetbrains-editors-intellij-rustrover-pycharm-webstorm-rubymine-goland-etc}
 
 These apply to IntelliJ IDEA, PyCharm, WebStorm, GoLand, RubyMine, RustRover and
@@ -431,6 +414,23 @@ it:
 ```lisp
 (require 'mise)
 (add-hook 'after-init-hook #'global-mise-mode)
+```
+
+## Zed {#zed}
+
+The [mise-zed extension](https://github.com/hverlin/mise-zed) runs
+[`mise lsp`](#language-server) for mise config files, highlights the scripts of
+tasks in their language, and adds run buttons for tasks and tools. Zed loads
+your shell's environment for the project, so the tools that `mise activate`
+puts on `PATH` are found without shims.
+
+![mise-zed in Zed](./mise-zed.webp)
+
+Zed asks for the [semantic tokens](#language-server) of `mise lsp` only once
+they are turned on for the language, in Zed's settings:
+
+```json
+{ "languages": { "mise": { "semantic_tokens": "combined" } } }
 ```
 
 ## Xcode {#xcode}
