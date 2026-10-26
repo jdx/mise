@@ -488,6 +488,31 @@ impl PIPXBackend {
             cmd = cmd.args(["--prerelease", value]);
         }
         cmd.execute()?;
+        // `uv lock` resolves for every platform and interpreter, but the install
+        // replays the graph with `--no-build` on this one, so a graph that cannot
+        // be installed here must fail now instead of at the next `mise install`.
+        let mut replay = self
+            .uv_lock_command(config, tv, &uv, temp.path())
+            .await?
+            .args([
+                "sync",
+                "--frozen",
+                "--no-build",
+                "--no-config",
+                "--no-python-downloads",
+                "--no-install-project",
+                "--dry-run",
+            ])
+            .env("UV_PROJECT_ENVIRONMENT", temp.path().join(".venv"))
+            .env_remove("UV_EXCLUDE_NEWER");
+        if let Some((python, _)) = &tv.uv_python
+            && !python.as_os_str().is_empty()
+        {
+            replay = replay.arg("--python").arg(python);
+        }
+        replay
+            .execute()
+            .wrap_err("the dependency graph cannot be installed without building distributions")?;
         let graph_text = crate::file::read_to_string(temp.path().join("uv.lock"))?;
         let graph: toml::Table = graph_text.parse()?;
         if let Some(requires_python) = graph.get("requires-python") {

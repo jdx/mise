@@ -838,7 +838,13 @@ pub async fn populate_uv_locks(
                 );
                 continue;
             }
-            Err(error) => return Err(error),
+            Err(error) => {
+                warn!(
+                    "{} dependency graph unavailable; keeping a version-only lock entry: {error:#}",
+                    ba.short
+                );
+                continue;
+            }
         };
         lockfile.set_uv_lock(&ba.short, &tv.version, &backend_name, &options, graph)?;
     }
