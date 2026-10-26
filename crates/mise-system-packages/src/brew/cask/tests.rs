@@ -8558,6 +8558,7 @@ fn failed_app_activation_preserves_caskroom_copy() -> Result<()> {
     let result = activate_app_at(
         &parent,
         std::ffi::OsStr::new("Example.app"),
+        &parent.fd,
         std::ffi::OsStr::new("missing.mise-tmp"),
         std::ffi::OsStr::new("Example.mise-old-test"),
         &caskroom_app,
@@ -8604,6 +8605,7 @@ fn upgrades_app_with_protected_existing_contents() -> Result<()> {
     let result = swap_app_at(
         &parent,
         std::ffi::OsStr::new("Docker.app"),
+        &parent.fd,
         std::ffi::OsStr::new("Docker.mise-tmp-test"),
         &old_name,
         // This repro replaces an app it owns; the no-replace path is covered
@@ -10663,6 +10665,7 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
     let err = swap_app_at(
         &parent,
         std::ffi::OsStr::new("Example.app"),
+        &parent.fd,
         std::ffi::OsStr::new("Example.mise-tmp-test"),
         std::ffi::OsStr::new("Example.mise-old-test"),
         false,
@@ -10691,6 +10694,7 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
         swap_app_at(
             &parent,
             std::ffi::OsStr::new("Example.app"),
+            &parent.fd,
             missing_tmp,
             std::ffi::OsStr::new("Example.mise-old-test"),
             false,
@@ -10708,6 +10712,7 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
     swap_app_at(
         &parent,
         std::ffi::OsStr::new("Example.app"),
+        &parent.fd,
         std::ffi::OsStr::new("Example.mise-tmp-test"),
         std::ffi::OsStr::new("Example.mise-old-test"),
         true,

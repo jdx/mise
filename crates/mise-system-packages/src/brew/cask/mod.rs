@@ -1688,27 +1688,33 @@ fn install_app_in(
     // Suffix hashes stay derived from the logical path so temporary and backup
     // names are stable across runs.
     let name_hash = mise_util::hash::hash_to_str(&logical_target.display().to_string());
-    let tmp_name = replace_bundle_extension(&name, &format!("mise-tmp-{name_hash}"));
     let old_name = replace_bundle_extension(&name, &format!("mise-old-{name_hash}"));
-    remove_all_at(&parent.fd, &tmp_name)?;
-    ditto_into(&caskroom_app, &parent.fd, &tmp_name)?;
+    // The copy keeps its final bundle name inside a hidden directory, so app
+    // launchers that index the appdir never see a bundle under a staging name.
+    let stage_name = std::ffi::OsString::from(format!(".mise-tmp-{name_hash}"));
+    remove_all_at(&parent.fd, &stage_name)?;
+    let stage = create_stage_dir_at(&parent.fd, &stage_name)?;
+    let tmp_name = name.clone();
+    ditto_into(&caskroom_app, &stage, &tmp_name)?;
     if defer_if_running && app_is_running(&logical_target) {
-        remove_all_at(&parent.fd, &tmp_name)?;
+        remove_all_at(&parent.fd, &stage_name)?;
         file::remove_all(&caskroom_app)?;
         return Ok(AppInstall::Running);
     }
     // The earlier checks concluded this entry may put a bundle here. Only an
     // entry that owns the target may replace what is at it; otherwise the swap
     // must refuse anything that appeared while the copies ran.
-    if let Err(err) = activate_app_at(
+    let activated = activate_app_at(
         &parent,
         &name,
+        &stage,
         &tmp_name,
         &old_name,
         &caskroom_app,
         &logical_target,
         !require_unowned,
-    ) {
+    );
+    if let Err(err) = activated {
         if err.downcast_ref::<AppTargetCollision>().is_none() {
             // A real activation failure. The swap may already have happened and
             // only the caskroom symlink failed, so leave both staged copies in
@@ -1716,7 +1722,7 @@ fn install_app_in(
             return Err(err);
         }
         // Nothing was activated, so the staged copies are safe to discard.
-        let _ = remove_all_at(&parent.fd, &tmp_name);
+        let _ = remove_all_at(&parent.fd, &stage_name);
         let _ = file::remove_all(&caskroom_app);
         return Err(err.wrap_err(format!(
             "{}: '{}' was created by something else while this app was being staged; it was left untouched",
@@ -1724,6 +1730,8 @@ fn install_app_in(
             logical_target.display()
         )));
     }
+    // The bundle has left the staging directory; drop the empty shell.
+    let _ = remove_all_at(&parent.fd, &stage_name);
     // Remove macOS quarantine attribute so Gatekeeper doesn't block the app.
     let relative = Path::new(".").join(&name);
     let _ = run_in_trusted_dir(
@@ -1933,6 +1941,27 @@ fn validate_adoptable_apps(cask: &Cask, stage: &Path, apps: &[AppArtifact]) -> R
     Ok(())
 }
 
+/// Create the hidden staging directory `name` inside `dir` and return it opened
+/// without following symlinks, so later steps address the bound inode rather
+/// than re-resolving the name.
+#[cfg(unix)]
+fn create_stage_dir_at<Fd: std::os::fd::AsFd>(
+    dir: Fd,
+    name: &std::ffi::OsStr,
+) -> Result<std::os::fd::OwnedFd> {
+    nix::sys::stat::mkdirat(&dir, name, nix::sys::stat::Mode::S_IRWXU).wrap_err_with(|| {
+        format!(
+            "brew-cask: cannot create staging directory {}",
+            Path::new(name).display()
+        )
+    })?;
+    let stage = open_dir_nofollow_at(&dir, name)?;
+    if nix::sys::stat::fstat(&stage)?.st_uid != nix::unistd::geteuid().as_raw() {
+        bail!("brew-cask: staging directory is not owned by the current user");
+    }
+    Ok(stage)
+}
+
 /// Replace an app bundle's extension for a bare file name
 /// (`Firefox.app` + `mise-tmp-ab12` -> `Firefox.mise-tmp-ab12`).
 fn replace_bundle_extension(name: &std::ffi::OsStr, extension: &str) -> std::ffi::OsString {
@@ -1946,6 +1975,7 @@ fn replace_bundle_extension(name: &std::ffi::OsStr, extension: &str) -> std::ffi
 fn activate_app_at(
     parent: &TrustedOperationParent,
     name: &std::ffi::OsStr,
+    stage: impl std::os::fd::AsFd,
     tmp_name: &std::ffi::OsStr,
     old_name: &std::ffi::OsStr,
     caskroom_app: &Path,
@@ -1964,7 +1994,7 @@ fn activate_app_at(
             logical_target.display()
         );
     }
-    swap_app_at(parent, name, tmp_name, old_name, allow_replace)?;
+    swap_app_at(parent, name, stage, tmp_name, old_name, allow_replace)?;
     replace_caskroom_app_with_symlink(caskroom_app, logical_target)
 }
 
@@ -2014,6 +2044,7 @@ impl std::error::Error for AppTargetCollision {}
 fn swap_app_at(
     parent: &TrustedOperationParent,
     name: &std::ffi::OsStr,
+    stage: impl std::os::fd::AsFd,
     tmp_name: &std::ffi::OsStr,
     old_name: &std::ffi::OsStr,
     allow_replace: bool,
@@ -2039,7 +2070,7 @@ fn swap_app_at(
             Err(nix::errno::Errno::EEXIST) => return Err(AppTargetCollision.into()),
             Err(err) => return Err(err.into()),
         }
-        if let Err(err) = nix::fcntl::renameat(&parent.fd, tmp_name, &parent.fd, name) {
+        if let Err(err) = nix::fcntl::renameat(&stage, tmp_name, &parent.fd, name) {
             // Drop the placeholder, or a later apply reads the empty bundle
             // left behind as a foreign app and refuses.
             let _ = nix::unistd::unlinkat(&parent.fd, name, nix::unistd::UnlinkatFlags::RemoveDir);
@@ -2058,7 +2089,7 @@ fn swap_app_at(
     if exists_at(&parent.fd, name)? {
         nix::fcntl::renameat(&parent.fd, name, &parent.fd, old_name)?;
     }
-    if let Err(e) = nix::fcntl::renameat(&parent.fd, tmp_name, &parent.fd, name) {
+    if let Err(e) = nix::fcntl::renameat(&stage, tmp_name, &parent.fd, name) {
         // Restore the old app if the swap failed.
         if exists_at(&parent.fd, old_name)? {
             let _ = nix::fcntl::renameat(&parent.fd, old_name, &parent.fd, name);
