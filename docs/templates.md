@@ -463,8 +463,9 @@ against the file that sets them:
   [`age.identity_files`](/configuration/settings.html#age.identity_files) and
   [`age.ssh_identity_files`](/configuration/settings.html#age.ssh_identity_files)
 
-These render while mise reads settings, so they get the same limited
-context as [`.miserc.toml`](#miserc-template-support), plus `config_source`.
+These render while mise reads settings, so they get the limited context of a
+global [`.miserc.toml`](#miserc-template-support), plus `config_source`. Unlike
+a project `.miserc.toml`, a project `mise.toml` gets `env` here too.
 `config_root` is the [config root](/configuration.html#config-root) of the file
 that sets them, and a relative result resolves against it.
 
