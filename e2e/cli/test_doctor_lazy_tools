@@ -20,3 +20,16 @@ cat >mise.toml <<'EOF'
 tiny = "1.0.0"
 EOF
 assert_contains "mise doctor 2>&1 || true" "vfox:jdx/vfox-tiny@1.0.0 is not installed"
+
+# A lazy tool with no registry bin metadata must declare lazy_bins; doctor reports
+# the configuration error rather than treating the tool as intentionally missing.
+cat >mise.toml <<'EOF'
+[tools]
+"github:jdx/mise-test-fixtures" = { version = "1.0.0", lazy = true }
+EOF
+assert_contains "mise doctor 2>&1 || true" "set lazy_bins explicitly"
+cat >mise.toml <<'EOF'
+[tools]
+"github:jdx/mise-test-fixtures" = { version = "1.0.0", lazy = true, lazy_bins = ["fixture"] }
+EOF
+assert_not_contains "mise doctor 2>&1 || true" "set lazy_bins explicitly"
