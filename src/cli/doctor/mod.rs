@@ -354,9 +354,13 @@ impl Doctor {
                         false => {
                             tool.insert("version".into(), tv.version.to_string().into());
                             tool.insert("missing".into(), true.into());
-                            self.errors.push(format!(
-                                "tool {tv} is not installed, install with `mise install`"
-                            ));
+                            if tv.request.options().lazy == Some(true) {
+                                tool.insert("lazy".into(), true.into());
+                            } else {
+                                self.errors.push(format!(
+                                    "tool {tv} is not installed, install with `mise install`"
+                                ));
+                            }
                         }
                     }
                     serde_json::Value::from(tool)
@@ -1256,6 +1260,10 @@ impl Doctor {
                     (tv.to_string(), style::ndim("(empty)"))
                 }
                 true => (tv.to_string(), style::nstyle("")),
+                // lazy tools are installed on first use, so not being installed yet is expected
+                false if tv.request.options().lazy == Some(true) => {
+                    (tv.to_string(), style::ndim("(lazy)"))
+                }
                 false => {
                     self.errors.push(format!(
                         "tool {tv} is not installed, install with `mise install`"

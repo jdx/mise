@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# A lazy tool is installed on first use, so doctor must not report it as a problem.
+# https://github.com/jdx/mise/issues/15018
+
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", lazy = true }
+EOF
+
+assert_not_contains "mise doctor 2>&1 || true" "tool dummy@1.0.0 is not installed"
+assert_contains "mise doctor 2>&1 || true" "(lazy)"
+assert_not_contains "mise doctor --json 2>&1 || true" "is not installed"
+
+# Ordinary missing tools are still reported.
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+assert_contains "mise doctor 2>&1 || true" "vfox:jdx/vfox-tiny@1.0.0 is not installed"
