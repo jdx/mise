@@ -17,3 +17,16 @@ EOT
 assert_fail_contains "mise install --dry-run 2>&1" "is not in the lockfile"
 assert "mise lock tiny"
 assert_contains "cat mise.lock" 'version = "1.0.0"'
+
+# Task tools are resolved through a separate path and need the same fallback.
+rm mise.lock
+cat <<'EOT' >mise.toml
+[tool_config]
+locked = true
+
+[tasks.hello]
+run = "echo hi"
+tools = { tiny = "1.0.0" }
+EOT
+assert "mise lock"
+assert_contains "cat mise.lock" 'version = "1.0.0"'
