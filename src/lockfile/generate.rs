@@ -829,7 +829,16 @@ pub async fn populate_uv_locks(
             );
             continue;
         }
-        backend.validate_lock_options(tv)?;
+        if let Err(error) = backend.validate_lock_options(tv) {
+            if best_effort {
+                debug!(
+                    "{} dependency graph skipped during automatic locking: {error:#}",
+                    ba.short
+                );
+                continue;
+            }
+            return Err(error);
+        }
         let graph = match backend.resolve_uv_lock(config, tv).await {
             Ok(graph) => graph,
             Err(error) if best_effort => {
