@@ -334,7 +334,7 @@ pub fn is_current(
                 let Some(info) = entry.platforms.get(&key) else {
                     return Ok(false);
                 };
-                if !bindings_current || !can_reuse(info) {
+                if !bindings_current || !can_reuse(info, &tv.version) {
                     return Ok(false);
                 }
                 validate_provenance_settings(ba, tv, &key, info)?;
@@ -365,14 +365,19 @@ pub fn is_current(
     Ok(true)
 }
 
-fn can_reuse(info: &PlatformInfo) -> bool {
+/// An entry whose URL names another release was left behind when its `version`
+/// was rewritten (Renovate does this), so it is refreshed, not reused.
+fn can_reuse(info: &PlatformInfo, version: &str) -> bool {
     info.checksum.is_some()
-        && info.url.is_some()
-        && info.signer.is_none()
         && info
-            .additional_artifacts
-            .iter()
-            .all(|artifact| artifact.checksum.is_some())
+            .url
+            .as_deref()
+            .is_some_and(|url| super::url_contradicts_version(version, url).is_none())
+        && info.signer.is_none()
+        && info.additional_artifacts.iter().all(|artifact| {
+            artifact.checksum.is_some()
+                && super::url_contradicts_version(version, &artifact.url).is_none()
+        })
         && !Settings::get().force_provenance_verify()
 }
 
@@ -514,7 +519,9 @@ pub async fn generate(
         }
         // Complete cached artifacts need neither I/O nor a spawned task. Keep them
         // in the same ordered result stream so all downgrade checks still run.
-        let reusable = previous_info.as_ref().filter(|info| can_reuse(info));
+        let reusable = previous_info
+            .as_ref()
+            .filter(|info| can_reuse(info, &tv.version));
         if actual.is_none()
             && let Some(info) = reusable
         {
@@ -1406,6 +1413,27 @@ mod tests {
         for auto_prune in [false, true] {
             assert!(!is_current(&previous(), &tools, &platforms, auto_prune).unwrap());
         }
+    }
+
+    #[test]
+    fn entry_with_another_releases_url_is_not_reusable() {
+        let mut info = PlatformInfo {
+            url: Some("https://github.com/o/r/releases/download/v2.1.17/r_2.1.17_arm64.gz".into()),
+            checksum: Some("sha256:old".into()),
+            ..Default::default()
+        };
+        assert!(can_reuse(&info, "2.1.17"));
+        assert!(!can_reuse(&info, "2.2.2"));
+        info.url = Some("https://example.invalid/never-download".into());
+        assert!(can_reuse(&info, "2.2.2"));
+        info.additional_artifacts
+            .push(crate::lockfile::ArtifactInfo {
+                checksum: Some("sha256:old".into()),
+                url: "https://github.com/o/r/releases/download/v2.1.17/r.sig".into(),
+                ..Default::default()
+            });
+        assert!(can_reuse(&info, "2.1.17"));
+        assert!(!can_reuse(&info, "2.2.2"));
     }
 
     #[tokio::test]
