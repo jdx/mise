@@ -2441,8 +2441,7 @@ impl Lock {
                                 if resolve_options.before_date.is_some() {
                                     resolve_options.latest_versions = true;
                                 }
-                                match resolve_for_lock(config, request, &mut resolve_options)
-                                    .await
+                                match resolve_for_lock(config, request, &mut resolve_options).await
                                 {
                                     Ok(tv) => {
                                         push_unique_lock_tool(
