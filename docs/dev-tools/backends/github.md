@@ -104,6 +104,7 @@ such as `postinstall` and `os`, are described in
 | [`no_app`](#no-app)                                                                          | Prefer a command-line archive over a macOS `.app` bundle           |
 | [`additional_asset_patterns`](#additional-asset-patterns)                                    | Extract more archives from the same release into the install       |
 | [`version_prefix`](#version-prefix)                                                          | Read versions from tags with a prefix other than `v`               |
+| [`version_regex`](#version-regex)                                                            | List only the release tags that match a pattern                    |
 | [`prerelease`](#prerelease)                                                                  | Include prereleases                                                |
 | [`version_order`](#version-order)                                                            | Order versions by semantic version                                 |
 | [`url`](#platform-specific-urls)                                                             | Download a URL instead of a release asset on one platform          |
@@ -229,6 +230,26 @@ With `version_prefix = "release-"`, mise lists only tags that start with
 `release-`, shows the tag `release-1.0.0` as `1.0.0`, and installs that tag for
 `mise use github:user/repo@1.0.0`. Set `version_prefix = ""` to keep tags
 exactly as published, including a leading `v`.
+
+#### `version_regex` {#version-regex}
+
+A regular expression that a release tag must match to be listed. Use it when a
+repository publishes releases that are not versions of the tool, such as a
+release that only holds build data:
+
+```toml
+[tools]
+"github:owner/tool" = { version = "latest", prerelease = true, version_regex = '^(v\d+\.\d+\.\d+|nightly)$' }
+```
+
+This lists the `v1.2.3` releases and the `nightly` prerelease and leaves out
+every other tag. The pattern can match anywhere in the tag, so anchor it with
+`^` and `$` to match the whole tag. It only filters: mise names each listed
+version as it would without it, so the tag `v1.2.3` is still listed as `1.2.3`.
+With `version_prefix` also set, a tag must start with the prefix and match the
+pattern. Installing never uses a tag the pattern leaves out, so in a repository
+with both `1.2.3` and `v1.2.3`, `version_regex = '^\d'` installs `1.2.3` from
+the `1.2.3` release.
 
 #### `prerelease`
 
@@ -656,6 +677,8 @@ source archives, so a release without assets has nothing to install. A release
 whose assets do not cover your platform is still listed, so the version list is
 the same on every machine and cross-platform lockfiles work. Draft releases are
 never listed, and prereleases only with [`prerelease`](#prerelease).
+[`version_prefix`](#version-prefix) and [`version_regex`](#version-regex) leave
+out tags that do not match them.
 
 If every platform you support sets [`url`](#platform-specific-urls), mise lists
 releases whether or not they have assets. A `url` for only some platforms also

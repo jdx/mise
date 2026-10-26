@@ -7,7 +7,7 @@ use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
     ArchiveLayout, VerifiableError, ensure_plain_asset_name, get_filename_from_url,
     install_artifact, lookup_platform_key, lookup_with_fallback, pinned_checksum, render_bin_path,
-    tag_candidates, template_string, try_release_tags, try_with_v_prefix, verify_artifact,
+    tag_candidates, template_string, try_allowed_release_tags, verify_artifact,
 };
 use crate::backend::{MISE_BINS_DIR, SecurityFeature, runtime_path_for_install_path};
 use crate::config::{Config, Settings, SettingsExt};
@@ -131,6 +131,23 @@ impl<'a> GitBackendOptions<'a> {
 
     fn version_prefix(&self) -> Option<&'a str> {
         self.values.str("version_prefix")
+    }
+
+    /// The release tags this tool lists. An invalid `version_regex` is an
+    /// error rather than a filter that lists nothing.
+    fn tag_filter(&self) -> Result<TagFilter<'a>> {
+        let regex = self
+            .values
+            .str("version_regex")
+            .map(|pattern| {
+                Regex::new(pattern)
+                    .map_err(|e| eyre::eyre!("invalid version_regex {pattern:?}: {e}"))
+            })
+            .transpose()?;
+        Ok(TagFilter {
+            prefix: self.version_prefix(),
+            regex,
+        })
     }
 
     fn bin_path(&self) -> Option<String> {
@@ -307,6 +324,9 @@ impl<'a> GitBackendOptions<'a> {
         }
         if let Some(value) = self.version_prefix() {
             result.insert("version_prefix".to_string(), value.to_string());
+        }
+        if let Some(value) = self.values.str("version_regex") {
+            result.insert("version_regex".to_string(), value.to_string());
         }
         if let Some(value) = self.asset_pattern_for_target(target) {
             result.insert("asset_pattern".to_string(), value);
@@ -525,6 +545,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "additional_asset_patterns".into(),
         "url".into(),
         "version_prefix".into(),
+        "version_regex".into(),
         "no_app".into(),
         "matching".into(),
         "matching_regex".into(),
@@ -568,6 +589,30 @@ fn is_flat_platform_url_key(key: &str) -> bool {
 /// carry a token.
 fn direct_url_cache_context(effective: bool, registry_default: bool) -> Option<String> {
     (effective != registry_default).then(|| crate::hash::hash_to_str(&effective))
+}
+
+/// Which release tags a tool lists: those that start with `version_prefix`
+/// and match `version_regex`, when they are set.
+///
+/// The regex only filters. A listed tag still becomes a version by the usual
+/// prefix stripping, so the install path finds the tag again the same way.
+struct TagFilter<'a> {
+    prefix: Option<&'a str>,
+    regex: Option<Regex>,
+}
+
+impl TagFilter<'_> {
+    fn lists(&self, tag: &str) -> bool {
+        self.prefix.is_none_or(|p| tag.starts_with(p)) && self.allows(tag)
+    }
+
+    /// Whether a tag may be installed from. Installing still tries the tag
+    /// spellings without `version_prefix`, for tags written out by hand, but
+    /// never one `version_regex` leaves out: a repository with both `1.2.3`
+    /// and `v1.2.3` would otherwise install the release the listing excluded.
+    fn allows(&self, tag: &str) -> bool {
+        self.regex.as_ref().is_none_or(|re| re.is_match(tag))
+    }
 }
 
 /// Whether a release has anything mise could install from.
@@ -735,7 +780,7 @@ impl Backend for UnifiedGitBackend {
     }
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
-        &["api_url", "version_prefix"]
+        &["api_url", "version_prefix", "version_regex"]
     }
 
     /// The registry baseline is read straight off the registry entry, not
@@ -771,7 +816,7 @@ impl Backend for UnifiedGitBackend {
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
-        let version_prefix = opts.version_prefix();
+        let tags = opts.tag_filter()?;
 
         // A tool with a `url` option never selects an asset, so its releases
         // must not be judged on having one.
@@ -784,7 +829,7 @@ impl Backend for UnifiedGitBackend {
             gitlab::list_releases_from_url(api_url.as_str(), &repo)
                 .await?
                 .into_iter()
-                .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+                .filter(|r| tags.lists(&r.tag_name))
                 .filter(|r| skip_asset_check || gitlab_release_has_assets(r))
                 .map(|r| VersionInfo {
                     version: self.strip_version_prefix(&r.tag_name, &opts),
@@ -801,7 +846,7 @@ impl Backend for UnifiedGitBackend {
             )
             .await?
             .into_iter()
-            .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+            .filter(|r| tags.lists(&r.tag_name))
             .filter(|r| skip_asset_check || forgejo_release_has_assets(r))
             .map(|r| VersionInfo {
                 version: self.strip_version_prefix(&r.tag_name, &opts),
@@ -822,7 +867,7 @@ impl Backend for UnifiedGitBackend {
             github::list_release_versions(api_url.as_str(), &repo, !skip_asset_check)
                 .await?
                 .into_iter()
-                .filter(|r| version_prefix.is_none_or(|p| r.tag_name.starts_with(p)))
+                .filter(|r| tags.lists(&r.tag_name))
                 .filter(|r| skip_asset_check || r.has_assets)
                 .map(|r| {
                     let created_at = r.released_at.clone();
@@ -866,7 +911,7 @@ impl Backend for UnifiedGitBackend {
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
-        let version_prefix = opts.version_prefix();
+        let tags = opts.tag_filter()?;
 
         // When `prerelease = true`, skip the `/releases/latest` shortcut
         // (which returns whichever release the repo owner marked as "Latest",
@@ -920,9 +965,8 @@ impl Backend for UnifiedGitBackend {
         };
 
         let web_url_base = self.web_url_base(&api_url, &repo);
-        Ok(latest_release
-            .filter(|(tag, _, _)| version_prefix.is_none_or(|p| tag.starts_with(p)))
-            .map(|(tag, created_at, prerelease)| VersionInfo {
+        Ok(latest_release.filter(|(tag, _, _)| tags.lists(tag)).map(
+            |(tag, created_at, prerelease)| VersionInfo {
                 version: self.strip_version_prefix(&tag, &opts),
                 created_at: Some(created_at),
                 prerelease: Some(prerelease),
@@ -934,7 +978,8 @@ impl Backend for UnifiedGitBackend {
                 // so this is the GitHub/Forgejo tag form.
                 release_url: Some(format!("{web_url_base}/releases/tag/{tag}")),
                 ..Default::default()
-            }))
+            },
+        ))
     }
 
     async fn resolve_exact_version(
@@ -951,14 +996,16 @@ impl Backend for UnifiedGitBackend {
         let opts = self.options(&raw_opts);
         let api_url = opts.api_url();
         let version_prefix = opts.version_prefix();
+        let tags = opts.tag_filter()?;
         let listed_tag = self.listed_release_tag(&opts, version).await;
 
-        match try_release_tags(
+        match try_allowed_release_tags(
             version,
             version_prefix,
             Some(&repo),
             Some(&api_url),
             listed_tag.as_deref(),
+            |tag| tags.allows(tag),
             |candidate| {
                 let api_url = api_url.clone();
                 let repo = repo.clone();
@@ -1401,7 +1448,7 @@ impl UnifiedGitBackend {
         api_url: &str,
         repo: &str,
         version: &str,
-        version_prefix: Option<&str>,
+        opts: &GitBackendOptions<'_>,
         asset: &ReleaseAsset,
     ) -> Result<github::GithubRelease> {
         let tag = asset.release_tag.clone().or_else(|| {
@@ -1413,9 +1460,13 @@ impl UnifiedGitBackend {
         if let Some(tag) = tag {
             return github::get_release_for_url_with_versions_host(api_url, repo, &tag, true).await;
         }
+        let tags = opts.tag_filter()?;
         let mut first_release = None;
         let mut not_found = None;
-        for candidate in tag_candidates(version, version_prefix, Some(repo)) {
+        for candidate in tag_candidates(version, opts.version_prefix(), Some(repo))
+            .into_iter()
+            .filter(|candidate| tags.allows(candidate))
+        {
             match github::get_release_for_url_with_versions_host(api_url, repo, &candidate, true)
                 .await
             {
@@ -1448,11 +1499,10 @@ impl UnifiedGitBackend {
         let api_url = opts.api_url();
         let settings = Settings::get();
         let version = &tv.version;
-        let version_prefix = opts.version_prefix();
 
         let signer_pinned = settings.slsa && settings.github.slsa && opts.slsa_signer().is_some();
         let release = match self
-            .release_for_asset(&api_url, &repo, version, version_prefix, asset)
+            .release_for_asset(&api_url, &repo, version, opts, asset)
             .await
         {
             Ok(release) => release,
@@ -1644,9 +1694,8 @@ impl UnifiedGitBackend {
             && let Some((identity, issuer)) = opts.slsa_signer_for(tv)
         {
             let version = &tv.version;
-            let version_prefix = opts.version_prefix();
             let release = self
-                .release_for_asset(&api_url, &repo, version, version_prefix, asset)
+                .release_for_asset(&api_url, &repo, version, opts, asset)
                 .await?;
             let signer = crate::github::sigstore::SlsaSignerIdentity {
                 identity: &identity,
@@ -1822,8 +1871,8 @@ impl UnifiedGitBackend {
         let url = self.listed_release_url(&config, version).await?;
         let web_url_base = self.web_url_base(&opts.api_url(), &self.repo());
         let tag = crate::backend::release_tag_from_url(&url, &web_url_base)?;
-        let prefixed = opts.version_prefix().is_none_or(|p| tag.starts_with(p));
-        (prefixed && self.strip_version_prefix(&tag, opts) == version).then_some(tag)
+        let listed = opts.tag_filter().ok()?.lists(&tag);
+        (listed && self.strip_version_prefix(&tag, opts) == version).then_some(tag)
     }
 
     fn preferred_asset_name(&self) -> String {
@@ -2254,42 +2303,61 @@ impl UnifiedGitBackend {
 
         let version = &tv.version;
         let version_prefix = opts.version_prefix();
+        let tags = opts.tag_filter()?;
+        let allowed = |tag: &str| tags.allows(tag);
         if self.is_gitlab() {
-            try_with_v_prefix(version, version_prefix, |candidate| async move {
-                self.resolve_gitlab_asset_url_for_target(
-                    tv,
-                    opts,
-                    repo,
-                    &candidate,
-                    target,
-                    asset_pattern,
-                )
-                .await
-            })
+            try_allowed_release_tags(
+                version,
+                version_prefix,
+                None,
+                None,
+                None,
+                allowed,
+                |candidate| async move {
+                    self.resolve_gitlab_asset_url_for_target(
+                        tv,
+                        opts,
+                        repo,
+                        &candidate,
+                        target,
+                        asset_pattern,
+                    )
+                    .await
+                },
+            )
             .await
         } else if self.is_forgejo() {
-            try_with_v_prefix(version, version_prefix, |candidate| async move {
-                self.resolve_forgejo_asset_url_for_target(
-                    tv,
-                    opts,
-                    repo,
-                    &candidate,
-                    target,
-                    asset_pattern,
-                )
-                .await
-            })
+            try_allowed_release_tags(
+                version,
+                version_prefix,
+                None,
+                None,
+                None,
+                allowed,
+                |candidate| async move {
+                    self.resolve_forgejo_asset_url_for_target(
+                        tv,
+                        opts,
+                        repo,
+                        &candidate,
+                        target,
+                        asset_pattern,
+                    )
+                    .await
+                },
+            )
             .await
         } else {
             // Pass full repo for trying reponame@version formats
             let listed_tag = self.listed_release_tag(opts, version).await;
             let api_url = opts.api_url();
-            try_release_tags(
+            try_allowed_release_tags(
                 version,
                 version_prefix,
                 Some(repo),
                 Some(&api_url),
                 listed_tag.as_deref(),
+                allowed,
                 |candidate| async move {
                     self.resolve_github_asset_url_for_target(
                         tv,
@@ -3159,9 +3227,8 @@ impl UnifiedGitBackend {
         let version = &tv.version;
 
         // Try to get the release (with version prefix support)
-        let version_prefix = opts.version_prefix();
         let release = match self
-            .release_for_asset(api_url, &repo, version, version_prefix, asset)
+            .release_for_asset(api_url, &repo, version, &opts, asset)
             .await
         {
             Ok(r) => r,
@@ -3405,6 +3472,7 @@ fn template_string_for_target(template: &str, tv: &ToolVersion, target: &Platfor
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::static_helpers::try_release_tags;
 
     #[test]
     fn test_mirrored_digest_is_recorded_but_not_a_download_pin() {
@@ -3595,6 +3663,75 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_install_never_resolves_a_tag_version_regex_excludes() {
+        // `v1.2.3` and `1.2.3` both name version 1.2.3. With a regex that lists
+        // only the bare tag, installing 1.2.3 must not pick `v1.2.3`, which
+        // mise would otherwise try first.
+        let mut server = mockito::Server::new_async().await;
+        let repo = "owner/two-tags-regex";
+        let v_tag = server
+            .mock(
+                "GET",
+                format!("/repos/{repo}/releases/tags/v1.2.3").as_str(),
+            )
+            .with_header("content-type", "application/json")
+            .with_body(release_json("v1.2.3", "tool-darwin.tar.gz"))
+            .expect(0)
+            .create_async()
+            .await;
+        let bare_tag = server
+            .mock("GET", format!("/repos/{repo}/releases/tags/1.2.3").as_str())
+            .with_header("content-type", "application/json")
+            .with_body(release_json("1.2.3", "tool-linux.tar.gz"))
+            .expect_at_least(1)
+            .create_async()
+            .await;
+        let api_url = server.url();
+
+        let backend = create_test_backend();
+        let mut raw = ToolVersionOptions::default();
+        raw.opts
+            .insert("version_regex".into(), toml::Value::String("^[0-9]".into()));
+        let opts = backend.options(&raw);
+        let tags = opts.tag_filter().unwrap();
+
+        let release = try_allowed_release_tags(
+            "1.2.3",
+            None,
+            Some(repo),
+            Some(&api_url),
+            None,
+            |tag| tags.allows(tag),
+            |candidate| {
+                let api_url = api_url.clone();
+                async move {
+                    github::get_release_for_url_with_versions_host(&api_url, repo, &candidate, true)
+                        .await
+                }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(release.tag_name, "1.2.3");
+
+        let unplaced = ReleaseAsset {
+            name: "tool-linux.tar.gz".to_string(),
+            url: "https://example.com/tool-linux.tar.gz".to_string(),
+            url_api: String::new(),
+            digest: None,
+            release_tag: None,
+        };
+        let release = backend
+            .release_for_asset(&api_url, repo, "1.2.3", &opts, &unplaced)
+            .await
+            .unwrap();
+        assert_eq!(release.tag_name, "1.2.3");
+
+        v_tag.assert_async().await;
+        bare_tag.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn test_provenance_release_is_the_one_the_asset_came_from() {
         // `1.2.3` and `v1.2.3` both name version 1.2.3, with different assets,
         // and `v1.2.3` is the tag remembered for the version. An asset from
@@ -3668,7 +3805,13 @@ mod tests {
             ),
         ] {
             let release = backend
-                .release_for_asset(&api_url, repo, "1.2.3", None, &asset)
+                .release_for_asset(
+                    &api_url,
+                    repo,
+                    "1.2.3",
+                    &backend.options(&ToolVersionOptions::default()),
+                    &asset,
+                )
                 .await
                 .unwrap();
             assert_eq!(release.tag_name, "1.2.3", "{case}");
@@ -3872,6 +4015,53 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
     }
 
     #[test]
+    fn test_tag_filter_lists_tags_matching_prefix_and_regex() {
+        let backend = create_test_backend();
+        let filter = |options: &[(&str, &str)]| {
+            let mut opts = ToolVersionOptions::default();
+            for (key, value) in options {
+                opts.opts
+                    .insert(key.to_string(), toml::Value::String(value.to_string()));
+            }
+            let tags = backend.options(&opts).tag_filter().unwrap();
+            ["v1.2.3", "nightly", "pgo-profiles", "release-1.0.0"]
+                .into_iter()
+                .filter(|tag| tags.lists(tag))
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            filter(&[]),
+            ["v1.2.3", "nightly", "pgo-profiles", "release-1.0.0"]
+        );
+        assert_eq!(
+            filter(&[("version_regex", r"^(v\d+\.\d+\.\d+|nightly)$")]),
+            ["v1.2.3", "nightly"]
+        );
+        // Unanchored, the pattern matches anywhere in the tag.
+        assert_eq!(
+            filter(&[("version_regex", "1")]),
+            ["v1.2.3", "release-1.0.0"]
+        );
+        // With both set, a tag has to pass both.
+        assert_eq!(
+            filter(&[("version_prefix", "release-"), ("version_regex", r"\.0$")]),
+            ["release-1.0.0"]
+        );
+        assert!(filter(&[("version_prefix", "v"), ("version_regex", "nightly")]).is_empty());
+    }
+
+    #[test]
+    fn test_invalid_version_regex_is_an_error() {
+        let backend = create_test_backend();
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("version_regex".into(), toml::Value::String("(".into()));
+        let err = backend.options(&opts).tag_filter().err().unwrap();
+        assert!(err.to_string().contains("invalid version_regex"), "{err}");
+    }
+
+    #[test]
     fn test_identity_options_keep_the_signer_and_the_release_selection() {
         use crate::backend::static_helpers::test_identity_options;
         let backend = create_test_backend();
@@ -3897,6 +4087,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
         // Each of these selects a different release or a different layout.
         for (key, value) in [
             ("version_prefix", "release-"),
+            ("version_regex", "^v"),
             ("api_url", "https://ghe.example.com/api/v3"),
             ("asset_pattern", "tool-*.tar.gz"),
             ("bin_path", "tool/bin"),
@@ -4644,6 +4835,10 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
             "version_prefix".to_string(),
             toml::Value::String("release-".to_string()),
         );
+        opts.opts.insert(
+            "version_regex".to_string(),
+            toml::Value::String(r"^release-\d".to_string()),
+        );
         // matching/matching_regex are top-level (not per-platform) options; they
         // must round-trip into lockfile_options for every target so a relock on
         // another OS reproduces the same asset selection.
@@ -4689,6 +4884,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 ("matching".to_string(), "tool".to_string()),
                 ("matching_regex".to_string(), "^tool-".to_string()),
                 ("version_prefix".to_string(), "release-".to_string()),
+                ("version_regex".to_string(), r"^release-\d".to_string()),
             ])
         );
         assert_eq!(
@@ -4706,6 +4902,7 @@ platforms.macos-arm64.url = 'https://example.com/{{ version }}/tool-darwin-arm64
                 ("matching_regex".to_string(), "^tool-".to_string()),
                 ("no_app".to_string(), "true".to_string()),
                 ("version_prefix".to_string(), "release-".to_string()),
+                ("version_regex".to_string(), r"^release-\d".to_string()),
             ])
         );
     }

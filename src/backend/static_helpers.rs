@@ -462,6 +462,34 @@ where
     Fut: Future<Output = std::result::Result<T, E>>,
     E: VerifiableError,
 {
+    try_allowed_release_tags(
+        version,
+        version_prefix,
+        repo,
+        api_url,
+        known_tag,
+        |_| true,
+        resolver,
+    )
+    .await
+}
+
+/// [`try_release_tags`] over only the tags `allowed` accepts, hints included,
+/// for a tool whose options leave some of a version's spellings unlisted.
+pub(crate) async fn try_allowed_release_tags<F, Fut, T, E>(
+    version: &str,
+    version_prefix: Option<&str>,
+    repo: Option<&str>,
+    api_url: Option<&str>,
+    known_tag: Option<&str>,
+    allowed: impl Fn(&str) -> bool,
+    resolver: F,
+) -> Result<T>
+where
+    F: Fn(String) -> Fut,
+    Fut: Future<Output = std::result::Result<T, E>>,
+    E: VerifiableError,
+{
     let key = repo
         .zip(api_url)
         .map(|(repo, api_url)| resolved_tag_key(api_url, repo, version, version_prefix));
@@ -471,10 +499,11 @@ where
     let hints: IndexSet<String> = resolved
         .into_iter()
         .chain(known_tag.map(str::to_string))
+        .filter(|tag| allowed(tag))
         .collect();
     let generated = tag_candidates(version, version_prefix, repo)
         .into_iter()
-        .filter(|tag| !hints.contains(tag))
+        .filter(|tag| allowed(tag) && !hints.contains(tag))
         .map(|tag| (tag, false));
     let candidates = hints
         .iter()
