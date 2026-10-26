@@ -24,6 +24,11 @@ cat <<'EOF' >"$MISE_CONFIG_DIR/config.work.toml"
 [dotfiles]
 "~/.work-marker" = { source = "markers/work" }
 EOF
+echo personal >"$MISE_CONFIG_DIR/markers/personal"
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.personal.toml"
+[dotfiles]
+"~/.personal-marker" = { source = "markers/personal" }
+EOF
 cat <<'EOF' >"$MISE_CONFIG_DIR/conf.d/extra.toml"
 [dotfiles]
 "~/.confd-marker" = { source = "../markers/confd" }
@@ -31,17 +36,23 @@ EOF
 assert_succeed "mise bootstrap dotfiles track $MISE_CONFIG_DIR"
 assert_succeed "mise bootstrap dotfiles origin set file://$origin --sync manual --yes"
 
-# ---- machine B: a fresh HOME previews the adoption
-B="$(dirname "$HOME")/b-home"
-mkdir -p "$B"
-cat <<EOF >"$PWD/b"
+# other machines are other HOMEs reached through wrapper scripts
+wrapper() {
+  local home="$1" script="$2"
+  mkdir -p "$home"
+  cat <<EOF >"$script"
 #!/usr/bin/env bash
-export HOME="$B" XDG_CONFIG_HOME="$B/.config" MISE_CONFIG_DIR="$B/.config/mise" \\
-  MISE_STATE_DIR="$B/.local/state/mise" MISE_DATA_DIR="$B/.local/share/mise" \\
-  MISE_CACHE_DIR="$B/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$B"
+export HOME="$home" XDG_CONFIG_HOME="$home/.config" MISE_CONFIG_DIR="$home/.config/mise" \\
+  MISE_STATE_DIR="$home/.local/state/mise" MISE_DATA_DIR="$home/.local/share/mise" \\
+  MISE_CACHE_DIR="$home/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$home"
 cd "\$HOME" && exec mise "\$@"
 EOF
-chmod +x "$PWD/b"
+  chmod +x "$script"
+}
+
+# ---- machine B: a fresh HOME previews the adoption
+B="$(dirname "$HOME")/b-home"
+wrapper "$B" "$PWD/b"
 
 preview="$("$PWD/b" bootstrap --adopt "file://$origin" --dry-run --only dotfiles 2>&1)"
 [[ $preview == *'~/.work-marker'* ]] || fail "preview skips config.work.toml selected by miserc.toml: $preview"
@@ -53,3 +64,14 @@ assert_fail "test -e $B/.config/mise/config.toml"
 assert_succeed "$PWD/b bootstrap --adopt file://$origin --yes --only dotfiles"
 assert "cat $B/.work-marker" "work"
 assert "cat $B/.confd-marker" "confd"
+
+# ---- machine C chooses its own environment in miserc.local.toml, which is
+# never shared; the preview selects the same files the real run will
+C="$(dirname "$HOME")/c-home"
+wrapper "$C" "$PWD/c"
+mkdir -p "$C/.config/mise"
+echo 'env = ["personal"]' >"$C/.config/mise/miserc.local.toml"
+preview="$("$PWD/c" bootstrap --adopt "file://$origin" --dry-run --only dotfiles 2>&1)"
+[[ $preview == *'~/.personal-marker'* ]] || fail "preview ignores this machine's miserc.local.toml: $preview"
+assert_succeed "$PWD/c bootstrap --adopt file://$origin --yes --only dotfiles"
+assert "cat $C/.personal-marker" "personal"
