@@ -54,6 +54,15 @@ pub(crate) struct SystemPrune {
     /// Skip the confirmation prompt
     #[usage(long, short)]
     yes: bool,
+
+    /// Remove `brew-cask` casks that mise installed even when it cannot prove
+    /// they are unchanged, such as self-updating apps or casks with install
+    /// scripts
+    ///
+    /// mise removes the files it recorded installing that are still in place,
+    /// but not what a cask's own install scripts created.
+    #[usage(long)]
+    force: bool,
 }
 
 impl SystemPrune {
@@ -72,6 +81,9 @@ impl SystemPrune {
                 "manager '{}' is excluded by the system_packages.managers setting",
                 self.manager
             );
+        }
+        if self.force && self.manager != "brew-cask" {
+            bail!("--force only applies to --manager brew-cask");
         }
         match self.manager.as_str() {
             "brew" => self.run_brew().await,
@@ -205,9 +217,26 @@ impl SystemPrune {
             .find(|mp| mp.manager.name() == "brew-cask")
             .map(|mp| mp.requests)
             .unwrap_or_default();
-        let plan = brew::cask_prune_plan(&configured).await?;
+        let plan = brew::cask_prune_plan(&configured, self.force).await?;
         for skipped in &plan.skipped {
             warn!("brew-cask:{}: skipped: {}", skipped.token, skipped.reason);
+        }
+        let forceable = plan
+            .skipped
+            .iter()
+            .filter(|skipped| skipped.forceable)
+            .map(|skipped| skipped.token.as_str())
+            .collect::<Vec<_>>();
+        if !forceable.is_empty() {
+            info!(
+                "brew-cask: to remove {} anyway, run again with --force",
+                forceable.join(", ")
+            );
+        }
+        for candidate in &plan.remove {
+            if let Some(reason) = &candidate.forced {
+                warn!("brew-cask:{}: forcing removal: {reason}", candidate.token);
+            }
         }
         if plan.is_empty() {
             info!("brew-cask: nothing to prune");

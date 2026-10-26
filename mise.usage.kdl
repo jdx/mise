@@ -1811,6 +1811,13 @@ trusted config mise has tracked, still declares it.
             }
             flag "-n --dry-run" help="Show what would be removed without removing anything"
             flag "-y --yes" help="Skip the confirmation prompt"
+            flag --force help="Remove `brew-cask` casks that mise installed even when it cannot prove they are unchanged, such as self-updating apps or casks with install scripts" {
+                long_help #"""
+Remove `brew-cask` casks that mise installed even when it cannot prove they are unchanged, such as self-updating apps or casks with install scripts
+
+mise removes the files it recorded installing that are still in place, but not what a cask's own install scripts created.
+"""#
+            }
             flag "-h --help" help="Print help" action=help builtin=#true
             example "mise bootstrap packages prune --dry-run" help="Preview which Homebrew formulae would be removed"
             example "mise bootstrap packages prune --yes" help="Remove them without a prompt"
