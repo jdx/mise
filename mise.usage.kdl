@@ -847,6 +847,11 @@ A target that is already managed keeps its mode.
                 arg <PATH>
             }
             flag "-s --source" help="Source path to use for a single target" {
+                long_help #"""
+Source path to use for a single target
+
+A relative path starts from the current directory. The entry records it relative to the config file's directory when it lies inside it, and as an absolute path otherwise.
+"""#
                 arg <PATH>
             }
             flag "-y --yes" help="Skip the confirmation prompt"
@@ -2989,6 +2994,11 @@ A target that is already managed keeps its mode.
             arg <PATH>
         }
         flag "-s --source" help="Source path to use for a single target" {
+            long_help #"""
+Source path to use for a single target
+
+A relative path starts from the current directory. The entry records it relative to the config file's directory when it lies inside it, and as an absolute path otherwise.
+"""#
             arg <PATH>
         }
         flag "-y --yes" help="Skip the confirmation prompt"

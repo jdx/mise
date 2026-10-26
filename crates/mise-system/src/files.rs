@@ -2204,6 +2204,46 @@ pub fn resolve_target_arg(target: &str) -> PathBuf {
     lexical_normalize(&file::replace_path(target))
 }
 
+/// Resolve a source path given on the command line: `~/` expands and a
+/// relative path starts from the current directory, as in a shell.
+pub fn resolve_source_arg(source: &Path) -> Result<PathBuf> {
+    let source = file::replace_path(source);
+    let source = if source.is_absolute() {
+        source
+    } else {
+        let Some(cwd) = dirs::CWD.as_ref() else {
+            bail!(
+                "cannot resolve {}: the current directory is unavailable",
+                source.display()
+            );
+        };
+        cwd.join(source)
+    };
+    // `..` follows the real parent of a symlinked directory, so resolve that
+    // link before dropping the component
+    let mut resolved = PathBuf::new();
+    for component in source.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                if !resolved.is_dir() {
+                    bail!(
+                        "cannot resolve {}: {} is not a directory",
+                        source.display(),
+                        resolved.display()
+                    );
+                }
+                if resolved.is_symlink() {
+                    resolved = dunce::canonicalize(&resolved)?;
+                }
+                resolved.pop();
+            }
+            component => resolved.push(component.as_os_str()),
+        }
+    }
+    Ok(resolved)
+}
+
 fn lexical_normalize(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.components() {
