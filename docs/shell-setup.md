@@ -197,7 +197,7 @@ bash, zsh and fish completions for you. The extrepo apt repository, the yum and
 zypper repository, and the mise.run installer do not.
 
 `--install` writes the script where your shell looks for it. It does not edit
-your startup files; for zsh and PowerShell it prints a line to add once:
+your startup files; for zsh, Nushell and PowerShell it prints a line to add once:
 
 ::: code-group
 
@@ -214,6 +214,12 @@ mise completion zsh --install
 ```sh [fish]
 mise completion fish --install
 # writes ~/.config/fish/completions/mise.fish
+```
+
+```sh [nushell]
+mise completion nu --install
+# writes ~/.config/nushell/completions/mise.nu
+# and prints the `source` line to add to your config.nu
 ```
 
 ```powershell [PowerShell]

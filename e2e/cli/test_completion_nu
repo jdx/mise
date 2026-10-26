@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+assert_contains "mise completion nu" "__usage_complete_mise"
+assert "mise completion nushell" "$(mise completion nu)"
+assert_contains "mise __complete_word__ --shell nu --line 'mise inst'" "install"
