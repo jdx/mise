@@ -1374,14 +1374,16 @@ pub(super) fn cask_prune_plan_from_tokens(
                 .map(|reason| format!("recorded artifacts cannot be removed safely: {reason:#}"))
         };
         if let Some(reason) = blocker {
-            if !force || !schema_records_targets {
+            if !schema_records_targets {
                 plan.skipped.push(CaskPruneSkip {
                     token: candidate.token,
                     reason,
-                    forceable: schema_records_targets,
+                    forceable: false,
                 });
                 continue;
             }
+            // Whether `--force` may override this is decided below, once the
+            // ownership checks that `--force` never overrides have passed.
             candidate.forced = Some(reason);
         }
         candidates.push(candidate);
@@ -1407,9 +1409,7 @@ pub(super) fn cask_prune_plan_from_tokens(
                     .map(|_| target.path.clone())
             })
             .collect::<Vec<_>>();
-        if shared.is_empty() {
-            plan.remove.push(candidate);
-        } else {
+        if !shared.is_empty() {
             plan.skipped.push(CaskPruneSkip {
                 token: candidate.token,
                 reason: format!(
@@ -1422,6 +1422,23 @@ pub(super) fn cask_prune_plan_from_tokens(
                 ),
                 forceable: false,
             });
+            continue;
+        }
+        if let Err(reason) = validate_cask_prune_claims(&candidate, state_dir) {
+            plan.skipped.push(CaskPruneSkip {
+                token: candidate.token,
+                reason: format!("{reason:#}"),
+                forceable: false,
+            });
+            continue;
+        }
+        match candidate.forced {
+            Some(reason) if !force => plan.skipped.push(CaskPruneSkip {
+                token: candidate.token,
+                reason,
+                forceable: true,
+            }),
+            _ => plan.remove.push(candidate),
         }
     }
     plan.remove.sort_by(|a, b| a.token.cmp(&b.token));
@@ -1457,7 +1474,9 @@ pub(super) fn apply_cask_prune_plan_in(
         } else {
             validate_cask_prune_candidate(candidate)
         };
-        if let Err(reason) = validated.and_then(|_| validate_cask_prune_claims(candidate)) {
+        if let Err(reason) =
+            validated.and_then(|_| validate_cask_prune_claims(candidate, state_dir))
+        {
             warn!(
                 "brew-cask:{}: skipped because recorded artifacts changed after planning: {reason:#}",
                 candidate.token
@@ -1559,36 +1578,22 @@ pub(super) fn lock_caskroom(manager: CaskManager) -> Result<fslock::LockFile> {
     Ok(lock)
 }
 
-pub(super) fn validate_cask_prune_claims(candidate: &CaskPruneCandidate) -> Result<()> {
-    let caskroom = prefix::prefix().join("Caskroom");
-    let mut claims = BTreeMap::<PathBuf, BTreeSet<String>>::new();
-    for entry in std::fs::read_dir(&caskroom)? {
-        let entry = entry?;
-        if !entry.file_type()?.is_dir() {
-            continue;
-        }
-        let token = entry.file_name().to_string_lossy().to_string();
-        for version in std::fs::read_dir(entry.path())? {
-            let version = version?;
-            if !version.file_type()?.is_dir()
-                || version.file_name().to_string_lossy().starts_with('.')
-            {
-                continue;
-            }
-            if let Some(receipt) = read_receipt(&version.path())? {
-                for target in receipt.targets {
-                    claims.entry(target.path).or_default().insert(token.clone());
-                }
-            }
-        }
-    }
+/// Fail when another cask, under either manager, claims one of the
+/// candidate's targets. A `macos-app` entry can own the same app a
+/// `brew-cask` receipt recorded, so the Caskroom alone is not enough.
+pub(super) fn validate_cask_prune_claims(
+    candidate: &CaskPruneCandidate,
+    state_dir: &Path,
+) -> Result<()> {
     for target in &candidate.receipt.targets {
-        if claims
-            .get(&target.path)
-            .is_some_and(|tokens| tokens.iter().any(|token| token != &candidate.token))
-        {
+        if cask_target_claimed_by_another_in(
+            state_dir,
+            CaskManager::BrewCask,
+            &candidate.token,
+            &target.path,
+        )? {
             bail!(
-                "artifact target is now claimed by another cask: {}",
+                "artifact target is claimed by another cask: {}",
                 target.path.display()
             );
         }
@@ -1605,8 +1610,17 @@ pub(super) fn cask_target_claimed_by_another(
     token: &str,
     target: &Path,
 ) -> Result<bool> {
+    cask_target_claimed_by_another_in(&mise_util::dirs::STATE, manager, token, target)
+}
+
+pub(super) fn cask_target_claimed_by_another_in(
+    state_dir: &Path,
+    manager: CaskManager,
+    token: &str,
+    target: &Path,
+) -> Result<bool> {
     for other_manager in [CaskManager::BrewCask, CaskManager::MacosApp] {
-        let root = cask_state_root(other_manager);
+        let root = cask_state_root_in(state_dir, other_manager);
         let entries = match std::fs::read_dir(&root) {
             Ok(entries) => entries,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
@@ -1862,9 +1876,13 @@ pub(super) fn symlink_resolves_below(path: &Path, root: &Path) -> bool {
 /// non-Homebrew state, and keeps `macos-app:<token>` from colliding with
 /// `brew-cask:<token>` over one directory.
 pub(super) fn cask_state_root(manager: CaskManager) -> PathBuf {
+    cask_state_root_in(&mise_util::dirs::STATE, manager)
+}
+
+pub(super) fn cask_state_root_in(state_dir: &Path, manager: CaskManager) -> PathBuf {
     match manager {
         CaskManager::BrewCask => prefix::prefix().join("Caskroom"),
-        CaskManager::MacosApp => mise_util::dirs::STATE.join("macos-apps"),
+        CaskManager::MacosApp => state_dir.join("macos-apps"),
     }
 }
 

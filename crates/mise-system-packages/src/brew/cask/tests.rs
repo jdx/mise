@@ -7048,18 +7048,19 @@ fn write_self_updating_receipt(token: &str) -> Result<(PathBuf, PathBuf)> {
         target: Some("$HOMEBREW_PREFIX/Applications/Updater.app".to_string()),
     };
     let binary = BinaryArtifact {
-        source: "bin/updater".to_string(),
-        target: Some("$HOMEBREW_PREFIX/bin/updater".to_string()),
+        source: format!("bin/{token}"),
+        target: Some(format!("$HOMEBREW_PREFIX/bin/{token}")),
     };
     let app_target = app_target_path(app.target_name()?)?;
     file::create_dir_all(&app_target)?;
     file::write(app_target.join("version"), "1.0.0")?;
     let version_dir = caskroom_version_dir(CaskManager::BrewCask, &cask.token, &cask.version);
+    let binary_source = version_dir.join("bin").join(token);
     file::create_dir_all(version_dir.join("bin"))?;
-    file::write(version_dir.join("bin/updater"), "#!/bin/sh\n")?;
+    file::write(&binary_source, "#!/bin/sh\n")?;
     let binary_target = binary.target_path(Path::new("/Applications"))?;
     file::create_dir_all(binary_target.parent().unwrap())?;
-    std::os::unix::fs::symlink(version_dir.join("bin/updater"), &binary_target)?;
+    std::os::unix::fs::symlink(&binary_source, &binary_target)?;
     write_receipt_with_flight_targets(
         &version_dir,
         &cask,
@@ -7210,6 +7211,104 @@ fn cask_prune_force_still_refuses_casks_it_cannot_attribute() -> Result<()> {
             ("shared-b", false),
             ("unrecorded", false),
         ]
+    );
+    Ok(())
+}
+
+/// Record `app` as owned by a `macos-app` entry, which keeps its receipts in
+/// mise's state directory rather than the Caskroom.
+fn write_macos_app_claim(state_dir: &Path, token: &str, app: &Path) -> Result<()> {
+    let receipt_dir = state_dir.join("macos-apps").join(token).join("1.0.0");
+    file::create_dir_all(&receipt_dir)?;
+    file::write(
+        receipt_dir.join(".mise-cask.toml"),
+        toml::to_string_pretty(&CaskReceipt {
+            schema_version: 3,
+            version: "1.0.0".to_string(),
+            auto_updates: true,
+            metadata_only_apps: vec![app.to_path_buf()],
+            apps: vec![app.to_path_buf()],
+            binaries: Vec::new(),
+            fonts: Vec::new(),
+            completions: Vec::new(),
+            flight_directories: Vec::new(),
+            generic: Vec::new(),
+            pkg_ids: Vec::new(),
+            targets: Vec::new(),
+            prune_safe: false,
+            prune_blocker: None,
+        })?,
+    )
+}
+
+#[test]
+fn cask_prune_keeps_an_app_a_macos_app_entry_owns() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let state_dir = tmp.path().join("state");
+    let (forced_app, _) = write_self_updating_receipt("updater")?;
+    let plain_app = write_test_app_receipt(&test_cask("plain", "1.0.0"), "Plain.app")?;
+    write_macos_app_claim(&state_dir, "updater-app", &forced_app)?;
+    write_macos_app_claim(&state_dir, "plain-app", &plain_app)?;
+
+    for force in [false, true] {
+        let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, force)?;
+        assert!(plan.remove.is_empty());
+        assert_eq!(plan.skipped.len(), 2);
+        for skip in &plan.skipped {
+            assert!(!skip.forceable, "{}", skip.token);
+            assert!(
+                skip.reason.contains("claimed by another cask"),
+                "{}",
+                skip.reason
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn cask_prune_force_rechecks_macos_app_claims_before_removal() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let state_dir = tmp.path().join("state");
+    let (app_target, _) = write_self_updating_receipt("updater")?;
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, true)?;
+    assert_eq!(plan.remove.len(), 1);
+
+    write_macos_app_claim(&state_dir, "updater-app", &app_target)?;
+
+    assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 0);
+    assert!(app_target.exists());
+    assert!(caskroom_token_dir(CaskManager::BrewCask, "updater").exists());
+    Ok(())
+}
+
+#[test]
+fn cask_prune_offers_force_only_when_force_would_remove_the_cask() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let state_dir = tmp.path().join("state");
+    // Both self-updating casks record the same app, so neither can be forced.
+    write_self_updating_receipt("updater-a")?;
+    write_self_updating_receipt("updater-b")?;
+
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir, false)?;
+    assert!(plan.remove.is_empty());
+    assert_eq!(
+        plan.skipped
+            .iter()
+            .map(|skip| (skip.token.as_str(), skip.forceable))
+            .collect::<Vec<_>>(),
+        vec![("updater-a", false), ("updater-b", false)]
+    );
+    assert!(
+        plan.skipped
+            .iter()
+            .all(|skip| skip.reason.contains("claimed by another cask"))
     );
     Ok(())
 }
