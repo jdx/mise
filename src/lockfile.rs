@@ -792,6 +792,10 @@ pub struct PlatformInfo {
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url_api: Option<String>,
+    /// Request headers `url` needs, from the plugin that resolved it. Used
+    /// only to download the artifact for its checksum; never written.
+    #[serde(skip)]
+    pub download_headers: Option<reqwest::header::HeaderMap>,
     /// References to conda packages in the shared conda-packages section (by basename)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conda_deps: Option<Vec<String>>,
@@ -861,11 +865,12 @@ impl PlatformInfo {
     }
 
     /// Whether both describe the same persisted data. Ignores `size`, which is
-    /// read from existing lockfiles but never written.
+    /// read from existing lockfiles but never written, and `download_headers`.
     pub(crate) fn same_persisted_data(&self, other: &PlatformInfo) -> bool {
         fn persisted(info: &PlatformInfo) -> PlatformInfo {
             let mut info = info.clone();
             info.size = None;
+            info.download_headers = None;
             for artifact in &mut info.additional_artifacts {
                 artifact.size = None;
             }
@@ -887,6 +892,7 @@ impl PlatformInfo {
             size: None,
             url: None,
             url_api: None,
+            download_headers: None,
             provenance: None,
             provenance_verified: None,
             github_attestations: None,
@@ -990,6 +996,7 @@ impl PlatformInfo {
             )
         };
         PlatformInfo {
+            download_headers: None,
             install: self.install.clone().or_else(|| {
                 if self.url.is_some() {
                     None
@@ -1189,6 +1196,7 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     None => Vec::new(),
                 };
                 Ok(PlatformInfo {
+                    download_headers: None,
                     install,
                     checksum,
                     checksum_source,
@@ -2176,6 +2184,7 @@ impl Lockfile {
                     )
                 };
                 PlatformInfo {
+                    download_headers: None,
                     install: platform_info.install.or_else(|| {
                         if platform_info.url.is_some() {
                             None

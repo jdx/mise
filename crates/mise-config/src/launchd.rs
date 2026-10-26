@@ -54,6 +54,10 @@ pub struct LaunchdTomlConfig {
     #[serde(default)]
     #[schemars(inner(length(min = 1), regex(pattern = r"^(?:/|~$|~/|\{[{%])")))]
     pub queue_directories: Vec<String>,
+    /// write LaunchEvents, keyed by event stream, then event name, with launchd's case-sensitive property names
+    #[serde(default)]
+    #[schemars(schema_with = "launch_events")]
+    pub launch_events: IndexMap<String, IndexMap<String, toml::Table>>,
     /// environment variables for EnvironmentVariables
     #[serde(default)]
     #[schemars(extend("additionalProperties" = {"type": "string", "description": "value of the environment variable"}))]
@@ -70,6 +74,20 @@ pub struct LaunchdTomlConfig {
     /// run `launchctl kickstart -k` after loading the agent
     #[serde(default)]
     pub kickstart: bool,
+}
+
+fn launch_events(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({
+        "type": "object",
+        "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "object",
+                "additionalProperties": refs::macos_defaults_value(generator)
+            }
+        },
+        "default": {}
+    })
 }
 
 /// calendar schedule fields for launchd StartCalendarInterval
