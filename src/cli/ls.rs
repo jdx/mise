@@ -38,6 +38,7 @@ crate::remove_by!("2027.10.0", "cli-local-flag-meaning");
 /// config file that requests it, and the request as written.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
+    after_long_help = AFTER_LONG_HELP,
     visible_alias = "list",
     verbatim_doc_comment,
     example(
@@ -911,6 +912,14 @@ async fn resolve_version_status(
         }
     }
 }
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r###"<bold><underline>Deprecation:</underline></bold>
+
+The `-l` and `--local` flags are deprecated in favor of `--no-global`. mise warns about
+them from 2027.1.0 and removes them in 2027.7.0; `--local` returns in 2027.10.0 as the
+nearest project's config alone, as with `mise settings --local`."###
+);
 
 #[cfg(test)]
 mod tests {

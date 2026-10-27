@@ -24,6 +24,7 @@ use serde_json::json;
 /// See https://mise.jdx.dev/tasks/task-discovery.html
 #[derive(Debug, usage_rs::Args)]
 #[usage(
+    after_long_help = AFTER_LONG_HELP,
     example("mise tasks ls", help = "List tasks"),
     example("mise tasks ls --hidden", help = "Include hidden tasks"),
     example("mise tasks ls --all", help = "List tasks from every monorepo project"),
@@ -467,6 +468,14 @@ fn shorthand_name(current_root: Option<&str>, task: &Task) -> Option<String> {
 }
 
 // TODO: fill this out
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r###"<bold><underline>Deprecation:</underline></bold>
+
+The `-l` and `--local` flags are deprecated in favor of `--no-global`. mise warns about
+them from 2027.1.0 and removes them in 2027.7.0; `--local` returns in 2027.10.0 as the
+nearest project's config alone, as with `mise settings --local`."###
+);
 
 #[cfg(test)]
 mod tests {

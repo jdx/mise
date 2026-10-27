@@ -119,6 +119,10 @@ Deprecation:
 The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
 After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
 
+The `--local` flag is deprecated in favor of `--no-global`. mise warns about it from
+2027.1.0 and removes it in 2027.7.0; it returns in 2027.10.0 as the nearest project's
+config alone, as with `mise settings --local`.
+
 <!-- generated reference navigation -->
 
 ## Related documentation
