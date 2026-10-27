@@ -556,7 +556,9 @@ fn copy_dir_all_preserve_symlinks_skipping(
     skip_top_level: &[&str],
 ) -> Result<()> {
     trace!("cp -a {} {}", from.display(), to.display());
-    let mut directory_permissions = vec![(to.to_path_buf(), fs::metadata(from)?.permissions())];
+    let permissions = fs::metadata(from)?.permissions();
+    create_dir_all(to)?;
+    let mut directory_permissions = vec![(to.to_path_buf(), permissions)];
     let entries = WalkDir::new(from)
         .follow_links(false)
         .min_depth(1)
