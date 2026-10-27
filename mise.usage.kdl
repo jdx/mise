@@ -7465,7 +7465,7 @@ same versions have to install them again.
         long_help #"""
 Remove the installed versions the nearest project config requests
 
-The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool-versions` and idiomatic version files. Configs in parent directories and global or system configs do not. Lists what it will remove and asks for confirmation unless `--yes` or a dry run is given.
+The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool-versions` and idiomatic version files. Configs in parent directories and global or system configs do not. Lists what it will remove and asks for confirmation unless `--yes` or a dry run is given. Tools set to a `path:` or `system` version are never removed.
 """#
         conflicts "--all" INSTALLED_TOOL@VERSION
     }

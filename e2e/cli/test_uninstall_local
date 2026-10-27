@@ -9,7 +9,27 @@ cat >parent/app/mise.toml <<EOF
 [tools]
 dummy = "1.1.0"
 EOF
+mkdir -p parent/frag/.mise/conf.d/dummy parent/pathed/ext
+cat >parent/frag/.mise/conf.d/dummy/mise.toml <<EOF
+[tools]
+dummy = "2.0.0"
+EOF
+touch parent/pathed/ext/keep
+cat >parent/pathed/mise.toml <<EOF
+[tools]
+dummy = "path:$PWD/parent/pathed/ext"
+EOF
 mise i dummy@{1.0.0,1.1.0,2.0.0}
+
+# a project made only of a conf.d folder fragment is found from its root
+out="$(cd parent/frag && mise uninstall --local --dry-run 2>&1)"
+assert_contains_text "$out" "dummy@2.0.0 is requested by"
+assert_not_contains_text "$out" "dummy@1.0.0"
+assert_not_contains_text "$out" "dummy@1.1.0"
+
+# a path request names a directory mise did not install, so it is never removed
+assert_contains "cd parent/pathed && mise uninstall --local --yes 2>&1" "no installed tools are requested"
+assert_succeed "test -f parent/pathed/ext/keep"
 
 cd parent/app/src || exit 1
 
@@ -23,6 +43,9 @@ assert_contains_text "$out" "parent/app/mise.toml"
 assert_not_contains_text "$out" "dummy@1.0.0"
 assert_not_contains_text "$out" "dummy@2.0.0"
 assert_contains "mise ls --installed dummy" "1.1.0"
+
+# a shell override does not hide what the project's config requests
+assert_contains "MISE_DUMMY_VERSION=2.0.0 mise uninstall --local --dry-run 2>&1" "dummy@1.1.0 is requested by"
 assert_fail_contains "mise uninstall --local --dry-run-code 2>&1" "uninstalled (dry-run)"
 
 # without a terminal to ask, it refuses rather than removing

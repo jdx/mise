@@ -27,7 +27,7 @@ same versions have to install them again.
 - **`-a --all`** — Remove every installed version of the named tools, or of every tool when none is named
 - **`--local`** — Remove the installed versions the nearest project config requests
 
-  The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool-versions` and idiomatic version files. Configs in parent directories and global or system configs do not. Lists what it will remove and asks for confirmation unless `--yes` or a dry run is given.
+  The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool-versions` and idiomatic version files. Configs in parent directories and global or system configs do not. Lists what it will remove and asks for confirmation unless `--yes` or a dry run is given. Tools set to a `path:` or `system` version are never removed.
 - **`-n --dry-run`** — Show what would change without changing anything
 - **`--dry-run-code`** — Like --dry-run, but exit with code 1 if there are tools to uninstall
 

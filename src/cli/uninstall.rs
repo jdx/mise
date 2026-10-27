@@ -8,8 +8,9 @@ use itertools::Itertools;
 
 use crate::args::ToolArg;
 use crate::backend::Backend;
-use crate::config::config_file::config_root::config_root;
+use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings};
+use crate::daemons::glue::DaemonSetExt;
 use crate::file::display_path;
 use crate::toolset::{
     ToolRequest, ToolRequestSet, ToolSource, ToolVersion, Toolset, ToolsetBuilder,
@@ -68,7 +69,8 @@ pub(crate) struct Uninstall {
     /// directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d`
     /// fragments, `.tool-versions` and idiomatic version files. Configs in parent
     /// directories and global or system configs do not. Lists what it will
-    /// remove and asks for confirmation unless `--yes` or a dry run is given.
+    /// remove and asks for confirmation unless `--yes` or a dry run is given. Tools set to a
+    /// `path:` or `system` version are never removed.
     #[usage(long, conflicts = ["all", "installed_tool"])]
     local: bool,
 
@@ -258,27 +260,48 @@ impl Uninstall {
         Ok(())
     }
 
-    /// The installed versions requested by the config files in the nearest
-    /// config root, and that root.
+    /// The installed versions requested by the config files of the nearest
+    /// project, and that project's directory.
+    ///
+    /// Requests come from those files alone. The merged tool request set already
+    /// has shell overrides such as `MISE_NODE_VERSION` applied, which would hide
+    /// the version the project's own config names.
     async fn get_local_tool_versions(
         &self,
         config: &Arc<Config>,
     ) -> Result<(PathBuf, Vec<(Arc<dyn Backend>, ToolVersion)>)> {
-        let root = nearest_config_root(config).ok_or_else(|| {
+        let (root, files) = nearest_project_configs(config).ok_or_else(|| {
             eyre!(
                 "no config file found in {} or a parent directory",
                 dirs::CWD.as_deref().map(display_path).unwrap_or_default()
             )
         })?;
-        let requests: ToolRequestSet = config
-            .get_tool_request_set()
-            .await?
-            .iter()
-            .filter(|(.., source)| {
-                config_file_of(source).is_some_and(|path| config_root(path) == root)
-            })
-            .map(|(ba, trs, source)| (ba.clone(), trs.clone(), source.clone()))
-            .collect();
+        let mut requested = Vec::new();
+        for cf in &files {
+            let set = cf.to_tool_request_set()?;
+            requested.extend(set.iter().flat_map(|(_, trs, _)| trs.iter().cloned()));
+        }
+        // Daemon tools are declared in the same files but loaded separately.
+        let mut daemon_tools = ToolRequestSet::new();
+        config.daemons()?.add_tool_requests(&mut daemon_tools)?;
+        let paths = files.iter().map(|cf| cf.get_path()).collect::<HashSet<_>>();
+        requested.extend(
+            daemon_tools
+                .iter()
+                .flat_map(|(_, trs, _)| trs.iter())
+                .filter(|tr| config_file_of(tr.source()).is_some_and(|path| paths.contains(path)))
+                .cloned(),
+        );
+        let mut requests = ToolRequestSet::new();
+        for tr in requested {
+            // A path or system request names a directory or program mise did not
+            // install, and uninstalling one would delete it.
+            if matches!(tr, ToolRequest::Path { .. } | ToolRequest::System { .. }) {
+                continue;
+            }
+            let source = tr.source().clone();
+            requests.add_version(tr, &source);
+        }
         let mut ts = Toolset::from(requests);
         ts.resolve(config).await?;
         Ok((root, ts.list_current_installed_versions(config)))
@@ -393,17 +416,31 @@ impl Uninstall {
     }
 }
 
-/// The nearest directory, from the working directory up, that has a project
-/// config file. Only that directory's configs are "local": a parent's config is
+/// The config files of the nearest directory, from the working directory up,
+/// that has any. Only that directory's configs are "local": a parent's config is
 /// another project's, or the monorepo's, and is none of this command's business.
-fn nearest_config_root(config: &Config) -> Option<PathBuf> {
+///
+/// A directory's configs are the ones discovery finds in it, which includes
+/// `.mise/config.toml` and `conf.d` folder fragments whose own config root is a
+/// folder below the project, plus any file such as `.tool-versions` or an
+/// idiomatic version file that sits in it.
+fn nearest_project_configs(config: &Config) -> Option<(PathBuf, Vec<Arc<dyn ConfigFile>>)> {
     let cwd = dirs::CWD.as_ref()?;
-    config
-        .config_files
-        .values()
-        .filter_map(|cf| cf.project_root())
-        .filter(|root| cwd.starts_with(root))
-        .max_by_key(|root| root.components().count())
+    cwd.ancestors()
+        .filter(|dir| *dir != *dirs::HOME)
+        .find_map(|dir| {
+            let discovered = config::config_files_in_dir(dir);
+            let files = config
+                .config_files
+                .iter()
+                .filter(|(path, _)| {
+                    !config::is_global_config(path)
+                        && (discovered.contains(path.as_path()) || path.parent() == Some(dir))
+                })
+                .map(|(_, cf)| cf.clone())
+                .collect_vec();
+            (!files.is_empty()).then(|| (dir.to_path_buf(), files))
+        })
 }
 
 /// The file a tool request came from, when it came from a project's config
