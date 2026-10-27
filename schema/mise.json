@@ -7122,7 +7122,7 @@
               },
               "permissions": {
                 "type": "string",
-                "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
+                "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target; on a merge entry it sets the mode only when apply creates the target, never on one that exists (Unix only)",
                 "pattern": "^(0o)?[0-7]{1,4}$"
               },
               "autosave": {
@@ -7236,7 +7236,6 @@
                   "properties": {
                     "mode": false,
                     "content": false,
-                    "permissions": false,
                     "exclude": false,
                     "include": false,
                     "manifest": false,
@@ -7416,7 +7415,6 @@
                         "enum": ["copy", "template"]
                       },
                       "block": false,
-                      "template": false,
                       "comment": false
                     },
                     "required": ["permissions"],
@@ -7436,6 +7434,20 @@
                           "manifest": false,
                           "encrypt": false
                         }
+                      }
+                    ],
+                    "allOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "properties": {
+                              "template": false
+                            }
+                          },
+                          {
+                            "required": ["merge"]
+                          }
+                        ]
                       }
                     ]
                   },
@@ -7672,7 +7684,7 @@
                     },
                     "permissions": {
                       "type": "string",
-                      "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
+                      "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target; on a merge entry it sets the mode only when apply creates the target, never on one that exists (Unix only)",
                       "pattern": "^(0o)?[0-7]{1,4}$"
                     },
                     "autosave": {
@@ -7738,7 +7750,6 @@
                         "properties": {
                           "mode": false,
                           "content": false,
-                          "permissions": false,
                           "exclude": false,
                           "include": false,
                           "manifest": false,
@@ -7918,7 +7929,6 @@
                               "enum": ["copy", "template"]
                             },
                             "block": false,
-                            "template": false,
                             "comment": false
                           },
                           "required": ["permissions"],
@@ -7938,6 +7948,20 @@
                                 "manifest": false,
                                 "encrypt": false
                               }
+                            }
+                          ],
+                          "allOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "properties": {
+                                    "template": false
+                                  }
+                                },
+                                {
+                                  "required": ["merge"]
+                                }
+                              ]
                             }
                           ]
                         },

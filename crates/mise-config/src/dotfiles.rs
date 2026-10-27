@@ -76,7 +76,7 @@ pub struct DotfileTableDecl {
     pub dot_prefix: bool,
     /// symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)
     pub relative: Option<bool>,
-    /// octal permissions for the target, such as "0600"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)
+    /// octal permissions for the target, such as "0600"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target; on a merge entry it sets the mode only when apply creates the target, never on one that exists (Unix only)
     #[schemars(regex(pattern = r"^(0o)?[0-7]{1,4}$"))]
     pub permissions: Option<String>,
     /// track only: false saves the path only on `mise dotfiles save <path>`
@@ -210,7 +210,7 @@ pub struct DotfileGroupEntryTableDecl {
     pub dot_prefix: bool,
     /// symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)
     pub relative: Option<bool>,
-    /// octal permissions for the target, such as "0600"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)
+    /// octal permissions for the target, such as "0600"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target; on a merge entry it sets the mode only when apply creates the target, never on one that exists (Unix only)
     #[schemars(regex(pattern = r"^(0o)?[0-7]{1,4}$"))]
     pub permissions: Option<String>,
     /// track only: false saves the path only on `mise dotfiles save <path>`

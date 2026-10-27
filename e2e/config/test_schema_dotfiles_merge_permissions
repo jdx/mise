@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+TOMBI_VERSION="0.9.22"
+mise use -g tombi@$TOMBI_VERSION
+TOMBI_LINT="mise x tombi@$TOMBI_VERSION -- tombi lint --offline --no-cache --error-on-warnings --quiet"
+cat >"$HOME/tombi.toml" <<TOML
+[schema]
+enabled = true
+strict = true
+[[schemas]]
+path = "file://$ROOT/schema/mise.json"
+include = ["merge-permissions-valid.toml", "merge-permissions-invalid.toml"]
+TOML
+cat >merge-permissions-valid.toml <<'TOML'
+[dotfiles]
+"~/.config/app/config.toml/seed" = { source = "seed.toml", merge = "missing", permissions = "0600" }
+"~/.config/app/settings.json/shared" = { source = "shared.json", merge = true, permissions = "0640" }
+"~/.config/app/rendered.yml/shared" = { source = "shared.yml.tera", merge = true, template = "tera", permissions = "0600" }
+TOML
+assert_succeed "$TOMBI_LINT merge-permissions-valid.toml"
+for entry in \
+  '{ block = "echo hi", permissions = "0600" }' \
+  '{ line = "export A=1", permissions = "0600" }' \
+  '{ source = "shared.json", merge = true, mode = "copy", permissions = "0600" }'; do
+  printf '[dotfiles]\n"~/.app/id" = %s\n' "$entry" >merge-permissions-invalid.toml
+  assert_fail "$TOMBI_LINT merge-permissions-invalid.toml"
+done

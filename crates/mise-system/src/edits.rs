@@ -84,6 +84,10 @@ pub(crate) struct EditTomlTable {
     /// value for, so a value the application changed stays
     #[serde(default)]
     pub merge: Option<MergeSetting>,
+    /// merge only: octal permissions for the target when apply creates it;
+    /// an existing target keeps the mode it has
+    #[serde(default)]
+    pub permissions: Option<String>,
 }
 
 pub use mise_config::dotfiles::MergeSetting;
@@ -115,6 +119,8 @@ pub enum EditOp {
         format: Format,
         /// only set keys the target has no value for
         missing_only: bool,
+        /// the mode of the target when apply creates it (Unix only)
+        permissions: Option<u32>,
     },
 }
 
@@ -307,6 +313,14 @@ const WHOLE_FILE_KEYS: [&str; 15] = [
     "group",
 ];
 
+/// the whole-file keys a merge rejects: all but `permissions`, which sets the
+/// mode of a target the merge creates
+fn merge_rejected_keys() -> impl Iterator<Item = &'static str> {
+    WHOLE_FILE_KEYS
+        .into_iter()
+        .filter(|key| *key != "permissions")
+}
+
 /// Check an incoming `merge` declaration the way the edit parser will read it,
 /// so `mise dot pull` refuses one that would later be dropped. Templates are
 /// not rendered.
@@ -316,7 +330,7 @@ pub(crate) fn validate_incoming_merge(
     config_path: &Path,
 ) -> Result<()> {
     if let Some(table) = value.as_table() {
-        for key in WHOLE_FILE_KEYS {
+        for key in merge_rejected_keys() {
             if table.contains_key(key) {
                 bail!(
                     "dotfile {path_and_id}: {key} applies to whole-file entries, not merge edits"
@@ -342,7 +356,7 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
         toml::Value::Table(table) if table.contains_key("merge") => {
             // a merge edits one structured file, so every key that shapes a
             // whole-file entry is a mistake worth naming, not silently dropped
-            for key in WHOLE_FILE_KEYS {
+            for key in merge_rejected_keys() {
                 if table.contains_key(key) {
                     warn!(
                         "[dotfiles].\"{path_and_id}\": {key} applies to whole-file entries, not merge edits, ignoring entry"
@@ -433,6 +447,7 @@ fn resolve_entry(
             position: None,
             comment: None,
             merge: None,
+            permissions: None,
         },
         EditTomlEntry::Table(table) => table,
     };
@@ -590,11 +605,29 @@ fn merge_op(
             )
         }
     };
+    let permissions = match entry.permissions.as_deref() {
+        None => None,
+        Some(value) => {
+            let mode = crate::files::parse_permissions(value)
+                .map_err(|err| eyre::eyre!("\"{path_raw}\".{id}: {err}, ignoring entry"))?;
+            #[cfg(unix)]
+            {
+                Some(mode)
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = mode;
+                crate::files::warn_permissions_ignored();
+                None
+            }
+        }
+    };
     Ok(EditOp::Merge {
         source: BlockSource::File(source),
         template,
         format,
         missing_only,
+        permissions,
     })
 }
 
@@ -1272,6 +1305,7 @@ pub fn apply(
     let unapplied = unapplied_siblings(config, requests, &siblings, &merged);
     problems.extend(merge_conflicts(&merged, &unapplied));
     problems.extend(format_conflicts(requests, &siblings));
+    problems.extend(permission_conflicts(&todo));
     if !problems.is_empty() {
         bail!(
             "edits: cannot apply these entries, fix them manually:\n{}",
@@ -1312,7 +1346,12 @@ pub fn apply(
     }
     for (req, desired) in &todo {
         let pending = journal::begin_changes_with(opts.part, &req.path_raw, edit_paths(&req.path))?;
-        apply_one(req, desired.as_deref(), written)?;
+        apply_one(
+            req,
+            desired.as_deref(),
+            creation_mode(&todo, &req.path),
+            written,
+        )?;
         journal::commit_changes(pending);
     }
     let applied = todo
@@ -1739,7 +1778,12 @@ fn edit_paths(path: &Path) -> Vec<(PathBuf, Capture)> {
 /// changed — the journal preimage is only restored by a later recovery run.
 /// A new file is recorded once it exists, even if the write that created it
 /// then failed.
-fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf>) -> Result<()> {
+fn apply_one(
+    req: &EditRequest,
+    desired: Option<&str>,
+    create_mode: Option<u32>,
+    written: &mut Vec<PathBuf>,
+) -> Result<()> {
     use std::io::Write;
     debug!("edits: {} ({})", req.path.display_user(), req.describe_op());
     if let Some(parent) = req.path.parent() {
@@ -1812,9 +1856,59 @@ fn apply_one(req: &EditRequest, desired: Option<&str>, written: &mut Vec<PathBuf
         written.push(req.path.clone());
         target.write_all(out.as_bytes()).wrap_err_with(failed)?;
     } else {
-        crate::files::create_recorded(&req.path, written, || file::write(&req.path, &out))?;
+        crate::files::create_recorded(&req.path, written, || {
+            file::write(&req.path, &out)?;
+            #[cfg(unix)]
+            if let Some(mode) = create_mode {
+                crate::files::set_mode(&req.path, mode)?;
+            }
+            #[cfg(not(unix))]
+            let _ = create_mode;
+            Ok(())
+        })?;
     }
     Ok(())
+}
+
+/// The mode a merge-created `path` gets: the `permissions` of the merge
+/// entries this run applies to it, which `apply` has already checked agree.
+fn creation_mode(todo: &[(&EditRequest, Option<String>)], path: &Path) -> Option<u32> {
+    todo.iter().find_map(|(req, _)| match &req.op {
+        EditOp::Merge { permissions, .. } if same_target(&req.path, path) => *permissions,
+        _ => None,
+    })
+}
+
+/// Merge entries for one file that declare different `permissions`: which
+/// one a created file gets would depend on the order they apply in.
+fn permission_conflicts(todo: &[(&EditRequest, Option<String>)]) -> Vec<String> {
+    let mut problems = vec![];
+    for (i, (first, _)) in todo.iter().enumerate() {
+        let EditOp::Merge {
+            permissions: Some(a),
+            ..
+        } = &first.op
+        else {
+            continue;
+        };
+        for (second, _) in &todo[i + 1..] {
+            if let EditOp::Merge {
+                permissions: Some(b),
+                ..
+            } = &second.op
+                && a != b
+                && same_target(&first.path, &second.path)
+            {
+                problems.push(format!(
+                    "  \"{}\": {} and {} declare different permissions ({a:04o} and {b:04o})",
+                    first.path_raw,
+                    first.describe_op(),
+                    second.describe_op()
+                ));
+            }
+        }
+    }
+    problems
 }
 
 fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Result<String> {
@@ -1919,7 +2013,7 @@ mod tests {
 
         // a writable file is recorded and edited
         let mut written = vec![];
-        apply_one(&req, None, &mut written)?;
+        apply_one(&req, None, None, &mut written)?;
         assert_eq!(written, vec![path.clone()]);
         assert!(file::read_to_string(&path)?.contains("mise activate"));
 
@@ -1932,7 +2026,7 @@ mod tests {
             return Ok(());
         }
         let mut written = vec![];
-        assert!(apply_one(&req, None, &mut written).is_err());
+        assert!(apply_one(&req, None, None, &mut written).is_err());
         assert!(written.is_empty());
         assert_eq!(file::read_to_string(&path)?, "before\n");
         Ok(())
@@ -1965,11 +2059,36 @@ mod tests {
                     template: false,
                     format,
                     missing_only: false,
+                    permissions: None,
                 }
             );
             assert_eq!(req.describe_op(), "merge:shared");
             assert_eq!(req.origin.source, Some(PathBuf::from("/cfg/shared.txt")));
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn merge_entries_take_permissions_for_a_created_target() {
+        let req = resolve(
+            "~/a/config.toml",
+            "source = \"s.toml\"\nmerge = \"missing\"\npermissions = \"0600\"",
+        )
+        .unwrap();
+        assert!(matches!(
+            req.op,
+            EditOp::Merge {
+                permissions: Some(0o600),
+                missing_only: true,
+                ..
+            }
+        ));
+        let err = resolve(
+            "~/a/config.toml",
+            "source = \"s.toml\"\nmerge = true\npermissions = \"rw\"",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("octal string"), "{err}");
     }
 
     #[test]

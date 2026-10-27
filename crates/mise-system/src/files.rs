@@ -127,7 +127,7 @@ impl FileMode {
 
 /// Parse a `permissions` value: an octal string such as `"0600"`, with the
 /// same syntax `[bootstrap.files]` accepts for `mode`.
-fn parse_permissions(value: &str) -> Result<u32> {
+pub(crate) fn parse_permissions(value: &str) -> Result<u32> {
     crate::managed_files::parse_mode(Some(value), 0).map_err(|_| {
         eyre::eyre!(
             "permissions must be an octal string between \"0000\" and \"7777\", got {value:?}"
@@ -161,7 +161,7 @@ fn permissions_conflict(
 
 /// Windows has no Unix permission bits; entries there ignore `permissions`.
 #[cfg(not(unix))]
-fn warn_permissions_ignored() {
+pub(crate) fn warn_permissions_ignored() {
     static WARNED: std::sync::Once = std::sync::Once::new();
     WARNED.call_once(|| warn!("[dotfiles]: permissions is ignored on this platform"));
 }
@@ -6306,7 +6306,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
 }
 
 #[cfg(unix)]
-fn set_mode(path: &Path, mode: u32) -> Result<()> {
+pub(crate) fn set_mode(path: &Path, mode: u32) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
     Ok(())
