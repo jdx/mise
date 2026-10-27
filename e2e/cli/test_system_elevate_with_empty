@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# e2e:non-root
 
 if [[ "$(uname)" != "Linux" ]]; then
   exit 0
@@ -31,10 +32,8 @@ TOML
 
 export MISE_SYSTEM_PACKAGES_SUDO=true
 export MISE_SYSTEM_PACKAGES_ELEVATE_WITH=""
-if [[ "$(id -u)" != 0 ]]; then
-  assert_contains "mise bootstrap packages apply --dry-run" "snap install hello"
-  assert_not_contains "mise bootstrap packages apply --dry-run" "sudo"
-  assert_succeed "mise bootstrap packages apply"
-  assert_contains "cat '$HOME/snap-log'" "install hello"
-  assert_succeed "test ! -s '$HOME/sudo-log'"
-fi
+assert_contains "mise bootstrap packages apply --dry-run" "snap install hello"
+assert_not_contains "mise bootstrap packages apply --dry-run" "sudo"
+assert_succeed "mise bootstrap packages apply"
+assert_contains "cat '$HOME/snap-log'" "install hello"
+assert_succeed "test ! -s '$HOME/sudo-log'"

@@ -381,7 +381,8 @@ class CaskContext
       ["sudo", "-n", *argv]
     else
       odie "cask lifecycle hook needs sudo, but mise is not allowed to elevate " \
-           "(system_packages.sudo is disabled or sudo is unavailable). Run manually:\n" \
+           "(system_packages.sudo is disabled, system_packages.elevate_with is empty, " \
+           "or sudo is unavailable). Run manually:\n" \
            "  #{(["sudo"] + argv).shelljoin}"
     end
   end
