@@ -22,7 +22,9 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolRequestSetBuilder, ToolSou
 /// A directory's configs are the ones discovery finds in it, which includes
 /// `.mise/config.toml` and `conf.d` folder fragments whose own config root is a
 /// folder below the project, plus any file such as `.tool-versions` or an
-/// idiomatic version file that sits in it. Global, system and override configs
+/// idiomatic version file that sits in it. A file counts as sitting in the
+/// directory only if the directory is its config root, so running from inside
+/// `app/.mise` still finds `app`'s configs rather than stopping at `.mise`. Global, system and override configs
 /// never count, and neither does a config directly in the home directory.
 pub fn nearest_project_configs(config: &Config) -> Option<(PathBuf, Vec<Arc<dyn ConfigFile>>)> {
     let cwd = dirs::CWD.as_ref()?;
@@ -33,9 +35,12 @@ pub fn nearest_project_configs(config: &Config) -> Option<(PathBuf, Vec<Arc<dyn 
             let files = config
                 .config_files
                 .iter()
-                .filter(|(path, _)| {
+                .filter(|(path, cf)| {
                     !config::is_global_config(path)
-                        && (discovered.contains(path.as_path()) || path.parent() == Some(dir))
+                        && (discovered.contains(path.as_path())
+                            || (path.parent() == Some(dir)
+                                && !config::is_conf_d_folder_file(path)
+                                && cf.config_root() == dir))
                 })
                 .map(|(_, cf)| cf.clone())
                 .collect_vec();

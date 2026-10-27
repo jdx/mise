@@ -5,11 +5,20 @@ export CLICOLOR=0
 mise use dummy@1.0.0
 
 # --local on these commands is the old spelling of --no-global. It is silent
-# until 2027.1.0, so for now it must not warn.
-assert_not_contains "mise ls --local 2>&1" "deprecated"
-assert_not_contains "mise outdated --local 2>&1" "deprecated"
-assert_not_contains "mise upgrade --local --dry-run 2>&1" "deprecated"
-assert_not_contains "mise tasks ls --local 2>&1" "deprecated"
+# until 2027.1.0 and warns from then until it is removed in 2027.7.0, when this
+# test goes with it.
+version="$(mise --version | awk '{print $1}' | sed 's/-.*//')"
+if [[ "$(printf '%s\n' 2027.1.0 "$version" | sort -V | head -n 1)" == "2027.1.0" ]]; then
+  assert_contains "mise ls --local 2>&1" "deprecated [cli.ls.local]"
+  assert_contains "mise outdated --local 2>&1" "deprecated [cli.outdated.local]"
+  assert_contains "mise upgrade --local --dry-run 2>&1" "deprecated [cli.upgrade.local]"
+  assert_contains "mise tasks ls --local 2>&1" "deprecated [cli.tasks-ls.local]"
+else
+  assert_not_contains "mise ls --local 2>&1" "deprecated"
+  assert_not_contains "mise outdated --local 2>&1" "deprecated"
+  assert_not_contains "mise upgrade --local --dry-run 2>&1" "deprecated"
+  assert_not_contains "mise tasks ls --local 2>&1" "deprecated"
+fi
 
 assert_not_contains "mise ls --no-global 2>&1" "deprecated"
 assert_not_contains "mise outdated --no-global 2>&1" "deprecated"
