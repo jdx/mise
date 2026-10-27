@@ -112,6 +112,37 @@ echo 'edited' >"$HOME/groupdir/seed.conf"
 assert_succeed "mise dot apply --yes"
 assert "cat $HOME/groupdir/seed.conf" "edited"
 
+# a seeded group entry is claimed by its group only in the apply that wrote it,
+# so a prune never removes a file you have since edited or one that was already there
+assert_succeed "mise dot apply --yes"
+mkdir -p ~/.dotfiles/pre ~/predir
+echo 'from pre' >~/.dotfiles/pre/p.conf
+echo 'mine' >~/predir/p.conf
+cat <<'EOF' >mise.toml
+[dotfile_groups.home]
+root = "home"
+target = "~/groupdir"
+mode = "copy"
+
+[dotfile_groups.home.entries]
+"~/groupdir/seed.conf" = { mode = "copy", create_if_missing = true }
+
+[dotfile_groups.pre]
+root = "pre"
+target = "~/predir"
+mode = "copy"
+
+[dotfile_groups.pre.entries]
+"~/predir/p.conf" = { mode = "copy", create_if_missing = true }
+EOF
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/predir/p.conf" "mine"
+assert "cat $HOME/groupdir/seed.conf" "edited"
+echo "# nothing deployed" >mise.toml
+assert_succeed "mise dot apply --prune --yes"
+assert "cat $HOME/predir/p.conf" "mine"
+assert "cat $HOME/groupdir/seed.conf" "edited"
+
 # create_if_missing needs a copy or template entry, or inline content
 for entry in \
   '{ source = "templates/private.toml", mode = "symlink", create_if_missing = true }' \

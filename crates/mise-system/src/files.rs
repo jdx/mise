@@ -2649,6 +2649,14 @@ fn keeps_existing(req: &FileRequest) -> bool {
         && std::fs::symlink_metadata(&req.target).is_ok_and(|meta| !meta.is_dir())
 }
 
+/// Whether an apply may record `req`'s target as deployed by its dotfile
+/// group. A `create_if_missing` entry claims its target only in the apply
+/// that wrote it: a file it left alone may hold what the user typed, or
+/// never have been mise's, and a prune must not remove it without `--force`.
+fn records_group_ownership(todo: &[(&FileRequest, Option<String>)], req: &FileRequest) -> bool {
+    !req.create_if_missing || todo.iter().any(|(written, _)| std::ptr::eq(*written, req))
+}
+
 /// [`check`] with template output already rendered, so callers that go on to
 /// write the file render only once (templates may use `exec()`, which must
 /// not run more often than necessary)
@@ -3141,7 +3149,7 @@ pub fn preflight_templates(
     validate_composed_file_footprints(requests)?;
     let broken = requests
         .iter()
-        .filter(|req| req.mode == FileMode::Template)
+        .filter(|req| req.mode == FileMode::Template && !keeps_existing(req))
         .filter_map(|req| render_template(config, req, secrets).err())
         .map(|err| format!("  {err}"))
         .collect::<Vec<_>>();
@@ -4611,7 +4619,11 @@ pub fn execute_apply(
                 journal::commit_changes(pending);
             }
             record_template_states(&plan.record_templates)?;
-            crate::dotfile_groups::record_applied(plan.requests);
+            crate::dotfile_groups::record_applied(
+                plan.requests
+                    .iter()
+                    .filter(|req| records_group_ownership(&plan.todo, req)),
+            );
         }
         info!("files: all files are applied");
         return Ok(true);
@@ -4730,8 +4742,9 @@ pub fn execute_apply(
         // recorded: a target still waiting to be written may hold the
         // user's edits, which must not be recorded as mise's
         crate::dotfile_groups::record_applied(plan.requests.iter().filter(|req| {
-            done.iter().any(|d| std::ptr::eq(*d, *req))
-                || !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, *req))
+            (done.iter().any(|d| std::ptr::eq(*d, *req))
+                || !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, *req)))
+                && records_group_ownership(&plan.todo, req)
         }));
         // the entry that failed may have written some of its files, such
         // as part of a copied tree; those, and only those, are recorded
@@ -4756,7 +4769,11 @@ pub fn execute_apply(
         }
     }
     cleanup_reconciled_directories(&plan.reconciliation)?;
-    crate::dotfile_groups::record_applied(plan.requests);
+    crate::dotfile_groups::record_applied(
+        plan.requests
+            .iter()
+            .filter(|req| records_group_ownership(&plan.todo, req)),
+    );
     let applied = plan
         .todo
         .iter()
