@@ -7297,7 +7297,19 @@ Cannot be combined with \-\-json; use \-\-backend to filter JSON output.
 Output in JSON format
 .TP
 \fB\-l, \-\-local\fR
-Only show versions the local config requests
+Deprecated alias for \-\-no\-global
+
+Removed in mise 2027.7.0.
+.TP
+\fB\-\-no\-global\fR
+Only show versions that non\-global config files request
+
+Includes config files in parent directories and skips the global config, system config, and `MISE_<TOOL>_VERSION` environment variables. See \-\-project for the nearest project's config alone.
+.TP
+\fB\-\-project\fR
+Only show versions the nearest project config requests
+
+The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool\-versions` and idiomatic version files. Configs in parent directories and global or system configs do not, nor do `MISE_<TOOL>_VERSION` environment variables. A version that a later file in that directory overrides is not listed, as with \-\-no\-global; `mise uninstall \-\-project` still removes it.
 .TP
 \fB\-m, \-\-missing\fR
 Only show requested versions that are not installed
@@ -7960,6 +7972,11 @@ Only check tools defined in the global config
 Reports the requests in the global and system config (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool: what `mise upgrade \-\-global` would install.
 .TP
 \fB\-\-local\fR
+Deprecated alias for \-\-no\-global
+
+Removed in mise 2027.7.0.
+.TP
+\fB\-\-no\-global\fR
 Only check tools defined in project config files
 
 Skips tools defined in the global config (~/.config/mise/config.toml) and tools set through `MISE_<TOOL>_VERSION` environment variables.
@@ -8020,7 +8037,7 @@ mise outdated \-\-json
 Skip tools that only the global config requests
 .PP
 .RS 4
-mise outdated \-\-local
+mise outdated \-\-no\-global
 .RE
 .PP
 Check the global config's request for claude, even inside a project that sets its own
@@ -10160,6 +10177,11 @@ Only show global tasks
 Output in JSON format
 .TP
 \fB\-l, \-\-local\fR
+Deprecated alias for \-\-no\-global
+
+Removed in mise 2027.7.0.
+.TP
+\fB\-\-no\-global\fR
 Only show non\-global tasks
 .TP
 \fB\-x, \-\-extended\fR
@@ -10478,6 +10500,11 @@ Only show global tasks
 Output in JSON format
 .TP
 \fB\-l, \-\-local\fR
+Deprecated alias for \-\-no\-global
+
+Removed in mise 2027.7.0.
+.TP
+\fB\-\-no\-global\fR
 Only show non\-global tasks
 .TP
 \fB\-x, \-\-extended\fR
@@ -11008,7 +11035,7 @@ remove a tool from mise.toml and uninstall it. A tool name or version prefix,
 such as `node` or `node@22`, must match exactly one installed version unless
 you pass `\-\-all`.
 
-`\-\-local` removes the installed versions that the project's own config files
+`\-\-project` removes the installed versions that the project's own config files
 request. Installs are shared by every project, so other projects that use the
 same versions have to install them again.
 .PP
@@ -11020,10 +11047,10 @@ same versions have to install them again.
 \fB\-a, \-\-all\fR
 Remove every installed version of the named tools, or of every tool when none is named
 .TP
-\fB\-\-local\fR
+\fB\-\-project\fR
 Remove the installed versions the nearest project config requests
 
-The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool\-versions` and idiomatic version files. Configs in parent directories and global or system configs do not. Lists what it will remove and asks for confirmation unless `\-\-yes` or a dry run is given. Tools set to a `path:` or `system` version are never removed.
+The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool\-versions` and idiomatic version files. Configs in parent directories and global or system configs do not. Every version those files name is removed, including one that a later file overrides. Lists what it will remove and asks for confirmation unless `\-\-yes` or a dry run is given. Tools set to a `path:` or `system` version are never removed.
 .TP
 \fB\-n, \-\-dry\-run\fR
 Show what would change without changing anything
@@ -11063,7 +11090,7 @@ mise uninstall \-\-all node
 Preview the versions this project's config requests
 .PP
 .RS 4
-mise uninstall \-\-local \-\-dry\-run
+mise uninstall \-\-project \-\-dry\-run
 .RE
 .SH "MISE UNSET"
 Remove environment variables from mise.toml
@@ -11261,6 +11288,11 @@ Only upgrade tools defined in the global config
 Upgrades the requests in the global and system config (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool. It runs as if from outside any project, so project config, lockfiles, and `[env]` are neither read nor changed. Tools that update themselves, such as coding agents, run this instead of their own updater; see https://mise.jdx.dev/dev\-tools/self\-updating\-tools.html
 .TP
 \fB\-\-local\fR
+Deprecated alias for \-\-no\-global
+
+Removed in mise 2027.7.0.
+.TP
+\fB\-\-no\-global\fR
 Only upgrade tools defined in project config files
 
 Skips tools defined in the global config (~/.config/mise/config.toml) and tools set through `MISE_<TOOL>_VERSION` environment variables.

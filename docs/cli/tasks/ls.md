@@ -18,7 +18,10 @@ See <https://mise.jdx.dev/tasks/task-discovery.html>
 ## Flags
 - **`-g --global`** — Only show global tasks
 - **`-J --json`** — Output in JSON format
-- **`-l --local`** — Only show non-global tasks
+- **`-l --local`** — Deprecated alias for --no-global
+
+  Removed in mise 2027.7.0.
+- **`--no-global`** — Only show non-global tasks
 - **`-x --extended`** — Show all columns
 - **`-a --all`** — Include tasks from every project in the monorepo, not only the current directory's hierarchy
 - **`--hidden`** — Show hidden tasks
@@ -57,6 +60,11 @@ Pick a task name interactively
 ```
 mise tasks ls --name-only | fzf
 ```
+
+Deprecation:
+
+The `-l` and `--local` flags are deprecated in favor of `--no-global`. mise warns about
+them from 2027.1.0 and removes them in 2027.7.0.
 
 <!-- generated reference navigation -->
 

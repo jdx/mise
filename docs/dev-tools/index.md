@@ -133,7 +133,7 @@ the newest exact version. When you name a request, as in
 ```sh
 mise upgrade --dry-run      # show what would change
 mise upgrade --interactive  # pick tools from a list
-mise upgrade --bump --local # bump only tools in project config
+mise upgrade --bump --no-global # bump only tools in project config
 mise upgrade --global       # upgrade only tools in global config
 ```
 

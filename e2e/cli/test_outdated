@@ -23,7 +23,7 @@ assert_contains "mise outdated dummy -l 2>&1" "2.0.0"
 mise install dummy@1.1.0
 assert_contains "mise outdated dummy 2>&1" "Newer versions are available outside the configured version ranges"
 
-# Test: --local should only show outdated tools from local config, not global
+# Test: --no-global should only show outdated tools from local config, not global
 cat <<EOF >mise.toml
 [tools]
 dummy = "1"
@@ -34,10 +34,10 @@ tiny = "1"
 EOF
 mise uninstall dummy tiny --all
 mise install dummy@1.0.0 tiny@1.0.0
-# --local should only show dummy (local), not tiny (global)
-assert_contains "mise outdated --local" "dummy"
-assert_not_contains "mise outdated --local" "tiny"
-# without --local, both should appear
+# --no-global should only show dummy (local), not tiny (global)
+assert_contains "mise outdated --no-global" "dummy"
+assert_not_contains "mise outdated --no-global" "tiny"
+# without --no-global, both should appear
 assert_contains "mise outdated" "dummy"
 assert_contains "mise outdated" "tiny"
 

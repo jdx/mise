@@ -20,7 +20,10 @@ With no subcommand, lists tasks like `mise tasks ls` and accepts the same flags.
 ## Flags
 - **`-g --global`** — Only show global tasks
 - **`-J --json`** — Output in JSON format
-- **`-l --local`** — Only show non-global tasks
+- **`-l --local`** — Deprecated alias for --no-global
+
+  Removed in mise 2027.7.0.
+- **`--no-global`** — Only show non-global tasks
 - **`-x --extended`** — Show all columns
 - **`-a --all`** — Include tasks from every project in the monorepo, not only the current directory's hierarchy
 - **`--hidden`** — Show hidden tasks
