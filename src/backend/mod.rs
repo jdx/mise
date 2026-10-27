@@ -3675,7 +3675,7 @@ pub trait Backend: Debug + Send + Sync {
         };
         // A command that only needs a matching version keeps a list for the
         // cutoff's release-age window, not just `fetch_remote_versions_cache`.
-        let fresh = release_age_list_window_for_cutoff(before)
+        let fresh = release_age_list_window_for_cutoff(self.ba(), before)
             .or_else(|| Settings::get().fetch_remote_versions_cache());
         cache
             .lock()
@@ -6660,7 +6660,8 @@ pub(crate) async fn resolve_from_versions_index<B: Backend + ?Sized>(
         }
     };
     // The index stands in for this tool's own list, so it is kept as long.
-    let window = before_date.and_then(release_age_list_window_for_cutoff);
+    let window =
+        before_date.and_then(|before| release_age_list_window_for_cutoff(backend.ba(), before));
     let index = versions_index::get(&tool, refresh, window).await?;
     let Some(entry) = index.tool(&tool) else {
         trace!("versions index: {tool} is not listed");

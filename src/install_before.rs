@@ -41,7 +41,9 @@ pub fn set_cli_minimum_release_age_cutoff(cutoff: Timestamp) {
 /// does not delay any release beyond the cutoff. `None` means no window, and
 /// the list is kept for `fetch_remote_versions_cache` as usual: when the user
 /// set that, for a command that reports what is newest, under prefer-offline,
-/// and for a tool with no cutoff.
+/// for a tool with no cutoff, and for a tool that has a `tool@version` entry
+/// in `minimum_release_age_excludes`, whose exempt release the cutoff does
+/// not hide.
 pub(crate) fn release_age_list_window(
     backend_arg: &BackendArg,
     minimum_release_age: Option<&str>,
@@ -53,13 +55,17 @@ pub(crate) fn release_age_list_window(
         Some(cutoff) => cutoff,
         None => resolve_before_date_for_tool(backend_arg, None, minimum_release_age).ok()??,
     };
-    release_age_list_window_for_cutoff(cutoff)
+    release_age_list_window_for_cutoff(backend_arg, cutoff)
 }
 
 /// [`release_age_list_window`] for a cutoff the caller already resolved.
-pub(crate) fn release_age_list_window_for_cutoff(cutoff: Timestamp) -> Option<Duration> {
-    mise_util::network::release_age_list_window_applies(&Settings::get())
-        .then(|| list_window_for_cutoff(cutoff, crate::duration::process_now()))
+pub(crate) fn release_age_list_window_for_cutoff(
+    backend_arg: &BackendArg,
+    cutoff: Timestamp,
+) -> Option<Duration> {
+    (mise_util::network::release_age_list_window_applies(&Settings::get())
+        && ReleaseAgeExemptions::for_tool(backend_arg).is_empty())
+    .then(|| list_window_for_cutoff(cutoff, crate::duration::process_now()))
 }
 
 /// The release-age window for a list read at `now` under `cutoff`: a cutoff in
@@ -328,6 +334,10 @@ impl ReleaseAgeExemptions {
     pub(crate) fn contains(&self, version: &str) -> bool {
         self.0.iter().any(|exempt| exempt == version)
     }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 /// Whether a `tool@version` entry in `minimum_release_age_excludes` exempts
@@ -424,8 +434,9 @@ mod tests {
     use super::{
         BeforeDateSource, DEFAULT_MINIMUM_RELEASE_AGE, effective_minimum_release_age_for_tool,
         format_hidden_release_details, list_window_for_cutoff, minimum_release_age_label,
-        release_age_exempt, release_age_list_window, release_is_eligible_at, resolve_before_date,
-        resolve_before_date_for_tool, resolve_before_date_for_tool_with_source,
+        release_age_exempt, release_age_list_window, release_age_list_window_for_cutoff,
+        release_is_eligible_at, resolve_before_date, resolve_before_date_for_tool,
+        resolve_before_date_for_tool_with_source,
     };
     use crate::args::BackendArg;
     use crate::config::SettingsExt;
@@ -543,6 +554,29 @@ mod tests {
         Settings::reset(Some(partial));
         assert_eq!(release_age_list_window(&tool, None), None);
         assert_eq!(release_age_list_window(&tool, Some("6h")), None);
+    }
+
+    #[test]
+    fn test_release_age_list_window_is_off_for_a_tool_with_a_version_entry() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut partial = SettingsPartial::empty();
+        partial.minimum_release_age_excludes = Some(vec!["github:cli/cli@2.40.0".to_string()]);
+        Settings::reset(Some(partial));
+        let hours = |hours: u64| Some(Duration::from_secs(hours * 60 * 60));
+        let exempting: BackendArg = "github:cli/cli".into();
+        let other: BackendArg = "github:jdx/mise".into();
+        let cutoff = crate::duration::parse_into_timestamp("6h").unwrap();
+
+        // A list or `latest` cached within the window would not show an
+        // exempt release published since, which the cutoff does not hide.
+        let got = [
+            release_age_list_window(&exempting, None),
+            release_age_list_window_for_cutoff(&exempting, cutoff),
+            release_age_list_window(&other, None),
+            release_age_list_window_for_cutoff(&other, cutoff),
+        ];
+        Settings::reset(None);
+        assert_eq!(got, [None, None, hours(23), hours(5)]);
     }
 
     #[test]

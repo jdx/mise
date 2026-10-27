@@ -466,7 +466,7 @@ impl Backend for PIPXBackend {
         };
         let registry_url = self.get_registry_url(config).await?;
         let mut latest_version_cache = self.latest_version_cache(&registry_url);
-        if adopt_latest_within_release_age(&mut latest_version_cache, before) {
+        if adopt_latest_within_release_age(self.ba(), &mut latest_version_cache, before) {
             debug!("Using the cached latest release of {package}, within its release-age window");
         }
         timeout::run_with_timeout_async(
@@ -1928,13 +1928,15 @@ fn fix_venv_python_symlink(_install_path: &Path) -> Result<()> {
 /// yanked, which a version list cached for the same window shows as late.
 /// Without a date, a new upload would pass the cutoff at once.
 fn adopt_latest_within_release_age(
+    ba: &BackendArg,
     cache: &mut CacheManager<Option<VersionInfo>>,
     before: Option<Timestamp>,
 ) -> bool {
     if cache.has_fresh_value() {
         return false;
     }
-    let Some(window) = before.and_then(release_age_list_window_for_cutoff) else {
+    let Some(window) = before.and_then(|before| release_age_list_window_for_cutoff(ba, before))
+    else {
         return false;
     };
     cache.adopt_file_if_fresh_for(Some(window), |_, latest| {
@@ -2671,6 +2673,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         Settings::reset(None);
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("latest.msgpack.z");
+        let ba: BackendArg = "pipx:black".into();
         let cache = || -> CacheManager<Option<VersionInfo>> {
             CacheManagerBuilder::new(path.clone())
                 .with_fresh_duration(Some(std::time::Duration::from_secs(60 * 60)))
@@ -2697,27 +2700,36 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
 
         write(Some("2026-01-01T00:00:00Z"));
         assert!(super::adopt_latest_within_release_age(
+            &ba,
             &mut cache(),
             day_ago
         ));
         assert!(super::adopt_latest_within_release_age(
+            &ba,
             &mut cache(),
             six_hours_ago
         ));
         // A 90 minute cutoff keeps it for 90 minutes, not two hours.
         assert!(!super::adopt_latest_within_release_age(
+            &ba,
             &mut cache(),
             ninety_minutes_ago
         ));
-        assert!(!super::adopt_latest_within_release_age(&mut cache(), None));
+        assert!(!super::adopt_latest_within_release_age(
+            &ba,
+            &mut cache(),
+            None
+        ));
 
         write(None);
         assert!(!super::adopt_latest_within_release_age(
+            &ba,
             &mut cache(),
             day_ago
         ));
         write(Some("not a date"));
         assert!(!super::adopt_latest_within_release_age(
+            &ba,
             &mut cache(),
             day_ago
         ));
