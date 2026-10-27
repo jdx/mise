@@ -93,7 +93,15 @@ stays the application's:
 ```
 
 The source holds the keys you want, in the same format as the target, which
-mise infers from the target's `.json`, `.toml`, `.yaml`, or `.yml` extension.
+mise infers from the target's `.json`, `.jsonc`, `.toml`, `.yaml`, or `.yml`
+extension. For a file whose extension doesn't name its format, set `format` to
+`"json"`, `"jsonc"`, `"toml"`, or `"yaml"`:
+
+```toml
+[dotfiles]
+"~/.config/Code/User/settings.json/shared" = { source = "vscode/shared.json", merge = true, format = "jsonc" }
+```
+
 With `codex/shared.toml` containing:
 
 <!-- schema: skip -->
@@ -120,6 +128,12 @@ the application wrote. A missing target is created from the source.
   order and indentation, and rewrites the file only when an owned key differs.
   A target that is not valid JSON, TOML, or YAML, including JSON with
   comments, is reported and never overwritten.
+- JSONC is JSON with comments and trailing commas, as VS Code's
+  `settings.json` is. It is edited in place like TOML and YAML: comments,
+  indentation, trailing commas, and the text of untouched keys stay. The
+  `format = "jsonc"` setting (or a `.jsonc` extension) applies to the source
+  too, so it may also hold comments. Other JSON5 syntax, such as single-quoted
+  strings or unquoted keys, is rejected.
 - `template = "tera"` renders the source first, as for blocks.
 - Like a `symlink` entry, a merge entry without `source` uses the target's path
   under [`dotfiles.root`](/configuration/settings.html#dotfiles.root), so

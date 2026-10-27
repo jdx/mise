@@ -51,6 +51,7 @@ indoc = "2"
 itertools = "0.15"
 jdx-tar = "1"
 jiff = "0.2"
+jsonc-parser = { version = "0.34", features = ["cst", "serde_json"] }
 junction = "2"
 log = "0.4"
 md-5 = "0.11"

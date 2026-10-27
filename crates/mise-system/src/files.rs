@@ -1489,6 +1489,15 @@ fn parse_file_entry(target: &str, value: toml::Value, config: &Path) -> Option<F
         );
         return None;
     }
+    // `format` only names the format of a merge; a whole-file entry would drop it
+    // and replace the file the user meant to merge into
+    if value
+        .as_table()
+        .is_some_and(|t| t.contains_key("format") && !t.contains_key("merge"))
+    {
+        record_invalid(target, config, "format is only valid with merge", local);
+        return None;
+    }
     let encryption_declared = value
         .as_table()
         .is_some_and(|table| table.contains_key("encrypt"));
@@ -7348,6 +7357,22 @@ source = "oldrc""#,
             assert!(
                 parse_file_entry("~/.oldrc", value, Path::new("/mise.toml")).is_none(),
                 "{extra}"
+            );
+        }
+    }
+
+    /// `format` belongs to a merge; on a whole-file entry it would be dropped
+    /// silently and the file linked or copied over the one being merged into.
+    #[test]
+    fn whole_file_entries_reject_format() {
+        for entry in [
+            "source = \"s.json\"\nformat = \"jsonc\"",
+            "mode = \"copy\"\nsource = \"s.json\"\nformat = \"jsonc\"",
+        ] {
+            let value: toml::Value = toml::from_str(entry).expect("toml");
+            assert!(
+                parse_file_entry("~/settings.json", value, Path::new("/mise.toml")).is_none(),
+                "{entry}"
             );
         }
     }

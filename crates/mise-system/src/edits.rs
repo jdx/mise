@@ -77,13 +77,18 @@ pub(crate) struct EditTomlTable {
     #[serde(default)]
     pub comment: Option<String>,
     /// `merge = true` sets the keys in `source` on a structured target file
-    /// (JSON, TOML, or YAML) and leaves every other key to the application
+    /// (JSON, JSONC, TOML, or YAML) and leaves every other key to the application
     /// that also writes it
     ///
     /// `merge = "missing"` sets only the keys of `source` the target has no
     /// value for, so a value the application changed stays
     #[serde(default)]
     pub merge: Option<MergeSetting>,
+    /// format of a merge target whose extension doesn't name it, such as
+    /// VS Code's `settings.json` (`"jsonc"`); string-typed so formats from
+    /// newer mise versions warn and skip instead of failing to parse
+    #[serde(default)]
+    pub format: Option<String>,
     /// merge only: octal permissions for the target when apply creates it;
     /// an existing target keeps the mode it has
     #[serde(default)]
@@ -449,6 +454,7 @@ fn resolve_entry(
             position: None,
             comment: None,
             merge: None,
+            format: None,
             permissions: None,
         },
         EditTomlEntry::Table(table) => table,
@@ -464,6 +470,9 @@ fn resolve_entry(
             config_path: config_path.to_path_buf(),
             origin,
         });
+    }
+    if entry.format.is_some() {
+        bail!("\"{path_raw}\".{id}: format is only valid with merge, ignoring entry")
     }
     let is_block = entry.block.is_some() || entry.source.is_some();
     let op = match (&is_block, &entry.line) {
@@ -586,10 +595,17 @@ fn merge_op(
             .to_string_lossy()
             .into_owned(),
     };
-    let Some(format) = Format::from_path(path) else {
-        bail!(
-            "\"{path_raw}\".{id}: merge needs a .json, .toml, .yaml, or .yml target, ignoring entry"
-        );
+    let format = match entry.format.as_deref() {
+        Some(name) => Format::from_name(name).ok_or_else(|| {
+            eyre::eyre!(
+                "\"{path_raw}\".{id}: unknown format '{name}' (expected \"json\", \"jsonc\", \"toml\", or \"yaml\"), ignoring entry"
+            )
+        })?,
+        None => Format::from_path(path).ok_or_else(|| {
+            eyre::eyre!(
+                "\"{path_raw}\".{id}: merge needs a .json, .jsonc, .toml, .yaml, or .yml target or a format, ignoring entry"
+            )
+        })?,
     };
     let source = file::replace_path(&source);
     let source = if source.is_relative() {
@@ -746,10 +762,15 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
         // reported before any entry is written, even when the target is
         // missing
         if let EditOp::Merge { format, .. } = &req.op {
-            structured_merge::contains(*format, "", &content).wrap_err_with(|| {
-                format!(
-                    "[dotfiles].\"{}/{}\": invalid merge source",
-                    req.path_raw, req.id
+            structured_merge::contains(*format, "", &content).map_err(|err| {
+                let from = match source {
+                    BlockSource::File(path) => format!(" {}", path.display()),
+                    BlockSource::Inline(_) => String::new(),
+                };
+                eyre::eyre!(
+                    "[dotfiles].\"{}/{}\": invalid merge source{from}: {err}",
+                    req.path_raw,
+                    req.id
                 )
             })?;
         }
@@ -2215,7 +2236,7 @@ mod tests {
             (
                 "~/a/notes.txt",
                 "source = \"s\"\nmerge = true",
-                ".json, .toml",
+                ".json, .jsonc",
             ),
             (
                 "~/a/config.toml",
@@ -2241,6 +2262,16 @@ mod tests {
                 "~/a/config.toml",
                 "source = \"s\"\nmerge = true\ntemplate = \"jinja\"",
                 "unknown template engine",
+            ),
+            (
+                "~/a/settings.json",
+                "source = \"s\"\nmerge = true\nformat = \"ini\"",
+                "unknown format 'ini'",
+            ),
+            (
+                "~/a/settings.json",
+                "block = \"x\"\nformat = \"jsonc\"",
+                "format is only valid with merge",
             ),
         ] {
             let err = resolve(path, entry).unwrap_err().to_string();
@@ -2270,7 +2301,7 @@ mod tests {
             (
                 "~/a/notes.txt/shared",
                 "source = \"s\"\nmerge = true",
-                ".json, .toml",
+                ".json, .jsonc",
             ),
             (
                 "~/a/settings.json/shared",

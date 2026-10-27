@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+
+# a merge entry can edit JSONC, like VS Code's settings.json: comments and
+# trailing commas stay, and format names a target whose extension doesn't
+mkdir -p shared ~/.config/Code/User
+cat <<'EOF' >shared/vscode.json
+{
+  // owned by mise
+  "editor.fontSize": 16,
+  "files.exclude": {"**/.git": false},
+}
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/Code/User/settings.json/shared" = { source = "shared/vscode.json", merge = true, format = "jsonc" }
+EOF
+cat <<'EOF' >~/.config/Code/User/settings.json
+{
+  // my theme
+  "workbench.colorTheme": "Dark+", // keep
+  "files.exclude": {
+    "**/.DS_Store": true,
+  },
+}
+EOF
+
+assert_contains "mise dotfiles status 2>&1" "merge:shared"
+assert_succeed "mise dotfiles apply --yes"
+assert_contains "cat ~/.config/Code/User/settings.json" "// my theme"
+assert_contains "cat ~/.config/Code/User/settings.json" '"workbench.colorTheme": "Dark+", // keep'
+assert_contains "cat ~/.config/Code/User/settings.json" '"editor.fontSize": 16'
+assert_contains "cat ~/.config/Code/User/settings.json" '"**/.DS_Store": true'
+assert_contains "cat ~/.config/Code/User/settings.json" '"**/.git": false'
+
+# in sync now, so a second apply changes nothing
+assert_contains "mise dotfiles apply --dry-run 2>&1" "all edits are applied"
+assert_succeed "mise dotfiles status --missing"
+
+# without format, a .json target is plain JSON and the comments are an error
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/Code/User/settings.json/shared" = { source = "shared/vscode.json", merge = true }
+EOF
+assert_fail_contains "mise dotfiles apply --yes" "invalid merge source"
+assert_fail_contains "mise dotfiles apply --yes" "failed to parse the JSON source"
+
+# a .jsonc target needs no format
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/settings.jsonc/shared" = { source = "shared/vscode.json", merge = true }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+assert_contains "cat ~/settings.jsonc" '"editor.fontSize": 16'
+
+# an unknown format is refused
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/x.cfg/shared" = { source = "shared/vscode.json", merge = true, format = "ini" }
+EOF
+assert_contains "mise dotfiles status 2>&1" "unknown format 'ini'"
+
+# format names the format of a merge; without merge the entry is refused
+# rather than linked over the file it meant to merge into
+# schema: invalid
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/Code/User/settings.json/shared" = { source = "shared/vscode.json", format = "jsonc" }
+EOF
+assert_contains "mise dotfiles status 2>&1" "format is only valid with merge"
