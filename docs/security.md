@@ -478,15 +478,14 @@ add it to the same list as `tool@version`:
 ```toml
 [settings]
 minimum_release_age = "7d"
-minimum_release_age_excludes = ["node@22.11.1"]
+minimum_release_age_excludes = ["node@24.22.1"]
 
 [tools]
-node = "22"
+node = "24"
 ```
 
-`node = "22"` and `node = "latest"` can now resolve to 22.11.1, while every
-other node release stays behind the cutoff. A version entry differs from a tool
-entry in three ways:
+`node = "24"` can now resolve to 24.22.1, while every other node release stays
+behind the cutoff. A version entry differs from a tool entry in three ways:
 
 - It lifts every cutoff for that version, including a tool's own
   `minimum_release_age` option and `--minimum-release-age`.

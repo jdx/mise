@@ -2244,7 +2244,7 @@ minimum_release_age_excludes = ["trivy", "npm:*"]
 A tool's own `minimum_release_age` option and `--minimum-release-age` still
 apply to excluded tools.
 
-An entry of the form `tool@version`, such as `node@22.11.1` or
+An entry of the form `tool@version`, such as `node@24.22.1` or
 `npm:@scope/pkg@1.2.3`, exempts only that version, so a `latest` or prefix
 request can pick it while the tool's other versions stay behind the cutoff. It
 lifts every cutoff for that version, including the tool option and the flag.
