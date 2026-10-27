@@ -31,7 +31,7 @@ importers:
         version: 6.43.15
       '@jdxcode/docs-releases':
         specifier: '0.1'
-        version: 0.1.2(vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.31)(search-insights@2.17.3)(typescript@7.0.2))(vue@3.5.44(typescript@7.0.2))
+        version: 0.1.2(vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.32)(search-insights@2.17.3)(typescript@7.0.2))(vue@3.5.44(typescript@7.0.2))
       '@lezer/highlight':
         specifier: '1'
         version: 1.2.5
@@ -70,16 +70,16 @@ importers:
         version: 7.0.2
       vitepress:
         specifier: 1.6.4
-        version: 1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.31)(search-insights@2.17.3)(typescript@7.0.2)
+        version: 1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.32)(search-insights@2.17.3)(typescript@7.0.2)
       vitepress-plugin-group-icons:
         specifier: ^1.6.5
         version: 1.8.1(vite@5.4.21(@types/node@26.6.5))
       vitepress-plugin-mermaid:
         specifier: 2.0.17
-        version: 2.0.17(mermaid@11.17.2)(vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.31)(search-insights@2.17.3)(typescript@7.0.2))
+        version: 2.0.17(mermaid@11.17.2)(vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.32)(search-insights@2.17.3)(typescript@7.0.2))
       vitepress-plugin-tabs:
         specifier: ^0.9.0
-        version: 0.9.1(vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.31)(search-insights@2.17.3)(typescript@7.0.2))(vue@3.5.44(typescript@7.0.2))
+        version: 0.9.1(vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.32)(search-insights@2.17.3)(typescript@7.0.2))(vue@3.5.44(typescript@7.0.2))
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -1439,8 +1439,8 @@ packages:
   points-on-path@0.2.1:
     resolution: {integrity: sha512-25ClnWWuw7JbWZcgqY/gJ4FQWadKxGWk+3kR/7kD0tCaDtPPMj7oHu2ToLaVhfpnHrZzYby2w6tUA0eOIuUg8g==}
 
-  postcss@8.5.31:
-    resolution: {integrity: sha512-YUbWYCgErwnMAVkjUnYa+KlMBzGpHwiIt/DE7f0G33AuX2LH9UcTk6KgWxd3zRU+pN3u/C+Xl3EnMLM4Hea7Sg==}
+  postcss@8.5.32:
+    resolution: {integrity: sha512-LJlKCCAUFKOuZxipUdYw1NzIITEsPcgyOG9LkvRJvuKj/bRzbuRY0ARXvL0pWGpsZvn8jku+LMep2eU0seHp8g==}
     engines: {node: ^10 || ^12 || >=14}
 
   preact@10.29.8:
@@ -1987,9 +1987,9 @@ snapshots:
       '@iconify/types': 2.0.0
       import-meta-resolve: 4.2.0
 
-  '@jdxcode/docs-releases@0.1.2(vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.31)(search-insights@2.17.3)(typescript@7.0.2))(vue@3.5.44(typescript@7.0.2))':
+  '@jdxcode/docs-releases@0.1.2(vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.32)(search-insights@2.17.3)(typescript@7.0.2))(vue@3.5.44(typescript@7.0.2))':
     dependencies:
-      vitepress: 1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.31)(search-insights@2.17.3)(typescript@7.0.2)
+      vitepress: 1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.32)(search-insights@2.17.3)(typescript@7.0.2)
       vue: 3.5.44(typescript@7.0.2)
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
@@ -2435,7 +2435,7 @@ snapshots:
       '@vue/shared': 3.5.44
       estree-walker: 2.0.2
       magic-string: 0.30.21
-      postcss: 8.5.31
+      postcss: 8.5.32
       source-map-js: 1.2.2
 
   '@vue/compiler-ssr@3.5.44':
@@ -2979,7 +2979,7 @@ snapshots:
       path-data-parser: 0.1.0
       points-on-curve: 0.2.0
 
-  postcss@8.5.31:
+  postcss@8.5.32:
     dependencies:
       nanoid: 3.3.20
       picocolors: 1.1.1
@@ -3159,7 +3159,7 @@ snapshots:
   vite@5.4.21(@types/node@26.6.5):
     dependencies:
       esbuild: 0.28.2
-      postcss: 8.5.31
+      postcss: 8.5.32
       rollup: 4.65.1
     optionalDependencies:
       '@types/node': 26.6.5
@@ -3173,19 +3173,19 @@ snapshots:
     optionalDependencies:
       vite: 5.4.21(@types/node@26.6.5)
 
-  vitepress-plugin-mermaid@2.0.17(mermaid@11.17.2)(vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.31)(search-insights@2.17.3)(typescript@7.0.2)):
+  vitepress-plugin-mermaid@2.0.17(mermaid@11.17.2)(vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.32)(search-insights@2.17.3)(typescript@7.0.2)):
     dependencies:
       mermaid: 11.17.2
-      vitepress: 1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.31)(search-insights@2.17.3)(typescript@7.0.2)
+      vitepress: 1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.32)(search-insights@2.17.3)(typescript@7.0.2)
     optionalDependencies:
       '@mermaid-js/mermaid-mindmap': 9.3.0
 
-  vitepress-plugin-tabs@0.9.1(vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.31)(search-insights@2.17.3)(typescript@7.0.2))(vue@3.5.44(typescript@7.0.2)):
+  vitepress-plugin-tabs@0.9.1(vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.32)(search-insights@2.17.3)(typescript@7.0.2))(vue@3.5.44(typescript@7.0.2)):
     dependencies:
-      vitepress: 1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.31)(search-insights@2.17.3)(typescript@7.0.2)
+      vitepress: 1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.32)(search-insights@2.17.3)(typescript@7.0.2)
       vue: 3.5.44(typescript@7.0.2)
 
-  vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.31)(search-insights@2.17.3)(typescript@7.0.2):
+  vitepress@1.6.4(@algolia/client-search@5.60.0)(@types/node@26.6.5)(postcss@8.5.32)(search-insights@2.17.3)(typescript@7.0.2):
     dependencies:
       '@docsearch/css': 3.8.2
       '@docsearch/js': 3.8.2(@algolia/client-search@5.60.0)(search-insights@2.17.3)
@@ -3206,7 +3206,7 @@ snapshots:
       vite: 5.4.21(@types/node@26.6.5)
       vue: 3.5.44(typescript@7.0.2)
     optionalDependencies:
-      postcss: 8.5.31
+      postcss: 8.5.32
     transitivePeerDependencies:
       - '@algolia/client-search'
       - '@types/node'
