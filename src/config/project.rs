@@ -2,18 +2,18 @@
 //! "this project" rather than on everything mise has loaded.
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use eyre::{Result, eyre};
 use itertools::Itertools;
 
+use crate::args::BackendArg;
 use crate::config::config_file::ConfigFile;
 use crate::config::{self, Config};
-use crate::daemons::glue::DaemonSetExt;
 use crate::dirs;
 use crate::file::display_path;
-use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
+use crate::toolset::{ToolRequest, ToolRequestSet, ToolRequestSetBuilder, ToolSource};
 
 /// The config files of the nearest directory, from the working directory up,
 /// that has any. Only that directory's configs are the project's: a parent's
@@ -61,17 +61,24 @@ pub fn nearest_project_tool_requests(config: &Config) -> Result<(PathBuf, Vec<To
         let set = cf.to_tool_request_set()?;
         requests.extend(set.iter().flat_map(|(_, trs, _)| trs.iter().cloned()));
     }
-    // Daemon tools are declared in the same files but loaded separately.
-    let mut daemon_tools = ToolRequestSet::new();
-    config.daemons()?.add_tool_requests(&mut daemon_tools)?;
+    // Daemon tools are declared in the same files but loaded separately. They
+    // are read here rather than through `add_tool_requests`, whose conflict
+    // check is against the whole config and could refuse a project that normal
+    // tool selection accepts.
     let paths = files.iter().map(|cf| cf.get_path()).collect::<HashSet<_>>();
-    requests.extend(
-        daemon_tools
-            .iter()
-            .flat_map(|(_, trs, _)| trs.iter())
-            .filter(|tr| config_file_of(tr.source()).is_some_and(|path| paths.contains(path)))
-            .cloned(),
-    );
+    for daemon in config.daemons()?.daemons.values() {
+        let Some((tool, version)) = daemon.tool.as_ref().filter(|_| !daemon.imported) else {
+            continue;
+        };
+        if paths.contains(daemon.source.as_path()) {
+            let ba = Arc::new(BackendArg::from(tool.as_str()));
+            let source = ToolSource::MiseTomlDaemon(daemon.source.clone());
+            requests.push(ToolRequest::new(ba, version, source)?);
+        }
+    }
+    // Tools that settings or the platform leave out are not this project's.
+    let filter = ToolRequestSetBuilder::new();
+    requests.retain(|tr| !filter.is_disabled(tr.ba()));
     Ok((root, requests))
 }
 
@@ -83,19 +90,4 @@ pub fn tool_request_set(requests: impl IntoIterator<Item = ToolRequest>) -> Tool
         set.add_version(tr, &source);
     }
     set
-}
-
-/// The file a tool request came from, when it came from a project's config
-/// rather than a flag, an environment variable or a tool stub.
-fn config_file_of(source: &ToolSource) -> Option<&Path> {
-    match source {
-        ToolSource::MiseToml(path)
-        | ToolSource::MiseTomlDaemon(path)
-        | ToolSource::IdiomaticVersionFile(path)
-        | ToolSource::ToolVersions(path) => Some(path),
-        ToolSource::ToolStub(_)
-        | ToolSource::Argument
-        | ToolSource::Environment(..)
-        | ToolSource::Unknown => None,
-    }
 }

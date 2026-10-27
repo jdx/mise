@@ -87,7 +87,7 @@ pub(crate) struct Outdated {
 
     /// Deprecated alias for --no-global
     ///
-    /// Removed in mise 2027.10.0.
+    /// Removed in mise 2027.7.0.
     #[usage(long, conflicts = ["global", "no_global"])]
     pub local: bool,
 
@@ -111,8 +111,8 @@ impl Outdated {
     pub(crate) async fn run(mut self) -> Result<()> {
         if self.local {
             deprecated_at!(
-                "2026.10.0",
-                "2027.10.0",
+                "2027.1.0",
+                "2027.7.0",
                 "cli.outdated.local",
                 "`mise outdated --local` is deprecated. Use `mise outdated --no-global` instead."
             );

@@ -39,7 +39,7 @@ config file that requests it, and the request as written.
 - **`-J --json`** — Output in JSON format
 - **`-l --local`** — Deprecated alias for --no-global
 
-  Removed in mise 2027.10.0.
+  Removed in mise 2027.7.0.
 - **`--no-global`** — Only show versions that non-global config files request
 
   Includes config files in parent directories and skips the global config, system config, and `MISE_<TOOL>_VERSION` environment variables. See --project for the nearest project's config alone.

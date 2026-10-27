@@ -34,7 +34,7 @@ pass `--bump` to compare against the newest release overall instead. Run
   Reports the requests in the global and system config (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool: what `mise upgrade --global` would install.
 - **`--local`** — Deprecated alias for --no-global
 
-  Removed in mise 2027.10.0.
+  Removed in mise 2027.7.0.
 - **`--no-global`** — Only check tools defined in project config files
 
   Skips tools defined in the global config (~/.config/mise/config.toml) and tools set through `MISE_<TOOL>_VERSION` environment variables.

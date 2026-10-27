@@ -43,7 +43,7 @@ pub(crate) struct TasksLs {
 
     /// Deprecated alias for --no-global
     ///
-    /// Removed in mise 2027.10.0.
+    /// Removed in mise 2027.7.0.
     #[usage(short, long, overrides = ["global", "no_global"], verbatim_doc_comment)]
     pub local: bool,
 
@@ -153,8 +153,8 @@ impl TasksLs {
 
         if self.local {
             crate::deprecated_at!(
-                "2026.10.0",
-                "2027.10.0",
+                "2027.1.0",
+                "2027.7.0",
                 "cli.tasks-ls.local",
                 "`mise tasks ls --local` is deprecated. Use `mise tasks ls --no-global` instead."
             );

@@ -146,7 +146,7 @@ pub(crate) struct Upgrade {
 
     /// Deprecated alias for --no-global
     ///
-    /// Removed in mise 2027.10.0.
+    /// Removed in mise 2027.7.0.
     #[usage(long, conflicts = ["global", "no_global"])]
     local: bool,
 
@@ -356,8 +356,8 @@ impl Upgrade {
     pub(crate) async fn run(mut self) -> Result<()> {
         if self.local {
             deprecated_at!(
-                "2026.10.0",
-                "2027.10.0",
+                "2027.1.0",
+                "2027.7.0",
                 "cli.upgrade.local",
                 "`mise upgrade --local` is deprecated. Use `mise upgrade --no-global` instead."
             );

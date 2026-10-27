@@ -24,9 +24,10 @@ use crate::ui::table::MiseTable;
 
 // `--local` on `ls`, `outdated`, `upgrade` and `tasks ls` means "not global",
 // unlike `mise settings --local` and `--project`, which mean the nearest project
-// config. It is deprecated in favor of `--no-global` and removed in 2027.10.0.
-// This fails that release's build so the flag is revisited: re-add `--local` on
-// those commands as the nearest-project scope, then delete this.
+// config. It is deprecated in favor of `--no-global`: silent until 2027.1.0,
+// warned about until it is removed in 2027.7.0. `--local` comes back as the
+// nearest-project scope in 2027.10.0. This fails that release's build so the
+// flag is not forgotten: re-add `--local` on those commands, then delete this.
 crate::remove_by!("2027.10.0", "cli-local-flag-meaning");
 
 /// List installed and active tool versions
@@ -113,7 +114,7 @@ pub(crate) struct Ls {
 
     /// Deprecated alias for --no-global
     ///
-    /// Removed in mise 2027.10.0.
+    /// Removed in mise 2027.7.0.
     #[usage(long, short, conflicts = ["global", "no_global", "project"])]
     local: bool,
 
@@ -203,8 +204,8 @@ impl Ls {
         };
         if self.local {
             deprecated_at!(
-                "2026.10.0",
-                "2027.10.0",
+                "2027.1.0",
+                "2027.7.0",
                 "cli.ls.local",
                 "`mise ls --local` is deprecated. Use `mise ls --no-global` instead."
             );

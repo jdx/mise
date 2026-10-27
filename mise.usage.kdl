@@ -4887,7 +4887,7 @@ Cannot be combined with --json; use --backend to filter JSON output.
         long_help #"""
 Deprecated alias for --no-global
 
-Removed in mise 2027.10.0.
+Removed in mise 2027.7.0.
 """#
         conflicts "--global" "--no-global" "--project"
     }
@@ -5419,7 +5419,7 @@ Reports the requests in the global and system config (~/.config/mise/config.toml
         long_help #"""
 Deprecated alias for --no-global
 
-Removed in mise 2027.10.0.
+Removed in mise 2027.7.0.
 """#
         conflicts "--global" "--no-global"
     }
@@ -6802,7 +6802,7 @@ With no subcommand, lists tasks like `mise tasks ls` and accepts the same flags.
         long_help #"""
 Deprecated alias for --no-global
 
-Removed in mise 2027.10.0.
+Removed in mise 2027.7.0.
 """#
         overrides "--global" "--no-global"
     }
@@ -6964,7 +6964,7 @@ See https://mise.jdx.dev/tasks/task-discovery.html
             long_help #"""
 Deprecated alias for --no-global
 
-Removed in mise 2027.10.0.
+Removed in mise 2027.7.0.
 """#
             overrides "--global" "--no-global"
         }
@@ -7699,7 +7699,7 @@ Upgrades the requests in the global and system config (~/.config/mise/config.tom
         long_help #"""
 Deprecated alias for --no-global
 
-Removed in mise 2027.10.0.
+Removed in mise 2027.7.0.
 """#
         conflicts "--global" "--no-global"
     }
