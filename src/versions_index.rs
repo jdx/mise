@@ -773,7 +773,11 @@ mod tests {
     fn visible(list: &[VersionInfo], prereleases: bool, before: Option<Timestamp>) -> Vec<String> {
         let mut list = crate::backend::filter_cached_prereleases(list.to_vec(), prereleases);
         if let Some(before) = before {
-            list = VersionInfo::filter_by_date(list, before);
+            list = VersionInfo::filter_by_date(
+                list,
+                before,
+                &crate::install_before::ReleaseAgeExemptions::default(),
+            );
         }
         list.into_iter().map(|v| v.version).collect()
     }

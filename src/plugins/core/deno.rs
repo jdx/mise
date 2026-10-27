@@ -348,10 +348,14 @@ mod tests {
     #[test]
     fn deno_versions_released_after_the_cutoff_are_hidden() {
         let cutoff = parse_into_timestamp("2024-10-10T00:00:00Z").unwrap();
-        let kept: Vec<_> = VersionInfo::filter_by_date(dated_versions(), cutoff)
-            .into_iter()
-            .map(|v| v.version)
-            .collect();
+        let kept: Vec<_> = VersionInfo::filter_by_date(
+            dated_versions(),
+            cutoff,
+            &crate::install_before::ReleaseAgeExemptions::default(),
+        )
+        .into_iter()
+        .map(|v| v.version)
+        .collect();
         assert_eq!(kept, ["1.46.3", "2.0.0"]);
     }
 }

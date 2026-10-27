@@ -1036,10 +1036,14 @@ mod tests {
     #[test]
     fn test_kerl_versions_released_after_the_cutoff_are_hidden() {
         let cutoff = parse_into_timestamp("2024-06-01T00:00:00Z").unwrap();
-        let kept: Vec<_> = VersionInfo::filter_by_date(dated_kerl_versions(), cutoff)
-            .into_iter()
-            .map(|v| v.version)
-            .collect();
+        let kept: Vec<_> = VersionInfo::filter_by_date(
+            dated_kerl_versions(),
+            cutoff,
+            &crate::install_before::ReleaseAgeExemptions::default(),
+        )
+        .into_iter()
+        .map(|v| v.version)
+        .collect();
         assert_eq!(kept, ["26.2.5", "27.0", "17.0"]);
     }
 

@@ -39,6 +39,7 @@ use crate::dirs;
 use crate::file;
 use crate::github;
 use crate::http::HTTP_FETCH;
+use crate::install_before::{ReleaseAgeExemptions, release_age_exempt};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
 use crate::packslip_forge::{self, ForgeExpect};
@@ -1295,6 +1296,22 @@ fn verified_age_allowed(
     Ok(recorded <= before)
 }
 
+/// Whether the cutoff `before` excludes `version` as a resolution candidate:
+/// [`verified_age_allowed`], unless a `minimum_release_age_excludes` entry
+/// exempts that version. Parse errors are verification errors, not age-policy
+/// exclusions, so they propagate even for an exempt version.
+fn candidate_past_cutoff(
+    ba: &BackendArg,
+    version: &str,
+    logged_at: Option<&str>,
+    published_at: &str,
+    allow_unlogged: bool,
+    before: Option<jiff::Timestamp>,
+) -> Result<bool> {
+    let allowed = verified_age_allowed(logged_at, published_at, allow_unlogged, before)?;
+    Ok(!allowed && !release_age_exempt(ba, version))
+}
+
 /// Refuse a list whose sequence is below one already accepted for the
 /// project, and remember the highest seen. The crate verifies the list
 /// and its expiry; this is the consumer's part, kept with the pins.
@@ -1942,8 +1959,9 @@ impl PackslipBackend {
             .verified_for_resolution(project, &tv, pin, opts, stamp)
             .await?;
         let statement: Statement = serde_json::from_str(&verified.statement)?;
-        // Parse errors are verification errors, not age-policy exclusions.
-        let past_cutoff = !verified_age_allowed(
+        let past_cutoff = candidate_past_cutoff(
+            &self.ba,
+            version,
             verified.logged_at.as_deref(),
             &verified.published_at,
             opts.allow_unlogged(),
@@ -2752,7 +2770,11 @@ impl Backend for PackslipBackend {
         // The listing's dates drop what is plainly too new without verifying
         // it; the walk below checks the logged time of what is left.
         let versions = match before_date {
-            Some(before) => VersionInfo::filter_by_date(versions, before),
+            Some(before) => VersionInfo::filter_by_date(
+                versions,
+                before,
+                &ReleaseAgeExemptions::for_tool(&self.ba),
+            ),
             None => versions,
         };
         let versions = versions.into_iter().map(|v| v.version).collect();
@@ -3218,6 +3240,38 @@ mod tests {
         settings.url_replacements = Some(replacements);
         settings.http_retries = Some(0);
         Settings::reset(Some(settings));
+    }
+
+    #[test]
+    fn release_age_exempt_candidate_passes_a_cutoff_it_would_fail() {
+        use confique::Layer;
+        let _settings = crate::test::SettingsGuard::lock();
+        let ba: BackendArg = "packslip:github.com/jdx/hk".into();
+        let before = Some("2026-06-01T00:00:00Z".parse().unwrap());
+        let logged = Some("2026-06-02T00:00:00Z");
+        let published = "2026-06-02T00:00:00Z";
+        let past_cutoff = |version: &str, allow_unlogged: bool, logged_at: Option<&str>| {
+            candidate_past_cutoff(&ba, version, logged_at, published, allow_unlogged, before)
+                .unwrap()
+        };
+
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.minimum_release_age_excludes =
+            Some(vec!["packslip:github.com/jdx/hk@2.0.1".to_string()]);
+        Settings::reset(Some(settings));
+        let results = [
+            past_cutoff("2.0.1", false, logged),
+            past_cutoff("2.0.1", false, None),
+            past_cutoff("2.0.2", false, logged),
+        ];
+        let unparseable =
+            candidate_past_cutoff(&ba, "2.0.1", Some("not a time"), published, false, before);
+        Settings::reset(None);
+
+        // Logged after the cutoff, or not logged at all, an exempt version is
+        // still a candidate; any other version is not.
+        assert_eq!(results, [false, false, true]);
+        assert!(unparseable.is_err());
     }
 
     #[tokio::test]

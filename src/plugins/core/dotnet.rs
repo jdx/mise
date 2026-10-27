@@ -662,10 +662,14 @@ mod tests {
     fn sdk_versions_released_after_the_cutoff_are_hidden() {
         let versions = sdk_versions(&[channel_releases(CHANNEL_JSON)]);
         let cutoff = parse_into_timestamp("2024-02-20T00:00:00Z").unwrap();
-        let kept: Vec<_> = VersionInfo::filter_by_date(versions, cutoff)
-            .into_iter()
-            .map(|v| v.version)
-            .collect();
+        let kept: Vec<_> = VersionInfo::filter_by_date(
+            versions,
+            cutoff,
+            &crate::install_before::ReleaseAgeExemptions::default(),
+        )
+        .into_iter()
+        .map(|v| v.version)
+        .collect();
         assert_eq!(kept, ["8.0.101", "8.0.200", "8.0.300-preview.1"]);
     }
 

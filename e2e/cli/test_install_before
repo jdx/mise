@@ -195,3 +195,32 @@ assert_fail "mise install jq@prefix:1.8 --minimum-release-age 1990-01-01" "the n
 # from 1.8.2 rather than selecting the release below it.
 assert_fail "mise install jq@sub-1:latest --minimum-release-age 1990-01-01" "Lower minimum_release_age to make them eligible"
 assert_not_contains_text "$(mise install jq@sub-1:latest --minimum-release-age 1990-01-01 2>&1 || true)" "Install that one now"
+
+# Test: a tool@version entry in minimum_release_age_excludes exempts that one
+# version, so `latest` and prefix requests may pick it while the newer 1.8.x
+# releases stay behind the cutoff.
+mise uninstall jq --all 2>/dev/null || true
+rm -f mise.toml
+cat <<EOF2 >mise.toml
+[settings]
+minimum_release_age = "2019-01-01"
+
+[tools]
+jq = "latest"
+EOF2
+assert "mise latest jq" "1.6"
+cat <<EOF2 >mise.toml
+[settings]
+minimum_release_age = "2019-01-01"
+minimum_release_age_excludes = ["jq@1.7.1"]
+
+[tools]
+jq = "latest"
+EOF2
+assert "mise latest jq" "1.7.1"
+assert "mise latest jq@1" "1.7.1"
+# Unlike a tool-level entry, a version entry also lifts an explicit cutoff.
+assert "mise latest jq --minimum-release-age 2019-01-01" "1.7.1"
+mise install
+assert_contains "mise ls --installed jq" "1.7.1"
+assert_not_contains "mise ls --installed jq" "1.8"

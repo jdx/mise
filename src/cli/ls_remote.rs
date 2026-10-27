@@ -7,7 +7,9 @@ use serde::Serialize;
 use crate::args::{BackendArg, ToolArg};
 use crate::backend::{Backend, VersionInfo};
 use crate::config::{Settings, SettingsExt};
-use crate::install_before::{resolve_before_date_for_backend, resolve_cli_minimum_release_age};
+use crate::install_before::{
+    ReleaseAgeExemptions, resolve_before_date_for_backend, resolve_cli_minimum_release_age,
+};
 use crate::toolset::{ToolRequest, resolve_sub_base};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, config::Config};
@@ -177,10 +179,13 @@ impl LsRemote {
             .into_iter()
             .filter(|v| matches_prefix(&v.version))
             .collect::<Vec<_>>();
+        let exempt = ReleaseAgeExemptions::for_tool(plugin.ba());
         let hidden_versions = before_date
-            .map(|before| VersionInfo::count_hidden_by_date(&versions_matching_prefix, before))
+            .map(|before| {
+                VersionInfo::count_hidden_by_date(&versions_matching_prefix, before, &exempt)
+            })
             .unwrap_or_default();
-        let versions = filter_versions_by_date(versions_matching_prefix, before_date);
+        let versions = filter_versions_by_date(versions_matching_prefix, before_date, &exempt);
 
         if self.json {
             miseprintln!("{}", serde_json::to_string(&versions)?);
@@ -201,10 +206,12 @@ impl LsRemote {
             let before_date =
                 resolve_before_date_for_backend(config, b.as_ref(), before_date).await?;
             let all_versions = b.list_remote_versions_with_info(config).await?;
+            let exempt = ReleaseAgeExemptions::for_tool(b.ba());
             if let Some(before) = before_date {
-                hidden_versions += VersionInfo::count_hidden_by_date(&all_versions, before);
+                hidden_versions +=
+                    VersionInfo::count_hidden_by_date(&all_versions, before, &exempt);
             }
-            for v in filter_versions_by_date(all_versions, before_date) {
+            for v in filter_versions_by_date(all_versions, before_date, &exempt) {
                 versions.push(VersionOutputAll {
                     tool: tool.clone(),
                     version: v.version,
@@ -267,9 +274,10 @@ fn warn_if_versions_hidden_by_minimum_release_age(tool: &str, hidden_versions: u
 fn filter_versions_by_date(
     versions: Vec<VersionInfo>,
     before_date: Option<Timestamp>,
+    exempt: &ReleaseAgeExemptions,
 ) -> Vec<VersionInfo> {
     match before_date {
-        Some(before) => VersionInfo::filter_by_date(versions, before),
+        Some(before) => VersionInfo::filter_by_date(versions, before, exempt),
         None => versions,
     }
 }

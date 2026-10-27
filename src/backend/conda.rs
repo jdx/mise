@@ -1415,7 +1415,11 @@ mod tests {
         ));
         let infos = super::collect_version_infos([&new, &old]);
         let cutoff: jiff::Timestamp = "2024-06-01T00:00:00Z".parse().unwrap();
-        let kept = crate::backend::VersionInfo::filter_by_date(infos, cutoff);
+        let kept = crate::backend::VersionInfo::filter_by_date(
+            infos,
+            cutoff,
+            &crate::install_before::ReleaseAgeExemptions::default(),
+        );
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].version, "9.1.0");
     }

@@ -156,7 +156,7 @@ impl Display for ToolArg {
     }
 }
 
-fn parse_input(s: &str) -> (&str, Option<&str>) {
+pub(crate) fn parse_input(s: &str) -> (&str, Option<&str>) {
     // An identity or URL in inline options may contain '@'. Only a separator
     // after the closing bracket starts a version; scoped package names still
     // follow the ordinary rules below.

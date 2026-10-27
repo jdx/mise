@@ -22,7 +22,8 @@ use crate::file::{
     remove_all_with_warning,
 };
 use crate::install_before::{
-    release_age_list_window, release_age_list_window_for_cutoff, resolve_before_date_for_tool,
+    ReleaseAgeExemptions, release_age_exempt, release_age_list_window,
+    release_age_list_window_for_cutoff, resolve_before_date_for_tool,
 };
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
@@ -543,24 +544,35 @@ impl VersionInfo {
         }
     }
 
-    pub(crate) fn hidden_by_date(&self, before: Timestamp) -> bool {
-        self.created_at_timestamp()
-            .is_some_and(|created| created >= before)
+    pub(crate) fn hidden_by_date(&self, before: Timestamp, exempt: &ReleaseAgeExemptions) -> bool {
+        !exempt.contains(&self.version)
+            && self
+                .created_at_timestamp()
+                .is_some_and(|created| created >= before)
     }
 
-    pub fn count_hidden_by_date(versions: &[Self], before: Timestamp) -> usize {
-        versions.iter().filter(|v| v.hidden_by_date(before)).count()
+    pub fn count_hidden_by_date(
+        versions: &[Self],
+        before: Timestamp,
+        exempt: &ReleaseAgeExemptions,
+    ) -> usize {
+        versions
+            .iter()
+            .filter(|v| v.hidden_by_date(before, exempt))
+            .count()
     }
 
-    /// Filter versions to only include those released before the given timestamp.
-    /// Versions without a created_at timestamp are included by default.
-    pub fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
+    /// Filter versions to only include those released before the given
+    /// timestamp, or exempt from it. Versions without a created_at timestamp
+    /// are included by default.
+    pub fn filter_by_date(
+        versions: Vec<Self>,
+        before: Timestamp,
+        exempt: &ReleaseAgeExemptions,
+    ) -> Vec<Self> {
         versions
             .into_iter()
-            .filter(|v| {
-                v.created_at_timestamp()
-                    .is_none_or(|created| created < before)
-            })
+            .filter(|v| !v.hidden_by_date(before, exempt))
             .collect()
     }
 }
@@ -4129,7 +4141,11 @@ pub trait Backend: Debug + Send + Sync {
                         refresh,
                     )
                     .await?;
-                let filtered = VersionInfo::filter_by_date(versions_with_info, before);
+                let filtered = VersionInfo::filter_by_date(
+                    versions_with_info,
+                    before,
+                    &ReleaseAgeExemptions::for_tool(self.ba()),
+                );
                 // Warn if no versions have timestamps
                 if filtered.iter().all(|v| v.created_at.is_none()) && !filtered.is_empty() {
                     debug!(
@@ -4178,6 +4194,7 @@ pub trait Backend: Debug + Send + Sync {
     ) -> eyre::Result<Vec<VersionInfo>> {
         let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
         let backend = self.ba().full();
+        let exempt = ReleaseAgeExemptions::for_tool(self.ba());
         let hidden: Vec<VersionInfo> = self
             .list_remote_versions_with_info_with_selection_options(config, &opts, false)
             .await?
@@ -4194,10 +4211,7 @@ pub trait Backend: Debug + Send + Sync {
                 }
                 v
             })
-            .filter(|v| {
-                v.created_at_timestamp()
-                    .is_some_and(|created| created >= before)
-            })
+            .filter(|v| v.hidden_by_date(before, &exempt))
             .collect();
         let matched: HashSet<String> = self
             .fuzzy_match_filter(
@@ -4267,10 +4281,14 @@ pub trait Backend: Debug + Send + Sync {
                             refresh,
                         )
                         .await?;
-                    VersionInfo::filter_by_date(versions_with_info, before)
-                        .into_iter()
-                        .map(|v| v.version)
-                        .collect()
+                    VersionInfo::filter_by_date(
+                        versions_with_info,
+                        before,
+                        &ReleaseAgeExemptions::for_tool(self.ba()),
+                    )
+                    .into_iter()
+                    .map(|v| v.version)
+                    .collect()
                 }
                 None => {
                     self.list_remote_versions_with_selection_options(
@@ -4330,6 +4348,7 @@ pub trait Backend: Debug + Send + Sync {
         if matches.is_empty() {
             return Ok(());
         }
+        let exempt = ReleaseAgeExemptions::for_tool(self.ba());
         // Cached from the listing this candidate set was built from.
         let dated: HashSet<String> = self
             .list_remote_versions_with_info_with_selection_options(config, selection_opts, false)
@@ -4339,11 +4358,14 @@ pub trait Backend: Debug + Send + Sync {
             .map(|v| v.version)
             .collect();
         // `filter_by_date` already checked the last dated candidate against
-        // the cutoff, so only the undated ones after it are in question:
-        // `lo..hi`, where everything from `hi` on is hidden.
+        // the cutoff, and an exempt one passes it whatever its date, so only
+        // the undated ones after both are in question: `lo..hi`, where
+        // everything from `hi` on is hidden. The search below assumes the
+        // allowed candidates all come before the hidden ones, which an exempt
+        // version among them would break.
         let mut lo = matches
             .iter()
-            .rposition(|v| dated.contains(v))
+            .rposition(|v| dated.contains(v) || exempt.contains(v))
             .map_or(0, |i| i + 1);
         let mut hi = matches.len();
         let mut bisecting = false;
@@ -4372,7 +4394,7 @@ pub trait Backend: Debug + Send + Sync {
                 created_at,
                 ..Default::default()
             };
-            if info.hidden_by_date(before) {
+            if info.hidden_by_date(before, &exempt) {
                 debug!(
                     "Dropping {}@{candidate}: released {:?}, after the {before} cutoff",
                     self.id(),
@@ -4571,7 +4593,9 @@ pub trait Backend: Debug + Send + Sync {
             let version = latest.version.clone();
             match before_date {
                 Some(before) => {
-                    let allowed = if latest.created_at.is_some() {
+                    let allowed = if release_age_exempt(self.ba(), &version) {
+                        true
+                    } else if latest.created_at.is_some() {
                         latest_stable_candidate_allowed_by_before_date(
                             &version,
                             Some(&latest),
@@ -6730,7 +6754,11 @@ pub(crate) fn resolve_in_versions_index<B: Backend + ?Sized>(
     let want_prereleases = backend.include_prereleases(selection_opts);
     let mut versions = filter_cached_prereleases(entry.version_infos(), want_prereleases);
     if let Some(before) = before_date {
-        versions = VersionInfo::filter_by_date(versions, before);
+        versions = VersionInfo::filter_by_date(
+            versions,
+            before,
+            &ReleaseAgeExemptions::for_tool(backend.ba()),
+        );
     }
     let matches = backend.fuzzy_match_filter(
         versions.into_iter().map(|v| v.version).collect(),
@@ -7207,6 +7235,33 @@ mod latest_version_tests {
                 backend.lazy_date_calls()
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_cutoff_keeps_an_exempt_version_among_hidden_ones() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let config = Config::get().await.unwrap();
+        let before = parse_into_timestamp("2025-06-01").unwrap();
+        let name = "test-lazy-dates-exempt";
+        let mut partial = SettingsPartial::empty();
+        partial.minimum_release_age_excludes = Some(vec![format!("{name}@1.0.996")]);
+        Settings::reset(Some(partial));
+
+        // 1.0.995 to 1.0.999 are past the cutoff, and the listing dates none
+        // of them, so the bisect looks for where they begin. 1.0.996 is
+        // exempt, so the versions after it are the only ones in question.
+        let backend = undated_backend(name, 1000, 5);
+        let latest = backend
+            .latest_version(&config, Some("latest".to_string()), Some(before))
+            .await
+            .unwrap();
+        let prefix = backend
+            .list_versions_matching_with_opts(&config, "1.0", Some(before), false)
+            .await
+            .unwrap();
+        Settings::reset(None);
+        assert_eq!(latest.as_deref(), Some("1.0.996"));
+        assert_eq!(prefix.last().map(String::as_str), Some("1.0.996"));
     }
 
     #[tokio::test]

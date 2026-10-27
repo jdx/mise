@@ -13,8 +13,8 @@ use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::install_before::{
-    BeforeDateSource, format_hidden_release_details, minimum_release_age_label,
-    resolve_before_date_for_tool_with_source,
+    BeforeDateSource, ReleaseAgeExemptions, format_hidden_release_details,
+    minimum_release_age_label, resolve_before_date_for_tool_with_source,
 };
 use crate::lockfile::{AubeLock, CondaPackageInfo, LockfileTool, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
@@ -1072,10 +1072,14 @@ impl ToolVersion {
                                 opts.refresh_remote_versions,
                             )
                             .await?;
-                        VersionInfo::filter_by_date(versions_with_info, before)
-                            .into_iter()
-                            .map(|v| v.version)
-                            .collect()
+                        VersionInfo::filter_by_date(
+                            versions_with_info,
+                            before,
+                            &ReleaseAgeExemptions::for_tool(backend.ba()),
+                        )
+                        .into_iter()
+                        .map(|v| v.version)
+                        .collect()
                     }
                     None => {
                         backend

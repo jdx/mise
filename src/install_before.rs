@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -5,7 +6,7 @@ use eyre::Result;
 use jiff::civil::date;
 use jiff::{Span, Timestamp};
 
-use crate::args::{BackendArg, split_bracketed_opts};
+use crate::args::{BackendArg, parse_input, split_bracketed_opts};
 use crate::backend::Backend;
 use crate::config::{Config, Settings};
 use crate::duration::{parse_duration, parse_into_timestamp};
@@ -240,35 +241,99 @@ fn is_minimum_release_age_excluded(backend_arg: &BackendArg) -> bool {
         return false;
     }
 
-    let mut full = None;
-    let mut backend_wildcard = None;
+    // A `tool@version` entry matches neither name, so it never excludes the
+    // whole tool; `ReleaseAgeExemptions` reads it.
+    let names = ExcludeNames::new(backend_arg);
     excludes.iter().any(|exclude| {
         let exclude = crate::backend::canonical_backend_full(exclude.trim());
-        let exclude = exclude.as_ref();
+        names.tool(&exclude) || names.backend_wildcard(&exclude)
+    })
+}
+
+/// The names a `minimum_release_age_excludes` entry may give one tool,
+/// compared after `canonical_backend_full` and worked out on first use.
+struct ExcludeNames<'a> {
+    backend_arg: &'a BackendArg,
+    full: OnceCell<String>,
+    backend_wildcard: OnceCell<String>,
+}
+
+impl<'a> ExcludeNames<'a> {
+    fn new(backend_arg: &'a BackendArg) -> Self {
+        Self {
+            backend_arg,
+            full: OnceCell::new(),
+            backend_wildcard: OnceCell::new(),
+        }
+    }
+
+    /// Whether `exclude` is the tool's short or full name.
+    fn tool(&self, exclude: &str) -> bool {
         if exclude.is_empty() {
             return false;
         }
-        if exclude == crate::backend::canonical_backend_full(&backend_arg.short) {
+        let ba = self.backend_arg;
+        if exclude == crate::backend::canonical_backend_full(&ba.short) {
             return true;
         }
-        let full = full.get_or_insert_with(|| {
-            if backend_arg.short.contains(':') {
-                let name = split_bracketed_opts(&backend_arg.short)
+        let full = self.full.get_or_init(|| {
+            if ba.short.contains(':') {
+                let name = split_bracketed_opts(&ba.short)
                     .map(|(name, _)| name)
-                    .unwrap_or(&backend_arg.short);
+                    .unwrap_or(&ba.short);
                 crate::backend::canonical_backend_full(name).into_owned()
             } else {
-                crate::backend::canonical_backend_full(&backend_arg.full_without_opts())
-                    .into_owned()
+                crate::backend::canonical_backend_full(&ba.full_without_opts()).into_owned()
             }
         });
-        if exclude == full {
-            return true;
-        }
-        let backend_wildcard =
-            backend_wildcard.get_or_insert_with(|| format!("{}:*", backend_arg.backend_type()));
-        exclude == backend_wildcard
-    })
+        exclude == full
+    }
+
+    /// Whether `exclude` is `<backend>:*` for the tool's backend.
+    fn backend_wildcard(&self, exclude: &str) -> bool {
+        exclude
+            == self
+                .backend_wildcard
+                .get_or_init(|| format!("{}:*", self.backend_arg.backend_type()))
+    }
+}
+
+/// The versions of one tool that `tool@version` entries in
+/// `minimum_release_age_excludes` exempt from every release-age cutoff,
+/// including a per-tool `minimum_release_age` and `--minimum-release-age`.
+/// Versions are opaque strings, matched only in full.
+#[derive(Debug, Default)]
+pub struct ReleaseAgeExemptions(Vec<String>);
+
+impl ReleaseAgeExemptions {
+    pub fn for_tool(backend_arg: &BackendArg) -> Self {
+        let excludes = &Settings::get().minimum_release_age_excludes;
+        let names = ExcludeNames::new(backend_arg);
+        Self(
+            excludes
+                .iter()
+                .filter_map(|exclude| {
+                    let (name, Some(version)) = parse_input(exclude.trim()) else {
+                        return None;
+                    };
+                    // `npm:*@1.2.3` names no tool, so it exempts nothing.
+                    names
+                        .tool(&crate::backend::canonical_backend_full(name))
+                        .then(|| version.to_string())
+                })
+                .collect(),
+        )
+    }
+
+    pub(crate) fn contains(&self, version: &str) -> bool {
+        self.0.iter().any(|exempt| exempt == version)
+    }
+}
+
+/// Whether a `tool@version` entry in `minimum_release_age_excludes` exempts
+/// `version` of `backend_arg` from every release-age cutoff.
+pub(crate) fn release_age_exempt(backend_arg: &BackendArg, version: &str) -> bool {
+    ReleaseAgeExemptions::for_tool(backend_arg).contains(version)
 }
 
 pub async fn resolve_before_date_for_backend<B: Backend + ?Sized>(
@@ -359,7 +424,7 @@ mod tests {
     use super::{
         BeforeDateSource, DEFAULT_MINIMUM_RELEASE_AGE, effective_minimum_release_age_for_tool,
         format_hidden_release_details, list_window_for_cutoff, minimum_release_age_label,
-        release_age_list_window, release_is_eligible_at, resolve_before_date,
+        release_age_exempt, release_age_list_window, release_is_eligible_at, resolve_before_date,
         resolve_before_date_for_tool, resolve_before_date_for_tool_with_source,
     };
     use crate::args::BackendArg;
@@ -549,6 +614,74 @@ mod tests {
             resolved_tool_timestamp("npm:prettier", None, None),
             Some(crate::duration::parse_into_timestamp("2024-01-03").unwrap())
         );
+    }
+
+    fn exempt_under(excludes: &[&str], tool: &str, version: &str) -> bool {
+        let mut partial = SettingsPartial::empty();
+        partial.minimum_release_age = Some("2024-01-03".to_string());
+        partial.minimum_release_age_excludes =
+            Some(excludes.iter().map(|e| e.to_string()).collect());
+        Settings::reset(Some(partial));
+        release_age_exempt(&tool.into(), version)
+    }
+
+    #[test]
+    fn test_release_age_exempt_matches_the_tool_by_any_of_its_names() {
+        let _settings = crate::test::SettingsGuard::lock();
+        assert!(exempt_under(&["node@22.11.1"], "node", "22.11.1"));
+        assert!(exempt_under(&["core:node@22.11.1"], "node", "22.11.1"));
+        assert!(exempt_under(
+            &["npm:prettier@3.3.3"],
+            "npm:prettier",
+            "3.3.3"
+        ));
+        assert!(exempt_under(&["pipx:black@24.1.0"], "pypi:black", "24.1.0"));
+        assert!(exempt_under(&["pypi:black@24.1.0"], "pipx:black", "24.1.0"));
+        assert!(exempt_under(
+            &["npm:@scope/pkg@1.2.3"],
+            "npm:@scope/pkg",
+            "1.2.3"
+        ));
+        assert!(!exempt_under(
+            &["npm:prettier@3.3.3"],
+            "npm:eslint",
+            "3.3.3"
+        ));
+    }
+
+    #[test]
+    fn test_release_age_exempt_matches_the_version_exactly() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let excludes = &["node@22.11.1"];
+        assert!(!exempt_under(excludes, "node", "22.11"));
+        assert!(!exempt_under(excludes, "node", "22.11.10"));
+        assert!(!exempt_under(excludes, "node", "22.11.2"));
+        assert!(!exempt_under(
+            &["npm:@scope/pkg@1.2.3"],
+            "npm:@scope/pkg",
+            "1.2"
+        ));
+        // A version entry needs a concrete tool.
+        assert!(!exempt_under(&["npm:*@3.3.3"], "npm:prettier", "3.3.3"));
+        // A tool-level entry exempts no version on its own.
+        assert!(!exempt_under(&["npm:prettier"], "npm:prettier", "3.3.3"));
+    }
+
+    #[test]
+    fn test_release_age_exempt_entry_keeps_the_cutoff_for_the_tool() {
+        let _settings = crate::test::SettingsGuard::lock();
+        let cutoff = Some(crate::duration::parse_into_timestamp("2024-01-03").unwrap());
+        for exclude in ["npm:prettier@3.3.3", "npm:*@3.3.3"] {
+            let mut partial = SettingsPartial::empty();
+            partial.minimum_release_age = Some("2024-01-03".to_string());
+            partial.minimum_release_age_excludes = Some(vec![exclude.to_string()]);
+            Settings::reset(Some(partial));
+            assert_eq!(
+                resolved_tool_timestamp("npm:prettier", None, None),
+                cutoff,
+                "{exclude}"
+            );
+        }
     }
 
     #[test]
