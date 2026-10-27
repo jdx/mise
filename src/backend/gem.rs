@@ -536,21 +536,26 @@ fn env_script_all_bin_files(install_path: &Path) -> eyre::Result<bool> {
                 install_libexec_path.display()
             )
         })?;
-        file::write(
-            &exec_path,
-            formatdoc!(
-                r#"
-                #!/usr/bin/env bash
-                GEM_HOME="{gem_home}" exec {gem_exec_path} "$@"
-                "#,
-                gem_home = gem_home,
-                gem_exec_path = gem_exec_path,
-            ),
-        )?;
+        file::write(&exec_path, unix_wrapper_script(gem_home, gem_exec_path))?;
         file::make_executable(&exec_path)?;
     }
 
     Ok(true)
+}
+
+/// The bash wrapper for one gem executable. Both paths are quoted so an install
+/// directory or executable name containing spaces or shell metacharacters is
+/// passed through as a single word instead of being parsed by bash.
+#[cfg(unix)]
+fn unix_wrapper_script(gem_home: &str, gem_exec_path: &str) -> String {
+    formatdoc!(
+        r#"
+        #!/usr/bin/env bash
+        GEM_HOME={gem_home} exec {gem_exec_path} "$@"
+        "#,
+        gem_home = shell_words::quote(gem_home),
+        gem_exec_path = shell_words::quote(gem_exec_path),
+    )
 }
 
 #[cfg(windows)]
@@ -850,6 +855,42 @@ pub(crate) async fn search_tools(query: &str, limit: usize) -> Result<Vec<vfox::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The wrapper must run the executable it was generated for, even when the
+    /// install directory or the executable's name contains spaces or shell
+    /// metacharacters, and must not run anything else.
+    #[cfg(unix)]
+    #[test]
+    fn unix_wrapper_quotes_paths_with_shell_metacharacters() {
+        for dir_name in ["plain", "with space", "semi;colon", "dollar$(touch pwned)"] {
+            let tmp = tempfile::tempdir().unwrap();
+            let libexec = tmp.path().join(dir_name).join("libexec");
+            let bin = libexec.join("bin");
+            std::fs::create_dir_all(&bin).unwrap();
+            let exe = bin.join("tool;touch injected");
+            std::fs::write(&exe, "#!/bin/sh\necho \"home=$GEM_HOME args=$*\"\n").unwrap();
+            file::make_executable(&exe).unwrap();
+
+            let wrapper = tmp.path().join("wrapper");
+            let script = unix_wrapper_script(libexec.to_str().unwrap(), exe.to_str().unwrap());
+            std::fs::write(&wrapper, script).unwrap();
+            file::make_executable(&wrapper).unwrap();
+
+            let out = std::process::Command::new(&wrapper)
+                .args(["a", "b c"])
+                .current_dir(tmp.path())
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{dir_name}: {out:?}");
+            assert_eq!(
+                String::from_utf8_lossy(&out.stdout),
+                format!("home={} args=a b c\n", libexec.display()),
+                "{dir_name}"
+            );
+            assert!(!tmp.path().join("injected").exists(), "{dir_name}");
+            assert!(!tmp.path().join("pwned").exists(), "{dir_name}");
+        }
+    }
 
     #[tokio::test]
     async fn exact_semver_versions_resolve_without_remote_discovery() {
