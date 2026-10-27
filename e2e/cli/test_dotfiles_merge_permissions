@@ -59,6 +59,20 @@ cat <<'EOF' >mise.toml
 EOF
 assert_fail_contains "mise dot apply --yes" "declare different permissions"
 assert_fail "test -e $HOME/.config/two/settings.json"
+# selecting one of them does not skip the check
+assert_fail_contains "mise dot apply --yes ~/.config/two/settings.json/one" "declare different permissions"
+assert_fail "test -e $HOME/.config/two/settings.json"
+
+# a read-only mode is set after every merge for the file has written it
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/ro/settings.json/one" = { source = "templates/shared.json", merge = true, permissions = "0444" }
+"~/.config/ro/settings.json/two" = { source = "templates/extra.json", merge = true, permissions = "0444" }
+EOF
+assert_succeed "mise dot apply --yes"
+assert "stat -c %a $HOME/.config/ro/settings.json" "444"
+assert_contains "cat $HOME/.config/ro/settings.json" "theme"
+assert_contains "cat $HOME/.config/ro/settings.json" "extra"
 
 # a bad mode skips the entry
 # schema: invalid

@@ -1305,7 +1305,7 @@ pub fn apply(
     let unapplied = unapplied_siblings(config, requests, &siblings, &merged);
     problems.extend(merge_conflicts(&merged, &unapplied));
     problems.extend(format_conflicts(requests, &siblings));
-    problems.extend(permission_conflicts(&todo));
+    problems.extend(permission_conflicts(requests, &siblings));
     if !problems.is_empty() {
         bail!(
             "edits: cannot apply these entries, fix them manually:\n{}",
@@ -1344,16 +1344,36 @@ pub fn apply(
             return Ok(false);
         }
     }
-    for (req, desired) in &todo {
-        let pending = journal::begin_changes_with(opts.part, &req.path_raw, edit_paths(&req.path))?;
-        apply_one(
-            req,
-            desired.as_deref(),
-            creation_mode(&todo, &req.path),
-            written,
-        )?;
-        journal::commit_changes(pending);
+    let candidates = todo
+        .iter()
+        .map(|(req, _)| *req)
+        .chain(siblings.iter())
+        .collect::<Vec<_>>();
+    // files this run created with a mode, which they get once every merge
+    // for them is done: a read-only mode would stop the next merge writing
+    let mut created: Vec<(PathBuf, u32)> = vec![];
+    let applied = (|| -> Result<()> {
+        for (req, desired) in &todo {
+            let pending =
+                journal::begin_changes_with(opts.part, &req.path_raw, edit_paths(&req.path))?;
+            let mode = creation_mode(&candidates, &req.path);
+            if apply_one(req, desired.as_deref(), mode, written)?
+                && let Some(mode) = mode
+            {
+                created.push((req.path.clone(), mode));
+            }
+            journal::commit_changes(pending);
+        }
+        Ok(())
+    })();
+    // also after a failure, so a file left behind is not stuck owner-only
+    #[cfg(unix)]
+    for (path, mode) in &created {
+        crate::files::set_mode(path, *mode)?;
     }
+    #[cfg(not(unix))]
+    let _ = created;
+    applied?;
     let applied = todo
         .iter()
         .map(|(r, _)| format!("{} ({})", r.path_raw, r.describe_op()))
@@ -1783,7 +1803,7 @@ fn apply_one(
     desired: Option<&str>,
     create_mode: Option<u32>,
     written: &mut Vec<PathBuf>,
-) -> Result<()> {
+) -> Result<bool> {
     use std::io::Write;
     debug!("edits: {} ({})", req.path.display_user(), req.describe_op());
     if let Some(parent) = req.path.parent() {
@@ -1844,7 +1864,7 @@ fn apply_one(
         if replaced_link {
             written.push(req.path.clone());
         }
-        return Ok(());
+        return Ok(false);
     }
     let failed = || format!("failed write: {}", req.path.display_user());
     if existed {
@@ -1857,54 +1877,72 @@ fn apply_one(
         target.write_all(out.as_bytes()).wrap_err_with(failed)?;
     } else {
         crate::files::create_recorded(&req.path, written, || {
-            file::write(&req.path, &out)?;
+            // a file that will get a mode starts owner-only, so its content is
+            // never readable by others while it is written; `apply` sets the
+            // final mode once every merge for the file is done
             #[cfg(unix)]
-            if let Some(mode) = create_mode {
-                crate::files::set_mode(&req.path, mode)?;
+            if create_mode.is_some() {
+                return write_new_private(&req.path, &out);
             }
-            #[cfg(not(unix))]
-            let _ = create_mode;
-            Ok(())
+            file::write(&req.path, &out)
         })?;
     }
-    Ok(())
+    Ok(!existed && create_mode.is_some())
+}
+
+/// Create `path`, which must not exist, readable and writable by its owner
+/// only, and write `text` to it.
+#[cfg(unix)]
+fn write_new_private(path: &Path, text: &str) -> Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let failed = || format!("failed write: {}", path.display_user());
+    let mut target = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+        .wrap_err_with(failed)?;
+    target.write_all(text.as_bytes()).wrap_err_with(failed)
 }
 
 /// The mode a merge-created `path` gets: the `permissions` of the merge
-/// entries this run applies to it, which `apply` has already checked agree.
-fn creation_mode(todo: &[(&EditRequest, Option<String>)], path: &Path) -> Option<u32> {
-    todo.iter().find_map(|(req, _)| match &req.op {
+/// entries declared for it, which `apply` has already checked agree.
+fn creation_mode(candidates: &[&EditRequest], path: &Path) -> Option<u32> {
+    candidates.iter().find_map(|req| match &req.op {
         EditOp::Merge { permissions, .. } if same_target(&req.path, path) => *permissions,
         _ => None,
     })
 }
 
 /// Merge entries for one file that declare different `permissions`: which
-/// one a created file gets would depend on the order they apply in.
-fn permission_conflicts(todo: &[(&EditRequest, Option<String>)]) -> Vec<String> {
-    let mut problems = vec![];
-    for (i, (first, _)) in todo.iter().enumerate() {
-        let EditOp::Merge {
-            permissions: Some(a),
-            ..
-        } = &first.op
-        else {
-            continue;
-        };
-        for (second, _) in &todo[i + 1..] {
-            if let EditOp::Merge {
-                permissions: Some(b),
+/// one a created file gets would depend on which entries a run applies and in
+/// what order. Siblings are checked too, so selecting one entry cannot skip it.
+fn permission_conflicts(requests: &[EditRequest], siblings: &[EditRequest]) -> Vec<String> {
+    let declared = requests
+        .iter()
+        .chain(siblings)
+        .filter_map(|req| match &req.op {
+            EditOp::Merge {
+                permissions: Some(mode),
                 ..
-            } = &second.op
-                && a != b
-                && same_target(&first.path, &second.path)
-            {
-                problems.push(format!(
+            } => Some((req, *mode)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let mut problems: Vec<String> = vec![];
+    for (i, (first, a)) in declared.iter().enumerate() {
+        for (second, b) in &declared[i + 1..] {
+            if a != b && same_target(&first.path, &second.path) {
+                let problem = format!(
                     "  \"{}\": {} and {} declare different permissions ({a:04o} and {b:04o})",
                     first.path_raw,
                     first.describe_op(),
                     second.describe_op()
-                ));
+                );
+                if !problems.contains(&problem) {
+                    problems.push(problem);
+                }
             }
         }
     }

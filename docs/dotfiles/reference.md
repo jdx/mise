@@ -59,7 +59,7 @@ An edit entry is keyed by the target path followed by `/<id>`, such as
 `line`. `position` applies only to `line`. A `merge` entry without `source`
 reads the target's path under
 [`dotfiles.root`](/configuration/settings.html#dotfiles.root), and takes no
-`block`, `line`, `position`, or `comment`. An edit entry takes no
+`block`, `line`, `position`, or `comment`. Only a `merge` entry takes
 `permissions`. Edits are never encrypted.
 
 ## Modes and keys {#modes-and-keys}
