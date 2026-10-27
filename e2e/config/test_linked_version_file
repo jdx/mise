@@ -36,21 +36,39 @@ assert_contains "mise ls dummy" "1.0.0"
 rm .tool-versions
 
 # A skipped link does not hide the file it points to. A project that keeps
-# `.nvmrc` for nvm as a link to `.node-version` still gets that Node version.
+# `.nvmrc` for nvm as a link to `.node-version` still gets that Node version,
+# and no warning: the link stays in its directory and ends at a version file.
 export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node
 echo "20.0.0" >.node-version
 ln -s .node-version .nvmrc
-assert_contains "mise ls 2>&1" "not reading ~/workdir/.nvmrc"
+assert_not_contains "mise ls 2>&1" "not reading"
 assert "mise ls --current --json | jq -r '.node[0].requested_version'" "20.0.0"
 assert_contains "mise ls --current node" "~/workdir/.node-version"
-rm .nvmrc .node-version
+rm .nvmrc
+
+# A target that is disabled is not read under its own name, so the skipped link
+# still warns.
+ln -s .node-version .nvmrc
+export MISE_IDIOMATIC_VERSION_FILE_DISABLE_FILES=node:.node-version
+assert_contains "mise ls 2>&1" "not reading ~/workdir/.nvmrc"
+unset MISE_IDIOMATIC_VERSION_FILE_DISABLE_FILES
+rm .nvmrc
+
+# A link to any other sibling is still skipped with the warning, and its text
+# is never read as a version.
+echo "NODE_AUTH_TOKEN=s3cr3t" >.env
+ln -s .env .nvmrc
+assert_contains "mise ls 2>&1" "not reading ~/workdir/.nvmrc"
+assert_not_contains "mise ls 2>&1 || true" "s3cr3t"
+assert "mise ls --current --json | jq -r '.node[0].requested_version'" "20.0.0"
+rm .nvmrc .env .node-version
 unset MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS
 
 # The same holds for a tool-versions filename that ends in `.toml`.
 export MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=.tool-versions:versions.toml
 echo "dummy 1.0.0" >.tool-versions
 ln -s .tool-versions versions.toml
-assert_contains "mise ls dummy 2>&1" "not reading ~/workdir/versions.toml"
+assert_not_contains "mise ls dummy 2>&1" "not reading"
 assert_contains "mise ls dummy 2>&1" "1.0.0"
 rm versions.toml .tool-versions
 unset MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
