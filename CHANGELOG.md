@@ -1,5 +1,43 @@
 # Changelog
 
+## [2026.10.21](https://github.com/jdx/mise/releases/tag/v2026.10.21) - 2026-10-27
+
+### 🚀 Features
+
+- **(bootstrap)** add `--force` to remove casks prune cannot prove unchanged by @jacobbednarz in [#14985](https://github.com/jdx/mise/pull/14985)
+- **(dotfiles)** warn when apply overwrites an edited template target by @jdx in [#15020](https://github.com/jdx/mise/pull/15020)
+- **(dotfiles)** set up from a dotfiles checkout or Stow packages with less config by @jdx in [#15025](https://github.com/jdx/mise/pull/15025)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** preserve smolvm guest rootfs links by @jdx in [#15015](https://github.com/jdx/mise/pull/15015)
+- **(ci)** stop ci overrides from killing tests on the shared macOS profile by @jdx in [#15026](https://github.com/jdx/mise/pull/15026)
+- **(config)** keep root tool inheritance for monorepo children when "." is a config root by @jdx in [#15023](https://github.com/jdx/mise/pull/15023)
+- **(config)** use the sub-project lockfile for idiomatic files in monorepo task runs by @jdx in [#15021](https://github.com/jdx/mise/pull/15021)
+- **(config)** keep a skipped version-file link from hiding the file it points at by @jdx in [#15006](https://github.com/jdx/mise/pull/15006)
+- **(doctor)** don't report uninstalled lazy tools as problems by @jdx in [#15024](https://github.com/jdx/mise/pull/15024)
+- **(dotfiles)** refuse mise dot add on a template entry by @jdx in [#15019](https://github.com/jdx/mise/pull/15019)
+- **(lock)** refresh platform entries whose URL belongs to another release by @jdx in [#15010](https://github.com/jdx/mise/pull/15010)
+- **(lock)** degrade to version-only for pypi tools with uvx_args during a lock sweep by @jdx in [#15030](https://github.com/jdx/mise/pull/15030)
+- **(packslip)** read a repository's release list from mise-versions first by @jdx in [#15032](https://github.com/jdx/mise/pull/15032)
+- **(pypi)** fall back to version-only locks when a uv graph can't install by @jdx in [#15031](https://github.com/jdx/mise/pull/15031)
+
+### 📦️ Dependency Updates
+
+- update jdx crates to v7.1.3 by @renovate[bot] in [#14996](https://github.com/jdx/mise/pull/14996)
+
+### 📦 Registry
+
+- add tuios ([aqua:Gaurav-Gosain/tuios](https://github.com/Gaurav-Gosain/tuios)) by @Gaurav-Gosain in [#14990](https://github.com/jdx/mise/pull/14990)
+
+### Ci
+
+- **(release)** leave room to retry a hung tarball build by @jdx in [#15022](https://github.com/jdx/mise/pull/15022)
+
+### New Contributors
+
+- @Gaurav-Gosain made their first contribution in [#14990](https://github.com/jdx/mise/pull/14990)
+
 ## [2026.10.20](https://github.com/jdx/mise/releases/tag/v2026.10.20) - 2026-10-26
 
 ### 🚀 Features
