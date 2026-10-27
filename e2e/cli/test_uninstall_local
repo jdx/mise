@@ -36,6 +36,27 @@ assert_contains_text "$out" "dummy@1.0.0 is requested by"
 assert_contains_text "$out" "dummy@2.0.0 is requested by"
 assert_not_contains_text "$out" "dummy@1.1.0"
 
+# daemons that disagree on a version do not block cleanup, and their tools count
+mkdir -p parent/daemons
+cat >parent/daemons/mise.toml <<EOF
+[tools]
+dummy = "1.1.0"
+[daemons.first]
+run = "exec sleep 600"
+tool = "dummy"
+version = "1.0.0"
+[daemons.second]
+run = "exec sleep 600"
+tool = "dummy"
+version = "2.0.0"
+EOF
+out="$(cd parent/daemons && mise uninstall --local --dry-run 2>&1)"
+assert_contains_text "$out" "dummy@1.1.0 is requested by"
+assert_contains_text "$out" "dummy@1.0.0 is requested by"
+
+# a tool that settings disable is left alone
+assert_contains "cd parent/app && MISE_DISABLE_TOOLS=dummy mise uninstall --local --dry-run 2>&1" "no installed tools are requested"
+
 # a path request names a directory mise did not install, so it is never removed
 assert_contains "cd parent/pathed && mise uninstall --local --yes 2>&1" "no installed tools are requested"
 assert_succeed "test -f parent/pathed/ext/keep"

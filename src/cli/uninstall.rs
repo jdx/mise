@@ -6,14 +6,14 @@ use console::style;
 use eyre::{Result, bail, eyre};
 use itertools::Itertools;
 
-use crate::args::ToolArg;
+use crate::args::{BackendArg, ToolArg};
 use crate::backend::Backend;
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, Settings};
-use crate::daemons::glue::DaemonSetExt;
 use crate::file::display_path;
 use crate::toolset::{
-    ToolRequest, ToolRequestSet, ToolSource, ToolVersion, Toolset, ToolsetBuilder,
+    ToolRequest, ToolRequestSet, ToolRequestSetBuilder, ToolSource, ToolVersion, Toolset,
+    ToolsetBuilder,
 };
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -281,17 +281,24 @@ impl Uninstall {
             let set = cf.to_tool_request_set()?;
             requested.extend(set.iter().flat_map(|(_, trs, _)| trs.iter().cloned()));
         }
-        // Daemon tools are declared in the same files but loaded separately.
-        let mut daemon_tools = ToolRequestSet::new();
-        config.daemons()?.add_tool_requests(&mut daemon_tools)?;
+        // Daemon tools are declared in the same files but loaded separately. They
+        // are read here rather than through `add_tool_requests`, whose conflict
+        // check is against the whole config and could refuse a project that
+        // normal tool selection accepts.
         let paths = files.iter().map(|cf| cf.get_path()).collect::<HashSet<_>>();
-        requested.extend(
-            daemon_tools
-                .iter()
-                .flat_map(|(_, trs, _)| trs.iter())
-                .filter(|tr| config_file_of(tr.source()).is_some_and(|path| paths.contains(path)))
-                .cloned(),
-        );
+        for daemon in config.daemons()?.daemons.values() {
+            let Some((tool, version)) = daemon.tool.as_ref().filter(|_| !daemon.imported) else {
+                continue;
+            };
+            if paths.contains(daemon.source.as_path()) {
+                let ba = Arc::new(BackendArg::from(tool.as_str()));
+                let source = ToolSource::MiseTomlDaemon(daemon.source.clone());
+                requested.push(ToolRequest::new(ba, version, source)?);
+            }
+        }
+        // Tools that settings or the platform leave out are not this project's.
+        let filter = ToolRequestSetBuilder::new();
+        requested.retain(|tr| !filter.is_disabled(tr.ba()));
         let mut requests = ToolRequestSet::new();
         for tr in requested {
             // A path or system request names a directory or program mise did not
@@ -441,19 +448,4 @@ fn nearest_project_configs(config: &Config) -> Option<(PathBuf, Vec<Arc<dyn Conf
                 .collect_vec();
             (!files.is_empty()).then(|| (dir.to_path_buf(), files))
         })
-}
-
-/// The file a tool request came from, when it came from a project's config
-/// rather than a flag, an environment variable or a tool stub.
-fn config_file_of(source: &ToolSource) -> Option<&std::path::Path> {
-    match source {
-        ToolSource::MiseToml(path)
-        | ToolSource::MiseTomlDaemon(path)
-        | ToolSource::IdiomaticVersionFile(path)
-        | ToolSource::ToolVersions(path) => Some(path),
-        ToolSource::ToolStub(_)
-        | ToolSource::Argument
-        | ToolSource::Environment(..)
-        | ToolSource::Unknown => None,
-    }
 }
