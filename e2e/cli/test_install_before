@@ -227,6 +227,9 @@ assert "mise latest jq --minimum-release-age 2019-01-01" "1.7.1"
 mise install
 assert_contains "mise ls --installed jq" "1.7.1"
 assert_not_contains "mise ls --installed jq" "1.8"
+# `ls-remote --all` lists only tools with an install, which jq now has.
+assert_contains "mise ls-remote --all 2>/dev/null" "jq@1.7.1"
+assert_not_contains "mise ls-remote --all 2>/dev/null" "jq@1.8"
 # Installing the exempt version keeps the cutoff for the rest of the tool, so
 # an upgrade does not reach for the 1.8.x releases still behind it.
 output=$(mise upgrade --dry-run 2>&1)
