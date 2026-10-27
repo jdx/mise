@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# Regression test for #15037: a custom aqua registry package with a bare (no
+# `owner/repo`) name is legitimate, but mise warned "invalid aqua tool" every
+# time the backend was constructed because the name is not in mise's registry.
+
+export MISE_AQUA_BAKED_REGISTRY=0
+export MISE_AQUA_REGISTRY_URL="file://$ROOT/vendor/aqua-registry"
+
+cat <<'EOF_REGISTRY' >registry.yaml
+packages:
+  - type: http
+    name: my-bare-tool
+    url: https://example.invalid/my-bare-tool_{{.Version}}_{{.OS}}_{{.Arch}}.tar.gz
+    format: tar.gz
+    files:
+      - name: my-bare-tool
+        src: my-bare-tool
+EOF_REGISTRY
+
+cat <<'EOF_MISE' >mise.toml
+[settings]
+aqua.registries = ["registry.yaml"]
+
+[tools]
+"aqua:my-bare-tool" = "1.0.0"
+EOF_MISE
+
+output=$(mise ls 2>&1)
+printf '%s\n' "$output"
+assert_contains "echo '$output'" "my-bare-tool"
+assert_not_contains "echo '$output'" "invalid aqua tool"

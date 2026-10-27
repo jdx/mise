@@ -2540,13 +2540,13 @@ impl AquaBackend {
         let full = ba.full_without_opts();
         let mut id = full.split_once(":").unwrap_or(("", &full)).1;
         if !id.contains("/") {
+            // A bare name that is not in mise's registry may be a package of a custom
+            // aqua registry, which can only be looked up asynchronously. If no registry
+            // has it, `AQUA_REGISTRY.package` reports "package not found" on first use.
             id = REGISTRY
                 .get(id)
                 .and_then(|t| t.backends.iter().find_map(|s| s.full.strip_prefix("aqua:")))
-                .unwrap_or_else(|| {
-                    warn!("invalid aqua tool: {}", id);
-                    id
-                });
+                .unwrap_or(id);
         }
         let cache_path = ba.cache_path().to_path_buf();
         Self {
