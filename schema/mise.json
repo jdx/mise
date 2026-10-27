@@ -2406,6 +2406,11 @@
             }
           }
         },
+        "ipv4_only": {
+          "default": false,
+          "description": "Connect to remote hosts over IPv4 only.",
+          "type": "boolean"
+        },
         "jobs": {
           "default": 8,
           "description": "How many jobs to run concurrently such as tool installs. Values below 1 are treated as 1.",

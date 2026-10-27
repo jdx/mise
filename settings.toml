@@ -1957,6 +1957,26 @@ java.shorthand_vendor = "openjdk"
 env = "MISE_JAVA_SHORTHAND_VENDOR"
 type = "String"
 
+[ipv4_only]
+default = false
+description = "Connect to remote hosts over IPv4 only."
+docs = """
+Use it when a host answers wrongly over IPv6 while IPv4 works, for example
+`dl.google.com` returning `404 Not Found` for a Go download, or the Sigstore
+trust root failing to load during attestation verification. Without it mise
+follows the system resolver, which usually prefers IPv6 on a dual-stack machine.
+
+It applies to the connections mise makes itself: downloads, version lookups,
+GitHub API calls, attestation verification and vfox plugins. Programs mise
+runs, such as `git`, `npm` or a tool's installer, follow the system. For those,
+prefer IPv4 system-wide, for example with `precedence ::ffff:0:0/96 100` in
+`/etc/gai.conf`.
+
+A host with no IPv4 address cannot be reached while this is on.
+"""
+env = "MISE_IPV4_ONLY"
+type = "Bool"
+
 [jobs]
 default = 8
 description = "How many jobs to run concurrently such as tool installs. Values below 1 are treated as 1."

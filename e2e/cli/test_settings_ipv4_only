@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+assert "mise settings get ipv4_only" "false"
+assert "MISE_IPV4_ONLY=1 mise settings get ipv4_only" "true"

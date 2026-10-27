@@ -8,7 +8,23 @@
 //! never supplemented, so `SSL_CERT_FILE` and `SSL_CERT_DIR` keep replacing the
 //! system store.
 
+use std::net::{IpAddr, Ipv4Addr};
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use reqwest::{Client, ClientBuilder};
+
+static IPV4_ONLY: AtomicBool = AtomicBool::new(false);
+
+/// Makes every client built from now on connect over IPv4 only. Clients that
+/// already exist keep the address family they were built with.
+pub fn set_ipv4_only(ipv4_only: bool) {
+    IPV4_ONLY.store(ipv4_only, Ordering::Relaxed);
+}
+
+/// Whether [`set_ipv4_only`] is on.
+pub fn ipv4_only() -> bool {
+    IPV4_ONLY.load(Ordering::Relaxed)
+}
 
 /// Builds the client `make` describes. If that fails, builds it again with
 /// Mozilla's root certificates added and returns the original error when the
@@ -20,8 +36,19 @@ use reqwest::{Client, ClientBuilder};
 /// otherwise send the previous URL, with any token in its path or query
 /// (`?private_token=`, a signed URL), to every host a request is redirected
 /// to, and mise has no use for the header.
+///
+/// With [`set_ipv4_only`] on, the client connects over IPv4 only.
 pub fn build_client(make: impl Fn() -> ClientBuilder) -> reqwest::Result<Client> {
-    let make = || make().referer(false);
+    let make = || {
+        let builder = make().referer(false);
+        // Binding the unspecified IPv4 address leaves only IPv4 candidates
+        // for the connector to try.
+        if ipv4_only() {
+            builder.local_address(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
+        } else {
+            builder
+        }
+    };
     match make().build() {
         Ok(client) => Ok(client),
         Err(err) => with_bundled_roots(make, err),
@@ -96,5 +123,48 @@ mod tests {
             "reqwest should refuse to build with no system roots"
         );
         assert!(build_client(|| Client::builder().tls_backend_rustls()).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod ipv4_only_tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    /// The only test that sets the flag, and it clears it before any assertion
+    /// that could end the test early.
+    #[tokio::test]
+    async fn ipv4_only_refuses_an_ipv6_destination() {
+        // A machine without IPv6 loopback has nothing to test.
+        let Ok(listener) = std::net::TcpListener::bind("[::1]:0") else {
+            return;
+        };
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let mut stream = stream;
+                let _ = stream.read(&mut [0; 1024]);
+                let _ = stream.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+            }
+        });
+
+        let get = |client: Client| {
+            let url = url.clone();
+            async move { client.get(url).send().await }
+        };
+        let make = || Client::builder().no_proxy();
+        let default = build_client(make).unwrap();
+        set_ipv4_only(true);
+        let pinned = build_client(make);
+        set_ipv4_only(false);
+        let pinned = pinned.unwrap();
+
+        assert!(get(default).await.is_ok(), "IPv6 is reachable by default");
+        assert!(
+            get(pinned).await.is_err(),
+            "an IPv4-only client must not connect to an IPv6 address"
+        );
     }
 }
