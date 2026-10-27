@@ -868,7 +868,11 @@ mod tests {
             let bin = libexec.join("bin");
             std::fs::create_dir_all(&bin).unwrap();
             let exe = bin.join("tool;touch injected");
-            std::fs::write(&exe, "#!/bin/sh\necho \"home=$GEM_HOME args=$*\"\n").unwrap();
+            std::fs::write(
+                &exe,
+                "#!/bin/sh\necho \"home=$GEM_HOME\"\nprintf '<%s>\\n' \"$@\"\n",
+            )
+            .unwrap();
             file::make_executable(&exe).unwrap();
 
             let wrapper = tmp.path().join("wrapper");
@@ -884,7 +888,7 @@ mod tests {
             assert!(out.status.success(), "{dir_name}: {out:?}");
             assert_eq!(
                 String::from_utf8_lossy(&out.stdout),
-                format!("home={} args=a b c\n", libexec.display()),
+                format!("home={}\n<a>\n<b c>\n", libexec.display()),
                 "{dir_name}"
             );
             assert!(!tmp.path().join("injected").exists(), "{dir_name}");
