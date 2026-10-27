@@ -361,7 +361,14 @@ impl Tick {
         }
         #[cfg(windows)]
         {
-            let (child, job) = crate::windows_job::spawn(&mut command, 0)?;
+            use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+            // No terminal reads a pass, and the detached process a prompt
+            // started has no console at all: Windows gives a console program
+            // started by a process with no console a console of its own — a
+            // window on the desktop until the pass ends (jdx/mise#14995).
+            // This starts it with a console that has no window instead, and
+            // everything the pass starts inherits that and stays hidden too.
+            let (child, job) = crate::windows_job::spawn(&mut command, CREATE_NO_WINDOW)?;
             Ok(Self {
                 child,
                 job,
