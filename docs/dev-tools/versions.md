@@ -223,8 +223,8 @@ otherwise point it at a file such as `~/.netrc` and have its text shown as tool
 names and versions. Your own files are exempt: global config such as
 `~/.tool-versions`, and version files directly in your home directory, may link
 to a file of any name. The target is still read under its own name: with
-`.nvmrc` linked to the `.node-version` beside it, mise skips `.nvmrc` and reads
-`.node-version`.
+`.nvmrc` linked to the `.node-version` beside it, mise skips `.nvmrc` without a
+warning and reads `.node-version`.
 
 ### Enable idiomatic version files {#enabling-idiomatic-version-files}
 

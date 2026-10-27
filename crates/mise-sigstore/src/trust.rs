@@ -27,16 +27,23 @@ pub(crate) fn select_tuf_config(override_url: Option<String>) -> Result<TufConfi
                 url,
                 TufBootstrap::trusted(SigstoreInstance::PublicGood.tuf_root()),
             );
-            match credentials {
-                Some(credentials) => config.with_http_client(tuf_http_client(credentials)?),
-                None => config,
-            }
+            with_http_client(config, credentials)?
         }
         // Equivalent to `TrustedRoot::production()` (which is itself
         // `from_tuf(TufConfig::production())`) — the default path is unchanged.
-        None => TufConfig::production(),
+        None => with_http_client(TufConfig::production(), None)?,
     };
     Ok(config)
+}
+
+/// The TUF client picks its own HTTP client unless it is given one, and that
+/// one connects over either IP family, so `config` gets mise's when the mirror
+/// needs credentials or `ipv4_only` is on.
+fn with_http_client(config: TufConfig, credentials: Option<HeaderValue>) -> Result<TufConfig> {
+    if credentials.is_none() && !mise_tls::ipv4_only() {
+        return Ok(config);
+    }
+    Ok(config.with_http_client(tuf_http_client(credentials)?))
 }
 
 /// Move a mirror URL's userinfo (a `url_replacements` target such as
@@ -72,9 +79,11 @@ fn credentials_as_header(url: String) -> Result<(String, Option<HeaderValue>)> {
 /// The TUF client's own default HTTP client (the same timeouts, so a mirror
 /// cannot hang the refresh), plus the mirror's credentials. reqwest drops the
 /// header on a redirect to another host, as it did the userinfo.
-fn tuf_http_client(credentials: HeaderValue) -> Result<reqwest::Client> {
+fn tuf_http_client(credentials: Option<HeaderValue>) -> Result<reqwest::Client> {
     let mut headers = HeaderMap::new();
-    headers.insert(AUTHORIZATION, credentials);
+    if let Some(credentials) = credentials {
+        headers.insert(AUTHORIZATION, credentials);
+    }
     mise_tls::build_client(|| {
         reqwest::Client::builder()
             .default_headers(headers.clone())
@@ -101,7 +110,7 @@ pub(crate) fn github_embedded_trusted_root() -> Result<TrustedRoot> {
 }
 
 pub(crate) async fn github_tuf_trusted_root() -> Result<TrustedRoot> {
-    TrustedRoot::from_tuf(TufConfig::github())
+    TrustedRoot::from_tuf(with_http_client(TufConfig::github(), None)?)
         .await
         .map_err(|e| AttestationError::TrustRoot(e.to_string()))
 }

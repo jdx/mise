@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+
+export MISE_HTTP_RETRIES=0
+# The servers below are on loopback; a configured proxy must not stand in for them.
+export no_proxy="*" NO_PROXY="*"
+
+assert "mise settings get ipv4_only" "false"
+assert "MISE_IPV4_ONLY=1 mise settings get ipv4_only" "true"
+
+# Without IPv6 on loopback there is no host that answers only over IPv6.
+if ! python3 -c "import socket; socket.socket(socket.AF_INET6).bind(('::1', 0))" 2>/dev/null; then
+  return 0 2>/dev/null || exit 0
+fi
+
+printf '1.0.0\n2.0.0\n' >versions.txt
+
+# The same version list, served once over IPv6 only and once over IPv4 only.
+start_http_server --bind ::1 --handler - <<'PY'
+import http.server
+import socket
+
+
+class Server(http.server.ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+
+
+SERVER_CLASS = Server
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = b"1.0.0\n2.0.0\n"
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+PY
+V6_PORT=$HTTP_PORT
+start_http_server --dir "$PWD"
+V4_PORT=$HTTP_PORT
+
+write_config() {
+  cat >mise.toml <<EOT
+[tools."http:$1"]
+version = "latest"
+url = "http://$2/versions.txt"
+version_list_url = "http://$2/versions.txt"
+EOT
+}
+
+# The loaded setting, not just the helper, decides which address family
+# connections use: an IPv6-only host is unreachable with it on, and reachable
+# with it off. IPv4 hosts keep working either way.
+write_config v6-only "[::1]:$V6_PORT"
+assert_fail "MISE_IPV4_ONLY=1 mise ls-remote http:v6-only"
+assert_contains "mise ls-remote http:v6-only" "2.0.0"
+
+write_config v4-only "127.0.0.1:$V4_PORT"
+assert_contains "MISE_IPV4_ONLY=1 mise ls-remote http:v4-only" "2.0.0"

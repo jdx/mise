@@ -27,5 +27,5 @@ ln -s .dummy-version packages/app/.dummyrc
 
 mise -C packages/app install
 
-assert_contains "mise run //packages/app:check 2>&1" "not reading ~/workdir/packages/app/.dummyrc"
+assert_not_contains "mise run //packages/app:check 2>&1" "not reading"
 assert_contains "mise run //packages/app:check" "This is Dummy 1.0.0!"

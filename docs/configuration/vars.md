@@ -100,6 +100,7 @@ config or dotfiles history, and is available to every command that reads vars fr
 
 ```sh
 mise vars                       # list every var and where it comes from
+mise vars --json                # the same as a JSON object; --json-extended adds sources
 mise vars git_name=Ada          # save a value on this machine, no terminal needed
 mise vars git_name              # print the value templates see
 mise vars prompt                # ask for every unanswered prompt var
