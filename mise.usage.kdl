@@ -7455,8 +7455,20 @@ Removes installed versions but does not edit mise.toml. Use `mise unuse` to
 remove a tool from mise.toml and uninstall it. A tool name or version prefix,
 such as `node` or `node@22`, must match exactly one installed version unless
 you pass `--all`.
+
+`--local` removes the installed versions that the project's own config files
+request. Installs are shared by every project, so other projects that use the
+same versions have to install them again.
 """#
     flag "-a --all" help="Remove every installed version of the named tools, or of every tool when none is named"
+    flag --local help="Remove the installed versions the nearest project config requests" {
+        long_help #"""
+Remove the installed versions the nearest project config requests
+
+The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool-versions` and idiomatic version files. Configs in parent directories and global or system configs do not. Lists what it will remove and asks for confirmation unless `--yes` or a dry run is given.
+"""#
+        conflicts "--all" INSTALLED_TOOL@VERSION
+    }
     flag "-n --dry-run" help="Show what would change without changing anything"
     flag --dry-run-code help="Like --dry-run, but exit with code 1 if there are tools to uninstall" {
         long_help #"""
@@ -7466,10 +7478,13 @@ Use it in scripts that check whether tools need uninstalling.
 """#
     }
     flag "-h --help" help="Print help" action=help builtin=#true
-    arg "[INSTALLED_TOOL@VERSION]…" help="Tools to remove, such as node@22.0.0" required=#false var=#true required_unless=--all
+    arg "[INSTALLED_TOOL@VERSION]…" help="Tools to remove, such as node@22.0.0" required=#false var=#true {
+        required_unless "--all" "--local"
+    }
     example "mise uninstall node@22.0.0" help="Uninstall a specific version"
     example "mise uninstall node" help="Uninstall node when exactly one version is installed"
     example "mise uninstall --all node" help="Uninstall every installed version of node"
+    example "mise uninstall --local --dry-run" help="Preview the versions this project's config requests"
 }
 cmd unset help="Remove environment variables from mise.toml" effect=write {
     long_help #"""

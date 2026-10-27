@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+export CLICOLOR=0
+
+# "local" is the nearest directory with a config file, not every config above it
+mkdir -p parent/app/src
+echo "dummy 1.0.0" >parent/.tool-versions
+cat >parent/app/mise.toml <<EOF
+[tools]
+dummy = "1.1.0"
+EOF
+mise i dummy@{1.0.0,1.1.0,2.0.0}
+
+cd parent/app/src || exit 1
+
+assert_fail "mise uninstall --local --all"
+assert_fail "mise uninstall --local dummy@1.1.0"
+
+# a dry run names the version and where it is requested, and removes nothing
+out="$(mise uninstall --local --dry-run 2>&1)"
+assert_contains_text "$out" "dummy@1.1.0 is requested by"
+assert_contains_text "$out" "parent/app/mise.toml"
+assert_not_contains_text "$out" "dummy@1.0.0"
+assert_not_contains_text "$out" "dummy@2.0.0"
+assert_contains "mise ls --installed dummy" "1.1.0"
+assert_fail_contains "mise uninstall --local --dry-run-code 2>&1" "uninstalled (dry-run)"
+
+# without a terminal to ask, it refuses rather than removing
+assert_fail_contains "MISE_YES=0 mise uninstall --local </dev/null 2>&1" "requires confirmation"
+assert_contains "mise ls --installed dummy" "1.1.0"
+
+# --yes skips the question; the parent's version and the unrequested one stay
+mise uninstall --local --yes
+assert_not_contains "mise ls --installed dummy" "1.1.0"
+assert_contains "mise ls --installed dummy" "1.0.0"
+assert_contains "mise ls --installed dummy" "2.0.0"
+
+# nothing requested is installed any more
+assert_contains "mise uninstall --local --yes 2>&1" "no installed tools are requested"
+assert_succeed "mise uninstall --local --dry-run-code"
+
+# from the parent, its own config is the local one
+cd .. && cd .. || exit 1
+mise uninstall --local --yes
+assert_not_contains "mise ls --installed dummy" "1.0.0"
+assert_contains "mise ls --installed dummy" "2.0.0"
