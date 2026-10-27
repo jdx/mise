@@ -553,9 +553,17 @@ fn unix_wrapper_script(gem_home: &str, gem_exec_path: &str) -> String {
         #!/usr/bin/env bash
         GEM_HOME={gem_home} exec {gem_exec_path} "$@"
         "#,
-        gem_home = shell_words::quote(gem_home),
-        gem_exec_path = shell_words::quote(gem_exec_path),
+        gem_home = single_quote(gem_home),
+        gem_exec_path = single_quote(gem_exec_path),
     )
+}
+
+/// Always single-quotes `s`. `shell_words::quote` leaves a string bare when it
+/// has no characters it considers special, but `{` and `}` are not among them,
+/// so a path like `/opt/{1,2}/tool` would still be brace-expanded by bash.
+#[cfg(unix)]
+fn single_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
 }
 
 #[cfg(windows)]
@@ -862,12 +870,25 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn unix_wrapper_quotes_paths_with_shell_metacharacters() {
-        for dir_name in ["plain", "with space", "semi;colon", "dollar$(touch pwned)"] {
+        let dir_names = [
+            "plain",
+            "with space",
+            "semi;colon",
+            "dollar$(touch pwned)",
+            "brace{1,2}",
+            "quote's",
+        ];
+        // A bare name keeps the executable path free of its own metacharacters,
+        // so only the install directory can make the path need quoting.
+        for (dir_name, exe_name) in dir_names
+            .into_iter()
+            .flat_map(|d| ["tool", "tool;touch injected"].map(|e| (d, e)))
+        {
             let tmp = tempfile::tempdir().unwrap();
             let libexec = tmp.path().join(dir_name).join("libexec");
             let bin = libexec.join("bin");
             std::fs::create_dir_all(&bin).unwrap();
-            let exe = bin.join("tool;touch injected");
+            let exe = bin.join(exe_name);
             std::fs::write(
                 &exe,
                 "#!/bin/sh\necho \"home=$GEM_HOME\"\nprintf '<%s>\\n' \"$@\"\n",
@@ -885,14 +906,17 @@ mod tests {
                 .current_dir(tmp.path())
                 .output()
                 .unwrap();
-            assert!(out.status.success(), "{dir_name}: {out:?}");
+            assert!(out.status.success(), "{dir_name} {exe_name}: {out:?}");
             assert_eq!(
                 String::from_utf8_lossy(&out.stdout),
                 format!("home={}\n<a>\n<b c>\n", libexec.display()),
-                "{dir_name}"
+                "{dir_name} {exe_name}"
             );
-            assert!(!tmp.path().join("injected").exists(), "{dir_name}");
-            assert!(!tmp.path().join("pwned").exists(), "{dir_name}");
+            assert!(
+                !tmp.path().join("injected").exists(),
+                "{dir_name} {exe_name}"
+            );
+            assert!(!tmp.path().join("pwned").exists(), "{dir_name} {exe_name}");
         }
     }
 
