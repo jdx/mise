@@ -7590,6 +7590,11 @@
                     }
                   },
                   {
+                    "properties": {
+                      "merge": {
+                        "enum": [true, "missing"]
+                      }
+                    },
                     "required": ["merge"]
                   }
                 ]
@@ -8156,6 +8161,11 @@
                           }
                         },
                         {
+                          "properties": {
+                            "merge": {
+                              "enum": [true, "missing"]
+                            }
+                          },
                           "required": ["merge"]
                         }
                       ]

@@ -260,12 +260,12 @@ fn rule_8() -> Value {
     })
 }
 
-/// `format` names the format of a merge, so it takes `merge`.
+/// `format` names the format of a merge, so it takes `merge = true` or `"missing"`.
 fn rule_10() -> Value {
     json!({
         "anyOf": [
             {"properties": {"format": false}},
-            {"required": ["merge"]}
+            {"properties": {"merge": {"enum": [true, "missing"]}}, "required": ["merge"]}
         ]
     })
 }
