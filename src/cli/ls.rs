@@ -129,7 +129,7 @@ pub(crate) struct Ls {
     /// `MISE_<TOOL>_VERSION` environment variables. A version that a later file
     /// in that directory overrides is not listed, as with --no-global; `mise
     /// uninstall --project` still removes it.
-    #[usage(long, conflicts = ["global", "local", "no_global"])]
+    #[usage(long, conflicts = ["global", "local", "no_global", "monorepo", "prunable"])]
     project: bool,
 
     /// Only show requested versions that are not installed

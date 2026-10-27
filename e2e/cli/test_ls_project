@@ -4,6 +4,10 @@ export CLICOLOR=0
 
 mise i dummy@{1.0.0,2.0.0}
 
+# --project is its own scope, so it refuses flags that would silently win over it
+assert_fail "mise ls --project --monorepo"
+assert_fail "mise ls --project --prunable"
+
 # a version that a later file overrides is not listed, as with --no-global
 mkdir -p layered
 printf '[tools]\ndummy = "1.0.0"\n' >layered/mise.toml

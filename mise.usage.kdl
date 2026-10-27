@@ -4906,7 +4906,7 @@ Only show versions the nearest project config requests
 
 The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool-versions` and idiomatic version files. Configs in parent directories and global or system configs do not, nor do `MISE_<TOOL>_VERSION` environment variables. A version that a later file in that directory overrides is not listed, as with --no-global; `mise uninstall --project` still removes it.
 """#
-        conflicts "--global" "--local" "--no-global"
+        conflicts "--global" "--local" "--no-global" "--monorepo" "--prunable"
     }
     flag "-m --missing" help="Only show requested versions that are not installed" conflicts=--installed
     flag "-o --offline" help="Don't fetch information such as outdated versions" hide=#true
