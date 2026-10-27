@@ -482,7 +482,7 @@ impl PIPXBackend {
             .uv_lock_command(config, tv, &uv, temp.path())
             .await?
             .args(["lock", "--no-build", "--no-config", "--no-python-downloads"])
-            .args(Self::uv_exclude_newer_args(tv.before_date));
+            .args(Self::uv_exclude_newer_args(tv.install_before_date()));
         let raw = tv.request.options();
         if let Some(value) = PipxOptions::new(&raw).dependency_prereleases()? {
             cmd = cmd.args(["--prerelease", value]);

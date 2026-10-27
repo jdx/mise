@@ -58,7 +58,7 @@ impl InstallInto {
             .first()
             .unwrap()
             .clone();
-        let before_date = tv.before_date;
+        let before_date = tv.install_before_date();
         let backend = tv.backend()?;
         let mpr = MultiProgressReport::get();
         let install_ctx = InstallContext {

@@ -14,7 +14,7 @@ use crate::file;
 use crate::hash::hash_to_str;
 use crate::install_before::{
     BeforeDateSource, ReleaseAgeExemptions, format_hidden_release_details,
-    minimum_release_age_label, resolve_before_date_for_tool_with_source,
+    minimum_release_age_label, release_age_exempt, resolve_before_date_for_tool_with_source,
 };
 use crate::lockfile::{AubeLock, CondaPackageInfo, LockfileTool, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
@@ -394,6 +394,25 @@ impl ToolVersion {
         !self
             .backend()
             .is_ok_and(|backend| backend.is_rolling_channel(version))
+    }
+
+    /// The release-age cutoff installing or locking this version applies,
+    /// transitive dependencies included. Resolution already chose the version,
+    /// so the cutoff only stays where it governed that choice: an exact pin, a
+    /// ref, a path, `system` and a version a `minimum_release_age_excludes`
+    /// entry exempts have none. `before_date` itself is kept, so a later
+    /// resolution of the same request still applies it to other versions.
+    pub fn install_before_date(&self) -> Option<Timestamp> {
+        match &self.request {
+            ToolRequest::Version { version, .. }
+                if version != "latest" && version == &self.version =>
+            {
+                None
+            }
+            ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => None,
+            _ if release_age_exempt(self.ba(), &self.version) => None,
+            _ => self.before_date,
+        }
     }
 
     pub fn ba(&self) -> &BackendArg {
@@ -1830,6 +1849,37 @@ mod tests {
             !ToolVersion::new(request, "ref:main".to_string()).request_pinned_this_version(),
             "a ref names a moving target, not a release"
         );
+    }
+
+    #[test]
+    fn install_before_date_drops_the_cutoff_only_for_a_selection_it_does_not_govern() {
+        use confique::Layer;
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut partial = crate::config::settings::SettingsPartial::empty();
+        partial.minimum_release_age_excludes = Some(vec!["aqua:jqlang/jq@1.7.1".to_string()]);
+        Settings::reset(Some(partial));
+        let backend = Arc::new(BackendArg::from("aqua:jqlang/jq"));
+        let before: Timestamp = "2019-01-01T00:00:00Z".parse().unwrap();
+        let install_before = |requested: &str, resolved: &str| {
+            let request =
+                ToolRequest::new(backend.clone(), requested, ToolSource::Argument).unwrap();
+            let mut tv = ToolVersion::new(request, resolved.to_string());
+            tv.before_date = Some(before);
+            tv.install_before_date()
+        };
+
+        let got = [
+            // An exempt version, however it was requested.
+            install_before("latest", "1.7.1"),
+            install_before("1", "1.7.1"),
+            // An exact pin, as before.
+            install_before("1.6", "1.6"),
+            // An ordinary version a fuzzy request picked under the cutoff.
+            install_before("latest", "1.6"),
+            install_before("1", "1.6"),
+        ];
+        Settings::reset(None);
+        assert_eq!(got, [None, None, None, Some(before), Some(before)]);
     }
 
     #[test]

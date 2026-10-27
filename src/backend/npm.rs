@@ -2443,7 +2443,13 @@ impl NPMBackend {
         let request_options = tv.request.options();
         let options = NpmOptions::new(&request_options);
         let allow_builds = options.allow_builds()?;
-        self.write_aube_embed_project(temp.path(), tv.before_date, &options, &allow_builds, false)?;
+        self.write_aube_embed_project(
+            temp.path(),
+            tv.install_before_date(),
+            &options,
+            &allow_builds,
+            false,
+        )?;
         self.write_aube_root_dependency(temp.path(), tv)?;
         let mut install_options = aube::embed::InstallOptions::new(temp.path());
         install_options.lockfile_only = true;

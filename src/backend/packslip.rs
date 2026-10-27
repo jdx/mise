@@ -1225,9 +1225,13 @@ pub(crate) fn verify_release_list(
 /// The cutoff decides which release a fuzzy request may pick. A lockfile entry
 /// and an explicit pin like `hk = "2.0.1"` are both that decision already taken
 /// and committed, so re-applying the cutoff here would reject a version mise
-/// itself resolved — `minimum_release_age` documents both as unfiltered.
+/// itself resolved — `minimum_release_age` documents both as unfiltered. A
+/// version a `minimum_release_age_excludes` entry names is exempt from the
+/// cutoff altogether.
 fn selection_already_made(tv: &ToolVersion) -> bool {
-    tv.resolved_from_lockfile() || tv.request_pinned_this_version()
+    tv.resolved_from_lockfile()
+        || tv.request_pinned_this_version()
+        || release_age_exempt(tv.ba(), &tv.version)
 }
 
 /// Refuse a release newer than the cutoff; see [`verified_age_allowed`].

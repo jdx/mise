@@ -927,7 +927,7 @@ impl Toolset {
             tv.install_path = Some(dir.join(tool_dir_name).join(tv.tv_pathname()));
             tv.install_path_is_explicit = true;
         }
-        let before_date = transitive_dependency_before_date(tr, &tv);
+        let before_date = tv.install_before_date();
         // Silent unless resolution picked this version under a cutoff without a
         // date, so it needs no cutoff check of its own: an upgrade installs what
         // it picked as an exact pin, which has no `before_date` here.
@@ -1233,19 +1233,6 @@ fn should_refresh_remote_versions(
         }
         ToolRequest::Sub { orig_version, .. } => orig_version == "latest",
         ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => false,
-    }
-}
-
-fn transitive_dependency_before_date(
-    tr: &ToolRequest,
-    tv: &ToolVersion,
-) -> Option<jiff::Timestamp> {
-    match tr {
-        ToolRequest::Version { version, .. } if version != "latest" && version == &tv.version => {
-            None
-        }
-        ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => None,
-        _ => tv.before_date,
     }
 }
 
