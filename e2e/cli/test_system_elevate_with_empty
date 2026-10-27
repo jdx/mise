@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Linux" ]]; then
+  exit 0
+fi
+
+# An empty system_packages.elevate_with runs the package manager directly
+# instead of falling back to sudo (Termux has no root to get).
+mkdir -p "$HOME/snap-bin"
+export PATH="$HOME/snap-bin:$PATH"
+touch "$HOME/snap-log" "$HOME/sudo-log"
+cat >"$HOME/snap-bin/snap" <<'SH'
+#!/bin/sh
+if [ "$1" = list ]; then
+  echo 'Name      Version   Rev   Tracking        Publisher   Notes'
+  exit 0
+fi
+echo "$*" >>"$HOME/snap-log"
+SH
+cat >"$HOME/snap-bin/sudo" <<'SH'
+#!/bin/sh
+echo "$*" >>"$HOME/sudo-log"
+exit 99
+SH
+chmod +x "$HOME/snap-bin/"*
+
+cat >mise.toml <<'TOML'
+[bootstrap.packages]
+"snap:hello" = "latest"
+TOML
+
+export MISE_SYSTEM_PACKAGES_SUDO=true
+export MISE_SYSTEM_PACKAGES_ELEVATE_WITH=""
+if [[ "$(id -u)" != 0 ]]; then
+  assert_contains "mise bootstrap packages apply --dry-run" "snap install hello"
+  assert_not_contains "mise bootstrap packages apply --dry-run" "sudo"
+  assert_succeed "mise bootstrap packages apply"
+  assert_contains "cat '$HOME/snap-log'" "install hello"
+  assert_succeed "test ! -s '$HOME/sudo-log'"
+fi
