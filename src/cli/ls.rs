@@ -22,14 +22,6 @@ use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequestSet, ToolSource, ToolVersion, Toolset};
 use crate::ui::table::MiseTable;
 
-// `--local` on `ls`, `outdated`, `upgrade` and `tasks ls` means "not global",
-// unlike `mise settings --local` and `--project`, which mean the nearest project
-// config. It is deprecated in favor of `--no-global`: silent until 2027.1.0,
-// warned about until it is removed in 2027.7.0. `--local` comes back as the
-// nearest-project scope in 2027.10.0. This fails that release's build so the
-// flag is not forgotten: re-add `--local` on those commands, then delete this.
-crate::remove_by!("2027.10.0", "cli-local-flag-meaning");
-
 /// List installed and active tool versions
 ///
 /// Lists the tools mise knows about: versions that are installed, and versions
@@ -917,8 +909,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r###"<bold><underline>Deprecation:</underline></bold>
 
 The `-l` and `--local` flags are deprecated in favor of `--no-global`. mise warns about
-them from 2027.1.0 and removes them in 2027.7.0; `--local` returns in 2027.10.0 as the
-nearest project's config alone, as with `mise settings --local`."###
+them from 2027.1.0 and removes them in 2027.7.0."###
 );
 
 #[cfg(test)]

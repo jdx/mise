@@ -115,8 +115,7 @@ mise ls --grouped
 Deprecation:
 
 The `-l` and `--local` flags are deprecated in favor of `--no-global`. mise warns about
-them from 2027.1.0 and removes them in 2027.7.0; `--local` returns in 2027.10.0 as the
-nearest project's config alone, as with `mise settings --local`.
+them from 2027.1.0 and removes them in 2027.7.0.
 
 <!-- generated reference navigation -->
 
