@@ -98,10 +98,13 @@ pub struct DotfileTableDecl {
     pub position: Option<String>,
     /// comment prefix for edit marker lines; inferred from the file extension when omitted
     pub comment: Option<String>,
-    /// edit entry: true sets the keys of source (default: the target's path under dotfiles.root) on a JSON, TOML, or YAML target and leaves the target's other keys to the application that also writes it; "missing" sets only the keys the target has no value for; the format comes from the target's extension
+    /// edit entry: true sets the keys of source (default: the target's path under dotfiles.root) on a JSON, JSONC, TOML, or YAML target and leaves the target's other keys to the application that also writes it; "missing" sets only the keys the target has no value for; the format comes from the target's extension unless "format" names it
     #[serde(default)]
     #[schemars(schema_with = "schema::merge")]
     pub merge: Option<MergeSetting>,
+    /// merge only: the format of the target and source when the target's extension doesn't name it, such as "jsonc" for VS Code's settings.json
+    #[schemars(extend("anyOf" = [{"enum": ["json", "jsonc", "toml", "yaml"]}, {"type": "string"}]))]
+    pub format: Option<String>,
     /// OS/profile variants: history streams for track mode, or optional destinations for deployment modes
     pub variants: Option<Vec<DotfileVariantDecl>>,
 }

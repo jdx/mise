@@ -77,13 +77,18 @@ pub(crate) struct EditTomlTable {
     #[serde(default)]
     pub comment: Option<String>,
     /// `merge = true` sets the keys in `source` on a structured target file
-    /// (JSON, TOML, or YAML) and leaves every other key to the application
+    /// (JSON, JSONC, TOML, or YAML) and leaves every other key to the application
     /// that also writes it
     ///
     /// `merge = "missing"` sets only the keys of `source` the target has no
     /// value for, so a value the application changed stays
     #[serde(default)]
     pub merge: Option<MergeSetting>,
+    /// format of a merge target whose extension doesn't name it, such as
+    /// VS Code's `settings.json` (`"jsonc"`); string-typed so formats from
+    /// newer mise versions warn and skip instead of failing to parse
+    #[serde(default)]
+    pub format: Option<String>,
 }
 
 pub use mise_config::dotfiles::MergeSetting;
@@ -433,6 +438,7 @@ fn resolve_entry(
             position: None,
             comment: None,
             merge: None,
+            format: None,
         },
         EditTomlEntry::Table(table) => table,
     };
@@ -569,10 +575,17 @@ fn merge_op(
             .to_string_lossy()
             .into_owned(),
     };
-    let Some(format) = Format::from_path(path) else {
-        bail!(
-            "\"{path_raw}\".{id}: merge needs a .json, .toml, .yaml, or .yml target, ignoring entry"
-        );
+    let format = match entry.format.as_deref() {
+        Some(name) => Format::from_name(name).ok_or_else(|| {
+            eyre::eyre!(
+                "\"{path_raw}\".{id}: unknown format '{name}' (expected \"json\", \"jsonc\", \"toml\", or \"yaml\"), ignoring entry"
+            )
+        })?,
+        None => Format::from_path(path).ok_or_else(|| {
+            eyre::eyre!(
+                "\"{path_raw}\".{id}: merge needs a .json, .jsonc, .toml, .yaml, or .yml target or a format, ignoring entry"
+            )
+        })?,
     };
     let source = file::replace_path(&source);
     let source = if source.is_relative() {
@@ -711,10 +724,15 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
         // reported before any entry is written, even when the target is
         // missing
         if let EditOp::Merge { format, .. } = &req.op {
-            structured_merge::contains(*format, "", &content).wrap_err_with(|| {
-                format!(
-                    "[dotfiles].\"{}/{}\": invalid merge source",
-                    req.path_raw, req.id
+            structured_merge::contains(*format, "", &content).map_err(|err| {
+                let from = match source {
+                    BlockSource::File(path) => format!(" {}", path.display()),
+                    BlockSource::Inline(_) => String::new(),
+                };
+                eyre::eyre!(
+                    "[dotfiles].\"{}/{}\": invalid merge source{from}: {err}",
+                    req.path_raw,
+                    req.id
                 )
             })?;
         }

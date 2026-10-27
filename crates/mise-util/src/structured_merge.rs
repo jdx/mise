@@ -1,4 +1,4 @@
-//! Set some keys of a JSON, TOML, or YAML file and leave the rest alone.
+//! Set some keys of a JSON, JSONC, TOML, or YAML file and leave the rest alone.
 //!
 //! This is for files an application also writes: the caller owns the keys in
 //! `source`, the application owns everything else. [`merge`] returns the
@@ -8,7 +8,7 @@
 //! caller tells "in sync" from "drifted" without being bothered by keys it
 //! does not own.
 //!
-//! Semantics, identical for all three formats:
+//! Semantics, identical for all four formats:
 //! - A key present on both sides whose values are both tables/objects merges
 //!   recursively.
 //! - Any other value, including an array, is replaced by the source's.
@@ -19,6 +19,8 @@ use crate::yaml;
 use crate::yaml_merge::{mapping_subset, merge_yaml, root_mapping};
 use eyre::{Result, bail, eyre};
 use indexmap::IndexMap;
+use jsonc_parser::ParseOptions;
+use jsonc_parser::cst::{CstInputValue, CstObject, CstRootNode};
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 use std::path::Path;
@@ -28,6 +30,8 @@ use toml_edit::{DocumentMut, Item, TableLike};
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum Format {
     Json,
+    /// JSON with comments and trailing commas, as VS Code's `settings.json`
+    Jsonc,
     Toml,
     Yaml,
 }
@@ -37,6 +41,18 @@ impl Format {
     pub fn from_path(path: &Path) -> Option<Self> {
         match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
             "json" => Some(Self::Json),
+            "jsonc" => Some(Self::Jsonc),
+            "toml" => Some(Self::Toml),
+            "yaml" | "yml" => Some(Self::Yaml),
+            _ => None,
+        }
+    }
+
+    /// The format a user names explicitly, such as an entry's `format` key.
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.to_ascii_lowercase().as_str() {
+            "json" => Some(Self::Json),
+            "jsonc" => Some(Self::Jsonc),
             "toml" => Some(Self::Toml),
             "yaml" | "yml" => Some(Self::Yaml),
             _ => None,
@@ -46,6 +62,7 @@ impl Format {
     fn name(self) -> &'static str {
         match self {
             Self::Json => "JSON",
+            Self::Jsonc => "JSONC",
             Self::Toml => "TOML",
             Self::Yaml => "YAML",
         }
@@ -99,6 +116,7 @@ pub fn merge(format: Format, target: &str, source: &str) -> Result<String> {
     }
     match format {
         Format::Json => merge_json(target, source),
+        Format::Jsonc => merge_jsonc(target, source),
         Format::Toml => merge_toml(target, source),
         Format::Yaml => merge_yaml(target, source),
     }
@@ -290,7 +308,8 @@ fn yaml_features(text: &str) -> (bool, bool) {
 
 fn parse(format: Format, text: &str, what: &str, yaml_values: bool) -> Result<Doc> {
     // an empty file, or one holding only comments, is an empty table
-    let blank = text.trim().is_empty() || (format != Format::Json && is_comments_only(text));
+    let blank = text.trim().is_empty()
+        || (matches!(format, Format::Toml | Format::Yaml) && is_comments_only(text));
     let fail =
         |e: &dyn std::fmt::Display| eyre!("failed to parse the {} {what}: {e}", format.name());
     let not_a_table = || {
@@ -304,6 +323,15 @@ fn parse(format: Format, text: &str, what: &str, yaml_values: bool) -> Result<Do
         Format::Json => match serde_json::from_str(text).map_err(|e| fail(&e))? {
             value @ Value::Object(_) => Doc::Json(value),
             _ => return Err(not_a_table()),
+        },
+        Format::Jsonc if blank => Doc::Json(Value::Object(Map::new())),
+        Format::Jsonc => match parse_jsonc(text).map_err(|e| fail(&e))?.value() {
+            // only comments
+            None => Doc::Json(Value::Object(Map::new())),
+            Some(node) => match node.to_serde_value() {
+                Some(value @ Value::Object(_)) => Doc::Json(value),
+                _ => return Err(not_a_table()),
+            },
         },
         Format::Toml if blank => Doc::Toml(toml::Table::new()),
         Format::Toml => Doc::Toml(toml::from_str(text).map_err(|e| fail(&e))?),
@@ -471,6 +499,78 @@ fn merge_json(target: &str, source: &str) -> Result<String> {
     Ok(out)
 }
 
+/// What a JSONC document may hold beyond JSON: comments and trailing commas,
+/// and nothing of JSON5.
+fn jsonc_options() -> ParseOptions {
+    ParseOptions {
+        allow_comments: true,
+        allow_trailing_commas: true,
+        allow_loose_object_property_names: false,
+        allow_missing_commas: false,
+        allow_single_quoted_strings: false,
+        allow_hexadecimal_numbers: false,
+        allow_unary_plus_numbers: false,
+        allow_bare_decimal_point_numbers: false,
+        allow_non_finite_numbers: false,
+        allow_extended_string_escapes: false,
+    }
+}
+
+fn parse_jsonc(text: &str) -> Result<CstRootNode> {
+    Ok(CstRootNode::parse(text, &jsonc_options())?)
+}
+
+/// Edits the target's syntax tree, so its comments, indentation, trailing
+/// commas and every key the source does not set stay as written.
+fn merge_jsonc(target: &str, source: &str) -> Result<String> {
+    let Doc::Json(Value::Object(source)) = parse(Format::Jsonc, source, "source", false)? else {
+        unreachable!("parsed as a JSON object");
+    };
+    let blank = target.trim().is_empty();
+    let root = parse_jsonc(if blank { "{}" } else { target })
+        .map_err(|e| eyre!("failed to parse the JSONC target: {e}"))?;
+    merge_jsonc_object(&root.object_value_or_set(), source);
+    let mut out = root.to_string();
+    if blank {
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+fn merge_jsonc_object(target: &CstObject, source: Map<String, Value>) {
+    for (key, value) in source {
+        let Some(prop) = target.get(&key) else {
+            target.append(&key, jsonc_input(value));
+            continue;
+        };
+        let existing = prop.value();
+        match (value, existing.as_ref().and_then(|node| node.as_object())) {
+            (Value::Object(source_child), Some(target_child)) => {
+                merge_jsonc_object(&target_child, source_child);
+            }
+            // an equal value keeps its own text, comments inside it included
+            (value, _)
+                if existing.and_then(|node| node.to_serde_value()).as_ref() == Some(&value) => {}
+            (value, _) => prop.set_value(jsonc_input(value)),
+        }
+    }
+}
+
+fn jsonc_input(value: Value) -> CstInputValue {
+    match value {
+        Value::Null => CstInputValue::Null,
+        Value::Bool(b) => CstInputValue::Bool(b),
+        Value::Number(n) => CstInputValue::Number(n.to_string()),
+        Value::String(s) => CstInputValue::String(s),
+        Value::Array(items) => CstInputValue::Array(items.into_iter().map(jsonc_input).collect()),
+        Value::Object(map) => CstInputValue::Object(
+            map.into_iter()
+                .map(|(key, value)| (key, jsonc_input(value)))
+                .collect(),
+        ),
+    }
+}
+
 /// A JSON value on its way back to text: either the exact source text it came
 /// from, an object some of whose entries changed, or a new value.
 enum JsonNode {
@@ -620,7 +720,7 @@ mod tests {
             ("a.TOML", Some(Format::Toml)),
             ("a.yaml", Some(Format::Yaml)),
             ("a.yml", Some(Format::Yaml)),
-            ("a.jsonc", None),
+            ("a.jsonc", Some(Format::Jsonc)),
             ("a", None),
         ] {
             assert_eq!(Format::from_path(Path::new(path)), format, "{path}");
@@ -635,6 +735,68 @@ mod tests {
             merge(Format::Json, target, source).unwrap(),
             "{\n    \"z\": 1,\n    \"model\": \"new\",\n    \"a\": {\n        \"x\": 1,\n        \"y\": 2\n    },\n    \"n\": [\n        1,\n        2\n    ]\n}\n"
         );
+    }
+
+    #[test]
+    fn jsonc_keeps_comments_and_trailing_commas() {
+        let target = "{\n    // editor\n    \"editor.fontSize\": 14, // px\n    \"files.exclude\": {\n        \"a\": true, /* x */\n    },\n    \"keep\": [1, 2,],\n}\n";
+        let source = r#"{"editor.fontSize": 16, "files.exclude": {"b": true}, "new": {"k": [1]}}"#;
+        assert_eq!(
+            merge(Format::Jsonc, target, source).unwrap(),
+            "{\n    // editor\n    \"editor.fontSize\": 16, // px\n    \"files.exclude\": {\n        \"a\": true, /* x */\n        \"b\": true,\n    },\n    \"keep\": [1, 2,],\n    \"new\": {\n        \"k\": [1],\n    },\n}\n"
+        );
+    }
+
+    #[test]
+    fn jsonc_satisfied_target_comes_back_untouched() {
+        let target = "{\n  // c\n  \"a\": 1, \"b\": 2,\n}";
+        assert_eq!(merge(Format::Jsonc, target, r#"{"a": 1}"#).unwrap(), target);
+        assert!(contains(Format::Jsonc, target, "// s\n{\"a\": 1,}").unwrap());
+        assert!(!contains(Format::Jsonc, target, r#"{"a": 2}"#).unwrap());
+    }
+
+    #[test]
+    fn jsonc_creates_or_fills_an_empty_target() {
+        assert_eq!(
+            merge(Format::Jsonc, "", r#"{"a": 1}"#).unwrap(),
+            "{\n  \"a\": 1\n}\n"
+        );
+        assert_eq!(
+            merge(Format::Jsonc, "// only a comment\n", r#"{"a": 1}"#).unwrap(),
+            "// only a comment\n{\n  \"a\": 1\n}\n"
+        );
+    }
+
+    #[test]
+    fn jsonc_fill_missing_keeps_existing_values() {
+        let merged = fill_missing(
+            Format::Jsonc,
+            "{\n  // mine\n  \"a\": 1,\n}\n",
+            r#"{"a": 2, "b": 3}"#,
+        )
+        .unwrap();
+        assert_eq!(merged, "{\n  // mine\n  \"a\": 1,\n  \"b\": 3,\n}\n");
+    }
+
+    #[test]
+    fn jsonc_rejects_what_is_not_jsonc() {
+        for text in [
+            "{'a': 1}",
+            "{a: 1}",
+            "{\"a\": 0x1}",
+            "{\"a\": 1 \"b\": 2}",
+            "[1]",
+        ] {
+            assert!(merge(Format::Jsonc, text, "{}").is_err(), "{text}");
+            assert!(merge(Format::Jsonc, "{}", text).is_err(), "{text}");
+        }
+    }
+
+    #[test]
+    fn formats_come_from_names() {
+        assert_eq!(Format::from_name("JSONC"), Some(Format::Jsonc));
+        assert_eq!(Format::from_name("yml"), Some(Format::Yaml));
+        assert_eq!(Format::from_name("ini"), None);
     }
 
     #[test]

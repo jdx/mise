@@ -6243,6 +6243,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonc-parser"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ecded084f9b9a718d39668a42657c32253663d1f6afb3fbb9134f0305f73f48"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "jsonptr"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7311,6 +7320,7 @@ dependencies = [
  "itertools 0.15.0",
  "jdx-tar",
  "jiff",
+ "jsonc-parser",
  "junction",
  "landlock",
  "log",
