@@ -66,6 +66,14 @@ out="$(cd parent/dotmise/.mise && mise uninstall --project --dry-run 2>&1)"
 assert_contains_text "$out" "dummy@1.0.0 is requested by"
 assert_contains_text "$out" "dummy@2.0.0 is requested by"
 
+# running from inside a plain .config folder does too
+mkdir -p parent/dotconfig/.config
+printf '[tools]\ndummy = "1.0.0"\n' >parent/dotconfig/mise.toml
+printf '[tools]\ndummy = "2.0.0"\n' >parent/dotconfig/.config/mise.toml
+out="$(cd parent/dotconfig/.config && mise uninstall --project --dry-run 2>&1)"
+assert_contains_text "$out" "dummy@1.0.0 is requested by"
+assert_contains_text "$out" "dummy@2.0.0 is requested by"
+
 # a path request names a directory mise did not install, so it is never removed
 assert_contains "cd parent/pathed && mise uninstall --project --yes 2>&1" "no installed tools are requested"
 assert_succeed "test -f parent/pathed/ext/keep"
