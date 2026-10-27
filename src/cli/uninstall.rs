@@ -440,9 +440,12 @@ fn nearest_project_configs(config: &Config) -> Option<(PathBuf, Vec<Arc<dyn Conf
             let files = config
                 .config_files
                 .iter()
-                .filter(|(path, _)| {
+                .filter(|(path, cf)| {
                     !config::is_global_config(path)
-                        && (discovered.contains(path.as_path()) || path.parent() == Some(dir))
+                        && (discovered.contains(path.as_path())
+                            || (path.parent() == Some(dir)
+                                && !config::is_conf_d_folder_file(path)
+                                && cf.config_root() == dir))
                 })
                 .map(|(_, cf)| cf.clone())
                 .collect_vec();
