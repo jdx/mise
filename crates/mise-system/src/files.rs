@@ -507,6 +507,10 @@ pub(crate) struct FileTomlTable {
     /// template only: remove the target when the template renders empty
     #[serde(default)]
     pub(crate) remove_empty: Option<bool>,
+    /// copy, template, and inline content only: write the target only when
+    /// nothing exists there yet
+    #[serde(default)]
+    pub(crate) create_if_missing: Option<bool>,
     /// directory-walking modes only: deploy a source name like
     /// `dot-bashrc` as `.bashrc`
     #[serde(default)]
@@ -610,6 +614,10 @@ pub struct FileRequest {
     /// template only: an empty (whitespace-only) render removes the target
     /// instead of writing an empty file
     pub remove_empty: bool,
+    /// copy, template, and inline content only: an existing target is left
+    /// exactly as it is, content and permissions included, and the entry
+    /// writes it only while nothing is there
+    pub create_if_missing: bool,
     /// directory-walking modes only: each source path component named
     /// `dot-<name>` is deployed as `.<name>`, like GNU Stow's `--dotfiles`
     pub dot_prefix: bool,
@@ -1014,6 +1022,7 @@ fn file_requests_match(config: &Config, first: &FileRequest, second: &FileReques
         && first.mode == second.mode
         && first.manifest == second.manifest
         && first.remove_empty == second.remove_empty
+        && first.create_if_missing == second.create_if_missing
         && first.dot_prefix == second.dot_prefix
         && first.relative == second.relative
         && first.permissions == second.permissions
@@ -1102,6 +1111,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "variants"
                             | "enabled"
                             | "remove_empty"
+                            | "create_if_missing"
                             | "dot_prefix"
                             | "relative"
                             | "group"
@@ -1128,6 +1138,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 permissions,
                 variants,
                 remove_empty,
+                create_if_missing,
                 dot_prefix,
                 relative,
                 group,
@@ -1229,6 +1240,15 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     && (content.is_some() || permissions_only || mode != FileMode::Template)
                 {
                     bail!("dotfile {target}: remove_empty requires mode = \"template\"");
+                }
+                if create_if_missing == Some(true)
+                    && (permissions_only
+                        || content.is_none()
+                            && !matches!(mode, FileMode::Copy | FileMode::Template))
+                {
+                    bail!(
+                        "dotfile {target}: create_if_missing requires mode copy or template, or inline content"
+                    );
                 }
                 if dot_prefix == Some(true)
                     && (content.is_some()
@@ -1509,6 +1529,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                 || table.contains_key("variants")
                 || table.contains_key("enabled")
                 || table.contains_key("remove_empty")
+                || table.contains_key("create_if_missing")
                 || ((table.contains_key("source")
                     || table.contains_key("content")
                     || table.contains_key("permissions")
@@ -1585,12 +1606,14 @@ fn merge_file_entry(
         variants,
         enabled,
         remove_empty,
+        create_if_missing,
         dot_prefix,
         relative,
         group,
     ) = match entry {
         FileTomlEntry::Source(source) => (
             Some(source),
+            None,
             None,
             None,
             None,
@@ -1621,6 +1644,7 @@ fn merge_file_entry(
             variants,
             enabled,
             remove_empty,
+            create_if_missing,
             dot_prefix,
             relative,
             group,
@@ -1638,6 +1662,7 @@ fn merge_file_entry(
             variants,
             enabled,
             remove_empty,
+            create_if_missing,
             dot_prefix,
             relative,
             group,
@@ -1674,6 +1699,7 @@ fn merge_file_entry(
         }
     };
     let remove_empty = remove_empty.unwrap_or(false);
+    let create_if_missing = create_if_missing.unwrap_or(false);
     let dot_prefix = dot_prefix.unwrap_or(false);
     if let Some(group) = &group
         && let Err(err) = crate::dotfile_groups::validate_group_name(group)
@@ -1750,6 +1776,7 @@ fn merge_file_entry(
             || content.is_some()
             || manifest.is_some()
             || remove_empty
+            || create_if_missing
             || relative == Some(true)
             || dot_prefix
             || group.is_some()
@@ -1757,7 +1784,7 @@ fn merge_file_entry(
             record_invalid(
                 &target_raw,
                 &origin.config,
-                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, relative, dot_prefix, or group",
+                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, create_if_missing, relative, dot_prefix, or group",
                 local,
             );
             return;
@@ -1832,6 +1859,7 @@ fn merge_file_entry(
             variants: selectors,
             enabled,
             remove_empty: false,
+            create_if_missing: false,
             dot_prefix: false,
             relative: false,
             group: None,
@@ -1901,9 +1929,9 @@ fn merge_file_entry(
             );
             return;
         }
-        if remove_empty || relative == Some(true) {
+        if remove_empty || create_if_missing || relative == Some(true) {
             warn!(
-                "[dotfiles].\"{target_raw}\": mode = \"absent\" takes no remove_empty or relative, ignoring entry"
+                "[dotfiles].\"{target_raw}\": mode = \"absent\" takes no remove_empty, create_if_missing, or relative, ignoring entry"
             );
             return;
         }
@@ -1945,6 +1973,7 @@ fn merge_file_entry(
                 variants: vec![],
                 enabled,
                 remove_empty: false,
+                create_if_missing: false,
                 dot_prefix: false,
                 relative: false,
                 group: group.clone(),
@@ -2032,6 +2061,15 @@ fn merge_file_entry(
         );
         return;
     }
+    if create_if_missing
+        && (permissions_only
+            || content.is_none() && !matches!(mode, FileMode::Copy | FileMode::Template))
+    {
+        warn!(
+            "[dotfiles].\"{target_raw}\": create_if_missing requires mode copy or template, or inline content, ignoring entry"
+        );
+        return;
+    }
     if dot_prefix
         && (content.is_some()
             || permissions_only
@@ -2084,6 +2122,7 @@ fn merge_file_entry(
                 variants: vec![],
                 enabled,
                 remove_empty: false,
+                create_if_missing: false,
                 dot_prefix: false,
                 relative: false,
                 group: group.clone(),
@@ -2110,6 +2149,7 @@ fn merge_file_entry(
                 variants: vec![],
                 enabled,
                 remove_empty: false,
+                create_if_missing,
                 dot_prefix: false,
                 relative: false,
                 group: group.clone(),
@@ -2156,6 +2196,7 @@ fn merge_file_entry(
         variants: vec![],
         enabled,
         remove_empty,
+        create_if_missing,
         dot_prefix,
         relative: relative_symlinks(mode, relative),
         group,
@@ -2320,6 +2361,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
         policy,
         enabled,
         remove_empty,
+        create_if_missing,
         dot_prefix,
         relative,
         group,
@@ -2342,6 +2384,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             variants: vec![],
             enabled,
             remove_empty,
+            create_if_missing,
             dot_prefix,
             relative,
             group,
@@ -2399,6 +2442,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             variants: vec![],
             enabled,
             remove_empty,
+            create_if_missing,
             dot_prefix,
             relative,
             group,
@@ -2441,6 +2485,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
                 variants: vec![],
                 enabled,
                 remove_empty,
+                create_if_missing,
                 dot_prefix,
                 relative,
                 group: group.clone(),
@@ -2584,21 +2629,42 @@ pub fn check(config: &Config, req: &FileRequest, secrets: &SecretValues) -> Resu
     if req.mode == FileMode::Track {
         return Ok(FileState::Tracked);
     }
-    if req.mode.has_source() && !req.source.exists() {
+    if req.mode.has_source() && !req.source.exists() && !keeps_existing(req) {
         return Ok(FileState::SourceMissing);
     }
     // render at most once per call — templates may use exec()
     let rendered = match req.mode {
-        FileMode::Template => Some(render_template(config, req, secrets)?),
+        FileMode::Template if !keeps_existing(req) => Some(render_template(config, req, secrets)?),
         _ => None,
     };
     check_rendered(req, rendered.as_deref())
+}
+
+/// Whether `create_if_missing` leaves the target exactly as it is: anything
+/// but a directory is already there, a link and a dangling one included. A
+/// directory is still a conflict, and a directory source cannot be seeded.
+fn keeps_existing(req: &FileRequest) -> bool {
+    req.create_if_missing
+        && !(req.mode == FileMode::Copy && req.source.is_dir())
+        && std::fs::symlink_metadata(&req.target).is_ok_and(|meta| !meta.is_dir())
+}
+
+/// Whether an apply may record `req`'s target as deployed by its dotfile
+/// group. A `create_if_missing` entry claims its target only in the apply
+/// that wrote it: a file it left alone may hold what the user typed, or
+/// never have been mise's, and a prune must not remove it without `--force`.
+/// `seeded` holds the entries whose target `apply_one` actually wrote.
+fn records_group_ownership(seeded: &[&FileRequest], req: &FileRequest) -> bool {
+    !req.create_if_missing || seeded.iter().any(|written| std::ptr::eq(*written, req))
 }
 
 /// [`check`] with template output already rendered, so callers that go on to
 /// write the file render only once (templates may use `exec()`, which must
 /// not run more often than necessary)
 fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState> {
+    if keeps_existing(req) {
+        return Ok(FileState::Applied);
+    }
     match req.mode {
         FileMode::Track => Ok(FileState::Tracked),
         FileMode::Absent => check_absent(&req.target),
@@ -2607,6 +2673,9 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
         FileMode::Copy if req.source.is_dir() => {
             if req.permissions.is_some() {
                 bail!("permissions requires a file source, not a directory");
+            }
+            if req.create_if_missing {
+                bail!("create_if_missing requires a file source, not a directory");
             }
             check_copy_dir(req)
         }
@@ -3081,7 +3150,7 @@ pub fn preflight_templates(
     validate_composed_file_footprints(requests)?;
     let broken = requests
         .iter()
-        .filter(|req| req.mode == FileMode::Template)
+        .filter(|req| req.mode == FileMode::Template && !keeps_existing(req))
         .filter_map(|req| render_template(config, req, secrets).err())
         .map(|err| format!("  {err}"))
         .collect::<Vec<_>>();
@@ -4551,7 +4620,11 @@ pub fn execute_apply(
                 journal::commit_changes(pending);
             }
             record_template_states(&plan.record_templates)?;
-            crate::dotfile_groups::record_applied(plan.requests);
+            crate::dotfile_groups::record_applied(
+                plan.requests
+                    .iter()
+                    .filter(|req| records_group_ownership(&[], req)),
+            );
         }
         info!("files: all files are applied");
         return Ok(true);
@@ -4633,6 +4706,7 @@ pub fn execute_apply(
     }
     let mut removals = vec![];
     let mut done = vec![];
+    let mut seeded: Vec<&FileRequest> = vec![];
     // the request being applied, and where its writes start in `written`
     let mut current = None;
     let applied = (|| -> Result<()> {
@@ -4644,7 +4718,13 @@ pub fn execute_apply(
             }
             let pending =
                 journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
+            let start = written.len();
             apply_one(req, rendered.as_deref(), written)?;
+            // a target that appeared since planning is left alone and not
+            // written, so it is not this group's to prune
+            if req.create_if_missing && written[start..].contains(&req.target) {
+                seeded.push(*req);
+            }
             if apply_removes_target(req, rendered.as_deref()) {
                 removals.push(*req);
             }
@@ -4670,8 +4750,9 @@ pub fn execute_apply(
         // recorded: a target still waiting to be written may hold the
         // user's edits, which must not be recorded as mise's
         crate::dotfile_groups::record_applied(plan.requests.iter().filter(|req| {
-            done.iter().any(|d| std::ptr::eq(*d, *req))
-                || !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, *req))
+            (done.iter().any(|d| std::ptr::eq(*d, *req))
+                || !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, *req)))
+                && records_group_ownership(&seeded, req)
         }));
         // the entry that failed may have written some of its files, such
         // as part of a copied tree; those, and only those, are recorded
@@ -4696,7 +4777,11 @@ pub fn execute_apply(
         }
     }
     cleanup_reconciled_directories(&plan.reconciliation)?;
-    crate::dotfile_groups::record_applied(plan.requests);
+    crate::dotfile_groups::record_applied(
+        plan.requests
+            .iter()
+            .filter(|req| records_group_ownership(&seeded, req)),
+    );
     let applied = plan
         .todo
         .iter()
@@ -4753,7 +4838,7 @@ pub fn plan_apply_with_active<'a>(
         }
         // report every problem in one pass instead of fix-and-retry — a
         // render or check failure on one entry must not hide the rest
-        if req.mode.has_source() && !req.source.exists() {
+        if req.mode.has_source() && !req.source.exists() && !keeps_existing(req) {
             missing_sources.push(format!(
                 "  [dotfiles].\"{}\": {}",
                 req.target_raw,
@@ -4780,20 +4865,22 @@ pub fn plan_apply_with_active<'a>(
         }
         // rendering can run exec() — a dry run must not execute anything,
         // so list template entries without computing their current state
-        if opts.dry_run && req.mode == FileMode::Template {
+        if opts.dry_run && req.mode == FileMode::Template && !keeps_existing(req) {
             conflicts.extend(find_conflicts(req)?);
             todo.push((req, None));
             continue;
         }
         let rendered = match req.mode {
-            FileMode::Template => match render_template(config, req, secrets) {
-                Ok(rendered) => Some(rendered),
-                // already carries the entry's context
-                Err(err) => {
-                    broken.push(format!("  {err}"));
-                    continue;
+            FileMode::Template if !keeps_existing(req) => {
+                match render_template(config, req, secrets) {
+                    Ok(rendered) => Some(rendered),
+                    // already carries the entry's context
+                    Err(err) => {
+                        broken.push(format!("  {err}"));
+                        continue;
+                    }
                 }
-            },
+            }
             _ => None,
         };
         match check_rendered(req, rendered.as_deref()) {
@@ -5886,19 +5973,21 @@ pub fn print_diffs(
         if req.mode == FileMode::Track {
             continue;
         }
-        if req.mode.has_source() && !req.source.exists() {
+        if req.mode.has_source() && !req.source.exists() && !keeps_existing(req) {
             miseprintln!("{}: source missing", req.target_raw);
             changed = true;
             continue;
         }
         let rendered = match req.mode {
-            FileMode::Template => match render_template(config, req, secrets) {
-                Ok(rendered) => Some(rendered),
-                Err(err) => {
-                    problems.push(format!("  \"{}\": {err}", req.target_raw));
-                    continue;
+            FileMode::Template if !keeps_existing(req) => {
+                match render_template(config, req, secrets) {
+                    Ok(rendered) => Some(rendered),
+                    Err(err) => {
+                        problems.push(format!("  \"{}\": {err}", req.target_raw));
+                        continue;
+                    }
                 }
-            },
+            }
             _ => None,
         };
         match check_rendered(req, rendered.as_deref()) {
@@ -6092,6 +6181,11 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
         }
         // The record keeps what mise last wrote, so a file brought back by
         // `mise dot undo` is still recognised as mise's own.
+        return Ok(());
+    }
+    // the plan saw nothing here; a file that appeared since is the user's
+    if keeps_existing(req) {
+        debug!("files: {} exists, leaving it", req.target.display_user());
         return Ok(());
     }
     debug!("files: {}", describe(req)?);
@@ -6992,6 +7086,7 @@ variants = [{{ {field} = "linux" }}]"#
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            create_if_missing: false,
             dot_prefix: false,
             relative: false,
             group: None,
@@ -7509,6 +7604,7 @@ source = "oldrc""#,
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            create_if_missing: false,
             dot_prefix: false,
             relative: false,
             group: None,
@@ -7629,6 +7725,7 @@ source = "oldrc""#,
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            create_if_missing: false,
             dot_prefix: false,
             relative: false,
             group: None,
@@ -9193,6 +9290,67 @@ source = "oldrc""#,
         assert!(merge("content = \"x\"\nremove_empty = true").is_empty());
         assert!(merge("permissions = \"0600\"\nremove_empty = true").is_empty());
         assert!(merge("mode = \"absent\"\nremove_empty = true").is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn create_if_missing_is_rejected_outside_copy_template_and_content() -> Result<()> {
+        let path = dirs::HOME.join(".config/mise/config.toml");
+        let validate = |entry: &str| -> Result<()> {
+            let body = format!("[dotfiles]\n\"~/.create-if-missing-test\" = {entry}\n");
+            let mut configs = ConfigMap::new();
+            configs.insert(path.clone(), crate::host::parse_config_body(&body, &path)?);
+            validate_incoming_files(&configs)
+        };
+        validate(r#"{ source = "a", mode = "copy", create_if_missing = true }"#)?;
+        validate(r#"{ source = "a.tera", mode = "template", create_if_missing = true }"#)?;
+        validate(r#"{ content = "x", permissions = "0600", create_if_missing = true }"#)?;
+        validate(r#"{ source = "a", mode = "symlink", create_if_missing = false }"#)?;
+        for entry in [
+            r#"{ source = "a", mode = "symlink", create_if_missing = true }"#,
+            r#"{ source = "a", mode = "symlink-each", create_if_missing = true }"#,
+            r#"{ permissions = "0600", create_if_missing = true }"#,
+            r#"{ mode = "absent", create_if_missing = true }"#,
+            r#"{ mode = "track", create_if_missing = true }"#,
+        ] {
+            assert!(validate(entry).is_err(), "{entry} should be rejected");
+        }
+
+        let origin = ResourceOrigin {
+            config: PathBuf::from("/mise.toml"),
+            config_root: PathBuf::from("/"),
+            environment: vec![],
+            source: None,
+        };
+        let merge = |entry: &str| {
+            let entry: FileTomlEntry = toml::from_str(entry).unwrap();
+            let mut merged = IndexMap::new();
+            merge_file_entry(
+                "~/.create-if-missing-test".into(),
+                entry,
+                Path::new("/"),
+                &origin,
+                &mut merged,
+            );
+            merged.into_values().collect::<Vec<_>>()
+        };
+        for entry in [
+            "source = \"a\"\nmode = \"copy\"\ncreate_if_missing = true",
+            "source = \"a.tera\"\nmode = \"template\"\ncreate_if_missing = true",
+            "content = \"x\"\ncreate_if_missing = true",
+        ] {
+            let accepted = merge(entry);
+            assert!(accepted[0].create_if_missing, "{entry}");
+        }
+        assert!(!merge("source = \"a\"\nmode = \"copy\"")[0].create_if_missing);
+        for entry in [
+            "source = \"a\"\nmode = \"symlink\"\ncreate_if_missing = true",
+            "permissions = \"0600\"\ncreate_if_missing = true",
+            "mode = \"absent\"\ncreate_if_missing = true",
+            "mode = \"track\"\ncreate_if_missing = true",
+        ] {
+            assert!(merge(entry).is_empty(), "{entry}");
+        }
         Ok(())
     }
 

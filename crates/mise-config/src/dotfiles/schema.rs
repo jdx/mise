@@ -20,6 +20,7 @@ pub(crate) fn entry_rules(schema: &mut Schema) {
         rule_6(),
         rule_7(),
         rule_8(),
+        rule_9(),
     ];
     schema.insert("allOf".into(), rules.into());
     // an encrypted entry is a whole file from a source, never inline content or an edit
@@ -50,6 +51,7 @@ fn rule_0() -> Value {
                 "variants": false,
                 "enabled": false,
                 "remove_empty": false,
+                "create_if_missing": false,
                 "relative": false,
                 "dot_prefix": false,
                 "group": false,
@@ -109,6 +111,7 @@ fn rule_2() -> Value {
                 "manifest": false,
                 "permissions": false,
                 "remove_empty": false,
+                "create_if_missing": false,
                 "dot_prefix": {"const": false},
                 "encrypt": {"const": false},
                 "block": false,
@@ -249,6 +252,29 @@ fn rule_8() -> Value {
                 "required": ["allow_plaintext", "mode"]
             },
             {"properties": {"allow_plaintext": false}}
+        ]
+    })
+}
+
+/// `create_if_missing` applies to copy, template and inline content.
+fn rule_9() -> Value {
+    json!({
+        "anyOf": [
+            {"properties": {"create_if_missing": {"const": false}}},
+            {
+                "properties": {
+                    "mode": {"enum": ["copy", "template"]},
+                    "block": false,
+                    "line": false,
+                    "template": false,
+                    "comment": false
+                },
+                "anyOf": [
+                    {"required": ["source"]},
+                    {"required": ["content"]},
+                    {"required": ["mode"]}
+                ]
+            }
         ]
     })
 }

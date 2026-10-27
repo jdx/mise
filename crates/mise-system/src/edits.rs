@@ -289,7 +289,7 @@ pub(crate) fn edits_from_config_files(config_files: &ConfigMap) -> Vec<EditReque
 }
 
 /// keys that only mean something on a whole-file entry
-const WHOLE_FILE_KEYS: [&str; 15] = [
+const WHOLE_FILE_KEYS: [&str; 16] = [
     "mode",
     "content",
     "permissions",
@@ -302,6 +302,7 @@ const WHOLE_FILE_KEYS: [&str; 15] = [
     "variants",
     "enabled",
     "remove_empty",
+    "create_if_missing",
     "relative",
     "dot_prefix",
     "group",
@@ -358,6 +359,7 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
                 || only_enabled
                 || table.contains_key("mode")
                 || table.contains_key("remove_empty")
+                || table.contains_key("create_if_missing")
                 || (table.contains_key("source")
                     || table.contains_key("content")
                     || table.contains_key("permissions")
