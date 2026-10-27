@@ -2036,7 +2036,7 @@ mod tests {
             (
                 "~/a/notes.txt",
                 "source = \"s\"\nmerge = true",
-                ".json, .toml",
+                ".json, .jsonc",
             ),
             (
                 "~/a/config.toml",
@@ -2062,6 +2062,11 @@ mod tests {
                 "~/a/config.toml",
                 "source = \"s\"\nmerge = true\ntemplate = \"jinja\"",
                 "unknown template engine",
+            ),
+            (
+                "~/a/settings.json",
+                "source = \"s\"\nmerge = true\nformat = \"ini\"",
+                "unknown format 'ini'",
             ),
         ] {
             let err = resolve(path, entry).unwrap_err().to_string();
@@ -2091,7 +2096,7 @@ mod tests {
             (
                 "~/a/notes.txt/shared",
                 "source = \"s\"\nmerge = true",
-                ".json, .toml",
+                ".json, .jsonc",
             ),
             (
                 "~/a/settings.json/shared",
