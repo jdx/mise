@@ -97,6 +97,11 @@ fn with_bundled_roots(
     Err(err)
 }
 
+/// Held while a test changes the process environment or builds a client, since
+/// building one reads `SSL_CERT_FILE` and `SSL_CERT_DIR`.
+#[cfg(test)]
+static CLIENT_BUILD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(all(
     test,
     any(feature = "rustls", feature = "rustls-native-roots"),
@@ -107,10 +112,11 @@ fn with_bundled_roots(
 mod tests {
     use super::*;
 
-    /// The only test in this crate, so changing the process environment cannot
-    /// race another test.
+    /// Holds `CLIENT_BUILD_LOCK`, so no other test builds a client while the
+    /// process environment changes.
     #[test]
     fn falls_back_to_bundled_roots_when_the_system_store_is_empty() {
+        let _lock = CLIENT_BUILD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // SAFETY: no other thread reads or writes the environment here.
         unsafe {
             std::env::remove_var("SSL_CERT_FILE");
@@ -155,11 +161,14 @@ mod ipv4_only_tests {
             async move { client.get(url).send().await }
         };
         let make = || Client::builder().no_proxy();
-        let default = build_client(make).unwrap();
-        set_ipv4_only(true);
-        let pinned = build_client(make);
-        set_ipv4_only(false);
-        let pinned = pinned.unwrap();
+        let (default, pinned) = {
+            let _lock = CLIENT_BUILD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let default = build_client(make).unwrap();
+            set_ipv4_only(true);
+            let pinned = build_client(make);
+            set_ipv4_only(false);
+            (default, pinned.unwrap())
+        };
 
         assert!(get(default).await.is_ok(), "IPv6 is reachable by default");
         assert!(

@@ -508,13 +508,14 @@ pub mod unix {
             let expiry = expiry_task(cancel.clone(), audit.clone());
             let broker = Broker {
                 audit: audit.clone(),
-                client: Client::builder()
-                    .no_proxy()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .timeout(scope.options.request_timeout)
-                    .connect_timeout(Duration::from_secs(15))
-                    .user_agent("mise-github-relay")
-                    .build()?,
+                client: mise_tls::build_client(|| {
+                    Client::builder()
+                        .no_proxy()
+                        .redirect(reqwest::redirect::Policy::none())
+                        .timeout(scope.options.request_timeout)
+                        .connect_timeout(Duration::from_secs(15))
+                        .user_agent("mise-github-relay")
+                })?,
                 permits: Arc::new(Semaphore::new(scope.options.concurrency)),
                 scope,
                 cancel: cancel.clone(),
