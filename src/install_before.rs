@@ -340,23 +340,29 @@ impl ReleaseAgeExemptions {
     }
 
     /// Note at debug level each entry that changes nothing under `before`:
-    /// its version is not in `versions`, or the cutoff would not hide it
-    /// anyway. Such an entry is harmless, so it is not worth a warning.
+    /// its version is not in `versions`, or is dated before the cutoff. An
+    /// undated version may still be dated on demand and found too new, so it
+    /// is not reported. Such an entry is harmless, so it is not worth a
+    /// warning.
     pub(crate) fn debug_entries_without_effect(
         &self,
         backend_arg: &BackendArg,
         versions: &[VersionInfo],
         before: Timestamp,
     ) {
-        let unexempted = Self::default();
         for exempt in &self.0 {
             match versions.iter().find(|v| &v.version == exempt) {
                 None => debug!(
                     "minimum_release_age_excludes: {backend_arg}@{exempt} is not a listed version"
                 ),
-                Some(v) if !v.hidden_by_date(before, &unexempted) => debug!(
-                    "minimum_release_age_excludes: {backend_arg}@{exempt} is not held back by the {before} cutoff"
-                ),
+                Some(v)
+                    if v.created_at_timestamp()
+                        .is_some_and(|created| created < before) =>
+                {
+                    debug!(
+                        "minimum_release_age_excludes: {backend_arg}@{exempt} is not held back by the {before} cutoff"
+                    )
+                }
                 Some(_) => {}
             }
         }
