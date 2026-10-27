@@ -9645,10 +9645,11 @@ Set a tool version for the current shell session
 Installs the version if needed, then sets `MISE_<TOOL>_VERSION`, such as
 `MISE_NODE_VERSION`, to the resolved version in the current shell. That
 overrides config files until you close the shell or run
-`mise shell \-\-unset <TOOL>`. Requires `mise activate`: the shell function it
+`mise shell \-\-unset <TOOL>`, or `mise shell \-\-unset \-\-all` to remove every
+version set this way. Requires `mise activate`: the shell function it
 defines applies the variable that this command prints.
 .PP
-\fBUsage:\fR mise shell [OPTIONS] <TOOL@VERSION> ...
+\fBUsage:\fR mise shell [OPTIONS] [<TOOL@VERSION>] ...
 .PP
 \fBOptions:\fR
 .PP
@@ -9661,6 +9662,11 @@ Number of jobs to run in parallel (default: the `jobs` setting)
 .TP
 \fB\-u, \-\-unset\fR
 Remove a version set earlier with `mise shell`
+.TP
+\fB\-\-all\fR
+With `\-\-unset`, remove every `MISE_<TOOL>_VERSION` in this shell
+
+This includes any you exported yourself, not only those set by `mise shell`.
 .TP
 \fB\-\-raw\fR
 Connect the install commands' stdin, stdout, and stderr to the terminal
@@ -9688,6 +9694,12 @@ Go back to the version the config requests
 .PP
 .RS 4
 mise shell \-\-unset node
+.RE
+.PP
+Drop every version set with `mise shell` or `MISE_<TOOL>_VERSION`
+.PP
+.RS 4
+mise shell \-\-unset \-\-all
 .RE
 .SH "MISE SSH"
 Open an SSH session, optionally borrowing read\-only GitHub access
@@ -11489,6 +11501,12 @@ See https://mise.jdx.dev/configuration/vars.html#prompt
 \fBOptions:\fR
 .PP
 .TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-json\-extended\fR
+Output in JSON format with sources
+.TP
 \fB\-\-no\-header\fR
 Do not print the table header
 .TP
@@ -11524,12 +11542,19 @@ List every var, with the file it comes from
 Lists the `[vars]` of every config file mise loads here, plus the answers
 saved on this machine (source: `$MISE_STATE_DIR/vars.toml`). Values hidden
 with `redact` show as `[redacted]`. A `required` var that is still unset only
-warns here.
+warns here. `\-\-json` prints an object of names and values, and
+`\-\-json\-extended` adds each var's source.
 .PP
 \fBUsage:\fR mise vars ls [OPTIONS]
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-json\-extended\fR
+Output in JSON format with sources
 .TP
 \fB\-\-no\-header\fR
 Do not print the table header

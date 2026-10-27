@@ -580,6 +580,37 @@ fn test_copy_dir_all_preserve_symlinks_does_not_follow_loops() {
 }
 
 #[test]
+fn test_copy_dir_all_preserve_symlinks_copies_empty_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source");
+    let dest = dir.path().join("dest");
+    fs::create_dir(&source).unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = fs::metadata(&source).unwrap().permissions();
+        permissions.set_mode(0o555);
+        fs::set_permissions(&source, permissions).unwrap();
+    }
+
+    copy_dir_all_preserve_symlinks(&source, &dest).unwrap();
+
+    assert!(dest.is_dir());
+    assert_eq!(fs::read_dir(&dest).unwrap().count(), 0);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        assert_eq!(
+            fs::metadata(&dest).unwrap().permissions().mode() & 0o777,
+            0o555
+        );
+    }
+}
+
+#[test]
 #[cfg(unix)]
 fn test_copy_dmg_volume_skips_unreadable_volume_metadata() {
     use std::os::unix::fs::PermissionsExt;

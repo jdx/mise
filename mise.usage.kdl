@@ -6462,13 +6462,21 @@ Set a tool version for the current shell session
 Installs the version if needed, then sets `MISE_<TOOL>_VERSION`, such as
 `MISE_NODE_VERSION`, to the resolved version in the current shell. That
 overrides config files until you close the shell or run
-`mise shell --unset <TOOL>`. Requires `mise activate`: the shell function it
+`mise shell --unset <TOOL>`, or `mise shell --unset --all` to remove every
+version set this way. Requires `mise activate`: the shell function it
 defines applies the variable that this command prints.
 """#
     flag "-j --jobs" help="Number of jobs to run in parallel (default: the `jobs` setting)" env=MISE_JOBS {
         arg <JOBS>
     }
     flag "-u --unset" help="Remove a version set earlier with `mise shell`"
+    flag --all help="With `--unset`, remove every `MISE_<TOOL>_VERSION` in this shell" conflicts=TOOL@VERSION {
+        long_help #"""
+With `--unset`, remove every `MISE_<TOOL>_VERSION` in this shell
+
+This includes any you exported yourself, not only those set by `mise shell`.
+"""#
+    }
     flag --raw help="Connect the install commands' stdin, stdout, and stderr to the terminal" overrides=--jobs {
         long_help #"""
 Connect the install commands' stdin, stdout, and stderr to the terminal
@@ -6477,13 +6485,14 @@ Implies `--jobs=1`.
 """#
     }
     flag "-h --help" help="Print help" action=help builtin=#true
-    arg <TOOL@VERSION>… help="Tools to set, such as node@20" var=#true
+    arg "[TOOL@VERSION]…" help="Tools to set, such as node@20" required=#false var=#true required_unless=--all
     example #"""
 mise shell node@20
 node -v
 v20.19.5
 """# help="Use node 20 in this shell"
     example "mise shell --unset node" help="Go back to the version the config requests"
+    example "mise shell --unset --all" help="Drop every version set with `mise shell` or `MISE_<TOOL>_VERSION`"
 }
 cmd ssh help="Open an SSH session, optionally borrowing read-only GitHub access" {
     long_help #"""
@@ -7831,9 +7840,14 @@ file sets. `mise vars prompt` asks for the `[vars]` that declare a `prompt`;
 only it and `mise bootstrap --prompt-vars` ever ask.
 See https://mise.jdx.dev/configuration/vars.html#prompt
 """#
-    flag --no-header help="Do not print the table header"
+    flag "-J --json" help="Output in JSON format"
+    flag --json-extended help="Output in JSON format with sources"
+    flag --no-header help="Do not print the table header" {
+        conflicts "--json" "--json-extended"
+    }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[NAME[=VALUE]]…" help="Values to save (`NAME=VALUE`) or to print (`NAME`)" required=#false var=#true
+    group output "--json" "--json-extended"
     cmd ls help="List every var, with the file it comes from" effect=read {
         alias list
         long_help #"""
@@ -7842,10 +7856,16 @@ List every var, with the file it comes from
 Lists the `[vars]` of every config file mise loads here, plus the answers
 saved on this machine (source: `$MISE_STATE_DIR/vars.toml`). Values hidden
 with `redact` show as `[redacted]`. A `required` var that is still unset only
-warns here.
+warns here. `--json` prints an object of names and values, and
+`--json-extended` adds each var's source.
 """#
-        flag --no-header help="Do not print the table header"
+        flag "-J --json" help="Output in JSON format"
+        flag --json-extended help="Output in JSON format with sources"
+        flag --no-header help="Do not print the table header" {
+            conflicts "--json" "--json-extended"
+        }
         flag "-h --help" help="Print help" action=help builtin=#true
+        group output "--json" "--json-extended"
     }
     cmd prompt help="Ask for the prompt vars that have no saved answer, or set answers directly" effect=write {
         long_help #"""

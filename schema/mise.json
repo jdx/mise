@@ -7111,6 +7111,11 @@
                 "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force",
                 "default": false
               },
+              "create_if_missing": {
+                "type": "boolean",
+                "description": "copy and template modes, or inline content: write the target only when nothing exists there yet, leaving an existing file's content and permissions alone; a target that was deleted is created again on the next apply. Not for directory sources",
+                "default": false
+              },
               "dot_prefix": {
                 "type": "boolean",
                 "description": "symlink-each and directory copy only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names",
@@ -7122,7 +7127,7 @@
               },
               "permissions": {
                 "type": "string",
-                "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
+                "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target; on a merge entry it sets the mode only when apply creates the target, never on one that exists (Unix only)",
                 "pattern": "^(0o)?[0-7]{1,4}$"
               },
               "autosave": {
@@ -7248,7 +7253,6 @@
                   "properties": {
                     "mode": false,
                     "content": false,
-                    "permissions": false,
                     "exclude": false,
                     "include": false,
                     "manifest": false,
@@ -7258,6 +7262,7 @@
                     "variants": false,
                     "enabled": false,
                     "remove_empty": false,
+                    "create_if_missing": false,
                     "relative": false,
                     "dot_prefix": false,
                     "group": false,
@@ -7345,6 +7350,7 @@
                     "manifest": false,
                     "permissions": false,
                     "remove_empty": false,
+                    "create_if_missing": false,
                     "dot_prefix": {
                       "const": false
                     },
@@ -7428,7 +7434,6 @@
                         "enum": ["copy", "template"]
                       },
                       "block": false,
-                      "template": false,
                       "comment": false
                     },
                     "required": ["permissions"],
@@ -7448,6 +7453,20 @@
                           "manifest": false,
                           "encrypt": false
                         }
+                      }
+                    ],
+                    "allOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "properties": {
+                              "template": false
+                            }
+                          },
+                          {
+                            "required": ["merge"]
+                          }
+                        ]
                       }
                     ]
                   },
@@ -7527,6 +7546,39 @@
                     "properties": {
                       "allow_plaintext": false
                     }
+                  }
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "create_if_missing": {
+                        "const": false
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "mode": {
+                        "enum": ["copy", "template"]
+                      },
+                      "block": false,
+                      "line": false,
+                      "template": false,
+                      "comment": false
+                    },
+                    "anyOf": [
+                      {
+                        "required": ["source"]
+                      },
+                      {
+                        "required": ["content"]
+                      },
+                      {
+                        "required": ["mode"]
+                      }
+                    ]
                   }
                 ]
               }
@@ -7673,6 +7725,11 @@
                       "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force",
                       "default": false
                     },
+                    "create_if_missing": {
+                      "type": "boolean",
+                      "description": "copy and template modes, or inline content: write the target only when nothing exists there yet, leaving an existing file's content and permissions alone; a target that was deleted is created again on the next apply. Not for directory sources",
+                      "default": false
+                    },
                     "dot_prefix": {
                       "type": "boolean",
                       "description": "symlink-each and directory copy only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names",
@@ -7684,7 +7741,7 @@
                     },
                     "permissions": {
                       "type": "string",
-                      "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)",
+                      "description": "octal permissions for the target, such as \"0600\"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target; on a merge entry it sets the mode only when apply creates the target, never on one that exists (Unix only)",
                       "pattern": "^(0o)?[0-7]{1,4}$"
                     },
                     "autosave": {
@@ -7750,7 +7807,6 @@
                         "properties": {
                           "mode": false,
                           "content": false,
-                          "permissions": false,
                           "exclude": false,
                           "include": false,
                           "manifest": false,
@@ -7760,6 +7816,7 @@
                           "variants": false,
                           "enabled": false,
                           "remove_empty": false,
+                          "create_if_missing": false,
                           "relative": false,
                           "dot_prefix": false,
                           "group": false,
@@ -7847,6 +7904,7 @@
                           "manifest": false,
                           "permissions": false,
                           "remove_empty": false,
+                          "create_if_missing": false,
                           "dot_prefix": {
                             "const": false
                           },
@@ -7930,7 +7988,6 @@
                               "enum": ["copy", "template"]
                             },
                             "block": false,
-                            "template": false,
                             "comment": false
                           },
                           "required": ["permissions"],
@@ -7950,6 +8007,20 @@
                                 "manifest": false,
                                 "encrypt": false
                               }
+                            }
+                          ],
+                          "allOf": [
+                            {
+                              "anyOf": [
+                                {
+                                  "properties": {
+                                    "template": false
+                                  }
+                                },
+                                {
+                                  "required": ["merge"]
+                                }
+                              ]
                             }
                           ]
                         },
@@ -8029,6 +8100,39 @@
                           "properties": {
                             "allow_plaintext": false
                           }
+                        }
+                      ]
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "create_if_missing": {
+                              "const": false
+                            }
+                          }
+                        },
+                        {
+                          "properties": {
+                            "mode": {
+                              "enum": ["copy", "template"]
+                            },
+                            "block": false,
+                            "line": false,
+                            "template": false,
+                            "comment": false
+                          },
+                          "anyOf": [
+                            {
+                              "required": ["source"]
+                            },
+                            {
+                              "required": ["content"]
+                            },
+                            {
+                              "required": ["mode"]
+                            }
+                          ]
                         }
                       ]
                     }

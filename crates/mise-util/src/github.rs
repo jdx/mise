@@ -372,11 +372,7 @@ async fn list_releases_from_api(
     repo: &str,
     require_assets: bool,
 ) -> Result<Vec<GithubRelease>> {
-    let mut url = format!("{api_url}/repos/{repo}/releases?per_page=100");
-    let headers = get_headers(&url, api_url)?;
-    let (mut releases, mut headers) = crate::http::HTTP_FETCH
-        .json_headers_with_headers::<Vec<GithubRelease>, _>(&url, &headers)
-        .await?;
+    let (mut url, mut releases, mut headers) = fetch_first_release_page(api_url, repo).await?;
 
     // Fetch additional pages when MISE_LIST_ALL_VERSIONS is set, or (bounded) while
     // every release seen so far is a prerelease/draft so a stable release is still
@@ -403,6 +399,50 @@ async fn list_releases_from_api(
     releases.retain(|r| !r.draft);
 
     Ok(releases)
+}
+
+/// Page sizes asked of GitHub for a repository's first page of releases,
+/// largest first. GitHub answers 504 to the largest when every release carries
+/// hundreds of assets (be5invis/Iosevka), but serves a smaller page of the same
+/// list.
+const RELEASE_PAGE_SIZES: [u32; 3] = [100, 30, 10];
+
+/// The first page of `repo`'s releases from the API, with the URL it came from
+/// and its headers. A 5xx on a page size is retried with the next smaller one
+/// (see [`RELEASE_PAGE_SIZES`]); the `Link` header then keeps that size for
+/// the pages after it.
+async fn fetch_first_release_page(
+    api_url: &str,
+    repo: &str,
+) -> Result<(String, Vec<GithubRelease>, HeaderMap)> {
+    let last = RELEASE_PAGE_SIZES.len() - 1;
+    for (i, per_page) in RELEASE_PAGE_SIZES.into_iter().enumerate() {
+        let url = format!("{api_url}/repos/{repo}/releases?per_page={per_page}");
+        let headers = get_headers(&url, api_url)?;
+        match crate::http::HTTP_FETCH
+            .json_headers_with_headers::<Vec<GithubRelease>, _>(&url, &headers)
+            .await
+        {
+            Ok((releases, headers)) => return Ok((url, releases, headers)),
+            Err(err) if i < last && is_server_error(&err) => {
+                debug!(
+                    "GitHub failed to list {per_page} releases of {repo} at once, asking for fewer: {err:#}"
+                );
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    unreachable!("the smallest page size returns its result")
+}
+
+/// Whether `err` is, or was caused by, an HTTP 5xx answer.
+fn is_server_error(err: &eyre::Report) -> bool {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<reqwest::Error>()
+            .and_then(reqwest::Error::status)
+            .is_some_and(|status| status.is_server_error())
+    })
 }
 
 /// [`list_releases_`] through mise-versions. `Ok(None)` when mise-versions

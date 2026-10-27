@@ -164,7 +164,7 @@ impl Version {
     async fn json(&self) -> Result<()> {
         let json = serde_json::json!({
             "version": *VERSION,
-            "latest": get_latest_version(duration::DAILY).await,
+            "latest": clamp_latest(get_latest_version(duration::DAILY).await, &V),
             "os": *OS,
             "arch": *ARCH,
             "build_time": BUILD_TIME.to_string(),
@@ -318,6 +318,15 @@ pub(crate) async fn check_for_new_version(cache_duration: Duration) -> Option<St
         return Some(latest.to_string());
     }
     None
+}
+
+/// A build newer than the newest release past the age gate has nothing newer to
+/// update to, so report itself as the latest instead of an older release.
+fn clamp_latest(latest: Option<String>, current: &Versioning) -> Option<String> {
+    match latest {
+        Some(l) if Versioning::new(&l).is_some_and(|l| *current > l) => Some(current.to_string()),
+        other => other,
+    }
 }
 
 /// State of the `latest-version` cache file.
@@ -529,6 +538,24 @@ mod tests {
             Some("Bearer ghes-self-update-token")
         );
         assert_eq!(auth("https://downloads.example.com/mise.zip"), None);
+    }
+
+    #[test]
+    fn latest_is_never_older_than_current() {
+        let current = Versioning::new("2026.10.21").unwrap();
+        assert_eq!(
+            clamp_latest(Some("2026.10.19".into()), &current).as_deref(),
+            Some("2026.10.21")
+        );
+        assert_eq!(
+            clamp_latest(Some("2026.10.21".into()), &current).as_deref(),
+            Some("2026.10.21")
+        );
+        assert_eq!(
+            clamp_latest(Some("2026.10.22".into()), &current).as_deref(),
+            Some("2026.10.22")
+        );
+        assert_eq!(clamp_latest(None, &current), None);
     }
 
     #[test]

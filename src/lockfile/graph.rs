@@ -257,7 +257,7 @@ impl<'de, T: NativeGraph> Deserialize<'de> for GraphRef<T> {
 /// The first symlink on the way down from `base` (exclusive) to `path`, if
 /// any. Everything below a lockfile's directory comes with the working tree,
 /// so a link there can lead anywhere on the machine.
-pub(crate) fn symlink_below<'a>(base: &Path, path: &'a Path) -> Option<&'a Path> {
+pub fn symlink_below<'a>(base: &Path, path: &'a Path) -> Option<&'a Path> {
     path.ancestors()
         .take_while(|p| *p != base && p.starts_with(base))
         .find(|p| p.is_symlink())

@@ -2,6 +2,7 @@ pub mod generate;
 mod graph;
 
 pub use graph::sidecar_root;
+pub use graph::symlink_below;
 pub(crate) use graph::{GraphRef, NativeGraph};
 
 use crate::args::BackendArg;

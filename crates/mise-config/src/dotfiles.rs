@@ -71,12 +71,15 @@ pub struct DotfileTableDecl {
     /// template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force
     #[serde(default)]
     pub remove_empty: bool,
+    /// copy and template modes, or inline content: write the target only when nothing exists there yet, leaving an existing file's content and permissions alone; a target that was deleted is created again on the next apply. Not for directory sources
+    #[serde(default)]
+    pub create_if_missing: bool,
     /// symlink-each and directory copy only: deploy each source path component named "dot-<name>" as ".<name>", like GNU Stow's --dotfiles; exclude still matches source names
     #[serde(default)]
     pub dot_prefix: bool,
     /// symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)
     pub relative: Option<bool>,
-    /// octal permissions for the target, such as "0600"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)
+    /// octal permissions for the target, such as "0600"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target; on a merge entry it sets the mode only when apply creates the target, never on one that exists (Unix only)
     #[schemars(regex(pattern = r"^(0o)?[0-7]{1,4}$"))]
     pub permissions: Option<String>,
     /// track only: false saves the path only on `mise dotfiles save <path>`
@@ -208,12 +211,15 @@ pub struct DotfileGroupEntryTableDecl {
     /// template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force
     #[serde(default)]
     pub remove_empty: bool,
+    /// copy and template modes, or inline content: write the target only when nothing exists there yet, leaving an existing file's content and permissions alone; a target that was deleted is created again on the next apply. Not for directory sources
+    #[serde(default)]
+    pub create_if_missing: bool,
     /// symlink-each and directory copy only: deploy each source path component named "dot-<name>" as ".<name>", like GNU Stow's --dotfiles; exclude still matches source names
     #[serde(default)]
     pub dot_prefix: bool,
     /// symlink and symlink-each only: link by a path relative to the link's directory instead of an absolute one; overrides the dotfiles.relative_symlinks setting (ignored on Windows)
     pub relative: Option<bool>,
-    /// octal permissions for the target, such as "0600"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target (Unix only)
+    /// octal permissions for the target, such as "0600"; overrides what copy, template, and inline content entries set, and on its own manages only the permissions of an existing target; on a merge entry it sets the mode only when apply creates the target, never on one that exists (Unix only)
     #[schemars(regex(pattern = r"^(0o)?[0-7]{1,4}$"))]
     pub permissions: Option<String>,
     /// track only: false saves the path only on `mise dotfiles save <path>`

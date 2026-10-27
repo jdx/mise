@@ -175,6 +175,26 @@ for, next to a regular `merge = true` entry for the keys you enforce:
 - A `missing` entry never conflicts with another entry for the same key: the
   other entry's value wins whichever applies first.
 
+### Set permissions when mise creates the file {#merge-permissions}
+
+A `merge` entry takes `permissions`, an octal string such as `"0600"`. mise sets
+that mode when apply creates the target and never changes the mode of a file
+that already exists, because the application that writes it owns the file. That
+suits a file you seed with placeholders and then fill in, such as a token:
+
+```toml
+[dotfiles]
+"~/.config/mise/conf.d/private.local.toml/seed" = { source = "templates/private.toml", merge = "missing", permissions = "0600" }
+```
+
+The first apply creates the file from the source at `0600`. Later applies add
+only the keys it lacks, so the token you type stays, and a deleted file is
+created again. To keep an existing file's mode too, add a
+[permissions-only entry](/dotfiles/managed.html#permissions) for the same path.
+Merge entries for one file that declare different modes are refused, and
+`permissions` is ignored with a warning on Windows. Block and line edits do not
+take `permissions`.
+
 ## Conflicts and removal {#conflicts}
 
 Edits apply without `--force`. mise reports an error when a block's markers
