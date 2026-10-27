@@ -12,9 +12,9 @@ assert "echo $MISE_TINY_VERSION" "1.0.0"
 export MISE_NODEJS_VERSION=20
 
 mise shell --unset --all
-assert "echo ${MISE_DUMMY_VERSION+set}" ""
-assert "echo ${MISE_TINY_VERSION+set}" ""
-assert "echo ${MISE_NODEJS_VERSION+set}" ""
+assert_succeed 'test -z "${MISE_DUMMY_VERSION+set}"'
+assert_succeed 'test -z "${MISE_TINY_VERSION+set}"'
+assert_succeed 'test -z "${MISE_NODEJS_VERSION+set}"'
 
 # --all is only meaningful with --unset and cannot be combined with tools
 assert_fail_contains "mise shell --all" "--all can only be used with --unset"
