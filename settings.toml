@@ -1966,11 +1966,12 @@ Use it when a host answers wrongly over IPv6 while IPv4 works, for example
 trust root failing to load during attestation verification. Without it mise
 follows the system resolver, which usually prefers IPv6 on a dual-stack machine.
 
-It applies to the connections mise makes itself: downloads, version lookups,
-GitHub API calls, attestation verification and vfox plugins. Programs mise
-runs, such as `git`, `npm` or a tool's installer, follow the system. For those,
-prefer IPv4 system-wide, for example with `precedence ::ffff:0:0/96 100` in
-`/etc/gai.conf`.
+It applies to the connections mise makes with its own HTTP client: downloads,
+version lookups, GitHub API calls, attestation verification, vfox plugins and
+the GitHub relay. Programs mise runs, such as `git`, `npm` or a tool's
+installer, follow the system, and so does the package manager embedded in the
+`npm:` backend. For those, prefer IPv4 system-wide, for example with
+`precedence ::ffff:0:0/96 100` in `/etc/gai.conf`.
 
 A host with no IPv4 address cannot be reached while this is on.
 """
