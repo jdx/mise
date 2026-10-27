@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 export MISE_HTTP_RETRIES=0
+# The servers below are on loopback; a configured proxy must not stand in for them.
+export no_proxy="*" NO_PROXY="*"
 
 assert "mise settings get ipv4_only" "false"
 assert "MISE_IPV4_ONLY=1 mise settings get ipv4_only" "true"
