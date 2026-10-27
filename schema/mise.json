@@ -2495,7 +2495,7 @@
         },
         "minimum_release_age_excludes": {
           "default": [],
-          "description": "Tools and backends that the configured and default `minimum_release_age` do not apply to.",
+          "description": "Tools and backends that the configured and default `minimum_release_age` do not apply to, and tool versions no cutoff applies to.",
           "type": "array",
           "items": {
             "type": "string"

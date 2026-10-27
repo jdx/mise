@@ -2230,7 +2230,7 @@ type = "String"
 
 [minimum_release_age_excludes]
 default = []
-description = "Tools and backends that the configured and default `minimum_release_age` do not apply to."
+description = "Tools and backends that the configured and default `minimum_release_age` do not apply to, and tool versions no cutoff applies to."
 docs = """
 An entry matches a backend wildcard such as `npm:*`, a registry short name such
 as `trivy`, or a full backend ID such as `aqua:aquasecurity/trivy`:
@@ -2242,9 +2242,19 @@ minimum_release_age_excludes = ["trivy", "npm:*"]
 ```
 
 A tool's own `minimum_release_age` option and `--minimum-release-age` still
-apply to excluded tools. Lists from several config files are combined, so a
-project can add exclusions without repeating global ones;
-`MISE_MINIMUM_RELEASE_AGE_EXCLUDES` replaces the combined list.
+apply to excluded tools.
+
+An entry of the form `tool@version`, such as `node@22.11.1` or
+`npm:@scope/pkg@1.2.3`, exempts only that version, so a `latest` or prefix
+request can pick it while the tool's other versions stay behind the cutoff. It
+lifts every cutoff for that version, including the tool option and the flag.
+The version must match exactly, and the entry must name a tool: `npm:*@1.2.3`
+matches nothing. See
+[Per-tool cutoffs and exclusions](/security.html#per-tool-cutoffs-and-exclusions).
+
+Lists from several config files are combined, so a project can add exclusions
+without repeating global ones; `MISE_MINIMUM_RELEASE_AGE_EXCLUDES` replaces the
+combined list.
 """
 env = "MISE_MINIMUM_RELEASE_AGE_EXCLUDES"
 merge = "append_unique"

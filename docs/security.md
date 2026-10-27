@@ -430,6 +430,8 @@ The cutoff applies when mise has to choose a version, for a prefix such as
 - An installed version that matches the request. The cutoff limits which new
   versions mise downloads; it does not deactivate one you have. `mise lock` with
   a configured cutoff, rather than the default, re-checks installed matches.
+- A version named in `minimum_release_age_excludes` as `tool@version`; see
+  [Per-tool cutoffs and exclusions](#per-tool-cutoffs-and-exclusions).
 
 For `packslip:` tools, mise compares the cutoff with the release's verified
 transparency-log time; see
@@ -456,11 +458,6 @@ The `--minimum-release-age` flag on commands such as `mise install`, `mise use`,
 `mise upgrade` and `mise lock` overrides both. The order is: the flag, then the
 tool option, then the setting or the built-in default.
 
-To take one newer release before it passes the cutoff, run the command with
-`0s` for just that tool, for example `mise upgrade --minimum-release-age 0s gh`.
-The flag applies to that command only. A version you install this way is not
-downgraded by a later `mise upgrade` that resolves to an older release.
-
 To exempt tools from the setting and the default, list them in
 [`minimum_release_age_excludes`](/configuration/settings.html#minimum_release_age_excludes):
 
@@ -474,6 +471,38 @@ An entry can be a backend wildcard (`npm:*`), a tool short name (`trivy`) or a
 full backend ID (`npm:prettier`). A tool option or the flag still applies to an
 excluded tool. Exclusions from several config files are merged, so a project can
 add to the global list without repeating it.
+
+To take one newer release before it passes the cutoff, such as a security fix,
+add it to the same list as `tool@version`:
+
+```toml
+[settings]
+minimum_release_age = "7d"
+minimum_release_age_excludes = ["node@22.11.1"]
+
+[tools]
+node = "22"
+```
+
+`node = "22"` and `node = "latest"` can now resolve to 22.11.1, while every
+other node release stays behind the cutoff. A version entry differs from a tool
+entry in three ways:
+
+- It lifts every cutoff for that version, including a tool's own
+  `minimum_release_age` option and `--minimum-release-age`.
+- The version is compared exactly, as the backend lists it. Prefixes and ranges
+  are not supported, and the entry must name a tool: `npm:*@1.2.3` matches
+  nothing.
+- Like an exact pin, the version installs without the cutoff, so `npm:` and
+  `pypi:` do not apply it to that version's transitive dependencies either.
+
+Once the release is older than the cutoff, the entry has no effect and can be
+removed.
+
+For a one-off on one machine, run the command with `0s` for just that tool, for
+example `mise upgrade --minimum-release-age 0s gh`. The flag applies to that
+command only. A version you install this way is not downgraded by a later
+`mise upgrade` that resolves to an older release.
 
 ## Secrets
 
