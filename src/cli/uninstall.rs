@@ -65,9 +65,10 @@ pub(crate) struct Uninstall {
     /// moving up, that has a mise config file. Every config file in that
     /// directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d`
     /// fragments, `.tool-versions` and idiomatic version files. Configs in parent
-    /// directories and global or system configs do not. Lists what it will
-    /// remove and asks for confirmation unless `--yes` or a dry run is given. Tools set to a
-    /// `path:` or `system` version are never removed.
+    /// directories and global or system configs do not. Every version those
+    /// files name is removed, including one that a later file overrides. Lists
+    /// what it will remove and asks for confirmation unless `--yes` or a dry run
+    /// is given. Tools set to a `path:` or `system` version are never removed.
     #[usage(long, conflicts = ["all", "installed_tool"])]
     project: bool,
 

@@ -4904,7 +4904,7 @@ Includes config files in parent directories and skips the global config, system 
         long_help #"""
 Only show versions the nearest project config requests
 
-The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool-versions` and idiomatic version files. Configs in parent directories and global or system configs do not, nor do `MISE_<TOOL>_VERSION` environment variables. Lists every version a file names, including one that a later file overrides, which is what `mise uninstall --project` considers.
+The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool-versions` and idiomatic version files. Configs in parent directories and global or system configs do not, nor do `MISE_<TOOL>_VERSION` environment variables. A version that a later file in that directory overrides is not listed, as with --no-global; `mise uninstall --project` still removes it.
 """#
         conflicts "--global" "--local" "--no-global"
     }
@@ -7526,7 +7526,7 @@ same versions have to install them again.
         long_help #"""
 Remove the installed versions the nearest project config requests
 
-The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool-versions` and idiomatic version files. Configs in parent directories and global or system configs do not. Lists what it will remove and asks for confirmation unless `--yes` or a dry run is given. Tools set to a `path:` or `system` version are never removed.
+The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool-versions` and idiomatic version files. Configs in parent directories and global or system configs do not. Every version those files name is removed, including one that a later file overrides. Lists what it will remove and asks for confirmation unless `--yes` or a dry run is given. Tools set to a `path:` or `system` version are never removed.
 """#
         conflicts "--all" INSTALLED_TOOL@VERSION
     }

@@ -15,7 +15,7 @@ use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::config;
 use crate::config::Config;
-use crate::config::project::{nearest_project_tool_requests, tool_request_set};
+use crate::config::project::{effective_requests, nearest_project_tool_requests, tool_request_set};
 use crate::env;
 use crate::file;
 use crate::runtime_symlinks::is_runtime_symlink;
@@ -134,9 +134,9 @@ pub(crate) struct Ls {
     /// directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d`
     /// fragments, `.tool-versions` and idiomatic version files. Configs in
     /// parent directories and global or system configs do not, nor do
-    /// `MISE_<TOOL>_VERSION` environment variables. Lists every version a file
-    /// names, including one that a later file overrides, which is what
-    /// `mise uninstall --project` considers.
+    /// `MISE_<TOOL>_VERSION` environment variables. A version that a later file
+    /// in that directory overrides is not listed, as with --no-global; `mise
+    /// uninstall --project` still removes it.
     #[usage(long, conflicts = ["global", "local", "no_global"])]
     project: bool,
 
@@ -441,7 +441,7 @@ impl Ls {
     async fn get_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow<'_>>> {
         let mut trs = if self.project {
             let (_, requests) = nearest_project_tool_requests(config)?;
-            tool_request_set(requests)
+            tool_request_set(effective_requests(requests))
         } else if self.monorepo {
             config.monorepo_union_tool_request_set().await?
         } else {

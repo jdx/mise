@@ -1,7 +1,7 @@
 //! The config files of the nearest project directory, for commands that act on
 //! "this project" rather than on everything mise has loaded.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -94,6 +94,23 @@ pub fn nearest_project_tool_requests(config: &Config) -> Result<(PathBuf, Vec<To
     let filter = ToolRequestSetBuilder::new();
     requests.retain(|tr| !filter.is_disabled(tr.ba()));
     Ok((root, requests))
+}
+
+/// The requests mise would actually use: for each tool, those from the
+/// highest-priority file that names it. `requests` comes in priority order, as
+/// [`nearest_project_tool_requests`] returns it, so a version that a later file
+/// overrides is dropped, as when mise merges the files itself.
+pub fn effective_requests(requests: Vec<ToolRequest>) -> Vec<ToolRequest> {
+    let mut winners: HashMap<Arc<BackendArg>, ToolSource> = HashMap::new();
+    for tr in &requests {
+        winners
+            .entry(tr.ba().clone())
+            .or_insert_with(|| tr.source().clone());
+    }
+    requests
+        .into_iter()
+        .filter(|tr| winners.get(tr.ba()) == Some(tr.source()))
+        .collect()
 }
 
 /// The requests as a set, each filed under its own source.
