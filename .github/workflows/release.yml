@@ -732,7 +732,7 @@ jobs:
       # writing it under packslip/, and an artifact holding files at two
       # depths keeps the directory, which the flat `sha256sum ./*` below
       # would then choke on.
-      - uses: jdx/packslip@2187c31f8317b8548833baf60cfe93db1f42431d # v1.9.0
+      - uses: jdx/packslip@693d02c49f6e1c8a0cc797472dc3fa53f0a6c955 # v1.9.1
         with:
           artifacts: release-assets/mise-*
           bin: mise
@@ -907,7 +907,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.finish-draft-resolve.outputs.tag }}
         run: gh release upload "$TAG" mise.usage.kdl mise.bash mise.zsh mise.fish mise.powershell --clobber
-      - uses: jdx/packslip@2187c31f8317b8548833baf60cfe93db1f42431d # v1.9.0
+      - uses: jdx/packslip@693d02c49f6e1c8a0cc797472dc3fa53f0a6c955 # v1.9.1
         with:
           artifacts: release-assets/mise-*
           bin: mise
