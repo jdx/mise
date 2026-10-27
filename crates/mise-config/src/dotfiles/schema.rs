@@ -33,7 +33,8 @@ pub(crate) fn entry_rules(schema: &mut Schema) {
     );
 }
 
-/// A merge edits a structured file, so it takes none of the whole-file or line keys.
+/// A merge edits a structured file, so it takes none of the whole-file or line keys except
+/// `permissions`, which sets the mode of a target the merge creates.
 fn rule_0() -> Value {
     json!({
         "if": {"properties": {"merge": {"enum": [true, "missing"]}}, "required": ["merge"]},
@@ -41,7 +42,6 @@ fn rule_0() -> Value {
             "properties": {
                 "mode": false,
                 "content": false,
-                "permissions": false,
                 "exclude": false,
                 "include": false,
                 "manifest": false,
@@ -170,7 +170,8 @@ fn rule_4() -> Value {
     })
 }
 
-/// `permissions` applies to copy, template and inline content, or on its own to an existing target.
+/// `permissions` applies to copy, template and inline content, to a merge that creates its
+/// target, or on its own to an existing target.
 fn rule_5() -> Value {
     json!({
         "oneOf": [
@@ -178,7 +179,6 @@ fn rule_5() -> Value {
                 "properties": {
                     "mode": {"enum": ["copy", "template"]},
                     "block": false,
-                    "template": false,
                     "comment": false
                 },
                 "required": ["permissions"],
@@ -187,6 +187,9 @@ fn rule_5() -> Value {
                     {"required": ["content"]},
                     {"required": ["mode"]},
                     {"properties": {"exclude": false, "manifest": false, "encrypt": false}}
+                ],
+                "allOf": [
+                    {"anyOf": [{"properties": {"template": false}}, {"required": ["merge"]}]}
                 ]
             },
             {"properties": {"permissions": false}}
