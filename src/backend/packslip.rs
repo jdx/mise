@@ -2001,9 +2001,11 @@ impl PackslipBackend {
             .candidate_exclusion(project, &version, opts, pin, before, stamps)
             .await?
         {
-            // An installed version needs no upgrade, so skipping it is not news.
-            let installed = reason == AFTER_CUTOFF && self.is_installed_version(&version);
-            if !installed {
+            // A version that minimum_release_age holds back is what the user
+            // asked for, not a problem, so it is only debug output.
+            if reason == AFTER_CUTOFF {
+                debug!("packslip:{project}: skipping {version}: {reason}");
+            } else {
                 warn!("packslip:{project}: skipping {version}: {reason}");
             }
             return Ok(false);
