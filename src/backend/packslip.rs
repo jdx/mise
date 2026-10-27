@@ -409,7 +409,7 @@ where
     let newest_first = matches.iter().rev().cloned().collect();
     let Some(eligible) = first_eligible(newest_first, admits).await? else {
         bail!(
-            "no release of packslip:{project} matching {query} can be installed; the warnings above say why each was skipped"
+            "no release of packslip:{project} matching {query} can be installed; the warnings above, or MISE_DEBUG=1 output, say why each was skipped"
         );
     };
     let keep = matches
