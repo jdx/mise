@@ -1379,11 +1379,18 @@ pub fn apply(
         }
         Ok(())
     })();
-    // after a failure, a file left behind is not stuck owner-only
+    // after a failure, a file left behind is not stuck owner-only; every file
+    // is tried, and the apply error is the one reported
+    let mut mode_error = None;
     for (path, mode) in &waiting {
-        set_created_mode(path, *mode)?;
+        if let Err(err) = set_created_mode(path, *mode) {
+            mode_error.get_or_insert(err);
+        }
     }
     applied?;
+    if let Some(err) = mode_error {
+        return Err(err);
+    }
     let applied = todo
         .iter()
         .map(|(r, _)| format!("{} ({})", r.path_raw, r.describe_op()))
@@ -1922,7 +1929,14 @@ fn write_new_private(path: &Path, text: &str) -> Result<()> {
         .mode(0o600)
         .open(path)
         .wrap_err_with(failed)?;
-    target.write_all(text.as_bytes()).wrap_err_with(failed)
+    if let Err(err) = target.write_all(text.as_bytes()) {
+        // a half-written file would look like an existing target on the next
+        // apply and never get its mode
+        drop(target);
+        let _ = std::fs::remove_file(path);
+        return Err(err).wrap_err_with(failed);
+    }
+    Ok(())
 }
 
 /// The mode a merge-created `path` gets: the `permissions` of the merge
