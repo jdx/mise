@@ -4141,11 +4141,9 @@ pub trait Backend: Debug + Send + Sync {
                         refresh,
                     )
                     .await?;
-                let filtered = VersionInfo::filter_by_date(
-                    versions_with_info,
-                    before,
-                    &ReleaseAgeExemptions::for_tool(self.ba()),
-                );
+                let exempt = ReleaseAgeExemptions::for_tool(self.ba());
+                exempt.debug_entries_without_effect(self.ba(), &versions_with_info, before);
+                let filtered = VersionInfo::filter_by_date(versions_with_info, before, &exempt);
                 // Warn if no versions have timestamps
                 if filtered.iter().all(|v| v.created_at.is_none()) && !filtered.is_empty() {
                     debug!(

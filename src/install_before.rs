@@ -7,7 +7,7 @@ use jiff::civil::date;
 use jiff::{Span, Timestamp};
 
 use crate::args::{BackendArg, parse_input, split_bracketed_opts};
-use crate::backend::Backend;
+use crate::backend::{Backend, VersionInfo};
 use crate::config::{Config, Settings};
 use crate::duration::{parse_duration, parse_into_timestamp};
 
@@ -337,6 +337,29 @@ impl ReleaseAgeExemptions {
 
     fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    /// Note at debug level each entry that changes nothing under `before`:
+    /// its version is not in `versions`, or the cutoff would not hide it
+    /// anyway. Such an entry is harmless, so it is not worth a warning.
+    pub(crate) fn debug_entries_without_effect(
+        &self,
+        backend_arg: &BackendArg,
+        versions: &[VersionInfo],
+        before: Timestamp,
+    ) {
+        let unexempted = Self::default();
+        for exempt in &self.0 {
+            match versions.iter().find(|v| &v.version == exempt) {
+                None => debug!(
+                    "minimum_release_age_excludes: {backend_arg}@{exempt} is not a listed version"
+                ),
+                Some(v) if !v.hidden_by_date(before, &unexempted) => debug!(
+                    "minimum_release_age_excludes: {backend_arg}@{exempt} is not held back by the {before} cutoff"
+                ),
+                Some(_) => {}
+            }
+        }
     }
 }
 
