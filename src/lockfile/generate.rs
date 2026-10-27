@@ -196,10 +196,14 @@ pub(crate) async fn prepare_install(config: &Arc<Config>, tv: &ToolVersion) -> R
         &[],
     )
     .await?;
+    // With no foreign target (for example `lockfile_platforms` limited to the
+    // host) the candidate has no entry for the tool, so there is no graph to
+    // attach to.
+    let graph_tools = tools_on_platforms(&[(tv.ba().clone(), tv.clone())], &platforms);
     Box::pin(populate_uv_locks(
         config,
         &mut candidate,
-        &[(tv.ba().clone(), tv.clone())],
+        &graph_tools,
         false,
         true,
         false,
