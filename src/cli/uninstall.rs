@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use console::style;
@@ -9,6 +9,7 @@ use itertools::Itertools;
 use crate::args::{BackendArg, ToolArg};
 use crate::backend::Backend;
 use crate::config::config_file::ConfigFile;
+use crate::config::config_file::config_root::config_root;
 use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::toolset::{
@@ -424,31 +425,41 @@ impl Uninstall {
 }
 
 /// The config files of the nearest directory, from the working directory up,
-/// that has any. Only that directory's configs are "local": a parent's config is
-/// another project's, or the monorepo's, and is none of this command's business.
+/// that owns any. Only that directory's configs are "local": a parent's config
+/// is another project's, or the monorepo's, and is none of this command's
+/// business.
 ///
-/// A directory's configs are the ones discovery finds in it, which includes
-/// `.mise/config.toml` and `conf.d` folder fragments whose own config root is a
-/// folder below the project, plus any file such as `.tool-versions` or an
-/// idiomatic version file that sits in it.
+/// A file belongs to the directory it configures, the one mise calls its config
+/// root: `.mise/config.toml`, `.config/mise.toml` and `.config/mise/config.toml`
+/// all belong to the directory holding the `.mise` or `.config` folder, and a
+/// `conf.d` folder fragment to the project its `conf.d` belongs to. Running from
+/// inside one of those folders therefore still finds the project that owns it.
 fn nearest_project_configs(config: &Config) -> Option<(PathBuf, Vec<Arc<dyn ConfigFile>>)> {
     let cwd = dirs::CWD.as_ref()?;
+    let owned = config
+        .config_files
+        .iter()
+        .filter(|(path, _)| !config::is_global_config(path))
+        .map(|(path, cf)| (owning_dir(path), cf))
+        .collect_vec();
     cwd.ancestors()
         .filter(|dir| *dir != *dirs::HOME)
         .find_map(|dir| {
-            let discovered = config::config_files_in_dir(dir);
-            let files = config
-                .config_files
+            let files = owned
                 .iter()
-                .filter(|(path, cf)| {
-                    !config::is_global_config(path)
-                        && (discovered.contains(path.as_path())
-                            || (path.parent() == Some(dir)
-                                && !config::is_conf_d_folder_file(path)
-                                && cf.config_root() == dir))
-                })
-                .map(|(_, cf)| cf.clone())
+                .filter(|(owner, _)| owner == dir)
+                .map(|(_, cf)| Arc::clone(cf))
                 .collect_vec();
             (!files.is_empty()).then(|| (dir.to_path_buf(), files))
         })
+}
+
+/// The directory a config file configures. A folder fragment is its own config
+/// root so that relative paths stay inside the folder, but it configures the
+/// project its `conf.d` belongs to.
+fn owning_dir(path: &Path) -> PathBuf {
+    match path.parent() {
+        Some(dir) if config::is_conf_d_folder_file(path) => config_root(dir),
+        _ => config_root(path),
+    }
 }
