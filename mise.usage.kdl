@@ -4865,7 +4865,9 @@ under aqua. Repeat the flag to show several backends.
         arg <BACKEND>
     }
     flag "-c --current" help="Only show versions the loaded config files request"
-    flag "-g --global" help="Only show versions the global config requests" conflicts=--local
+    flag "-g --global" help="Only show versions the global config requests" {
+        conflicts "--local" "--no-global" "--project"
+    }
     flag "-i --installed" help="Only show installed versions" {
         long_help #"""
 Only show installed versions
@@ -4881,7 +4883,30 @@ Cannot be combined with --json; use --backend to filter JSON output.
 """#
     }
     flag "-J --json" help="Output in JSON format"
-    flag "-l --local" help="Only show versions the local config requests" conflicts=--global
+    flag "-l --local" help="Deprecated alias for --no-global" {
+        long_help #"""
+Deprecated alias for --no-global
+
+Removed in mise 2027.10.0.
+"""#
+        conflicts "--global" "--no-global" "--project"
+    }
+    flag --no-global help="Only show versions that non-global config files request" {
+        long_help #"""
+Only show versions that non-global config files request
+
+Includes config files in parent directories and skips the global config, system config, and `MISE_<TOOL>_VERSION` environment variables. See --project for the nearest project's config alone.
+"""#
+        conflicts "--global" "--local" "--project"
+    }
+    flag --project help="Only show versions the nearest project config requests" {
+        long_help #"""
+Only show versions the nearest project config requests
+
+The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool-versions` and idiomatic version files. Configs in parent directories and global or system configs do not, nor do `MISE_<TOOL>_VERSION` environment variables. Lists every version a file names, including one that a later file overrides, which is what `mise uninstall --project` considers.
+"""#
+        conflicts "--global" "--local" "--no-global"
+    }
     flag "-m --missing" help="Only show requested versions that are not installed" conflicts=--installed
     flag "-o --offline" help="Don't fetch information such as outdated versions" hide=#true
     flag "-p --plugin" hide=#true {
@@ -4893,7 +4918,7 @@ Show requests from every config file mise has seen, not only loaded ones
 
 mise tracks the config files it loads so `mise prune` keeps the versions they use.
 """#
-        conflicts "--current" "--global" "--local" "--prunable"
+        conflicts "--current" "--global" "--local" "--no-global" "--project" "--prunable"
     }
     flag --monorepo help="Also list tools from every config root in `[monorepo].config_roots`" env=MISE_MONOREPO {
         long_help #"""
@@ -5374,12 +5399,13 @@ With `node = "20"` in your config, `mise outdated` reports the newest 20.x relea
     }
     flag "-J --json" help="Output in JSON format"
     flag -l help="Deprecated shorthand for --bump" hide=#true
-    flag --inactive help="Also check installed tools that the current config does not request" conflicts=--local {
+    flag --inactive help="Also check installed tools that the current config does not request" {
         long_help #"""
 Also check installed tools that the current config does not request
 
 By default, `mise outdated` checks only tools that come from the current config.
 """#
+        conflicts "--local" "--no-global"
     }
     flag --global help="Only check tools defined in the global config" {
         long_help #"""
@@ -5387,14 +5413,23 @@ Only check tools defined in the global config
 
 Reports the requests in the global and system config (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool: what `mise upgrade --global` would install.
 """#
-        conflicts "--local" "--inactive"
+        conflicts "--local" "--no-global" "--inactive"
     }
-    flag --local help="Only check tools defined in project config files" {
+    flag --local help="Deprecated alias for --no-global" {
+        long_help #"""
+Deprecated alias for --no-global
+
+Removed in mise 2027.10.0.
+"""#
+        conflicts "--global" "--no-global"
+    }
+    flag --no-global help="Only check tools defined in project config files" {
         long_help #"""
 Only check tools defined in project config files
 
 Skips tools defined in the global config (~/.config/mise/config.toml) and tools set through `MISE_<TOOL>_VERSION` environment variables.
 """#
+        conflicts "--global" "--local"
     }
     flag --monorepo help="Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet." hide=#true
     flag --no-header help="Do not print the table header"
@@ -5431,7 +5466,7 @@ mise outdated --json
   }
 }
 """# help="Print the same information as JSON"
-    example "mise outdated --local" help="Skip tools that only the global config requests"
+    example "mise outdated --no-global" help="Skip tools that only the global config requests"
     example "mise outdated --global claude --json" help="Check the global config's request for claude, even inside a project that sets its own"
 }
 cmd patrons help="Show the individuals supporting mise as Patron-tier members" effect=read {
@@ -6759,9 +6794,21 @@ Manage tasks
 
 With no subcommand, lists tasks like `mise tasks ls` and accepts the same flags. With a task name, shows that task like `mise tasks info`. To run a task, use `mise run`.
 """#
-    flag "-g --global" help="Only show global tasks" overrides=--local
+    flag "-g --global" help="Only show global tasks" {
+        overrides "--local" "--no-global"
+    }
     flag "-J --json" help="Output in JSON format"
-    flag "-l --local" help="Only show non-global tasks" overrides=--global
+    flag "-l --local" help="Deprecated alias for --no-global" {
+        long_help #"""
+Deprecated alias for --no-global
+
+Removed in mise 2027.10.0.
+"""#
+        overrides "--global" "--no-global"
+    }
+    flag --no-global help="Only show non-global tasks" {
+        overrides "--global" "--local"
+    }
     flag "-x --extended" help="Show all columns"
     flag "-a --all" help="Include tasks from every project in the monorepo, not only the current directory's hierarchy"
     flag --complete help="Display tasks for usage completion" hide=#true
@@ -6909,9 +6956,21 @@ Lists tasks from `[tasks]` in your config files and from task directories such a
 
 See https://mise.jdx.dev/tasks/task-discovery.html
 """#
-        flag "-g --global" help="Only show global tasks" overrides=--local
+        flag "-g --global" help="Only show global tasks" {
+            overrides "--local" "--no-global"
+        }
         flag "-J --json" help="Output in JSON format"
-        flag "-l --local" help="Only show non-global tasks" overrides=--global
+        flag "-l --local" help="Deprecated alias for --no-global" {
+            long_help #"""
+Deprecated alias for --no-global
+
+Removed in mise 2027.10.0.
+"""#
+            overrides "--global" "--no-global"
+        }
+        flag --no-global help="Only show non-global tasks" {
+            overrides "--global" "--local"
+        }
         flag "-x --extended" help="Show all columns"
         flag "-a --all" help="Include tasks from every project in the monorepo, not only the current directory's hierarchy"
         flag --complete help="Display tasks for usage completion" hide=#true
@@ -7456,12 +7515,12 @@ remove a tool from mise.toml and uninstall it. A tool name or version prefix,
 such as `node` or `node@22`, must match exactly one installed version unless
 you pass `--all`.
 
-`--local` removes the installed versions that the project's own config files
+`--project` removes the installed versions that the project's own config files
 request. Installs are shared by every project, so other projects that use the
 same versions have to install them again.
 """#
     flag "-a --all" help="Remove every installed version of the named tools, or of every tool when none is named"
-    flag --local help="Remove the installed versions the nearest project config requests" {
+    flag --project help="Remove the installed versions the nearest project config requests" {
         long_help #"""
 Remove the installed versions the nearest project config requests
 
@@ -7479,12 +7538,12 @@ Use it in scripts that check whether tools need uninstalling.
     }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[INSTALLED_TOOL@VERSION]…" help="Tools to remove, such as node@22.0.0" required=#false var=#true {
-        required_unless "--all" "--local"
+        required_unless "--all" "--project"
     }
     example "mise uninstall node@22.0.0" help="Uninstall a specific version"
     example "mise uninstall node" help="Uninstall node when exactly one version is installed"
     example "mise uninstall --all node" help="Uninstall every installed version of node"
-    example "mise uninstall --local --dry-run" help="Preview the versions this project's config requests"
+    example "mise uninstall --project --dry-run" help="Preview the versions this project's config requests"
 }
 cmd unset help="Remove environment variables from mise.toml" effect=write {
     long_help #"""
@@ -7625,21 +7684,32 @@ Like --dry-run, but exit with code 1 if there are outdated tools
 Use it in scripts that check whether tools need upgrading.
 """#
     }
-    flag --inactive help="Also upgrade installed tools that the current config does not request" conflicts=--local
+    flag --inactive help="Also upgrade installed tools that the current config does not request" {
+        conflicts "--local" "--no-global"
+    }
     flag --global help="Only upgrade tools defined in the global config" {
         long_help #"""
 Only upgrade tools defined in the global config
 
 Upgrades the requests in the global and system config (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool. It runs as if from outside any project, so project config, lockfiles, and `[env]` are neither read nor changed. Tools that update themselves, such as coding agents, run this instead of their own updater; see https://mise.jdx.dev/dev-tools/self-updating-tools.html
 """#
-        conflicts "--local" "--inactive"
+        conflicts "--local" "--no-global" "--inactive"
     }
-    flag --local help="Only upgrade tools defined in project config files" {
+    flag --local help="Deprecated alias for --no-global" {
+        long_help #"""
+Deprecated alias for --no-global
+
+Removed in mise 2027.10.0.
+"""#
+        conflicts "--global" "--no-global"
+    }
+    flag --no-global help="Only upgrade tools defined in project config files" {
         long_help #"""
 Only upgrade tools defined in project config files
 
 Skips tools defined in the global config (~/.config/mise/config.toml) and tools set through `MISE_<TOOL>_VERSION` environment variables.
 """#
+        conflicts "--global" "--local"
     }
     flag --minimum-release-age help="Only upgrade to versions released before this date or older than this duration" {
         alias "--before" hide=#true

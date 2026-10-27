@@ -32,7 +32,10 @@ pass `--bump` to compare against the newest release overall instead. Run
 - **`--global`** — Only check tools defined in the global config
 
   Reports the requests in the global and system config (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool: what `mise upgrade --global` would install.
-- **`--local`** — Only check tools defined in project config files
+- **`--local`** — Deprecated alias for --no-global
+
+  Removed in mise 2027.10.0.
+- **`--no-global`** — Only check tools defined in project config files
 
   Skips tools defined in the global config (~/.config/mise/config.toml) and tools set through `MISE_<TOOL>_VERSION` environment variables.
 - **`--no-header`** — Do not print the table header
@@ -79,7 +82,7 @@ mise outdated --json
 Skip tools that only the global config requests
 
 ```
-mise outdated --local
+mise outdated --no-global
 ```
 
 Check the global config's request for claude, even inside a project that sets its own

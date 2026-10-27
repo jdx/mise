@@ -129,7 +129,7 @@ pub(crate) struct Upgrade {
     installed_only: bool,
 
     /// Also upgrade installed tools that the current config does not request
-    #[usage(long, verbatim_doc_comment, conflicts = "local")]
+    #[usage(long, verbatim_doc_comment, conflicts = ["local", "no_global"])]
     inactive: bool,
 
     /// Only upgrade tools defined in the global config
@@ -141,15 +141,21 @@ pub(crate) struct Upgrade {
     /// config, lockfiles, and `[env]` are neither read nor changed. Tools that
     /// update themselves, such as coding agents, run this instead of their own
     /// updater; see https://mise.jdx.dev/dev-tools/self-updating-tools.html
-    #[usage(long, conflicts = ["local", "inactive"])]
+    #[usage(long, conflicts = ["local", "no_global", "inactive"])]
     global: bool,
+
+    /// Deprecated alias for --no-global
+    ///
+    /// Removed in mise 2027.10.0.
+    #[usage(long, conflicts = ["global", "no_global"])]
+    local: bool,
 
     /// Only upgrade tools defined in project config files
     ///
     /// Skips tools defined in the global config (~/.config/mise/config.toml) and
     /// tools set through `MISE_<TOOL>_VERSION` environment variables.
-    #[usage(long)]
-    local: bool,
+    #[usage(long, conflicts = ["global", "local"])]
+    no_global: bool,
 
     /// Only upgrade to versions released before this date or older than this duration
     ///
@@ -340,7 +346,7 @@ impl Upgrade {
     fn scope(&self) -> ConfigScope {
         if self.for_auto_update || self.global {
             ConfigScope::GlobalOnly
-        } else if self.local {
+        } else if self.local || self.no_global {
             ConfigScope::LocalOnly
         } else {
             ConfigScope::All
@@ -348,6 +354,14 @@ impl Upgrade {
     }
 
     pub(crate) async fn run(mut self) -> Result<()> {
+        if self.local {
+            deprecated_at!(
+                "2026.10.0",
+                "2027.10.0",
+                "cli.upgrade.local",
+                "`mise upgrade --local` is deprecated. Use `mise upgrade --no-global` instead."
+            );
+        }
         if self.legacy_bump {
             deprecated_at!(
                 "2026.8.5",

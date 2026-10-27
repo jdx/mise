@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+export CLICOLOR=0
+
+mise use dummy@1.0.0
+
+# --local on these commands is the old spelling of --no-global
+assert_contains "mise ls --local 2>&1" "deprecated [cli.ls.local]"
+assert_contains "mise outdated --local 2>&1" "deprecated [cli.outdated.local]"
+assert_contains "mise upgrade --local --dry-run 2>&1" "deprecated [cli.upgrade.local]"
+assert_contains "mise tasks ls --local 2>&1" "deprecated [cli.tasks-ls.local]"
+
+assert_not_contains "mise ls --no-global 2>&1" "deprecated"
+assert_not_contains "mise outdated --no-global 2>&1" "deprecated"
+assert_not_contains "mise upgrade --no-global --dry-run 2>&1" "deprecated"
+assert_not_contains "mise tasks ls --no-global 2>&1" "deprecated"
+
+# both spellings select the same tools
+assert "mise ls --local --json 2>/dev/null | jq -r 'keys[]'" "$(mise ls --no-global --json | jq -r 'keys[]')"
+assert_fail "mise ls --local --no-global"

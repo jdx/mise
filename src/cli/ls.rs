@@ -15,11 +15,19 @@ use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::config;
 use crate::config::Config;
+use crate::config::project::{nearest_project_tool_requests, tool_request_set};
 use crate::env;
 use crate::file;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequestSet, ToolSource, ToolVersion, Toolset};
 use crate::ui::table::MiseTable;
+
+// `--local` on `ls`, `outdated`, `upgrade` and `tasks ls` means "not global",
+// unlike `mise settings --local` and `--project`, which mean the nearest project
+// config. It is deprecated in favor of `--no-global` and removed in 2027.10.0.
+// This fails that release's build so the flag is revisited: re-add `--local` on
+// those commands as the nearest-project scope, then delete this.
+crate::remove_by!("2027.10.0", "cli-local-flag-meaning");
 
 /// List installed and active tool versions
 ///
@@ -84,7 +92,7 @@ pub(crate) struct Ls {
     current: bool,
 
     /// Only show versions the global config requests
-    #[usage(long, short, conflicts = "local")]
+    #[usage(long, short, conflicts = ["local", "no_global", "project"])]
     global: bool,
 
     /// Only show installed versions
@@ -103,9 +111,32 @@ pub(crate) struct Ls {
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Only show versions the local config requests
-    #[usage(long, short, conflicts = "global")]
+    /// Deprecated alias for --no-global
+    ///
+    /// Removed in mise 2027.10.0.
+    #[usage(long, short, conflicts = ["global", "no_global", "project"])]
     local: bool,
+
+    /// Only show versions that non-global config files request
+    ///
+    /// Includes config files in parent directories and skips the global config,
+    /// system config, and `MISE_<TOOL>_VERSION` environment variables. See
+    /// --project for the nearest project's config alone.
+    #[usage(long, conflicts = ["global", "local", "project"])]
+    no_global: bool,
+
+    /// Only show versions the nearest project config requests
+    ///
+    /// The project is the nearest directory, starting at the current one and
+    /// moving up, that has a mise config file. Every config file in that
+    /// directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d`
+    /// fragments, `.tool-versions` and idiomatic version files. Configs in
+    /// parent directories and global or system configs do not, nor do
+    /// `MISE_<TOOL>_VERSION` environment variables. Lists every version a file
+    /// names, including one that a later file overrides, which is what
+    /// `mise uninstall --project` considers.
+    #[usage(long, conflicts = ["global", "local", "no_global"])]
+    project: bool,
 
     /// Only show requested versions that are not installed
     #[usage(long, short, conflicts = "installed")]
@@ -122,7 +153,7 @@ pub(crate) struct Ls {
     ///
     /// mise tracks the config files it loads so `mise prune` keeps the versions
     /// they use.
-    #[usage(long, conflicts = &["current", "global", "local", "prunable"])]
+    #[usage(long, conflicts = &["current", "global", "local", "no_global", "project", "prunable"])]
     all_sources: bool,
 
     /// Also list tools from every config root in `[monorepo].config_roots`
@@ -170,7 +201,15 @@ impl Ls {
         } else {
             (self.get_runtime_list(&config).await?, None)
         };
-        if self.current || self.global || self.local {
+        if self.local {
+            deprecated_at!(
+                "2026.10.0",
+                "2027.10.0",
+                "cli.ls.local",
+                "`mise ls --local` is deprecated. Use `mise ls --no-global` instead."
+            );
+        }
+        if self.current || self.global || self.local || self.no_global || self.project {
             // TODO: global is a little weird: it will show global versions as the active ones even if
             // they're overridden locally
             runtimes.retain(|(_, _, _, source)| !source.is_unknown());
@@ -398,7 +437,10 @@ impl Ls {
         )
     }
     async fn get_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow<'_>>> {
-        let mut trs = if self.monorepo {
+        let mut trs = if self.project {
+            let (_, requests) = nearest_project_tool_requests(config)?;
+            tool_request_set(requests)
+        } else if self.monorepo {
             config.monorepo_union_tool_request_set().await?
         } else {
             config.get_tool_request_set().await?.clone()
@@ -414,7 +456,7 @@ impl Ls {
                 })
                 .map(|(fa, tv, ts)| (fa.clone(), tv.clone(), ts.clone()))
                 .collect()
-        } else if self.local {
+        } else if self.local || self.no_global {
             trs = trs
                 .iter()
                 .filter(|(.., ts)| {

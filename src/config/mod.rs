@@ -57,6 +57,7 @@ pub mod doctor;
 pub mod edit;
 pub mod env_directive;
 pub mod miserc;
+pub mod project;
 pub(crate) mod provenance;
 mod remote_include;
 pub mod schema;

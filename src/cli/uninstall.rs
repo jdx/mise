@@ -8,13 +8,10 @@ use itertools::Itertools;
 
 use crate::args::ToolArg;
 use crate::backend::Backend;
-use crate::config::config_file::ConfigFile;
+use crate::config::project::{nearest_project_tool_requests, tool_request_set};
 use crate::config::{Config, Settings};
-use crate::daemons::glue::DaemonSetExt;
 use crate::file::display_path;
-use crate::toolset::{
-    ToolRequest, ToolRequestSet, ToolSource, ToolVersion, Toolset, ToolsetBuilder,
-};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::prompt::{self, Confirmation};
@@ -27,7 +24,7 @@ use crate::{config, dirs, exit, file};
 /// such as `node` or `node@22`, must match exactly one installed version unless
 /// you pass `--all`.
 ///
-/// `--local` removes the installed versions that the project's own config files
+/// `--project` removes the installed versions that the project's own config files
 /// request. Installs are shared by every project, so other projects that use the
 /// same versions have to install them again.
 #[derive(Debug, usage_rs::Args)]
@@ -46,7 +43,7 @@ use crate::{config, dirs, exit, file};
         help = r###"Uninstall every installed version of node"###
     ),
     example(
-        r###"mise uninstall --local --dry-run"###,
+        r###"mise uninstall --project --dry-run"###,
         help = r###"Preview the versions this project's config requests"###
     )
 )]
@@ -54,7 +51,7 @@ pub(crate) struct Uninstall {
     /// Tools to remove, such as node@22.0.0
     #[usage(
         value_name = "INSTALLED_TOOL@VERSION",
-        required_unless = ["all", "local"]
+        required_unless = ["all", "project"]
     )]
     installed_tool: Vec<ToolArg>,
 
@@ -72,7 +69,7 @@ pub(crate) struct Uninstall {
     /// remove and asks for confirmation unless `--yes` or a dry run is given. Tools set to a
     /// `path:` or `system` version are never removed.
     #[usage(long, conflicts = ["all", "installed_tool"])]
-    local: bool,
+    project: bool,
 
     /// Show what would change without changing anything
     #[usage(long, short = 'n')]
@@ -92,10 +89,10 @@ impl Uninstall {
 
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let mut local_root = None;
-        let tool_versions = if self.local {
-            let (root, tool_versions) = self.get_local_tool_versions(&config).await?;
-            local_root = Some(root);
+        let mut project_root = None;
+        let tool_versions = if self.project {
+            let (root, tool_versions) = self.get_project_tool_versions(&config).await?;
+            project_root = Some(root);
             tool_versions
         } else if self.installed_tool.is_empty() && self.all {
             self.get_all_tool_versions(&config).await?
@@ -130,7 +127,7 @@ impl Uninstall {
                     || !present.contains(&(tv.ba().short.clone(), tv.version.clone()))
             })
             .collect::<Vec<_>>();
-        if !self.all && !self.local && tool_versions.len() > self.installed_tool.len() {
+        if !self.all && !self.project && tool_versions.len() > self.installed_tool.len() {
             let variants = tool_versions
                 .iter()
                 .filter_map(|(_, tv)| {
@@ -182,13 +179,13 @@ impl Uninstall {
             to_remove.push((plugin, tv));
         }
         let has_work = !to_remove.is_empty();
-        if let Some(root) = &local_root {
+        if let Some(root) = &project_root {
             if !has_work {
                 info!(
                     "no installed tools are requested by the config in {}",
                     display_path(root)
                 );
-            } else if !self.confirm_local(root, &to_remove)? {
+            } else if !self.confirm_project(root, &to_remove)? {
                 return Ok(());
             }
         }
@@ -262,54 +259,26 @@ impl Uninstall {
 
     /// The installed versions requested by the config files of the nearest
     /// project, and that project's directory.
-    ///
-    /// Requests come from those files alone. The merged tool request set already
-    /// has shell overrides such as `MISE_NODE_VERSION` applied, which would hide
-    /// the version the project's own config names.
-    async fn get_local_tool_versions(
+    async fn get_project_tool_versions(
         &self,
         config: &Arc<Config>,
     ) -> Result<(PathBuf, Vec<(Arc<dyn Backend>, ToolVersion)>)> {
-        let (root, files) = nearest_project_configs(config).ok_or_else(|| {
-            eyre!(
-                "no config file found in {} or a parent directory",
-                dirs::CWD.as_deref().map(display_path).unwrap_or_default()
-            )
-        })?;
-        let mut requested = Vec::new();
-        for cf in &files {
-            let set = cf.to_tool_request_set()?;
-            requested.extend(set.iter().flat_map(|(_, trs, _)| trs.iter().cloned()));
-        }
-        // Daemon tools are declared in the same files but loaded separately.
-        let mut daemon_tools = ToolRequestSet::new();
-        config.daemons()?.add_tool_requests(&mut daemon_tools)?;
-        let paths = files.iter().map(|cf| cf.get_path()).collect::<HashSet<_>>();
-        requested.extend(
-            daemon_tools
-                .iter()
-                .flat_map(|(_, trs, _)| trs.iter())
-                .filter(|tr| config_file_of(tr.source()).is_some_and(|path| paths.contains(path)))
-                .cloned(),
+        let (root, requested) = nearest_project_tool_requests(config)?;
+        // A path or system request names a directory or program mise did not
+        // install, and uninstalling one would delete it.
+        let requests = tool_request_set(
+            requested
+                .into_iter()
+                .filter(|tr| !matches!(tr, ToolRequest::Path { .. } | ToolRequest::System { .. })),
         );
-        let mut requests = ToolRequestSet::new();
-        for tr in requested {
-            // A path or system request names a directory or program mise did not
-            // install, and uninstalling one would delete it.
-            if matches!(tr, ToolRequest::Path { .. } | ToolRequest::System { .. }) {
-                continue;
-            }
-            let source = tr.source().clone();
-            requests.add_version(tr, &source);
-        }
         let mut ts = Toolset::from(requests);
         ts.resolve(config).await?;
         Ok((root, ts.list_current_installed_versions(config)))
     }
 
-    /// Say what `--local` selected and, unless this is a dry run, ask before
+    /// Say what `--project` selected and, unless this is a dry run, ask before
     /// anything is removed. Returns whether to go ahead.
-    fn confirm_local(
+    fn confirm_project(
         &self,
         root: &PathBuf,
         to_remove: &[(Arc<dyn Backend>, ToolVersion)],
@@ -330,7 +299,7 @@ impl Uninstall {
             Confirmation::Yes => Ok(true),
             Confirmation::No | Confirmation::Unanswered => Ok(false),
             Confirmation::Unavailable => bail!(
-                "mise uninstall --local requires confirmation but there was nobody to ask; pass --yes to uninstall non-interactively"
+                "mise uninstall --project requires confirmation but there was nobody to ask; pass --yes to uninstall non-interactively"
             ),
         }
     }
@@ -413,47 +382,5 @@ impl Uninstall {
             tool_versions.extend(tvs);
         }
         Ok(tool_versions)
-    }
-}
-
-/// The config files of the nearest directory, from the working directory up,
-/// that has any. Only that directory's configs are "local": a parent's config is
-/// another project's, or the monorepo's, and is none of this command's business.
-///
-/// A directory's configs are the ones discovery finds in it, which includes
-/// `.mise/config.toml` and `conf.d` folder fragments whose own config root is a
-/// folder below the project, plus any file such as `.tool-versions` or an
-/// idiomatic version file that sits in it.
-fn nearest_project_configs(config: &Config) -> Option<(PathBuf, Vec<Arc<dyn ConfigFile>>)> {
-    let cwd = dirs::CWD.as_ref()?;
-    cwd.ancestors()
-        .filter(|dir| *dir != *dirs::HOME)
-        .find_map(|dir| {
-            let discovered = config::config_files_in_dir(dir);
-            let files = config
-                .config_files
-                .iter()
-                .filter(|(path, _)| {
-                    !config::is_global_config(path)
-                        && (discovered.contains(path.as_path()) || path.parent() == Some(dir))
-                })
-                .map(|(_, cf)| cf.clone())
-                .collect_vec();
-            (!files.is_empty()).then(|| (dir.to_path_buf(), files))
-        })
-}
-
-/// The file a tool request came from, when it came from a project's config
-/// rather than a flag, an environment variable or a tool stub.
-fn config_file_of(source: &ToolSource) -> Option<&std::path::Path> {
-    match source {
-        ToolSource::MiseToml(path)
-        | ToolSource::MiseTomlDaemon(path)
-        | ToolSource::IdiomaticVersionFile(path)
-        | ToolSource::ToolVersions(path) => Some(path),
-        ToolSource::ToolStub(_)
-        | ToolSource::Argument
-        | ToolSource::Environment(..)
-        | ToolSource::Unknown => None,
     }
 }

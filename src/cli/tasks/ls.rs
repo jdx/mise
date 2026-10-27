@@ -34,16 +34,22 @@ use serde_json::json;
 )]
 pub(crate) struct TasksLs {
     /// Only show global tasks
-    #[usage(short, long, overrides = "local", verbatim_doc_comment)]
+    #[usage(short, long, overrides = ["local", "no_global"], verbatim_doc_comment)]
     pub global: bool,
 
     /// Output in JSON format
     #[usage(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
-    /// Only show non-global tasks
-    #[usage(short, long, overrides = "global", verbatim_doc_comment)]
+    /// Deprecated alias for --no-global
+    ///
+    /// Removed in mise 2027.10.0.
+    #[usage(short, long, overrides = ["global", "no_global"], verbatim_doc_comment)]
     pub local: bool,
+
+    /// Only show non-global tasks
+    #[usage(long, overrides = ["global", "local"], verbatim_doc_comment)]
+    pub no_global: bool,
 
     /// Show all columns
     #[usage(short = 'x', long, verbatim_doc_comment)]
@@ -102,9 +108,10 @@ pub(crate) enum SortOrder {
 
 impl TasksLs {
     pub(super) fn merge(mut self, later: Self) -> Result<Self> {
-        if later.global || later.local {
+        if later.global || later.local || later.no_global {
             self.global = later.global;
             self.local = later.local;
+            self.no_global = later.no_global;
         }
         self.json |= later.json;
         self.extended |= later.extended;
@@ -129,6 +136,7 @@ impl TasksLs {
     pub(super) fn has_non_json_options(&self) -> bool {
         self.global
             || self.local
+            || self.no_global
             || self.extended
             || self.all
             || self.complete
@@ -142,6 +150,15 @@ impl TasksLs {
 
     pub(super) async fn run(self) -> Result<()> {
         use crate::task::TaskLoadContext;
+
+        if self.local {
+            crate::deprecated_at!(
+                "2026.10.0",
+                "2027.10.0",
+                "cli.tasks-ls.local",
+                "`mise tasks ls --local` is deprecated. Use `mise tasks ls --no-global` instead."
+            );
+        }
 
         let config = Config::get().await?;
 
@@ -158,7 +175,7 @@ impl TasksLs {
         let tasks = all_tasks
             .values()
             .filter(|t| self.hidden || !t.hide)
-            .filter(|t| !self.local || !t.global)
+            .filter(|t| !(self.local || self.no_global) || !t.global)
             .filter(|t| !self.global || t.global)
             .cloned()
             .sorted_by(|a, b| self.sort(a, b))

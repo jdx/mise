@@ -46,7 +46,10 @@ Pass `--prune` to remove it now or `--no-prune` to keep it.
 - **`--global`** — Only upgrade tools defined in the global config
 
   Upgrades the requests in the global and system config (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool. It runs as if from outside any project, so project config, lockfiles, and `[env]` are neither read nor changed. Tools that update themselves, such as coding agents, run this instead of their own updater; see <https://mise.jdx.dev/dev-tools/self-updating-tools.html>
-- **`--local`** — Only upgrade tools defined in project config files
+- **`--local`** — Deprecated alias for --no-global
+
+  Removed in mise 2027.10.0.
+- **`--no-global`** — Only upgrade tools defined in project config files
 
   Skips tools defined in the global config (~/.config/mise/config.toml) and tools set through `MISE_<TOOL>_VERSION` environment variables.
 - **`--minimum-release-age <MINIMUM_RELEASE_AGE>`** — Only upgrade to versions released before this date or older than this duration

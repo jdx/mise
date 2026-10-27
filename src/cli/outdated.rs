@@ -42,7 +42,7 @@ node  20         20.0.0   24    24.1.0  ~/src/app/mise.toml"###,
   }
 }"###,
         help = "Print the same information as JSON"),
-    example(r###"mise outdated --local"###,
+    example(r###"mise outdated --no-global"###,
         help = "Skip tools that only the global config requests"),
     example(r###"mise outdated --global claude --json"###,
         help = "Check the global config's request for claude, even inside a project that sets its own"))]
@@ -73,7 +73,7 @@ pub(crate) struct Outdated {
     /// Also check installed tools that the current config does not request
     ///
     /// By default, `mise outdated` checks only tools that come from the current config.
-    #[usage(long, conflicts = "local")]
+    #[usage(long, conflicts = ["local", "no_global"])]
     pub inactive: bool,
 
     /// Only check tools defined in the global config
@@ -82,15 +82,21 @@ pub(crate) struct Outdated {
     /// (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project
     /// config or a `MISE_<TOOL>_VERSION` environment variable sets its own
     /// version of the tool: what `mise upgrade --global` would install.
-    #[usage(long, conflicts = ["local", "inactive"])]
+    #[usage(long, conflicts = ["local", "no_global", "inactive"])]
     pub global: bool,
+
+    /// Deprecated alias for --no-global
+    ///
+    /// Removed in mise 2027.10.0.
+    #[usage(long, conflicts = ["global", "no_global"])]
+    pub local: bool,
 
     /// Only check tools defined in project config files
     ///
     /// Skips tools defined in the global config (~/.config/mise/config.toml) and
     /// tools set through `MISE_<TOOL>_VERSION` environment variables.
-    #[usage(long)]
-    pub local: bool,
+    #[usage(long, conflicts = ["global", "local"])]
+    pub no_global: bool,
 
     /// Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet.
     #[usage(long, hide = true, verbatim_doc_comment)]
@@ -103,6 +109,14 @@ pub(crate) struct Outdated {
 
 impl Outdated {
     pub(crate) async fn run(mut self) -> Result<()> {
+        if self.local {
+            deprecated_at!(
+                "2026.10.0",
+                "2027.10.0",
+                "cli.outdated.local",
+                "`mise outdated --local` is deprecated. Use `mise outdated --no-global` instead."
+            );
+        }
         if self.legacy_bump {
             deprecated_at!(
                 "2026.8.5",
@@ -121,7 +135,7 @@ impl Outdated {
         let config = Config::get().await?;
         let scope = if self.global {
             ConfigScope::GlobalOnly
-        } else if self.local {
+        } else if self.local || self.no_global {
             ConfigScope::LocalOnly
         } else {
             ConfigScope::All
