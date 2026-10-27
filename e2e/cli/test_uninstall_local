@@ -27,6 +27,15 @@ assert_contains_text "$out" "dummy@2.0.0 is requested by"
 assert_not_contains_text "$out" "dummy@1.0.0"
 assert_not_contains_text "$out" "dummy@1.1.0"
 
+# every file in the directory counts, even when a later one overrides the tool
+mkdir -p parent/layered
+printf '[tools]\ndummy = "1.0.0"\n' >parent/layered/mise.toml
+printf '[tools]\ndummy = "2.0.0"\n' >parent/layered/mise.local.toml
+out="$(cd parent/layered && mise uninstall --local --dry-run 2>&1)"
+assert_contains_text "$out" "dummy@1.0.0 is requested by"
+assert_contains_text "$out" "dummy@2.0.0 is requested by"
+assert_not_contains_text "$out" "dummy@1.1.0"
+
 # a path request names a directory mise did not install, so it is never removed
 assert_contains "cd parent/pathed && mise uninstall --local --yes 2>&1" "no installed tools are requested"
 assert_succeed "test -f parent/pathed/ext/keep"
