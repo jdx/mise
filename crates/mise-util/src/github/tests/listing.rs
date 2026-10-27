@@ -526,3 +526,57 @@ fn test_tag_commit_url_encodes_reserved_characters() {
         "https://api.github.com/repos/o/r/commits/release/v1%23x%3F%25"
     );
 }
+// be5invis/Iosevka: each release carries ~450 assets, and api.github.com times
+// out on a list of 100 of them while serving a smaller page of the same list.
+#[tokio::test]
+async fn test_list_releases_asks_for_fewer_after_a_server_error() {
+    let mut server = mockito::Server::new_async().await;
+    let base = server.url();
+    let repo = "owner/huge-releases";
+    let path = format!("/repos/{repo}/releases");
+
+    let too_big = server
+        .mock("GET", path.as_str())
+        .match_query(mockito::Matcher::UrlEncoded(
+            "per_page".into(),
+            "100".into(),
+        ))
+        .with_status(504)
+        .expect_at_least(1)
+        .create_async()
+        .await;
+    let smaller = server
+        .mock("GET", path.as_str())
+        .match_query(mockito::Matcher::UrlEncoded("per_page".into(), "30".into()))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(serde_json::to_string(&vec![make_release("v1.0.0")]).unwrap())
+        .expect(1)
+        .create_async()
+        .await;
+
+    let releases = list_releases_(&base, repo, false).await.unwrap();
+    too_big.assert_async().await;
+    smaller.assert_async().await;
+    assert_eq!(releases.len(), 1);
+    assert_eq!(releases[0].tag_name, "v1.0.0");
+}
+
+// A 4xx is the answer, not a reason to ask again with a smaller page.
+#[tokio::test]
+async fn test_list_releases_does_not_shrink_the_page_on_a_client_error() {
+    let mut server = mockito::Server::new_async().await;
+    let base = server.url();
+    let repo = "owner/missing-releases";
+
+    let missing = server
+        .mock("GET", format!("/repos/{repo}/releases").as_str())
+        .match_query(mockito::Matcher::Any)
+        .with_status(404)
+        .expect(1)
+        .create_async()
+        .await;
+
+    assert!(list_releases_(&base, repo, false).await.is_err());
+    missing.assert_async().await;
+}
