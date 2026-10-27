@@ -37,11 +37,16 @@ struct Row {
 }
 
 impl VarsLs {
-    /// `--json` and `--json-extended` are also accepted before the subcommand
+    /// The output flags are also accepted before the subcommand
     /// (`mise vars --json ls`), so the parent's flags count here too.
-    pub(super) async fn run(self, parent_json: bool, parent_json_extended: bool) -> Result<()> {
+    pub(super) async fn run(
+        self,
+        parent_no_header: bool,
+        parent_json: bool,
+        parent_json_extended: bool,
+    ) -> Result<()> {
         list(
-            self.no_header,
+            self.no_header || parent_no_header,
             self.json || parent_json,
             self.json_extended || parent_json_extended,
         )
@@ -50,6 +55,9 @@ impl VarsLs {
 }
 
 pub(super) async fn list(no_header: bool, json: bool, json_extended: bool) -> Result<()> {
+    if json && json_extended {
+        bail!("--json cannot be combined with --json-extended");
+    }
     if no_header && (json || json_extended) {
         bail!("--no-header cannot be combined with --json or --json-extended");
     }
@@ -79,7 +87,7 @@ pub(super) async fn list(no_header: bool, json: bool, json_extended: bool) -> Re
             .into_iter()
             .map(|(name, value, source)| {
                 let value = if json_extended {
-                    serde_json::json!({ "value": value, "source": source })
+                    serde_json::json!({ "value": value, "source": source.to_string_lossy() })
                 } else {
                     value.into()
                 };

@@ -60,7 +60,7 @@ enum Commands {
 impl Vars {
     pub(crate) async fn run(self) -> Result<()> {
         match self.command {
-            Some(Commands::Ls(cmd)) => cmd.run(self.json, self.json_extended).await,
+            Some(Commands::Ls(cmd)) => cmd.run(self.no_header, self.json, self.json_extended).await,
             Some(Commands::Prompt(cmd)) => cmd.run().await,
             Some(Commands::Unset(cmd)) => cmd.run(),
             None if self.args.is_empty() => {

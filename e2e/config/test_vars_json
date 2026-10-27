@@ -19,3 +19,7 @@ assert "mise vars --json-extended ls | jq -r .greeting.source" "$PWD/mise.toml"
 
 # Named reads print a bare value, so JSON flags are rejected rather than ignored
 assert_fail_contains "mise vars --json greeting" "cannot be used with NAME"
+
+# Flags given before the subcommand still conflict with the ones after it
+assert_fail_contains "mise vars --no-header ls --json" "--no-header cannot be combined"
+assert_fail_contains "mise vars --json ls --json-extended" "--json cannot be combined"
