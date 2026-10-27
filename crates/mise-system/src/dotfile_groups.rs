@@ -349,6 +349,7 @@ fn expand_group(
             variants: None,
             enabled: None,
             remove_empty: None,
+            create_if_missing: None,
             dot_prefix: (group.dot_prefix && walks).then_some(true),
             relative: group.relative,
             group: Some(name.to_string()),

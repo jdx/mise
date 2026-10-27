@@ -765,6 +765,7 @@ impl PlannedAdd {
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            create_if_missing: false,
             dot_prefix: false,
             relative: system::files::relative_symlinks(self.mode, None),
             group: None,

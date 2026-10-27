@@ -71,6 +71,9 @@ pub struct DotfileTableDecl {
     /// template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force
     #[serde(default)]
     pub remove_empty: bool,
+    /// copy and template modes, or inline content: write the target only when nothing exists there yet, leaving an existing file's content and permissions alone; a target that was deleted is created again on the next apply. Not for directory sources
+    #[serde(default)]
+    pub create_if_missing: bool,
     /// symlink-each and directory copy only: deploy each source path component named "dot-<name>" as ".<name>", like GNU Stow's --dotfiles; exclude still matches source names
     #[serde(default)]
     pub dot_prefix: bool,
@@ -205,6 +208,9 @@ pub struct DotfileGroupEntryTableDecl {
     /// template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force
     #[serde(default)]
     pub remove_empty: bool,
+    /// copy and template modes, or inline content: write the target only when nothing exists there yet, leaving an existing file's content and permissions alone; a target that was deleted is created again on the next apply. Not for directory sources
+    #[serde(default)]
+    pub create_if_missing: bool,
     /// symlink-each and directory copy only: deploy each source path component named "dot-<name>" as ".<name>", like GNU Stow's --dotfiles; exclude still matches source names
     #[serde(default)]
     pub dot_prefix: bool,

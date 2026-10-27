@@ -479,7 +479,7 @@ config directory can themselves be symlinks; mise maps them to the matching
 directories on each machine.
 
 A tracking entry cannot contain `source`, `content`, `manifest`,
-`permissions`, `remove_empty`, `relative`, `dot_prefix`, or variant `target`
+`permissions`, `remove_empty`, `create_if_missing`, `relative`, `dot_prefix`, or variant `target`
 overrides; see the [modes and keys table](/dotfiles/reference.html#modes-and-keys).
 `mise dot paths` reports such an entry as invalid and leaves it out of
 history, and `mise dot track` exits non-zero if the entry it writes is not

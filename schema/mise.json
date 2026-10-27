@@ -7111,6 +7111,11 @@
                 "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force",
                 "default": false
               },
+              "create_if_missing": {
+                "type": "boolean",
+                "description": "copy and template modes, or inline content: write the target only when nothing exists there yet, leaving an existing file's content and permissions alone; a target that was deleted is created again on the next apply. Not for directory sources",
+                "default": false
+              },
               "dot_prefix": {
                 "type": "boolean",
                 "description": "symlink-each and directory copy only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names",
@@ -7246,6 +7251,7 @@
                     "variants": false,
                     "enabled": false,
                     "remove_empty": false,
+                    "create_if_missing": false,
                     "relative": false,
                     "dot_prefix": false,
                     "group": false,
@@ -7333,6 +7339,7 @@
                     "manifest": false,
                     "permissions": false,
                     "remove_empty": false,
+                    "create_if_missing": false,
                     "dot_prefix": {
                       "const": false
                     },
@@ -7517,6 +7524,39 @@
                     }
                   }
                 ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "create_if_missing": {
+                        "const": false
+                      }
+                    }
+                  },
+                  {
+                    "properties": {
+                      "mode": {
+                        "enum": ["copy", "template"]
+                      },
+                      "block": false,
+                      "line": false,
+                      "template": false,
+                      "comment": false
+                    },
+                    "anyOf": [
+                      {
+                        "required": ["source"]
+                      },
+                      {
+                        "required": ["content"]
+                      },
+                      {
+                        "required": ["mode"]
+                      }
+                    ]
+                  }
+                ]
               }
             ],
             "anyOf": [
@@ -7661,6 +7701,11 @@
                       "description": "template mode only: remove the target when the template renders empty or whitespace-only; a target that changed since mise last wrote it needs --force",
                       "default": false
                     },
+                    "create_if_missing": {
+                      "type": "boolean",
+                      "description": "copy and template modes, or inline content: write the target only when nothing exists there yet, leaving an existing file's content and permissions alone; a target that was deleted is created again on the next apply. Not for directory sources",
+                      "default": false
+                    },
                     "dot_prefix": {
                       "type": "boolean",
                       "description": "symlink-each and directory copy only: deploy each source path component named \"dot-<name>\" as \".<name>\", like GNU Stow's --dotfiles; exclude still matches source names",
@@ -7748,6 +7793,7 @@
                           "variants": false,
                           "enabled": false,
                           "remove_empty": false,
+                          "create_if_missing": false,
                           "relative": false,
                           "dot_prefix": false,
                           "group": false,
@@ -7835,6 +7881,7 @@
                           "manifest": false,
                           "permissions": false,
                           "remove_empty": false,
+                          "create_if_missing": false,
                           "dot_prefix": {
                             "const": false
                           },
@@ -8017,6 +8064,39 @@
                           "properties": {
                             "allow_plaintext": false
                           }
+                        }
+                      ]
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "create_if_missing": {
+                              "const": false
+                            }
+                          }
+                        },
+                        {
+                          "properties": {
+                            "mode": {
+                              "enum": ["copy", "template"]
+                            },
+                            "block": false,
+                            "line": false,
+                            "template": false,
+                            "comment": false
+                          },
+                          "anyOf": [
+                            {
+                              "required": ["source"]
+                            },
+                            {
+                              "required": ["content"]
+                            },
+                            {
+                              "required": ["mode"]
+                            }
+                          ]
                         }
                       ]
                     }

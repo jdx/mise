@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# create_if_missing = true writes a copy, template, or inline content target
+# only while nothing is there: an existing file keeps its content and its
+# permissions, and a deleted one is created again.
+require_cmd git
+
+target="$HOME/.config/mise/conf.d/private.local.toml"
+mkdir -p templates
+cat <<'EOF' >templates/private.toml
+[env]
+MISE_GITHUB_TOKEN = "your_github_token"
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/mise/conf.d/private.local.toml" = { source = "templates/private.toml", mode = "copy", permissions = "0600", create_if_missing = true }
+EOF
+
+# nothing there yet: the source is copied with the declared permissions
+assert_contains "mise dot status" "missing"
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $target" "your_github_token"
+assert "stat -c %a $target" "600"
+assert_contains "mise dot status --verbose" "applied"
+
+# the user fills in the token and loosens the mode: neither is drift
+sed -i 's/your_github_token/ghp_secret/' "$target"
+chmod 644 "$target"
+assert_contains "mise dot status --verbose" "applied"
+assert_not_contains "mise dot diff" "ghp_secret"
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $target" "ghp_secret"
+assert "stat -c %a $target" "644"
+
+# a changed source does not reach the existing file either
+echo '# new' >>templates/private.toml
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $target" "ghp_secret"
+assert_not_contains "cat $target" "# new"
+
+# deleting the target creates it again from the source
+rm "$target"
+assert_contains "mise dot status" "missing"
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $target" "your_github_token"
+assert "stat -c %a $target" "600"
+
+# a symlink, even a dangling one, counts as existing and is left alone
+rm "$target"
+ln -s "$HOME/elsewhere" "$target"
+assert_contains "mise dot status --verbose" "applied"
+assert_succeed "mise dot apply --yes"
+assert_succeed "test -L $target"
+assert_fail "test -e $HOME/elsewhere"
+rm "$target"
+
+# a directory at the target is still a conflict
+mkdir "$target"
+assert_fail "mise dot apply --yes" "refusing to overwrite existing files"
+rmdir "$target"
+
+# a template is not rendered while its target exists, so exec() never runs
+cat <<'EOF' >templates/token.tera
+token = "{{ exec(command='touch rendered-marker') }}"
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.token" = { source = "templates/token.tera", mode = "template", create_if_missing = true }
+EOF
+echo 'token = "mine"' >"$HOME/.token"
+assert_succeed "mise dot apply --yes"
+assert_succeed "mise dot diff"
+assert_contains "mise dot status --verbose" "applied"
+assert_contains "cat $HOME/.token" "mine"
+assert_fail "test -e rendered-marker"
+rm "$HOME/.token"
+assert_succeed "mise dot apply --yes"
+assert_succeed "test -f rendered-marker"
+assert_succeed "test -f $HOME/.token"
+
+# inline content is seeded the same way
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.seed" = { content = "seed = true\n", permissions = "0600", create_if_missing = true }
+EOF
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/.seed" "seed = true"
+assert "stat -c %a $HOME/.seed" "600"
+echo "mine" >"$HOME/.seed"
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/.seed" "mine"
+# mise did not write what is there now, so unapply keeps it without --force
+assert_fail "mise dot unapply ~/.seed --yes"
+assert "cat $HOME/.seed" "mine"
+assert_succeed "mise dot unapply ~/.seed --yes --force"
+assert_fail "test -e $HOME/.seed"
+
+# a dotfile group entry takes it too
+mkdir -p ~/.dotfiles/home
+echo 'from group' >~/.dotfiles/home/seed.conf
+cat <<'EOF' >mise.toml
+[dotfile_groups.home]
+root = "home"
+target = "~/groupdir"
+mode = "copy"
+
+[dotfile_groups.home.entries]
+"~/groupdir/seed.conf" = { mode = "copy", create_if_missing = true }
+EOF
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $HOME/groupdir/seed.conf" "from group"
+echo 'edited' >"$HOME/groupdir/seed.conf"
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/groupdir/seed.conf" "edited"
+
+# create_if_missing needs a copy or template entry, or inline content
+for entry in \
+  '{ source = "templates/private.toml", mode = "symlink", create_if_missing = true }' \
+  '{ source = "templates", mode = "symlink-each", create_if_missing = true }' \
+  '{ mode = "absent", create_if_missing = true }' \
+  '{ permissions = "0600", create_if_missing = true }'; do
+  printf '[dotfiles]\n"~/.bad" = %s\n' "$entry" >mise.toml
+  assert_contains "mise dot status 2>&1" "create_if_missing"
+  assert_succeed "mise dot apply --yes"
+  assert_fail "test -e $HOME/.bad"
+done
+
+# a directory source cannot be seeded
+mkdir -p templates/dir
+echo x >templates/dir/a
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.dir" = { source = "templates/dir", mode = "copy", create_if_missing = true }
+EOF
+assert_fail "mise dot apply --yes" "create_if_missing requires a file source"

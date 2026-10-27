@@ -92,6 +92,33 @@ them to the source first with `mise dot add`; see
 [Adopt files and capture edits](#capturing-changes).
 :::
 
+## Create a file only if it is missing {#create-if-missing}
+
+`copy`, `template`, and inline `content` entries overwrite the target on every
+apply. To seed a file that you then edit on the machine, such as a template for
+local API tokens, set `create_if_missing = true`:
+
+```toml
+[dotfiles]
+"~/.config/mise/conf.d/private.local.toml" = { source = "templates/private.toml", mode = "copy", permissions = "0600", create_if_missing = true }
+```
+
+- If nothing exists at the target, apply writes it and sets `permissions`.
+- If anything but a directory exists there, including a symlink, apply leaves it
+  as it is, content and permissions included. `status` reports it as applied and
+  `diff` shows nothing, so edits you make are never drift.
+- If you delete the target, the next apply creates it again.
+
+A template is not rendered while its target exists. A directory at the target is
+still a [conflict](#conflicts). `create_if_missing` takes a file source, so it
+cannot be combined with a directory source, `symlink`, `symlink-each`,
+`absent`, `track`, or a permissions-only entry.
+
+Because mise did not write what you have since edited, `mise dot unapply`
+leaves the file in place unless you pass `--force`; see [Unapply](#unapplying).
+If the target lives in a repository, ignore it there so a token you add is not
+committed.
+
 ## Templates {#templates}
 
 A `template` entry renders its source with mise's
@@ -200,7 +227,7 @@ sets others:
 ```
 
 `content` takes the place of `source` and `mode`. It can be combined with
-`permissions`, but not with `source`, `mode`, `exclude`, `manifest`,
+`permissions` and [`create_if_missing`](#create-if-missing), but not with `source`, `mode`, `exclude`, `manifest`,
 `encrypt = true`, `remove_empty`, `dot_prefix`, `relative = true`, target
 `variants`, the track-only keys `include` and `allow_plaintext`, or the edit
 options `block`, `line`, `template`, and `comment`. The
@@ -277,8 +304,8 @@ when an earlier entry wrote this target: once the file is gone and the
 directory is empty, it goes too, as [for templates](#remove-empty).
 
 An `absent` entry takes no `source`, `content`, `exclude`, `manifest`,
-`permissions`, `encrypt = true`, `remove_empty`, `relative = true`,
-`dot_prefix`, or block and line edit keys; mise warns and ignores an entry
+`permissions`, `encrypt = true`, `remove_empty`, `create_if_missing`,
+`relative = true`, `dot_prefix`, or block and line edit keys; mise warns and ignores an entry
 that sets one. No other entry can place a file beneath an `absent` target, and
 an edit entry cannot change the file it removes. The target names exactly one
 path, so it cannot contain `*`, `?`, or `[`. To remove a file whose name

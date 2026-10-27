@@ -323,6 +323,7 @@ export const values: Record<string, string> = {
   "dotfiles.<target>.include": '["init.lua", "lua/**"]',
   "dotfiles.<target>.manifest": '"git"',
   "dotfiles.<target>.remove_empty": "true",
+  "dotfiles.<target>.create_if_missing": "true",
   "dotfiles.<target>.dot_prefix": "true",
   "dotfiles.<target>.relative": "true",
   "dotfiles.<target>.permissions": '"0600"',
