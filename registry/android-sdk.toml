@@ -1,5 +1,6 @@
 backends = ["vfox:jdx/vfox-android-sdk"]
 bins = [
+  "android",
   "apkanalyzer",
   "avdmanager",
   "d8",
@@ -12,5 +13,5 @@ bins = [
   "sdkmanager",
 ]
 description = "Android Command-line tools"
-test = { cmd = "sdkmanager --version", expected = "Android CLI", tools = ["java"] }
+test = { cmd = "android --version", expected = "1.", tools = ["java"] }
 version_order = "source"
