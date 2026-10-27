@@ -384,7 +384,8 @@ fails and prints the command to run yourself. If `sudo` is not installed, mise
 falls back to `run0` (systemd 256+) and then `doas`; if none is installed, it
 asks you to run the command as root. Set
 [`system_packages.elevate_with`](/configuration/settings.html#system_packages.elevate_with)
-to pin one, such as `run0`.
+to pin one, such as `run0`, or to an empty string to run commands as your user
+without any elevator, as on Termux.
 
 Set [`system_packages.sudo`](/configuration/settings.html#system_packages.sudo)
 to `false` to forbid elevation. Commands that need root then fail and print the

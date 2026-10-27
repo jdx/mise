@@ -3849,7 +3849,12 @@ with `doas -n` or `run0 --no-ask-password` so it fails instead of prompting;
 any other command is used only in an interactive terminal. A `doas` rule that
 restricts commands must also allow `env`, which mise uses to pass variables
 such as `DEBIAN_FRONTEND` to apt. [`system_packages.sudo`](#system_packages.sudo) still turns
-elevation off entirely. See
+elevation off entirely.
+
+Set it to an empty string to never elevate: mise runs package manager commands
+as your user, with no `sudo`, `run0` or `doas` in front. Use this where there is
+no root to get, such as Termux or a rootless container, and the package manager
+works without it. Unset still picks an elevator from `PATH`. See
 [Root privileges and sudo](/bootstrap/packages/#sudo).
 """
 env = "MISE_SYSTEM_PACKAGES_ELEVATE_WITH"
