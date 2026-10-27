@@ -755,10 +755,10 @@ backend = "npm:markdownlint-cli"
 specifiers = ["latest"]
 
 [[tools.oxfmt]]
-version = "0.73.0"
-aube = { path = ".mise/locks/oxfmt/0.73.0", digest = "sha256:e42eeebedd060ec6393c40caa35362b541991453b9aab2de3d33d41a0c245a62" }
+version = "0.74.0"
+aube = { path = ".mise/locks/oxfmt/0.74.0", digest = "sha256:b7977a181c0e11736ab44f83b24a4b862754204c253477e29d1758b0f898aad7" }
 backend = "npm:oxfmt"
-specifiers = ["0.73.0"]
+specifiers = ["0.74.0"]
 
 [[tools.shellcheck]]
 version = "0.11.0"
