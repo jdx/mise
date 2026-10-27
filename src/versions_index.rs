@@ -974,4 +974,40 @@ mod tests {
             Some("20.20.2".into())
         );
     }
+
+    /// 1.26.9 is six days old, so a 30-day cutoff answers 1.26.8, until a
+    /// `tool@version` entry exempts 1.26.9.
+    #[test]
+    fn test_release_age_exempt_version_resolves_from_the_index() {
+        use confique::Layer;
+        let _settings = crate::test::SettingsGuard::lock();
+        let index = index();
+        let backend = ListBackend {
+            ba: Arc::new("test-versions-index-exempt".into()),
+            list: vec![],
+            matcher: Matcher::Shared,
+        };
+        let opts = ToolVersionOptions::default();
+        let before = Some(generated_at() - SignedDuration::from_hours(24 * 30));
+        let resolve = || {
+            resolve_in_versions_index(
+                &backend,
+                index.tool("go").unwrap(),
+                "1.26",
+                IndexPick::Request,
+                &opts,
+                before,
+            )
+        };
+
+        let without = resolve();
+        let mut partial = crate::config::settings::SettingsPartial::empty();
+        partial.minimum_release_age_excludes =
+            Some(vec!["test-versions-index-exempt@1.26.9".to_string()]);
+        Settings::reset(Some(partial));
+        let with = resolve();
+        Settings::reset(None);
+        assert_eq!(without.as_deref(), Some("1.26.8"));
+        assert_eq!(with.as_deref(), Some("1.26.9"));
+    }
 }

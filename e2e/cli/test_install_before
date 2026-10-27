@@ -209,6 +209,7 @@ minimum_release_age = "2019-01-01"
 jq = "latest"
 EOF2
 assert "mise latest jq" "1.6"
+assert_not_contains "mise ls-remote jq 2>/dev/null" "1.7.1"
 cat <<EOF2 >mise.toml
 [settings]
 minimum_release_age = "2019-01-01"
@@ -219,6 +220,8 @@ jq = "latest"
 EOF2
 assert "mise latest jq" "1.7.1"
 assert "mise latest jq@1" "1.7.1"
+assert_contains "mise ls-remote jq 2>/dev/null" "1.7.1"
+assert_not_contains "mise ls-remote jq 2>/dev/null" "1.8"
 # Unlike a tool-level entry, a version entry also lifts an explicit cutoff.
 assert "mise latest jq --minimum-release-age 2019-01-01" "1.7.1"
 mise install
