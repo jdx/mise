@@ -628,17 +628,30 @@ async fn test_list_releases_fails_when_the_smallest_page_size_fails() {
     let mut server = mockito::Server::new_async().await;
     let base = server.url();
     let repo = "owner/huge-releases-all-fail";
+    let path = format!("/repos/{repo}/releases");
 
-    let failing = server
-        .mock("GET", format!("/repos/{repo}/releases").as_str())
-        .match_query(mockito::Matcher::Any)
-        .with_status(504)
-        .expect_at_least(3)
-        .create_async()
-        .await;
+    // One mock per size: the client retries a 504 at the same URL, so a
+    // catch-all could be satisfied without the smaller sizes ever being asked.
+    let mut failing = Vec::new();
+    for per_page in ["100", "30", "10"] {
+        failing.push(
+            server
+                .mock("GET", path.as_str())
+                .match_query(mockito::Matcher::UrlEncoded(
+                    "per_page".into(),
+                    per_page.into(),
+                ))
+                .with_status(504)
+                .expect_at_least(1)
+                .create_async()
+                .await,
+        );
+    }
 
     let err = list_releases_(&base, repo, false).await.unwrap_err();
-    failing.assert_async().await;
+    for mock in &failing {
+        mock.assert_async().await;
+    }
     assert!(is_server_error(&err), "got {err:#}");
 }
 
