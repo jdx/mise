@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::env;
 use crate::shell::{EXAMPLE_SHELL, require_shell};
 use crate::toolset::{
-    InstallOptions, ToolSource, ToolsetBuilder, tool_env_var_name, tool_env_vars,
+    InstallOptions, ToolSource, ToolsetBuilder, tool_env_var_name, tool_from_env_var_name,
 };
 
 /// Set a tool version for the current shell session
@@ -81,8 +81,14 @@ impl Shell {
 
         if self.unset {
             if self.all {
-                for (_, key, _) in tool_env_vars() {
-                    miseprint!("{}", shell.unset_env(&key))?;
+                // Match on the name alone: `tool_env_vars()` also drops variables whose
+                // value is not valid UTF-8, which would leave them set.
+                for (key, _) in env::vars_os() {
+                    let Some(key) = key.to_str().filter(|k| tool_from_env_var_name(k).is_some())
+                    else {
+                        continue;
+                    };
+                    miseprint!("{}", shell.unset_env(key))?;
                 }
                 return Ok(());
             }
