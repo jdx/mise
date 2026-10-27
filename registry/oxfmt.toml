@@ -1,4 +1,4 @@
-backends = ["npm:oxfmt"]
+backends = ["npm:oxfmt", "aqua:oxc-project/oxc/oxfmt"]
 bins = ["oxfmt"]
 description = "This is the formatter for oxc."
 test = { cmd = "oxfmt --version", expected = "Version: {{version}}" }
