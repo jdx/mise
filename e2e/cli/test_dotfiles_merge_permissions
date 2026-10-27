@@ -63,6 +63,17 @@ assert_fail "test -e $HOME/.config/two/settings.json"
 assert_fail_contains "mise dot apply --yes ~/.config/two/settings.json/one" "declare different permissions"
 assert_fail "test -e $HOME/.config/two/settings.json"
 
+# an unselected pair that disagrees does not block an unrelated entry
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/two/settings.json/one" = { source = "templates/shared.json", merge = true, permissions = "0600" }
+"~/.config/two/settings.json/two" = { source = "templates/extra.json", merge = true, permissions = "0644" }
+"~/.config/other/settings.json/shared" = { source = "templates/shared.json", merge = true, permissions = "0600" }
+EOF
+assert_succeed "mise dot apply --yes ~/.config/other/settings.json/shared"
+assert "stat -c %a $HOME/.config/other/settings.json" "600"
+assert_fail "test -e $HOME/.config/two/settings.json"
+
 # a read-only mode is set after every merge for the file has written it
 cat <<'EOF' >mise.toml
 [dotfiles]

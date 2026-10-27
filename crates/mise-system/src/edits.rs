@@ -1349,30 +1349,40 @@ pub fn apply(
         .map(|(req, _)| *req)
         .chain(siblings.iter())
         .collect::<Vec<_>>();
-    // files this run created with a mode, which they get once every merge
-    // for them is done: a read-only mode would stop the next merge writing
-    let mut created: Vec<(PathBuf, u32)> = vec![];
+    // files this run created owner-only that still wait for their mode: a
+    // file gets it with the last merge that writes it, since a read-only mode
+    // would stop the next merge, and inside that merge's journal entry, so
+    // recovery sees the state it recorded
+    let mut waiting: Vec<(PathBuf, u32)> = vec![];
     let applied = (|| -> Result<()> {
-        for (req, desired) in &todo {
+        for (i, (req, desired)) in todo.iter().enumerate() {
             let pending =
                 journal::begin_changes_with(opts.part, &req.path_raw, edit_paths(&req.path))?;
             let mode = creation_mode(&candidates, &req.path);
             if apply_one(req, desired.as_deref(), mode, written)?
                 && let Some(mode) = mode
             {
-                created.push((req.path.clone(), mode));
+                waiting.push((req.path.clone(), mode));
+            }
+            let last = !todo[i + 1..]
+                .iter()
+                .any(|(later, _)| same_target(&later.path, &req.path));
+            if last
+                && let Some(at) = waiting
+                    .iter()
+                    .position(|(path, _)| same_target(path, &req.path))
+            {
+                let (path, mode) = waiting.remove(at);
+                set_created_mode(&path, mode)?;
             }
             journal::commit_changes(pending);
         }
         Ok(())
     })();
-    // also after a failure, so a file left behind is not stuck owner-only
-    #[cfg(unix)]
-    for (path, mode) in &created {
-        crate::files::set_mode(path, *mode)?;
+    // after a failure, a file left behind is not stuck owner-only
+    for (path, mode) in &waiting {
+        set_created_mode(path, *mode)?;
     }
-    #[cfg(not(unix))]
-    let _ = created;
     applied?;
     let applied = todo
         .iter()
@@ -1890,6 +1900,15 @@ fn apply_one(
     Ok(!existed && create_mode.is_some())
 }
 
+/// Give a file this run created its declared `mode` (Unix only).
+fn set_created_mode(path: &Path, mode: u32) -> Result<()> {
+    #[cfg(unix)]
+    crate::files::set_mode(path, mode)?;
+    #[cfg(not(unix))]
+    let _ = (path, mode);
+    Ok(())
+}
+
 /// Create `path`, which must not exist, readable and writable by its owner
 /// only, and write `text` to it.
 #[cfg(unix)]
@@ -1921,19 +1940,24 @@ fn creation_mode(candidates: &[&EditRequest], path: &Path) -> Option<u32> {
 fn permission_conflicts(requests: &[EditRequest], siblings: &[EditRequest]) -> Vec<String> {
     let declared = requests
         .iter()
-        .chain(siblings)
-        .filter_map(|req| match &req.op {
+        .map(|req| (req, true))
+        .chain(siblings.iter().map(|req| (req, false)))
+        .filter_map(|(req, selected)| match &req.op {
             EditOp::Merge {
                 permissions: Some(mode),
                 ..
-            } => Some((req, *mode)),
+            } => Some((req, *mode, selected)),
             _ => None,
         })
         .collect::<Vec<_>>();
     let mut problems: Vec<String> = vec![];
-    for (i, (first, a)) in declared.iter().enumerate() {
-        for (second, b) in &declared[i + 1..] {
-            if a != b && same_target(&first.path, &second.path) {
+    for (i, (first, a, first_selected)) in declared.iter().enumerate() {
+        for (second, b, second_selected) in &declared[i + 1..] {
+            // an entry this run does not select only matters next to one it does
+            if (*first_selected || *second_selected)
+                && a != b
+                && same_target(&first.path, &second.path)
+            {
                 let problem = format!(
                     "  \"{}\": {} and {} declare different permissions ({a:04o} and {b:04o})",
                     first.path_raw,
