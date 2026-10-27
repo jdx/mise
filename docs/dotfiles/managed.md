@@ -115,6 +115,10 @@ directory at the target is still a [conflict](#conflicts). `create_if_missing`
 takes a file source, so it cannot be combined with a directory source,
 `symlink`, `symlink-each`, `absent`, `track`, or a permissions-only entry.
 
+If an application rewrites the file and you only own some of its keys, a
+[`merge`](/dotfiles/edits.html#merge) entry fits better: it sets the keys you
+ship and leaves the rest alone.
+
 Because mise did not write what you have since edited, `mise dot unapply`
 leaves the file in place unless you pass `--force`; see [Unapply](#unapplying).
 If the target lives in a repository, ignore it there so a token you add is not

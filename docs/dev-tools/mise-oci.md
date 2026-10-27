@@ -261,6 +261,8 @@ Dotfiles are written as files in the image:
 - Tracked files and permissions-only entries are left out.
 - A `create_if_missing` entry is always written, since the build starts from no
   machine state; it does not check whether the base image already has the file.
+  The exception is a `remove_empty` template that renders empty, which adds a
+  whiteout as above and writes nothing.
 
 `mise oci build` fails if an included config sets `[bootstrap.macos.*]`
 defaults; keep them in a config the build does not read, such as your global

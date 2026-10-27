@@ -2653,8 +2653,9 @@ fn keeps_existing(req: &FileRequest) -> bool {
 /// group. A `create_if_missing` entry claims its target only in the apply
 /// that wrote it: a file it left alone may hold what the user typed, or
 /// never have been mise's, and a prune must not remove it without `--force`.
-fn records_group_ownership(todo: &[(&FileRequest, Option<String>)], req: &FileRequest) -> bool {
-    !req.create_if_missing || todo.iter().any(|(written, _)| std::ptr::eq(*written, req))
+/// `seeded` holds the entries whose target `apply_one` actually wrote.
+fn records_group_ownership(seeded: &[&FileRequest], req: &FileRequest) -> bool {
+    !req.create_if_missing || seeded.iter().any(|written| std::ptr::eq(*written, req))
 }
 
 /// [`check`] with template output already rendered, so callers that go on to
@@ -4622,7 +4623,7 @@ pub fn execute_apply(
             crate::dotfile_groups::record_applied(
                 plan.requests
                     .iter()
-                    .filter(|req| records_group_ownership(&plan.todo, req)),
+                    .filter(|req| records_group_ownership(&[], req)),
             );
         }
         info!("files: all files are applied");
@@ -4705,6 +4706,7 @@ pub fn execute_apply(
     }
     let mut removals = vec![];
     let mut done = vec![];
+    let mut seeded: Vec<&FileRequest> = vec![];
     // the request being applied, and where its writes start in `written`
     let mut current = None;
     let applied = (|| -> Result<()> {
@@ -4716,7 +4718,13 @@ pub fn execute_apply(
             }
             let pending =
                 journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
+            let start = written.len();
             apply_one(req, rendered.as_deref(), written)?;
+            // a target that appeared since planning is left alone and not
+            // written, so it is not this group's to prune
+            if req.create_if_missing && written[start..].contains(&req.target) {
+                seeded.push(*req);
+            }
             if apply_removes_target(req, rendered.as_deref()) {
                 removals.push(*req);
             }
@@ -4744,7 +4752,7 @@ pub fn execute_apply(
         crate::dotfile_groups::record_applied(plan.requests.iter().filter(|req| {
             (done.iter().any(|d| std::ptr::eq(*d, *req))
                 || !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, *req)))
-                && records_group_ownership(&plan.todo, req)
+                && records_group_ownership(&seeded, req)
         }));
         // the entry that failed may have written some of its files, such
         // as part of a copied tree; those, and only those, are recorded
@@ -4772,7 +4780,7 @@ pub fn execute_apply(
     crate::dotfile_groups::record_applied(
         plan.requests
             .iter()
-            .filter(|req| records_group_ownership(&plan.todo, req)),
+            .filter(|req| records_group_ownership(&seeded, req)),
     );
     let applied = plan
         .todo
