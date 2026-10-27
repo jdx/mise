@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<'TOML'
+[vars]
+greeting = "hello"
+secret = { value = "hunter2", redact = true }
+TOML
+
+assert "mise vars --json | jq -r .greeting" "hello"
+assert "mise vars ls --json | jq -r .greeting" "hello"
+assert "mise vars -J | jq -r .secret" "[redacted]"
+assert "mise vars --json-extended | jq -r .greeting.value" "hello"
+assert_contains "mise vars --json-extended | jq -r .greeting.source" "mise.toml"
+assert_fail "mise vars --json --no-header"
