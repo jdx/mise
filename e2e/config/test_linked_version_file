@@ -46,6 +46,14 @@ assert "mise ls --current --json | jq -r '.node[0].requested_version'" "20.0.0"
 assert_contains "mise ls --current node" "~/workdir/.node-version"
 rm .nvmrc
 
+# A target that is disabled is not read under its own name, so the skipped link
+# still warns.
+ln -s .node-version .nvmrc
+export MISE_IDIOMATIC_VERSION_FILE_DISABLE_FILES=node:.node-version
+assert_contains "mise ls 2>&1" "not reading ~/workdir/.nvmrc"
+unset MISE_IDIOMATIC_VERSION_FILE_DISABLE_FILES
+rm .nvmrc
+
 # A link to any other sibling is still skipped with the warning, and its text
 # is never read as a version.
 echo "NODE_AUTH_TOKEN=s3cr3t" >.env

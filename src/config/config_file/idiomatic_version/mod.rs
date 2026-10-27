@@ -5,7 +5,7 @@ use eyre::{Result, eyre};
 use crate::args::{BackendArg, BackendResolution};
 use crate::backend::BackendList;
 use crate::config::config_file::{ConfigFile, trust_check, version_requires_trust};
-use crate::config::is_global_config;
+use crate::config::{Settings, is_global_config};
 use crate::file;
 use crate::plugins;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
@@ -58,9 +58,25 @@ impl IdiomaticVersionFile {
         let mut tools = ToolRequestSet::new();
         file::ensure_config_file_size(&path)?;
         if super::diagnostic::links_to_another_name(&path) {
+            // Only filenames discovery still looks for: a disabled one is not read
+            // under its own name either.
+            let disable_files = &Settings::get().idiomatic_version_file_disable_files;
             let mut filenames = vec![];
             for plugin in &plugins {
-                filenames.extend(plugin.idiomatic_filenames().await.unwrap_or_default());
+                filenames.extend(
+                    plugin
+                        .idiomatic_filenames()
+                        .await
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|f| {
+                            !crate::config::idiomatic_version_file_disabled(
+                                disable_files,
+                                plugin.id(),
+                                f,
+                            )
+                        }),
+                );
             }
             super::diagnostic::warn_linked_version_file(&path, |target| {
                 !super::matching_idiomatic_filenames(target, filenames.iter().map(String::as_str))
