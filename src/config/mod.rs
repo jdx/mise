@@ -2949,7 +2949,7 @@ fn is_conf_d_file(p: &Path) -> bool {
 ///
 /// Only `conf.d` directories mise reads count: a project that merely lives at
 /// `nginx/conf.d/site/mise.toml` is an ordinary project.
-pub(crate) fn is_conf_d_folder_file(p: &Path) -> bool {
+pub fn is_conf_d_folder_file(p: &Path) -> bool {
     let is_mise_filename = p
         .file_name()
         .and_then(|name| name.to_str())
