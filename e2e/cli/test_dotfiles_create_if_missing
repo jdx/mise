@@ -44,6 +44,17 @@ assert_succeed "mise dot apply --yes"
 assert_contains "cat $target" "your_github_token"
 assert "stat -c %a $target" "600"
 
+# the source is not needed while the target exists
+mv templates/private.toml templates/private.toml.away
+assert_contains "mise dot status --verbose" "applied"
+assert_succeed "mise dot apply --yes"
+assert_succeed "mise dot diff"
+rm "$target"
+assert_fail "mise dot apply --yes" "sources do not exist"
+mv templates/private.toml.away templates/private.toml
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $target" "your_github_token"
+
 # a symlink, even a dangling one, counts as existing and is left alone
 rm "$target"
 ln -s "$HOME/elsewhere" "$target"

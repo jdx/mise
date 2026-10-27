@@ -2629,7 +2629,7 @@ pub fn check(config: &Config, req: &FileRequest, secrets: &SecretValues) -> Resu
     if req.mode == FileMode::Track {
         return Ok(FileState::Tracked);
     }
-    if req.mode.has_source() && !req.source.exists() {
+    if req.mode.has_source() && !req.source.exists() && !keeps_existing(req) {
         return Ok(FileState::SourceMissing);
     }
     // render at most once per call — templates may use exec()
@@ -4830,7 +4830,7 @@ pub fn plan_apply_with_active<'a>(
         }
         // report every problem in one pass instead of fix-and-retry — a
         // render or check failure on one entry must not hide the rest
-        if req.mode.has_source() && !req.source.exists() {
+        if req.mode.has_source() && !req.source.exists() && !keeps_existing(req) {
             missing_sources.push(format!(
                 "  [dotfiles].\"{}\": {}",
                 req.target_raw,
@@ -5965,7 +5965,7 @@ pub fn print_diffs(
         if req.mode == FileMode::Track {
             continue;
         }
-        if req.mode.has_source() && !req.source.exists() {
+        if req.mode.has_source() && !req.source.exists() && !keeps_existing(req) {
             miseprintln!("{}: source missing", req.target_raw);
             changed = true;
             continue;

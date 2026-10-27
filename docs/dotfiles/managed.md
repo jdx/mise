@@ -109,10 +109,11 @@ local API tokens, set `create_if_missing = true`:
   `diff` shows nothing, so edits you make are never drift.
 - If you delete the target, the next apply creates it again.
 
-A template is not rendered while its target exists. A directory at the target is
-still a [conflict](#conflicts). `create_if_missing` takes a file source, so it
-cannot be combined with a directory source, `symlink`, `symlink-each`,
-`absent`, `track`, or a permissions-only entry.
+The source is not read, and a template is not rendered, while its target
+exists, so deleting the source does not make `apply` or `status` fail. A
+directory at the target is still a [conflict](#conflicts). `create_if_missing`
+takes a file source, so it cannot be combined with a directory source,
+`symlink`, `symlink-each`, `absent`, `track`, or a permissions-only entry.
 
 Because mise did not write what you have since edited, `mise dot unapply`
 leaves the file in place unless you pass `--force`; see [Unapply](#unapplying).
