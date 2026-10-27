@@ -142,7 +142,7 @@ pub fn config_root(path: &Path) -> PathBuf {
 /// checkout of its own is a project of its own: it is not `<dir>`'s config, and
 /// trust in `<dir>` does not extend to it. A submodule belongs to the checkout
 /// that holds it, so a project's `.mise/` submodule stays part of the project.
-pub(crate) fn nested_checkout(path: &Path) -> Option<PathBuf> {
+pub fn nested_checkout(path: &Path) -> Option<PathBuf> {
     if is_global_config(path) {
         return None;
     }

@@ -74,6 +74,15 @@ out="$(cd parent/dotconfig/.config && mise uninstall --project --dry-run 2>&1)"
 assert_contains_text "$out" "dummy@1.0.0 is requested by"
 assert_contains_text "$out" "dummy@2.0.0 is requested by"
 
+# a git checkout of its own inside .config is a project of its own
+mkdir -p parent/nested/.config
+printf '[tools]\ndummy = "1.0.0"\n' >parent/nested/mise.toml
+printf '[tools]\ndummy = "2.0.0"\n' >parent/nested/.config/mise.toml
+git init -q parent/nested/.config
+out="$(cd parent/nested/.config && mise uninstall --project --dry-run 2>&1)"
+assert_contains_text "$out" "dummy@2.0.0 is requested by"
+assert_not_contains_text "$out" "dummy@1.0.0"
+
 # a path request names a directory mise did not install, so it is never removed
 assert_contains "cd parent/pathed && mise uninstall --project --yes 2>&1" "no installed tools are requested"
 assert_succeed "test -f parent/pathed/ext/keep"
