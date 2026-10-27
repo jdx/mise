@@ -20,7 +20,7 @@ use crate::yaml_merge::{mapping_subset, merge_yaml, root_mapping};
 use eyre::{Result, bail, eyre};
 use indexmap::IndexMap;
 use jsonc_parser::ParseOptions;
-use jsonc_parser::cst::{CstInputValue, CstObject, CstRootNode};
+use jsonc_parser::cst::{CstInputValue, CstObject, CstObjectProp, CstRootNode};
 use serde_json::value::RawValue;
 use serde_json::{Map, Value};
 use std::path::Path;
@@ -537,9 +537,19 @@ fn merge_jsonc(target: &str, source: &str) -> Result<String> {
     Ok(out)
 }
 
+/// The property a parser reads for `key`: with a repeated key the last one wins,
+/// as it does for [`contains`], which compares parsed values.
+fn effective_jsonc_prop(object: &CstObject, key: &str) -> Option<CstObjectProp> {
+    object
+        .properties()
+        .into_iter()
+        .rev()
+        .find(|prop| prop.decoded_name().as_deref() == Some(key))
+}
+
 fn merge_jsonc_object(target: &CstObject, source: Map<String, Value>) {
     for (key, value) in source {
-        let Some(prop) = target.get(&key) else {
+        let Some(prop) = effective_jsonc_prop(target, &key) else {
             target.append(&key, jsonc_input(value));
             continue;
         };
@@ -744,6 +754,15 @@ mod tests {
         assert_eq!(
             merge(Format::Jsonc, target, source).unwrap(),
             "{\n    // editor\n    \"editor.fontSize\": 16, // px\n    \"files.exclude\": {\n        \"a\": true, /* x */\n        \"b\": true,\n    },\n    \"keep\": [1, 2,],\n    \"new\": {\n        \"k\": [1],\n    },\n}\n"
+        );
+    }
+
+    #[test]
+    fn jsonc_repeated_target_key_merges_into_the_effective_value() {
+        let merged = merge(Format::Jsonc, r#"{"a": 1, "a": 2}"#, r#"{"a": 1}"#).unwrap();
+        assert!(
+            contains(Format::Jsonc, &merged, r#"{"a": 1}"#).unwrap(),
+            "{merged}"
         );
     }
 
