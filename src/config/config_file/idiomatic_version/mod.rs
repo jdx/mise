@@ -58,7 +58,14 @@ impl IdiomaticVersionFile {
         let mut tools = ToolRequestSet::new();
         file::ensure_config_file_size(&path)?;
         if super::diagnostic::links_to_another_name(&path) {
-            super::diagnostic::warn_linked_version_file(&path);
+            let mut filenames = vec![];
+            for plugin in &plugins {
+                filenames.extend(plugin.idiomatic_filenames().await.unwrap_or_default());
+            }
+            super::diagnostic::warn_linked_version_file(&path, |target| {
+                !super::matching_idiomatic_filenames(target, filenames.iter().map(String::as_str))
+                    .is_empty()
+            });
             return Ok(Self { tools, path });
         }
 

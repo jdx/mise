@@ -191,8 +191,29 @@ pub(crate) fn links_to_another_name(path: &Path) -> bool {
     target.as_deref().and_then(Path::file_name) != path.file_name()
 }
 
-/// The warning for a version file [`links_to_another_name`] skips.
-pub(crate) fn warn_linked_version_file(path: &Path) {
+/// Whether `path` links to a file beside it that `is_version_file` accepts, such
+/// as `.nvmrc` linked to the `.node-version` next to it. A link that stays in
+/// its own directory and ends at a version file leaves nothing to warn about:
+/// mise skips the link, as [`links_to_another_name`] decides, and reads that file
+/// under its own name.
+pub(crate) fn links_to_sibling_version_file(
+    path: &Path,
+    is_version_file: impl Fn(&Path) -> bool,
+) -> bool {
+    let dir = path.parent().and_then(|dir| dir.canonicalize().ok());
+    let target = path.canonicalize().ok();
+    match (dir, target) {
+        (Some(dir), Some(target)) => target.parent() == Some(&*dir) && is_version_file(&target),
+        _ => false,
+    }
+}
+
+/// The warning for a version file [`links_to_another_name`] skips, unless it
+/// only points at a version file beside it, see [`links_to_sibling_version_file`].
+pub(crate) fn warn_linked_version_file(path: &Path, is_version_file: impl Fn(&Path) -> bool) {
+    if links_to_sibling_version_file(path, is_version_file) {
+        return;
+    }
     warn_once!(
         "not reading {}: it is a symlink to a file of another name, and mise reads a linked version file only when the target has the same name",
         display_path(path)
@@ -383,5 +404,32 @@ mod tests {
         assert!(links_to_another_name(&project.join("ok")));
         assert!(!links_to_another_name(&project.join("sub/.tool-versions")));
         assert!(!links_to_another_name(&project.join(".node-version")));
+    }
+
+    #[test]
+    fn a_link_to_a_sibling_version_file_is_told_apart_from_other_links() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(project.join("sub")).unwrap();
+        std::fs::write(project.join(".node-version"), "22\n").unwrap();
+        std::fs::write(project.join(".env"), "NODE_AUTH_TOKEN=s3cr3t\n").unwrap();
+        std::fs::write(project.join("sub/.node-version"), "20\n").unwrap();
+        symlink(".node-version", project.join(".nvmrc")).unwrap();
+        symlink(".env", project.join(".nvmrc-env")).unwrap();
+        symlink("sub/.node-version", project.join(".nvmrc-sub")).unwrap();
+        let is_node_version = |p: &Path| p.ends_with(".node-version");
+
+        assert!(links_to_sibling_version_file(
+            &project.join(".nvmrc"),
+            is_node_version
+        ));
+        assert!(!links_to_sibling_version_file(
+            &project.join(".nvmrc-env"),
+            is_node_version
+        ));
+        assert!(!links_to_sibling_version_file(
+            &project.join(".nvmrc-sub"),
+            is_node_version
+        ));
     }
 }

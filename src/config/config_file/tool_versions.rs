@@ -59,7 +59,12 @@ impl ToolVersions {
     pub(crate) fn from_file(path: &Path) -> Result<Self> {
         trace!("parsing tool-versions: {}", path.display());
         if super::diagnostic::links_to_another_name(path) {
-            super::diagnostic::warn_linked_version_file(path);
+            super::diagnostic::warn_linked_version_file(path, |target| {
+                matches!(
+                    super::detect_config_file_type_by_filename(target),
+                    Some(super::ConfigFileType::ToolVersions)
+                )
+            });
             return Ok(Self {
                 unread: true,
                 ..Self::init(path)
