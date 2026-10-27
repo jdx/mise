@@ -3640,11 +3640,16 @@ pub trait Backend: Debug + Send + Sync {
     /// cutoff of minutes is not. It must also be fresh, and date every version
     /// in a form that parses: a backend that dates its listing dates new
     /// releases too, while a version without a usable date passes any cutoff.
+    /// A tool with a `tool@version` entry in `minimum_release_age_excludes`
+    /// never qualifies, as the cutoff does not hide its exempt release.
     async fn adopt_cached_remote_versions_for_cutoff(
         &self,
         config: &Arc<Config>,
         before: Timestamp,
     ) -> bool {
+        if !ReleaseAgeExemptions::for_tool(self.ba()).is_empty() {
+            return false;
+        }
         let Ok(cutoff_age) = std::time::Duration::try_from(Timestamp::now().duration_since(before))
         else {
             return false;
@@ -8406,6 +8411,17 @@ mod latest_version_tests {
                 .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
                 .await
         );
+        // The cutoff does not hide an exempt release published since the
+        // list was cached, so it cannot stand in for the refresh.
+        let mut partial = SettingsPartial::empty();
+        partial.minimum_release_age_excludes =
+            Some(vec!["test-adopt-cached-remote-versions@3.0.0".to_string()]);
+        Settings::reset(Some(partial));
+        let adopted_with_exemption = backend
+            .adopt_cached_remote_versions_for_cutoff(&config, day_ago)
+            .await;
+        Settings::reset(None);
+        assert!(!adopted_with_exemption);
         // A just-written list can still hold a snapshot too old for a short
         // cutoff.
         assert!(

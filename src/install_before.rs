@@ -335,7 +335,7 @@ impl ReleaseAgeExemptions {
         self.0.iter().any(|exempt| exempt == version)
     }
 
-    fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
