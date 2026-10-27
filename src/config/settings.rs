@@ -1959,6 +1959,7 @@ fn load() -> Result<Arc<Settings>> {
     }
     trace!("Settings: {:#?}", redacted_settings_for_debug(&settings));
     let settings = Arc::new(settings);
+    mise_tls::set_ipv4_only(settings.ipv4_only);
     // Replace the bootstrap snapshot published above; the loader's own result is not cached
     // once the cache has changed underneath it.
     mise_settings::store(settings.clone());

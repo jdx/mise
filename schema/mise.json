@@ -2395,6 +2395,11 @@
           "type": "string",
           "enum": ["legacy", "identity"]
         },
+        "ipv4_only": {
+          "default": false,
+          "description": "Connect to remote hosts over IPv4 only.",
+          "type": "boolean"
+        },
         "java": {
           "type": "object",
           "unevaluatedProperties": false,

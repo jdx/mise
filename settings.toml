@@ -1926,6 +1926,27 @@ env = "MISE_INSTALL_LAYOUT"
 optional = true
 type = "String"
 
+[ipv4_only]
+default = false
+description = "Connect to remote hosts over IPv4 only."
+docs = """
+Use it when a host answers wrongly over IPv6 while IPv4 works, for example
+`dl.google.com` returning `404 Not Found` for a Go download, or the Sigstore
+trust root failing to load during attestation verification. Without it mise
+follows the system resolver, which usually prefers IPv6 on a dual-stack machine.
+
+It applies to the connections mise makes with its own HTTP client: downloads,
+version lookups, GitHub API calls, attestation verification, vfox plugins and
+the GitHub relay. Programs mise runs, such as `git`, `npm` or a tool's
+installer, follow the system, and so does the package manager embedded in the
+`npm:` backend. For those, prefer IPv4 system-wide, for example with
+`precedence ::ffff:0:0/96 100` in `/etc/gai.conf`.
+
+A host with no IPv4 address cannot be reached while this is on.
+"""
+env = "MISE_IPV4_ONLY"
+type = "Bool"
+
 [java.shorthand_vendor]
 default = "temurin"
 description = "Vendor used for a Java version without a vendor prefix, such as `java@21`."
