@@ -21,6 +21,7 @@ pub(crate) fn entry_rules(schema: &mut Schema) {
         rule_7(),
         rule_8(),
         rule_9(),
+        rule_10(),
     ];
     schema.insert("allOf".into(), rules.into());
     // an encrypted entry is a whole file from a source, never inline content or an edit
@@ -255,6 +256,16 @@ fn rule_8() -> Value {
                 "required": ["allow_plaintext", "mode"]
             },
             {"properties": {"allow_plaintext": false}}
+        ]
+    })
+}
+
+/// `format` names the format of a merge, so it takes `merge`.
+fn rule_10() -> Value {
+    json!({
+        "anyOf": [
+            {"properties": {"format": false}},
+            {"required": ["merge"]}
         ]
     })
 }

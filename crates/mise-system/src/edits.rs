@@ -471,6 +471,9 @@ fn resolve_entry(
             origin,
         });
     }
+    if entry.format.is_some() {
+        bail!("\"{path_raw}\".{id}: format is only valid with merge, ignoring entry")
+    }
     let is_block = entry.block.is_some() || entry.source.is_some();
     let op = match (&is_block, &entry.line) {
         (true, Some(_)) => {
@@ -2264,6 +2267,11 @@ mod tests {
                 "~/a/settings.json",
                 "source = \"s\"\nmerge = true\nformat = \"ini\"",
                 "unknown format 'ini'",
+            ),
+            (
+                "~/a/settings.json",
+                "block = \"x\"\nformat = \"jsonc\"",
+                "format is only valid with merge",
             ),
         ] {
             let err = resolve(path, entry).unwrap_err().to_string();

@@ -7581,6 +7581,18 @@
                     ]
                   }
                 ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "format": false
+                    }
+                  },
+                  {
+                    "required": ["merge"]
+                  }
+                ]
               }
             ],
             "anyOf": [
@@ -8133,6 +8145,18 @@
                               "required": ["mode"]
                             }
                           ]
+                        }
+                      ]
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "properties": {
+                            "format": false
+                          }
+                        },
+                        {
+                          "required": ["merge"]
                         }
                       ]
                     }

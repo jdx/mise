@@ -58,3 +58,12 @@ cat <<'EOF' >mise.toml
 "~/x.cfg/shared" = { source = "shared/vscode.json", merge = true, format = "ini" }
 EOF
 assert_contains "mise dotfiles status 2>&1" "unknown format 'ini'"
+
+# format names the format of a merge; without merge the entry is refused
+# rather than linked over the file it meant to merge into
+# schema: invalid
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/Code/User/settings.json/shared" = { source = "shared/vscode.json", format = "jsonc" }
+EOF
+assert_contains "mise dotfiles status 2>&1" "format is only valid with merge"
