@@ -12,3 +12,10 @@ assert "mise vars -J | jq -r .secret" "[redacted]"
 assert "mise vars --json-extended | jq -r .greeting.value" "hello"
 assert_contains "mise vars --json-extended | jq -r .greeting.source" "mise.toml"
 assert_fail "mise vars --json --no-header"
+
+# JSON keeps the full source path, and works before the subcommand
+assert "mise vars --json ls | jq -r .greeting" "hello"
+assert "mise vars --json-extended ls | jq -r .greeting.source" "$PWD/mise.toml"
+
+# Named reads print a bare value, so JSON flags are rejected rather than ignored
+assert_fail_contains "mise vars --json greeting" "cannot be used with NAME"

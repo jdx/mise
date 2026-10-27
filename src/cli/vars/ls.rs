@@ -1,4 +1,4 @@
-use eyre::Result;
+use eyre::{Result, bail};
 use tabled::Tabled;
 
 use crate::config::Config;
@@ -37,48 +37,66 @@ struct Row {
 }
 
 impl VarsLs {
-    pub(super) async fn run(self) -> Result<()> {
-        list(self.no_header, self.json, self.json_extended).await
+    /// `--json` and `--json-extended` are also accepted before the subcommand
+    /// (`mise vars --json ls`), so the parent's flags count here too.
+    pub(super) async fn run(self, parent_json: bool, parent_json_extended: bool) -> Result<()> {
+        list(
+            self.no_header,
+            self.json || parent_json,
+            self.json_extended || parent_json_extended,
+        )
+        .await
     }
 }
 
 pub(super) async fn list(no_header: bool, json: bool, json_extended: bool) -> Result<()> {
+    if no_header && (json || json_extended) {
+        bail!("--no-header cannot be combined with --json or --json-extended");
+    }
     // A `required` var that is not set yet should not hide the others.
     prompt::tolerate_missing();
     let config = Config::get().await?;
-    let rows = config
+    let vars = config
         .vars_results_cached()
         .map(|results| {
             results
                 .vars
                 .iter()
-                .map(|(name, (value, source))| Row {
-                    name: name.clone(),
-                    value: if results.redactions.contains(name) {
+                .map(|(name, (value, source))| {
+                    let value = if results.redactions.contains(name) {
                         "[redacted]".to_string()
                     } else {
                         value.clone()
-                    },
-                    source: display_path(source),
+                    };
+                    (name.clone(), value, source.clone())
                 })
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
     if json || json_extended {
-        let map: serde_json::Map<String, serde_json::Value> = rows
+        // JSON keeps the full source path; only the table abbreviates the home directory.
+        let map: serde_json::Map<String, serde_json::Value> = vars
             .into_iter()
-            .map(|row| {
+            .map(|(name, value, source)| {
                 let value = if json_extended {
-                    serde_json::json!({ "value": row.value, "source": row.source })
+                    serde_json::json!({ "value": value, "source": source })
                 } else {
-                    row.value.into()
+                    value.into()
                 };
-                (row.name, value)
+                (name, value)
             })
             .collect();
         miseprintln!("{}", serde_json::to_string_pretty(&map)?);
         return Ok(());
     }
+    let rows = vars
+        .into_iter()
+        .map(|(name, value, source)| Row {
+            name,
+            value,
+            source: display_path(source),
+        })
+        .collect::<Vec<_>>();
     let mut table = tabled::Table::new(rows);
     table::print(&mut table, no_header)?;
     Ok(())

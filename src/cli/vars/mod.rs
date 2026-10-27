@@ -60,13 +60,16 @@ enum Commands {
 impl Vars {
     pub(crate) async fn run(self) -> Result<()> {
         match self.command {
-            Some(Commands::Ls(cmd)) => cmd.run().await,
+            Some(Commands::Ls(cmd)) => cmd.run(self.json, self.json_extended).await,
             Some(Commands::Prompt(cmd)) => cmd.run().await,
             Some(Commands::Unset(cmd)) => cmd.run(),
             None if self.args.is_empty() => {
                 ls::list(self.no_header, self.json, self.json_extended).await
             }
             None => {
+                if self.json || self.json_extended {
+                    bail!("--json and --json-extended list every var and cannot be used with NAME");
+                }
                 // Validate everything first so a typo doesn't save half the list.
                 let mut sets = Vec::new();
                 let mut gets = Vec::new();
