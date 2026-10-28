@@ -79,7 +79,8 @@ printf 'real c:%s\n' "$*"
 EOF
 cat >"$fake_bin/wrap-c" <<'EOF'
 #!/usr/bin/env bash
-eval "$(mise hook-env -s bash --force)"
+hook_env="$(mise hook-env -s bash --force)" || exit $?
+eval "$hook_env" || exit $?
 printf 'wrapper c active:%s\n' "$__MISE_ACTIVE_WRAPPERS"
 exec c "$@"
 EOF
