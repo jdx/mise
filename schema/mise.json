@@ -158,6 +158,10 @@
                   }
                 }
               ]
+            },
+            "description": {
+              "type": "string",
+              "description": "what `mise bootstrap` prints instead of the command; `--verbose` and `--dry-run` print the command"
             }
           },
           "additionalProperties": true,
