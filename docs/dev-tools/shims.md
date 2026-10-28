@@ -545,3 +545,10 @@ from `PATH`, so `mbx` finds the real Cargo: mise-managed Rust when configured,
 otherwise rustup or the system installation. For mise-managed Rust, the
 [Rust guide](/lang/rust.html#share-cargo-builds-with-mr-boxington) sets this up
 with the `mr_boxington` tool option and the `mr-boxington` tool.
+
+The stripped `PATH` is what the wrapped command and everything it starts
+inherit, so wrappers apply only to the command you run. If a wrapped command
+runs another wrapped command, such as `pnpm` running `node` when both are
+wrapped, the second wrapper is skipped and the real tool runs. Wrappers swap
+one command for another. To run a guard script around a tool, put your own
+directory of scripts on `PATH` instead, for example with `_.path` in `[env]`.
