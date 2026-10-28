@@ -26,8 +26,9 @@ use crate::ui::table::MiseTable;
 ///
 /// Lists the tools mise knows about: versions that are installed, and versions
 /// requested by a config file (active) whether or not they are installed. Each row
-/// shows the tool, the version (marked `(missing)` when it is not installed), the
-/// config file that requests it, and the request as written.
+/// shows the tool, the version (marked `(missing)` when it is not installed, or
+/// `(lazy)` when it is a lazy tool that installs on first use), the config file
+/// that requests it, and the request as written.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     after_long_help = AFTER_LONG_HELP,
@@ -675,6 +676,10 @@ impl Row {
             VersionStatus::Missing(version) => Cell::new(annotate(format!("{version} (missing)")))
                 .fg(Color::Red)
                 .add_attribute(Attribute::CrossedOut),
+            // Not installed, but nothing is wrong: it installs the first time it runs.
+            VersionStatus::Lazy(version) => {
+                Cell::new(annotate(format!("{version} (lazy)"))).add_attribute(Attribute::Dim)
+            }
             VersionStatus::Symlink(version, active) => {
                 let mut cell = Cell::new(annotate(format!("{version} (symlink)")));
                 if !*active {
@@ -797,7 +802,7 @@ async fn json_tool_version_from(
         // keeping the `incomplete` marker for one.
         installed: !matches!(
             vs,
-            VersionStatus::Missing(_) | VersionStatus::BrokenSymlink(_)
+            VersionStatus::Missing(_) | VersionStatus::Lazy(_) | VersionStatus::BrokenSymlink(_)
         ),
         active: match &vs {
             VersionStatus::Active(_, _) => true,
@@ -842,6 +847,10 @@ enum VersionStatus {
     Active(String, bool),
     Inactive(String),
     Missing(String),
+    /// A lazy tool's version that is not installed yet. Unlike `Missing`, that is
+    /// expected: it installs the first time one of its commands runs, through the
+    /// shims its declaration provides.
+    Lazy(String),
     Symlink(String, bool),
     /// A link that is still on disk but no longer resolves — a `mise link` whose target moved or
     /// was deleted. Distinct from `Missing`, which is a version that was never there: this one
@@ -881,7 +890,13 @@ async fn resolve_version_status(
             VersionStatus::BrokenSymlink(tv.display_version().to_string())
         }
     } else if !p.is_version_installed(config, tv, true) {
-        VersionStatus::Missing(tv.display_version().to_string())
+        // A lazy declaration safe mode refuses, or with no command left to shim,
+        // does not install on first use, so it is just missing.
+        if tv.request.installs_on_first_use() {
+            VersionStatus::Lazy(tv.display_version().to_string())
+        } else {
+            VersionStatus::Missing(tv.display_version().to_string())
+        }
     } else {
         let category = env::install_path_category(&install_path);
         if category != env::InstallPathCategory::Local {

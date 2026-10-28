@@ -428,6 +428,13 @@ impl ToolRequest {
         )
     }
 
+    /// Whether running one of this lazy request's commands installs it: the
+    /// declaration provides commands, and `shims.exclude` leaves at least one of
+    /// them a bootstrap shim.
+    pub fn installs_on_first_use(&self) -> bool {
+        matches!(self.lazy_bins(), Ok(Some(bins)) if crate::shims::lazy_bins_keep_a_shim(&bins))
+    }
+
     /// Whether the registry options this request carries were supplied by a
     /// backend other than `recorded`, which a lock entry names. A request that
     /// carries none has nothing to differ.

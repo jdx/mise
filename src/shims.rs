@@ -1915,6 +1915,25 @@ fn shim_name_key(name: &str) -> String {
     }
 }
 
+/// Whether `shims.exclude` leaves a bootstrap shim for at least one of a lazy tool's
+/// `bins`. Matched on the names the shims are written under, as `ensure_lazy_shims`
+/// does: on Windows those can differ from the command names.
+pub(crate) fn lazy_bins_keep_a_shim(bins: &[String]) -> bool {
+    let excluded = &Settings::get().shims.exclude;
+    if excluded.is_empty() {
+        return !bins.is_empty();
+    }
+    // Locating the mise binary walks PATH; only Windows reads it, for its shim mode.
+    let mise_bin = if cfg!(windows) {
+        mise_bin_for_shims()
+    } else {
+        PathBuf::new()
+    };
+    bins.iter()
+        .flat_map(|bin| platform_shim_names(&mise_bin, bin))
+        .any(|name| !shim_name_excluded(excluded, &name))
+}
+
 /// Whether `shims.exclude` covers this shim name.
 pub(crate) fn shim_name_excluded(excluded: &BTreeSet<String>, name: &str) -> bool {
     let key = shim_name_key(name);
