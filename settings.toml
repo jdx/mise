@@ -4588,7 +4588,13 @@ that path for good, such as a virtualenv built from a mise-managed interpreter;
 the old version then stays without a scheduled removal.
 
 Versions still used by another tracked config, a tool stub or a running process
-are kept, and may be removed up to a day after that use ends.
+are kept, and may be removed up to a day after that use ends. A process runs
+from a version when its executable, or an absolute path in its command line, is
+inside that version's directory. When the path goes through a link such as
+`installs/<tool>/latest` that an upgrade has moved since the process started,
+the process's executable tells which version it runs; when only a script path
+goes through the link, every version of that tool counts as running until the
+process exits.
 `mise upgrade --prune` removes the replaced version at once, and `--no-prune`
 keeps it without scheduling removal. See
 [`upgrade.prune_after`](#upgrade.prune_after).

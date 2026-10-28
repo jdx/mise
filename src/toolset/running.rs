@@ -38,6 +38,8 @@ impl Display for RunningProcess {
 /// A command-line path can go through one of the tool's runtime links, such as
 /// `installs/node/latest`, which an upgrade retargets while the process keeps
 /// running. A link that has not changed since the process started is followed.
+/// A path that names the process's own executable, such as the program path a
+/// launcher found on PATH, gets its version from where the executable is.
 /// Otherwise the version the process started from is unknown, so every one of
 /// `tvs` for that tool counts as running until the process exits.
 ///
@@ -119,12 +121,41 @@ struct Install<'a> {
     // resolved paths as well as the ones mise uses.
     roots: Vec<PathBuf>,
     links_dirs: Vec<PathBuf>,
+    /// Every version directory of the tool, resolved, read on first use.
+    version_roots: OnceCell<Vec<PathBuf>>,
 }
 
 impl Install<'_> {
     fn contains(&self, path: &Path) -> bool {
         let path = comparable(path);
         self.roots.iter().any(|root| path.starts_with(root))
+    }
+
+    /// Whether `exe` is the file at `rest` inside one of the tool's version
+    /// directories. A process started through `<link>/<rest>` then runs the
+    /// version the link named when it started, whatever the link names now.
+    fn is_version_file(&self, exe: &Path, rest: &Path) -> bool {
+        let exe = comparable(exe);
+        let depth = rest.components().count();
+        if depth == 0 || !exe.ends_with(rest) {
+            return false;
+        }
+        let Some(root) = exe.ancestors().nth(depth) else {
+            return false;
+        };
+        let root = comparable(root);
+        self.version_roots
+            .get_or_init(|| {
+                self.links_dirs
+                    .iter()
+                    .filter_map(|dir| std::fs::read_dir(dir).ok())
+                    .flatten()
+                    .flatten()
+                    .filter_map(|entry| entry.path().canonicalize().ok())
+                    .map(|path| comparable(&path))
+                    .collect()
+            })
+            .contains(&root)
     }
 }
 
@@ -144,6 +175,7 @@ pub(super) fn scan(candidates: &[Candidate]) -> BTreeMap<PathBuf, Vec<RunningPro
             candidate,
             roots: with_resolved(&candidate.path),
             links_dirs: with_resolved(&candidate.links_dir),
+            version_roots: OnceCell::new(),
         })
         .collect::<Vec<_>>();
     let mut found: BTreeMap<PathBuf, Vec<RunningProcess>> = BTreeMap::new();
@@ -199,7 +231,11 @@ fn runs_from(
                 }
                 // The link changed after the process started through it, or
                 // cannot be followed, so it may have named this version then.
-                Followed::Link { .. } | Followed::Broken => true,
+                // Unless the path is the process's own executable: that
+                // lies in the version the link named, which is not this one.
+                Followed::Link { .. } | Followed::Broken => {
+                    !exe.is_some_and(|exe| install.is_version_file(exe, &rest))
+                }
             }
         })
     })
@@ -464,6 +500,57 @@ mod tests {
 
         let found = scan(&[candidate(&old)]);
         assert_eq!(pids(&found, &old), vec![child.0.id()]);
+    }
+
+    #[test]
+    fn an_executable_started_through_a_retargeted_link_keeps_only_its_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tool = tmp.path().join("installs/tool");
+        let old = tool.join("1.0.0");
+        let new = tool.join("2.0.0");
+        let older = tool.join("0.9.0");
+        install_with_sleep(&old);
+        install_with_sleep(&new);
+        install_with_sleep(&older);
+        let latest = tool.join("latest");
+        std::os::unix::fs::symlink("./1.0.0", &latest).unwrap();
+        link_written_at(&latest, SystemTime::now() - Duration::from_secs(3600));
+        // A launcher that finds the tool on PATH runs it by a path through the
+        // link, which becomes the command line's first argument.
+        let child = spawn(Command::new(latest.join("bin/sleep")).arg("30"));
+
+        std::fs::remove_file(&latest).unwrap();
+        std::os::unix::fs::symlink("./2.0.0", &latest).unwrap();
+
+        let found = scan(&[candidate(&old), candidate(&new), candidate(&older)]);
+        assert_eq!(pids(&found, &old), vec![child.0.id()]);
+        assert!(!found.contains_key(&new));
+        assert!(!found.contains_key(&older));
+    }
+
+    #[test]
+    fn an_identity_layout_executable_keeps_only_its_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path().join("installs");
+        let tool = installs.join("tool");
+        std::fs::create_dir_all(&tool).unwrap();
+        // Each version is a link to the directory named by its identity.
+        for (version, dir) in [("1.0.0", "tool-aaaa"), ("2.0.0", "tool-bbbb")] {
+            install_with_sleep(&installs.join(dir));
+            std::os::unix::fs::symlink(format!("../{dir}"), tool.join(version)).unwrap();
+        }
+        let latest = tool.join("latest");
+        std::os::unix::fs::symlink("./1.0.0", &latest).unwrap();
+        link_written_at(&latest, SystemTime::now() - Duration::from_secs(3600));
+        let child = spawn(Command::new(latest.join("bin/sleep")).arg("30"));
+
+        std::fs::remove_file(&latest).unwrap();
+        std::os::unix::fs::symlink("./2.0.0", &latest).unwrap();
+
+        let (old, new) = (tool.join("1.0.0"), tool.join("2.0.0"));
+        let found = scan(&[candidate(&old), candidate(&new)]);
+        assert_eq!(pids(&found, &old), vec![child.0.id()]);
+        assert!(!found.contains_key(&new));
     }
 }
 
