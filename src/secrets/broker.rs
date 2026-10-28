@@ -59,10 +59,10 @@ pub(crate) enum Pending {
 }
 
 impl Pending {
-    fn selection(&self) -> KeySelection {
+    fn selection(&self, catalog: &Catalog) -> KeySelection {
         match self {
             Self::Keys(keys) => KeySelection::Keys(keys.iter().cloned().collect()),
-            Self::All => KeySelection::AllInScope,
+            Self::All => all_selection(catalog),
         }
     }
 
@@ -73,6 +73,26 @@ impl Pending {
             Self::All => "all secrets".to_string(),
         }
     }
+}
+
+/// `--secrets-all` as a source request. The user's own keys are never handed out, so when the
+/// catalog has any, the project's keys are asked for by name: a signed-out provider behind a
+/// personal key then cannot fail the run, or prompt for it. A dynamic lease's keys are only
+/// known once it runs, so with one in the catalog everything is asked for, and the personal
+/// keys are dropped from the answer.
+fn all_selection(catalog: &Catalog) -> KeySelection {
+    if !catalog.dynamic_leases.is_empty() || !catalog.entries.values().any(|e| e.personal.is_some())
+    {
+        return KeySelection::AllInScope;
+    }
+    KeySelection::Keys(
+        catalog
+            .entries
+            .iter()
+            .filter(|(_, e)| e.injectable && e.personal.is_none())
+            .map(|(key, _)| key.clone())
+            .collect(),
+    )
 }
 
 /// The terminal lock for an interactive fnox call.
@@ -219,11 +239,14 @@ impl MemoValues {
         interactive: bool,
         subject: &str,
     ) -> Result<()> {
-        let selection = what.selection();
-        let result = memo
-            .source
-            .resolve(&SourceCx { interactive }, &selection, catalog)
-            .await;
+        let selection = what.selection(catalog);
+        let result = if selection.names().is_some_and(BTreeSet::is_empty) {
+            Ok(Resolved::default())
+        } else {
+            memo.source
+                .resolve(&SourceCx { interactive }, &selection, catalog)
+                .await
+        };
         self.apply(result, memo, catalog, what, interactive, subject)
     }
 
@@ -238,7 +261,18 @@ impl MemoValues {
         what: &Pending,
         subject: &str,
     ) -> Result<bool> {
-        let selection = what.selection();
+        let selection = what.selection(catalog);
+        if selection.names().is_some_and(BTreeSet::is_empty) {
+            self.apply(
+                Ok(Resolved::default()),
+                memo,
+                catalog,
+                what.clone(),
+                true,
+                subject,
+            )?;
+            return Ok(true);
+        }
         let result = match memo
             .source
             .resolve_cached(&SourceCx { interactive: true }, &selection, catalog)
@@ -1214,6 +1248,8 @@ mod tests {
         file_keys: BTreeSet<String>,
         /// catalog keys that resolve without error but are left out of the document
         omit: BTreeSet<String>,
+        /// catalog keys from the user's own config
+        personal: BTreeSet<String>,
     }
 
     fn catalog() -> Catalog {
@@ -1227,7 +1263,6 @@ mod tests {
             "SHORT",
             "HIDDEN_KEY",
             "LEASE",
-            "PERSONAL_KEY",
         ] {
             entries.insert(
                 SecretName::new(k).unwrap(),
@@ -1237,8 +1272,7 @@ mod tests {
                     as_file: false,
                     injectable: k != "HIDDEN_KEY",
                     description: None,
-                    personal: (k == "PERSONAL_KEY")
-                        .then(|| PathBuf::from("/home/me/.config/fnox/config.toml")),
+                    personal: None,
                 },
             );
         }
@@ -1271,6 +1305,19 @@ mod tests {
                         injectable: true,
                         description: None,
                         personal: None,
+                    },
+                );
+            }
+            for k in &self.personal {
+                catalog.entries.insert(
+                    SecretName::new(k).unwrap(),
+                    CatalogEntry {
+                        kind: KeyKind::Secret,
+                        mode: None,
+                        as_file: false,
+                        injectable: true,
+                        description: None,
+                        personal: Some(PathBuf::from("/home/me/.config/fnox/config.toml")),
                     },
                 );
             }
@@ -1339,7 +1386,6 @@ mod tests {
                     "SHORT",
                     "HIDDEN_KEY",
                     "EXTRA_KEY",
-                    "PERSONAL_KEY",
                 ]
                 .iter()
                 .map(|k| SecretName::new(k).unwrap())
@@ -1373,6 +1419,10 @@ mod tests {
     }
 
     fn fake(fail: &[&str]) -> (Arc<Fake>, Arc<SourceMemo>) {
+        fake_with_personal(fail, &[])
+    }
+
+    fn fake_with_personal(fail: &[&str], personal: &[&str]) -> (Arc<Fake>, Arc<SourceMemo>) {
         let f = Arc::new(Fake {
             id: Some(SourceId {
                 kind: "fake",
@@ -1380,6 +1430,7 @@ mod tests {
                 profile: None,
             }),
             fail: fail.iter().map(|s| s.to_string()).collect(),
+            personal: personal.iter().map(|s| s.to_string()).collect(),
             ..Default::default()
         });
         let memo = SourceMemo::new(f.clone());
@@ -1887,7 +1938,7 @@ mod tests {
     #[tokio::test]
     async fn a_personal_key_needs_the_users_own_flag() {
         let term = terminal();
-        let (fake, memo) = fake(&[]);
+        let (fake, memo) = fake_with_personal(&[], &["PERSONAL_KEY"]);
         let listed = Inputs::new("deploy", &["PERSONAL_KEY"]);
         let err = SecretBroker::default()
             .grant_values(&memo, &listed.req(&term, false))
@@ -2049,8 +2100,7 @@ mod tests {
         let (s1, s2) = (r1.unwrap(), r2.unwrap());
         assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
         assert!(fake.asked.lock().unwrap()[0].is_empty());
-        // HIDDEN_KEY is not injectable, EXTRA_KEY is not in the catalog and PERSONAL_KEY is the
-        // user's own: none comes back
+        // HIDDEN_KEY is not injectable and EXTRA_KEY is not in the catalog: neither comes back
         assert_eq!(s1.marker_value(), "A,B,C,DEPLOY_KEY,SHORT");
         assert_eq!(s2.marker_value(), "A,B,C,DEPLOY_KEY,SHORT");
         // later requests for named keys are answered from the memo, with no call
@@ -2061,6 +2111,44 @@ mod tests {
             .unwrap();
         assert_eq!(s3.marker_value(), "B,C");
         assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn all_in_scope_names_the_project_keys_when_the_user_has_own_keys() {
+        // the personal key's provider is signed out; asking for it would fail the run
+        let (fake, memo) = fake_with_personal(&["PERSONAL_KEY"], &["PERSONAL_KEY"]);
+        let term = terminal();
+        let all = with_all(Inputs::new("a", &[]));
+        let spawn = SecretBroker::default()
+            .grant_values(&memo, &all.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(
+            fake.asked.lock().unwrap().as_slice(),
+            [["A", "B", "C", "DEPLOY_KEY", "LEASE", "PATH_LIKE", "SHORT"]]
+        );
+        assert!(!spawn.marker_value().contains("PERSONAL_KEY"));
+    }
+
+    #[test]
+    fn all_in_scope_still_asks_for_everything_when_a_dynamic_lease_exists() {
+        // without personal keys nothing changes
+        assert!(all_selection(&catalog()).names().is_none());
+        let mut catalog = catalog();
+        catalog.entries.insert(
+            SecretName::new("PERSONAL_KEY").unwrap(),
+            CatalogEntry {
+                kind: KeyKind::Secret,
+                mode: None,
+                as_file: false,
+                injectable: true,
+                description: None,
+                personal: Some(PathBuf::from("/home/me/.config/fnox/config.toml")),
+            },
+        );
+        assert!(all_selection(&catalog).names().is_some());
+        catalog.dynamic_leases.push("build_token".into());
+        assert!(all_selection(&catalog).names().is_none());
     }
 
     #[tokio::test]

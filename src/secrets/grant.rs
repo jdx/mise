@@ -909,7 +909,7 @@ pub(crate) fn key_problems(
                     )
                     .detail(format!(
                         "{} defines {key}. fnox adds its global config, and fnox.toml files in or above your home directory, to every project.",
-                        crate::file::display_path(file)
+                        escape_controls(&crate::file::display_path(file))
                     ))
                     .detail(format!("Granted by: {}", grant.granted_by(key)))
                     .detail(format!(
@@ -921,6 +921,20 @@ pub(crate) fn key_problems(
         }
     }
     problems
+}
+
+/// A file name comes from the user's config and reaches the terminal.
+fn escape_controls(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| {
+            let escaped: Vec<char> = if c.is_control() {
+                c.escape_default().collect()
+            } else {
+                vec![c]
+            };
+            escaped
+        })
+        .collect()
 }
 
 /// A close name: transposition-aware edit distance of at most 2, else a fuzzy match.
@@ -1375,6 +1389,14 @@ fn scan_get_env_name(chars: &[char], mut i: usize, out: &mut BTreeSet<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn escapes_control_characters_in_a_displayed_file_name() {
+        assert_eq!(
+            escape_controls("/h/.config/fnox/a\nb\u{1b}[31m.toml"),
+            "/h/.config/fnox/a\\nb\\u{1b}[31m.toml"
+        );
+    }
 
     fn parse(s: &str) -> Result<TaskSecrets, String> {
         #[derive(serde::Deserialize)]
