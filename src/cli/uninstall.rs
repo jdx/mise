@@ -6,8 +6,9 @@ use console::style;
 use eyre::{Result, bail, eyre};
 use itertools::Itertools;
 
-use crate::args::ToolArg;
+use crate::args::{BackendArg, ToolArg};
 use crate::backend::Backend;
+use crate::backend::backend_type::BackendType;
 use crate::config::project::{nearest_project_tool_requests, tool_request_set};
 use crate::config::{Config, Settings};
 use crate::file::display_path;
@@ -333,7 +334,7 @@ impl Uninstall {
                 None => installed_versions
                     .iter()
                     .filter(|v| {
-                        installed_version_matches(&query, v, |candidate| {
+                        installed_version_matches(backend.ba(), &query, v, |candidate| {
                             !backend
                                 .fuzzy_match_filter(vec![candidate.to_string()], &query, false)
                                 .is_empty()
@@ -348,7 +349,7 @@ impl Uninstall {
                 let resolved = tvr.resolve(config, &Default::default()).await?;
                 // A graph install is the one installation the request names; the
                 // resolved version would only count it a second time.
-                if !graph_install_stands_for(&resolved.version, &matches) {
+                if !graph_install_stands_for(backend.ba(), &resolved.version, &matches) {
                     tvs.push((backend.clone(), resolved));
                 }
             }
@@ -394,22 +395,29 @@ impl Uninstall {
     }
 }
 
-/// The version a graph install stands for: `1.0.0` for `1.0.0~uv~<digest>`
-/// or `1.0.0~aube~<digest>`.
-fn graph_install_version(name: &str) -> Option<&str> {
-    ["~aube~", "~uv~"].iter().find_map(|marker| {
-        let (version, identity) = name.rsplit_once(marker)?;
-        (identity.len() == 16 && identity.bytes().all(|b| b.is_ascii_hexdigit())).then_some(version)
-    })
+/// The version a graph install of `ba` stands for: `1.0.0` for
+/// `1.0.0~aube~<digest>` of an npm tool or `1.0.0~uv~<digest>` of a pipx tool.
+/// Another backend's version may contain these characters, so they say nothing
+/// about it.
+fn graph_install_version<'a>(ba: &BackendArg, name: &'a str) -> Option<&'a str> {
+    let marker = if ba.full_without_opts().starts_with("npm:") {
+        "~aube~"
+    } else if ba.backend_type() == BackendType::Pipx {
+        "~uv~"
+    } else {
+        return None;
+    };
+    let (version, identity) = name.rsplit_once(marker)?;
+    (identity.len() == 16 && identity.bytes().all(|b| b.is_ascii_hexdigit())).then_some(version)
 }
 
 /// Whether `matches` holds a graph install of `resolved` and no plain install
 /// of it.
-fn graph_install_stands_for(resolved: &str, matches: &[&String]) -> bool {
+fn graph_install_stands_for(ba: &BackendArg, resolved: &str, matches: &[&String]) -> bool {
     !matches.iter().any(|m| m.as_str() == resolved)
         && matches
             .iter()
-            .any(|m| graph_install_version(m) == Some(resolved))
+            .any(|m| graph_install_version(ba, m) == Some(resolved))
 }
 
 /// Whether the installed version `name` is selected by the version `query`,
@@ -419,67 +427,89 @@ fn graph_install_stands_for(resolved: &str, matches: &[&String]) -> bool {
 /// `latest` is resolved separately; as a fuzzy query it would select every
 /// installed version. A graph install lists as `<version>~aube~<digest>` or
 /// `<version>~uv~<digest>`, and the query names the version it stands for.
-fn installed_version_matches(query: &str, name: &str, matches: impl Fn(&str) -> bool) -> bool {
+fn installed_version_matches(
+    ba: &BackendArg,
+    query: &str,
+    name: &str,
+    matches: impl Fn(&str) -> bool,
+) -> bool {
     if query.is_empty() {
         return true;
     }
     if query == "latest" {
         return false;
     }
-    let logical = graph_install_version(name);
+    let logical = graph_install_version(ba, name);
     matches(name) || logical.is_some_and(matches)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{graph_install_stands_for, installed_version_matches as matches_with};
+    use super::{graph_install_stands_for, installed_version_matches};
+    use crate::args::BackendArg;
 
-    fn installed_version_matches(query: &str, name: &str) -> bool {
-        // Stands in for the backend's matcher: the query, or the query followed
-        // by a separator and more.
-        matches_with(query, name, |candidate| {
+    /// Stands in for the backend's matcher: the query, or the query followed
+    /// by a separator and more.
+    fn separator_match(query: &str) -> impl Fn(&str) -> bool + '_ {
+        move |candidate| {
             candidate == query
                 || candidate
                     .strip_prefix(query)
                     .is_some_and(|rest| rest.len() > 1 && rest.starts_with(['.', '-', '+']))
-        })
+        }
+    }
+
+    fn matches(ba: &str, query: &str, name: &str) -> bool {
+        installed_version_matches(&BackendArg::from(ba), query, name, separator_match(query))
     }
 
     #[test]
     fn query_matches_on_a_separator_boundary() {
-        assert!(installed_version_matches("3.4.1", "3.4.1"));
-        assert!(installed_version_matches("3.4", "3.4.12"));
-        assert!(installed_version_matches("3.4.1", "3.4.1-rc1"));
-        assert!(!installed_version_matches("3.4.1", "3.4.12"));
-        assert!(installed_version_matches("", "3.4.12"));
-        assert!(!installed_version_matches("latest", "3.4.12"));
-    }
-
-    #[test]
-    fn a_graph_install_stands_for_the_version_it_was_resolved_from() {
-        let graph = "1.0.0~uv~0123456789abcdef".to_string();
-        let other = "1.0.1".to_string();
-        let plain = "1.0.0".to_string();
-        assert!(graph_install_stands_for("1.0.0", &[&graph]));
-        assert!(graph_install_stands_for("1.0.0", &[&graph, &other]));
-        assert!(!graph_install_stands_for("1.0.0", &[&graph, &plain]));
-        assert!(!graph_install_stands_for("1.0.1", &[&graph]));
-        assert!(!graph_install_stands_for("1.0.0", &[]));
+        assert!(matches("tiny", "3.4.1", "3.4.1"));
+        assert!(matches("tiny", "3.4", "3.4.12"));
+        assert!(matches("tiny", "3.4.1", "3.4.1-rc1"));
+        assert!(!matches("tiny", "3.4.1", "3.4.12"));
+        assert!(matches("tiny", "", "3.4.12"));
+        assert!(!matches("tiny", "latest", "3.4.12"));
     }
 
     #[test]
     fn query_matches_the_version_behind_a_graph_identity() {
-        let name = "1.0.0~uv~0123456789abcdef";
-        assert!(installed_version_matches("1.0.0", name));
-        assert!(installed_version_matches("1", name));
-        assert!(installed_version_matches(
+        let uv = "1.0.0~uv~0123456789abcdef";
+        let aube = "1.0.0~aube~0123456789abcdef";
+        assert!(matches("pipx:foo", "1.0.0", uv));
+        assert!(matches("pipx:foo", "1", uv));
+        assert!(matches("npm:foo", "1.0.0", aube));
+        assert!(!matches("pipx:foo", "1.0.0", "1.0.1~uv~0123456789abcdef"));
+        assert!(!matches("pipx:foo", "1.0.0", "1.0.0~uv~nothex"));
+    }
+
+    #[test]
+    fn a_suffix_is_a_graph_identity_only_for_its_backend() {
+        let uv = "1.0.0~uv~0123456789abcdef";
+        let aube = "1.0.0~aube~0123456789abcdef";
+        assert!(!matches("npm:foo", "1.0.0", uv));
+        assert!(!matches("pipx:foo", "1.0.0", aube));
+        assert!(!matches("tiny", "1.0.0", uv));
+        assert!(!matches("tiny", "1.0.0", aube));
+    }
+
+    #[test]
+    fn a_graph_install_stands_for_the_version_it_was_resolved_from() {
+        let pipx = BackendArg::from("pipx:foo");
+        let graph = "1.0.0~uv~0123456789abcdef".to_string();
+        let other = "1.0.1".to_string();
+        let plain = "1.0.0".to_string();
+        assert!(graph_install_stands_for(&pipx, "1.0.0", &[&graph]));
+        assert!(graph_install_stands_for(&pipx, "1.0.0", &[&graph, &other]));
+        assert!(!graph_install_stands_for(&pipx, "1.0.0", &[&graph, &plain]));
+        assert!(!graph_install_stands_for(&pipx, "1.0.1", &[&graph]));
+        assert!(!graph_install_stands_for(&pipx, "1.0.0", &[]));
+        // Another backend's version name is its own.
+        assert!(!graph_install_stands_for(
+            &BackendArg::from("tiny"),
             "1.0.0",
-            "1.0.0~aube~0123456789abcdef"
+            &[&graph]
         ));
-        assert!(!installed_version_matches(
-            "1.0.0",
-            "1.0.1~uv~0123456789abcdef"
-        ));
-        assert!(!installed_version_matches("1.0.0", "1.0.0~uv~nothex"));
     }
 }
