@@ -332,11 +332,7 @@ impl Uninstall {
                 Some(m) => vec![m],
                 None => installed_versions
                     .iter()
-                    .filter(|v| {
-                        // `latest` is resolved below; as a fuzzy query it would
-                        // select every installed version.
-                        query.is_empty() || (query != "latest" && fuzzy_version_matches(&query, v))
-                    })
+                    .filter(|v| installed_version_matches(&query, v))
                     .collect_vec(),
             };
 
@@ -387,5 +383,55 @@ impl Uninstall {
             tool_versions.extend(tvs);
         }
         Ok(tool_versions)
+    }
+}
+
+/// Whether the installed version `name` is selected by the version `query`.
+///
+/// `latest` is resolved separately; as a fuzzy query it would select every
+/// installed version. A graph install lists as `<version>~aube~<digest>` or
+/// `<version>~uv~<digest>`, and the query names the version it stands for.
+fn installed_version_matches(query: &str, name: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    if query == "latest" {
+        return false;
+    }
+    let logical = ["~aube~", "~uv~"].iter().find_map(|marker| {
+        let (version, identity) = name.rsplit_once(marker)?;
+        (identity.len() == 16 && identity.bytes().all(|b| b.is_ascii_hexdigit())).then_some(version)
+    });
+    fuzzy_version_matches(query, name) || logical.is_some_and(|v| fuzzy_version_matches(query, v))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::installed_version_matches;
+
+    #[test]
+    fn query_matches_on_a_separator_boundary() {
+        assert!(installed_version_matches("3.4.1", "3.4.1"));
+        assert!(installed_version_matches("3.4", "3.4.12"));
+        assert!(installed_version_matches("3.4.1", "3.4.1-rc1"));
+        assert!(!installed_version_matches("3.4.1", "3.4.12"));
+        assert!(installed_version_matches("", "3.4.12"));
+        assert!(!installed_version_matches("latest", "3.4.12"));
+    }
+
+    #[test]
+    fn query_matches_the_version_behind_a_graph_identity() {
+        let name = "1.0.0~uv~0123456789abcdef";
+        assert!(installed_version_matches("1.0.0", name));
+        assert!(installed_version_matches("1", name));
+        assert!(installed_version_matches(
+            "1.0.0",
+            "1.0.0~aube~0123456789abcdef"
+        ));
+        assert!(!installed_version_matches(
+            "1.0",
+            "1.0.1~uv~0123456789abcdef"
+        ));
+        assert!(!installed_version_matches("1.0.0", "1.0.0~uv~nothex"));
     }
 }
