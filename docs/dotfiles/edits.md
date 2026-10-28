@@ -6,8 +6,8 @@ socialDescription: "Manage one block, line, or set of keys in a file that someth
 # Edit part of a file
 
 An edit entry manages one piece of a file and leaves the rest alone: a block
-between marker comments, a single line, or a few keys of a JSON, TOML, or YAML
-file. Use it for a file that you or an application also edit by hand.
+between marker comments, a single line, or a few keys of a JSON, TOML, YAML, or
+INI file. Use it for a file that you or an application also edit by hand.
 
 Edit entries live in `[dotfiles]`. Each key is the target path followed by an
 id that names the edit within that file:
@@ -54,7 +54,7 @@ an extension such as `.zshrc`. Set `comment = "..."` to use another prefix.
 comment; set `comment = '"'` on edits to `~/.vimrc`.
 
 A file that cannot hold line comments, such as JSON, cannot take a block. To
-set keys in a JSON, TOML, or YAML file, use a [merge entry](#merge);
+set keys in a JSON, TOML, YAML, or INI file, use a [merge entry](#merge);
 otherwise [manage the whole file](/dotfiles/managed.html).
 
 ### Block content from a file {#block-content-from-a-file}
@@ -93,13 +93,14 @@ stays the application's:
 ```
 
 The source holds the keys you want, in the same format as the target, which
-mise infers from the target's `.json`, `.jsonc`, `.toml`, `.yaml`, or `.yml`
-extension. For a file whose extension doesn't name its format, set `format` to
-`"json"`, `"jsonc"`, `"toml"`, or `"yaml"`:
+mise infers from the target's `.json`, `.jsonc`, `.toml`, `.yaml`, `.yml`, or
+`.ini` extension. For a file whose extension doesn't name its format, set
+`format` to `"json"`, `"jsonc"`, `"toml"`, `"yaml"`, or `"ini"`:
 
 ```toml
 [dotfiles]
 "~/.config/Code/User/settings.json/shared" = { source = "vscode/shared.json", merge = true, format = "jsonc" }
+"~/.config/pip/pip.conf/shared" = { source = "pip/shared.conf", merge = true, format = "ini" }
 ```
 
 With `codex/shared.toml` containing:
@@ -126,7 +127,7 @@ the application wrote. A missing target is created from the source.
 - TOML and YAML are edited in place, so comments, key order, and the
   formatting of untouched keys stay. JSON has no comments; mise keeps its key
   order and indentation, and rewrites the file only when an owned key differs.
-  A target that is not valid JSON, TOML, or YAML, including JSON with
+  A target that is not valid JSON, TOML, YAML, or INI, including JSON with
   comments, is reported and never overwritten.
 - JSONC is JSON with comments and trailing commas, as VS Code's
   `settings.json` is. It is edited in place like TOML and YAML: comments,
@@ -134,6 +135,16 @@ the application wrote. A missing target is created from the source.
   `format = "jsonc"` setting (or a `.jsonc` extension) applies to the source
   too, so it may also hold comments. Other JSON5 syntax, such as single-quoted
   strings or unquoted keys, is rejected.
+- INI, with `format = "ini"` or an `.ini` extension, follows the files Python's
+  `configparser` reads. `[name]` starts a section, and keys before the first
+  section belong to none. `key = value` and `key: value` both set a key, a
+  line with neither is a key with no value, and a line indented further than
+  its key continues the value. Only lines that start with `#` or `;` are
+  comments, so `a = b ; c` sets `a` to `b ; c`. Values are strings and
+  sections don't nest, so a source section merges key by key. Keys and
+  section names are compared as written, case included. A repeated key or
+  section has its last value, and that's the one mise sets. Lines of keys the
+  source doesn't set are never rewritten.
 - `template = "tera"` renders the source first, as for blocks.
 - Like a `symlink` entry, a merge entry without `source` uses the target's path
   under [`dotfiles.root`](/configuration/settings.html#dotfiles.root), so

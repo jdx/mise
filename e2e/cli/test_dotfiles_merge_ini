@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+# a merge entry can edit an INI file such as pip.conf: format names a target
+# whose extension doesn't, and comments and unowned keys stay
+mkdir -p shared ~/.config/pip
+cat <<'EOF' >shared/pip.conf
+[global]
+index-url = https://pypi.example/simple
+retries = 3
+
+[install]
+user = true
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/.config/pip/pip.conf/shared" = { source = "shared/pip.conf", merge = true, format = "ini" }
+EOF
+cat <<'EOF' >~/.config/pip/pip.conf
+; my pip settings
+[global]
+timeout = 60
+index-url: https://old.example/simple ; old mirror
+EOF
+
+assert_contains "mise dotfiles status 2>&1" "merge:shared"
+assert_succeed "mise dotfiles apply --yes"
+# only # and ; at the start of a line are comments, so "; old mirror" was
+# part of the old value
+assert "cat ~/.config/pip/pip.conf" "; my pip settings
+[global]
+timeout = 60
+index-url: https://pypi.example/simple
+retries = 3
+
+[install]
+user = true"
+
+# in sync now, so a second apply changes nothing
+assert_contains "mise dotfiles apply --dry-run 2>&1" "all edits are applied"
+assert_succeed "mise dotfiles status --missing"
+
+# a value the app changes is drift
+sed -i.bak 's/retries = 3/retries = 5/' ~/.config/pip/pip.conf
+assert_contains "mise dotfiles status" "differs"
+assert_contains "mise dotfiles diff" "-retries = 5"
+assert_contains "mise dotfiles diff" "+retries = 3"
+assert_not_contains "mise dotfiles diff" "-timeout"
+assert_succeed "mise dotfiles apply --yes"
+assert_contains "cat ~/.config/pip/pip.conf" "retries = 3"
+
+# an .ini target needs no format, and merge = "missing" keeps existing values
+cat <<'EOF' >~/tox.ini
+[tox]
+envlist = py312
+EOF
+cat <<'EOF' >shared/tox.ini
+[tox]
+envlist = py313
+isolated_build = true
+EOF
+cat <<'EOF' >mise.toml
+[dotfiles]
+"~/tox.ini/defaults" = { source = "shared/tox.ini", merge = "missing" }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+assert "cat ~/tox.ini" "[tox]
+envlist = py312
+isolated_build = true"
+
+# a target that isn't INI is reported and left alone
+echo '[broken' >~/tox.ini
+assert_fail_contains "mise dotfiles apply --yes" "failed to parse the INI target"
+assert "cat ~/tox.ini" "[broken"

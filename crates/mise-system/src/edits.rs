@@ -77,7 +77,7 @@ pub(crate) struct EditTomlTable {
     #[serde(default)]
     pub comment: Option<String>,
     /// `merge = true` sets the keys in `source` on a structured target file
-    /// (JSON, JSONC, TOML, or YAML) and leaves every other key to the application
+    /// (JSON, JSONC, TOML, YAML, or INI) and leaves every other key to the application
     /// that also writes it
     ///
     /// `merge = "missing"` sets only the keys of `source` the target has no
@@ -598,12 +598,12 @@ fn merge_op(
     let format = match entry.format.as_deref() {
         Some(name) => Format::from_name(name).ok_or_else(|| {
             eyre::eyre!(
-                "\"{path_raw}\".{id}: unknown format '{name}' (expected \"json\", \"jsonc\", \"toml\", or \"yaml\"), ignoring entry"
+                "\"{path_raw}\".{id}: unknown format '{name}' (expected \"json\", \"jsonc\", \"toml\", \"yaml\", or \"ini\"), ignoring entry"
             )
         })?,
         None => Format::from_path(path).ok_or_else(|| {
             eyre::eyre!(
-                "\"{path_raw}\".{id}: merge needs a .json, .jsonc, .toml, .yaml, or .yml target or a format, ignoring entry"
+                "\"{path_raw}\".{id}: merge needs a .json, .jsonc, .toml, .yaml, .yml, or .ini target or a format, ignoring entry"
             )
         })?,
     };
@@ -2149,6 +2149,7 @@ mod tests {
             ("~/a/settings.json", Format::Json),
             ("~/a/config.yml", Format::Yaml),
             ("~/a/config.yaml", Format::Yaml),
+            ("~/a/tox.ini", Format::Ini),
         ] {
             let req = resolve(path, "source = \"shared.txt\"\nmerge = true").unwrap();
             assert_eq!(
@@ -2265,8 +2266,8 @@ mod tests {
             ),
             (
                 "~/a/settings.json",
-                "source = \"s\"\nmerge = true\nformat = \"ini\"",
-                "unknown format 'ini'",
+                "source = \"s\"\nmerge = true\nformat = \"xml\"",
+                "unknown format 'xml'",
             ),
             (
                 "~/a/settings.json",

@@ -119,7 +119,7 @@ cat <<'EOF' >mise.toml
 [dotfiles]
 "~/notes.txt/shared" = { source = "shared/codex.toml", merge = true }
 EOF
-assert_contains "mise dotfiles status 2>&1" "merge needs a .json, .jsonc, .toml, .yaml, or .yml target"
+assert_contains "mise dotfiles status 2>&1" "merge needs a .json, .jsonc, .toml, .yaml, .yml, or .ini target"
 
 # a target that does not parse is reported, never overwritten
 cat <<'EOF' >mise.toml

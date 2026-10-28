@@ -7180,7 +7180,7 @@
                 "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
               },
               "merge": {
-                "description": "edit entry: true sets the keys of source (default: the target's path under dotfiles.root) on a JSON, JSONC, TOML, or YAML target and leaves the target's other keys to the application that also writes it; \"missing\" sets only the keys the target has no value for; the format comes from the target's extension unless \"format\" names it",
+                "description": "edit entry: true sets the keys of source (default: the target's path under dotfiles.root) on a JSON, JSONC, TOML, YAML, or INI target and leaves the target's other keys to the application that also writes it; \"missing\" sets only the keys the target has no value for; the format comes from the target's extension unless \"format\" names it",
                 "oneOf": [
                   {
                     "type": "boolean"
@@ -7192,10 +7192,10 @@
               },
               "format": {
                 "type": "string",
-                "description": "merge only: the format of the target and source when the target's extension doesn't name it, such as \"jsonc\" for VS Code's settings.json",
+                "description": "merge only: the format of the target and source when the target's extension doesn't name it, such as \"jsonc\" for VS Code's settings.json or \"ini\" for an extensionless INI file",
                 "anyOf": [
                   {
-                    "enum": ["json", "jsonc", "toml", "yaml"]
+                    "enum": ["json", "jsonc", "toml", "yaml", "ini"]
                   },
                   {
                     "type": "string"

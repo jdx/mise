@@ -65,6 +65,7 @@ pub mod gitlab;
 pub mod gpg;
 pub mod hash;
 pub mod http;
+pub mod ini_merge;
 pub mod inline_command;
 pub mod jobs;
 pub mod lock_file;

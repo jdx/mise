@@ -1,4 +1,5 @@
-//! Set some keys of a JSON, JSONC, TOML, or YAML file and leave the rest alone.
+//! Set some keys of a JSON, JSONC, TOML, YAML, or INI file and leave the rest
+//! alone.
 //!
 //! This is for files an application also writes: the caller owns the keys in
 //! `source`, the application owns everything else. [`merge`] returns the
@@ -8,13 +9,15 @@
 //! caller tells "in sync" from "drifted" without being bothered by keys it
 //! does not own.
 //!
-//! Semantics, identical for all four formats:
+//! Semantics, identical for every format but INI, whose sections hold only
+//! strings and do not nest (see [`ini_merge`](crate::ini_merge)):
 //! - A key present on both sides whose values are both tables/objects merges
 //!   recursively.
 //! - Any other value, including an array, is replaced by the source's.
 //! - Keys only the target has are never touched, and nothing is ever removed.
 //! - An empty target is an empty table.
 
+use crate::ini_merge;
 use crate::yaml;
 use crate::yaml_merge::{mapping_subset, merge_yaml, root_mapping};
 use eyre::{Result, bail, eyre};
@@ -34,6 +37,8 @@ pub enum Format {
     Jsonc,
     Toml,
     Yaml,
+    /// sections of `key = value` lines, as Python's `configparser` reads
+    Ini,
 }
 
 impl Format {
@@ -44,6 +49,7 @@ impl Format {
             "jsonc" => Some(Self::Jsonc),
             "toml" => Some(Self::Toml),
             "yaml" | "yml" => Some(Self::Yaml),
+            "ini" => Some(Self::Ini),
             _ => None,
         }
     }
@@ -55,6 +61,7 @@ impl Format {
             "jsonc" => Some(Self::Jsonc),
             "toml" => Some(Self::Toml),
             "yaml" | "yml" => Some(Self::Yaml),
+            "ini" => Some(Self::Ini),
             _ => None,
         }
     }
@@ -65,6 +72,7 @@ impl Format {
             Self::Jsonc => "JSONC",
             Self::Toml => "TOML",
             Self::Yaml => "YAML",
+            Self::Ini => "INI",
         }
     }
 }
@@ -93,6 +101,9 @@ struct YamlTree {
 /// Whether every key in `source` is already set to the same value in
 /// `target`.
 pub fn contains(format: Format, target: &str, source: &str) -> Result<bool> {
+    if format == Format::Ini {
+        return ini_merge::contains(target, source);
+    }
     Ok(
         match parse_pair(format, (target, "target"), (source, "source"))? {
             (Doc::Json(target), Doc::Json(source)) => json_subset(&source, &target),
@@ -119,6 +130,7 @@ pub fn merge(format: Format, target: &str, source: &str) -> Result<String> {
         Format::Jsonc => merge_jsonc(target, source),
         Format::Toml => merge_toml(target, source),
         Format::Yaml => merge_yaml(target, source),
+        Format::Ini => ini_merge::merge(target, source),
     }
 }
 
@@ -127,6 +139,9 @@ pub fn merge(format: Format, target: &str, source: &str) -> Result<String> {
 /// key the target holds counts as present whatever its value, and a table both
 /// sides hold is compared key by key.
 pub fn missing(format: Format, target: &str, source: &str) -> Result<Option<String>> {
+    if format == Format::Ini {
+        return ini_merge::missing(target, source);
+    }
     Ok(
         match parse_pair(format, (target, "target"), (source, "source"))? {
             (Doc::Json(Value::Object(target)), Doc::Json(Value::Object(source))) => {
@@ -350,6 +365,7 @@ fn parse(format: Format, text: &str, what: &str, yaml_values: bool) -> Result<Do
                 Doc::YamlTree(Some(YamlTree { file, root }))
             }
         }
+        Format::Ini => unreachable!("INI is read by ini_merge"),
     })
 }
 
@@ -357,6 +373,9 @@ fn parse(format: Format, text: &str, what: &str, yaml_values: bool) -> Result<Do
 /// that agree on a key, or that set different keys of the same table, do not
 /// conflict.
 pub fn conflicts(format: Format, a: &str, b: &str) -> Result<Vec<String>> {
+    if format == Format::Ini {
+        return ini_merge::conflicts(a, b);
+    }
     let mut paths = vec![];
     match parse_pair(format, (a, "source"), (b, "source"))? {
         (Doc::Json(a), Doc::Json(b)) => json_conflicts(&a, &b, "", &mut paths),
@@ -731,6 +750,8 @@ mod tests {
             ("a.yaml", Some(Format::Yaml)),
             ("a.yml", Some(Format::Yaml)),
             ("a.jsonc", Some(Format::Jsonc)),
+            ("a.INI", Some(Format::Ini)),
+            ("a.cfg", None),
             ("a", None),
         ] {
             assert_eq!(Format::from_path(Path::new(path)), format, "{path}");
@@ -815,7 +836,8 @@ mod tests {
     fn formats_come_from_names() {
         assert_eq!(Format::from_name("JSONC"), Some(Format::Jsonc));
         assert_eq!(Format::from_name("yml"), Some(Format::Yaml));
-        assert_eq!(Format::from_name("ini"), None);
+        assert_eq!(Format::from_name("ini"), Some(Format::Ini));
+        assert_eq!(Format::from_name("xml"), None);
     }
 
     #[test]
