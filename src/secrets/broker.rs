@@ -1096,7 +1096,11 @@ fn split_exec_all(catalog: &Catalog, skip: impl Fn(&str) -> Option<Skip>) -> Exe
         skipped: vec![],
     };
     for (key, entry) in &catalog.entries {
-        if !entry.injectable || mise_util::env::is_reserved_secret_name(key.as_str()) {
+        // the user's own keys are not the project's to hand out
+        if !entry.injectable
+            || entry.personal.is_some()
+            || mise_util::env::is_reserved_secret_name(key.as_str())
+        {
             continue;
         }
         if entry.as_file {
@@ -1223,6 +1227,7 @@ mod tests {
             "SHORT",
             "HIDDEN_KEY",
             "LEASE",
+            "PERSONAL_KEY",
         ] {
             entries.insert(
                 SecretName::new(k).unwrap(),
@@ -1232,6 +1237,8 @@ mod tests {
                     as_file: false,
                     injectable: k != "HIDDEN_KEY",
                     description: None,
+                    personal: (k == "PERSONAL_KEY")
+                        .then(|| PathBuf::from("/home/me/.config/fnox/config.toml")),
                 },
             );
         }
@@ -1263,6 +1270,7 @@ mod tests {
                         as_file: self.file_keys.contains(k),
                         injectable: true,
                         description: None,
+                        personal: None,
                     },
                 );
             }
@@ -1331,6 +1339,7 @@ mod tests {
                     "SHORT",
                     "HIDDEN_KEY",
                     "EXTRA_KEY",
+                    "PERSONAL_KEY",
                 ]
                 .iter()
                 .map(|k| SecretName::new(k).unwrap())
@@ -1876,6 +1885,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_personal_key_needs_the_users_own_flag() {
+        let term = terminal();
+        let (fake, memo) = fake(&[]);
+        let listed = Inputs::new("deploy", &["PERSONAL_KEY"]);
+        let err = SecretBroker::default()
+            .grant_values(&memo, &listed.req(&term, false))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains(
+                "task deploy: PERSONAL_KEY comes from your own fnox config, so the project cannot grant it"
+            ),
+            "{err}"
+        );
+        assert!(
+            err.contains("mise run --secrets PERSONAL_KEY deploy"),
+            "{err}"
+        );
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 0);
+
+        let mut asked = Inputs::new("deploy", &["PERSONAL_KEY"]);
+        asked
+            .grant
+            .keys
+            .get_mut(&SecretName::new("PERSONAL_KEY").unwrap())
+            .unwrap()
+            .push(GrantOrigin::CliFlag);
+        let spawn = SecretBroker::default()
+            .grant_values(&memo, &asked.req(&term, false))
+            .await
+            .unwrap();
+        assert_eq!(spawn.marker_value(), "PERSONAL_KEY");
+    }
+
+    #[tokio::test]
     async fn registers_lines_and_json_forms_and_excludes_set_keys_from_remove() {
         let broker = SecretBroker::default();
         let term = terminal();
@@ -2004,7 +2049,8 @@ mod tests {
         let (s1, s2) = (r1.unwrap(), r2.unwrap());
         assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
         assert!(fake.asked.lock().unwrap()[0].is_empty());
-        // HIDDEN_KEY is not injectable and EXTRA_KEY is not in the catalog: neither comes back
+        // HIDDEN_KEY is not injectable, EXTRA_KEY is not in the catalog and PERSONAL_KEY is the
+        // user's own: none comes back
         assert_eq!(s1.marker_value(), "A,B,C,DEPLOY_KEY,SHORT");
         assert_eq!(s2.marker_value(), "A,B,C,DEPLOY_KEY,SHORT");
         // later requests for named keys are answered from the memo, with no call
@@ -2229,6 +2275,7 @@ mod tests {
                     as_file,
                     injectable,
                     description: None,
+                    personal: None,
                 },
             );
         }

@@ -631,7 +631,7 @@ fn interpret(
     }
     let doc: wire::DescribeDocument =
         serde_json::from_slice(buf).map_err(|e| unparsable(buf, &e))?;
-    Ok(catalog(doc))
+    Ok(catalog(doc, &crate::dirs::HOME))
 }
 
 /// Names and descriptions come from fnox config and reach the terminal.
@@ -639,7 +639,21 @@ fn strip_control(s: &str) -> String {
     s.chars().filter(|c| !c.is_ascii_control()).collect()
 }
 
-fn catalog(doc: wire::DescribeDocument) -> Catalog {
+/// fnox merges its global config into every project, and parent directories up to a
+/// `root = true` file, so a key can come from the user's own config. The same rule as for
+/// `[secrets.fnox]`: a file in `$HOME` or above it applies to every project.
+fn personal_file(source: Option<wire::WireSource>, home: &Path) -> Option<PathBuf> {
+    let source = source?;
+    let personal = source.global
+        || (source.path.is_absolute()
+            && source
+                .path
+                .parent()
+                .is_some_and(|dir| !super::config::is_project_secrets_root(dir, home)));
+    personal.then_some(source.path)
+}
+
+fn catalog(doc: wire::DescribeDocument, home: &Path) -> Catalog {
     let mut entries = IndexMap::new();
     for key in doc.keys {
         let Some(name) = SecretName::new(&key.key) else {
@@ -669,6 +683,7 @@ fn catalog(doc: wire::DescribeDocument) -> Catalog {
                 as_file: key.as_file,
                 injectable: key.injectable.exec,
                 description: key.description.map(|d| strip_control(&d)),
+                personal: personal_file(key.source, home),
             },
         );
     }
@@ -788,6 +803,46 @@ mod tests {
         let unknown = &c.entries[&SecretName::new("NEW_MODE").unwrap()];
         assert_eq!(unknown.mode, Some(InjectMode::Never));
         assert!(!unknown.injectable);
+    }
+
+    #[test]
+    fn keys_from_the_users_own_config_are_personal() {
+        let home = Path::new("/home/me");
+        let personal = |path: &str, global| {
+            personal_file(
+                Some(wire::WireSource {
+                    path: PathBuf::from(path),
+                    global,
+                }),
+                home,
+            )
+        };
+        let own = |path: &str| Some(PathBuf::from(path));
+        assert_eq!(
+            personal("/home/me/.config/fnox/config.toml", true),
+            own("/home/me/.config/fnox/config.toml")
+        );
+        // a project that imports a file the global config imports
+        assert_eq!(
+            personal("/srv/app/shared.toml", true),
+            own("/srv/app/shared.toml")
+        );
+        // found by walking up from the project
+        assert_eq!(
+            personal("/home/me/fnox.toml", false),
+            own("/home/me/fnox.toml")
+        );
+        assert_eq!(personal("/fnox.toml", false), own("/fnox.toml"));
+        assert_eq!(personal("/home/me/src/app/fnox.toml", false), None);
+        assert_eq!(personal("/srv/app/fnox.toml", false), None);
+        assert_eq!(personal_file(None, home), None);
+
+        let doc = r#"{"schema":1,"fnox_version":"1.44.0","profile":[],"keys":[{"key":"MINE","kind":"secret","env":true,"injectable":{"exec":true},"source":{"path":"/home/me/.config/fnox/config.toml","global":true}},{"key":"THEIRS","kind":"secret","env":true,"injectable":{"exec":true},"source":{"path":"/srv/app/fnox.toml","global":false}},{"key":"OLD","kind":"secret","env":true,"injectable":{"exec":true}}],"dynamic_leases":[]}"#;
+        let c = catalog(serde_json::from_str(doc).unwrap(), home);
+        let entry = |k: &str| c.entries[&SecretName::new(k).unwrap()].personal.clone();
+        assert_eq!(entry("MINE"), own("/home/me/.config/fnox/config.toml"));
+        assert_eq!(entry("THEIRS"), None);
+        assert_eq!(entry("OLD"), None);
     }
 
     #[test]

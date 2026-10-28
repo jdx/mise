@@ -318,6 +318,7 @@ mod tests {
                     as_file: false,
                     injectable,
                     description: None,
+                    personal: None,
                 },
             );
         }

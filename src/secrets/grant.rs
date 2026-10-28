@@ -213,6 +213,7 @@ impl SecretGrant {
 pub enum ProblemKind {
     Unknown,
     NotInjectable,
+    Personal,
     InvalidName,
     Wildcard,
     Remote,
@@ -231,6 +232,7 @@ impl ProblemKind {
         match self {
             Self::Unknown => "unknown",
             Self::NotInjectable => "not_injectable",
+            Self::Personal => "personal",
             Self::InvalidName => "invalid_name",
             Self::Wildcard => "wildcard",
             Self::Remote => "remote",
@@ -886,6 +888,33 @@ pub(crate) fn key_problems(
                         "fnox config sets env = false for {key}, so fnox never hands it to processes. Read it with `fnox get {key}` in your script, or set env = \"exec\" for it in fnox.toml if processes should receive it."
                     ))
                     .detail(format!("Granted by: {}", grant.granted_by(key))),
+                );
+            }
+            // The user naming the key on the command line is the one way to hand it to a
+            // project's task.
+            Some(super::CatalogEntry {
+                personal: Some(file),
+                ..
+            }) if !grant
+                .keys
+                .get(key)
+                .is_some_and(|origins| origins.contains(&GrantOrigin::CliFlag)) =>
+            {
+                problems.push(
+                    Problem::new(
+                        &name,
+                        Some(key.as_str()),
+                        ProblemKind::Personal,
+                        format!("{who}: {key} comes from your own fnox config, so the project cannot grant it"),
+                    )
+                    .detail(format!(
+                        "{} defines {key}. fnox adds its global config, and fnox.toml files in or above your home directory, to every project.",
+                        crate::file::display_path(file)
+                    ))
+                    .detail(format!("Granted by: {}", grant.granted_by(key)))
+                    .detail(format!(
+                        "Pass it for one run yourself with `mise run --secrets {key} {name}`, or define {key} in the project's fnox.toml."
+                    )),
                 );
             }
             Some(_) => {}
