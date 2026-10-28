@@ -429,7 +429,7 @@ mod tests {
             "1.0.0~aube~0123456789abcdef"
         ));
         assert!(!installed_version_matches(
-            "1.0",
+            "1.0.0",
             "1.0.1~uv~0123456789abcdef"
         ));
         assert!(!installed_version_matches("1.0.0", "1.0.0~uv~nothex"));
