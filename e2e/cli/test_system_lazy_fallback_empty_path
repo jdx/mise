@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+export MISE_SYSTEM_LAZY_FALLBACK=1
+export MISE_SYSTEM_CONFIG_FILE="$HOME/system-mise.toml"
+export MISE_SYSTEM_INSTALLS_DIR="$MISE_DATA_DIR/installs"
+export MISE_SYSTEM_SHIMS_DIR="$HOME/system-shims"
+export MISE_NOT_FOUND_AUTO_INSTALL=0
+export MISE_NOT_FOUND_SYSTEM_FALLBACK=0
+: >"$MISE_CONFIG_DIR/config.toml"
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tools]
+dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] }
+EOF
+
+# The empty entry selects the current directory. A bare returned filename
+# would be resolved again against mise's PATH, where _.path comes first.
+mkdir added
+cat >dummy <<'EOF'
+#!/bin/sh
+printf 'current-directory: %s\n' "$*"
+exit 23
+EOF
+cat >added/dummy <<'EOF'
+#!/bin/sh
+echo wrong-added-path
+EOF
+chmod +x dummy added/dummy
+cat >mise.toml <<'EOF'
+[env]
+_.path = ["{{config_root}}/added"]
+EOF
+mise trust
+mise reshim --system
+export PATH=":$PATH"
+
+for invocation in "'$MISE_SYSTEM_SHIMS_DIR/dummy'" "mise x -- dummy"; do
+  status=0
+  output=$(eval "$invocation 'one argument'") || status=$?
+  [[ $status == 23 && $output == 'current-directory: one argument' ]] || fail "empty PATH entry must run its selected file, preserving arguments/status: $output ($status)"
+done
+assert_fail "test -d '$MISE_SYSTEM_INSTALLS_DIR/dummy/1.0.0'"

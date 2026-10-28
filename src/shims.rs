@@ -143,6 +143,13 @@ pub fn path_fallback(bin_name: &str) -> Option<PathBuf> {
             continue;
         }
         let bin = path.join(bin_name);
+        // An empty PATH entry means the current directory. Return a path,
+        // not a bare name that exec would resolve again against its new PATH.
+        let bin = if path.as_os_str().is_empty() {
+            bin.absolutize().ok()?.into_owned()
+        } else {
+            bin
+        };
         if bin.is_file()
             && file::is_executable(&bin)
             && !file::is_active_mise_shim(&bin)
