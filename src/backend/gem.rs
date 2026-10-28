@@ -23,6 +23,7 @@ use std::time::{Duration, Instant};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::OnceCell as TokioOnceCell;
 use url::Url;
+use xx::regex;
 
 /// The source `gem` uses when none is configured.
 const DEFAULT_GEM_SOURCE: &str = "https://rubygems.org/";
@@ -143,7 +144,10 @@ impl Backend for GemBackend {
                     .await
                     .map_err(|e| with_github_packages_hint(source, e));
             }
-            (_, response) => response?,
+            (Some(source), response) => {
+                response.map_err(|e| with_github_packages_hint(source, e))?
+            }
+            (None, response) => response?,
         };
 
         // RubyGems API returns newest-first, mise expects oldest-first
@@ -417,16 +421,22 @@ fn with_github_packages_hint(source: &Url, e: eyre::Report) -> eyre::Report {
     }
 }
 
-/// The versions in a compact index `info` file, in the file's order, which is
-/// oldest first. Each line after the `---` header is `<version>[-<platform>]
+/// The versions in a compact index `info` file, oldest first. Each line after
+/// the `---` that ends the header is `<version>[-<platform>]
 /// <dependencies>|<requirements>`; the platform is split off at the first `-`,
 /// as Bundler does, so a version built for several platforms appears once.
 /// Some registries (rubygems.org, not GitHub Packages) add a `created_at:`
 /// requirement.
+///
+/// The file is in publish order, so a backport published after a newer
+/// release would otherwise read as the latest. RubyGems' JSON API answers in
+/// version order, and this matches it.
 fn parse_compact_index(body: &str) -> Vec<VersionInfo> {
     let mut seen = std::collections::HashSet::new();
-    body.lines()
-        .filter(|line| *line != "---")
+    let mut versions: Vec<VersionInfo> = body
+        .lines()
+        .skip_while(|line| *line != "---")
+        .skip(1)
         .filter_map(|line| {
             let version = line.split([' ', '-']).next()?;
             let created_at = line
@@ -445,7 +455,43 @@ fn parse_compact_index(body: &str) -> Vec<VersionInfo> {
             created_at,
             ..Default::default()
         })
+        .collect();
+    versions.sort_by(|a, b| gem_version_cmp(&a.version, &b.version));
+    versions
+}
+
+/// A segment of a RubyGems version. A letter segment marks a prerelease, so it
+/// sorts below any number, which the variant order gives.
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum GemSegment<'a> {
+    Letters(&'a str),
+    Number(u64),
+}
+
+fn gem_segments(version: &str) -> Vec<GemSegment<'_>> {
+    regex!(r"[0-9]+|[A-Za-z]+")
+        .find_iter(version)
+        .map(|m| {
+            m.as_str()
+                .parse()
+                .map_or(GemSegment::Letters(m.as_str()), GemSegment::Number)
+        })
         .collect()
+}
+
+/// RubyGems' version order (`Gem::Version#<=>`): runs of digits and of letters
+/// compared in turn, numbers numerically, letters (a prerelease) below any
+/// number, and missing trailing segments as zero, so `1.0` equals `1.0.0`
+/// and `1.0.a` comes before `1.0`.
+fn gem_version_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    let (a, b) = (gem_segments(a), gem_segments(b));
+    (0..a.len().max(b.len()))
+        .map(|i| {
+            let zero = GemSegment::Number(0);
+            a.get(i).unwrap_or(&zero).cmp(b.get(i).unwrap_or(&zero))
+        })
+        .find(|ordering| ordering.is_ne())
+        .unwrap_or(std::cmp::Ordering::Equal)
 }
 
 /// Move a URL's userinfo into an `Authorization` header, since the HTTP
@@ -1048,7 +1094,8 @@ mod tests {
     /// version once, oldest first.
     #[test]
     fn compact_index_versions_drop_platforms() {
-        let body = "---\n\
+        let body = "created_at: 2024-04-01T00:00:05Z\n\
+            ---\n\
             0.1.0 thor:>= 1.2.2|checksum:aa\n\
             1.0.0 |checksum:bb,created_at:2026-01-06T22:32:36Z\n\
             1.0.0-x86_64-linux |checksum:cc,ruby:>= 3.1\n\
@@ -1065,6 +1112,32 @@ mod tests {
                 ("1.1.0.rc1".into(), None),
             ]
         );
+    }
+
+    #[test]
+    fn compact_index_versions_are_in_version_order() {
+        // 1.9.1 is a backport, published after 2.0.0.
+        let body = "---\n1.0.0 |\n2.0.0 |\n1.9.1 |\n2.0.0.rc1 |\n1.10.0 |\n";
+        let versions: Vec<_> = parse_compact_index(body)
+            .into_iter()
+            .map(|v| v.version)
+            .collect();
+        assert_eq!(versions, ["1.0.0", "1.9.1", "1.10.0", "2.0.0.rc1", "2.0.0"]);
+    }
+
+    #[test]
+    fn gem_versions_compare_like_rubygems() {
+        use std::cmp::Ordering::*;
+        for (a, b, ordering) in [
+            ("1.0", "1.0.0", Equal),
+            ("1.0.a", "1.0", Less),
+            ("1.2.3.rc1", "1.2.3", Less),
+            ("1.2.3.alpha", "1.2.3.beta", Less),
+            ("5.0.0.1", "5.0.0", Greater),
+            ("1.2.10", "1.2.9", Greater),
+        ] {
+            assert_eq!(gem_version_cmp(a, b), ordering, "{a} vs {b}");
+        }
     }
 
     /// A bare GitHub Packages source borrows the resolved GitHub token.

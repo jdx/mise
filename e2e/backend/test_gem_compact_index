@@ -7,7 +7,7 @@
 TOKEN="ghp_e2eSECRET"
 
 # A fake registry with only the compact index. It records each request's path
-# and whether it carried basic auth.
+# and Authorization header.
 cat >registry.py <<'PYTHON'
 import os
 import threading
@@ -28,7 +28,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        auth = (self.headers.get("Authorization") or "").split(" ")[0] or "none"
+        auth = self.headers.get("Authorization") or "none"
         with open("requests.log", "a") as log:
             log.write(f"{self.path} {auth}\n")
         if self.path != "/acme/info/internal-cli":
@@ -70,6 +70,7 @@ assert "mise ls-remote gem:internal-cli" "1.0.0
 2.3.1"
 assert "mise latest gem:internal-cli@2.2" "2.2.0"
 
-# The JSON API first, then the compact index, both with the credential.
-assert "cat requests.log" "/acme/api/v1/versions/internal-cli.json Basic
-/acme/info/internal-cli Basic"
+# The JSON API first, then the compact index, both with the credential
+# (base64 of `ghp_e2eSECRET:`).
+assert "cat requests.log" "/acme/api/v1/versions/internal-cli.json Basic Z2hwX2UyZVNFQ1JFVDo=
+/acme/info/internal-cli Basic Z2hwX2UyZVNFQ1JFVDo="
