@@ -1277,6 +1277,7 @@ impl<'a> CmdLineRunner<'a> {
         self.interrupt_on_timeout();
         let mut cp = self
             .spawn_with_etxtbsy_retry()
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id();
         register_running_pid(id);
@@ -1478,6 +1479,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id().unwrap_or_default();
         register_running_pid(id);
@@ -1734,6 +1736,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id().unwrap_or_default();
         let _running_pid = RunningPidGuard::new(cp.id());
@@ -1913,6 +1916,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id();
         let _running_pid = RunningPidGuard::new(id);
@@ -1970,6 +1974,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id().unwrap_or_default();
         let _running_pid = RunningPidGuard::new(cp.id());
@@ -2456,6 +2461,22 @@ impl<'a> CmdLineRunner<'a> {
 
     fn get_program(&self) -> String {
         display_path(PathBuf::from(self.cmd.as_std().get_program()))
+    }
+
+    /// Spawning reports a missing program as a bare "No such file or directory
+    /// (os error 2)", which reads like a missing file the command touched. Say
+    /// which program was not found, unless the working directory is what's missing.
+    fn name_missing_program(&self, err: std::io::Error) -> std::io::Error {
+        let cwd_missing = self
+            .cmd
+            .as_std()
+            .get_current_dir()
+            .is_some_and(|dir| !dir.exists());
+        if err.kind() != std::io::ErrorKind::NotFound || cwd_missing {
+            return err;
+        }
+        let program = self.get_program();
+        std::io::Error::new(err.kind(), format!("`{program}` not found: {err}"))
     }
 
     fn get_args(&self) -> Vec<String> {

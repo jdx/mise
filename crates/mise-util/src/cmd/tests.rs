@@ -824,3 +824,45 @@ async fn test_apply_sandbox_rejects_allow_net() {
     let err = runner.apply_sandbox().await.unwrap_err();
     assert!(err.to_string().contains("--allow-net=<host>"), "{err}");
 }
+
+#[test]
+fn test_spawn_error_names_a_missing_program() {
+    let err = super::CmdLineRunner::new("mise-no-such-program-for-test")
+        .arg("install")
+        .execute()
+        .unwrap_err();
+
+    let message = format!("{err:#}");
+    assert!(
+        message.contains("`mise-no-such-program-for-test` not found"),
+        "expected the missing program to be named, got {message:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_spawn_error_names_a_missing_program_async() {
+    let err = super::CmdLineRunner::new("mise-no-such-program-for-test")
+        .arg("install")
+        .execute_async()
+        .await
+        .unwrap_err();
+
+    let message = format!("{err:#}");
+    assert!(
+        message.contains("`mise-no-such-program-for-test` not found"),
+        "expected the missing program to be named, got {message:?}"
+    );
+}
+
+#[test]
+fn test_spawn_error_blames_a_missing_directory_not_the_program() {
+    let err = super::CmdLineRunner::new("sh")
+        .args(["-c", "true"])
+        .current_dir("/mise-no-such-dir-for-test")
+        .execute()
+        .unwrap_err();
+
+    let message = format!("{err:#}");
+    assert!(!message.contains("not found"), "{message:?}");
+    assert!(message.contains("No such file or directory"), "{message:?}");
+}
