@@ -644,12 +644,17 @@ fn strip_control(s: &str) -> String {
 /// `[secrets.fnox]`: a file in `$HOME` or above it applies to every project.
 fn personal_file(source: Option<wire::WireSource>, home: &Path) -> Option<PathBuf> {
     let source = source?;
-    let personal = source.global
-        || (source.path.is_absolute()
-            && source
-                .path
+    let home_level = |path: &Path| {
+        path.is_absolute()
+            && path
                 .parent()
-                .is_some_and(|dir| !super::config::is_project_secrets_root(dir, home)));
+                .is_some_and(|dir| !super::config::is_project_secrets_root(dir, home))
+    };
+    // fnox reports the path it loaded, so a project fnox.toml that links to ~/fnox.toml is
+    // the home file
+    let personal = source.global
+        || home_level(&source.path)
+        || std::fs::canonicalize(&source.path).is_ok_and(|real| home_level(&real));
     personal.then_some(source.path)
 }
 
@@ -807,10 +812,15 @@ mod tests {
 
     #[test]
     fn keys_from_the_users_own_config_are_personal() {
-        // absolute on every platform: `/home/me` is not absolute on Windows
-        let root = if cfg!(windows) { r"C:\" } else { "/" };
-        let abs = |rel: &str| rel.split('/').fold(PathBuf::from(root), |p, c| p.join(c));
+        // a real, existing directory: `/home/me` is not absolute on Windows, and the check
+        // canonicalizes, which only matches up when the home directory exists
+        let t = tempfile::tempdir().unwrap();
+        let abs = |rel: &str| {
+            rel.split('/')
+                .fold(t.path().to_path_buf(), |p, c| p.join(c))
+        };
         let home = abs("home/me");
+        std::fs::create_dir_all(&home).unwrap();
         let personal = |rel: &str, global| {
             personal_file(
                 Some(wire::WireSource {
@@ -862,6 +872,28 @@ mod tests {
         assert_eq!(entry("MINE"), own("home/me/.config/fnox/config.toml"));
         assert_eq!(entry("THEIRS"), None);
         assert_eq!(entry("OLD"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_project_file_linked_to_a_home_file_is_personal() {
+        let t = tempfile::tempdir().unwrap();
+        let home = t.path().join("home");
+        let project = home.join("src/app");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(home.join("fnox.toml"), "").unwrap();
+        let linked = project.join("fnox.toml");
+        std::os::unix::fs::symlink(home.join("fnox.toml"), &linked).unwrap();
+        let source = |path: &Path| {
+            Some(wire::WireSource {
+                path: path.to_path_buf(),
+                global: false,
+            })
+        };
+        assert_eq!(personal_file(source(&linked), &home), Some(linked.clone()));
+        let own = project.join("own.toml");
+        std::fs::write(&own, "").unwrap();
+        assert_eq!(personal_file(source(&own), &home), None);
     }
 
     #[test]
