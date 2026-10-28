@@ -353,6 +353,8 @@ fn expand_group(
     // the tree itself, minus every path an entry describes, and minus a
     // source inside the tree that an entry deploys somewhere else
     let mut exclude = group.exclude.clone();
+    // the sources are normalized, so the root they are compared with is too
+    let normalized_root = files::lexical_normalize(&root);
     for (entry_target, entry_source) in &claims {
         let rel = entry_target
             .strip_prefix(&target)
@@ -361,7 +363,7 @@ fn expand_group(
             "/{}",
             glob_escape_rel(&source_rel_for(&root, rel, group.dot_prefix))
         ));
-        if let Ok(source_rel) = entry_source.strip_prefix(&root)
+        if let Ok(source_rel) = entry_source.strip_prefix(&normalized_root)
             && !source_rel.as_os_str().is_empty()
         {
             exclude.push(format!("/{}", glob_escape_rel(source_rel)));
@@ -1383,6 +1385,31 @@ mod tests {
                 format!("{}/owned", key.display())
             ),
         )?;
+        assert!(
+            files[0]
+                .exclude
+                .iter()
+                .any(|p| p.as_str() == "/templates/defaults.json")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_root_with_dot_dot_still_skips_the_sources_inside_it() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let root = dir.path().join("root/../root");
+        let group: GroupToml = toml::from_str(&format!(
+            "root = {root:?}\ntarget = {target:?}\nmode = \"copy\"\n[entries]\n{key:?} = {{ source = \"templates/defaults.json\", merge = true }}",
+            target = dir.path().join("home"),
+            key = format!("{}/owned", dir.path().join("home/settings.json").display()),
+        ))?;
+        let origin = ResourceOrigin {
+            config: dir.path().join("mise.toml"),
+            config_root: dir.path().to_path_buf(),
+            environment: vec![],
+            source: None,
+        };
+        let (files, _) = expand_group("common", group, dir.path(), &origin)?;
         assert!(
             files[0]
                 .exclude
