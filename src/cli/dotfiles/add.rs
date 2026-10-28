@@ -288,6 +288,17 @@ impl DotfilesAdd {
                     req.origin.config.display_user()
                 );
             }
+            // capturing a directory copies every file under it, secrets too
+            if let Some(req) = managed
+                .iter()
+                .find(|req| req.mode == FileMode::Fnox && req.target.starts_with(&target))
+            {
+                bail!(
+                    "{target_raw}: contains {}, which {} stores in fnox; add the other files one at a time",
+                    req.target.display_user(),
+                    req.origin.config.display_user()
+                );
+            }
             // capturing copies the target tree into the source verbatim,
             // which would store `.bashrc` where the entry reads `dot-bashrc`
             if let Some(req) = existing

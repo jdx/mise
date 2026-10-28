@@ -85,6 +85,18 @@ TOML
 assert_succeed "mise dot apply --yes"
 assert "cat ~/.netrc" "token=group"
 
+# capturing a directory that holds a fnox target would copy the secret too
+mkdir -p ~/.config/app
+printf 'token=dir\n' >~/fake-fnox/token
+printf 'theme=dark\n' >~/.config/app/settings
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.config/app/token" = { mode = "fnox" }
+TOML
+assert_succeed "mise dot apply --yes"
+assert_fail "mise dot add --no-apply ~/.config/app" "stores in fnox"
+assert_fail "test -e ~/.dotfiles/.config/app/token"
+
 # an entry that names a source is ignored with a warning
 # schema: invalid
 cat >mise.toml <<'TOML'
