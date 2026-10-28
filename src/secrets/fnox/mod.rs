@@ -631,7 +631,7 @@ fn interpret(
     }
     let doc: wire::DescribeDocument =
         serde_json::from_slice(buf).map_err(|e| unparsable(buf, &e))?;
-    Ok(catalog(doc))
+    Ok(catalog(doc, &crate::dirs::HOME))
 }
 
 /// Names and descriptions come from fnox config and reach the terminal.
@@ -639,7 +639,29 @@ fn strip_control(s: &str) -> String {
     s.chars().filter(|c| !c.is_ascii_control()).collect()
 }
 
-fn catalog(doc: wire::DescribeDocument) -> Catalog {
+/// fnox merges its global config into every project, and parent directories up to a
+/// `root = true` file, so a key can come from the user's own config. The same rule as for
+/// `[secrets.fnox]`: a file in `$HOME` or above it applies to every project.
+fn personal_file(source: Option<wire::WireSource>, home: &Path) -> Option<PathBuf> {
+    let source = source?;
+    let home_level = |path: &Path| {
+        // fnox finds `<dir>/.config/fnox.toml` from `<dir>`, as mise does `.config/mise.toml`
+        let dir = path.parent().map(|dir| match dir.file_name() {
+            Some(name) if name == ".config" => dir.parent().unwrap_or(dir),
+            _ => dir,
+        });
+        path.is_absolute()
+            && dir.is_some_and(|dir| !super::config::is_project_secrets_root(dir, home))
+    };
+    // fnox reports the path it loaded, so a project fnox.toml that links to ~/fnox.toml is
+    // the home file
+    let personal = source.global
+        || home_level(&source.path)
+        || std::fs::canonicalize(&source.path).is_ok_and(|real| home_level(&real));
+    personal.then_some(source.path)
+}
+
+fn catalog(doc: wire::DescribeDocument, home: &Path) -> Catalog {
     let mut entries = IndexMap::new();
     for key in doc.keys {
         let Some(name) = SecretName::new(&key.key) else {
@@ -669,6 +691,7 @@ fn catalog(doc: wire::DescribeDocument) -> Catalog {
                 as_file: key.as_file,
                 injectable: key.injectable.exec,
                 description: key.description.map(|d| strip_control(&d)),
+                personal: personal_file(key.source, home),
             },
         );
     }
@@ -788,6 +811,111 @@ mod tests {
         let unknown = &c.entries[&SecretName::new("NEW_MODE").unwrap()];
         assert_eq!(unknown.mode, Some(InjectMode::Never));
         assert!(!unknown.injectable);
+    }
+
+    #[test]
+    fn keys_from_the_users_own_config_are_personal() {
+        // a real, existing directory: `/home/me` is not absolute on Windows, and the check
+        // canonicalizes, which only matches up when the home directory exists
+        let t = tempfile::tempdir().unwrap();
+        let abs = |rel: &str| {
+            rel.split('/')
+                .fold(t.path().to_path_buf(), |p, c| p.join(c))
+        };
+        let home = abs("home/me");
+        std::fs::create_dir_all(&home).unwrap();
+        let personal = |rel: &str, global| {
+            personal_file(
+                Some(wire::WireSource {
+                    path: abs(rel),
+                    global,
+                }),
+                &home,
+            )
+        };
+        let own = |rel: &str| Some(abs(rel));
+        assert_eq!(
+            personal("home/me/.config/fnox/config.toml", true),
+            own("home/me/.config/fnox/config.toml")
+        );
+        // a project that imports a file the global config imports
+        assert_eq!(
+            personal("srv/app/shared.toml", true),
+            own("srv/app/shared.toml")
+        );
+        // found by walking up from the project
+        assert_eq!(
+            personal("home/me/fnox.toml", false),
+            own("home/me/fnox.toml")
+        );
+        assert_eq!(personal("fnox.toml", false), own("fnox.toml"));
+        assert_eq!(personal("home/me/src/app/fnox.toml", false), None);
+        assert_eq!(personal("srv/app/fnox.toml", false), None);
+        assert_eq!(personal_file(None, &home), None);
+
+        let key = |name: &str, source: Option<(&str, bool)>| {
+            let mut key = serde_json::json!({
+                "key": name, "kind": "secret", "env": true, "injectable": {"exec": true},
+            });
+            if let Some((rel, global)) = source {
+                key["source"] = serde_json::json!({"path": abs(rel), "global": global});
+            }
+            key
+        };
+        let doc = serde_json::json!({
+            "schema": 1, "fnox_version": "1.44.0", "profile": [], "dynamic_leases": [],
+            "keys": [
+                key("MINE", Some(("home/me/.config/fnox/config.toml", true))),
+                key("THEIRS", Some(("srv/app/fnox.toml", false))),
+                key("OLD", None),
+            ],
+        });
+        let c = catalog(serde_json::from_value(doc).unwrap(), &home);
+        let entry = |k: &str| c.entries[&SecretName::new(k).unwrap()].personal.clone();
+        assert_eq!(entry("MINE"), own("home/me/.config/fnox/config.toml"));
+        assert_eq!(entry("THEIRS"), None);
+        assert_eq!(entry("OLD"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_project_file_linked_to_a_home_file_is_personal() {
+        let t = tempfile::tempdir().unwrap();
+        let home = t.path().join("home");
+        let project = home.join("src/app");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(home.join("fnox.toml"), "").unwrap();
+        let linked = project.join("fnox.toml");
+        std::os::unix::fs::symlink(home.join("fnox.toml"), &linked).unwrap();
+        let source = |path: &Path| {
+            Some(wire::WireSource {
+                path: path.to_path_buf(),
+                global: false,
+            })
+        };
+        assert_eq!(personal_file(source(&linked), &home), Some(linked.clone()));
+        let own = project.join("own.toml");
+        std::fs::write(&own, "").unwrap();
+        assert_eq!(personal_file(source(&own), &home), None);
+
+        // `~/.config/fnox.toml` is found from `$HOME`; a project's `.config/fnox.toml` is not
+        std::fs::create_dir_all(home.join(".config")).unwrap();
+        std::fs::create_dir_all(project.join(".config")).unwrap();
+        let home_config = home.join(".config/fnox.toml");
+        std::fs::write(&home_config, "").unwrap();
+        assert_eq!(
+            personal_file(source(&home_config), &home),
+            Some(home_config.clone())
+        );
+        let linked_config = project.join("linked.toml");
+        std::os::unix::fs::symlink(&home_config, &linked_config).unwrap();
+        assert_eq!(
+            personal_file(source(&linked_config), &home),
+            Some(linked_config.clone())
+        );
+        let project_config = project.join(".config/fnox.toml");
+        std::fs::write(&project_config, "").unwrap();
+        assert_eq!(personal_file(source(&project_config), &home), None);
     }
 
     #[test]

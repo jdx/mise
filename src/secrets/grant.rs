@@ -213,6 +213,7 @@ impl SecretGrant {
 pub enum ProblemKind {
     Unknown,
     NotInjectable,
+    Personal,
     InvalidName,
     Wildcard,
     Remote,
@@ -231,6 +232,7 @@ impl ProblemKind {
         match self {
             Self::Unknown => "unknown",
             Self::NotInjectable => "not_injectable",
+            Self::Personal => "personal",
             Self::InvalidName => "invalid_name",
             Self::Wildcard => "wildcard",
             Self::Remote => "remote",
@@ -888,10 +890,51 @@ pub(crate) fn key_problems(
                     .detail(format!("Granted by: {}", grant.granted_by(key))),
                 );
             }
+            // The user naming the key on the command line is the one way to hand it to a
+            // project's task.
+            Some(super::CatalogEntry {
+                personal: Some(file),
+                ..
+            }) if !grant
+                .keys
+                .get(key)
+                .is_some_and(|origins| origins.contains(&GrantOrigin::CliFlag)) =>
+            {
+                problems.push(
+                    Problem::new(
+                        &name,
+                        Some(key.as_str()),
+                        ProblemKind::Personal,
+                        format!("{who}: {key} comes from your own fnox config, so the project cannot grant it"),
+                    )
+                    .detail(format!(
+                        "{} supplies all or part of {key}. fnox adds its global config, and fnox.toml files in or above your home directory, to every project.",
+                        escape_controls(&crate::file::display_path(file))
+                    ))
+                    .detail(format!("Granted by: {}", grant.granted_by(key)))
+                    .detail(format!(
+                        "Pass it for one run yourself with `mise run --secrets {key} {name}`, or define {key} in the project's fnox.toml."
+                    )),
+                );
+            }
             Some(_) => {}
         }
     }
     problems
+}
+
+/// A file name comes from the user's config and reaches the terminal.
+fn escape_controls(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| {
+            let escaped: Vec<char> = if c.is_control() {
+                c.escape_default().collect()
+            } else {
+                vec![c]
+            };
+            escaped
+        })
+        .collect()
 }
 
 /// A close name: transposition-aware edit distance of at most 2, else a fuzzy match.
@@ -1346,6 +1389,14 @@ fn scan_get_env_name(chars: &[char], mut i: usize, out: &mut BTreeSet<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn escapes_control_characters_in_a_displayed_file_name() {
+        assert_eq!(
+            escape_controls("/h/.config/fnox/a\nb\u{1b}[31m.toml"),
+            "/h/.config/fnox/a\\nb\\u{1b}[31m.toml"
+        );
+    }
 
     fn parse(s: &str) -> Result<TaskSecrets, String> {
         #[derive(serde::Deserialize)]
