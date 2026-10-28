@@ -38,7 +38,7 @@ List node's version aliases
 ```
 mise tool-alias ls node
 tool  alias      version
-node  lts        24
+node  lts        26
 node  lts-jod    22
 node  project    20
 ```
