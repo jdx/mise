@@ -77,6 +77,9 @@ assume I will wait before I look at the PR.
 - Git and a C toolchain.
 - clang and libclang. `mise run build` builds with `--all-features`, which
   generates `aws-lc-sys` bindings with bindgen.
+- cmake, which `mise install` provides with the other project tools. The
+  build compiles zlib-ng (`libz-ng-sys`, pulled in by `flate2`) with it, and
+  `--all-features` also compiles AWS-LC (`aws-lc-sys`) with it.
 - On Linux and macOS, OpenSSL and its headers, plus `pkg-config` on Linux.
   `--all-features` also turns on the optional `openssl` dependency, which links
   the system OpenSSL.

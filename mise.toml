@@ -10,6 +10,8 @@ tak = { version = "latest", minimum_release_age = "0s" }
 age = "latest"
 aube = { version = "latest", minimum_release_age = "0s" }
 cargo-binstall = "latest"
+# builds zlib-ng (libz-ng-sys) and, with --all-features, AWS-LC (aws-lc-sys)
+cmake = "latest"
 communique = { version = "latest", minimum_release_age = "0s" }
 cargo-insta = "latest"
 "aqua:nextest-rs/nextest/cargo-nextest" = "latest"
