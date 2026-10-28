@@ -693,6 +693,7 @@ impl Backend for NodePlugin {
             ("lts/iron", "20"),
             ("lts/jod", "22"),
             ("lts/krypton", "24"),
+            ("lts/lithium", "26"),
             ("lts-argon", "4"),
             ("lts-boron", "6"),
             ("lts-carbon", "8"),
@@ -704,6 +705,7 @@ impl Backend for NodePlugin {
             ("lts-iron", "20"),
             ("lts-jod", "22"),
             ("lts-krypton", "24"),
+            ("lts-lithium", "26"),
             ("lts", "26"),
         ]
         .into_iter()
