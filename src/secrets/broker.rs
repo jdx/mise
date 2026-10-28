@@ -79,20 +79,23 @@ impl Pending {
 /// catalog has any, the project's keys are asked for by name: a signed-out provider behind a
 /// personal key then cannot fail the run, or prompt for it. A dynamic lease's keys are only
 /// known once it runs, so with one in the catalog everything is asked for, and the personal
-/// keys are dropped from the answer.
+/// keys are dropped from the answer. So with no project key to name: a call is still needed
+/// for the `remove` list that scrubs provider credentials from the child.
 fn all_selection(catalog: &Catalog) -> KeySelection {
     if !catalog.dynamic_leases.is_empty() || !catalog.entries.values().any(|e| e.personal.is_some())
     {
         return KeySelection::AllInScope;
     }
-    KeySelection::Keys(
-        catalog
-            .entries
-            .iter()
-            .filter(|(_, e)| e.injectable && e.personal.is_none())
-            .map(|(key, _)| key.clone())
-            .collect(),
-    )
+    let project: BTreeSet<SecretName> = catalog
+        .entries
+        .iter()
+        .filter(|(_, e)| e.injectable && e.personal.is_none())
+        .map(|(key, _)| key.clone())
+        .collect();
+    if project.is_empty() {
+        return KeySelection::AllInScope;
+    }
+    KeySelection::Keys(project)
 }
 
 /// The terminal lock for an interactive fnox call.
@@ -240,13 +243,10 @@ impl MemoValues {
         subject: &str,
     ) -> Result<()> {
         let selection = what.selection(catalog);
-        let result = if selection.names().is_some_and(BTreeSet::is_empty) {
-            Ok(Resolved::default())
-        } else {
-            memo.source
-                .resolve(&SourceCx { interactive }, &selection, catalog)
-                .await
-        };
+        let result = memo
+            .source
+            .resolve(&SourceCx { interactive }, &selection, catalog)
+            .await;
         self.apply(result, memo, catalog, what, interactive, subject)
     }
 
@@ -262,17 +262,6 @@ impl MemoValues {
         subject: &str,
     ) -> Result<bool> {
         let selection = what.selection(catalog);
-        if selection.names().is_some_and(BTreeSet::is_empty) {
-            self.apply(
-                Ok(Resolved::default()),
-                memo,
-                catalog,
-                what.clone(),
-                true,
-                subject,
-            )?;
-            return Ok(true);
-        }
         let result = match memo
             .source
             .resolve_cached(&SourceCx { interactive: true }, &selection, catalog)
@@ -2148,6 +2137,10 @@ mod tests {
         );
         assert!(all_selection(&catalog).names().is_some());
         catalog.dynamic_leases.push("build_token".into());
+        assert!(all_selection(&catalog).names().is_none());
+        // with only personal keys a call is still made, for the credential scrub
+        catalog.dynamic_leases.clear();
+        catalog.entries.retain(|_, e| e.personal.is_some());
         assert!(all_selection(&catalog).names().is_none());
     }
 
