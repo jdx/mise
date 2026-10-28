@@ -345,10 +345,12 @@ impl Uninstall {
             let mut tvs = Vec::new();
 
             if let Some(tvr) = &ta.tvr {
-                tvs.push((
-                    backend.clone(),
-                    tvr.resolve(config, &Default::default()).await?,
-                ));
+                let resolved = tvr.resolve(config, &Default::default()).await?;
+                // A graph install is the one installation the request names; the
+                // resolved version would only count it a second time.
+                if !graph_install_stands_for(&resolved.version, &matches) {
+                    tvs.push((backend.clone(), resolved));
+                }
             }
 
             // Installations of a matching version that differ in install options
@@ -392,6 +394,24 @@ impl Uninstall {
     }
 }
 
+/// The version a graph install stands for: `1.0.0` for `1.0.0~uv~<digest>`
+/// or `1.0.0~aube~<digest>`.
+fn graph_install_version(name: &str) -> Option<&str> {
+    ["~aube~", "~uv~"].iter().find_map(|marker| {
+        let (version, identity) = name.rsplit_once(marker)?;
+        (identity.len() == 16 && identity.bytes().all(|b| b.is_ascii_hexdigit())).then_some(version)
+    })
+}
+
+/// Whether `matches` holds a graph install of `resolved` and no plain install
+/// of it.
+fn graph_install_stands_for(resolved: &str, matches: &[&String]) -> bool {
+    !matches.iter().any(|m| m.as_str() == resolved)
+        && matches
+            .iter()
+            .any(|m| graph_install_version(m) == Some(resolved))
+}
+
 /// Whether the installed version `name` is selected by the version `query`,
 /// where `matches` is the backend's own fuzzy matcher (Java, for one, accepts
 /// `+` after any query).
@@ -406,16 +426,13 @@ fn installed_version_matches(query: &str, name: &str, matches: impl Fn(&str) -> 
     if query == "latest" {
         return false;
     }
-    let logical = ["~aube~", "~uv~"].iter().find_map(|marker| {
-        let (version, identity) = name.rsplit_once(marker)?;
-        (identity.len() == 16 && identity.bytes().all(|b| b.is_ascii_hexdigit())).then_some(version)
-    });
+    let logical = graph_install_version(name);
     matches(name) || logical.is_some_and(matches)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::installed_version_matches as matches_with;
+    use super::{graph_install_stands_for, installed_version_matches as matches_with};
 
     fn installed_version_matches(query: &str, name: &str) -> bool {
         // Stands in for the backend's matcher: the query, or the query followed
@@ -436,6 +453,18 @@ mod tests {
         assert!(!installed_version_matches("3.4.1", "3.4.12"));
         assert!(installed_version_matches("", "3.4.12"));
         assert!(!installed_version_matches("latest", "3.4.12"));
+    }
+
+    #[test]
+    fn a_graph_install_stands_for_the_version_it_was_resolved_from() {
+        let graph = "1.0.0~uv~0123456789abcdef".to_string();
+        let other = "1.0.1".to_string();
+        let plain = "1.0.0".to_string();
+        assert!(graph_install_stands_for("1.0.0", &[&graph]));
+        assert!(graph_install_stands_for("1.0.0", &[&graph, &other]));
+        assert!(!graph_install_stands_for("1.0.0", &[&graph, &plain]));
+        assert!(!graph_install_stands_for("1.0.1", &[&graph]));
+        assert!(!graph_install_stands_for("1.0.0", &[]));
     }
 
     #[test]
