@@ -102,6 +102,7 @@ The script reads these environment variables, not TOML settings:
 | `MISE_INSTALL_OS`, `MISE_INSTALL_ARCH` | Override the detected platform, such as `MISE_INSTALL_ARCH=x64` to install the Intel build on Apple silicon. Add `-musl` to the architecture for a musl build.  |
 | `MISE_INSTALL_EXT`                     | Archive format, `tar.zst` or `tar.gz`. Defaults to `tar.zst` when `zstd` is available.                                                                          |
 | `MISE_INSTALL_FROM_GITHUB`             | With `1`, download only from GitHub Releases, without trying mise.jdx.dev first.                                                                                |
+| `MISE_INSTALL_GITHUB_MIRROR`           | HTTPS URL or host to use instead of `https://github.com`, such as an internal mirror. Downloads and checksums from GitHub Releases then come from it.           |
 | `MISE_INSTALL_HELP`                    | With `0`, do not print the activation hint after installing.                                                                                                    |
 | `MISE_DEBUG`, `MISE_QUIET`             | With `1`, print debug output or only errors.                                                                                                                    |
 
@@ -394,13 +395,14 @@ Releases. It adds that directory to your user `Path` (no admin rights needed).
 Re-running it upgrades mise. In MSYS2 or Git Bash, run it through
 `powershell.exe -NoProfile -Command "irm https://mise.run/powershell | iex"`.
 
-| Variable                   | Effect                                                       |
-| -------------------------- | ------------------------------------------------------------ |
-| `MISE_VERSION`             | Install this release instead of the latest                   |
-| `MISE_INSTALL_PATH`        | Path of `mise.exe` (default `~\.local\bin\mise.exe`)         |
-| `MISE_INSTALL_MODIFY_PATH` | `0` leaves the user `Path` alone                             |
-| `MISE_INSTALL_SHIMS_PATH`  | `1` also adds the shims directory to the user `Path`         |
-| `MISE_INSTALL_FROM_GITHUB` | `1` downloads from GitHub Releases instead of `mise.jdx.dev` |
+| Variable                     | Effect                                                       |
+| ---------------------------- | ------------------------------------------------------------ |
+| `MISE_VERSION`               | Install this release instead of the latest                   |
+| `MISE_INSTALL_PATH`          | Path of `mise.exe` (default `~\.local\bin\mise.exe`)         |
+| `MISE_INSTALL_MODIFY_PATH`   | `0` leaves the user `Path` alone                             |
+| `MISE_INSTALL_SHIMS_PATH`    | `1` also adds the shims directory to the user `Path`         |
+| `MISE_INSTALL_FROM_GITHUB`   | `1` downloads from GitHub Releases instead of `mise.jdx.dev` |
+| `MISE_INSTALL_GITHUB_MIRROR` | HTTPS URL or host to use instead of `https://github.com`     |
 
 ### Scoop {#windows-scoop}
 
