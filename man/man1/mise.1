@@ -7257,8 +7257,9 @@ List installed and active tool versions
 
 Lists the tools mise knows about: versions that are installed, and versions
 requested by a config file (active) whether or not they are installed. Each row
-shows the tool, the version (marked `(missing)` when it is not installed), the
-config file that requests it, and the request as written.
+shows the tool, the version (marked `(missing)` when it is not installed, or
+`(lazy)` when it is a lazy tool that installs on first use), the config file
+that requests it, and the request as written.
 .PP
 \fBUsage:\fR mise ls [OPTIONS] [<INSTALLED_TOOL>] ...
 .PP

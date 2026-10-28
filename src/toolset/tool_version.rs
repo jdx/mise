@@ -301,7 +301,7 @@ impl ToolVersion {
     /// Whether a command that runs tools may leave this lazy request unresolved
     /// rather than wait on remote version lists for a tool nobody has run yet.
     /// Installing the tool resolves the request then.
-    fn defers_missing_lazy(request: &ToolRequest, opts: &ResolveOptions) -> bool {
+    pub(crate) fn defers_missing_lazy(request: &ToolRequest, opts: &ResolveOptions) -> bool {
         opts.defer_missing_lazy_tools
             && !opts.latest_versions
             && request.options().lazy == Some(true)

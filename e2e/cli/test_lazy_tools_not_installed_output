@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+# A lazy tool that is not installed yet is waiting for its first run, not
+# missing. `mise ls` marks it `(lazy)` rather than `(missing)`, and a bare
+# `mise upgrade`, which leaves it alone, doesn't list it among the tools it
+# resolves. A distribution's defaults can declare many such tools.
+
+mise uninstall needs-dummy --all
+mise install dummy@1.0.0
+cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF'
+[tools]
+dummy = "1.0.0"
+needs-dummy = { version = "1.0.0", lazy = true, lazy_bins = ["needs-dummy"] }
+EOF
+
+assert_contains "mise ls needs-dummy" "1.0.0 (lazy)"
+assert_not_contains "mise ls needs-dummy" "(missing)"
+assert "mise ls needs-dummy --json | jq -r '.[0].installed'" "false"
+
+upgrade_output=$(mise upgrade 2>&1)
+assert_contains_text "$upgrade_output" " dummy"
+assert_not_contains_text "$upgrade_output" "needs-dummy"
+assert_empty "mise ls --installed needs-dummy"
+
+# Once it is installed, it is listed like any other tool.
+mise install needs-dummy@1.0.0
+assert_not_contains "mise ls needs-dummy" "(lazy)"
+assert_contains "mise upgrade 2>&1" "needs-dummy"
+
+# A tool that isn't lazy is still missing.
+mise uninstall needs-dummy --all
+cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF'
+[tools]
+dummy = "1.0.0"
+needs-dummy = "1.0.0"
+EOF
+assert_contains "mise ls needs-dummy" "1.0.0 (missing)"

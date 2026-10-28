@@ -4851,8 +4851,9 @@ List installed and active tool versions
 
 Lists the tools mise knows about: versions that are installed, and versions
 requested by a config file (active) whether or not they are installed. Each row
-shows the tool, the version (marked `(missing)` when it is not installed), the
-config file that requests it, and the request as written.
+shows the tool, the version (marked `(missing)` when it is not installed, or
+`(lazy)` when it is a lazy tool that installs on first use), the config file
+that requests it, and the request as written.
 """#
     after_long_help "\u{1b}[1m\u{1b}[4mDeprecation:\u{1b}[22m\u{1b}[24m\n\nThe `-l` and `--local` flags are deprecated in favor of `--no-global`. mise warns about\nthem from 2027.1.0 and removes them in 2027.7.0."
     flag --truncate help="Truncate long terminal output to fit the available width" negate=--no-truncate default="true"

@@ -159,10 +159,13 @@ impl Toolset {
     ) -> eyre::Result<()> {
         let mut progress = show_progress
             .then(|| {
+                // A lazy tool left for its first run is not looked up, so listing
+                // it would only suggest work that does not happen.
                 crate::ui::install_progress::resolution_progress(
                     self.versions
-                        .keys()
-                        .map(|ba| (ba.short.clone(), ba.short.clone())),
+                        .iter()
+                        .filter(|(_, tvl)| !tvl.defers_resolution(opts))
+                        .map(|(ba, _)| (ba.short.clone(), ba.short.clone())),
                 )
             })
             .flatten();
