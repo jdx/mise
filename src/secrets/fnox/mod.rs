@@ -807,40 +807,59 @@ mod tests {
 
     #[test]
     fn keys_from_the_users_own_config_are_personal() {
-        let home = Path::new("/home/me");
-        let personal = |path: &str, global| {
+        // absolute on every platform: `/home/me` is not absolute on Windows
+        let root = if cfg!(windows) { r"C:\" } else { "/" };
+        let abs = |rel: &str| rel.split('/').fold(PathBuf::from(root), |p, c| p.join(c));
+        let home = abs("home/me");
+        let personal = |rel: &str, global| {
             personal_file(
                 Some(wire::WireSource {
-                    path: PathBuf::from(path),
+                    path: abs(rel),
                     global,
                 }),
-                home,
+                &home,
             )
         };
-        let own = |path: &str| Some(PathBuf::from(path));
+        let own = |rel: &str| Some(abs(rel));
         assert_eq!(
-            personal("/home/me/.config/fnox/config.toml", true),
-            own("/home/me/.config/fnox/config.toml")
+            personal("home/me/.config/fnox/config.toml", true),
+            own("home/me/.config/fnox/config.toml")
         );
         // a project that imports a file the global config imports
         assert_eq!(
-            personal("/srv/app/shared.toml", true),
-            own("/srv/app/shared.toml")
+            personal("srv/app/shared.toml", true),
+            own("srv/app/shared.toml")
         );
         // found by walking up from the project
         assert_eq!(
-            personal("/home/me/fnox.toml", false),
-            own("/home/me/fnox.toml")
+            personal("home/me/fnox.toml", false),
+            own("home/me/fnox.toml")
         );
-        assert_eq!(personal("/fnox.toml", false), own("/fnox.toml"));
-        assert_eq!(personal("/home/me/src/app/fnox.toml", false), None);
-        assert_eq!(personal("/srv/app/fnox.toml", false), None);
-        assert_eq!(personal_file(None, home), None);
+        assert_eq!(personal("fnox.toml", false), own("fnox.toml"));
+        assert_eq!(personal("home/me/src/app/fnox.toml", false), None);
+        assert_eq!(personal("srv/app/fnox.toml", false), None);
+        assert_eq!(personal_file(None, &home), None);
 
-        let doc = r#"{"schema":1,"fnox_version":"1.44.0","profile":[],"keys":[{"key":"MINE","kind":"secret","env":true,"injectable":{"exec":true},"source":{"path":"/home/me/.config/fnox/config.toml","global":true}},{"key":"THEIRS","kind":"secret","env":true,"injectable":{"exec":true},"source":{"path":"/srv/app/fnox.toml","global":false}},{"key":"OLD","kind":"secret","env":true,"injectable":{"exec":true}}],"dynamic_leases":[]}"#;
-        let c = catalog(serde_json::from_str(doc).unwrap(), home);
+        let key = |name: &str, source: Option<(&str, bool)>| {
+            let mut key = serde_json::json!({
+                "key": name, "kind": "secret", "env": true, "injectable": {"exec": true},
+            });
+            if let Some((rel, global)) = source {
+                key["source"] = serde_json::json!({"path": abs(rel), "global": global});
+            }
+            key
+        };
+        let doc = serde_json::json!({
+            "schema": 1, "fnox_version": "1.44.0", "profile": [], "dynamic_leases": [],
+            "keys": [
+                key("MINE", Some(("home/me/.config/fnox/config.toml", true))),
+                key("THEIRS", Some(("srv/app/fnox.toml", false))),
+                key("OLD", None),
+            ],
+        });
+        let c = catalog(serde_json::from_value(doc).unwrap(), &home);
         let entry = |k: &str| c.entries[&SecretName::new(k).unwrap()].personal.clone();
-        assert_eq!(entry("MINE"), own("/home/me/.config/fnox/config.toml"));
+        assert_eq!(entry("MINE"), own("home/me/.config/fnox/config.toml"));
         assert_eq!(entry("THEIRS"), None);
         assert_eq!(entry("OLD"), None);
     }

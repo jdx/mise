@@ -908,7 +908,7 @@ pub(crate) fn key_problems(
                         format!("{who}: {key} comes from your own fnox config, so the project cannot grant it"),
                     )
                     .detail(format!(
-                        "{} defines {key}. fnox adds its global config, and fnox.toml files in or above your home directory, to every project.",
+                        "{} supplies all or part of {key}. fnox adds its global config, and fnox.toml files in or above your home directory, to every project.",
                         escape_controls(&crate::file::display_path(file))
                     ))
                     .detail(format!("Granted by: {}", grant.granted_by(key)))
