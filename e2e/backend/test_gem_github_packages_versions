@@ -90,7 +90,18 @@ assert "cat requests.log" "/orgs/acme/packages/rubygems/internal-cli/versions?pe
 /users/acme/packages/rubygems/internal-cli/versions?per_page=100
 /users/acme/packages/rubygems/internal-cli/versions?per_page=100&page=2"
 
-# Without a token the error names the scope and the fix rather than a bare 401.
 unset GITHUB_TOKEN
 rm -rf "$MISE_CACHE_DIR"
+
+# A token in the source is used for listing as it is for the install, with no
+# GitHub token configured.
+sed 's|https://rubygems|https://ghp_e2eSOURCE@rubygems|' mise.toml >mise.toml.new
+mv mise.toml.new mise.toml
+assert_contains "MISE_GITHUB_GH_CLI_TOKENS=false mise ls-remote gem:internal-cli" "2.3.1"
+assert_not_contains "MISE_DEBUG=1 MISE_GITHUB_GH_CLI_TOKENS=false mise ls-remote gem:internal-cli 2>&1" "ghp_e2eSOURCE"
+sed 's|ghp_e2eSOURCE@||' mise.toml >mise.toml.new
+mv mise.toml.new mise.toml
+rm -rf "$MISE_CACHE_DIR"
+
+# Without a token the error names the scope and the fix rather than a bare 401.
 assert_fail "MISE_GITHUB_GH_CLI_TOKENS=false mise ls-remote gem:internal-cli" "read:packages"

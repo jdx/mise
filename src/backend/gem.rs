@@ -305,20 +305,37 @@ impl GemBackend {
                  https://{GITHUB_PACKAGES_HOST}/<owner>"
             );
         };
-        ensure!(
-            crate::github::resolve_token("api.github.com").is_some(),
-            "listing versions of `{}` from GitHub Packages needs {GITHUB_PACKAGES_TOKEN}",
-            self.ba()
-        );
-        let versions = crate::github::list_package_versions(owner, "rubygems", &self.tool_name())
-            .await
-            .wrap_err_with(|| {
-                format!(
-                    "could not list `{}` in {owner}'s GitHub Packages: check that it exists \
+        // The install authenticates with the source's credential, which is
+        // either the user's own or mise's GitHub token (see
+        // `with_github_packages_token`), so listing uses the same one. GitHub
+        // Packages takes the token as the username, or as the password after
+        // any username.
+        let token = match source.password().filter(|p| !p.is_empty()) {
+            Some(password) => Some(password),
+            None => Some(source.username()).filter(|u| !u.is_empty()),
+        }
+        .map(urlencoding::decode)
+        .transpose()?;
+        let Some(token) = token else {
+            bail!(
+                "listing versions of `{}` from GitHub Packages needs {GITHUB_PACKAGES_TOKEN}",
+                self.ba()
+            );
+        };
+        let versions = crate::github::list_package_versions(
+            owner,
+            "rubygems",
+            &self.tool_name(),
+            Some(&token),
+        )
+        .await
+        .wrap_err_with(|| {
+            format!(
+                "could not list `{}` in {owner}'s GitHub Packages: check that it exists \
                          and that mise has {GITHUB_PACKAGES_TOKEN}",
-                    self.ba()
-                )
-            })?;
+                self.ba()
+            )
+        })?;
         // Newest first, like RubyGems; mise expects oldest first.
         Ok(versions
             .into_iter()
