@@ -43,6 +43,8 @@ pub struct BootstrapHookTable {
     pub run: Option<BootstrapHookRun>,
     /// shell command or commands to run instead of `run` on Windows; set alone, the hook does nothing on other platforms
     pub run_windows: Option<BootstrapHookRun>,
+    /// what `mise bootstrap` prints instead of the command; `--verbose` and `--dry-run` print the command
+    pub description: Option<String>,
 }
 
 #[derive(JsonSchema)]

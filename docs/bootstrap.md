@@ -301,6 +301,28 @@ run = "mise exec -- node --version"
 run_windows = "mise exec -- node.exe --version"
 ```
 
+A table can also set `description`. `mise bootstrap` prints it in place of the
+command, which is useful when the command is a long script:
+
+```toml
+[bootstrap.hooks.final]
+description = "Remove the root copy of pam_reattach if Homebrew removed the module"
+run = '''
+copy=/usr/local/lib/pam/pam_reattach.so
+if [ ! -e /opt/homebrew/lib/pam/pam_reattach.so ] && [ -e "$copy" ]; then
+  sudo rm -f "$copy"
+fi
+'''
+```
+
+Without a `description`, mise prints `$` and the first line of the command, cut
+to the width of the terminal, as it does for [tasks](/tasks/). With a `run`
+array, the description is printed once, before the first command. `--verbose`
+prints each full command, and so does `--dry-run`, which shows what a real run
+would execute. When a [remote host's](/bootstrap/remote.html) own config and a shared config
+both have a hook for the same phase, mise combines their commands and prints
+them without the descriptions.
+
 The phases are `pre-packages`, `post-packages`, `pre-repos`, `post-repos`,
 `pre-dotfiles`, `post-dotfiles`, `pre-defaults`, `post-defaults`, `pre-user`,
 `post-user`, `pre-tools`, `post-tools`, and `final`. The
