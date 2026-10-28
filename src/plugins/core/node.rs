@@ -704,7 +704,7 @@ impl Backend for NodePlugin {
             ("lts-iron", "20"),
             ("lts-jod", "22"),
             ("lts-krypton", "24"),
-            ("lts", "24"),
+            ("lts", "26"),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
