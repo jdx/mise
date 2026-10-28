@@ -332,7 +332,11 @@ impl Uninstall {
                 Some(m) => vec![m],
                 None => installed_versions
                     .iter()
-                    .filter(|v| query.is_empty() || fuzzy_version_matches(&query, v))
+                    .filter(|v| {
+                        // `latest` is resolved below; as a fuzzy query it would
+                        // select every installed version.
+                        query.is_empty() || (query != "latest" && fuzzy_version_matches(&query, v))
+                    })
                     .collect_vec(),
             };
 

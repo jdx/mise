@@ -51,3 +51,8 @@ assert_contains "mise ls --installed --json dummy" '"version": "1.1.12"'
 # the second uninstall finds nothing named 1.1.1, so 1.1.12 stays
 assert_contains "mise uninstall dummy@1.1.1 2>&1" "is not installed"
 assert_contains "mise ls --installed --json dummy" '"version": "1.1.12"'
+# Test: latest removes only the newest installed version, not every version
+mise i dummy@1.1.1
+assert_succeed "mise uninstall dummy@latest"
+assert_contains "mise ls --installed --json dummy" '"version": "1.1.1"'
+assert_not_contains "mise ls --installed --json dummy" '"version": "1.1.12"'
