@@ -471,6 +471,14 @@ fn group_edit_entry(
     let Some((path_raw, _)) = edits::split_edit_key(key) else {
         bail!("entries.{key:?}: edit entries must end with an id path segment");
     };
+    // `..` through a link reaches a file the check below cannot see, and two
+    // spellings of one path would key as two edits
+    if file::replace_path(&path_raw)
+        .components()
+        .any(|component| component == std::path::Component::ParentDir)
+    {
+        bail!("entries.{key:?}: the file being edited must not contain \"..\"");
+    }
     let target = files::resolve_target_arg(&path_raw);
     let Ok(rel) = target.strip_prefix(group_target) else {
         bail!("entries.{key:?}: the file being edited must be inside the group's target");
@@ -489,11 +497,8 @@ fn group_edit_entry(
             toml::Value::String(source.to_string_lossy().to_string()),
         );
     }
-    let mut request = edits::group_edit(name, key, value, root, config_path)
+    let request = edits::group_edit(name, key, value, root, config_path)
         .map_err(|err| eyre::eyre!("entries.{key:?}: {err}"))?;
-    // the file edited is the one checked to lie inside the group's target,
-    // not another that `..` through a link would reach
-    request.path = target.clone();
     let source = request
         .op
         .source_file()
@@ -1398,21 +1403,6 @@ mod tests {
     }
 
     #[test]
-    fn a_group_edit_changes_the_file_it_was_checked_against() -> Result<()> {
-        let dir = tempfile::tempdir()?;
-        let home = dir.path().join("home");
-        let (_, edits) = expand(
-            dir.path(),
-            &format!(
-                "{:?} = {{ line = \"x\" }}",
-                format!("{}/link/../.rc/x", home.display())
-            ),
-        )?;
-        assert_eq!(edits[0].path, home.join(".rc"));
-        Ok(())
-    }
-
-    #[test]
     fn a_root_with_dot_dot_still_skips_the_sources_inside_it() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let root = dir.path().join("root/../root");
@@ -1473,6 +1463,13 @@ mod tests {
                     format!("{}/outside/x", dir.path().display())
                 ),
                 "inside the group's target",
+            ),
+            (
+                format!(
+                    "{:?} = {{ line = \"x\" }}",
+                    format!("{}/link/../.rc/x", home.display())
+                ),
+                "must not contain",
             ),
             (
                 format!(
