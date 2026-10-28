@@ -6,26 +6,12 @@ export MISE_USE_VERSIONS_HOST=0
 MISE_DEBUG=1 mise use swift@6
 assert_matches "mise x -- swift --version" 'Swift version 6\.'
 
-# TODO: re-enable once Swift provides Ubuntu 26.04 binaries
-# Swift 24.04 binaries link against libxml2.so.2 but Ubuntu 26.04 ships libxml2.so.16 (ABI mismatch)
+# TODO: validate these older SwiftFormat source releases with current Swift toolchains.
 #assert "mise x spm:nicklockwood/SwiftFormat@0.53.10 -- swiftformat --version" "0.53.10"
 #assert "mise x spm:https://github.com/nicklockwood/SwiftFormat.git@0.53.10 -- swiftformat --version" "0.53.10"
 
 assert "mise x spm:nicklockwood/SwiftFormat@0.61.1 -- swiftformat --version" "0.61.1"
 
-# Swift's Ubuntu 24.04 binaries require libxml2.so.2, while Ubuntu 26.04 ships
-# the compatible library as libxml2.so.16. Keep SwiftPM mandatory by providing
-# the expected SONAME in the isolated test environment.
-if [[ $(uname -s) == Linux ]]; then
-  libxml2_path="$(find /usr/lib /lib -name 'libxml2.so.2' -print -quit 2>/dev/null)"
-  if [[ -z $libxml2_path ]]; then
-    libxml2_path="$(find /usr/lib /lib -name 'libxml2.so.16' -print -quit 2>/dev/null)"
-    [[ -n $libxml2_path ]]
-    mkdir -p swift-compat
-    ln -s "$libxml2_path" swift-compat/libxml2.so.2
-    export LD_LIBRARY_PATH="$PWD/swift-compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-  fi
-fi
 assert_matches "mise x -- swift package --version" 'Swift Package Manager - Swift 6\.'
 
 # A commit selector must be checked out as a Git revision rather than being
@@ -52,17 +38,17 @@ git -C spm-revision add .
 git -C spm-revision commit -qm "second"
 git_config="$PWD/spm-gitconfig"
 git config --file "$git_config" \
-  url."file://$PWD/spm-revision".insteadOf \
-  "https://github.com/mise-test/spm-revision.git"
+	url."file://$PWD/spm-revision".insteadOf \
+	"https://github.com/mise-test/spm-revision.git"
 
 assert \
-  "GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise x spm:mise-test/spm-revision@rev:$first_revision -- revision-tool" \
-  "first commit"
+	"GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise x spm:mise-test/spm-revision@rev:$first_revision -- revision-tool" \
+	"first commit"
 assert \
-  "GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise x spm:mise-test/spm-revision@ref:$short_revision -- revision-tool" \
-  "first commit"
+	"GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise x spm:mise-test/spm-revision@ref:$short_revision -- revision-tool" \
+	"first commit"
 assert_fail \
-  "GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise install spm:mise-test/spm-revision@rev:deadbeef"
+	"GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise install spm:mise-test/spm-revision@rev:deadbeef"
 assert_fail "mise where spm:mise-test/spm-revision@rev:deadbeef"
 
 # test package with resources (`templates list` command depends on resources being installed)
@@ -75,3 +61,43 @@ assert_fail "mise where spm:mise-test/spm-revision@rev:deadbeef"
 #You can also specify custom templates by path, using \`templatePath\` instead of \`templateName\`.
 #For more information, see the documentation on GitHub or use \`swiftgen template doc\`.
 #"
+
+if [[ $(uname -s) == Darwin ]]; then
+	# danger-swift invokes xcrun on macOS, so build its modules with the same
+	# Apple Swift toolchain rather than the separately packaged Swift toolchain.
+	mise unuse --no-prune swift
+fi
+mise install node@24 danger-swift@3.22.1 npm:danger@13.0.10
+danger_install_path="$(mise where danger-swift@3.22.1)"
+test -x "$danger_install_path/bin/danger-swift"
+test -f "$danger_install_path/lib/danger/libDanger.dylib" ||
+	test -f "$danger_install_path/lib/danger/libDanger.so"
+find "$danger_install_path/lib/danger" -name 'Danger.swiftmodule' -print -quit | grep -q .
+
+cat >Dangerfile.swift <<'EOF'
+import Danger
+import Foundation
+
+nonisolated(unsafe) let danger = Danger()
+danger.fail("mise Danger Swift integration test")
+EOF
+
+git init -q -b master
+git config user.email e2e@example.com
+git config user.name "mise e2e"
+git add Dangerfile.swift
+git commit -q -m initial
+git checkout -q -b test
+cp Dangerfile.swift Changed.swift
+git add Changed.swift
+git commit -q -m change
+
+# Foundation must use the isolated test home on Linux as well as macOS.
+export CFFIXED_USER_HOME="$HOME"
+
+danger_output="$(
+	mise x node@24 danger-swift@3.22.1 npm:danger@13.0.10 -- danger-swift local 2>&1
+)"
+assert_contains_text "$danger_output" "Danger: ⅹ Failing the build"
+assert_contains_text "$danger_output" "mise Danger Swift integration test"
+assert_not_contains_text "$danger_output" "Could not find a libDanger"

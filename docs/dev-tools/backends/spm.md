@@ -195,6 +195,17 @@ Some install scripts exit successfully even when `swift build` failed, so mise
 checks that the command put at least one executable in `bin/` and fails the
 install otherwise.
 
+The `danger-swift` registry shorthand supplies the official installer options,
+so projects do not need to repeat `install_command`. Danger JS is also required.
+For a fresh install through the npm backend, declare Node and Danger JS separately:
+
+```toml
+[tools]
+node = "24"
+danger-js = "13.0.10"
+danger-swift = "3.22.1"
+```
+
 ## Settings
 
 <script setup>
