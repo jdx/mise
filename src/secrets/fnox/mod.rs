@@ -645,10 +645,13 @@ fn strip_control(s: &str) -> String {
 fn personal_file(source: Option<wire::WireSource>, home: &Path) -> Option<PathBuf> {
     let source = source?;
     let home_level = |path: &Path| {
+        // fnox finds `<dir>/.config/fnox.toml` from `<dir>`, as mise does `.config/mise.toml`
+        let dir = path.parent().map(|dir| match dir.file_name() {
+            Some(name) if name == ".config" => dir.parent().unwrap_or(dir),
+            _ => dir,
+        });
         path.is_absolute()
-            && path
-                .parent()
-                .is_some_and(|dir| !super::config::is_project_secrets_root(dir, home))
+            && dir.is_some_and(|dir| !super::config::is_project_secrets_root(dir, home))
     };
     // fnox reports the path it loaded, so a project fnox.toml that links to ~/fnox.toml is
     // the home file
@@ -894,6 +897,25 @@ mod tests {
         let own = project.join("own.toml");
         std::fs::write(&own, "").unwrap();
         assert_eq!(personal_file(source(&own), &home), None);
+
+        // `~/.config/fnox.toml` is found from `$HOME`; a project's `.config/fnox.toml` is not
+        std::fs::create_dir_all(home.join(".config")).unwrap();
+        std::fs::create_dir_all(project.join(".config")).unwrap();
+        let home_config = home.join(".config/fnox.toml");
+        std::fs::write(&home_config, "").unwrap();
+        assert_eq!(
+            personal_file(source(&home_config), &home),
+            Some(home_config.clone())
+        );
+        let linked_config = project.join("linked.toml");
+        std::os::unix::fs::symlink(&home_config, &linked_config).unwrap();
+        assert_eq!(
+            personal_file(source(&linked_config), &home),
+            Some(linked_config.clone())
+        );
+        let project_config = project.join(".config/fnox.toml");
+        std::fs::write(&project_config, "").unwrap();
+        assert_eq!(personal_file(source(&project_config), &home), None);
     }
 
     #[test]
