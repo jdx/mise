@@ -848,7 +848,8 @@ enum VersionStatus {
     Inactive(String),
     Missing(String),
     /// A lazy tool's version that is not installed yet. Unlike `Missing`, that is
-    /// expected: it installs the first time one of its commands runs.
+    /// expected: it installs the first time one of its commands runs, through the
+    /// shims its declaration provides.
     Lazy(String),
     Symlink(String, bool),
     /// A link that is still on disk but no longer resolves — a `mise link` whose target moved or
@@ -889,7 +890,9 @@ async fn resolve_version_status(
             VersionStatus::BrokenSymlink(tv.display_version().to_string())
         }
     } else if !p.is_version_installed(config, tv, true) {
-        if tv.request.options().lazy == Some(true) {
+        // Only a lazy declaration that gets its commands' shims installs on first
+        // use; one safe mode refuses, or with no bins to shim, is just missing.
+        if matches!(tv.request.lazy_bins(), Ok(Some(_))) {
             VersionStatus::Lazy(tv.display_version().to_string())
         } else {
             VersionStatus::Missing(tv.display_version().to_string())
