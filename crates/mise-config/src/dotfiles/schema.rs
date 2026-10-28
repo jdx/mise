@@ -179,7 +179,7 @@ fn rule_5() -> Value {
         "oneOf": [
             {
                 "properties": {
-                    "mode": {"enum": ["copy", "template"]},
+                    "mode": {"enum": ["copy", "template", "fnox"]},
                     "block": false,
                     "comment": false
                 },

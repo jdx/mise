@@ -471,7 +471,7 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
     let has_source = table.contains_key("source");
     let needs_source = !(has_source
         || table.contains_key("content")
-        || matches!(mode.as_deref(), Some("absent" | "track" | "track-local"))
+        || matches!(mode.as_deref(), Some("absent" | "fnox" | "track" | "track-local"))
         // `{ permissions = "0600" }` alone manages an existing file's mode
         || mode.is_none() && table.contains_key("permissions"));
     let source = if let Some(source) = table.get("source").and_then(toml::Value::as_str) {

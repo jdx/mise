@@ -56,6 +56,35 @@ assert_contains "cat ~/.npmrc" "edited=1"
 assert_succeed "mise dot unapply --yes ~/.npmrc"
 assert_fail "test -e ~/.npmrc"
 
+# add never captures a secret into the dotfiles root as plaintext
+printf 'token=local\n' >~/.npmrc
+assert_fail "mise dot add --dry-run ~/.npmrc" "stored in fnox"
+assert_fail "mise dot add --mode fnox ~/.other" "takes no source"
+assert_fail "test -e ~/.dotfiles/.npmrc"
+rm ~/.npmrc
+
+# permissions override 0600, and a variant target selects where it goes
+printf 'token=variant\n' >~/fake-fnox/npmrc
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.npmrc" = { mode = "fnox", permissions = "0640", variants = [{ default = true, target = "~/.config/npm/npmrc" }] }
+TOML
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.config/npm/npmrc" "token=variant"
+assert "stat -c %a ~/.config/npm/npmrc 2>/dev/null || stat -f %Lp ~/.config/npm/npmrc" "640"
+assert_fail "test -e ~/.npmrc"
+
+# a group entry needs no source either
+mkdir -p ~/.dotfiles/secrets
+printf 'token=group\n' >~/fake-fnox/.netrc
+cat >mise.toml <<'TOML'
+[dotfile_groups.secrets]
+root = "secrets"
+entries."~/.netrc" = { mode = "fnox" }
+TOML
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.netrc" "token=group"
+
 # an entry that names a source is ignored with a warning
 # schema: invalid
 cat >mise.toml <<'TOML'

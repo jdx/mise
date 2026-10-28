@@ -144,6 +144,10 @@ impl DotfilesAdd {
             Some("absent") => bail!(
                 "`--mode absent` removes a file rather than capturing it; declare `mode = \"absent\"` in [dotfiles]"
             ),
+            // capturing would copy the secret into the dotfiles root as plaintext
+            Some("fnox") => bail!(
+                "`--mode fnox` takes no source; store the file with `fnox set --file <path>` and declare `mode = \"fnox\"` in [dotfiles]"
+            ),
             Some(mode) => {
                 FileMode::parse(mode).ok_or_else(|| eyre::eyre!("unknown dotfile mode: {mode}"))
             }
@@ -273,6 +277,14 @@ impl DotfilesAdd {
             {
                 bail!(
                     "{target_raw}: declared absent in {}; remove that entry before adding the file",
+                    req.origin.config.display_user()
+                );
+            }
+            if let Some(req) = existing
+                && req.mode == FileMode::Fnox
+            {
+                bail!(
+                    "{target_raw}: stored in fnox by {}; change it with `mise dot edit {target_raw}`",
                     req.origin.config.display_user()
                 );
             }

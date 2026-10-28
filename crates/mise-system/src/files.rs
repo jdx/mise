@@ -347,11 +347,12 @@ fn validate_file_variants(
     if has_target_override && content.is_some() {
         bail!("destination variants with inline content are not supported");
     }
-    // an absent entry removes its destination and reads no source
+    // absent and fnox entries read no source: one removes its destination,
+    // the other writes what fnox stores for it
     let implied_source = if has_target_override
         && source.is_none()
         && !permissions_only
-        && mode != Some("absent")
+        && !matches!(mode, Some("absent" | "fnox"))
     {
         if !variants.iter().all(|v| v.target.is_some()) {
             bail!(
@@ -1207,7 +1208,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 // composition checks whichever destination a variant selects,
                 // so every one of them must be a single path; a template's
                 // literal text is checked now and its rendering when selected
-                if mode == FileMode::Absent
+                if matches!(mode, FileMode::Absent | FileMode::Fnox)
                     && std::iter::once(target.as_str())
                         .chain(
                             variants
@@ -1217,7 +1218,10 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                         )
                         .any(|path| is_glob_pattern(&resolve_target_arg(&template_literal(path))))
                 {
-                    bail!("dotfile {target}: an absent target cannot use wildcards");
+                    bail!(
+                        "dotfile {target}: an {} target cannot use wildcards",
+                        mode.name()
+                    );
                 }
                 if mode == FileMode::Fnox
                     && (source.is_some()
@@ -1229,9 +1233,6 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                     bail!(
                         "dotfile {target} with mode = \"fnox\" cannot declare source, content, manifest, exclude, or encrypt; fnox stores the file"
                     );
-                }
-                if mode == FileMode::Fnox && is_glob_pattern(&resolve_target_arg(&target)) {
-                    bail!("dotfile {target}: a fnox target cannot use wildcards");
                 }
                 if source.is_some() && content.is_some() {
                     bail!("dotfile {target} cannot declare both source and content");
@@ -1288,7 +1289,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                         "dotfile {target}: relative requires mode = \"symlink\" or \"symlink-each\""
                     );
                 }
-                if !matches!(mode, FileMode::Track | FileMode::Absent)
+                if !matches!(mode, FileMode::Track | FileMode::Absent | FileMode::Fnox)
                     && !permissions_only
                     && source.is_none()
                     && content.is_none()
@@ -3226,6 +3227,7 @@ pub fn render_template_for_oci(config: &Config, req: &FileRequest) -> Result<Str
 
 /// The permission bits a `mode = "fnox"` target gets unless the entry sets
 /// `permissions`: the file holds a secret.
+#[cfg(unix)]
 const FNOX_PERMISSIONS: u32 = 0o600;
 
 /// Message text only: versions are never compared.
@@ -7079,6 +7081,25 @@ variants = [
         )?;
         assert!(check("{{", "absent").is_err());
         assert!(check("{{ xdg_config_home }}/*", "absent").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn fnox_entries_need_no_source_in_incoming_config() -> Result<()> {
+        let path = dirs::HOME.join(".config/mise/config.toml");
+        let check = |body: &str| -> Result<()> {
+            let mut configs = ConfigMap::new();
+            configs.insert(path.clone(), crate::host::parse_config_body(body, &path)?);
+            validate_incoming_files(&configs)
+        };
+        check("[dotfiles]\n\"/etc/service/credentials\" = { mode = \"fnox\" }\n")?;
+        check(
+            "[dotfiles]\n\"~/.npmrc\" = { mode = \"fnox\", permissions = \"0640\", variants = [{ os = \"linux\", target = \"~/.config/npm/npmrc\" }] }\n",
+        )?;
+        assert!(
+            check("[dotfiles]\n\"~/.npmrc\" = { mode = \"fnox\", variants = [{ default = true, target = \"~/.config/*\" }] }\n")
+                .is_err()
+        );
         Ok(())
     }
 

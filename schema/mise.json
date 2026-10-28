@@ -7436,7 +7436,7 @@
                   {
                     "properties": {
                       "mode": {
-                        "enum": ["copy", "template"]
+                        "enum": ["copy", "template", "fnox"]
                       },
                       "block": false,
                       "comment": false
@@ -8043,7 +8043,7 @@
                         {
                           "properties": {
                             "mode": {
-                              "enum": ["copy", "template"]
+                              "enum": ["copy", "template", "fnox"]
                             },
                             "block": false,
                             "comment": false
