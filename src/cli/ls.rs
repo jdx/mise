@@ -890,9 +890,9 @@ async fn resolve_version_status(
             VersionStatus::BrokenSymlink(tv.display_version().to_string())
         }
     } else if !p.is_version_installed(config, tv, true) {
-        // Only a lazy declaration that gets its commands' shims installs on first
-        // use; one safe mode refuses, or with no bins to shim, is just missing.
-        if matches!(tv.request.lazy_bins(), Ok(Some(_))) {
+        // A lazy declaration safe mode refuses, or with no command left to shim,
+        // does not install on first use, so it is just missing.
+        if tv.request.installs_on_first_use() {
             VersionStatus::Lazy(tv.display_version().to_string())
         } else {
             VersionStatus::Missing(tv.display_version().to_string())

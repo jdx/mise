@@ -38,6 +38,16 @@ needs-dummy = { version = "1.0.0", lazy = true }
 EOF
 assert_contains "mise ls needs-dummy" "1.0.0 (missing)"
 
+# The same when shims.exclude removes every command it would shim.
+cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF'
+[settings]
+shims.exclude = ["needs-dummy"]
+[tools]
+dummy = "1.0.0"
+needs-dummy = { version = "1.0.0", lazy = true, lazy_bins = ["needs-dummy"] }
+EOF
+assert_contains "mise ls needs-dummy" "1.0.0 (missing)"
+
 # A tool that isn't lazy is still missing.
 cat >"$MISE_SYSTEM_DIR/config.toml" <<'EOF'
 [tools]
