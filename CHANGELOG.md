@@ -1,5 +1,88 @@
 # Changelog
 
+## [2026.10.22](https://github.com/jdx/mise/releases/tag/v2026.10.22) - 2026-10-28
+
+### 🚀 Features
+
+- **(bootstrap)** print a hook's description or one line instead of its whole script by @jdx in [#15106](https://github.com/jdx/mise/pull/15106)
+- **(dotfiles)** add create_if_missing to seed a file once by @jdx in [#15080](https://github.com/jdx/mise/pull/15080)
+- **(dotfiles)** set permissions on a file a merge entry creates by @jdx in [#15087](https://github.com/jdx/mise/pull/15087)
+- **(dotfiles)** merge into JSONC files such as VS Code's settings.json by @jdx in [#15077](https://github.com/jdx/mise/pull/15077)
+- **(http)** add ipv4_only setting for hosts that fail over IPv6 by @jdx in [#15057](https://github.com/jdx/mise/pull/15057)
+- **(shell)** add --all to `mise shell --unset` by @jdx in [#15088](https://github.com/jdx/mise/pull/15088)
+- **(uninstall)** add --local to remove a project's installed tools by @jdx in [#15079](https://github.com/jdx/mise/pull/15079)
+- **(vars)** add --json and --json-extended to mise vars by @jdx in [#15069](https://github.com/jdx/mise/pull/15069)
+- add --no-global and --project scope flags, deprecate --local by @jdx in [#15081](https://github.com/jdx/mise/pull/15081)
+
+### 🐛 Bug Fixes
+
+- **(aqua)** stop warning "invalid aqua tool" for custom registry packages by @jdx in [#15048](https://github.com/jdx/mise/pull/15048)
+- **(backends)** handle empty lock directories when switching backends by @zeitlinger in [#15060](https://github.com/jdx/mise/pull/15060)
+- **(config)** treat an empty system_packages.elevate_with as "never elevate" by @jdx in [#15049](https://github.com/jdx/mise/pull/15049)
+- **(config)** stop warning about a version-file link to a sibling version file by @jdx in [#15058](https://github.com/jdx/mise/pull/15058)
+- **(core)** point node@lts at Node.js 26 by @jdx in [#15105](https://github.com/jdx/mise/pull/15105)
+- **(gem)** quote paths in generated wrapper scripts by @jdx in [#15055](https://github.com/jdx/mise/pull/15055)
+- **(github)** ask for fewer releases when api.github.com times out listing them by @jdx in [#15078](https://github.com/jdx/mise/pull/15078)
+- **(lock)** install pipx tools when only the current platform is locked by @jdx in [#15091](https://github.com/jdx/mise/pull/15091)
+- **(packslip)** log versions held back by minimum_release_age at debug level by @jdx in [#15056](https://github.com/jdx/mise/pull/15056)
+- **(prune)** keep only the running version of a tool started through a moved link by @jdx in [#15113](https://github.com/jdx/mise/pull/15113)
+- **(release)** include shell completions in Debian packages by @gilesw in [#15074](https://github.com/jdx/mise/pull/15074)
+- **(remote-source)** validate git ref in remote git sources by @Huge in [#14832](https://github.com/jdx/mise/pull/14832)
+- **(version)** never report a latest version older than the running one in version --json by @jdx in [#15068](https://github.com/jdx/mise/pull/15068)
+- hide the Windows console for prompt-started tool updates by @yusoofsh in [#15038](https://github.com/jdx/mise/pull/15038)
+
+### 📚 Documentation
+
+- **(secrets)** note that fnox daemon reads need fnox 1.43.0 by @jdx in [#15115](https://github.com/jdx/mise/pull/15115)
+
+### 📦️ Dependency Updates
+
+- update github actions by @renovate[bot] in [#15039](https://github.com/jdx/mise/pull/15039)
+- update ubuntu docker tag to resolute-20261006 by @renovate[bot] in [#15040](https://github.com/jdx/mise/pull/15040)
+- update rust crates by @renovate[bot] in [#15041](https://github.com/jdx/mise/pull/15041)
+- update github actions by @renovate[bot] in [#15046](https://github.com/jdx/mise/pull/15046)
+- lock file maintenance by @renovate[bot] in [#15043](https://github.com/jdx/mise/pull/15043)
+- update mise tools by @renovate[bot] in [#15042](https://github.com/jdx/mise/pull/15042)
+- update rust crates to v1.12.0 by @renovate[bot] in [#15050](https://github.com/jdx/mise/pull/15050)
+- lock file maintenance by @renovate[bot] in [#15062](https://github.com/jdx/mise/pull/15062)
+- update aube to v2.8.4 by @renovate[bot] in [#15072](https://github.com/jdx/mise/pull/15072)
+- update swatinem/rust-cache digest to d1527c8 by @renovate[bot] in [#15064](https://github.com/jdx/mise/pull/15064)
+- lock file maintenance by @renovate[bot] in [#15073](https://github.com/jdx/mise/pull/15073)
+- update rust crates to v1.12.0 by @renovate[bot] in [#15065](https://github.com/jdx/mise/pull/15065)
+- stop lock file maintenance from downgrading crates by @jdx in [#15086](https://github.com/jdx/mise/pull/15086)
+- update jdx/packslip action to v1.9.1 by @renovate[bot] in [#15083](https://github.com/jdx/mise/pull/15083)
+- update rust crate jdx-tar to v1.1.2 by @renovate[bot] in [#15089](https://github.com/jdx/mise/pull/15089)
+- lock file maintenance by @renovate[bot] in [#15085](https://github.com/jdx/mise/pull/15085)
+- lock file maintenance by @renovate[bot] in [#15093](https://github.com/jdx/mise/pull/15093)
+- update dependency node to v26 by @renovate[bot] in [#15095](https://github.com/jdx/mise/pull/15095)
+- lock file maintenance by @renovate[bot] in [#15097](https://github.com/jdx/mise/pull/15097)
+- lock file maintenance by @renovate[bot] in [#15099](https://github.com/jdx/mise/pull/15099)
+- lock file maintenance by @renovate[bot] in [#15100](https://github.com/jdx/mise/pull/15100)
+
+### 📦 Registry
+
+- fix docuum and android-sdk test expectations by @jdx in [#15067](https://github.com/jdx/mise/pull/15067)
+- add aqua for oxfmt by @scop in [#15092](https://github.com/jdx/mise/pull/15092)
+
+### New Contributors
+
+- @gilesw made their first contribution in [#15074](https://github.com/jdx/mise/pull/15074)
+- @yusoofsh made their first contribution in [#15038](https://github.com/jdx/mise/pull/15038)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (9)
+
+- [`aquaproj/aqua-registry-updater`](https://github.com/aquaproj/aqua-registry-updater)
+- [`lintnet/lintnet`](https://github.com/lintnet/lintnet)
+- [`suzuki-shunsuke/ghproj`](https://github.com/suzuki-shunsuke/ghproj)
+- [`suzuki-shunsuke/github-comment`](https://github.com/suzuki-shunsuke/github-comment)
+- [`suzuki-shunsuke/rgo`](https://github.com/suzuki-shunsuke/rgo)
+- [`suzuki-shunsuke/sort-issue-template`](https://github.com/suzuki-shunsuke/sort-issue-template)
+- [`suzuki-shunsuke/tfmv`](https://github.com/suzuki-shunsuke/tfmv)
+- [`suzuki-shunsuke/tfprovidercheck`](https://github.com/suzuki-shunsuke/tfprovidercheck)
+- [`suzuki-shunsuke/tfrstate`](https://github.com/suzuki-shunsuke/tfrstate)
+
 ## [2026.10.21](https://github.com/jdx/mise/releases/tag/v2026.10.21) - 2026-10-27
 
 ### 🚀 Features
