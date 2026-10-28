@@ -72,6 +72,26 @@ wrapper b:
 real b active:["a","b"]'
 mise settings unset sandbox.deny_env
 
+# A wrapper command that activates mise does not lose the marker to hook-env's revert of the diff.
+cat >"$fake_bin/c" <<'EOF'
+#!/usr/bin/env bash
+printf 'real c:%s\n' "$*"
+EOF
+cat >"$fake_bin/wrap-c" <<'EOF'
+#!/usr/bin/env bash
+eval "$(mise hook-env -s bash --force)"
+printf 'wrapper c active:%s\n' "$__MISE_ACTIVE_WRAPPERS"
+exec c "$@"
+EOF
+chmod +x "$fake_bin/c" "$fake_bin/wrap-c"
+cat >mise.toml <<'EOF'
+[wrappers]
+c = "wrap-c"
+EOF
+mise reshim
+assert "c" 'wrapper c active:["c"]
+real c:'
+
 # Two wrappers that delegate to each other end at the real tool instead of looping.
 cat >"$fake_bin/x" <<'EOF'
 #!/usr/bin/env bash

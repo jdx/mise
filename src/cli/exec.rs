@@ -428,6 +428,9 @@ impl Exec {
             None
         };
         env.remove("__MISE_DIFF");
+        // Not mise-managed env: a hook-env in the child would revert it from the diff and the
+        // child's descendants would apply the running wrapper again.
+        let active_wrappers_marker = env.remove(crate::shims::ACTIVE_WRAPPERS_ENV);
         let mut final_env = env::PRISTINE_ENV.clone();
         for key in &env_remove {
             final_env.remove(key);
@@ -436,6 +439,9 @@ impl Exec {
         let serialized = EnvDiff::from_final_env(&env::PRISTINE_ENV, &final_env).serialize();
         if let Some(mise_env) = removed_mise_env {
             env.insert("MISE_ENV".to_string(), mise_env);
+        }
+        if let Some(marker) = active_wrappers_marker {
+            env.insert(crate::shims::ACTIVE_WRAPPERS_ENV.to_string(), marker);
         }
         if let Ok(serialized) = serialized {
             env.insert("__MISE_DIFF".to_string(), serialized);
