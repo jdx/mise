@@ -84,7 +84,7 @@ impl DotfilesUnapply {
             .cloned()
             .collect::<Vec<_>>();
         let all_edits = system::edits::edits_from_config(&config)?;
-        // edits belong to no group
+        // a group's record holds the files it deployed, never its edits
         let edits = all_edits
             .iter()
             .filter(|req| {

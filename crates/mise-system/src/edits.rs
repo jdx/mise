@@ -189,6 +189,9 @@ pub struct EditRequest {
     /// config file that declared this edit
     pub config_path: PathBuf,
     pub origin: ResourceOrigin,
+    /// the `[dotfile_groups]` table that declared this edit; it applies only
+    /// while that group is selected
+    pub group: Option<String>,
 }
 
 impl EditRequest {
@@ -225,13 +228,26 @@ pub fn matches_target(req: &EditRequest, filters: &[String]) -> bool {
         })
 }
 
-/// Aggregate edit `[dotfiles]` entries across all loaded config files. Entries
+/// Aggregate edit `[dotfiles]` entries, and the edits of the selected
+/// `[dotfile_groups]`, across all loaded config files. Entries
 /// union global -> local, keyed by `(path, id)`; a more local config overrides
 /// an edit with the same id. Malformed entries warn and are skipped.
 pub fn edits_from_config(config: &Config) -> Result<Vec<EditRequest>> {
     let mut composed: IndexMap<String, EditRequest> = IndexMap::new();
+    let selection = crate::dotfile_groups::selection(&config.config_files());
     for config_files in config.bootstrap_config_maps() {
-        for request in edits_from_config_files(&config_files) {
+        // an edit a group declares applies only while its group is selected,
+        // so a deselected group's edit takes no part in the conflict checks
+        for request in edits_from_config_files(&config_files)
+            .into_iter()
+            .chain(crate::dotfile_groups::group_edits(&config_files))
+            .filter(|request| {
+                crate::dotfile_groups::group_selected(
+                    request.group.as_deref(),
+                    selection.as_deref(),
+                )
+            })
+        {
             let key = format!("{}\u{0}{}", request.path.display(), request.id);
             if let Some(existing) = composed.get(&key) {
                 if edit_requests_match(config, existing, &request) {
@@ -327,6 +343,37 @@ fn merge_rejected_keys() -> impl Iterator<Item = &'static str> {
         .filter(|key| *key != "permissions")
 }
 
+/// Read one block, line, or merge entry of `[dotfile_groups.<group>.entries]`.
+/// It is keyed like a `[dotfiles]` edit, and a relative `source` starts at
+/// `base`, the group root. Unlike `[dotfiles]`, a key that only a whole-file
+/// entry takes is an error, so the group is refused and not half applied.
+pub(crate) fn group_edit(
+    group: &str,
+    path_and_id: &str,
+    value: toml::Value,
+    base: &Path,
+    config_path: &Path,
+) -> Result<EditRequest> {
+    if let Some(table) = value.as_table() {
+        let is_merge = table.contains_key("merge");
+        // a merge may set the mode of a target it creates
+        for key in WHOLE_FILE_KEYS {
+            if table.contains_key(key) && !(is_merge && key == "permissions") {
+                bail!("{key} applies to whole-file entries, not block, line, or merge edits");
+            }
+        }
+    }
+    let entry: EditTomlEntry = value
+        .try_into()
+        .map_err(|err| eyre::eyre!("invalid edit entry: {err}"))?;
+    let Some((path_raw, id)) = split_edit_key(path_and_id) else {
+        bail!("edit entries must end with an id path segment");
+    };
+    let mut request = resolve_entry(&path_raw, id, entry, base, config_path)?;
+    request.group = Some(group.to_string());
+    Ok(request)
+}
+
 /// Check an incoming `merge` declaration the way the edit parser will read it,
 /// so `mise dot pull` refuses one that would later be dropped. Templates are
 /// not rendered.
@@ -413,7 +460,7 @@ fn edit_entry_from_toml(path_and_id: &str, value: toml::Value) -> Option<EditTom
     }
 }
 
-fn split_edit_key(path_and_id: &str) -> Option<(String, String)> {
+pub(crate) fn split_edit_key(path_and_id: &str) -> Option<(String, String)> {
     let (path, id) = path_and_id.rsplit_once('/')?;
     if path.is_empty() || path == "~" || path == "/" || id.is_empty() {
         return None;
@@ -469,6 +516,7 @@ fn resolve_entry(
             base: base.to_path_buf(),
             config_path: config_path.to_path_buf(),
             origin,
+            group: None,
         });
     }
     if entry.format.is_some() {
@@ -559,6 +607,7 @@ fn resolve_entry(
         base: base.to_path_buf(),
         config_path: config_path.to_path_buf(),
         origin,
+        group: None,
     })
 }
 
@@ -2108,6 +2157,7 @@ mod tests {
                 environment: vec![],
                 source: None,
             },
+            group: None,
         };
 
         // a writable file is recorded and edited

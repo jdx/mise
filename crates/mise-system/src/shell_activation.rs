@@ -40,6 +40,7 @@ impl ShellActivationRequest {
                     environment: vec![],
                     source: None,
                 },
+                group: None,
             },
         }
     }

@@ -162,24 +162,25 @@ pub struct DotfileGroupDecl {
     pub manifest: Option<String>,
     /// link by a path relative to the link's directory; overrides the dotfiles.relative_symlinks setting (ignored on Windows)
     pub relative: Option<bool>,
-    /// whole-file entries for parts of the tree, keyed by target path inside the group's target and written like [dotfiles] entries; each is cut out of the walk. A missing source is found under the root at the entry's path inside the target, and a relative source starts at the root
+    /// entries for parts of the tree, written like [dotfiles] entries and applied only while the group is selected. A whole-file entry is keyed by its target path inside the group's target and cut out of the walk; a block, line, or merge edit is keyed by the path of the file it edits, inside the group's target, then "/" and an id. A missing source is found under the root at the entry's path inside the target, and a relative source starts at the root
     pub entries: Option<IndexMap<String, DotfileGroupEntryDecl>>,
 }
 
 // One `[dotfile_groups.<name>.entries]` value.
-/// a whole-file entry for a path inside the group's target: its source path, or a table as in [dotfiles]
+/// an entry for a path inside the group's target: a whole-file entry's source path, or a table as in [dotfiles] for a whole-file entry or a block, line, or merge edit
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(untagged)]
 #[schemars(transform = crate::schema::one_of)]
 pub enum DotfileGroupEntryDecl {
     /// source path, relative to the group root
     Source(String),
-    /// whole-file entry, as in [dotfiles]
+    /// whole-file entry or file edit, as in [dotfiles]
     Table(Box<DotfileGroupEntryTableDecl>),
 }
 
-/// whole-file entry of a dotfile group
-// The whole-file keys of `DotfileTableDecl`: a group holds no block, line, or merge edits.
+/// whole-file entry or file edit entry of a dotfile group
+// The keys of `DotfileTableDecl`. An edit takes the same keys in a group as in [dotfiles]; its
+// relative source starts at the group root.
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(transform = schema::entry_rules)]
@@ -228,4 +229,26 @@ pub struct DotfileGroupEntryTableDecl {
     pub enabled: Option<bool>,
     /// OS/profile variants: history streams for track mode, or optional destinations for deployment modes
     pub variants: Option<Vec<DotfileVariantDecl>>,
+    /// edit entry: block content, maintained between marker comments
+    pub block: Option<String>,
+    /// template engine to render block content with; currently only "tera"
+    #[schemars(extend("anyOf" = [{"enum": ["tera"]}, {"type": "string"}]))]
+    pub template: Option<String>,
+    /// edit entry: exact line to ensure exists
+    pub line: Option<String>,
+    /// where to insert a missing line
+    #[schemars(extend("default" = "append", "anyOf" = [
+        {"enum": ["append", "prepend"]},
+        {"type": "string"}
+    ]))]
+    pub position: Option<String>,
+    /// comment prefix for edit marker lines; inferred from the file extension when omitted
+    pub comment: Option<String>,
+    /// edit entry: true sets the keys of source (default: the file's path under the group root) on a JSON, JSONC, TOML, or YAML target and leaves the target's other keys to the application that also writes it; "missing" sets only the keys the target has no value for; the format comes from the target's extension unless "format" names it
+    #[serde(default)]
+    #[schemars(schema_with = "schema::merge")]
+    pub merge: Option<MergeSetting>,
+    /// merge only: the format of the target and source when the target's extension doesn't name it, such as "jsonc" for VS Code's settings.json
+    #[schemars(extend("anyOf" = [{"enum": ["json", "jsonc", "toml", "yaml"]}, {"type": "string"}]))]
+    pub format: Option<String>,
 }

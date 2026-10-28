@@ -96,10 +96,36 @@ dot_prefix = true
   linked as a whole would change a file in the root itself, so mise reports it
   as a conflict before anything is written.
 
-Group entries are whole-file entries only. Declare
-[block, line, and merge edits](/dotfiles/edits.html) in `[dotfiles]`. To put an
-entry in a group, declare it under `[dotfile_groups.<name>.entries]`; a
-`[dotfiles]` entry with a `group` key is invalid.
+To put an entry in a group, declare it under `[dotfile_groups.<name>.entries]`;
+a `[dotfiles]` entry with a `group` key is invalid.
+
+### Edits in a group {#group-edits}
+
+An entry can also [edit part of a file](/dotfiles/edits.html) instead of
+deploying one. Key it like a `[dotfiles]` edit, with the path of the file
+followed by an id, and write it as a table with `block`, `line`, or `merge`:
+
+```toml
+[dotfile_groups.common]
+root = "common"
+
+[dotfile_groups.common.entries]
+"~/.config/mise/conf.d/private.local.toml/defaults" = { source = "../templates/private.toml", merge = "missing", permissions = "0600" }
+```
+
+- The edit applies only while the group is selected. A machine that selects
+  other groups leaves the file alone.
+- A relative `source` starts at the group root, like the group's other
+  entries, and a `merge` without one reads the file at the same path inside the
+  root. A walking group does not also deploy a file that an edit reads or
+  changes.
+- The file being edited must lie inside the group's target. An edit takes the
+  keys it takes in `[dotfiles]`, and a key that only whole-file entries take,
+  such as `mode`, makes mise ignore the whole group with a warning.
+- Deselecting the group stops the edit but leaves what it wrote in the file.
+  `mise dot unapply --group` removes only the group's deployed files, so to
+  remove an edit's block or line, run `mise dot unapply <path>` while the group
+  is still selected.
 
 ## Select groups {#selecting-groups}
 
@@ -113,7 +139,8 @@ dotfile_groups = ["home", "zsh"]
 ```
 
 A more local config file's list replaces the others. `[dotfiles]` entries
-apply on every machine, whichever groups it selects.
+apply on every machine, whichever groups it selects; the entries of a group,
+including its [edits](#group-edits), apply only while it is selected.
 
 ### Groups without a table {#groups-without-a-table}
 
