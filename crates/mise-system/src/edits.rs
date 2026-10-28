@@ -1855,9 +1855,6 @@ fn apply_one(
         && req.path.is_symlink()
         && links_to_merge_source(req);
     if replaced_link {
-        // the link's text is the raw source, which a template may leave
-        // unparseable; fail before the link is gone rather than after
-        apply_to_string(req, desired, &file::read_to_string(&req.path)?)?;
         // prepare the whole copy beside the link in an exclusively created
         // temp file (std::fs::copy gives it the source's mode), then rename it
         // over the link, so a failure leaves the link in place
@@ -1866,6 +1863,9 @@ fn apply_one(
             .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
         std::fs::copy(&req.path, tmp.path())
             .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
+        // the copy is the raw source, which a template may leave unparseable;
+        // fail before the link is gone rather than after
+        apply_to_string(req, desired, &file::read_to_string(tmp.path())?)?;
         // a read-only source (a Nix store file, `chmod -w`) must not leave a
         // copy the merge cannot write
         #[cfg(unix)]
