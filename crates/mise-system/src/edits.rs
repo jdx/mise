@@ -1855,6 +1855,9 @@ fn apply_one(
         && req.path.is_symlink()
         && links_to_merge_source(req);
     if replaced_link {
+        // the link's text is the raw source, which a template may leave
+        // unparseable; fail before the link is gone rather than after
+        apply_to_string(req, desired, &file::read_to_string(&req.path)?)?;
         // prepare the whole copy beside the link in an exclusively created
         // temp file (std::fs::copy gives it the source's mode), then rename it
         // over the link, so a failure leaves the link in place
@@ -2128,6 +2131,46 @@ mod tests {
         assert!(apply_one(&req, None, None, &mut written).is_err());
         assert!(written.is_empty());
         assert_eq!(file::read_to_string(&path)?, "before\n");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_merge_that_cannot_read_its_linked_source_keeps_the_link() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("shared.ini");
+        // a template whose raw text is not INI, though it renders to INI
+        file::write(&source, "[{{ section }}\nk = 1\n")?;
+        let path = dir.path().join("app.ini");
+        std::os::unix::fs::symlink(&source, &path)?;
+        let req = EditRequest {
+            path_raw: path.to_string_lossy().to_string(),
+            path: path.clone(),
+            id: "shared".into(),
+            op: EditOp::Merge {
+                source: BlockSource::File(source.clone()),
+                template: true,
+                format: Format::Ini,
+                missing_only: false,
+                permissions: None,
+            },
+            base: dir.path().to_path_buf(),
+            config_path: dir.path().join("mise.toml"),
+            origin: ResourceOrigin {
+                config: dir.path().join("mise.toml"),
+                config_root: dir.path().to_path_buf(),
+                environment: vec![],
+                source: Some(source.clone()),
+            },
+        };
+        let mut written = vec![];
+        let err = apply_one(&req, Some("[app]\nk = 1\n"), None, &mut written).unwrap_err();
+        assert!(
+            format!("{err:?}").contains("failed to parse the INI target"),
+            "{err:?}"
+        );
+        assert!(path.is_symlink());
+        assert!(written.is_empty());
         Ok(())
     }
 
