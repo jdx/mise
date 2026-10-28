@@ -7,22 +7,24 @@ use crate::cmd::CmdLineRunner;
 use crate::env;
 use crate::file;
 use crate::hash;
-use crate::http::HTTP_FETCH;
+use crate::http::{HTTP_FETCH, error_code};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::{Result, config::Config};
 use async_trait::async_trait;
 use base64::{Engine, prelude::BASE64_STANDARD};
-use eyre::{WrapErr, bail, ensure};
+use eyre::{WrapErr, ensure};
 use indoc::formatdoc;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::OnceCell as TokioOnceCell;
 use url::Url;
+use xx::regex;
 
 /// The source `gem` uses when none is configured.
 const DEFAULT_GEM_SOURCE: &str = "https://rubygems.org/";
@@ -118,17 +120,12 @@ impl Backend for GemBackend {
         // Resolution and installation have to agree on where the gem comes
         // from. Listing versions from rubygems.org and then installing from a
         // private registry would resolve `latest` against the wrong catalogue.
-        let url = match self.configured_source(config).await? {
+        let source = self.configured_source(config).await?;
+        let url = match &source {
             // `join` rather than concatenation. The source is normalized to end
             // in `/`, so this appends within it instead of replacing its last
             // path segment, and it cannot smuggle the API path into a query
             // string or a fragment the way string-building could.
-            // GitHub Packages has no JSON versions API.
-            Some(source) if source.host_str() == Some(GITHUB_PACKAGES_HOST) => bail!(
-                "GitHub Packages has no version-listing API mise can read, so `{}` \
-                 cannot resolve `latest` or a prefix there: pin an exact version",
-                self.ba()
-            ),
             Some(source) => source.join(&format!("api/v1/versions/{}.json", self.tool_name()))?,
             None => format!(
                 "{}api/v1/versions/{}.json",
@@ -138,7 +135,21 @@ impl Backend for GemBackend {
             .parse()?,
         };
         let (url, headers) = credentials_as_header(url)?;
-        let response: Vec<RubyGemsVersion> = HTTP_FETCH.json_with_headers(url, &headers).await?;
+        let response = HTTP_FETCH.json_with_headers(url, &headers).await;
+        let response: Vec<RubyGemsVersion> = match (&source, response) {
+            // Not every registry has the JSON API (GitHub Packages does not),
+            // but every one Bundler installs from serves the compact index.
+            (Some(source), Err(e)) if error_code(&e) == Some(404) => {
+                return self
+                    .compact_index_versions(source)
+                    .await
+                    .map_err(|e| with_github_packages_hint(source, e));
+            }
+            (Some(source), response) => {
+                response.map_err(|e| with_github_packages_hint(source, e))?
+            }
+            (None, response) => response?,
+        };
 
         // RubyGems API returns newest-first, mise expects oldest-first
         let mut versions: Vec<VersionInfo> = response
@@ -219,7 +230,11 @@ impl Backend for GemBackend {
             // directory, and a shim can start this install inside an untrusted
             // project.
             .current_dir(tv.install_path())
-            .execute()?;
+            .execute()
+            .map_err(|e| match &source {
+                Some(source) => with_github_packages_hint(source, e),
+                None => e,
+            })?;
 
         // We install the gem to {install_path}/libexec and create a wrapper script for each executable
         // in {install_path}/bin that sets GEM_HOME and executes the gem installed
@@ -281,6 +296,18 @@ impl GemBackend {
         });
         config.add_redactions(source_secrets(&url));
         Ok(Some(url))
+    }
+
+    /// Versions of this gem from `source`'s compact index, oldest first.
+    async fn compact_index_versions(&self, source: &Url) -> Result<Vec<VersionInfo>> {
+        let url = source.join(&format!("info/{}", self.tool_name()))?;
+        let (url, headers) = credentials_as_header(url)?;
+        let body = HTTP_FETCH
+            .get_text_request(url)
+            .headers(&headers)
+            .send()
+            .await?;
+        Ok(parse_compact_index(&body))
     }
 
     /// Get the primary gem source URL using the mise-managed Ruby environment.
@@ -364,6 +391,10 @@ Gem::GemRunner.new.run(ARGV + ["--source", ENV.delete("MISE_GEM_SOURCE")])"#;
 /// GitHub Packages' RubyGems registry.
 const GITHUB_PACKAGES_HOST: &str = "rubygems.pkg.github.com";
 
+/// What GitHub Packages needs from mise's GitHub token.
+const GITHUB_PACKAGES_TOKEN: &str = "a GitHub token with the read:packages scope \
+     (`gh auth refresh -s read:packages`, or see `mise token github`)";
+
 /// Add the resolved GitHub token to an https GitHub Packages source that has
 /// no credentials. Other hosts and explicit credentials are left alone.
 fn with_github_packages_token(mut url: Url, token: impl FnOnce() -> Option<String>) -> Url {
@@ -378,6 +409,104 @@ fn with_github_packages_token(mut url: Url, token: impl FnOnce() -> Option<Strin
         let _ = url.set_username(&token);
     }
     url
+}
+
+/// Name the token scope when a request to GitHub Packages fails. It answers a
+/// missing or under-scoped token with a bare 401, which `gem install` reports
+/// as "Could not find a valid gem".
+fn with_github_packages_hint(source: &Url, e: eyre::Report) -> eyre::Report {
+    if source.host_str() == Some(GITHUB_PACKAGES_HOST) {
+        e.wrap_err(format!("GitHub Packages needs {GITHUB_PACKAGES_TOKEN}"))
+    } else {
+        e
+    }
+}
+
+/// The versions in a compact index `info` file, oldest first. Each line after
+/// the `---` that ends the header is `<version>[-<platform>]
+/// <dependencies>|<requirements>`; the platform is split off at the first `-`,
+/// as Bundler does, so a version built for several platforms appears once.
+/// Some registries (rubygems.org, not GitHub Packages) add a `created_at:`
+/// requirement.
+///
+/// The file is in publish order, so a backport published after a newer
+/// release would otherwise read as the latest. RubyGems' JSON API answers in
+/// version order, and this matches it.
+fn parse_compact_index(body: &str) -> Vec<VersionInfo> {
+    // Each platform build has its own line and maybe its own date; keep a
+    // version's first date.
+    let mut dates: HashMap<&str, Option<&str>> = HashMap::new();
+    for line in body.lines().skip_while(|line| *line != "---").skip(1) {
+        let Some(version) = line.split([' ', '-']).next().filter(|v| !v.is_empty()) else {
+            continue;
+        };
+        let created_at = line.split_once('|').and_then(|(_, requirements)| {
+            requirements
+                .split(',')
+                .find_map(|r| r.strip_prefix("created_at:"))
+        });
+        let date = dates.entry(version).or_default();
+        *date = date.or(created_at);
+    }
+    let mut versions: Vec<VersionInfo> = dates
+        .into_iter()
+        .map(|(version, created_at)| VersionInfo {
+            version: version.to_string(),
+            created_at: created_at.map(str::to_string),
+            ..Default::default()
+        })
+        .collect();
+    versions.sort_by(|a, b| gem_version_cmp(&a.version, &b.version));
+    versions
+}
+
+/// A segment of a RubyGems version. A letter segment marks a prerelease, so it
+/// sorts below any number, which the variant order gives.
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum GemSegment<'a> {
+    Letters(&'a str),
+    Number(u64),
+}
+
+/// A version's segments as `Gem::Version#canonical_segments` gives them:
+/// trailing zeros dropped from the release part and from the prerelease part,
+/// so `1.0.0.beta1` compares as `1.beta.1`.
+fn gem_segments(version: &str) -> Vec<GemSegment<'_>> {
+    let mut release: Vec<_> = regex!(r"[0-9]+|[A-Za-z]+")
+        .find_iter(version)
+        .map(|m| {
+            m.as_str()
+                .parse()
+                .map_or(GemSegment::Letters(m.as_str()), GemSegment::Number)
+        })
+        .collect();
+    let prerelease_at = release
+        .iter()
+        .position(|s| matches!(s, GemSegment::Letters(_)))
+        .unwrap_or(release.len());
+    let mut prerelease = release.split_off(prerelease_at);
+    for part in [&mut release, &mut prerelease] {
+        while part.last() == Some(&GemSegment::Number(0)) {
+            part.pop();
+        }
+    }
+    release.extend(prerelease);
+    release
+}
+
+/// RubyGems' version order (`Gem::Version#<=>`): runs of digits and of letters
+/// compared in turn, numbers numerically, letters (a prerelease) below any
+/// number, and missing trailing segments as zero, so `1.0` equals `1.0.0`
+/// and `1.0.a` comes before `1.0`.
+fn gem_version_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    let (a, b) = (gem_segments(a), gem_segments(b));
+    (0..a.len().max(b.len()))
+        .map(|i| {
+            let zero = GemSegment::Number(0);
+            a.get(i).unwrap_or(&zero).cmp(b.get(i).unwrap_or(&zero))
+        })
+        .find(|ordering| ordering.is_ne())
+        .unwrap_or(std::cmp::Ordering::Equal)
 }
 
 /// Move a URL's userinfo into an `Authorization` header, since the HTTP
@@ -974,6 +1103,58 @@ mod tests {
     fn github_packages(raw: &str, token: Option<&str>) -> String {
         let url = parse_source(raw).unwrap().unwrap();
         with_github_packages_token(url, || token.map(str::to_string)).to_string()
+    }
+
+    /// A compact index lists platform builds separately; mise wants each
+    /// version once, oldest first.
+    #[test]
+    fn compact_index_versions_drop_platforms() {
+        let body = "created_at: 2024-04-01T00:00:05Z\n\
+            ---\n\
+            0.1.0 thor:>= 1.2.2|checksum:aa\n\
+            1.0.0-x86_64-linux |checksum:cc,ruby:>= 3.1\n\
+            1.0.0 |checksum:bb,created_at:2026-01-06T22:32:36Z\n\
+            1.1.0.rc1 |checksum:dd\n";
+        let versions: Vec<_> = parse_compact_index(body)
+            .into_iter()
+            .map(|v| (v.version, v.created_at))
+            .collect();
+        assert_eq!(
+            versions,
+            [
+                ("0.1.0".into(), None),
+                ("1.0.0".into(), Some("2026-01-06T22:32:36Z".into())),
+                ("1.1.0.rc1".into(), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn compact_index_versions_are_in_version_order() {
+        // 1.9.1 is a backport, published after 2.0.0.
+        let body = "---\n1.0.0 |\n2.0.0 |\n1.9.1 |\n2.0.0.rc1 |\n1.10.0 |\n";
+        let versions: Vec<_> = parse_compact_index(body)
+            .into_iter()
+            .map(|v| v.version)
+            .collect();
+        assert_eq!(versions, ["1.0.0", "1.9.1", "1.10.0", "2.0.0.rc1", "2.0.0"]);
+    }
+
+    #[test]
+    fn gem_versions_compare_like_rubygems() {
+        use std::cmp::Ordering::*;
+        for (a, b, ordering) in [
+            ("1.0", "1.0.0", Equal),
+            ("1.0.a", "1.0", Less),
+            ("1.2.3.rc1", "1.2.3", Less),
+            ("1.2.3.alpha", "1.2.3.beta", Less),
+            ("5.0.0.1", "5.0.0", Greater),
+            ("1.2.10", "1.2.9", Greater),
+            ("1.0.0.beta1", "1.0.rc1", Less),
+            ("1.0.0.rc1", "1.0.rc1", Equal),
+        ] {
+            assert_eq!(gem_version_cmp(a, b), ordering, "{a} vs {b}");
+        }
     }
 
     /// A bare GitHub Packages source borrows the resolved GitHub token.
