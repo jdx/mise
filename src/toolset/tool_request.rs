@@ -432,13 +432,7 @@ impl ToolRequest {
     /// declaration provides commands, and `shims.exclude` leaves at least one of
     /// them a bootstrap shim.
     pub fn installs_on_first_use(&self) -> bool {
-        let excluded = &Settings::get().shims.exclude;
-        matches!(
-            self.lazy_bins(),
-            Ok(Some(bins)) if bins
-                .iter()
-                .any(|bin| !crate::shims::shim_name_excluded(excluded, bin))
-        )
+        matches!(self.lazy_bins(), Ok(Some(bins)) if crate::shims::lazy_bins_keep_a_shim(&bins))
     }
 
     /// Whether the registry options this request carries were supplied by a
