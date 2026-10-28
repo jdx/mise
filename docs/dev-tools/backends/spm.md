@@ -196,7 +196,8 @@ checks that the command put at least one executable in `bin/` and fails the
 install otherwise.
 
 The `danger-swift` registry shorthand supplies the official installer options,
-so projects do not need to repeat `install_command`. Danger JS is also required.
+so projects do not need to repeat `install_command`. On macOS, installation uses
+the Swift toolchain selected by `xcrun`, matching Dangerfile execution. Danger JS is also required.
 For a fresh install through the npm backend, declare Node and Danger JS separately:
 
 ```toml

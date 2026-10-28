@@ -1,5 +1,5 @@
 backends = [
-  { full = "spm:danger/swift", options = { artifactbundle = false, install_command = "make install PREFIX=\"$MISE_TOOL_INSTALL_PATH\"" } },
+  { full = "spm:danger/swift", options = { artifactbundle = false, install_command = "if [ \"$(uname -s)\" = Darwin ]; then swift_bin=\"$(xcrun --find swift)\" || exit; export PATH=\"${swift_bin%/*}:$PATH\"; fi; make install PREFIX=\"$MISE_TOOL_INSTALL_PATH\"" } },
 ]
 description = "Stop saying 'you forgot to …' in code review"
 version_order = "semver"

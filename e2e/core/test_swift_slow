@@ -38,17 +38,17 @@ git -C spm-revision add .
 git -C spm-revision commit -qm "second"
 git_config="$PWD/spm-gitconfig"
 git config --file "$git_config" \
-	url."file://$PWD/spm-revision".insteadOf \
-	"https://github.com/mise-test/spm-revision.git"
+  url."file://$PWD/spm-revision".insteadOf \
+  "https://github.com/mise-test/spm-revision.git"
 
 assert \
-	"GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise x spm:mise-test/spm-revision@rev:$first_revision -- revision-tool" \
-	"first commit"
+  "GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise x spm:mise-test/spm-revision@rev:$first_revision -- revision-tool" \
+  "first commit"
 assert \
-	"GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise x spm:mise-test/spm-revision@ref:$short_revision -- revision-tool" \
-	"first commit"
+  "GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise x spm:mise-test/spm-revision@ref:$short_revision -- revision-tool" \
+  "first commit"
 assert_fail \
-	"GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise install spm:mise-test/spm-revision@rev:deadbeef"
+  "GIT_CONFIG_GLOBAL=$git_config MISE_GIX=0 mise install spm:mise-test/spm-revision@rev:deadbeef"
 assert_fail "mise where spm:mise-test/spm-revision@rev:deadbeef"
 
 # test package with resources (`templates list` command depends on resources being installed)
@@ -63,15 +63,14 @@ assert_fail "mise where spm:mise-test/spm-revision@rev:deadbeef"
 #"
 
 if [[ $(uname -s) == Darwin ]]; then
-	# danger-swift invokes xcrun on macOS, so build its modules with the same
-	# Apple Swift toolchain rather than the separately packaged Swift toolchain.
-	mise unuse --no-prune swift
+  # Keep mise-managed Swift active to exercise the installer's xcrun selection.
+  assert_matches "mise x -- which swift" '/installs/swift/'
 fi
 mise install node@24 danger-swift@3.22.1 npm:danger@13.0.10
 danger_install_path="$(mise where danger-swift@3.22.1)"
 test -x "$danger_install_path/bin/danger-swift"
 test -f "$danger_install_path/lib/danger/libDanger.dylib" ||
-	test -f "$danger_install_path/lib/danger/libDanger.so"
+  test -f "$danger_install_path/lib/danger/libDanger.so"
 find "$danger_install_path/lib/danger" -name 'Danger.swiftmodule' -print -quit | grep -q .
 
 cat >Dangerfile.swift <<'EOF'
@@ -96,7 +95,7 @@ git commit -q -m change
 export CFFIXED_USER_HOME="$HOME"
 
 danger_output="$(
-	mise x node@24 danger-swift@3.22.1 npm:danger@13.0.10 -- danger-swift local 2>&1
+  mise x node@24 danger-swift@3.22.1 npm:danger@13.0.10 -- danger-swift local 2>&1
 )"
 assert_contains_text "$danger_output" "Danger: ⅹ Failing the build"
 assert_contains_text "$danger_output" "mise Danger Swift integration test"
