@@ -540,15 +540,13 @@ command = "podman"
 args = ["ps", "--format", "{% raw %}{{.Names}}{% endraw %}"]
 ```
 
-When a wrapper runs its command, mise removes the shim and wrapper directories
-from `PATH`, so `mbx` finds the real Cargo: mise-managed Rust when configured,
-otherwise rustup or the system installation. For mise-managed Rust, the
-[Rust guide](/lang/rust.html#share-cargo-builds-with-mr-boxington) sets this up
-with the `mr_boxington` tool option and the `mr-boxington` tool.
+While a wrapper's command runs, that wrapper is skipped for the command and
+everything it starts, so `mbx` finds the real Cargo: mise-managed Rust when
+configured, otherwise rustup or the system installation. For mise-managed Rust,
+the [Rust guide](/lang/rust.html#share-cargo-builds-with-mr-boxington) sets this
+up with the `mr_boxington` tool option and the `mr-boxington` tool.
 
-The stripped `PATH` is what the wrapped command and everything it starts
-inherit, so wrappers apply only to the command you run. If a wrapped command
-runs another wrapped command, such as `pnpm` running `node` when both are
-wrapped, the second wrapper is skipped and the real tool runs. Wrappers swap
-one command for another. To run a guard script around a tool, put your own
-directory of scripts on `PATH` instead, for example with `_.path` in `[env]`.
+Other wrappers still apply. If `pnpm` and `node` are both wrapped, a script that
+`pnpm` runs gets the `node` wrapper, with its `args` and `env`, while `pnpm`'s own
+lookups of `pnpm` reach the real tool. mise records the running wrappers in the
+`__MISE_ACTIVE_WRAPPERS` environment variable.

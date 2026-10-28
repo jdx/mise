@@ -109,11 +109,14 @@ pub(crate) async fn handle_shim() -> Result<()> {
         exec.run_with_command_wrapper(
             config,
             ts,
-            wrapper
-                .env()
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect(),
+            with_active_command_wrapper(
+                shim_name,
+                wrapper
+                    .env()
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect(),
+            ),
         )
         .await?;
     } else {
@@ -222,23 +225,28 @@ pub(crate) async fn apply_native_shim_command_wrapper(
     trace!("shim[{shim_name}] WRAPPER command: {}", wrapper.command());
     command[0] = wrapper.command().to_string();
     command.splice(1..1, wrapper.args().iter().cloned());
-    Ok(Some(
+    Ok(Some(with_active_command_wrapper(
+        shim_name,
         wrapper
             .env()
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect(),
-    ))
+    )))
 }
 
 /// The command wrapper configured for `shim_name`, with its command installed first when
-/// `install_command` is set and a tool provides it.
+/// `install_command` is set and a tool provides it. None while that wrapper's own command is
+/// running, so the command finds the real tool instead of the wrapper again.
 async fn command_wrapper_for(
     config: &mut Arc<Config>,
     ts: &mut Toolset,
     shim_name: &str,
     install_command: bool,
 ) -> Result<Option<CommandWrapper>> {
+    if is_active_command_wrapper(shim_name) {
+        return Ok(None);
+    }
     let wrappers = load_command_wrappers(
         &config.config_files,
         ts.versions.values().flat_map(|versions| &versions.requests),

@@ -37,6 +37,44 @@ const WRAPPER_STAGING_PREFIX: &str = ".mise-wrappers-stage-";
 
 pub const TASK_TOOL_ARGS_ENV: &str = "__MISE_TASK_TOOL_ARGS";
 
+/// A JSON array of the command wrappers whose commands are running, inherited by their
+/// descendants. A wrapper shim named in it runs the real command instead of the wrapper again,
+/// so `mbx` finds the real `cargo` while a wrapped command's other wrappers still apply.
+const ACTIVE_WRAPPERS_ENV: &str = "__MISE_ACTIVE_WRAPPERS";
+
+fn parse_active_wrappers(value: &str) -> Vec<String> {
+    serde_json::from_str(value).unwrap_or_default()
+}
+
+/// Whether the command wrapper for `name` is already running in this process tree.
+pub fn is_active_command_wrapper(name: &str) -> bool {
+    env::var(ACTIVE_WRAPPERS_ENV).is_ok_and(|value| {
+        parse_active_wrappers(&value)
+            .iter()
+            .any(|active| command_names_eq(active, name))
+    })
+}
+
+/// `wrapper_env` plus `name` in the active wrappers, for the command the wrapper runs. The value
+/// is sorted and holds no PID, so it is the same for every run of a wrapped command.
+pub fn with_active_command_wrapper(
+    name: &str,
+    mut wrapper_env: BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    let mut active = env::var(ACTIVE_WRAPPERS_ENV)
+        .map(|value| parse_active_wrappers(&value))
+        .unwrap_or_default();
+    if !active.iter().any(|active| command_names_eq(active, name)) {
+        active.push(name.to_string());
+    }
+    active.sort();
+    wrapper_env.insert(
+        ACTIVE_WRAPPERS_ENV.to_string(),
+        serde_json::to_string(&active).unwrap_or_default(),
+    );
+    wrapper_env
+}
+
 #[derive(serde::Deserialize, serde::Serialize)]
 struct TaskToolArg {
     backend: String,
@@ -2188,6 +2226,14 @@ mod tests {
     use super::*;
     use crate::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+
+    #[test]
+    fn active_wrappers_ignore_a_value_that_is_not_a_name_list() {
+        assert_eq!(parse_active_wrappers(r#"["a","b"]"#), ["a", "b"]);
+        for value in ["", "cargo", "{}", "[1]"] {
+            assert!(parse_active_wrappers(value).is_empty(), "{value:?}");
+        }
+    }
 
     #[test]
     fn plugin_shims_stay_inside_the_plugins_dir() {

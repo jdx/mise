@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+# A wrapped command's children still get the other wrappers (#15108). Only the wrapper that is
+# already running is skipped, so its command finds the real tool.
+fake_bin="$HOME/wrapper-bin"
+mkdir -p "$fake_bin"
+cat >"$fake_bin/a" <<'EOF'
+#!/usr/bin/env bash
+printf 'real a:%s\n' "$*"
+if [ "$1" != inner ]; then
+  a inner
+  b
+fi
+EOF
+cat >"$fake_bin/b" <<'EOF'
+#!/usr/bin/env bash
+printf 'real b active:%s\n' "$__MISE_ACTIVE_WRAPPERS"
+EOF
+cat >"$fake_bin/wrap-a" <<'EOF'
+#!/usr/bin/env bash
+printf 'wrapper a:%s\n' "$WRAP_A"
+exec a "$@"
+EOF
+cat >"$fake_bin/wrap-b" <<'EOF'
+#!/usr/bin/env bash
+printf 'wrapper b:%s\n' "$WRAP_B"
+exec b "$@"
+EOF
+chmod +x "$fake_bin"/*
+export PATH="$fake_bin:$PATH"
+
+cat >mise.toml <<'EOF'
+[wrappers.a]
+command = "wrap-a"
+env = { WRAP_A = "1" }
+
+[wrappers.b]
+command = "wrap-b"
+env = { WRAP_B = "2" }
+EOF
+
+mise reshim
+eval "$(mise activate bash --shims)"
+
+# `a` runs itself and `b`. Its own wrapper is skipped for the nested `a`, but b's wrapper applies.
+expected='wrapper a:1
+real a:
+real a:inner
+wrapper b:2
+real b active:["a","b"]'
+assert "mise x -- a" "$expected"
+assert "a" "$expected"
+
+# `b` alone runs under its own wrapper only.
+assert "b" 'wrapper b:2
+real b active:["b"]'
+
+# Two wrappers that delegate to each other end at the real tool instead of looping.
+cat >"$fake_bin/x" <<'EOF'
+#!/usr/bin/env bash
+echo real x
+EOF
+chmod +x "$fake_bin/x"
+cat >mise.toml <<'EOF'
+[wrappers]
+x = "y"
+y = "x"
+EOF
+mise reshim
+assert "x" "real x"

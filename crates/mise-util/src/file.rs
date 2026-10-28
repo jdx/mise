@@ -2135,11 +2135,22 @@ pub fn strip_shims_from_path(path_val: &str) -> String {
         .into_owned()
 }
 
-/// Strip every mise dispatch directory from PATH before a command wrapper
-/// delegates. This lets the wrapped command resolve a tool managed by mise or
-/// fall through to rustup/the system without invoking the wrapper again.
+/// Strip every mise dispatch directory (shims and command wrappers) from PATH.
+/// This lets the command resolve a tool managed by mise or fall through to
+/// rustup/the system without going through a shim or a wrapper.
 pub fn strip_dispatch_dirs_from_path(path_val: &str) -> String {
     let filtered = env::split_paths(path_val).filter(|p| !is_mise_dispatch_dir(p));
+    std::env::join_paths(filtered)
+        .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// Strip only the shims directory from PATH, keeping the command wrapper directory. A command
+/// wrapper's children use this so a wrapper they run still applies; the wrapper that started
+/// them is skipped by name instead (`__MISE_ACTIVE_WRAPPERS`).
+pub fn strip_shims_dir_from_path(path_val: &str) -> String {
+    let filtered = env::split_paths(path_val).filter(|p| !is_mise_shims_dir(p));
     std::env::join_paths(filtered)
         .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
         .to_string_lossy()
