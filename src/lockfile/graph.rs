@@ -272,13 +272,22 @@ pub(crate) fn absolute(path: &Path) -> PathBuf {
 }
 
 pub fn sidecar_root(lockfile: &Path) -> PathBuf {
+    sidecar_root_in(lockfile, &crate::env::MISE_CONFIG_DIR)
+}
+
+fn sidecar_root_in(lockfile: &Path, global_config_dir: &Path) -> PathBuf {
     let dir = lockfile.parent().unwrap_or(Path::new("."));
     // Choose the layout from the physical directory, so a symlinked config
     // dir (`~/.config/mise` -> a dotfiles repo) gets the same sidecar location
     // however it is reached. The root itself stays under the given path.
     let physical = dunce::canonicalize(absolute(dir)).ok();
     let layout = physical.as_deref().unwrap_or(dir);
+    // The global config dir keeps `locks/` whatever its link target is named.
+    let is_global = physical.as_deref().is_some_and(|physical| {
+        dunce::canonicalize(absolute(global_config_dir)).is_ok_and(|global| global == physical)
+    });
     let mut root = match layout.file_name().and_then(|s| s.to_str()) {
+        _ if is_global => dir.join("locks"),
         Some(".mise") => dir.join("locks"),
         Some("mise")
             if layout
@@ -654,6 +663,29 @@ mod tests {
         ] {
             assert_eq!(sidecar_root(Path::new(path)), PathBuf::from(expected));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn global_config_dir_keeps_locks_layout_through_a_symlink() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dotfiles = tmp.path().join("dotfiles/shell");
+        let config = tmp.path().join("home/.config-link");
+        std::fs::create_dir_all(&dotfiles).unwrap();
+        std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&dotfiles, &config).unwrap();
+        for dir in [&config, &dotfiles] {
+            assert_eq!(
+                sidecar_root_in(&dir.join("mise.lock"), &config),
+                dir.join("locks")
+            );
+        }
+        // Not the global dir: the project layout applies.
+        let other = tmp.path().join("other");
+        assert_eq!(
+            sidecar_root_in(&dotfiles.join("mise.lock"), &other),
+            dotfiles.join(".mise/locks")
+        );
     }
 
     #[cfg(unix)]
