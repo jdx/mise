@@ -179,7 +179,12 @@ impl Shell for Fish {
                 .join(" ");
             format!("set -gx {k} {paths}\n")
         } else {
-            let v = escape(v.into());
+            let v = if key == "MANPATH" {
+                crate::windows_posix::windows_manpath_for_shell(v)
+            } else {
+                v.into()
+            };
+            let v = escape(v);
             format!("set -gx {k} {v}\n")
         }
     }
