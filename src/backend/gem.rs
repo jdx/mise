@@ -17,6 +17,7 @@ use eyre::{WrapErr, ensure};
 use indoc::formatdoc;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -432,27 +433,26 @@ fn with_github_packages_hint(source: &Url, e: eyre::Report) -> eyre::Report {
 /// release would otherwise read as the latest. RubyGems' JSON API answers in
 /// version order, and this matches it.
 fn parse_compact_index(body: &str) -> Vec<VersionInfo> {
-    let mut seen = std::collections::HashSet::new();
-    let mut versions: Vec<VersionInfo> = body
-        .lines()
-        .skip_while(|line| *line != "---")
-        .skip(1)
-        .filter_map(|line| {
-            let version = line.split([' ', '-']).next()?;
-            let created_at = line
-                .split_once('|')
-                .and_then(|(_, requirements)| {
-                    requirements
-                        .split(',')
-                        .find_map(|r| r.strip_prefix("created_at:"))
-                })
-                .map(str::to_string);
-            Some((version, created_at))
-        })
-        .filter(|(version, _)| !version.is_empty() && seen.insert(*version))
+    // Each platform build has its own line and maybe its own date; keep a
+    // version's first date.
+    let mut dates: HashMap<&str, Option<&str>> = HashMap::new();
+    for line in body.lines().skip_while(|line| *line != "---").skip(1) {
+        let Some(version) = line.split([' ', '-']).next().filter(|v| !v.is_empty()) else {
+            continue;
+        };
+        let created_at = line.split_once('|').and_then(|(_, requirements)| {
+            requirements
+                .split(',')
+                .find_map(|r| r.strip_prefix("created_at:"))
+        });
+        let date = dates.entry(version).or_default();
+        *date = date.or(created_at);
+    }
+    let mut versions: Vec<VersionInfo> = dates
+        .into_iter()
         .map(|(version, created_at)| VersionInfo {
             version: version.to_string(),
-            created_at,
+            created_at: created_at.map(str::to_string),
             ..Default::default()
         })
         .collect();
@@ -468,15 +468,30 @@ enum GemSegment<'a> {
     Number(u64),
 }
 
+/// A version's segments as `Gem::Version#canonical_segments` gives them:
+/// trailing zeros dropped from the release part and from the prerelease part,
+/// so `1.0.0.beta1` compares as `1.beta.1`.
 fn gem_segments(version: &str) -> Vec<GemSegment<'_>> {
-    regex!(r"[0-9]+|[A-Za-z]+")
+    let mut release: Vec<_> = regex!(r"[0-9]+|[A-Za-z]+")
         .find_iter(version)
         .map(|m| {
             m.as_str()
                 .parse()
                 .map_or(GemSegment::Letters(m.as_str()), GemSegment::Number)
         })
-        .collect()
+        .collect();
+    let prerelease_at = release
+        .iter()
+        .position(|s| matches!(s, GemSegment::Letters(_)))
+        .unwrap_or(release.len());
+    let mut prerelease = release.split_off(prerelease_at);
+    for part in [&mut release, &mut prerelease] {
+        while part.last() == Some(&GemSegment::Number(0)) {
+            part.pop();
+        }
+    }
+    release.extend(prerelease);
+    release
 }
 
 /// RubyGems' version order (`Gem::Version#<=>`): runs of digits and of letters
@@ -1097,8 +1112,8 @@ mod tests {
         let body = "created_at: 2024-04-01T00:00:05Z\n\
             ---\n\
             0.1.0 thor:>= 1.2.2|checksum:aa\n\
-            1.0.0 |checksum:bb,created_at:2026-01-06T22:32:36Z\n\
             1.0.0-x86_64-linux |checksum:cc,ruby:>= 3.1\n\
+            1.0.0 |checksum:bb,created_at:2026-01-06T22:32:36Z\n\
             1.1.0.rc1 |checksum:dd\n";
         let versions: Vec<_> = parse_compact_index(body)
             .into_iter()
@@ -1135,6 +1150,8 @@ mod tests {
             ("1.2.3.alpha", "1.2.3.beta", Less),
             ("5.0.0.1", "5.0.0", Greater),
             ("1.2.10", "1.2.9", Greater),
+            ("1.0.0.beta1", "1.0.rc1", Less),
+            ("1.0.0.rc1", "1.0.rc1", Equal),
         ] {
             assert_eq!(gem_version_cmp(a, b), ordering, "{a} vs {b}");
         }
