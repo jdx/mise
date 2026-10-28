@@ -123,12 +123,11 @@ impl Backend for GemBackend {
             // in `/`, so this appends within it instead of replacing its last
             // path segment, and it cannot smuggle the API path into a query
             // string or a fragment the way string-building could.
-            // GitHub Packages has no JSON versions API.
-            Some(source) if source.host_str() == Some(GITHUB_PACKAGES_HOST) => bail!(
-                "GitHub Packages has no version-listing API mise can read, so `{}` \
-                 cannot resolve `latest` or a prefix there: pin an exact version",
-                self.ba()
-            ),
+            // GitHub Packages has no JSON versions API, but GitHub's REST API
+            // lists the same versions.
+            Some(source) if source.host_str() == Some(GITHUB_PACKAGES_HOST) => {
+                return self.list_github_packages_versions(&source).await;
+            }
             Some(source) => source.join(&format!("api/v1/versions/{}.json", self.tool_name()))?,
             None => format!(
                 "{}api/v1/versions/{}.json",
@@ -219,7 +218,15 @@ impl Backend for GemBackend {
             // directory, and a shim can start this install inside an untrusted
             // project.
             .current_dir(tv.install_path())
-            .execute()?;
+            .execute()
+            // GitHub Packages answers a missing or under-scoped token with a
+            // 401, which RubyGems reports as "Could not find a valid gem".
+            .map_err(|e| match &source {
+                Some(source) if source.host_str() == Some(GITHUB_PACKAGES_HOST) => e.wrap_err(
+                    format!("installing from GitHub Packages needs {GITHUB_PACKAGES_TOKEN}"),
+                ),
+                _ => e,
+            })?;
 
         // We install the gem to {install_path}/libexec and create a wrapper script for each executable
         // in {install_path}/bin that sets GEM_HOME and executes the gem installed
@@ -281,6 +288,47 @@ impl GemBackend {
         });
         config.add_redactions(source_secrets(&url));
         Ok(Some(url))
+    }
+
+    /// Versions of this gem in a GitHub Packages source, through GitHub's REST
+    /// API. The owner is the first path segment of the source, and the request
+    /// takes mise's GitHub token, which needs the `read:packages` scope here
+    /// just as it does for the install.
+    async fn list_github_packages_versions(&self, source: &Url) -> Result<Vec<VersionInfo>> {
+        let Some(owner) = source
+            .path_segments()
+            .and_then(|mut segments| segments.next())
+            .filter(|owner| !owner.is_empty())
+        else {
+            bail!(
+                "a GitHub Packages source names its owner, as in \
+                 https://{GITHUB_PACKAGES_HOST}/<owner>"
+            );
+        };
+        ensure!(
+            crate::github::resolve_token("api.github.com").is_some(),
+            "listing versions of `{}` from GitHub Packages needs {GITHUB_PACKAGES_TOKEN}",
+            self.ba()
+        );
+        let versions = crate::github::list_package_versions(owner, "rubygems", &self.tool_name())
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "could not list `{}` in {owner}'s GitHub Packages: check that it exists \
+                         and that mise has {GITHUB_PACKAGES_TOKEN}",
+                    self.ba()
+                )
+            })?;
+        // Newest first, like RubyGems; mise expects oldest first.
+        Ok(versions
+            .into_iter()
+            .rev()
+            .map(|v| VersionInfo {
+                version: v.name,
+                created_at: Some(v.created_at),
+                ..Default::default()
+            })
+            .collect())
     }
 
     /// Get the primary gem source URL using the mise-managed Ruby environment.
@@ -363,6 +411,10 @@ Gem::GemRunner.new.run(ARGV + ["--source", ENV.delete("MISE_GEM_SOURCE")])"#;
 
 /// GitHub Packages' RubyGems registry.
 const GITHUB_PACKAGES_HOST: &str = "rubygems.pkg.github.com";
+
+/// What GitHub Packages needs from mise's GitHub token.
+const GITHUB_PACKAGES_TOKEN: &str = "a GitHub token with the read:packages scope \
+     (`gh auth refresh -s read:packages`, or see `mise token github`)";
 
 /// Add the resolved GitHub token to an https GitHub Packages source that has
 /// no credentials. Other hosts and explicit credentials are left alone.

@@ -88,12 +88,13 @@ install metadata. A source with credentials must use `https` unless it is on
 An `https` source on `rubygems.pkg.github.com` without credentials uses mise's
 GitHub token (see [`mise token github`](/cli/token/github.html)). The token
 needs the `read:packages` scope, which a default `gh auth login` lacks
-(`gh auth refresh -s read:packages`). GitHub Packages cannot list versions, so
-pin one:
+(`gh auth refresh -s read:packages`). mise lists the gem's versions through
+GitHub's REST API with that token, so `latest`, prefixes, `mise outdated` and
+`mise upgrade` work as they do on rubygems.org:
 
 ```toml
 [tools]
-"gem:internal-cli" = { version = "1.4.2", source = "https://rubygems.pkg.github.com/acme" }
+"gem:internal-cli" = { version = "latest", source = "https://rubygems.pkg.github.com/acme" }
 ```
 
 mise adds this source alongside rubygems.org; it does not replace it.

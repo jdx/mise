@@ -82,6 +82,13 @@ pub struct GithubTag {
     pub commit: Option<GithubTagCommit>,
 }
 
+/// One version of a GitHub Packages package.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GithubPackageVersion {
+    pub name: String,
+    pub created_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GithubTagCommit {
     pub sha: String,
@@ -1024,6 +1031,48 @@ async fn list_tags_from_api(api_url: &str, repo: &str, list_all: bool) -> Result
     }
 
     Ok(tags.into_iter().map(|t| t.name).collect())
+}
+
+/// Every version of `owner`'s `package_type` package `name` on GitHub Packages,
+/// newest first.
+///
+/// The API has separate endpoints for organization and user owners, and
+/// nothing in a package's URL says which one `owner` is, so a 404 for the
+/// organization asks again as a user.
+pub async fn list_package_versions(
+    owner: &str,
+    package_type: &str,
+    name: &str,
+) -> Result<Vec<GithubPackageVersion>> {
+    let path = format!(
+        "{}/packages/{package_type}/{}/versions",
+        urlencoding::encode(owner),
+        urlencoding::encode(name)
+    );
+    match list_package_versions_(&format!("{API_URL}/orgs/{path}")).await {
+        Err(e) if crate::http::error_code(&e) == Some(404) => {
+            list_package_versions_(&format!("{API_URL}/users/{path}")).await
+        }
+        result => result,
+    }
+}
+
+async fn list_package_versions_(url: &str) -> Result<Vec<GithubPackageVersion>> {
+    let mut url = format!("{url}?per_page=100");
+    let headers = get_headers(&url, API_URL)?;
+    let (mut versions, mut headers) = crate::http::HTTP_FETCH
+        .json_headers_with_headers::<Vec<GithubPackageVersion>, _>(&url, &headers)
+        .await?;
+    while let Some(next) = next_page(&headers) {
+        url = crate::http::resolve_pagination_url(&url, &next)?;
+        headers = get_headers(&url, API_URL)?;
+        let (more, h) = crate::http::HTTP_FETCH
+            .json_headers_with_headers::<Vec<GithubPackageVersion>, _>(&url, &headers)
+            .await?;
+        versions.extend(more);
+        headers = h;
+    }
+    Ok(versions)
 }
 
 /// List `repo`'s tags with the commit dates mise-versions already knows, at the
