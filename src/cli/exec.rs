@@ -480,10 +480,12 @@ impl Exec {
         .await?;
 
         // A sandbox that denies env would drop the marker that makes a wrapper's command skip
-        // that wrapper, so its descendants would reach the wrapper again.
-        let active_wrappers = wrapper_dispatch
-            .then(|| env.get(crate::shims::ACTIVE_WRAPPERS_ENV).cloned())
-            .flatten();
+        // that wrapper, so its descendants would reach the wrapper again. A wrapper dispatch sets
+        // it; a command that skipped its wrapper only inherits it.
+        let active_wrappers = env
+            .get(crate::shims::ACTIVE_WRAPPERS_ENV)
+            .cloned()
+            .or_else(|| env::var(crate::shims::ACTIVE_WRAPPERS_ENV).ok());
         if sandbox.is_active() {
             env = sandbox.filter_env(&env);
             if let Some(active_wrappers) = active_wrappers {

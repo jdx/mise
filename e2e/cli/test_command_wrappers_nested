@@ -63,6 +63,15 @@ real a:inner
 wrapper b:2
 real b active:["a","b"]'
 
+# The same holds when the sandbox setting is persistent, so every mise in the tree applies it.
+mise settings set sandbox.deny_env true
+assert "a" 'wrapper a:
+real a:
+real a:inner
+wrapper b:
+real b active:["a","b"]'
+mise settings unset sandbox.deny_env
+
 # Two wrappers that delegate to each other end at the real tool instead of looping.
 cat >"$fake_bin/x" <<'EOF'
 #!/usr/bin/env bash
