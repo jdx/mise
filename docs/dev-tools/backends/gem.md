@@ -88,8 +88,8 @@ install metadata. A source with credentials must use `https` unless it is on
 mise lists a source's versions from RubyGems' JSON API, or, for a registry
 without one such as GitHub Packages, from the compact index Bundler installs
 from. Either way `latest`, prefixes, `mise outdated` and `mise upgrade` work.
-The compact index has no release dates, so release-age settings such as
-`minimum_release_age` cannot filter those versions.
+GitHub Packages' compact index has no release dates, so release-age settings
+such as `minimum_release_age` cannot filter its versions.
 
 An `https` source on `rubygems.pkg.github.com` without credentials uses mise's
 GitHub token (see [`mise token github`](/cli/token/github.html)). The token

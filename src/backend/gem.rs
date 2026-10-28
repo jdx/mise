@@ -421,14 +421,28 @@ fn with_github_packages_hint(source: &Url, e: eyre::Report) -> eyre::Report {
 /// oldest first. Each line after the `---` header is `<version>[-<platform>]
 /// <dependencies>|<requirements>`; the platform is split off at the first `-`,
 /// as Bundler does, so a version built for several platforms appears once.
+/// Some registries (rubygems.org, not GitHub Packages) add a `created_at:`
+/// requirement.
 fn parse_compact_index(body: &str) -> Vec<VersionInfo> {
     let mut seen = std::collections::HashSet::new();
     body.lines()
         .filter(|line| *line != "---")
-        .filter_map(|line| line.split([' ', '-']).next())
-        .filter(|version| !version.is_empty() && seen.insert(*version))
-        .map(|version| VersionInfo {
+        .filter_map(|line| {
+            let version = line.split([' ', '-']).next()?;
+            let created_at = line
+                .split_once('|')
+                .and_then(|(_, requirements)| {
+                    requirements
+                        .split(',')
+                        .find_map(|r| r.strip_prefix("created_at:"))
+                })
+                .map(str::to_string);
+            Some((version, created_at))
+        })
+        .filter(|(version, _)| !version.is_empty() && seen.insert(*version))
+        .map(|(version, created_at)| VersionInfo {
             version: version.to_string(),
+            created_at,
             ..Default::default()
         })
         .collect()
@@ -1036,14 +1050,21 @@ mod tests {
     fn compact_index_versions_drop_platforms() {
         let body = "---\n\
             0.1.0 thor:>= 1.2.2|checksum:aa\n\
-            1.0.0 |checksum:bb\n\
+            1.0.0 |checksum:bb,created_at:2026-01-06T22:32:36Z\n\
             1.0.0-x86_64-linux |checksum:cc,ruby:>= 3.1\n\
             1.1.0.rc1 |checksum:dd\n";
         let versions: Vec<_> = parse_compact_index(body)
             .into_iter()
-            .map(|v| v.version)
+            .map(|v| (v.version, v.created_at))
             .collect();
-        assert_eq!(versions, ["0.1.0", "1.0.0", "1.1.0.rc1"]);
+        assert_eq!(
+            versions,
+            [
+                ("0.1.0".into(), None),
+                ("1.0.0".into(), Some("2026-01-06T22:32:36Z".into())),
+                ("1.1.0.rc1".into(), None),
+            ]
+        );
     }
 
     /// A bare GitHub Packages source borrows the resolved GitHub token.
