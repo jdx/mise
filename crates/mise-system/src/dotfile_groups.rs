@@ -489,8 +489,11 @@ fn group_edit_entry(
             toml::Value::String(source.to_string_lossy().to_string()),
         );
     }
-    let request = edits::group_edit(name, key, value, root, config_path)
+    let mut request = edits::group_edit(name, key, value, root, config_path)
         .map_err(|err| eyre::eyre!("entries.{key:?}: {err}"))?;
+    // the file edited is the one checked to lie inside the group's target,
+    // not another that `..` through a link would reach
+    request.path = target.clone();
     let source = request
         .op
         .source_file()
@@ -1391,6 +1394,21 @@ mod tests {
                 .iter()
                 .any(|p| p.as_str() == "/templates/defaults.json")
         );
+        Ok(())
+    }
+
+    #[test]
+    fn a_group_edit_changes_the_file_it_was_checked_against() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        let (_, edits) = expand(
+            dir.path(),
+            &format!(
+                "{:?} = {{ line = \"x\" }}",
+                format!("{}/link/../.rc/x", home.display())
+            ),
+        )?;
+        assert_eq!(edits[0].path, home.join(".rc"));
         Ok(())
     }
 
