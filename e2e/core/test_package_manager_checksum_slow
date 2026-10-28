@@ -37,6 +37,15 @@ cat >package.json <<'EOF'
 EOF
 assert "mise tool pnpm --backend" "aqua:pnpm/pnpm"
 
+# A manifest an earlier mise wrote for a checksum install still pinned the
+# backend as explicit. It is read as the registry's choice again.
+cat >"$MISE_DATA_DIR/installs/pnpm/.mise.backend.toml" <<'EOF'
+short = "pnpm"
+full = "npm:pnpm"
+explicit_backend = true
+EOF
+assert "mise tool pnpm --backend" "aqua:pnpm/pnpm"
+
 cat >mise.lock <<EOF
 $LOCKFILE_HEADER
 
