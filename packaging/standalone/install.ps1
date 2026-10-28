@@ -12,6 +12,7 @@
 #   MISE_INSTALL_MODIFY_PATH     set to 0 to leave the user Path alone
 #   MISE_INSTALL_SHIMS_PATH      set to 1 to also add the shims directory to the user Path
 #   MISE_INSTALL_FROM_GITHUB     set to 1 to download from GitHub Releases, not mise.jdx.dev
+#   MISE_INSTALL_GITHUB_MIRROR   https URL or host to use instead of https://github.com
 #   MISE_INSTALL_ARCH            x64 or arm64 (default: detected)
 #   MISE_SELF_UPDATE_MINIMUM_RELEASE_AGE / MISE_MINIMUM_RELEASE_AGE
 #                                skip releases newer than this when unpinned (default: 24h)
@@ -62,6 +63,16 @@
     # Binary content types (GitHub serves release assets as octet-stream) come back as bytes.
     if ($content -is [byte[]]) { return [Text.Encoding]::UTF8.GetString($content) }
     return [string]$content
+  }
+
+  # MISE_INSTALL_GITHUB_MIRROR stands in for https://github.com, for networks
+  # that reach GitHub Releases only through a mirror. A bare host means https.
+  function Get-GitHubBase {
+    $mirror = $env:MISE_INSTALL_GITHUB_MIRROR
+    if (-not $mirror) { return 'https://github.com' }
+    if ($mirror -notmatch '://') { $mirror = "https://$mirror" }
+    if ($mirror -notmatch '^https://') { Stop-Install "MISE_INSTALL_GITHUB_MIRROR must use https: $mirror" }
+    return $mirror.TrimEnd('/')
   }
 
   # "24h" -> seconds. Mirrors install.sh: an integer followed by s, m, h, d or w.
@@ -164,7 +175,7 @@
 
   if ($install) {
     $asset = "mise-v$version-windows-$arch.zip"
-    $githubBase = "https://github.com/jdx/mise/releases/download/v$version"
+    $githubBase = "$(Get-GitHubBase)/jdx/mise/releases/download/v$version"
     $urls = @("$githubBase/$asset")
     if (-not (Test-Flag $env:MISE_INSTALL_FROM_GITHUB)) { $urls = @("https://mise.jdx.dev/v$version/$asset") + $urls }
 
@@ -187,8 +198,8 @@
       }
       if (-not $downloaded) { Stop-Install "failed to download $asset" }
 
-      # The checksum always comes from GitHub Releases, never the host the
-      # archive came from, so a compromised mirror cannot serve a matching pair.
+      # The checksum always comes from GitHub Releases (or MISE_INSTALL_GITHUB_MIRROR),
+      # never mise.jdx.dev, so a compromised mise.jdx.dev cannot serve a matching pair.
       $sums = $null
       try { $sums = Get-Text "$githubBase/SHASUMS256.txt" } catch { Stop-Install "could not fetch checksums for mise $version : $_" }
       $expected = $null
