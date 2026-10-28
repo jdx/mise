@@ -55,6 +55,14 @@ assert "a" "$expected"
 assert "b" 'wrapper b:2
 real b active:["b"]'
 
+# A sandbox that denies the environment drops a's own `env`, but the nested `a` still skips its
+# wrapper. The setting does not reach b's wrapper, which the sandboxed `a` starts.
+MISE_SANDBOX_DENY_ENV=1 assert "a" 'wrapper a:
+real a:
+real a:inner
+wrapper b:2
+real b active:["a","b"]'
+
 # Two wrappers that delegate to each other end at the real tool instead of looping.
 cat >"$fake_bin/x" <<'EOF'
 #!/usr/bin/env bash

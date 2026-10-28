@@ -40,7 +40,17 @@ pub const TASK_TOOL_ARGS_ENV: &str = "__MISE_TASK_TOOL_ARGS";
 /// A JSON array of the command wrappers whose commands are running, inherited by their
 /// descendants. A wrapper shim named in it runs the real command instead of the wrapper again,
 /// so `mbx` finds the real `cargo` while a wrapped command's other wrappers still apply.
-const ACTIVE_WRAPPERS_ENV: &str = "__MISE_ACTIVE_WRAPPERS";
+pub const ACTIVE_WRAPPERS_ENV: &str = "__MISE_ACTIVE_WRAPPERS";
+
+/// Whether two command names find the same shim. Windows file names are case-insensitive, so a
+/// shim can be invoked as `Cargo` for `[wrappers.cargo]`.
+pub fn same_command_name(a: &str, b: &str) -> bool {
+    if cfg!(windows) {
+        a.eq_ignore_ascii_case(b)
+    } else {
+        command_names_eq(a, b)
+    }
+}
 
 fn parse_active_wrappers(value: &str) -> Vec<String> {
     serde_json::from_str(value).unwrap_or_default()
@@ -51,7 +61,7 @@ pub fn is_active_command_wrapper(name: &str) -> bool {
     env::var(ACTIVE_WRAPPERS_ENV).is_ok_and(|value| {
         parse_active_wrappers(&value)
             .iter()
-            .any(|active| command_names_eq(active, name))
+            .any(|active| same_command_name(active, name))
     })
 }
 
@@ -64,7 +74,7 @@ pub fn with_active_command_wrapper(
     let mut active = env::var(ACTIVE_WRAPPERS_ENV)
         .map(|value| parse_active_wrappers(&value))
         .unwrap_or_default();
-    if !active.iter().any(|active| command_names_eq(active, name)) {
+    if !active.iter().any(|active| same_command_name(active, name)) {
         active.push(name.to_string());
     }
     active.sort();

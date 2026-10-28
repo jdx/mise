@@ -479,8 +479,16 @@ impl Exec {
         )
         .await?;
 
+        // A sandbox that denies env would drop the marker that makes a wrapper's command skip
+        // that wrapper, so its descendants would reach the wrapper again.
+        let active_wrappers = wrapper_dispatch
+            .then(|| env.get(crate::shims::ACTIVE_WRAPPERS_ENV).cloned())
+            .flatten();
         if sandbox.is_active() {
             env = sandbox.filter_env(&env);
+            if let Some(active_wrappers) = active_wrappers {
+                env.insert(crate::shims::ACTIVE_WRAPPERS_ENV.into(), active_wrappers);
+            }
         }
         // The grants go in after the sandbox filter: under deny-env it copies allow_env names
         // back in from mise's own environment, which would undo a key fnox asked to remove.

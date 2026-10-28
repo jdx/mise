@@ -350,16 +350,6 @@ fn render_template(
     })
 }
 
-/// Whether two command names find the same shim. Windows file names are case-insensitive, so a
-/// shim can be invoked as `Cargo` for `[wrappers.cargo]`.
-fn same_command_name(a: &str, b: &str) -> bool {
-    if cfg!(windows) {
-        a.eq_ignore_ascii_case(b)
-    } else {
-        command_names_eq(a, b)
-    }
-}
-
 /// Shell completion invokes `usage complete-word` through the `usage` shim. It
 /// should use the installed CLI or fail locally, never resolve a floating tool
 /// version, auto-install, or update over the network while the user is pressing
