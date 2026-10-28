@@ -7,7 +7,7 @@ use eyre::{Result, bail, eyre};
 use itertools::Itertools;
 
 use crate::args::ToolArg;
-use crate::backend::{Backend, fuzzy_version_matches};
+use crate::backend::Backend;
 use crate::config::project::{nearest_project_tool_requests, tool_request_set};
 use crate::config::{Config, Settings};
 use crate::file::display_path;
@@ -332,7 +332,13 @@ impl Uninstall {
                 Some(m) => vec![m],
                 None => installed_versions
                     .iter()
-                    .filter(|v| installed_version_matches(&query, v))
+                    .filter(|v| {
+                        installed_version_matches(&query, v, |candidate| {
+                            !backend
+                                .fuzzy_match_filter(vec![candidate.to_string()], &query, false)
+                                .is_empty()
+                        })
+                    })
                     .collect_vec(),
             };
 
@@ -386,12 +392,14 @@ impl Uninstall {
     }
 }
 
-/// Whether the installed version `name` is selected by the version `query`.
+/// Whether the installed version `name` is selected by the version `query`,
+/// where `matches` is the backend's own fuzzy matcher (Java, for one, accepts
+/// `+` after any query).
 ///
 /// `latest` is resolved separately; as a fuzzy query it would select every
 /// installed version. A graph install lists as `<version>~aube~<digest>` or
 /// `<version>~uv~<digest>`, and the query names the version it stands for.
-fn installed_version_matches(query: &str, name: &str) -> bool {
+fn installed_version_matches(query: &str, name: &str, matches: impl Fn(&str) -> bool) -> bool {
     if query.is_empty() {
         return true;
     }
@@ -402,12 +410,23 @@ fn installed_version_matches(query: &str, name: &str) -> bool {
         let (version, identity) = name.rsplit_once(marker)?;
         (identity.len() == 16 && identity.bytes().all(|b| b.is_ascii_hexdigit())).then_some(version)
     });
-    fuzzy_version_matches(query, name) || logical.is_some_and(|v| fuzzy_version_matches(query, v))
+    matches(name) || logical.is_some_and(matches)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::installed_version_matches;
+    use super::installed_version_matches as matches_with;
+
+    fn installed_version_matches(query: &str, name: &str) -> bool {
+        // Stands in for the backend's matcher: the query, or the query followed
+        // by a separator and more.
+        matches_with(query, name, |candidate| {
+            candidate == query
+                || candidate
+                    .strip_prefix(query)
+                    .is_some_and(|rest| rest.len() > 1 && rest.starts_with(['.', '-', '+']))
+        })
+    }
 
     #[test]
     fn query_matches_on_a_separator_boundary() {

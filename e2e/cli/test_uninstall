@@ -56,3 +56,9 @@ mise i dummy@1.1.1
 assert_succeed "mise uninstall dummy@latest"
 assert_contains "mise ls --installed --json dummy" '"version": "1.1.1"'
 assert_not_contains "mise ls --installed --json dummy" '"version": "1.1.12"'
+
+# Test: a backend's own matching applies; java accepts a + build after any query
+mkdir -p "$MISE_DATA_DIR/installs/java/temurin-21.0.1+12" "$MISE_DATA_DIR/installs/java/temurin-21.0.1+13"
+assert_fail_contains "mise uninstall java@temurin-21.0.1 2>&1" "multiple tools specified"
+assert_succeed "mise uninstall --all java@temurin-21.0.1"
+assert_not_contains "mise ls --installed --json java" "temurin-21.0.1"
