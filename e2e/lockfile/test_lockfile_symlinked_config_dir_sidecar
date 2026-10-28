@@ -25,3 +25,8 @@ assert "grep '^aube = ' $repo/mise.lock" "$first"
 mise -C "$PWD/repo" lock --global
 assert "grep '^aube = ' $repo/mise.lock" "$first"
 assert "find $repo -name aube-lock.yaml | wc -l | tr -d ' '" "1"
+
+# The global config dir keeps the `locks/` layout even though its link target
+# is not named `mise` under a `.config` dir.
+assert_contains "grep '^aube = ' $repo/mise.lock" 'path = "locks/'
+assert "test -e $repo/locks && ! test -e $repo/.mise" ""
