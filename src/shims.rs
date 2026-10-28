@@ -111,6 +111,9 @@ pub async fn install_missing_wrapper_command(
     if command.contains(['/', '\\']) {
         return Ok(());
     }
+    if ts.lazy_bin_fallback(config, command).await?.is_some() {
+        return Ok(());
+    }
     // Match which_shim: a configured registry provider wins over an incidental install.
     if Settings::get().not_found_auto_install
         && ts
@@ -132,6 +135,7 @@ pub async fn install_missing_wrapper_command(
 }
 
 /// Find a real executable without entering a shim or command wrapper again.
+/// Used both for ordinary system fallback and optional lazy providers.
 pub fn path_fallback(bin_name: &str) -> Option<PathBuf> {
     let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
     for path in &*env::PATH {

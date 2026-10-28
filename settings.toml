@@ -3852,6 +3852,24 @@ global_only = true
 optional = true
 type = "Path"
 
+[system_lazy_fallback]
+description = "Prefer an existing PATH command over installing a missing system lazy tool."
+docs = """
+When enabled, an uninstalled system-scoped `lazy = true` provider is a fallback: shims and
+`mise exec` run an existing command on `PATH` before installing it. Mise's own
+shims and command wrappers are excluded from that lookup to prevent recursion.
+
+Installed, active mise tools still take precedence. A higher-precedence
+user or project selection, including a lazy pinned version, retains the normal
+missing-version and auto-install behavior. `mise install <tool>` still installs
+a lazy tool explicitly. Command wrappers still apply before fallback dispatch.
+
+This is useful for system configurations that offer optional tools without
+replacing copies users have installed through other package managers.
+"""
+env = "MISE_SYSTEM_LAZY_FALLBACK"
+type = "Bool"
+
 [system_packages.elevate_with]
 description = "Command mise uses to get root instead of `sudo`, such as `run0` or `doas`."
 docs = """

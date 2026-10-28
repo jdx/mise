@@ -83,6 +83,17 @@ run an unrelated system binary. Set
 [`not_found_system_fallback`](/configuration/settings.html#not_found_system_fallback)
 and `not_found_auto_install` to `false` to make an unresolved shim fail instead.
 
+### Optional lazy defaults
+
+System configurations can enable [`system_lazy_fallback`](/configuration/settings.html#system_lazy_fallback)
+to offer lazy tools without replacing commands already available on `PATH`.
+When a shim's effective provider is a system-declared uninstalled lazy tool, mise runs the existing
+executable first, excluding its own shims and command wrappers. If none exists,
+first use installs the lazy tool normally. Installed active mise tools and
+explicit user or project selections (including lazy ones) keep their normal precedence. Command
+wrappers still run first, so account or environment dispatch is preserved.
+The same policy applies to `mise exec`; explicit `mise install` is unchanged.
+
 ## Add shims to PATH {#how-to-add-mise-shims-to-path}
 
 `mise activate --shims` prints the lines that put the shim directories and the

@@ -393,6 +393,9 @@ async fn which_shim(
         trace!("shim[{bin_name}] WRAPPER command: {}", wrapper.command());
         return Ok((ShimCommand::Wrapper(wrapper), ts));
     }
+    if let Some(bin) = ts.lazy_bin_fallback(config, shim_name).await? {
+        return Ok((ShimCommand::SystemFallback(bin), ts));
+    }
     // A configured tool may intentionally override an executable bundled by another installed
     // tool (for example, a pinned npm overrides Node's npm). Install a missing provider declared
     // by the registry before resolving an incidental installed provider.

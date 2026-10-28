@@ -87,6 +87,31 @@ impl Toolset {
             .is_some())
     }
 
+    /// Only an effective missing system lazy provider may defer to PATH. Reuse
+    /// provider resolution and provenance so explicit project/global selections
+    /// keep priority, even when those selections are themselves lazy.
+    pub async fn lazy_bin_fallback(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Result<Option<PathBuf>> {
+        if !Settings::get().system_lazy_fallback || self.which(config, bin_name).await.is_some() {
+            return Ok(None);
+        }
+        let Some(provider) = self.missing_lazy_bin_provider(config, bin_name).await? else {
+            return Ok(None);
+        };
+        if !provider
+            .request
+            .source()
+            .path()
+            .is_some_and(crate::config::is_system_config)
+        {
+            return Ok(None);
+        }
+        Ok(shims::path_fallback(bin_name))
+    }
+
     /// A lazy tool's dependencies are commonly lazy themselves, so nothing else
     /// installs them and the provider alone fails its dependency preflight.
     async fn lazy_install_requests(

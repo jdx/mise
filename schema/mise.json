@@ -3223,6 +3223,10 @@
           "description": "Directory that `mise install --system` installs into.",
           "type": "string"
         },
+        "system_lazy_fallback": {
+          "description": "Prefer an existing PATH command over installing a missing system lazy tool.",
+          "type": "boolean"
+        },
         "system_packages": {
           "type": "object",
           "unevaluatedProperties": false,

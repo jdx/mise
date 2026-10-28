@@ -334,7 +334,29 @@ impl Exec {
         // names that command directly. Install its provider here: program resolution
         // below deliberately looks past shim directories, so the bootstrap shim that
         // would otherwise do this never gets the chance.
-        if ts.has_lazy_declarations()
+        let lazy_fallback = if program.contains(['/', '\\']) {
+            None
+        } else {
+            ts.lazy_bin_fallback(&config, &program).await?
+        };
+        if let Some(bin) = &lazy_fallback {
+            // Keep a configured wrapper's name for PATH resolution below. Its
+            // child resolves with dispatch directories stripped, allowing that
+            // child to use the external command without entering the wrapper again.
+            let name = crate::shims::command_name_without_exe_suffix(&program);
+            if strip_dispatch_dirs
+                || !crate::config::load_command_wrappers(
+                    &config.config_files,
+                    ts.versions.values().flat_map(|versions| &versions.requests),
+                )?
+                .keys()
+                .any(|wrapper| crate::shims::command_names_eq(wrapper, name))
+            {
+                program = bin.to_string_lossy().into_owned();
+            }
+        }
+        if lazy_fallback.is_none()
+            && ts.has_lazy_declarations()
             && !program.contains(['/', '\\'])
             && ts.has_missing_lazy_bin_provider(&config, &program).await?
         {

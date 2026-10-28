@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+
+export MISE_SYSTEM_LAZY_FALLBACK=1
+export MISE_SYSTEM_CONFIG_FILE="$HOME/system-mise.toml"
+export MISE_SYSTEM_INSTALLS_DIR="$MISE_DATA_DIR/installs"
+: >"$MISE_CONFIG_DIR/config.toml"
+export MISE_NOT_FOUND_AUTO_INSTALL=0
+export MISE_NOT_FOUND_SYSTEM_FALLBACK=0
+export MISE_SHIMS_DIR="$HOME/shims"
+export MISE_SYSTEM_SHIMS_DIR="$HOME/system-shims"
+export PATH="$MISE_SHIMS_DIR:$MISE_SYSTEM_SHIMS_DIR:$HOME/existing:$PATH"
+mkdir -p "$HOME/existing"
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tools]
+dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy", "dummy-exec-tiny"] }
+EOF
+cat >"$HOME/existing/dummy" <<'EOF'
+#!/bin/sh
+printf 'existing dummy: %s\n' "$*"
+exit 23
+EOF
+chmod +x "$HOME/existing/dummy"
+mise reshim --system
+mise reshim
+status=0
+output=$(dummy 'one argument') || status=$?
+[[ $status == 23 && $output == 'existing dummy: one argument' ]] || fail "missing lazy shim must use existing PATH command and preserve arguments/status"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+status=0
+output=$(mise x -- dummy 'exec argument') || status=$?
+[[ $status == 23 && $output == 'existing dummy: exec argument' ]] || fail "mise exec must apply the same lazy fallback policy"
+
+# A symlink to mise outside either known farm must not become a fallback cycle.
+mkdir -p "$HOME/other-shims"
+ln -s "$(command -v mise)" "$HOME/other-shims/dummy"
+export PATH="$HOME/other-shims:$PATH"
+status=0
+output=$("$MISE_SYSTEM_SHIMS_DIR/dummy" 'not recursive') || status=$?
+[[ $status == 23 && $output == 'existing dummy: not recursive' ]] || fail "foreign symlink shim must be skipped"
+
+export PATH="${PATH#"$HOME/other-shims:"}"
+
+# Absence still installs on first use. No tool-to-command map is involved.
+rm "$HOME/existing/dummy"
+assert_contains "dummy --version" "This is Dummy 1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+cat >"$HOME/existing/dummy" <<'EOF'
+#!/bin/sh
+printf 'existing-again:%s:%s\n' "${WRAPPER_ACCOUNT:-unset}" "$*"
+EOF
+chmod +x "$HOME/existing/dummy"
+assert_contains "dummy --version" "This is Dummy 1.0.0"
+
+# A trusted explicit project selection is authoritative even while missing.
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "2.0.0"
+EOF
+mise trust
+assert_fail "dummy --version"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/2.0.0'"
+# An explicit lazy project pin still installs its own version instead of
+# silently accepting an unrelated executable from PATH.
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "2.0.0", lazy = true, lazy_bins = ["dummy"] }
+EOF
+assert_contains "dummy --version" "This is Dummy 2.0.0"
+rm mise.toml
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+dummy = { version = "1.1.0", lazy = true, lazy_bins = ["dummy"] }
+EOF
+assert_contains "dummy --version" "This is Dummy 1.1.0"
+: >"$MISE_CONFIG_DIR/config.toml"
+
+# Prompt hooks retain the fallback and the active selection in child scripts.
+eval "$(mise activate bash)"
+for _ in 1 2 3; do
+  eval "$(mise hook-env -s bash --force)"
+done
+assert_contains "bash -c 'dummy --version'" "This is Dummy 1.0.0"
+
+# Wrapper dispatch stays ahead of an external command. This models account
+# selection without installing the optional provider merely to run its wrapper.
+mise uninstall --all dummy
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[wrappers.dummy]
+command = "sh"
+args = ["-c", "printf 'wrapped: '; exec \"$@\"", "sh", "dummy"]
+env = { WRAPPER_ACCOUNT = "work" }
+EOF
+mise reshim
+assert "dummy --version" "wrapped: existing-again:work:--version"
+assert "mise x -- dummy --version" "wrapped: existing-again:work:--version"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+
+# A wrapper's own command may also have an optional lazy provider. General
+# not-found auto-install must not install that provider before PATH fallback.
+cat >>"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tools.tiny]
+version = "1.0.0"
+lazy = true
+EOF
+cat >>"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[wrappers.alias-tiny]
+command = "rtx-tiny"
+EOF
+printf '#!/bin/sh\necho external-tiny\n' >"$HOME/existing/rtx-tiny"
+chmod +x "$HOME/existing/rtx-tiny"
+mise reshim
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=1 '$MISE_DATA_DIR/command-wrappers/bin/alias-tiny'" "external-tiny"
+assert_fail "test -d '$MISE_DATA_DIR/installs/tiny/1.0.0'"
