@@ -1331,14 +1331,22 @@ impl HistoryRepo {
         self.cat_object(oid)
     }
 
+    /// Writes `bytes` as a blob, as `hash-object -w --stdin` does (no
+    /// filters), without starting Git once per file of a snapshot.
     pub(crate) fn hash_blob(&self, bytes: &[u8]) -> Result<String> {
-        self.output_str(PlumbingCall::new(["hash-object", "-w", "--stdin"]).stdin(bytes))
+        Ok(self
+            .gix()?
+            .write_blob(bytes)
+            .wrap_err("writing a blob")?
+            .to_string())
     }
 
     /// Compute the normal Git identity without writing an object. Read APIs
     /// can resolve it in memory until this repository handle is dropped.
     pub(crate) fn transient_blob_id(&self, bytes: &[u8]) -> Result<String> {
-        let oid = self.output_str(PlumbingCall::new(["hash-object", "--stdin"]).stdin(bytes))?;
+        let oid =
+            gix::objs::compute_hash(self.gix()?.object_hash(), gix::object::Kind::Blob, bytes)?
+                .to_string();
         self.transient
             .lock()
             .unwrap_or_else(|error| error.into_inner())
@@ -2281,6 +2289,53 @@ mod tests {
         let checkpoint = repo.read_meta(&commit).unwrap();
         assert_eq!(checkpoint.uuid, commit);
         assert_eq!(checkpoint.description, "sha256 history");
+    }
+
+    /// Blobs written in-process get the ids `hash-object` gives them, in
+    /// either object format, and Git reads back the same bytes.
+    #[test]
+    fn blob_ids_match_git_hash_object() {
+        let Some(binary) = mise_util::git::plumbing_binary() else {
+            return;
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let contents: [&[u8]; 6] = [
+            b"",
+            b"line\n",
+            b"crlf\r\nline\r\n",
+            b"\0\xff\xfe binary \x00\n",
+            b"../target/of/a/symlink",
+            &vec![7; 8 * 1024 * 1024 + 1],
+        ];
+        for format in ["sha1", "sha256"] {
+            let path = temp.path().join(format!("{format}.git"));
+            let output = std::process::Command::new(binary)
+                .args(["init", "--bare", "--quiet"])
+                .arg(format!("--object-format={format}"))
+                .arg(&path)
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            let repo = super::HistoryRepo {
+                git: mise_util::git::GitPlumbing::new(path),
+                transient: Default::default(),
+            };
+            for bytes in contents {
+                let expected = repo
+                    .output_str(PlumbingCall::new(["hash-object", "--stdin"]).stdin(bytes))
+                    .unwrap();
+                assert_eq!(repo.transient_blob_id(bytes).unwrap(), expected);
+                assert!(repo.object_type(&expected).unwrap().is_none());
+                assert_eq!(repo.hash_blob(bytes).unwrap(), expected);
+                assert_eq!(repo.hash_blob(bytes).unwrap(), expected);
+                assert_eq!(
+                    repo.git
+                        .output(PlumbingCall::new(["cat-file", "blob", &expected]))
+                        .unwrap(),
+                    bytes
+                );
+            }
+        }
     }
 
     #[test]
