@@ -492,7 +492,7 @@ fn group_edit_entry(
     let source = request
         .op
         .source_file()
-        .map(Path::to_path_buf)
+        .map(files::lexical_normalize)
         .unwrap_or_default();
     Ok(GroupEdit {
         request,
@@ -663,7 +663,9 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
     Ok(GroupEntry {
         key: key.to_string(),
         target,
-        source,
+        // the walk's exclusions compare paths inside the root, so `..` in a
+        // source that leaves and re-enters it must not hide the match
+        source: files::lexical_normalize(&source),
         walks,
         dot_prefix: entry_dot_prefix,
         table,
@@ -1366,6 +1368,26 @@ mod tests {
             tree.exclude
                 .iter()
                 .any(|p| p.as_str() == "/.config/app/env.toml")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_source_that_leaves_and_reenters_the_root_is_still_skipped_by_the_walk() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let key = dir.path().join("home/settings.json");
+        let (files, _) = expand(
+            dir.path(),
+            &format!(
+                "{:?} = {{ source = \"../root/templates/defaults.json\", merge = true }}",
+                format!("{}/owned", key.display())
+            ),
+        )?;
+        assert!(
+            files[0]
+                .exclude
+                .iter()
+                .any(|p| p.as_str() == "/templates/defaults.json")
         );
         Ok(())
     }

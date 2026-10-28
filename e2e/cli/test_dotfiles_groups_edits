@@ -63,6 +63,7 @@ assert_fail "test -e $HOME/.commonrc"
 assert_contains "cat $target" "your_github_token"
 
 # a key that only a whole-file entry takes refuses the group
+# schema: invalid
 cat <<'TOML' >mise.toml
 [dotfile_groups.common]
 root = "common"

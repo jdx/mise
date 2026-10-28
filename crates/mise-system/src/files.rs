@@ -2312,7 +2312,7 @@ pub fn resolve_source_arg(source: &Path) -> Result<PathBuf> {
     Ok(resolved)
 }
 
-fn lexical_normalize(path: &Path) -> PathBuf {
+pub(crate) fn lexical_normalize(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {
