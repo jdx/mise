@@ -88,11 +88,27 @@ pub struct BackendResolution {
     /// Also true when restored from install state for backward compatibility with existing installations,
     /// and for plugin-based tools initialized from the plugin registry.
     pub explicit: bool,
+    /// The backend was chosen by mise for this request, not by the user, so it
+    /// is not recorded in the install manifest as the tool's backend.
+    forced: bool,
 }
 
 impl BackendResolution {
     pub(crate) fn new(explicit: bool) -> Self {
-        Self { explicit }
+        Self {
+            explicit,
+            forced: false,
+        }
+    }
+
+    /// A backend that mise requires for one request, such as the one that
+    /// publishes the artifact a `packageManager` checksum was computed for.
+    /// It is pinned like an explicit backend while the request lasts.
+    pub(crate) fn forced() -> Self {
+        Self {
+            explicit: true,
+            forced: true,
+        }
     }
 }
 
@@ -979,6 +995,13 @@ impl BackendArg {
     /// when registry/ is updated.
     pub(crate) fn has_explicit_backend(&self) -> bool {
         self.resolution.explicit
+    }
+
+    /// Whether the install manifest should record this backend as the tool's
+    /// explicit choice. A backend forced for one request is not: later requests
+    /// for the same tool name follow the registry again.
+    pub(crate) fn records_explicit_backend(&self) -> bool {
+        self.resolution.explicit && !self.resolution.forced
     }
 
     /// Returns the stored backend identifier, preferring the explicitly stored value
