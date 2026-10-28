@@ -1277,6 +1277,7 @@ impl<'a> CmdLineRunner<'a> {
         self.interrupt_on_timeout();
         let mut cp = self
             .spawn_with_etxtbsy_retry()
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id();
         register_running_pid(id);
@@ -1478,6 +1479,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id().unwrap_or_default();
         register_running_pid(id);
@@ -1734,6 +1736,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id().unwrap_or_default();
         let _running_pid = RunningPidGuard::new(cp.id());
@@ -1913,6 +1916,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id();
         let _running_pid = RunningPidGuard::new(id);
@@ -1970,6 +1974,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id().unwrap_or_default();
         let _running_pid = RunningPidGuard::new(cp.id());
@@ -2028,7 +2033,9 @@ impl<'a> CmdLineRunner<'a> {
         self.stdio.stdout = Some(Stdio::inherit());
         self.stdio.stderr = Some(Stdio::inherit());
         self.interrupt_on_timeout();
-        let mut cp = self.spawn_with_etxtbsy_retry()?;
+        let mut cp = self
+            .spawn_with_etxtbsy_retry()
+            .map_err(|err| self.name_missing_program(err))?;
         let timeout_guard = self
             .timeout
             .map(|t| TimeoutGuard::new(t, cp.id(), self.interruptible()));
@@ -2058,7 +2065,10 @@ impl<'a> CmdLineRunner<'a> {
         self.stdio.stdout = Some(Stdio::inherit());
         self.stdio.stderr = Some(Stdio::inherit());
         self.interrupt_on_timeout();
-        let mut cp = self.spawn_async_with_etxtbsy_retry().await?;
+        let mut cp = self
+            .spawn_async_with_etxtbsy_retry()
+            .await
+            .map_err(|err| self.name_missing_program(err))?;
         let id = cp.id().unwrap_or_default();
         if is_cancelled() {
             #[cfg(unix)]
@@ -2456,6 +2466,39 @@ impl<'a> CmdLineRunner<'a> {
 
     fn get_program(&self) -> String {
         display_path(PathBuf::from(self.cmd.as_std().get_program()))
+    }
+
+    /// Spawning reports a missing program as a bare "No such file or directory
+    /// (os error 2)", which reads like a missing file the command touched. Say
+    /// which program was not found. The same error also means a missing working
+    /// directory, or a script whose interpreter is missing, so the program is
+    /// only named once a lookup on the child's PATH confirms it is absent.
+    fn name_missing_program(&self, err: std::io::Error) -> std::io::Error {
+        if err.kind() != std::io::ErrorKind::NotFound || !self.program_is_missing() {
+            return err;
+        }
+        let program = self.get_program();
+        std::io::Error::new(err.kind(), format!("`{program}` not found: {err}"))
+    }
+
+    fn program_is_missing(&self) -> bool {
+        let cmd = self.cmd.as_std();
+        let cwd = cmd.get_current_dir().map(Path::to_path_buf);
+        if cwd.as_deref().is_some_and(|dir| !dir.exists()) {
+            return false;
+        }
+        let Some(cwd) = cwd.or_else(|| std::env::current_dir().ok()) else {
+            return false;
+        };
+        // Spawn looks the program up on the child's PATH when the command sets one.
+        let path = cmd
+            .get_envs()
+            .find(|(key, _)| *key == &**crate::env::PATH_KEY)
+            .map_or_else(
+                || std::env::var_os(&*crate::env::PATH_KEY),
+                |(_, v)| v.map(Into::into),
+            );
+        which::which_in(cmd.get_program(), path, cwd).is_err()
     }
 
     fn get_args(&self) -> Vec<String> {

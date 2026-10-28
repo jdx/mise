@@ -824,3 +824,77 @@ async fn test_apply_sandbox_rejects_allow_net() {
     let err = runner.apply_sandbox().await.unwrap_err();
     assert!(err.to_string().contains("--allow-net=<host>"), "{err}");
 }
+
+#[test]
+fn test_spawn_error_names_a_missing_program() {
+    let err = super::CmdLineRunner::new("mise-no-such-program-for-test")
+        .arg("install")
+        .execute()
+        .unwrap_err();
+
+    let message = format!("{err:#}");
+    assert!(
+        message.contains("`mise-no-such-program-for-test` not found"),
+        "expected the missing program to be named, got {message:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_spawn_error_names_a_missing_program_async() {
+    let err = super::CmdLineRunner::new("mise-no-such-program-for-test")
+        .arg("install")
+        .execute_async()
+        .await
+        .unwrap_err();
+
+    let message = format!("{err:#}");
+    assert!(
+        message.contains("`mise-no-such-program-for-test` not found"),
+        "expected the missing program to be named, got {message:?}"
+    );
+}
+
+#[test]
+fn test_spawn_error_blames_a_missing_directory_not_the_program() {
+    let err = super::CmdLineRunner::new("sh")
+        .args(["-c", "true"])
+        .current_dir("/mise-no-such-dir-for-test")
+        .execute()
+        .unwrap_err();
+
+    let message = format!("{err:#}");
+    assert!(!message.contains("not found"), "{message:?}");
+    assert!(message.contains("No such file or directory"), "{message:?}");
+}
+
+#[test]
+fn test_spawn_error_names_a_missing_program_in_raw_mode() {
+    let err = super::CmdLineRunner::new("mise-no-such-program-for-test")
+        .raw(true)
+        .execute()
+        .unwrap_err();
+
+    let message = format!("{err:#}");
+    assert!(
+        message.contains("`mise-no-such-program-for-test` not found"),
+        "expected the missing program to be named, got {message:?}"
+    );
+}
+
+// A script whose interpreter is gone fails to spawn with the same ENOENT, but
+// the script itself is there, so it must not be reported as missing.
+#[test]
+fn test_spawn_error_does_not_blame_a_program_that_exists() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("script");
+    std::fs::write(&script, "#!/mise-no-such-interpreter-for-test\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let err = super::CmdLineRunner::new(&script).execute().unwrap_err();
+
+    let message = format!("{err:#}");
+    assert!(!message.contains("not found"), "{message:?}");
+    assert!(message.contains("No such file or directory"), "{message:?}");
+}
