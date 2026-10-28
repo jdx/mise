@@ -880,7 +880,7 @@ fn deployed_paths(req: &FileRequest) -> Vec<RecordedPath> {
             .into_iter()
             .filter_map(|(_, target)| written(target))
             .collect(),
-        FileMode::Copy | FileMode::Template | FileMode::Content => {
+        FileMode::Copy | FileMode::Template | FileMode::Content | FileMode::Fnox => {
             written(req.target.clone()).into_iter().collect()
         }
         FileMode::Track | FileMode::Absent | FileMode::Permissions => vec![],

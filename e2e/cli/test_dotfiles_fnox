@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# `mode = "fnox"` writes the file fnox stores for the target with mode 0600,
+# never reads fnox on a dry run, never prints the content in a diff, and
+# edits through `fnox edit --file`. A fake fnox stands in for the real one.
+
+mkdir -p ~/bin ~/fake-fnox
+cat >~/bin/fnox <<'SH'
+#!/bin/sh
+store="$HOME/fake-fnox"
+echo "$*" >>"$HOME/fnox-calls"
+case "$1 $2" in
+"get --file") cat "$store/$(basename "$3")" ;;
+"edit --file") printf 'edited=1\n' >>"$store/$(basename "$3")" ;;
+*)
+	echo "unexpected fnox call: $*" >&2
+	exit 2
+	;;
+esac
+SH
+chmod +x ~/bin/fnox
+export PATH="$HOME/bin:$PATH"
+printf 'token=first-secret\n' >~/fake-fnox/.npmrc
+
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.npmrc" = { mode = "fnox" }
+TOML
+
+# a dry run lists the entry without reading fnox or writing the target
+assert_contains "mise dot apply --dry-run" "write the file fnox stores for ~/.npmrc"
+assert_fail "test -e ~/.npmrc"
+assert_fail "test -e ~/fnox-calls"
+
+# apply writes what fnox stores, readable only by its owner
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.npmrc" "token=first-secret"
+assert "stat -c %a ~/.npmrc 2>/dev/null || stat -f %Lp ~/.npmrc" "600"
+assert "mise dot status --json | jq -r '.files[] | select(.target == \"~/.npmrc\") | [.mode, .state] | join(\",\")'" "fnox,applied"
+
+# a change in fnox shows as a difference whose content is never printed
+printf 'token=second-secret\n' >~/fake-fnox/.npmrc
+assert "mise dot status --json | jq -r '.files[] | select(.target == \"~/.npmrc\") | .state'" "differs"
+assert_contains "mise dot diff" "content differs from the file fnox stores (not shown)"
+assert_not_contains "mise dot diff" "second-secret"
+assert_not_contains "mise dot diff" "first-secret"
+assert_succeed "mise dot apply --yes"
+assert "cat ~/.npmrc" "token=second-secret"
+
+# edit goes through fnox, and the next apply deploys the change
+assert_succeed "mise dot edit ~/.npmrc"
+assert_contains "cat ~/fake-fnox/.npmrc" "edited=1"
+assert_succeed "mise dot apply --yes"
+assert_contains "cat ~/.npmrc" "edited=1"
+
+# unapply removes the target while it still matches what fnox stores
+assert_succeed "mise dot unapply --yes ~/.npmrc"
+assert_fail "test -e ~/.npmrc"
+
+# an entry that names a source is ignored with a warning
+# schema: invalid
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.bad" = { mode = "fnox", source = "bad" }
+TOML
+assert_contains "mise dot apply --yes 2>&1" "takes no source"
+assert_fail "test -e ~/.bad"
+
+# a file fnox does not store stops the apply and says how to store it
+cat >mise.toml <<'TOML'
+[dotfiles]
+"~/.missing" = { mode = "fnox" }
+TOML
+assert_fail "mise dot apply --yes" "fnox set --file ~/.missing"
+assert_fail "test -e ~/.missing"

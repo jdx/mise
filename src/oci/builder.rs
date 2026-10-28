@@ -1130,6 +1130,15 @@ fn build_dotfiles_layer(
             // permissions-only entry adjusts a file the image does not
             // provide; an image has nothing to copy for either
             FileMode::Track | FileMode::Permissions => continue,
+            // the file fnox stores is a secret, and an image layer is
+            // readable by anyone who can pull the image
+            FileMode::Fnox => {
+                warn!(
+                    "oci: skipping [dotfiles].\"{}\": mode = \"fnox\" files are secrets and never go into an image",
+                    req.target_raw
+                );
+                continue;
+            }
             // an absent target is not added, and a whiteout hides one a
             // base layer may already hold there
             FileMode::Absent => entries.add_whiteout(&oci_target_path(req)?)?,

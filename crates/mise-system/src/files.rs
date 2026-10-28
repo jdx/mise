@@ -65,6 +65,9 @@ pub enum FileMode {
     /// set the permissions of an existing target without managing its
     /// content: an entry with `permissions` and no source, content, or mode
     Permissions,
+    /// write the file fnox stores for the target path (`fnox get --file`),
+    /// so its content never sits in the dotfiles repository
+    Fnox,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +104,7 @@ impl FileMode {
             "template" => Some(Self::Template),
             "track" => Some(Self::Track),
             "absent" => Some(Self::Absent),
+            "fnox" => Some(Self::Fnox),
             _ => None,
         }
     }
@@ -115,13 +119,17 @@ impl FileMode {
             Self::Track => "track",
             Self::Permissions => "permissions",
             Self::Absent => "absent",
+            Self::Fnox => "fnox",
         }
     }
 
     /// Whether requests in this mode read a source path. Inline content,
     /// permissions-only entries, and absent targets have none.
     pub fn has_source(self) -> bool {
-        !matches!(self, Self::Content | Self::Permissions | Self::Absent)
+        !matches!(
+            self,
+            Self::Content | Self::Permissions | Self::Absent | Self::Fnox
+        )
     }
 }
 
@@ -1211,6 +1219,20 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                 {
                     bail!("dotfile {target}: an absent target cannot use wildcards");
                 }
+                if mode == FileMode::Fnox
+                    && (source.is_some()
+                        || content.is_some()
+                        || manifest.is_some()
+                        || exclude.is_some()
+                        || encrypt == Some(true))
+                {
+                    bail!(
+                        "dotfile {target} with mode = \"fnox\" cannot declare source, content, manifest, exclude, or encrypt; fnox stores the file"
+                    );
+                }
+                if mode == FileMode::Fnox && is_glob_pattern(&resolve_target_arg(&target)) {
+                    bail!("dotfile {target}: a fnox target cannot use wildcards");
+                }
                 if source.is_some() && content.is_some() {
                     bail!("dotfile {target} cannot declare both source and content");
                 }
@@ -1926,6 +1948,14 @@ fn merge_file_entry(
         );
         return;
     }
+    if mode.as_deref() == Some("fnox")
+        && (source.is_some() || exclude.is_some() || manifest.is_some() || encrypt == Some(true))
+    {
+        warn!(
+            "[dotfiles].\"{target_raw}\": mode = \"fnox\" takes no source, exclude, manifest, or encrypt; fnox stores the file, ignoring entry"
+        );
+        return;
+    }
     if mode.as_deref() == Some("absent") {
         if source.is_some()
             || exclude.is_some()
@@ -2128,6 +2158,40 @@ fn merge_file_entry(
                 base: base.to_path_buf(),
                 origin: origin.clone(),
                 policy: policy_for(FileMode::Permissions),
+                variants: vec![],
+                enabled,
+                remove_empty: false,
+                create_if_missing: false,
+                dot_prefix: false,
+                relative: false,
+                group: group.clone(),
+            },
+        );
+        return;
+    }
+    if mode == FileMode::Fnox {
+        // fnox keys the file by its exact path
+        if is_glob_pattern(&target) {
+            warn!(
+                "[dotfiles].\"{target_raw}\": a fnox target cannot use wildcards, ignoring entry"
+            );
+            return;
+        }
+        merged.insert(
+            (target.clone(), false),
+            FileRequest {
+                target_raw,
+                target,
+                source: PathBuf::new(),
+                content: None,
+                mode: FileMode::Fnox,
+                exclude: vec![],
+                include: None,
+                manifest: None,
+                permissions,
+                base: base.to_path_buf(),
+                origin: origin.clone(),
+                policy: policy_for(FileMode::Fnox),
                 variants: vec![],
                 enabled,
                 remove_empty: false,
@@ -2643,7 +2707,9 @@ pub fn check(config: &Config, req: &FileRequest, secrets: &SecretValues) -> Resu
     }
     // render at most once per call — templates may use exec()
     let rendered = match req.mode {
-        FileMode::Template if !keeps_existing(req) => Some(render_template(config, req, secrets)?),
+        FileMode::Template | FileMode::Fnox if !keeps_existing(req) => {
+            Some(computed_content(config, req, secrets)?)
+        }
         _ => None,
     };
     check_rendered(req, rendered.as_deref())
@@ -2717,6 +2783,13 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
                 rendered.expect("rendered template content").as_bytes(),
             ),
         ),
+        FileMode::Fnox => check_permissions(
+            req,
+            check_content(
+                &req.target,
+                rendered.expect("content fnox stores").as_bytes(),
+            ),
+        ),
         FileMode::Permissions => check_permissions_only(req),
     }
 }
@@ -2732,6 +2805,9 @@ fn desired_permissions(req: &FileRequest) -> Result<Option<u32>> {
     }
     if req.mode == FileMode::Template {
         return Ok(Some(permission_bits(&req.source.metadata()?)));
+    }
+    if req.mode == FileMode::Fnox {
+        return Ok(Some(FNOX_PERMISSIONS));
     }
     Ok(None)
 }
@@ -3148,6 +3224,76 @@ pub fn render_template_for_oci(config: &Config, req: &FileRequest) -> Result<Str
     Ok(rendered)
 }
 
+/// The permission bits a `mode = "fnox"` target gets unless the entry sets
+/// `permissions`: the file holds a secret.
+const FNOX_PERMISSIONS: u32 = 0o600;
+
+/// Message text only: versions are never compared.
+const FNOX_FILES_MIN_VERSION: &str = "1.44.0";
+
+/// What apply writes for an entry whose content mise computes: a template's
+/// render, or the file fnox stores for the target.
+fn computed_content(config: &Config, req: &FileRequest, secrets: &SecretValues) -> Result<String> {
+    match req.mode {
+        FileMode::Fnox => read_fnox_file(req),
+        _ => render_template(config, req, secrets),
+    }
+}
+
+/// The file fnox stores for `req`'s target, from `fnox get --file`. fnox
+/// keys the file by the same path, so the entry needs no source. Its prompts
+/// and errors go straight to the terminal.
+fn read_fnox_file(req: &FileRequest) -> Result<String> {
+    let context = || format!("[dotfiles].\"{}\"", req.target_raw);
+    let Some(fnox) = file::which_spawnable("fnox") else {
+        bail!(
+            "{}: mode = \"fnox\" needs fnox {FNOX_FILES_MIN_VERSION} or newer on PATH; install it with `mise use -g fnox`",
+            context()
+        );
+    };
+    let output = Command::new(&fnox)
+        .args(["get", "--file"])
+        .arg(&req.target)
+        .stdin(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .output()
+        .wrap_err_with(|| format!("{}: failed to run {}", context(), fnox.display_user()))?;
+    if !output.status.success() {
+        bail!(
+            "{}: `fnox get --file {}` exited with {}; its error output is above. mode = \"fnox\" needs fnox {FNOX_FILES_MIN_VERSION} or newer, and the file stored with `fnox set --file {}`",
+            context(),
+            req.target_raw,
+            output.status,
+            req.target_raw
+        );
+    }
+    String::from_utf8(output.stdout)
+        .map_err(|_| eyre::eyre!("{}: fnox returned content that is not UTF-8", context()))
+}
+
+/// Write `content` to a new file at `path` that only its owner can read from
+/// the moment it exists, so a secret is never briefly readable by others.
+fn write_private(path: &Path, content: &str) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(FNOX_PERMISSIONS)
+            .open(path)
+            .wrap_err_with(|| format!("failed to create {}", path.display_user()))?;
+        file.write_all(content.as_bytes())
+            .wrap_err_with(|| format!("failed to write {}", path.display_user()))?;
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        file::write(path, content)
+    }
+}
+
 /// Render every configured dotfile template before a full bootstrap can
 /// mutate anything. Secret values are cached, but templates are rendered again
 /// when applied so hooks can update dynamic inputs such as files or commands.
@@ -3503,7 +3649,7 @@ fn remove_target_state(req: &FileRequest) -> Result<()> {
 /// [`removal_created_dirs`]).
 fn records_created_dirs(req: &FileRequest) -> bool {
     match req.mode {
-        FileMode::Symlink | FileMode::Template | FileMode::Content => true,
+        FileMode::Symlink | FileMode::Template | FileMode::Content | FileMode::Fnox => true,
         FileMode::Copy => !req.source.is_dir(),
         FileMode::SymlinkEach | FileMode::Track | FileMode::Permissions | FileMode::Absent => false,
     }
@@ -4872,16 +5018,20 @@ pub fn plan_apply_with_active<'a>(
             }
             continue;
         }
-        // rendering can run exec() — a dry run must not execute anything,
-        // so list template entries without computing their current state
-        if opts.dry_run && req.mode == FileMode::Template && !keeps_existing(req) {
+        // rendering can run exec() and reading from fnox can prompt — a dry
+        // run must not execute anything, so list these entries without
+        // computing their current state
+        if opts.dry_run
+            && matches!(req.mode, FileMode::Template | FileMode::Fnox)
+            && !keeps_existing(req)
+        {
             conflicts.extend(find_conflicts(req)?);
             todo.push((req, None));
             continue;
         }
         let rendered = match req.mode {
-            FileMode::Template if !keeps_existing(req) => {
-                match render_template(config, req, secrets) {
+            FileMode::Template | FileMode::Fnox if !keeps_existing(req) => {
+                match computed_content(config, req, secrets) {
                     Ok(rendered) => Some(rendered),
                     // already carries the entry's context
                     Err(err) => {
@@ -5105,7 +5255,7 @@ pub fn resolve_unapply(
         .iter()
         .map(|plan| {
             if plan.conditional {
-                match render_template(config, plan.req, secrets) {
+                match computed_content(config, plan.req, secrets) {
                     Ok(rendered) => Some(rendered),
                     Err(err) => {
                         problems.push(format!("  [dotfiles].\"{}\": {err}", plan.req.target_raw));
@@ -5403,6 +5553,12 @@ fn plan_unapply_one<'a>(
                 plan_inline_file(req, &mut paths)?;
             }
         }
+        // Reading from fnox can prompt. Like a template's render, the content
+        // is compared only after the complete unapply plan has been confirmed.
+        FileMode::Fnox => {
+            paths.insert(req.target.clone(), ());
+            conditional = !opts.force;
+        }
         FileMode::Symlink => {
             plan_single_file(req, opts, &mut paths)?;
         }
@@ -5644,7 +5800,7 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
                 out.push(req.target.clone());
             }
         }
-        FileMode::Content => {
+        FileMode::Content | FileMode::Fnox => {
             if req.target.is_dir() {
                 out.push(req.target.clone());
             }
@@ -5686,6 +5842,7 @@ fn describe(req: &FileRequest) -> Result<String> {
         FileMode::Copy => format!("cp {src} {tgt}"),
         FileMode::Template => format!("render {src} -> {tgt}"),
         FileMode::Content => format!("write inline content to {tgt}"),
+        FileMode::Fnox => format!("write the file fnox stores for {tgt}"),
         FileMode::Permissions => format!("chmod {:04o} {tgt}", req.permissions.unwrap_or_default()),
     })
 }
@@ -5712,6 +5869,7 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
         FileMode::Copy => format!("copied {src} to {tgt}"),
         FileMode::Template => format!("rendered {src} to {tgt}"),
         FileMode::Content => format!("wrote inline content to {tgt}"),
+        FileMode::Fnox => format!("wrote the file fnox stores for {tgt}"),
         FileMode::Permissions => format!(
             "set permissions of {tgt} to {:04o}",
             req.permissions.unwrap_or_default()
@@ -5814,6 +5972,19 @@ fn print_diff(config: &Config, req: &FileRequest, rendered: Option<&str>) -> Res
                 && current != desired
             {
                 print_content_diff(config, req, &current, desired)?;
+            }
+            print_permissions_diff(req)?;
+        }
+        // the file is a secret, so a difference is named but never printed
+        FileMode::Fnox => {
+            if let Some(desired) = rendered
+                && let Some(current) = current_regular_file_for_diff(req)?
+                && current != desired.as_bytes()
+            {
+                miseprintln!(
+                    "  content differs from the file fnox stores (not shown): {}",
+                    req.target.display_user()
+                );
             }
             print_permissions_diff(req)?;
         }
@@ -5988,8 +6159,8 @@ pub fn print_diffs(
             continue;
         }
         let rendered = match req.mode {
-            FileMode::Template if !keeps_existing(req) => {
-                match render_template(config, req, secrets) {
+            FileMode::Template | FileMode::Fnox if !keeps_existing(req) => {
+                match computed_content(config, req, secrets) {
                     Ok(rendered) => Some(rendered),
                     Err(err) => {
                         problems.push(format!("  \"{}\": {err}", req.target_raw));
@@ -6051,7 +6222,7 @@ fn touched_paths(req: &FileRequest) -> Result<Vec<(PathBuf, Capture)>> {
             paths.insert(req.target.clone(), dir_capture(&req.target));
         }
         // captured whole, so rollback restores a removed file or link
-        FileMode::Absent | FileMode::Symlink | FileMode::Content => {
+        FileMode::Absent | FileMode::Symlink | FileMode::Content | FileMode::Fnox => {
             paths.insert(req.target.clone(), Capture::Full);
         }
         FileMode::Template => {
@@ -6388,6 +6559,14 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             })?;
             #[cfg(unix)]
             set_mode(&req.target, req.permissions.unwrap_or(0o600))?;
+        }
+        FileMode::Fnox => {
+            let content = rendered.expect("content fnox stores");
+            replace_recorded(&req.target, written, || write_private(&req.target, content))?;
+            #[cfg(unix)]
+            if let Some(permissions) = req.permissions {
+                set_mode(&req.target, permissions)?;
+            }
         }
         FileMode::Permissions => {
             // planning skipped a missing target or a symlink; this check only
@@ -7070,6 +7249,9 @@ variants = [{{ {field} = "linux" }}]"#
         assert_eq!(FileMode::parse("absent"), Some(FileMode::Absent));
         assert_eq!(FileMode::Absent.name(), "absent");
         assert!(!FileMode::Absent.has_source());
+        assert_eq!(FileMode::parse("fnox"), Some(FileMode::Fnox));
+        assert_eq!(FileMode::Fnox.name(), "fnox");
+        assert!(!FileMode::Fnox.has_source());
         assert_eq!(FileMode::parse("hardlink"), None);
     }
 

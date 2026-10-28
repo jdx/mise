@@ -863,7 +863,11 @@ fn describe_apply(item: &PlannedAdd) -> String {
         FileMode::Copy if item.source.is_dir() => format!("cp -r {source} {target}"),
         FileMode::Copy => format!("cp {source} {target}"),
         FileMode::Template => format!("render {source} -> {target}"),
-        FileMode::Content | FileMode::Track | FileMode::Absent | FileMode::Permissions => {
+        FileMode::Content
+        | FileMode::Track
+        | FileMode::Absent
+        | FileMode::Permissions
+        | FileMode::Fnox => {
             unreachable!("dotfiles add always captures a source file")
         }
     }

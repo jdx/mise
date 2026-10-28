@@ -4499,7 +4499,7 @@ mise dot diff ~/.zshrc
 .SH "MISE DOTFILES EDIT"
 Open a dotfile's source in your editor
 
-Opens the file that defines TARGET in `$VISUAL` or `$EDITOR`: the source for symlink, copy, and template entries; the file itself for tracked and permissions\-only entries; and the declaring config for inline `content`, `absent` entries, and edits without a source file.
+Opens the file that defines TARGET in `$VISUAL` or `$EDITOR`: the source for symlink, copy, and template entries; the file itself for tracked and permissions\-only entries; and the declaring config for inline `content`, `absent` entries, and edits without a source file. A `fnox` entry is edited with `fnox edit \-\-file`, which stores the change in fnox.
 
 An unmanaged target is first added to the global `[dotfiles]`, as `mise dot add \-\-no\-apply` would add it, after a prompt that `\-\-yes` skips. Without a terminal, an unmanaged target needs `\-\-yes`. With `\-\-apply`, applies the target after the editor exits.
 .PP

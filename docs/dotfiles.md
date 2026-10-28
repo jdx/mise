@@ -58,6 +58,7 @@ files match it. You can combine the two and track a file that mise deploys.
 | Deploy a whole tree, and choose parts of it per machine     | [Groups](/dotfiles/groups.html)                             |
 | Own a few keys in a file that an application also writes    | [`merge = true`](/dotfiles/edits.html#merge)                |
 | Add a line or block to a file you do not otherwise manage   | [`line` or `block`](/dotfiles/edits.html)                   |
+| Deploy a secret file without committing it to a repository  | [`mode = "fnox"`](/dotfiles/managed.html#fnox)              |
 | Remove an old file from every machine                       | [`mode = "absent"`](/dotfiles/managed.html#absent)          |
 
 ## Track a file in place {#tracking-files-in-place}
