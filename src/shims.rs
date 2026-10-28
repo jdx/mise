@@ -131,6 +131,25 @@ pub async fn install_missing_wrapper_command(
     Ok(())
 }
 
+/// Find a real executable without entering a shim or command wrapper again.
+pub fn path_fallback(bin_name: &str) -> Option<PathBuf> {
+    let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
+    for path in &*env::PATH {
+        if file::is_mise_dispatch_dir(path) {
+            continue;
+        }
+        let bin = path.join(bin_name);
+        if bin.is_file()
+            && file::is_executable(&bin)
+            && !file::is_active_mise_shim(&bin)
+            && !file::canonicalize_cached(&bin).is_some_and(|bin| bin == mise_bin)
+        {
+            return Some(bin);
+        }
+    }
+    None
+}
+
 pub async fn backend_which_shim(
     backend: &dyn Backend,
     config: &Arc<Config>,

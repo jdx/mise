@@ -477,25 +477,11 @@ async fn which_shim(
     // Installed tools were tried above.
     let inactive_wrapper = invoked_from_wrapper_dir(bin_name)
         && !missing_version_may_provide(config, &ts, shim_name, bin_name).await;
-    if Settings::get().not_found_system_fallback || inactive_wrapper {
-        let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
-        for path in &*env::PATH {
-            if file::is_mise_shims_dir(path) || file::is_command_wrapper_dir(path) {
-                continue;
-            }
-            let bin = path.join(bin_name);
-            if bin.is_file() && file::is_executable(&bin) {
-                if file::is_active_mise_shim(&bin) {
-                    continue;
-                }
-                // Skip if this binary is a mise shim (symlink pointing to the mise binary)
-                if file::canonicalize_cached(&bin).is_some_and(|bin| bin == mise_bin) {
-                    continue;
-                }
-                trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
-                return Ok((ShimCommand::SystemFallback(bin), ts));
-            }
-        }
+    if (Settings::get().not_found_system_fallback || inactive_wrapper)
+        && let Some(bin) = path_fallback(bin_name)
+    {
+        trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
+        return Ok((ShimCommand::SystemFallback(bin), ts));
     }
     let mut tvs = ts.list_rtvs_with_bin(config, shim_name).await?;
     if tvs.is_empty() && shim_name != bin_name {
