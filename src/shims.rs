@@ -1915,7 +1915,6 @@ fn shim_name_key(name: &str) -> String {
     }
 }
 
-/// Whether `shims.exclude` covers this shim name.
 /// Whether `shims.exclude` leaves a bootstrap shim for at least one of a lazy tool's
 /// `bins`. Matched on the names the shims are written under, as `ensure_lazy_shims`
 /// does: on Windows those can differ from the command names.
@@ -1935,6 +1934,7 @@ pub(crate) fn lazy_bins_keep_a_shim(bins: &[String]) -> bool {
         .any(|name| !shim_name_excluded(excluded, &name))
 }
 
+/// Whether `shims.exclude` covers this shim name.
 pub(crate) fn shim_name_excluded(excluded: &BTreeSet<String>, name: &str) -> bool {
     let key = shim_name_key(name);
     excluded.iter().any(|e| shim_name_key(e) == key)
