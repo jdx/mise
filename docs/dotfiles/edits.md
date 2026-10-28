@@ -139,12 +139,12 @@ the application wrote. A missing target is created from the source.
   `configparser` reads. `[name]` starts a section, and keys before the first
   section belong to none. `key = value` and `key: value` both set a key, a
   line with neither is a key with no value, and a line indented further than
-  its key continues the value. Only lines that start with `#` or `;` are
-  comments, so `a = b ; c` sets `a` to `b ; c`. Values are strings and
-  sections don't nest, so a source section merges key by key. Keys and
-  section names are compared as written, case included. A repeated key or
-  section has its last value, and that's the one mise sets. Lines of keys the
-  source doesn't set are never rewritten.
+  its key continues the value, blank lines in between included. Only lines
+  that start with `#` or `;` are comments, so `a = b ; c` sets `a` to
+  `b ; c`. Values are strings and sections don't nest, so a source section
+  merges key by key. Keys and section names are compared as written, case
+  included. A repeated key or section has its last value, and that's the one
+  mise sets. Lines of keys the source doesn't set are never rewritten.
 - `template = "tera"` renders the source first, as for blocks.
 - Like a `symlink` entry, a merge entry without `source` uses the target's path
   under [`dotfiles.root`](/configuration/settings.html#dotfiles.root), so

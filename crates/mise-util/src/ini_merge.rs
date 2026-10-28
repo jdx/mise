@@ -8,12 +8,15 @@
 //! - `key = value` or `key: value` sets a key. The first `=` or `:` splits the
 //!   line, and the whitespace around the key and the value is not part of
 //!   them. A line with neither is a key with no value.
-//! - A line indented further than the key above it continues that key's value.
+//! - A line indented further than the key above it continues that key's value,
+//!   and blank lines between such lines are part of the value.
 //! - A line whose first non-blank character is `#` or `;` is a comment, and
 //!   nothing else is: `a = b ; c` sets `a` to `b ; c`.
 //! - Keys and section names are compared as written, case included.
 //! - A key repeated in a section, or a section repeated in the file, has its
 //!   last value, and a merge sets that one.
+//! - A leading UTF-8 byte order mark, which Windows editors write, is not part
+//!   of the first line, and a target keeps it.
 //!
 //! Values are strings and sections do not nest, so a source section merges key
 //! by key and every key's value replaces the target's. The target is edited
@@ -56,11 +59,14 @@ struct Doc {
 /// Each section's keys with their last entries, sections in the order they
 /// first appear. The keys before the first header are left out when there
 /// are none.
+const BOM: char = '\u{feff}';
+
 type Effective<'a> = IndexMap<Option<&'a str>, IndexMap<&'a str, &'a Entry>>;
 
 fn parse(text: &str, what: &str) -> Result<Doc> {
     let fail =
         |line: usize, msg: &str| eyre!("failed to parse the INI {what}: line {}: {msg}", line + 1);
+    let text = text.strip_prefix(BOM).unwrap_or(text);
     let lines: Vec<String> = text.lines().map(str::to_string).collect();
     let mut sections = vec![];
     let mut current = Section {
@@ -70,11 +76,13 @@ fn parse(text: &str, what: &str) -> Result<Doc> {
     };
     // the indent of the key whose value the next line may continue
     let mut open: Option<usize> = None;
+    // blank lines since then, which belong to the value only if it continues
+    let mut blanks = 0;
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         let indent = line.len() - line.trim_start().len();
         if trimmed.is_empty() {
-            open = None;
+            blanks += 1;
             continue;
         }
         // as in configparser, a comment inside a value does not end it
@@ -85,12 +93,14 @@ fn parse(text: &str, what: &str) -> Result<Doc> {
             && open.is_some_and(|key_indent| indent > key_indent)
         {
             if let Some(value) = &mut entry.value {
-                value.push('\n');
+                value.push_str(&"\n".repeat(blanks + 1));
                 value.push_str(trimmed);
             }
             entry.end = i + 1;
+            blanks = 0;
             continue;
         }
+        blanks = 0;
         if trimmed.starts_with('[') {
             let Some(close) = trimmed.rfind(']') else {
                 return Err(fail(i, "a section header needs a closing ]"));
@@ -183,11 +193,16 @@ impl Doc {
         &self.lines[entry.start][..entry.indent]
     }
 
-    /// An entry's lines with its key moved to `indent`.
+    /// An entry's lines with its key moved to `indent`. Its continuation
+    /// lines move with it, so they stay deeper than the key, and keys copied
+    /// from different places line up instead of reading as continuations.
     fn entry_lines(&self, entry: &Entry, indent: &str) -> Vec<String> {
         self.lines[entry.start..entry.end]
             .iter()
             .map(|line| {
+                if line.trim().is_empty() {
+                    return String::new();
+                }
                 // only whitespace comes off: a comment inside a value may sit
                 // left of its key
                 let space = line.len() - line.trim_start().len();
@@ -259,7 +274,7 @@ pub fn missing(target: &str, source: &str) -> Result<Option<String>> {
             out.push(source.header_line(name).to_string());
         }
         for entry in absent {
-            out.extend(source.lines[entry.start..entry.end].iter().cloned());
+            out.extend(source.entry_lines(entry, ""));
         }
     }
     Ok((!out.is_empty()).then(|| out.join("\n") + "\n"))
@@ -325,7 +340,7 @@ pub fn merge(target: &str, source: &str) -> Result<String> {
         }
         insert[len].push(s.header_line(name).to_string());
         for entry in keys.values() {
-            insert[len].extend(s.lines[entry.start..entry.end].iter().cloned());
+            insert[len].extend(s.entry_lines(entry, ""));
         }
     }
 
@@ -352,7 +367,12 @@ pub fn merge(target: &str, source: &str) -> Result<String> {
     } else {
         "\n"
     };
-    let mut text = out.join(nl);
+    let bom = if target.starts_with(BOM) {
+        "\u{feff}"
+    } else {
+        ""
+    };
+    let mut text = format!("{bom}{}", out.join(nl));
     if target.is_empty() || target.ends_with('\n') {
         text.push_str(nl);
     }
@@ -376,6 +396,14 @@ fn replacement(t: &Doc, existing: &Entry, s: &Doc, entry: &Entry) -> Vec<String>
         (None, Some("")) => format!("{indent}{} =", existing.key),
         (None, Some(value)) => format!("{indent}{} = {value}", existing.key),
     };
+    // comments between the old value's lines are the target's own; they
+    // follow the new value, where they still don't end it
+    lines.extend(
+        t.lines[existing.start + 1..existing.end]
+            .iter()
+            .filter(|line| line.trim_start().starts_with(['#', ';']))
+            .cloned(),
+    );
     lines
 }
 
@@ -469,6 +497,48 @@ user = true
             merged(target, "[options]\npackages = one\n"),
             "[options]\npackages = one\nzip_safe = false\n"
         );
+    }
+
+    #[test]
+    fn blank_lines_inside_a_value_belong_to_it() {
+        let target = "[options]\npackages =\n    a\n\n    b\n\nzip_safe = false\n";
+        assert!(contains(target, "[options]\npackages =\n  a\n\n  b\n").unwrap());
+        assert!(!contains(target, "[options]\npackages =\n    a\n").unwrap());
+        assert_eq!(
+            merged(target, "[options]\npackages =\n    c\n"),
+            "[options]\npackages =\n    c\n\nzip_safe = false\n"
+        );
+    }
+
+    #[test]
+    fn comments_inside_a_replaced_value_stay() {
+        assert_eq!(
+            merged(
+                "[a]\nk =\n  old\n# keep this note\n  more\n",
+                "[a]\nk = new\n"
+            ),
+            "[a]\nk = new\n# keep this note\n"
+        );
+    }
+
+    #[test]
+    fn copied_keys_line_up_whatever_their_source_indent() {
+        let source = "[a]\nx = 1\n[a]\n  y = 2\n    more\n";
+        let created = merged("", source);
+        assert_eq!(created, "[a]\nx = 1\ny = 2\n  more\n");
+        assert!(contains(&created, source).unwrap());
+        assert_eq!(
+            missing("[a]\nx = 1\n", source).unwrap(),
+            Some("[a]\ny = 2\n  more\n".to_string())
+        );
+    }
+
+    #[test]
+    fn a_byte_order_mark_is_not_part_of_the_first_line() {
+        let target = "\u{feff}[a]\nk = 1\n";
+        assert!(contains(target, "[a]\nk = 1\n").unwrap());
+        assert!(contains("[a]\nk = 1\n", "\u{feff}[a]\nk = 1\n").unwrap());
+        assert_eq!(merged(target, "[a]\nk = 2\n"), "\u{feff}[a]\nk = 2\n");
     }
 
     #[test]
