@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+# A dotfiles checkout linked into the global config dir keeps the lockfile
+# beside its mise.toml, and that lockfile keeps its download URLs: the user
+# made the checkout global config. A project mise.toml linked the other way, to
+# the global config, still does not vouch for the project's lockfile.
+
+export MISE_LOCKFILE=1
+export MISE_OFFLINE=1
+export MISE_TRUSTED_CONFIG_PATHS=""
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+write_lock() {
+  cat >"$1/mise.lock" <<EOF
+[[tools.jq]]
+version = "1.7.1"
+backend = "aqua:jqlang/jq"
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.7.1.tar.gz" }
+EOF
+}
+
+mkdir -p dotfiles "$MISE_CONFIG_DIR/conf.d"
+cat >dotfiles/mise.toml <<'EOF'
+[tools]
+jq = "1.7.1"
+EOF
+write_lock dotfiles
+dotfiles="$(cd dotfiles && pwd -P)"
+
+install="install jq --locked --dry-run"
+mise trust dotfiles/mise.toml
+assert_contains "mise -C dotfiles $install 2>&1" "would install"
+
+# Linking the checkout into conf.d must not cost its lockfile the URLs.
+ln -s "$dotfiles" "$MISE_CONFIG_DIR/conf.d/dotfiles"
+assert_contains "mise -C dotfiles $install 2>&1" "would install"
+
+# The link is the user's own consent, so trust is not needed on top of it.
+mise trust --untrust dotfiles/mise.toml
+assert_contains "MISE_YES=0 mise -C dotfiles $install 2>&1" "would install"
+
+# A global config file linked straight to the checkout behaves the same.
+rm "$MISE_CONFIG_DIR/conf.d/dotfiles"
+ln -s "$dotfiles/mise.toml" "$MISE_CONFIG_DIR/config.toml"
+assert_contains "MISE_YES=0 mise -C dotfiles $install 2>&1" "would install"
+rm "$MISE_CONFIG_DIR/config.toml"
+
+# An untrusted project cannot borrow global trust by linking its mise.toml to
+# the global config: that config keeps the global lockfile, which has no URL.
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+jq = "1.7.1"
+EOF
+mkdir proj
+ln -s "$MISE_CONFIG_DIR/config.toml" proj/mise.toml
+write_lock proj
+assert_fail "MISE_YES=0 mise -C proj $install 2>&1"
