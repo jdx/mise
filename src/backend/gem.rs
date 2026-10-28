@@ -7,13 +7,13 @@ use crate::cmd::CmdLineRunner;
 use crate::env;
 use crate::file;
 use crate::hash;
-use crate::http::HTTP_FETCH;
+use crate::http::{HTTP_FETCH, error_code};
 use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::{Result, config::Config};
 use async_trait::async_trait;
 use base64::{Engine, prelude::BASE64_STANDARD};
-use eyre::{WrapErr, bail, ensure};
+use eyre::{WrapErr, ensure};
 use indoc::formatdoc;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
@@ -118,16 +118,12 @@ impl Backend for GemBackend {
         // Resolution and installation have to agree on where the gem comes
         // from. Listing versions from rubygems.org and then installing from a
         // private registry would resolve `latest` against the wrong catalogue.
-        let url = match self.configured_source(config).await? {
+        let source = self.configured_source(config).await?;
+        let url = match &source {
             // `join` rather than concatenation. The source is normalized to end
             // in `/`, so this appends within it instead of replacing its last
             // path segment, and it cannot smuggle the API path into a query
             // string or a fragment the way string-building could.
-            // GitHub Packages has no JSON versions API, but GitHub's REST API
-            // lists the same versions.
-            Some(source) if source.host_str() == Some(GITHUB_PACKAGES_HOST) => {
-                return self.list_github_packages_versions(&source).await;
-            }
             Some(source) => source.join(&format!("api/v1/versions/{}.json", self.tool_name()))?,
             None => format!(
                 "{}api/v1/versions/{}.json",
@@ -137,7 +133,18 @@ impl Backend for GemBackend {
             .parse()?,
         };
         let (url, headers) = credentials_as_header(url)?;
-        let response: Vec<RubyGemsVersion> = HTTP_FETCH.json_with_headers(url, &headers).await?;
+        let response = HTTP_FETCH.json_with_headers(url, &headers).await;
+        let response: Vec<RubyGemsVersion> = match (&source, response) {
+            // Not every registry has the JSON API (GitHub Packages does not),
+            // but every one Bundler installs from serves the compact index.
+            (Some(source), Err(e)) if error_code(&e) == Some(404) => {
+                return self
+                    .compact_index_versions(source)
+                    .await
+                    .map_err(|e| with_github_packages_hint(source, e));
+            }
+            (_, response) => response?,
+        };
 
         // RubyGems API returns newest-first, mise expects oldest-first
         let mut versions: Vec<VersionInfo> = response
@@ -219,13 +226,9 @@ impl Backend for GemBackend {
             // project.
             .current_dir(tv.install_path())
             .execute()
-            // GitHub Packages answers a missing or under-scoped token with a
-            // 401, which RubyGems reports as "Could not find a valid gem".
             .map_err(|e| match &source {
-                Some(source) if source.host_str() == Some(GITHUB_PACKAGES_HOST) => e.wrap_err(
-                    format!("installing from GitHub Packages needs {GITHUB_PACKAGES_TOKEN}"),
-                ),
-                _ => e,
+                Some(source) => with_github_packages_hint(source, e),
+                None => e,
             })?;
 
         // We install the gem to {install_path}/libexec and create a wrapper script for each executable
@@ -290,62 +293,16 @@ impl GemBackend {
         Ok(Some(url))
     }
 
-    /// Versions of this gem in a GitHub Packages source, through GitHub's REST
-    /// API. The owner is the first path segment of the source, and the request
-    /// takes mise's GitHub token, which needs the `read:packages` scope here
-    /// just as it does for the install.
-    async fn list_github_packages_versions(&self, source: &Url) -> Result<Vec<VersionInfo>> {
-        let Some(owner) = source
-            .path_segments()
-            .and_then(|mut segments| segments.next())
-            .filter(|owner| !owner.is_empty())
-        else {
-            bail!(
-                "a GitHub Packages source names its owner, as in \
-                 https://{GITHUB_PACKAGES_HOST}/<owner>"
-            );
-        };
-        // The install authenticates with the source's credential, which is
-        // either the user's own or mise's GitHub token (see
-        // `with_github_packages_token`), so listing uses the same one. GitHub
-        // Packages takes the token as the username, or as the password after
-        // any username.
-        let token = match source.password().filter(|p| !p.is_empty()) {
-            Some(password) => Some(password),
-            None => Some(source.username()).filter(|u| !u.is_empty()),
-        }
-        .map(urlencoding::decode)
-        .transpose()?;
-        let Some(token) = token else {
-            bail!(
-                "listing versions of `{}` from GitHub Packages needs {GITHUB_PACKAGES_TOKEN}",
-                self.ba()
-            );
-        };
-        let versions = crate::github::list_package_versions(
-            owner,
-            "rubygems",
-            &self.tool_name(),
-            Some(&token),
-        )
-        .await
-        .wrap_err_with(|| {
-            format!(
-                "could not list `{}` in {owner}'s GitHub Packages: check that it exists \
-                         and that mise has {GITHUB_PACKAGES_TOKEN}",
-                self.ba()
-            )
-        })?;
-        // Newest first, like RubyGems; mise expects oldest first.
-        Ok(versions
-            .into_iter()
-            .rev()
-            .map(|v| VersionInfo {
-                version: v.name,
-                created_at: Some(v.created_at),
-                ..Default::default()
-            })
-            .collect())
+    /// Versions of this gem from `source`'s compact index, oldest first.
+    async fn compact_index_versions(&self, source: &Url) -> Result<Vec<VersionInfo>> {
+        let url = source.join(&format!("info/{}", self.tool_name()))?;
+        let (url, headers) = credentials_as_header(url)?;
+        let body = HTTP_FETCH
+            .get_text_request(url)
+            .headers(&headers)
+            .send()
+            .await?;
+        Ok(parse_compact_index(&body))
     }
 
     /// Get the primary gem source URL using the mise-managed Ruby environment.
@@ -447,6 +404,34 @@ fn with_github_packages_token(mut url: Url, token: impl FnOnce() -> Option<Strin
         let _ = url.set_username(&token);
     }
     url
+}
+
+/// Name the token scope when a request to GitHub Packages fails. It answers a
+/// missing or under-scoped token with a bare 401, which `gem install` reports
+/// as "Could not find a valid gem".
+fn with_github_packages_hint(source: &Url, e: eyre::Report) -> eyre::Report {
+    if source.host_str() == Some(GITHUB_PACKAGES_HOST) {
+        e.wrap_err(format!("GitHub Packages needs {GITHUB_PACKAGES_TOKEN}"))
+    } else {
+        e
+    }
+}
+
+/// The versions in a compact index `info` file, in the file's order, which is
+/// oldest first. Each line after the `---` header is `<version>[-<platform>]
+/// <dependencies>|<requirements>`; the platform is split off at the first `-`,
+/// as Bundler does, so a version built for several platforms appears once.
+fn parse_compact_index(body: &str) -> Vec<VersionInfo> {
+    let mut seen = std::collections::HashSet::new();
+    body.lines()
+        .filter(|line| *line != "---")
+        .filter_map(|line| line.split([' ', '-']).next())
+        .filter(|version| !version.is_empty() && seen.insert(*version))
+        .map(|version| VersionInfo {
+            version: version.to_string(),
+            ..Default::default()
+        })
+        .collect()
 }
 
 /// Move a URL's userinfo into an `Authorization` header, since the HTTP
@@ -1043,6 +1028,22 @@ mod tests {
     fn github_packages(raw: &str, token: Option<&str>) -> String {
         let url = parse_source(raw).unwrap().unwrap();
         with_github_packages_token(url, || token.map(str::to_string)).to_string()
+    }
+
+    /// A compact index lists platform builds separately; mise wants each
+    /// version once, oldest first.
+    #[test]
+    fn compact_index_versions_drop_platforms() {
+        let body = "---\n\
+            0.1.0 thor:>= 1.2.2|checksum:aa\n\
+            1.0.0 |checksum:bb\n\
+            1.0.0-x86_64-linux |checksum:cc,ruby:>= 3.1\n\
+            1.1.0.rc1 |checksum:dd\n";
+        let versions: Vec<_> = parse_compact_index(body)
+            .into_iter()
+            .map(|v| v.version)
+            .collect();
+        assert_eq!(versions, ["0.1.0", "1.0.0", "1.1.0.rc1"]);
     }
 
     /// A bare GitHub Packages source borrows the resolved GitHub token.
