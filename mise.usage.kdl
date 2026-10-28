@@ -372,7 +372,7 @@ prints the stored request, which may itself be a prefix.
         arg <ALIAS> help="The alias to show"
         example #"""
 mise tool-alias get node lts
-24
+26
 """# help="Show the version node's lts alias stands for"
         example #"""
 mise tool-alias set node project 20
