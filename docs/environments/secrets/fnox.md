@@ -466,7 +466,8 @@ from receiving secrets that nobody asked for; a script can unset it itself.
 fnox adds its global config (`~/.config/fnox/config.toml`, where
 `fnox set --global` writes) to every project, and also reads `fnox.toml` files
 in parent directories, including your home directory. A key defined there
-belongs to you, not to the project, so a project cannot grant it:
+belongs to you, not to the project, and so does a project secret whose value
+interpolates one (`default = "x-${MY_KEY}"`). A project cannot grant either:
 
 - A task's `secrets` list or a <span v-pre>`{{ secrets.NAME }}`</span>
   reference that names such a key is an error, and nothing is resolved.
