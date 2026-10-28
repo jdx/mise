@@ -3104,10 +3104,7 @@ fn load_config_paths_from_dirs(
         // reverse, a global config the user linked to a real file in their own
         // project (a dotfiles layout), keeps the project spelling, so its
         // lockfile stays beside the file.
-        .filter(|p| {
-            discovered_global_config(p)
-                .is_none_or(|global| global == *p || p.canonicalize().is_ok_and(|real| real == *p))
-        })
+        .filter(|p| !is_project_link_to_global_config(p))
         .unique_by(|p| config_path_identity(p, &idiomatic_filenames))
         .collect()
 }
@@ -3472,6 +3469,16 @@ pub fn is_override_config(path: &Path) -> bool {
         && path.parent().is_some_and(|dir| {
             file::desymlink_path_cached(dir) == file::desymlink_path_cached(&dirs::CONFIG)
         })
+}
+
+/// Whether `path` is a link to global or system config from somewhere else,
+/// such as a project `mise.toml` linked to the user's global config. Global
+/// config spelled where discovery found it is not, and neither is a real file
+/// the user linked into their global config (a dotfiles checkout): that file
+/// is global config because the user made it so.
+pub(crate) fn is_project_link_to_global_config(path: &Path) -> bool {
+    discovered_global_config(path)
+        .is_some_and(|global| global != path && !path.canonicalize().is_ok_and(|real| real == path))
 }
 
 /// The path global or system config discovery found `path` at, if `path` is
