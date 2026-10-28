@@ -178,7 +178,7 @@ fn package_manager_checksum_backend(
         Some(full.to_string()),
         tool_name.to_string(),
         None,
-        BackendResolution::new(true),
+        BackendResolution::forced(),
     )))
 }
 
@@ -380,6 +380,10 @@ mod tests {
             let backend =
                 package_manager_checksum_backend(&backend, version, &mut options, path).unwrap();
             assert_eq!(backend.full(), expected);
+            // The backend is pinned for this request but never recorded as the
+            // tool's explicit choice, so later requests follow the registry.
+            assert!(backend.has_explicit_backend());
+            assert!(!backend.records_explicit_backend());
             if tool == "bun" {
                 assert_eq!(
                     options.opts.get("allow_builds"),

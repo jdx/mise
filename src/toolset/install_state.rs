@@ -1081,7 +1081,7 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
     };
     let short = state_short(&ba.short).into_owned();
     let full = state_short(&ba.full_without_opts()).into_owned();
-    let explicit_backend = ba.has_explicit_backend();
+    let explicit_backend = ba.records_explicit_backend();
     let opts = persistent_opts(ba);
 
     let update = |tool: &mut InstallStateTool| {
@@ -1179,7 +1179,7 @@ pub(crate) fn write_backend_meta(ba: &BackendArg) -> Result<()> {
 /// Writes backend metadata to a manifest at a specific install path.
 pub(crate) fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
     let full = state_short(&ba.full_without_opts()).into_owned();
-    let explicit = ba.has_explicit_backend();
+    let explicit = ba.records_explicit_backend();
     let opts_map = persistent_opts(ba);
 
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");

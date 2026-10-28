@@ -88,11 +88,27 @@ pub struct BackendResolution {
     /// Also true when restored from install state for backward compatibility with existing installations,
     /// and for plugin-based tools initialized from the plugin registry.
     pub explicit: bool,
+    /// The backend was chosen by mise for this request, not by the user, so it
+    /// is not recorded in the install manifest as the tool's backend.
+    forced: bool,
 }
 
 impl BackendResolution {
     pub(crate) fn new(explicit: bool) -> Self {
-        Self { explicit }
+        Self {
+            explicit,
+            forced: false,
+        }
+    }
+
+    /// A backend that mise requires for one request, such as the one that
+    /// publishes the artifact a `packageManager` checksum was computed for.
+    /// It is pinned like an explicit backend while the request lasts.
+    pub(crate) fn forced() -> Self {
+        Self {
+            explicit: true,
+            forced: true,
+        }
     }
 }
 
@@ -139,8 +155,25 @@ impl<A: AsRef<str>> From<A> for BackendArg {
     }
 }
 
+// An earlier mise recorded the backend a `packageManager` checksum forces as the
+// tool's explicit backend, which pinned every later request for it to npm. Until
+// such manifests have aged out, they are read as the registry's choice again.
+crate::remove_by!("2027.10.0", "forced-checksum-backend-records");
+
+fn recorded_by_checksum_backend(short: &str, full: Option<&String>) -> bool {
+    matches!(
+        (short, full.map(String::as_str)),
+        ("bun", Some("npm:bun"))
+            | ("npm", Some("npm:npm"))
+            | ("pnpm", Some("npm:pnpm"))
+            | ("yarn", Some("npm:yarn" | "http:yarn"))
+    )
+}
+
 impl From<InstallStateTool> for BackendArg {
     fn from(ist: InstallStateTool) -> Self {
+        let explicit =
+            ist.explicit_backend && !recorded_by_checksum_backend(&ist.short, ist.full.as_ref());
         let (short, tool_name, mut opts) = parse_backend_components(&ist.short, ist.full.as_ref());
 
         // Merge manifest opts into the parsed opts (manifest opts provide defaults)
@@ -157,7 +190,7 @@ impl From<InstallStateTool> for BackendArg {
             ist.full,
             tool_name,
             None,
-            BackendResolution::new(ist.explicit_backend),
+            BackendResolution::new(explicit),
         );
         tool.opts = opts;
         tool.opts_source = opts_source;
@@ -981,6 +1014,13 @@ impl BackendArg {
         self.resolution.explicit
     }
 
+    /// Whether the install manifest should record this backend as the tool's
+    /// explicit choice. A backend forced for one request is not: later requests
+    /// for the same tool name follow the registry again.
+    pub(crate) fn records_explicit_backend(&self) -> bool {
+        self.resolution.explicit && !self.resolution.forced
+    }
+
     /// Returns the stored backend identifier, preferring the explicitly stored value
     /// over dynamic registry resolution. For non-explicit tools, uses `full()` which
     /// respects registry updates, allowing automatic backend migration when registry/
@@ -1448,6 +1488,25 @@ mod tests {
         assert_eq!(opts.get("alias_only"), Some("alias"));
         assert_eq!(opts.get("config_only"), Some("config"));
         assert_eq!(opts.get("foo"), Some("inline"));
+    }
+
+    #[test]
+    fn test_manifest_record_of_a_checksum_backend_follows_the_registry() {
+        let record = |short: &str, full: &str| InstallStateTool {
+            short: short.to_string(),
+            full: Some(full.to_string()),
+            versions: vec![],
+            explicit_backend: true,
+            opts: Default::default(),
+            installs_path: None,
+        };
+        // Written by a mise that recorded the forced backend as explicit.
+        let stale = BackendArg::from(record("pnpm", "npm:pnpm"));
+        assert!(!stale.has_explicit_backend());
+        assert_eq!(stale.full(), "aqua:pnpm/pnpm");
+        // An explicit backend the user picked stays.
+        assert!(BackendArg::from(record("pnpm", "aqua:pnpm/pnpm")).has_explicit_backend());
+        assert!(BackendArg::from(record("npm:pnpm", "npm:pnpm")).has_explicit_backend());
     }
 
     #[test]
