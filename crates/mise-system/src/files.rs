@@ -6799,8 +6799,8 @@ fn relative_link_path(source: &Path, target: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
-    /// A group's entries are whole-file entries, so they read the `FileTomlTable` keys; `group`
-    /// is set by the group itself.
+    /// A group's entries are whole-file entries or edits, so they read the `FileTomlTable` and
+    /// `EditTomlTable` keys; `group` is set by the group itself.
     #[test]
     fn group_entry_keys_match_the_declaration() {
         use mise_config::de::struct_fields;
@@ -6808,6 +6808,7 @@ mod tests {
         use std::collections::BTreeSet;
         let parsed: BTreeSet<&str> = struct_fields::<FileTomlTable>()
             .iter()
+            .chain(struct_fields::<crate::edits::EditTomlTable>())
             .copied()
             .filter(|key| *key != "group")
             .collect();
@@ -7415,6 +7416,7 @@ source = "oldrc""#,
             base: PathBuf::from("/"),
             config_path: PathBuf::from("/mise.toml"),
             origin: origin.clone(),
+            group: None,
         };
         let err =
             validate_absent_edit_targets(&[absent_req(&target)], &[edit(&target)]).unwrap_err();

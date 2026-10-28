@@ -210,5 +210,7 @@ so removing one needs `mise dot unapply --force`. Merged keys stay, because
 the application may have changed them since.
 
 Edit entries merge across config files by target path and id, so a more local
-config replaces an edit with the same id. The
+config replaces an edit with the same id. An edit declared in
+[a dotfile group](/dotfiles/groups.html#group-edits) applies only while that
+group is selected. The
 [reference](/dotfiles/reference.html#edit-keys) lists every edit key.

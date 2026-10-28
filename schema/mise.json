@@ -7671,9 +7671,9 @@
           },
           "entries": {
             "type": "object",
-            "description": "whole-file entries for parts of the tree, keyed by target path inside the group's target and written like [dotfiles] entries; each is cut out of the walk. A missing source is found under the root at the entry's path inside the target, and a relative source starts at the root",
+            "description": "entries for parts of the tree, written like [dotfiles] entries and applied only while the group is selected. A whole-file entry is keyed by its target path inside the group's target and cut out of the walk; a block, line, or merge edit is keyed by the path of the file it edits, inside the group's target, then \"/\" and an id. A missing source is found under the root at the entry's path inside the target, and a relative source starts at the root",
             "additionalProperties": {
-              "description": "a whole-file entry for a path inside the group's target: its source path, or a table as in [dotfiles]",
+              "description": "an entry for a path inside the group's target: a whole-file entry's source path, or a table as in [dotfiles] for a whole-file entry or a block, line, or merge edit",
               "oneOf": [
                 {
                   "type": "string",
@@ -7681,7 +7681,7 @@
                 },
                 {
                   "type": "object",
-                  "description": "whole-file entry, as in [dotfiles]",
+                  "description": "whole-file entry or file edit, as in [dotfiles]",
                   "additionalProperties": false,
                   "properties": {
                     "encrypt": {
@@ -7812,6 +7812,66 @@
                         },
                         "additionalProperties": false
                       }
+                    },
+                    "block": {
+                      "type": "string",
+                      "description": "edit entry: block content, maintained between marker comments"
+                    },
+                    "template": {
+                      "type": "string",
+                      "description": "template engine to render block content with; currently only \"tera\"",
+                      "anyOf": [
+                        {
+                          "enum": ["tera"]
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "line": {
+                      "type": "string",
+                      "description": "edit entry: exact line to ensure exists"
+                    },
+                    "position": {
+                      "type": "string",
+                      "description": "where to insert a missing line",
+                      "default": "append",
+                      "anyOf": [
+                        {
+                          "enum": ["append", "prepend"]
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "comment": {
+                      "type": "string",
+                      "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
+                    },
+                    "merge": {
+                      "description": "edit entry: true sets the keys of source (default: the file's path under the group root) on a JSON, JSONC, TOML, or YAML target and leaves the target's other keys to the application that also writes it; \"missing\" sets only the keys the target has no value for; the format comes from the target's extension unless \"format\" names it",
+                      "oneOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "const": "missing"
+                        }
+                      ]
+                    },
+                    "format": {
+                      "type": "string",
+                      "description": "merge only: the format of the target and source when the target's extension doesn't name it, such as \"jsonc\" for VS Code's settings.json",
+                      "anyOf": [
+                        {
+                          "enum": ["json", "jsonc", "toml", "yaml"]
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
                     }
                   },
                   "allOf": [

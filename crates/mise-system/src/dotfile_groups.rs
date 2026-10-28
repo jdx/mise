@@ -10,6 +10,7 @@
 //! [dotfile_groups.home.entries]          # whole-file entries, cut out of the walk
 //! "~/.config/kitty" = { mode = "symlink" }       # link the directory itself
 //! "~/.gitconfig" = { source = "git/config.tmpl", mode = "template" }
+//! "~/.config/app/env.toml/defaults" = { merge = "missing" }  # an edit, keyed `<path>/<id>`
 //!
 //! [bootstrap]
 //! dotfile_groups = ["home"]              # unset: every group applies
@@ -33,6 +34,7 @@ use eyre::{Result, bail};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use crate::edits::{self, EditRequest};
 use crate::files::{self, FileMode, FileRequest, FileTomlEntry, FileTomlTable};
 use crate::history::journal;
 use crate::host::ConfigMap;
@@ -99,7 +101,13 @@ pub fn selection(config_files: &ConfigMap) -> Option<Vec<String>> {
 
 /// Whether `req` applies under `selection`. Ungrouped entries always do.
 pub(crate) fn is_selected(req: &FileRequest, selection: Option<&[String]>) -> bool {
-    match (&req.group, selection) {
+    group_selected(req.group.as_deref(), selection)
+}
+
+/// Whether an entry of `group` applies under `selection`. Ungrouped entries
+/// always do.
+pub(crate) fn group_selected(group: Option<&str>, selection: Option<&[String]>) -> bool {
+    match (group, selection) {
         (Some(group), Some(selected)) => selected.iter().any(|s| s == group),
         _ => true,
     }
@@ -141,6 +149,16 @@ pub(crate) fn reset_unexpanded() {
 /// requests. A more local file's definition of a group replaces the whole
 /// definition from a more global one.
 pub(crate) fn group_requests(config_files: &ConfigMap) -> Vec<FileRequest> {
+    expand_groups(config_files).0
+}
+
+/// The block, line, and merge edits the `[dotfile_groups]` tables of one
+/// config hierarchy declare, whether or not their group is selected.
+pub(crate) fn group_edits(config_files: &ConfigMap) -> Vec<EditRequest> {
+    expand_groups(config_files).1
+}
+
+fn expand_groups(config_files: &ConfigMap) -> (Vec<FileRequest>, Vec<EditRequest>) {
     let mut groups: IndexMap<String, (PathBuf, ResourceOrigin, toml::Value)> = IndexMap::new();
     for (path, cf) in config_files.iter().rev() {
         let Some(declared) = cf.dotfile_groups_config() else {
@@ -159,6 +177,7 @@ pub(crate) fn group_requests(config_files: &ConfigMap) -> Vec<FileRequest> {
         }
     }
     let mut out = vec![];
+    let mut edits = vec![];
     for (name, (base, origin, value)) in groups {
         if !valid_group_name(&name) {
             warn_once!(
@@ -175,14 +194,17 @@ pub(crate) fn group_requests(config_files: &ConfigMap) -> Vec<FileRequest> {
             }
         };
         match expand_group(&name, group, &base, &origin) {
-            Ok(requests) => out.extend(requests),
+            Ok((requests, group_edits)) => {
+                out.extend(requests);
+                edits.extend(group_edits);
+            }
             Err(err) => {
                 unexpanded().insert(name.clone());
                 warn_once!("[dotfile_groups].{name}: {err}, ignoring group")
             }
         }
     }
-    out
+    (out, edits)
 }
 
 /// Every name a `[dotfile_groups]` table declares, including tables that
@@ -232,7 +254,7 @@ pub(crate) fn implicit_group_requests(
             ..Default::default()
         };
         match expand_group(name, group, &base, &origin) {
-            Ok(requests) => out.extend(requests),
+            Ok((requests, _)) => out.extend(requests),
             Err(err) => {
                 unexpanded().insert(name.clone());
                 warn_once!("[bootstrap] dotfile_groups: {name}: {err}, ignoring group")
@@ -247,7 +269,7 @@ fn expand_group(
     group: GroupToml,
     base: &Path,
     origin: &ResourceOrigin,
-) -> Result<Vec<FileRequest>> {
+) -> Result<(Vec<FileRequest>, Vec<EditRequest>)> {
     let mode = group.mode.as_deref().unwrap_or("symlink-each");
     if !matches!(mode, "symlink-each" | "copy" | "symlink") {
         bail!("mode must be \"symlink-each\", \"copy\", or \"symlink\", not {mode:?}");
@@ -280,13 +302,25 @@ fn expand_group(
         unanchored_exclude: &unanchored_exclude,
     };
     let mut entries = vec![];
+    let mut edits = vec![];
     for (key, value) in group.entries {
-        entries.push(group_entry(&defaults, &key, value)?);
+        if is_edit_entry(&value) {
+            edits.push(group_edit_entry(&defaults, &key, value, &origin.config)?);
+        } else {
+            entries.push(group_entry(&defaults, &key, value)?);
+        }
     }
     // an entry beneath a walking entry is cut out of its walk, as every
     // entry is cut out of the group's tree. Beneath anything else, such as
     // a directory linked whole, both claim the same path, and planning
     // reports the conflict.
+    // An edit's file and source are claimed the same way: the walk must not
+    // deploy a file the edit changes.
+    let claims = entries
+        .iter()
+        .map(|entry| (&entry.target, &entry.source))
+        .chain(edits.iter().map(|edit| (&edit.target, &edit.source)))
+        .collect::<Vec<_>>();
     let nested = entries
         .iter()
         .map(|outer| {
@@ -294,16 +328,18 @@ fn expand_group(
             if !outer.walks {
                 return cut;
             }
-            for inner in entries.iter().filter(|inner| inner.target != outer.target) {
+            for (inner_target, inner_source) in
+                claims.iter().filter(|(target, _)| **target != outer.target)
+            {
                 // the nested entry's target, and its source when that lies
                 // in this entry's tree, are the nested entry's to deploy
-                if let Ok(rel) = inner.target.strip_prefix(&outer.target) {
+                if let Ok(rel) = inner_target.strip_prefix(&outer.target) {
                     cut.push(format!(
                         "/{}",
                         glob_escape_rel(&source_rel_for(&outer.source, rel, outer.dot_prefix))
                     ));
                 }
-                if let Ok(rel) = inner.source.strip_prefix(&outer.source)
+                if let Ok(rel) = inner_source.strip_prefix(&outer.source)
                     && !rel.as_os_str().is_empty()
                 {
                     cut.push(format!("/{}", glob_escape_rel(rel)));
@@ -317,16 +353,15 @@ fn expand_group(
     // the tree itself, minus every path an entry describes, and minus a
     // source inside the tree that an entry deploys somewhere else
     let mut exclude = group.exclude.clone();
-    for entry in &entries {
-        let rel = entry
-            .target
+    for (entry_target, entry_source) in &claims {
+        let rel = entry_target
             .strip_prefix(&target)
             .expect("entry inside target");
         exclude.push(format!(
             "/{}",
             glob_escape_rel(&source_rel_for(&root, rel, group.dot_prefix))
         ));
-        if let Ok(source_rel) = entry.source.strip_prefix(&root)
+        if let Ok(source_rel) = entry_source.strip_prefix(&root)
             && !source_rel.as_os_str().is_empty()
         {
             exclude.push(format!("/{}", glob_escape_rel(source_rel)));
@@ -377,7 +412,10 @@ fn expand_group(
             &mut merged,
         )?;
     }
-    Ok(merged.into_values().collect())
+    Ok((
+        merged.into_values().collect(),
+        edits.into_iter().map(|edit| edit.request).collect(),
+    ))
 }
 
 /// One `[dotfile_groups.<name>.entries]` declaration, completed from its
@@ -391,6 +429,76 @@ struct GroupEntry {
     walks: bool,
     dot_prefix: bool,
     table: toml::Table,
+}
+
+/// One block, line, or merge entry of `[dotfile_groups.<name>.entries]`,
+/// keyed `<path>/<id>` like a `[dotfiles]` edit. Its relative `source` starts
+/// at the group root, and a merge without one reads the file at the same
+/// place in the tree as it edits in the target.
+struct GroupEdit {
+    request: EditRequest,
+    /// the file being edited
+    target: PathBuf,
+    /// the file the edit reads, empty when it reads none
+    source: PathBuf,
+}
+
+/// Keys that make an entry an edit of part of a file instead of a whole file.
+/// A bare string is a whole-file entry's source, so an edit is always a table.
+const EDIT_KEYS: [&str; 6] = ["block", "line", "template", "comment", "position", "merge"];
+
+fn is_edit_entry(value: &toml::Value) -> bool {
+    value
+        .as_table()
+        .is_some_and(|table| EDIT_KEYS.iter().any(|key| table.contains_key(*key)))
+}
+
+fn group_edit_entry(
+    defaults: &EntryDefaults,
+    key: &str,
+    value: toml::Value,
+    config_path: &Path,
+) -> Result<GroupEdit> {
+    let EntryDefaults {
+        name,
+        root,
+        target: group_target,
+        dot_prefix,
+        ..
+    } = *defaults;
+    let Some((path_raw, _)) = edits::split_edit_key(key) else {
+        bail!("entries.{key:?}: edit entries must end with an id path segment");
+    };
+    let target = files::resolve_target_arg(&path_raw);
+    let Ok(rel) = target.strip_prefix(group_target) else {
+        bail!("entries.{key:?}: the file being edited must be inside the group's target");
+    };
+    if rel.as_os_str().is_empty() {
+        bail!("entries.{key:?}: the file being edited must be a path inside the group's target");
+    }
+    let mut value = value;
+    if let toml::Value::Table(table) = &mut value
+        && table.contains_key("merge")
+        && !table.contains_key("source")
+    {
+        let source = root.join(source_rel_for(root, rel, dot_prefix));
+        table.insert(
+            "source".into(),
+            toml::Value::String(source.to_string_lossy().to_string()),
+        );
+    }
+    let request = edits::group_edit(name, key, value, root, config_path)
+        .map_err(|err| eyre::eyre!("entries.{key:?}: {err}"))?;
+    let source = request
+        .op
+        .source_file()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    Ok(GroupEdit {
+        request,
+        target,
+        source,
+    })
 }
 
 /// What a group's entries inherit from it.
@@ -425,14 +533,6 @@ fn group_entry(defaults: &EntryDefaults, key: &str, value: toml::Value) -> Resul
         toml::Value::Table(table) => table,
         _ => bail!("entries.{key:?}: expected a string or table"),
     };
-    if ["block", "line", "template", "comment", "position", "merge"]
-        .iter()
-        .any(|k| table.contains_key(*k))
-    {
-        bail!(
-            "entries.{key:?}: a group holds whole-file entries; declare block, line, and merge edits in [dotfiles]"
-        );
-    }
     match table.get("group").map(|g| g.as_str()) {
         None => {}
         Some(Some(g)) if g == name => {}
@@ -1217,6 +1317,124 @@ mod tests {
         let declared: std::collections::BTreeSet<_> =
             struct_fields::<DotfileGroupDecl>().iter().collect();
         assert_eq!(parsed, declared);
+    }
+
+    fn expand(dir: &Path, entries: &str) -> Result<(Vec<FileRequest>, Vec<EditRequest>)> {
+        let root = dir.join("root");
+        file::create_dir_all(&root)?;
+        let group: GroupToml = toml::from_str(&format!(
+            "root = {root:?}\ntarget = {target:?}\nmode = \"copy\"\n[entries]\n{entries}",
+            target = dir.join("home"),
+        ))?;
+        let origin = ResourceOrigin {
+            config: dir.join("mise.toml"),
+            config_root: dir.to_path_buf(),
+            environment: vec![],
+            source: None,
+        };
+        expand_group("common", group, dir, &origin)
+    }
+
+    #[test]
+    fn a_group_edit_reads_its_source_from_the_group_root() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        let key = home.join(".config/app/env.toml");
+        let (files, edits) = expand(
+            dir.path(),
+            &format!(
+                "{:?} = {{ source = \"../templates/env.toml\", merge = \"missing\", permissions = \"0600\" }}",
+                format!("{}/defaults", key.display())
+            ),
+        )?;
+        let [edit] = edits.as_slice() else {
+            panic!("expected one edit, got {edits:?}");
+        };
+        assert_eq!(edit.group.as_deref(), Some("common"));
+        assert_eq!(edit.path, key);
+        assert_eq!(edit.id, "defaults");
+        assert_eq!(edit.base, dir.path().join("root"));
+        assert_eq!(
+            edit.op.source_file(),
+            Some(dir.path().join("root/../templates/env.toml").as_path())
+        );
+        // the walk of the tree skips the file the edit changes
+        let [tree] = files.as_slice() else {
+            panic!("expected the tree only, got {files:?}");
+        };
+        assert!(
+            tree.exclude
+                .iter()
+                .any(|p| p.as_str() == "/.config/app/env.toml")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_group_merge_without_a_source_reads_the_same_path_in_the_root() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let key = dir.path().join("home/settings.json");
+        let (files, edits) = expand(
+            dir.path(),
+            &format!(
+                "{:?} = {{ merge = true }}",
+                format!("{}/owned", key.display())
+            ),
+        )?;
+        assert_eq!(
+            edits[0].op.source_file(),
+            Some(dir.path().join("root/settings.json").as_path())
+        );
+        // the source is the edit's, not a file to deploy as well
+        assert!(
+            files[0]
+                .exclude
+                .iter()
+                .any(|p| p.as_str() == "/settings.json")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_group_edit_is_refused_when_it_is_not_an_edit_of_a_file_in_the_target() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let home = dir.path().join("home");
+        for (entries, expected) in [
+            (
+                format!(
+                    "{:?} = {{ line = \"x\" }}",
+                    format!("{}/outside/x", dir.path().display())
+                ),
+                "inside the group's target",
+            ),
+            (
+                format!(
+                    "{:?} = {{ line = \"x\", mode = \"copy\" }}",
+                    format!("{}/.rc/x", home.display())
+                ),
+                "mode applies to whole-file entries",
+            ),
+            (
+                format!(
+                    "{:?} = {{ line = \"x\", permissions = \"0600\" }}",
+                    format!("{}/.rc/x", home.display())
+                ),
+                "permissions applies to whole-file entries",
+            ),
+        ] {
+            let err = expand(dir.path(), &entries).unwrap_err().to_string();
+            assert!(err.contains(expected), "{err}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn group_edits_follow_the_selection() {
+        let selected = ["common".to_string()];
+        assert!(group_selected(None, Some(&selected)));
+        assert!(group_selected(Some("common"), None));
+        assert!(group_selected(Some("common"), Some(&selected)));
+        assert!(!group_selected(Some("work"), Some(&selected)));
     }
 
     #[test]
