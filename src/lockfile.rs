@@ -2814,10 +2814,17 @@ pub(crate) fn lockfile_is_trusted(config: &Config, lockfile: &Path) -> bool {
             // Global config is trusted without asking, so a project config
             // linked to it must not lend that trust to the project's lockfile.
             // A dotfiles checkout the user linked into their global config is
-            // the other way round, and keeps its lockfile beside it.
+            // the other way round, and keeps its lockfile beside it. Global
+            // config vouches for no other lockfile, such as a monorepo's
+            // shared one when the file sits inside that monorepo.
             !crate::config::is_project_link_to_global_config(path)
             // A legacy monorepo lockfile still belongs to the config beside it.
-            && [monorepo_root.as_deref(), None]
+            && [
+                monorepo_root
+                    .as_deref()
+                    .filter(|_| !crate::config::is_global_config(path)),
+                None,
+            ]
                 .into_iter()
                 .any(|root| same_file_path(&lockfile_path_for_config(path, root).0, lockfile))
             && crate::config::config_file::is_path_trusted(path)
