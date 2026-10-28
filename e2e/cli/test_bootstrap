@@ -208,7 +208,7 @@ echo plain_second_line
 """
 EOF
 assert_contains "mise bootstrap --yes --skip packages --skip tools 2>&1" "Tidy the root copy"
-assert_not_contains "mise bootstrap --yes --skip packages --skip tools 2>&1" "described_first_line\n"
+assert_not_contains "mise bootstrap --yes --skip packages --skip tools 2>&1" "echo described_first_line"
 assert_contains "mise bootstrap --yes --skip packages --skip tools 2>&1" '$ echo plain_first_line'
 assert_contains "mise --verbose bootstrap --yes --skip packages --skip tools 2>&1" "echo described_second_line"
 assert_contains "mise bootstrap --dry-run --skip packages --skip tools 2>&1" "echo described_second_line"
