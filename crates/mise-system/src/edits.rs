@@ -204,6 +204,16 @@ impl EditRequest {
         }
     }
 
+    /// what two declarations of the same edit share: the file, as the
+    /// filesystem path it normalizes to, and the id
+    fn identity(&self) -> String {
+        format!(
+            "{}\u{0}{}",
+            crate::files::lexical_normalize(&self.path).display(),
+            self.id
+        )
+    }
+
     pub fn config_key(&self) -> String {
         format!("{}/{}", self.path_raw.trim_end_matches('/'), self.id)
     }
@@ -248,7 +258,7 @@ pub fn edits_from_config(config: &Config) -> Result<Vec<EditRequest>> {
                 )
             })
         {
-            let key = format!("{}\u{0}{}", request.path.display(), request.id);
+            let key = request.identity();
             if let Some(existing) = composed.get(&key) {
                 if edit_requests_match(config, existing, &request) {
                     continue;
@@ -302,7 +312,7 @@ pub(crate) fn edits_from_config_files(config_files: &ConfigMap) -> Vec<EditReque
             match split_edit_key(&path_and_id) {
                 Some((path_raw, id)) => match resolve_entry(&path_raw, id, entry, &base, cf_path) {
                     Ok(req) => {
-                        merged.insert(format!("{}\u{0}{}", req.path.display(), req.id), req);
+                        merged.insert(req.identity(), req);
                     }
                     Err(err) => warn!("[dotfiles]: {err}"),
                 },
@@ -2133,6 +2143,39 @@ fn apply_to_string(req: &EditRequest, desired: Option<&str>, text: &str) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spellings_of_one_path_are_one_edit() {
+        let edit = |path: &str| {
+            let path = PathBuf::from(path);
+            EditRequest {
+                path_raw: path.display().to_string(),
+                path,
+                id: "x".into(),
+                op: EditOp::Line {
+                    line: "x".into(),
+                    position: LinePosition::Append,
+                },
+                base: PathBuf::from("/"),
+                config_path: PathBuf::from("/mise.toml"),
+                origin: ResourceOrigin {
+                    config: PathBuf::from("/mise.toml"),
+                    config_root: PathBuf::from("/"),
+                    environment: vec![],
+                    source: None,
+                },
+                group: None,
+            }
+        };
+        assert_eq!(
+            edit("/home/dir/../.rc").identity(),
+            edit("/home/.rc").identity()
+        );
+        assert_ne!(
+            edit("/home/.rc").identity(),
+            edit("/home/.zshrc").identity()
+        );
+    }
 
     #[cfg(unix)]
     #[test]
