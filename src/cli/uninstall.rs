@@ -7,7 +7,7 @@ use eyre::{Result, bail, eyre};
 use itertools::Itertools;
 
 use crate::args::ToolArg;
-use crate::backend::Backend;
+use crate::backend::{Backend, fuzzy_version_matches};
 use crate::config::project::{nearest_project_tool_requests, tool_request_set};
 use crate::config::{Config, Settings};
 use crate::file::display_path;
@@ -332,7 +332,7 @@ impl Uninstall {
                 Some(m) => vec![m],
                 None => installed_versions
                     .iter()
-                    .filter(|v| v.starts_with(&query))
+                    .filter(|v| query.is_empty() || fuzzy_version_matches(&query, v))
                     .collect_vec(),
             };
 

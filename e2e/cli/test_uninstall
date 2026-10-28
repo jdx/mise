@@ -42,3 +42,12 @@ for v in 1.0.0 1.1.0; do
   # the install path and the cache path
   assert_contains_text "paths=$(grep -o "dummy/$v" <<<"$row" | wc -l | tr -d ' ')" "paths=2"
 done
+
+# Test: a version that is only a string prefix of another is not a match
+mise i dummy@1.1.1 dummy@1.1.12
+mise uninstall dummy@1.1.1
+assert_not_contains "mise ls --installed --json dummy" '"version": "1.1.1"'
+assert_contains "mise ls --installed --json dummy" '"version": "1.1.12"'
+# the second uninstall finds nothing named 1.1.1, so 1.1.12 stays
+assert_contains "mise uninstall dummy@1.1.1 2>&1" "is not installed"
+assert_contains "mise ls --installed --json dummy" '"version": "1.1.12"'
