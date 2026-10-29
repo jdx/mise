@@ -1031,21 +1031,7 @@ impl Config {
     fn discover_workspace_project_graph(
         &self,
     ) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
-        let monorepo_config = find_monorepo_config(&self.config_files)
-            .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
-        let monorepo_root = monorepo_config.root;
-        let overrides = monorepo_config.monorepo.projects;
-        let cargo = crate::task::workspace::cargo::CargoWorkspaceProvider;
-        let go = crate::task::workspace::go::GoWorkspaceProvider;
-        let gradle = crate::task::workspace::gradle::GradleWorkspaceProvider;
-        let node = crate::task::workspace::node::NodeWorkspaceProvider;
-        let uv = crate::task::workspace::uv::UvWorkspaceProvider;
-
-        crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides_lenient(
-            &[&cargo, &go, &gradle, &node, &uv],
-            &monorepo_root,
-            &overrides,
-        )
+        discover_workspace_project_graph(&self.config_files)
     }
 
     /// Returns the root lockfile directory when unified monorepo lockfiles are active.
@@ -2217,6 +2203,28 @@ pub(crate) fn monorepo_lockfile_root_from_dir(dir: &Path) -> Option<PathBuf> {
         .unwrap()
         .insert(dir.to_path_buf(), root.clone());
     root
+}
+
+/// The workspace projects of the monorepo `config_files` are in, as the workspace providers
+/// discover them, with the root config's project overrides applied.
+fn discover_workspace_project_graph(
+    config_files: &ConfigMap,
+) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
+    let monorepo_config = find_monorepo_config(config_files)
+        .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
+    let monorepo_root = monorepo_config.root;
+    let overrides = monorepo_config.monorepo.projects;
+    let cargo = crate::task::workspace::cargo::CargoWorkspaceProvider;
+    let go = crate::task::workspace::go::GoWorkspaceProvider;
+    let gradle = crate::task::workspace::gradle::GradleWorkspaceProvider;
+    let node = crate::task::workspace::node::NodeWorkspaceProvider;
+    let uv = crate::task::workspace::uv::UvWorkspaceProvider;
+
+    crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides_lenient(
+        &[&cargo, &go, &gradle, &node, &uv],
+        &monorepo_root,
+        &overrides,
+    )
 }
 
 fn find_monorepo_config(config_files: &ConfigMap) -> Option<ResolvedMonorepoConfig> {
@@ -8285,16 +8293,19 @@ mod write_target_tests {
     }
 }
 
-/// The tools that the inline tasks of one config file scope to themselves: concrete requests,
-/// plus the tools whose version is a template. A template can only be rendered in the context
-/// of the project, which a prune run from elsewhere does not have.
+/// The tools that the tasks of one config file scope to themselves: concrete requests, plus the
+/// tools whose version is a template. A template can only be rendered in the context of the
+/// project, which a prune run from elsewhere does not have.
 ///
-/// Each task is resolved the way `mise run` resolves it, with `extends` templates merged in. A
-/// tool that fails to parse is skipped without hiding the others.
+/// The tasks are the config's inline ones and those its project's task includes add (see
+/// [`included_task_definitions`]). Each task is resolved the way `mise run` resolves it, with
+/// `extends` templates merged in. A tool that fails to parse is skipped without hiding the
+/// others.
 pub(crate) fn task_tool_requests(
     config: &Arc<Config>,
     tracked: &ConfigMap,
     cf: &Arc<dyn ConfigFile>,
+    workspace_graphs: &mut WorkspaceGraphCache,
 ) -> (Vec<crate::toolset::ToolRequest>, Vec<String>) {
     // Templates come from this project: the tracked configs under the same roots and the
     // directories above it, plus the global configs, never from the directory prune happens to
@@ -8330,9 +8341,34 @@ pub(crate) fn task_tool_requests(
         };
         layers.entry(key).or_default().push(other);
     }
+    let tasks = cf
+        .tasks()
+        .into_iter()
+        .map(|task| (task.clone(), cf.get_path().to_path_buf()))
+        .chain(included_task_definitions(cf, &dir, tracked))
+        .collect::<Vec<_>>();
+    // `[monorepo.task_defaults]` of a monorepo root above this project fill in what its tasks
+    // leave unset, tools included.
+    let workspace_defaults = TaskDefinitions {
+        workspace_defaults: if tasks.is_empty() {
+            None
+        } else {
+            let project_configs = layers
+                .iter()
+                .filter(|((local, _), _)| *local)
+                .flat_map(|(_, layer)| layer.iter())
+                .map(|other| (other.get_path().to_path_buf(), Arc::clone(other)))
+                .collect::<ConfigMap>();
+            project_workspace_task_defaults(&project_configs, &dir, workspace_graphs)
+        },
+        ..Default::default()
+    };
     let mut requests = vec![];
     let mut templated = vec![];
-    for task in cf.tasks() {
+    for (mut task, source) in tasks {
+        if task.config_root.is_none() {
+            task.config_root = Some(dir.clone());
+        }
         let mut candidates = vec![];
         match &task.extends {
             None => candidates.push(task.clone()),
@@ -8362,13 +8398,14 @@ pub(crate) fn task_tool_requests(
                     warn!(
                         "task {} in {} extends template {name}, which was not found",
                         task.name,
-                        display_path(cf.get_path())
+                        display_path(&source)
                     );
                     candidates.push(task.clone());
                 }
             }
         }
-        for task in candidates {
+        for mut task in candidates {
+            apply_workspace_task_default(&mut task, &workspace_defaults);
             for (tool, value) in &task.tools {
                 if value.has_template() {
                     templated.push(tool.clone());
@@ -8379,11 +8416,181 @@ pub(crate) fn task_tool_requests(
                     Err(err) => warn!(
                         "error loading tool {tool} of task {} in {}: {err:#}",
                         task.name,
-                        display_path(cf.get_path())
+                        display_path(&source)
                     ),
                 }
             }
         }
     }
     (requests, templated)
+}
+
+/// Workspace project graphs by monorepo root, discovered once per prune run and shared by the
+/// tracked configs of each monorepo. `None` records a discovery that failed.
+pub(crate) type WorkspaceGraphCache =
+    HashMap<PathBuf, Option<Arc<crate::task::workspace::WorkspaceProjectGraph>>>;
+
+/// The task defaults of the monorepo `config_files` are in, for the project at `dir`. The
+/// workspace providers only run when `config_roots` and the project overrides do not already
+/// name `dir`: they read every manifest of the workspace, and most projects are named.
+fn project_workspace_task_defaults(
+    config_files: &ConfigMap,
+    dir: &Path,
+    workspace_graphs: &mut WorkspaceGraphCache,
+) -> Option<WorkspaceTaskDefaults> {
+    let defaults = workspace_task_defaults(config_files, None)?;
+    if defaults.project_roots.contains(&file::desymlink_path(dir)) {
+        return Some(defaults);
+    }
+    let root = find_monorepo_config(config_files)?.root;
+    let graph = workspace_graphs
+        .entry(root)
+        .or_insert_with_key(
+            |root| match discover_workspace_project_graph(config_files) {
+                Ok(graph) => Some(Arc::new(graph)),
+                Err(err) => {
+                    warn!(
+                        "error discovering the workspace projects of {}: {err:#}",
+                        display_path(root)
+                    );
+                    None
+                }
+            },
+        )
+        .clone();
+    match graph {
+        Some(graph) => workspace_task_defaults(config_files, Some(&graph)),
+        None => Some(defaults),
+    }
+}
+
+/// The tasks that the task includes of `cf`'s project at `dir` define, each with the file it came
+/// from: TOML task files and executable task scripts found through `task_config.includes`, or
+/// through the default task directories when no config sets them. They are read unrendered,
+/// since only their `tools` matter to the caller, and remote includes are not fetched. A file
+/// that fails to read or parse is skipped with a warning.
+///
+/// The includes and excludes `dir` resolves to only see the configs of the current `MISE_ENV`,
+/// so `cf`'s own `task_config.includes` are added to them, filtered by `cf`'s own excludes when
+/// it sets any: a tracked `mise.prod.toml` still names its task files when prune runs without
+/// `MISE_ENV=prod`.
+fn included_task_definitions(
+    cf: &Arc<dyn ConfigFile>,
+    dir: &Path,
+    config_files: &ConfigMap,
+) -> Vec<(Task, PathBuf)> {
+    let includes = task_includes_for_dir(dir, config_files).unwrap_or_else(|err| {
+        warn!(
+            "error loading task includes of {}: {err:#}",
+            display_path(dir)
+        );
+        vec![]
+    });
+    let excludes = task_excludes_for_dir(dir, config_files).unwrap_or_else(|err| {
+        warn!(
+            "error loading task excludes of {}: {err:#}",
+            display_path(dir)
+        );
+        vec![]
+    });
+    let mut groups = vec![];
+    match cf.task_config_includes() {
+        Ok(Some(own)) => {
+            let root = cf.config_root();
+            let own_excludes = match cf.task_config_excludes() {
+                Ok(Some(own_excludes)) => resolve_task_excludes(&root, &own_excludes),
+                Ok(None) => excludes.clone(),
+                Err(err) => {
+                    warn!(
+                        "error loading task excludes of {}: {err:#}",
+                        display_path(cf.get_path())
+                    );
+                    excludes.clone()
+                }
+            };
+            let own = own
+                .iter()
+                .filter(|p| !is_remote_task_include(p))
+                .flat_map(|p| expand_task_include(&root, p))
+                .collect::<Vec<_>>();
+            groups.push((own, own_excludes));
+        }
+        Ok(None) => {}
+        Err(err) => warn!(
+            "error loading task includes of {}: {err:#}",
+            display_path(cf.get_path())
+        ),
+    }
+    groups.insert(0, (includes, excludes));
+    let is_toml = |p: &Path| p.extension().is_some_and(|e| e == "toml");
+    // An include is walked again under different excludes, which can let through a file the
+    // first walk skipped, so it is the task files that are read once. A script's task is named
+    // after its path below the include, and task defaults match by name, so a script reached
+    // through two includes is read for each.
+    let mut walked = HashSet::new();
+    let mut read = HashSet::new();
+    let mut tasks = vec![];
+    for (includes, excludes) in groups {
+        let all_excludes = Settings::get()
+            .task
+            .disable_paths
+            .iter()
+            .chain(&excludes)
+            .cloned()
+            .collect::<Vec<_>>();
+        for include in includes {
+            if !walked.insert((include.clone(), excludes.clone()))
+                || is_task_path_excluded(&include, &excludes)
+            {
+                continue;
+            }
+            let files = if include.is_dir() {
+                match collect_task_files(&include, &all_excludes) {
+                    Ok(files) => files
+                        .into_iter()
+                        .filter(|p| match is_toml(p) {
+                            true => !is_mise_config_file_in_task_include(&include, p),
+                            false => file::is_executable(p),
+                        })
+                        .collect(),
+                    Err(err) => {
+                        warn!(
+                            "error reading task directory {}: {err:#}",
+                            display_path(&include)
+                        );
+                        continue;
+                    }
+                }
+            } else if is_toml(&include) {
+                vec![include.clone()]
+            } else {
+                continue;
+            };
+            for path in files {
+                let include_key = (!is_toml(&path)).then(|| include.clone());
+                if !read.insert((path.clone(), include_key)) {
+                    continue;
+                }
+                let loaded = if is_toml(&path) {
+                    file::read_config_to_string(&path).and_then(|raw| {
+                        Ok(toml::from_str::<Tasks>(&raw)?
+                            .0
+                            .into_iter()
+                            .map(|(name, mut task)| {
+                                task.name = name;
+                                task
+                            })
+                            .collect())
+                    })
+                } else {
+                    Task::from_path_unrendered_with_cf(&path, &include, dir, None).map(|t| vec![t])
+                };
+                match loaded {
+                    Ok(loaded) => tasks.extend(loaded.into_iter().map(|task| (task, path.clone()))),
+                    Err(err) => warn!("error loading task file {}: {err:#}", display_path(&path)),
+                }
+            }
+        }
+    }
+    tasks
 }

@@ -1010,6 +1010,7 @@ async fn get_versions_needed_by_tracked_configs_with_progress(
     // Prune also passes offline=true: it only protects installed versions, so
     // remote resolution can never affect the outcome and just adds latency.
     let tracked = config.get_tracked_config_files().await?;
+    let mut workspace_graphs = crate::config::WorkspaceGraphCache::new();
     for (done, (path, cf)) in tracked.clone().into_iter().enumerate() {
         // Without the animated display each message is a separate log line, so
         // a long list of configs would flood CI logs and piped output.
@@ -1125,7 +1126,7 @@ async fn get_versions_needed_by_tracked_configs_with_progress(
         crate::daemons::glue::load(&files)?.add_tool_requests(&mut requests)?;
         // Tools scoped to a task are still referenced by the config.
         let (task_requests, task_templated) =
-            crate::config::task_tool_requests(config, &tracked, &cf);
+            crate::config::task_tool_requests(config, &tracked, &cf, &mut workspace_graphs);
         for tvr in task_requests {
             requests.add_version(tvr, &cf.source());
         }
