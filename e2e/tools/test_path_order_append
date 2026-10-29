@@ -49,6 +49,7 @@ EOF
 assert "mise env | grep PATH" "export PATH='$HOME/workdir/tail:$dummy:$PATH'"
 
 # an unknown position is rejected
+# schema: invalid
 cat <<EOF >mise.toml
 [env]
 _.path = { path = ["tail"], position = "middle" }
