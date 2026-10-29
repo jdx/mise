@@ -113,7 +113,15 @@ async fn bulk_formula(base: &str, name: &str, follow_aliases: bool) -> Option<Fo
         return None;
     }
     let body = super::bulk::entry(&super::bulk::FORMULAE, name, follow_aliases).await?;
-    match serde_json::from_slice(&body) {
+    match serde_json::from_slice::<Formula>(&body) {
+        // An alias resolves to another formula, whose own URL may be rerouted.
+        Ok(formula)
+            if follow_aliases
+                && formula.name != name
+                && !formula_source_matches_index(&formula.name) =>
+        {
+            None
+        }
         Ok(formula) => Some(formula),
         Err(err) => {
             debug!(
