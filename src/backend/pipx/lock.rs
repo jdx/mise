@@ -383,11 +383,32 @@ impl PIPXBackend {
             .current_dir(project)
             .envs(config.env().await?)
             .env_values(tv.install_env())
-            .env("UV_DEFAULT_INDEX", index)
             .env_remove("UV_PROJECT")
             .env_remove("UV_WORKING_DIR")
             .env_remove("UV_PROJECT_ENVIRONMENT")
             .env_remove("VIRTUAL_ENV");
+        let raw = tv.request.options();
+        let default_index = uv_index_url(
+            &Settings::get()
+                .pypi
+                .registry_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_REGISTRY_URL.to_string()),
+        )?;
+        cmd = if PipxOptions::new(&raw).registry_index_priority()? && index != default_index {
+            // The registry is searched first and the global index (PyPI unless
+            // `pypi.registry_url` says otherwise) only for projects the registry does
+            // not host. `first-index` takes each project from the first index that has
+            // it, so a project on the registry never comes from anywhere else, and it
+            // is pinned because `install_env` could otherwise pick `unsafe-best-match`.
+            cmd.env("UV_INDEX", index)
+                .env("UV_DEFAULT_INDEX", default_index)
+                .env("UV_INDEX_STRATEGY", "first-index")
+        } else {
+            // The registry replaces the default index, so every dependency has to
+            // come from it.
+            cmd.env("UV_DEFAULT_INDEX", index)
+        };
         // The lock runs with `--no-config`, which also skips a `keyring-provider` in
         // the user's uv.toml, so the setting that authenticates mise's own index
         // requests has to reach uv here too.

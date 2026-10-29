@@ -191,6 +191,7 @@ impl<'a> PipxOptions<'a> {
         self.with()?;
         self.exposed_package_names()?;
         self.dependency_prereleases()?;
+        self.registry_index_priority()?;
         if self.selected_python()?.is_some() {
             for args in [self.uvx_args(), self.pipx_args()].into_iter().flatten() {
                 if uv_args_select_python(&shell_words::split(args)?) {
@@ -228,6 +229,16 @@ impl<'a> PipxOptions<'a> {
 
     fn registry_url(&self) -> Option<&'a str> {
         self.values.str("registry_url")
+    }
+
+    /// Whether `registry_url` is searched ahead of the default index instead of
+    /// replacing it when locking (`registry_index = "priority"`).
+    fn registry_index_priority(&self) -> Result<bool> {
+        match self.values.str("registry_index") {
+            None | Some("default") => Ok(false),
+            Some("priority") => Ok(true),
+            Some(_) => bail!("registry_index must be default or priority"),
+        }
     }
 
     fn uvx_args(&self) -> Option<&'a str> {
@@ -3010,6 +3021,27 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         opts.opts.insert(
             "with".to_string(),
             toml::Value::Array(vec![toml::Value::Integer(1)]),
+        );
+        assert!(PipxOptions::new(&opts).validate_semantic().is_err());
+    }
+
+    #[test]
+    fn registry_index_selects_priority_only_when_asked() {
+        let mut opts = ToolVersionOptions::default();
+        assert!(!PipxOptions::new(&opts).registry_index_priority().unwrap());
+        for (value, priority) in [("default", false), ("priority", true)] {
+            opts.opts.insert(
+                "registry_index".to_string(),
+                toml::Value::String(value.to_string()),
+            );
+            assert_eq!(
+                PipxOptions::new(&opts).registry_index_priority().unwrap(),
+                priority
+            );
+        }
+        opts.opts.insert(
+            "registry_index".to_string(),
+            toml::Value::String("sideways".to_string()),
         );
         assert!(PipxOptions::new(&opts).validate_semantic().is_err());
     }

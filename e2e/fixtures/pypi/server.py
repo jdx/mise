@@ -112,8 +112,12 @@ class Handler(BaseHTTPRequestHandler):
             requires_python = python_requirements.get(package, '>=3.10')
             body = json.dumps({'info': {'requires_python': requires_python}, 'releases': {'1.0.0': [{}]}}).encode()
             content_type = 'application/json'
-        elif path.startswith('/simple/'):
+        elif path.startswith('/simple/') or path.startswith('/private/simple/'):
             package = path.strip('/').split('/')[-1].replace('-', '_')
+            # A registry that hosts only its own package and 404s for the rest.
+            if path.startswith('/private/') and package != 'mise_lock_cli':
+                self.send_error(404)
+                return
             requires_python = python_requirements.get(package, '>=3.10').replace('<', '&lt;').replace('>', '&gt;')
             body = ''.join(
                 f'<a href="/files/{name}#sha256={hashlib.sha256(data).hexdigest()}" data-requires-python="{requires_python}">{name}</a>\n'
