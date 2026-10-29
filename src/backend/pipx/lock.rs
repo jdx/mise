@@ -478,11 +478,22 @@ impl PIPXBackend {
             temp.path().join("pyproject.toml"),
             toml::to_string(&project)?,
         )?;
+        // Install binds the interpreter explicitly, so lock and replay with the same
+        // one rather than whichever Python uv finds first on PATH. Without it, a
+        // selected or configured Python that mise installed but did not put on PATH
+        // is invisible to uv, and the graph is skipped.
+        let python = match &tv.uv_python {
+            Some((python, _)) if !python.as_os_str().is_empty() => Some(python.clone()),
+            _ => self.spawnable_dependency(config, None, "python").await,
+        };
         let mut cmd = self
             .uv_lock_command(config, tv, &uv, temp.path())
             .await?
             .args(["lock", "--no-build", "--no-config", "--no-python-downloads"])
             .args(Self::uv_exclude_newer_args(tv.before_date));
+        if let Some(python) = &python {
+            cmd = cmd.arg("--python").arg(python);
+        }
         let raw = tv.request.options();
         if let Some(value) = PipxOptions::new(&raw).dependency_prereleases()? {
             cmd = cmd.args(["--prerelease", value]);
@@ -505,12 +516,6 @@ impl PIPXBackend {
             ])
             .env("UV_PROJECT_ENVIRONMENT", temp.path().join(".venv"))
             .env_remove("UV_EXCLUDE_NEWER");
-        // Install binds the interpreter explicitly, so replay the same one rather
-        // than whichever Python uv finds first.
-        let python = match &tv.uv_python {
-            Some((python, _)) if !python.as_os_str().is_empty() => Some(python.clone()),
-            _ => self.spawnable_dependency(config, None, "python").await,
-        };
         if let Some(python) = python {
             replay = replay.arg("--python").arg(python);
         }
