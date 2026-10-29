@@ -491,7 +491,15 @@ impl PIPXBackend {
         let Ok(PipxRequest::Pypi(package)) = self.tool_name().parse() else {
             return vec![];
         };
-        let versions = match self.list_remote_versions_with_info(config).await {
+        // A pinned prerelease is a valid selection whatever `prerelease` says, so
+        // list with prereleases included to find it.
+        let mut opts = tv.request.options();
+        opts.opts
+            .insert("prerelease".into(), toml::Value::String("true".into()));
+        let versions = match self
+            .list_remote_versions_with_info_with_selection_options(config, &opts, false)
+            .await
+        {
             Ok(versions) => versions,
             Err(err) => {
                 debug!(
