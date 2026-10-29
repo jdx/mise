@@ -377,7 +377,7 @@ fn current_exe_stem() -> Option<String> {
 /// would succeed a moment later. Its first step renames the running mise.exe aside and nothing
 /// after it puts the binary back, so trying again is only safe while mise.exe is still at its
 /// path: then nothing has moved. A failure after the move has left no mise.exe at all, so the new
-/// one is copied there directly, which is what the update was about to leave there anyway.
+/// one is put there instead, which is what the update was about to leave there anyway.
 #[cfg(windows)]
 fn replace_running_binary(new_binary: &Path) -> Result<()> {
     let exe = std::env::current_exe()?.canonicalize()?;
@@ -409,11 +409,26 @@ fn replace_binary_at(
                 "replacing {} failed after moving it aside ({err}); copying the new binary there",
                 exe.display()
             );
-            retry_while_locked(|| fs::copy(new_binary, exe), || true, delays)
-                .wrap_err_with(|| format!("failed to put the new mise at {}", exe.display()))?;
-            Ok(())
+            restore_binary_at(exe, new_binary, delays)
+                .wrap_err_with(|| format!("failed to put the new mise at {}", exe.display()))
         }
     }
+}
+
+/// Copy `new_binary` beside `exe` and rename it into place, so `exe` never holds a partial copy.
+#[cfg(windows)]
+fn restore_binary_at(exe: &Path, new_binary: &Path, delays: &[Duration]) -> std::io::Result<()> {
+    let staged = exe.with_file_name(format!(
+        ".{}.{}.__restore__.exe",
+        exe.file_stem().and_then(|s| s.to_str()).unwrap_or("mise"),
+        std::process::id()
+    ));
+    let result = retry_while_locked(|| fs::copy(new_binary, &staged), || true, delays)
+        .and_then(|_| retry_while_locked(|| fs::rename(&staged, exe), || true, delays));
+    if result.is_err() {
+        let _ = fs::remove_file(&staged);
+    }
+    result
 }
 
 /// How long to wait before each retry of a step Windows refused with a transient lock: about six
@@ -1825,6 +1840,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fs::read(&exe).unwrap(), b"new");
+        assert_eq!(
+            staged_copies(&exe),
+            0,
+            "the staged copy was renamed, not left behind"
+        );
+    }
+
+    /// The `__restore__` copies `restore_binary_at` staged beside `exe`.
+    fn staged_copies(exe: &Path) -> usize {
+        fs::read_dir(exe.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .ends_with(".__restore__.exe")
+            })
+            .count()
     }
 
     #[test]
@@ -1843,6 +1876,7 @@ mod tests {
             "{err}"
         );
         assert!(!exe.exists());
+        assert_eq!(staged_copies(&exe), 0);
     }
 
     /// While `exe` is still in place nothing has moved, so the swap's own error comes out and the
