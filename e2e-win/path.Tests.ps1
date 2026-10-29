@@ -7,13 +7,16 @@ Describe 'path-env' {
         # these runs could see a tool the run before it did not. Own `_.path` entries still make
         # mise set PATH for the child, which is what this compares.
         $script:TestRoot = Join-Path $TestDrive ([System.Guid]::NewGuid().ToString())
-        $dirs = 'one', 'two', 'three' | ForEach-Object {
-            (New-Item -ItemType Directory -Path (Join-Path $script:TestRoot $_)).FullName
-        }
+        # A name no inherited PATH entry can have, so finding it proves mise added these.
+        $script:Marker = "three-$([System.Guid]::NewGuid().ToString('N'))"
+        $dirs = 'one', 'two', $script:Marker
+        $dirs | ForEach-Object { New-Item -ItemType Directory -Path (Join-Path $script:TestRoot $_) | Out-Null }
         $env:MISE_TRUSTED_CONFIG_PATHS = $script:TestRoot
+        # Relative entries, which mise resolves against this config's directory, keep the profile
+        # path (which may hold an apostrophe or non-ASCII characters) out of the TOML.
         @(
             '[env]'
-            "_.path = [$(($dirs | ForEach-Object { "'$_'" }) -join ', ')]"
+            "_.path = [$(($dirs | ForEach-Object { "'./$_'" }) -join ', ')]"
         ) | Out-File -Encoding ascii (Join-Path $script:TestRoot "mise.toml")
         Set-Location $script:TestRoot
     }
@@ -34,7 +37,7 @@ Describe 'path-env' {
         }
         $paths | Should -HaveCount 10
         # The comparison below means nothing if mise did not set PATH at all.
-        $paths[0] | Should -Match '\\three(;|$)'
+        $paths[0] -split ';' | Where-Object { $_ -like "*\$script:Marker" } | Should -HaveCount 1
         $paths | ForEach-Object {
             $_ | Should -Not -Match "ECHO is on."
             $_.Length | Should -BeExactly $paths[0].Length
