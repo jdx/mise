@@ -29,8 +29,8 @@ use crate::deps::DepsProviderDecl;
 use crate::doctor::DoctorConfig;
 use crate::env::{
     EnvAgeDecl, EnvAgeFormatDecl, EnvAgeValueDecl, EnvDecl, EnvDefaultDecl, EnvDirectiveDecl,
-    EnvFileExpandDecl, EnvFileFindUpDecl, EnvPathDecl, EnvRedactDecl, EnvRequiredDecl,
-    EnvToolsDecl, EnvValueDecl, VarsDecl,
+    EnvFileExpandDecl, EnvFileFindUpDecl, EnvPathDecl, EnvPathPositionDecl, EnvRedactDecl,
+    EnvRequiredDecl, EnvToolsDecl, EnvValueDecl, VarsDecl,
 };
 use crate::hooks::{
     HookCurrentShellScriptTable, HookCurrentShellScriptsTable, HookDefinition, HookDefinitionItem,
@@ -187,6 +187,10 @@ fn derived_defs(generator: &mut SchemaGenerator) -> Vec<(&'static str, Value)> {
         ("env_value", fragment::<EnvValueDecl>(generator)),
         ("env_path", fragment::<EnvPathDecl>(generator)),
         ("env_paths", fragment::<Vec<String>>(generator)),
+        (
+            "env_path_position",
+            fragment::<EnvPathPositionDecl>(generator),
+        ),
         ("env_tools", fragment::<EnvToolsDecl>(generator)),
         ("env_file_expand", fragment::<EnvFileExpandDecl>(generator)),
         ("env_file_find_up", fragment::<EnvFileFindUpDecl>(generator)),
@@ -356,6 +360,7 @@ pub(crate) mod refs {
         env_file_expand,
         env_file_find_up,
         env_path,
+        env_path_position,
         env_paths,
         env_redact,
         env_required,

@@ -119,6 +119,9 @@ pub(crate) struct CachedNonToolEnv {
     pub env_files: Vec<PathBuf>,
     /// paths added by env directives
     pub env_paths: Vec<PathBuf>,
+    /// paths added after tool paths by env directives
+    #[serde(default)]
+    pub env_paths_append: Vec<PathBuf>,
     /// scripts sourced by env directives
     pub env_scripts: Vec<PathBuf>,
     /// redaction patterns contributed by env directives

@@ -94,7 +94,7 @@ pub enum EnvSourceItem {
 }
 
 // `env._.path`
-/// directories to add to the front of PATH
+/// directories to add to PATH, ahead of tool paths unless `position = "append"`
 #[derive(JsonSchema)]
 #[serde(untagged)]
 #[schemars(transform = crate::schema::one_of)]
@@ -127,6 +127,9 @@ pub struct EnvPathTable {
     #[serde(default)]
     #[schemars(schema_with = "refs::env_tools")]
     pub tools: Option<()>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::env_path_position")]
+    pub position: Option<()>,
 }
 
 #[derive(JsonSchema)]
@@ -148,6 +151,9 @@ pub struct EnvPathItemTable {
     #[serde(default)]
     #[schemars(schema_with = "refs::env_tools")]
     pub tools: Option<()>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::env_path_position")]
+    pub position: Option<()>,
 }
 
 /// python environment
@@ -488,6 +494,15 @@ pub struct EnvFileExpandDecl(pub bool);
 #[derive(JsonSchema)]
 #[schemars(extend("default" = false))]
 pub struct EnvFileFindUpDecl(pub bool);
+
+/// where env._.path puts the directory. prepend (the default) adds it ahead of tool paths. append adds it after tool paths and ahead of the inherited PATH
+#[derive(JsonSchema)]
+#[serde(rename_all = "lowercase")]
+#[schemars(extend("default" = "prepend"))]
+pub enum EnvPathPositionDecl {
+    Prepend,
+    Append,
+}
 
 /// redact the value from logs
 #[derive(JsonSchema)]

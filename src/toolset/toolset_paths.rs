@@ -131,7 +131,11 @@ impl Toolset {
         // 5. Tool paths
         paths.extend(self.list_paths(config).await);
 
-        // 6. env_results.env_paths (from load_post_env like _.path directives) - these go at the front
+        // 6. `_.path` entries with `position = "append"` go after the tool paths
+        paths.extend(env_results.env_paths_append);
+        paths.extend(config.path_dirs_append().await?.clone());
+
+        // 7. env_results.env_paths (from load_post_env like _.path directives) - these go at the front
         let mut paths = env_results.env_paths.into_iter().chain(paths).collect();
         self.apply_command_wrapper_paths(config, &mut paths)?;
         Ok(paths)
@@ -167,6 +171,12 @@ impl Toolset {
 
         // Tool installation paths
         tool_paths.extend(self.list_paths(config).await);
+
+        // `_.path` entries with `position = "append"` follow the tool paths. They are filtered
+        // against the original PATH like tool paths, so one the shell already has stays where
+        // the shell put it.
+        tool_paths.extend(env_results.env_paths_append);
+        tool_paths.extend(config.path_dirs_append().await?.clone());
 
         Ok((user_paths, tool_paths))
     }

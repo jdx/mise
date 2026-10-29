@@ -726,7 +726,7 @@
               ]
             },
             "path": {
-              "description": "directories to add to the front of PATH",
+              "description": "directories to add to PATH, ahead of tool paths unless `position = \"append\"`",
               "oneOf": [
                 {
                   "type": "object",
@@ -741,6 +741,9 @@
                     },
                     "tools": {
                       "$ref": "#/$defs/env_tools"
+                    },
+                    "position": {
+                      "$ref": "#/$defs/env_path_position"
                     }
                   },
                   "oneOf": [
@@ -786,6 +789,9 @@
                           },
                           "tools": {
                             "$ref": "#/$defs/env_tools"
+                          },
+                          "position": {
+                            "$ref": "#/$defs/env_path_position"
                           }
                         }
                       }
@@ -1092,6 +1098,12 @@
           }
         }
       ]
+    },
+    "env_path_position": {
+      "type": "string",
+      "description": "where env._.path puts the directory. prepend (the default) adds it ahead of tool paths. append adds it after tool paths and ahead of the inherited PATH",
+      "enum": ["prepend", "append"],
+      "default": "prepend"
     },
     "env_paths": {
       "type": "array",

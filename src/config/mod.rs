@@ -699,6 +699,11 @@ impl Config {
     pub async fn path_dirs(self: &Arc<Self>) -> eyre::Result<&Vec<PathBuf>> {
         Ok(&self.env_results().await?.env_paths)
     }
+
+    /// `_.path` entries declared with `position = "append"`
+    pub async fn path_dirs_append(self: &Arc<Self>) -> eyre::Result<&Vec<PathBuf>> {
+        Ok(&self.env_results().await?.env_paths_append)
+    }
     pub fn daemons(&self) -> Result<&crate::daemons::DaemonSet> {
         self.daemons
             .get_or_try_init(|| crate::daemons::glue::load(&self.config_files))
@@ -1650,6 +1655,7 @@ impl Config {
                 env_remove: cached.env_remove.clone(),
                 env_files: cached.env_files.clone(),
                 env_paths: cached.env_paths.clone(),
+                env_paths_append: cached.env_paths_append.clone(),
                 env_scripts: cached.env_scripts.clone(),
                 redactions: cached.redactions.clone(),
                 redaction_exclusions: cached.redaction_exclusions.clone(),
@@ -1793,6 +1799,7 @@ impl Config {
                 env_remove: env_results.env_remove.clone(),
                 env_files: env_results.env_files.clone(),
                 env_paths: env_results.env_paths.clone(),
+                env_paths_append: env_results.env_paths_append.clone(),
                 env_scripts: env_results.env_scripts.clone(),
                 redactions: env_results.redactions.clone(),
                 redaction_exclusions: env_results.redaction_exclusions.clone(),
@@ -4796,6 +4803,7 @@ impl Debug for Config {
         if let Some(env_results) = self.env.get() {
             if !env_results.env_files.is_empty() {
                 s.field("Path Dirs", &env_results.env_paths);
+                s.field("Path Dirs (append)", &env_results.env_paths_append);
             }
             if !env_results.env_scripts.is_empty() {
                 s.field("Scripts", &env_results.env_scripts);

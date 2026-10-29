@@ -124,6 +124,7 @@ impl AsdfBackend {
         if env_results.env.is_empty()
             && env_results.env_remove.is_empty()
             && env_results.env_paths.is_empty()
+            && env_results.env_paths_append.is_empty()
         {
             return None;
         }
@@ -136,6 +137,7 @@ impl AsdfBackend {
             env,
             &env_results.env_remove,
             &env_results.env_paths,
+            &env_results.env_paths_append,
         )))
     }
 
@@ -147,10 +149,13 @@ impl AsdfBackend {
         for (key, (value, _)) in &env_results.env {
             sm = sm.with_env(key, value);
         }
-        if !env_results.env_paths.is_empty() {
+        if !env_results.env_paths.is_empty() || !env_results.env_paths_append.is_empty() {
             let path_key = OsString::from(&*env::PATH_KEY);
             let current_path = sm.env.get(&path_key).cloned().unwrap_or_default();
+            // Version listing runs without tools, so appended entries only need to
+            // follow the prepended ones.
             let mut paths = env_results.env_paths.clone();
+            paths.extend(env_results.env_paths_append.iter().cloned());
             if !current_path.is_empty() {
                 paths.extend(env::split_paths(&current_path));
             }
@@ -679,6 +684,12 @@ mod tests {
         assert_ne!(
             AsdfBackend::version_listing_cache_context(&first),
             AsdfBackend::version_listing_cache_context(&changed_path)
+        );
+        let mut changed_append = first.clone();
+        changed_append.env_paths_append = vec![PathBuf::from("/tail/bin")];
+        assert_ne!(
+            AsdfBackend::version_listing_cache_context(&first),
+            AsdfBackend::version_listing_cache_context(&changed_append)
         );
         assert_eq!(
             AsdfBackend::version_listing_cache_context(&EnvResults::default()),
