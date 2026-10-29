@@ -7676,6 +7676,39 @@ fn keeps_payload_file_links_pointing_into_the_caskroom() -> Result<()> {
 
 #[cfg(unix)]
 #[test]
+fn points_a_link_reached_through_a_directory_link_at_its_caskroom_file() -> Result<()> {
+    // `payload` links to `real/nested`, so `../../lib/tool` from inside it
+    // reaches `lib/tool`. Kept verbatim at `caskroom/payload/tool`, the same
+    // text would climb out of the caskroom.
+    let tmp = tempfile::tempdir()?;
+    let stage = tmp.path().join("stage");
+    file::create_dir_all(stage.join("real/nested"))?;
+    file::create_dir_all(stage.join("lib"))?;
+    mise_util::file::write(stage.join("lib/tool"), "launcher")?;
+    std::os::unix::fs::symlink("../../lib/tool", stage.join("real/nested/tool"))?;
+    std::os::unix::fs::symlink("real/nested", stage.join("payload"))?;
+    let caskroom = tmp.path().join("caskroom");
+    file::create_dir_all(caskroom.join("payload"))?;
+
+    durabilize_stage_payload(&stage, &caskroom, &[])?;
+    file::remove_all(&stage)?;
+
+    let link = caskroom.join("payload/tool");
+    assert_eq!(
+        file::desymlink_path(&std::fs::read_link(&link)?),
+        file::desymlink_path(&caskroom.join("lib/tool"))
+    );
+    assert_eq!(mise_util::file::read_to_string(&link)?, "launcher");
+    assert_eq!(
+        std::fs::read_link(caskroom.join("real/nested/tool"))?,
+        Path::new("../../lib/tool"),
+        "a link copied in place keeps its relative target"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
 fn retargets_a_payload_binary_link_when_the_caskroom_is_renamed() -> Result<()> {
     // The payload link is absolute and points into the temporary caskroom,
     // which only exists until activation renames it. `symlinks_under` takes a

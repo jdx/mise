@@ -4249,16 +4249,35 @@ fn durabilize_stage_payload(stage: &Path, caskroom: &Path, apps: &[AppArtifact])
                 file::copy_dir_all_preserve_symlinks(&source, &target)?;
             } else if entry.file_type()?.is_symlink()
                 && !app_sources.iter().any(|app| resolved.starts_with(app))
+                && let Some(resolved_relative) = staged_relative_path(stage, &resolved)
             {
                 // Keep a link between payload files a link, so a binary sees
-                // postflight edits to the file it points at. An absolute link
-                // into the stage is pointed at the same path in the caskroom.
-                // A link into a skipped app bundle is copied instead, since
-                // nothing would be left for it to point at.
+                // postflight edits to the file it points at. A relative link
+                // is kept when it reaches the same payload path from the
+                // caskroom; one that does not, such as a link reached through
+                // a followed directory link, or an absolute one, points at
+                // its resolved file in the caskroom instead. A link into a
+                // skipped app bundle is copied, since nothing would be left
+                // for it to point at.
                 let link = std::fs::read_link(&source)?;
-                let link = match staged_relative_path(stage, &link) {
-                    Some(relative) if link.is_absolute() => caskroom.join(relative),
-                    _ => link,
+                let reached_from = |directory: &Path, root: &Path| {
+                    lexically_normalized_path(&file::desymlink_path(directory).join(&link))
+                        .strip_prefix(file::desymlink_path(root))
+                        .ok()
+                        .map(Path::to_path_buf)
+                };
+                let keeps_its_meaning = link.is_relative()
+                    && source
+                        .parent()
+                        .zip(target.parent())
+                        .is_some_and(|(from, to)| {
+                            let staged = reached_from(from, stage);
+                            staged.is_some() && staged == reached_from(to, caskroom)
+                        });
+                let link = if keeps_its_meaning {
+                    link
+                } else {
+                    caskroom.join(resolved_relative)
                 };
                 file::make_symlink(&link, &target)?;
             } else {
