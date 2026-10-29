@@ -234,9 +234,10 @@ impl<'a> PipxOptions<'a> {
     /// Whether `registry_url` is searched ahead of the default index instead of
     /// replacing it when locking (`registry_index = "priority"`).
     fn registry_index_priority(&self) -> Result<bool> {
-        match self.values.str("registry_index") {
-            None | Some("default") => Ok(false),
-            Some("priority") => Ok(true),
+        match self.values.raw().opts.get("registry_index") {
+            None => Ok(false),
+            Some(toml::Value::String(value)) if value == "default" => Ok(false),
+            Some(toml::Value::String(value)) if value == "priority" => Ok(true),
             Some(_) => bail!("registry_index must be default or priority"),
         }
     }
@@ -3042,6 +3043,11 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         opts.opts.insert(
             "registry_index".to_string(),
             toml::Value::String("sideways".to_string()),
+        );
+        assert!(PipxOptions::new(&opts).validate_semantic().is_err());
+        opts.opts.insert(
+            "registry_index".to_string(),
+            toml::Value::Array(vec![toml::Value::String("priority".to_string())]),
         );
         assert!(PipxOptions::new(&opts).validate_semantic().is_err());
     }

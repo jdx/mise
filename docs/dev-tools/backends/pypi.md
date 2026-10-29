@@ -334,8 +334,8 @@ Choose how dependency locking uses this tool's [`registry_url`](#registry-url).
 
 - `default` (the default): the registry replaces PyPI, so the tool and all of its
   dependencies must come from it. This is right for full PyPI mirrors and for
-  air-gapped setups, and a dependency the registry lacks fails the lock instead
-  of being fetched from elsewhere.
+  air-gapped setups. A dependency the registry lacks is never fetched from
+  elsewhere: mise warns and keeps a version-only lock entry for the tool.
 - `priority`: the registry is searched first and PyPI second, which suits a registry
   that hosts only its own packages (Gitea, Forgejo, pypiserver, a static index).
 
@@ -352,7 +352,9 @@ also means a registry that hides a package on purpose, say a mirror that blocks
 it, no longer keeps that package out of the lock, so use `priority` only with a
 registry that is not meant to be the sole source. The index searched second is
 [`pypi.registry_url`](/dev-tools/backends/pypi.html#pypi.registry_url), which is
-PyPI unless you changed it. The option affects locking only; it is not recorded
+PyPI unless you changed it. While locking in this mode, mise ignores
+`UV_EXTRA_INDEX_URL` and `UV_INDEX_URL` from the environment and `install_env`, so
+no other index is searched in between. The option affects locking only; it is not recorded
 in the lockfile, which pins every package to the index it came from.
 
 ### `install_env`
