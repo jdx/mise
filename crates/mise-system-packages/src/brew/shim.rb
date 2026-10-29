@@ -572,6 +572,49 @@ class Requirement
   end
 end
 
+# Homebrew vendors ruby-macho as `MachO` (Library/Homebrew/vendor), and a tap
+# formula's `post_install` can use it to rewrite install names. Like the
+# `Language` mixins it is a constant reference, so it must exist for the
+# formula to even reach the call. mise does not vendor ruby-macho, and it does
+# not relocate source-built kegs either, so a `post_install` that edits dylibs
+# is normally undoing Homebrew's own relocation. While `post_install` runs,
+# each call warns and returns an inert value (no dylibs, no change) so the rest
+# of the method still runs; anywhere else, such as `install`, it fails the
+# build.
+$shim_in_post_install = false
+
+def shim_macho_call!(feature, result = nil)
+  shim_unsupported!(feature) unless $shim_in_post_install
+  opoo "skipping #{feature}: mise's source-build shim has no Mach-O support"
+  result
+end
+
+class MachOFileStub
+  LIST_READERS = %i[linked_dylibs rpaths dylib_id_and_rpaths].freeze
+
+  def method_missing(name, *)
+    shim_macho_call!("MachO file #{name}", LIST_READERS.include?(name) ? [] : nil)
+  end
+
+  def respond_to_missing?(*) = true
+end
+
+module MachO
+  class << self
+    def open(*) = shim_macho_call!("MachO.open", MachOFileStub.new)
+    def method_missing(name, *) = shim_macho_call!("MachO.#{name}")
+    def respond_to_missing?(*) = true
+  end
+
+  module Tools
+    class << self
+      def dylibs(*) = shim_macho_call!("MachO::Tools.dylibs", [])
+      def method_missing(name, *) = shim_macho_call!("MachO::Tools.#{name}")
+      def respond_to_missing?(*) = true
+    end
+  end
+end
+
 class Formula
   include FileUtils
 
@@ -961,7 +1004,9 @@ def main
   ohai "#{MISE_BREW_NAME}: running install"
   formula.prefix.mkpath
   formula.install
+  $shim_in_post_install = true
   formula.post_install
+  $shim_in_post_install = false
 
   if formula.prefix.children.empty?
     odie "install completed but the keg at #{formula.prefix} is empty"

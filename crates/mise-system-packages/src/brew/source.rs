@@ -547,6 +547,83 @@ end
         Ok(())
     }
 
+    /// A tap formula's `post_install` can rewrite install names through
+    /// Homebrew's vendored ruby-macho. mise has no equivalent, but it does not
+    /// relocate source-built kegs either, so each call is skipped with a
+    /// warning and the rest of `post_install` still runs. The same calls from
+    /// `install` must still fail the build.
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn shim_skips_macho_calls_in_post_install() -> Result<()> {
+        let Some(ruby) = super::super::tap::test_ruby().await? else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("shim.rb");
+        let buildpath = tmp.path().join("build");
+        mise_util::file::create_dir_all(&buildpath)?;
+        mise_util::file::write(&shim, SHIM_RB)?;
+        let run = |body: &str| -> Result<std::process::Output> {
+            let formula_rb = tmp.path().join("example.rb");
+            mise_util::file::write(
+                &formula_rb,
+                format!("class Example < Formula\n{body}\nend\n"),
+            )?;
+            Ok(std::process::Command::new(&ruby)
+                .arg(&shim)
+                .current_dir(&buildpath)
+                .env("MISE_BREW_PREFIX", tmp.path())
+                .env("MISE_BREW_CELLAR", tmp.path().join("Cellar"))
+                .env("MISE_BREW_FORMULA_FILE", &formula_rb)
+                .env("MISE_BREW_NAME", "example")
+                .env("MISE_BREW_VERSION", "1.0.0")
+                .env("MISE_BREW_PKG_VERSION", "1.0.0")
+                .env("MISE_BREW_BUILDPATH", &buildpath)
+                .env("MISE_BREW_CACHE", tmp.path().join("cache"))
+                .output()?)
+        };
+        let calls = [
+            (
+                "MachO.open",
+                r#"MachO.open("lib.dylib").linked_dylibs.each { |dep| raise "unreachable" }"#,
+            ),
+            (
+                "MachO::Tools.change_install_name",
+                r#"MachO::Tools.change_install_name("lib.dylib", "a", "@loader_path/a")"#,
+            ),
+            (
+                "MachO::Tools.dylibs",
+                r#"MachO::Tools.dylibs("lib.dylib").each { |dep| raise "unreachable" }"#,
+            ),
+            ("MachO.codesign!", r#"MachO.codesign!("lib.dylib")"#),
+        ];
+
+        for (feature, call) in calls {
+            let marker = tmp.path().join("Cellar/example/1.0.0/bin/after");
+            let _ = std::fs::remove_file(&marker);
+            let output = run(&format!(
+                "  def install\n    (prefix/\"bin\").mkpath\n  end\n  def post_install\n    {call}\n    (prefix/\"bin/after\").write(\"ran\")\n  end"
+            ))?;
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(output.status.success(), "{feature}: {stderr}");
+            assert!(
+                stderr.contains(&format!("skipping {feature}")),
+                "{feature}: {stderr}"
+            );
+            assert_eq!(
+                mise_util::file::read_to_string(&marker)?,
+                "ran",
+                "{feature}: rest of post_install did not run"
+            );
+
+            let output = run(&format!("  def install\n    {call}\n  end"))?;
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(!output.status.success(), "{feature}: {stderr}");
+            assert!(stderr.contains(feature), "{feature}: {stderr}");
+        }
+        Ok(())
+    }
+
     /// GitHub's codeload URLs (`.../tar.gz/refs/tags/v1.0.0`) name no
     /// extension; the tarball must still be unpacked rather than staged as an
     /// opaque file the build then cannot find its sources in.
