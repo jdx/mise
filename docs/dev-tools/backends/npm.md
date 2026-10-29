@@ -291,10 +291,16 @@ sfw mise use -g npm:prettier
 This works at the network layer. mise's npm metadata client and embedded aube
 both use aube-registry, which honors `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`
 and loads the `NODE_EXTRA_CA_CERTS` bundle. mise's other HTTP clients, such as
-the ones that look up versions for other backends, trust the proxy through
-`SSL_CERT_FILE` on Linux and macOS (see
-[TLS certificates](/faq.html#tls-certificates)). Socket does not list mise or
-aube as supported package managers, so Socket does not guarantee this setup.
+the ones that look up versions for other backends, trust the proxy's CA only
+through [`extra_ca_certs`](/configuration/settings.html#extra_ca_certs), which
+sfw does not set. Pass its CA along yourself:
+
+```sh
+sfw sh -c 'MISE_EXTRA_CA_CERTS="$NODE_EXTRA_CA_CERTS" mise upgrade'
+```
+
+Socket does not list mise or aube as supported package managers, so Socket does
+not guarantee this setup.
 
 ## Choosing an installer
 

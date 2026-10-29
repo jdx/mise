@@ -8,13 +8,14 @@
 //! never supplemented, so `SSL_CERT_FILE` and `SSL_CERT_DIR` keep replacing the
 //! system store.
 //!
-//! macOS verifies against the keychain, which ignores `SSL_CERT_FILE`, so
-//! [`build_client`] adds the certificates in that file to the keychain roots
-//! there. Tools that run mise behind a traffic-inspecting proxy, such as Socket
-//! Firewall, point `SSL_CERT_FILE` at a CA they generate for each run, which no
-//! keychain entry can cover.
+//! [`set_extra_ca_certs`] adds the certificates in a PEM bundle to whatever
+//! roots a client trusts, on every platform. It is how mise trusts a
+//! traffic-inspecting proxy whose CA is not in the system store, such as one
+//! that generates a new CA for each run.
 
 use std::net::{IpAddr, Ipv4Addr};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use reqwest::{Client, ClientBuilder};
@@ -32,6 +33,135 @@ pub fn ipv4_only() -> bool {
     IPV4_ONLY.load(Ordering::Relaxed)
 }
 
+/// The bundle [`set_extra_ca_certs`] last read, and the certificates in it or
+/// why it cannot be used.
+#[derive(Default)]
+struct ExtraCaCerts {
+    path: Option<PathBuf>,
+    error: Option<String>,
+    /// Whether a client build has reported `error` yet.
+    warned: bool,
+    #[cfg(any(
+        feature = "native-tls",
+        feature = "rustls",
+        feature = "rustls-native-roots"
+    ))]
+    certs: Vec<reqwest::Certificate>,
+}
+
+static EXTRA_CA_CERTS: Mutex<Option<ExtraCaCerts>> = Mutex::new(None);
+
+/// Makes every client built from now on trust the certificates in the PEM
+/// bundle at `path` as well as its usual roots, or only its usual roots when
+/// `path` is `None`. Clients that already exist keep the roots they were built
+/// with.
+///
+/// A bundle that cannot be read or holds no certificates leaves clients with
+/// their usual roots, and the first client built afterwards logs a warning
+/// saying so. Setting the bundle already set does not read it again.
+pub fn set_extra_ca_certs(path: Option<&Path>) {
+    let mut extra = EXTRA_CA_CERTS.lock().unwrap_or_else(|e| e.into_inner());
+    if extra
+        .as_ref()
+        .is_some_and(|extra| extra.path.as_deref() == path)
+    {
+        return;
+    }
+    let mut next = ExtraCaCerts {
+        path: path.map(Path::to_path_buf),
+        ..Default::default()
+    };
+    if let Some(path) = path
+        && let Err(err) = load_extra_ca_certs(&mut next, path)
+    {
+        next.error = Some(err);
+    }
+    *extra = Some(next);
+}
+
+/// Why the bundle [`set_extra_ca_certs`] was given cannot be used, if it cannot.
+#[cfg(all(
+    test,
+    any(
+        feature = "native-tls",
+        feature = "rustls",
+        feature = "rustls-native-roots"
+    )
+))]
+fn extra_ca_certs_error() -> Option<String> {
+    let extra = EXTRA_CA_CERTS.lock().unwrap_or_else(|e| e.into_inner());
+    extra.as_ref().and_then(|extra| extra.error.clone())
+}
+
+/// Logs, once per bundle, that the bundle [`set_extra_ca_certs`] was given
+/// cannot be used. The settings that name the bundle load before logging is
+/// set up, while clients are built after.
+fn warn_unusable_extra_ca_certs(extra: &mut ExtraCaCerts) {
+    if let (Some(path), Some(err), false) = (&extra.path, &extra.error, extra.warned) {
+        log::warn!(
+            "ignoring extra_ca_certs {}: {err}. mise is trusting its usual root certificates alone",
+            path.display()
+        );
+        extra.warned = true;
+    }
+}
+
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls",
+    feature = "rustls-native-roots"
+))]
+fn load_extra_ca_certs(extra: &mut ExtraCaCerts, path: &Path) -> Result<(), String> {
+    let pem = std::fs::read(path).map_err(|err| err.to_string())?;
+    let certs = reqwest::Certificate::from_pem_bundle(&pem).map_err(|err| err.to_string())?;
+    if certs.is_empty() {
+        return Err("it holds no PEM certificates".to_string());
+    }
+    extra.certs = certs;
+    Ok(())
+}
+
+#[cfg(not(any(
+    feature = "native-tls",
+    feature = "rustls",
+    feature = "rustls-native-roots"
+)))]
+fn load_extra_ca_certs(_extra: &mut ExtraCaCerts, _path: &Path) -> Result<(), String> {
+    Err("this build of mise has no TLS support".to_string())
+}
+
+/// Adds the certificates [`set_extra_ca_certs`] read to `builder`'s roots.
+#[cfg(any(
+    feature = "native-tls",
+    feature = "rustls",
+    feature = "rustls-native-roots"
+))]
+fn with_extra_ca_certs(builder: ClientBuilder) -> ClientBuilder {
+    let mut extra = EXTRA_CA_CERTS.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(extra) = extra.as_mut() else {
+        return builder;
+    };
+    warn_unusable_extra_ca_certs(extra);
+    if extra.certs.is_empty() {
+        builder
+    } else {
+        builder.tls_certs_merge(extra.certs.clone())
+    }
+}
+
+#[cfg(not(any(
+    feature = "native-tls",
+    feature = "rustls",
+    feature = "rustls-native-roots"
+)))]
+fn with_extra_ca_certs(builder: ClientBuilder) -> ClientBuilder {
+    let mut extra = EXTRA_CA_CERTS.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(extra) = extra.as_mut() {
+        warn_unusable_extra_ca_certs(extra);
+    }
+    builder
+}
+
 /// Builds the client `make` describes. If that fails, builds it again with
 /// Mozilla's root certificates added and returns the original error when the
 /// second build fails too.
@@ -43,10 +173,11 @@ pub fn ipv4_only() -> bool {
 /// (`?private_token=`, a signed URL), to every host a request is redirected
 /// to, and mise has no use for the header.
 ///
-/// With [`set_ipv4_only`] on, the client connects over IPv4 only.
+/// With [`set_ipv4_only`] on, the client connects over IPv4 only, and it trusts
+/// the certificates [`set_extra_ca_certs`] read as well as its usual roots.
 pub fn build_client(make: impl Fn() -> ClientBuilder) -> reqwest::Result<Client> {
     let make = || {
-        let builder = make().referer(false);
+        let builder = with_extra_ca_certs(make().referer(false));
         // Binding the unspecified IPv4 address leaves only IPv4 candidates
         // for the connector to try.
         if ipv4_only() {
@@ -55,75 +186,10 @@ pub fn build_client(make: impl Fn() -> ClientBuilder) -> reqwest::Result<Client>
             builder
         }
     };
-    #[cfg(all(
-        target_vendor = "apple",
-        any(
-            feature = "native-tls",
-            feature = "rustls",
-            feature = "rustls-native-roots"
-        )
-    ))]
-    if let Some(client) = with_ssl_cert_file(make) {
-        return Ok(client);
-    }
     match make().build() {
         Ok(client) => Ok(client),
         Err(err) => with_bundled_roots(make, err),
     }
-}
-
-/// Builds the client with the certificates in `SSL_CERT_FILE` added to the
-/// keychain roots. Returns `None` when the variable is unset, or warns once and
-/// returns `None` when its certificates cannot be used, so the caller builds
-/// with the keychain alone.
-#[cfg(all(
-    target_vendor = "apple",
-    any(
-        feature = "native-tls",
-        feature = "rustls",
-        feature = "rustls-native-roots"
-    )
-))]
-fn with_ssl_cert_file(make: impl Fn() -> ClientBuilder) -> Option<Client> {
-    static WARN: std::sync::Once = std::sync::Once::new();
-    let path = std::env::var_os("SSL_CERT_FILE").filter(|path| !path.is_empty())?;
-    let path = std::path::Path::new(&path);
-    let built = certs_from_file(path).and_then(|certs| {
-        make()
-            .tls_certs_merge(certs)
-            .build()
-            .map_err(|err| err.to_string())
-    });
-    match built {
-        Ok(client) => Some(client),
-        Err(err) => {
-            WARN.call_once(|| {
-                log::warn!(
-                    "ignoring SSL_CERT_FILE {}: {err}. mise is trusting the keychain alone",
-                    path.display()
-                );
-            });
-            None
-        }
-    }
-}
-
-/// The certificates in the PEM bundle at `path`, or why there are none.
-#[cfg(all(
-    any(test, target_vendor = "apple"),
-    any(
-        feature = "native-tls",
-        feature = "rustls",
-        feature = "rustls-native-roots"
-    )
-))]
-fn certs_from_file(path: &std::path::Path) -> Result<Vec<reqwest::Certificate>, String> {
-    let pem = std::fs::read(path).map_err(|err| err.to_string())?;
-    let certs = reqwest::Certificate::from_pem_bundle(&pem).map_err(|err| err.to_string())?;
-    if certs.is_empty() {
-        return Err("it holds no PEM certificates".to_string());
-    }
-    Ok(certs)
 }
 
 #[cfg(all(
@@ -168,8 +234,9 @@ fn with_bundled_roots(
     Err(err)
 }
 
-/// Held while a test changes the process environment or builds a client, since
-/// building one reads `SSL_CERT_FILE` and `SSL_CERT_DIR`.
+/// Held while a test changes the process environment or the extra CA
+/// certificates, or builds a client, since building one reads `SSL_CERT_FILE`,
+/// `SSL_CERT_DIR` and the extra CA certificates.
 #[cfg(test)]
 static CLIENT_BUILD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -211,24 +278,12 @@ mod tests {
         feature = "rustls-native-roots"
     )
 ))]
-mod ssl_cert_file_tests {
+mod extra_ca_certs_tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::sync::Arc;
 
-    /// A self-signed CA that nothing else trusts.
-    const TEST_CA: &str = "\
------BEGIN CERTIFICATE-----\n\
-MIIBjDCCATOgAwIBAgIUVbPJq8yZLTrD7b6LnjSCd74GtaIwCgYIKoZIzj0EAwIw\n\
-GzEZMBcGA1UEAwwQbWlzZS10bHMgdGVzdCBDQTAgFw0yNjEwMjkxNjQwMzlaGA8y\n\
-MTI2MTAwNTE2NDAzOVowGzEZMBcGA1UEAwwQbWlzZS10bHMgdGVzdCBDQTBZMBMG\n\
-ByqGSM49AgEGCCqGSM49AwEHA0IABPQed437vHYum31giiyasubjKtaAWzsXo/Xy\n\
-qdnJFVjnzEH8obt4rsuMNjvL+GhHkBYGhaPpBoc7KmfwE65GhX2jUzBRMB0GA1Ud\n\
-DgQWBBTzcT7B5cYB99uU5FwcBbyQHNiKLDAfBgNVHSMEGDAWgBTzcT7B5cYB99uU\n\
-5FwcBbyQHNiKLDAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0cAMEQCICUf\n\
-CLpV/tzrPQzYoJdl9OQOZfmO5sXnPU7cjqX8MfUkAiBpCVZC4A7jcIz2+BAvMeNs\n\
-Xt7cNjbenv1c97l0t1O79g==\n\
------END CERTIFICATE-----\n";
-
-    fn write(name: &str, contents: &str) -> std::path::PathBuf {
+    fn temp_file(name: &str, contents: &[u8]) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("mise-tls-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(name);
@@ -236,42 +291,140 @@ Xt7cNjbenv1c97l0t1O79g==\n\
         path
     }
 
-    #[test]
-    fn reads_every_certificate_in_a_bundle() {
-        let path = write("bundle.pem", &format!("{TEST_CA}{TEST_CA}"));
-        assert_eq!(certs_from_file(&path).unwrap().len(), 2);
+    /// Serves HTTPS on a loopback port with a certificate signed by a new CA
+    /// that nothing trusts. Returns that CA as PEM and the server's URL.
+    fn serve_https() -> (String, String) {
+        let now = time::OffsetDateTime::now_utc();
+        let ca_key = rcgen::KeyPair::generate().unwrap();
+        let mut ca_params = rcgen::CertificateParams::default();
+        ca_params
+            .distinguished_name
+            .push(rcgen::DnType::CommonName, "mise-tls test CA");
+        ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+        ca_params.key_usages = vec![
+            rcgen::KeyUsagePurpose::KeyCertSign,
+            rcgen::KeyUsagePurpose::CrlSign,
+        ];
+        ca_params.not_before = now - time::Duration::days(1);
+        ca_params.not_after = now + time::Duration::days(1);
+        let ca = ca_params.self_signed(&ca_key).unwrap();
+        let issuer = rcgen::Issuer::new(ca_params, ca_key);
+
+        // macOS rejects server certificates valid for more than 825 days or
+        // without the serverAuth usage, even from a trusted CA.
+        let key = rcgen::KeyPair::generate().unwrap();
+        let mut params = rcgen::CertificateParams::new(Vec::<String>::new()).unwrap();
+        params.subject_alt_names = vec![rcgen::SanType::IpAddress(Ipv4Addr::LOCALHOST.into())];
+        params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ServerAuth];
+        params.key_usages = vec![rcgen::KeyUsagePurpose::DigitalSignature];
+        params.not_before = now - time::Duration::days(1);
+        params.not_after = now + time::Duration::days(1);
+        let cert = params.signed_by(&key, &issuer).unwrap();
+
+        let config = rustls::ServerConfig::builder_with_provider(Arc::new(
+            rustls::crypto::aws_lc_rs::default_provider(),
+        ))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(
+            vec![cert.der().clone()],
+            rustls::pki_types::PrivatePkcs8KeyDer::from(key.serialize_der()).into(),
+        )
+        .unwrap();
+        let config = Arc::new(config);
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let url = format!("https://{}/", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let Ok(conn) = rustls::ServerConnection::new(config.clone()) else {
+                    continue;
+                };
+                let mut tls = rustls::StreamOwned::new(conn, stream);
+                // A client that rejects the certificate fails the handshake here.
+                if tls.read(&mut [0; 1024]).is_err() {
+                    continue;
+                }
+                let _ = tls.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                );
+                tls.conn.send_close_notify();
+                let _ = tls.flush();
+            }
+        });
+        (ca.pem(), url)
     }
 
-    #[test]
-    fn a_file_without_certificates_is_an_error() {
-        let path = write("empty.pem", "not a certificate\n");
-        assert!(certs_from_file(&path).is_err());
-        assert!(certs_from_file(std::path::Path::new("/nonexistent/mise-tls.pem")).is_err());
+    /// A TLS backend's name and a client builder that uses it.
+    type Backend = (&'static str, fn() -> ClientBuilder);
+
+    /// The TLS backends this build has, each as a client builder that ignores
+    /// any proxy in the environment.
+    fn backends() -> Vec<Backend> {
+        let mut backends: Vec<Backend> = Vec::new();
+        #[cfg(feature = "native-tls")]
+        backends.push(("native-tls", || {
+            Client::builder().no_proxy().tls_backend_native()
+        }));
+        #[cfg(any(feature = "rustls", feature = "rustls-native-roots"))]
+        backends.push(("rustls", || {
+            Client::builder().no_proxy().tls_backend_rustls()
+        }));
+        backends
     }
 
-    /// The keychain ignores `SSL_CERT_FILE`, so the client must still build
-    /// with the file's CA added, and with the keychain alone when the file is
-    /// unusable.
-    #[cfg(target_vendor = "apple")]
-    #[test]
-    fn builds_with_ssl_cert_file_on_macos() {
-        let ca = write("ca.pem", TEST_CA);
-        let _lock = CLIENT_BUILD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        for path in [
-            ca.as_path(),
-            std::path::Path::new("/nonexistent/mise-tls.pem"),
-        ] {
-            // SAFETY: no other thread reads or writes the environment here.
-            unsafe { std::env::set_var("SSL_CERT_FILE", path) };
-            let built = build_client(Client::builder);
-            unsafe { std::env::remove_var("SSL_CERT_FILE") };
-            assert!(built.is_ok(), "{}: {:?}", path.display(), built.err());
+    /// Holds `CLIENT_BUILD_LOCK`, so no other test builds a client while the
+    /// extra CA certificates are set.
+    #[tokio::test]
+    async fn trusts_a_server_signed_by_the_extra_ca() {
+        let (ca, url) = serve_https();
+        let ca = temp_file("ca.pem", ca.as_bytes());
+        let clients = {
+            let _lock = CLIENT_BUILD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let clients = backends()
+                .into_iter()
+                .map(|(name, make)| {
+                    set_extra_ca_certs(None);
+                    let without = build_client(make);
+                    set_extra_ca_certs(Some(&ca));
+                    let with = build_client(make);
+                    (name, without.unwrap(), with.unwrap())
+                })
+                .collect::<Vec<_>>();
+            set_extra_ca_certs(None);
+            clients
+        };
+        assert!(!clients.is_empty());
+        for (name, without, with) in clients {
+            assert!(
+                without.get(&url).send().await.is_err(),
+                "{name}: the test CA must not be trusted by default"
+            );
+            let response = with.get(&url).send().await;
+            assert!(
+                response.is_ok(),
+                "{name}: the extra CA should be trusted: {:?}",
+                response.err()
+            );
         }
-        assert!(with_ssl_cert_file(Client::builder).is_none());
-        unsafe { std::env::set_var("SSL_CERT_FILE", &ca) };
-        let merged = with_ssl_cert_file(Client::builder);
-        unsafe { std::env::remove_var("SSL_CERT_FILE") };
-        assert!(merged.is_some(), "the CA in SSL_CERT_FILE should be added");
+    }
+
+    #[test]
+    fn a_bundle_it_cannot_use_leaves_the_usual_roots() {
+        let empty = temp_file("empty.pem", b"not a certificate\n");
+        let missing = Path::new("/nonexistent/mise-tls.pem");
+        let _lock = CLIENT_BUILD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        set_extra_ca_certs(Some(&empty));
+        assert_eq!(
+            extra_ca_certs_error().as_deref(),
+            Some("it holds no PEM certificates")
+        );
+        assert!(build_client(Client::builder).is_ok());
+        set_extra_ca_certs(Some(missing));
+        assert!(extra_ca_certs_error().is_some());
+        assert!(build_client(Client::builder).is_ok());
+        set_extra_ca_certs(None);
+        assert!(extra_ca_certs_error().is_none());
     }
 }
 

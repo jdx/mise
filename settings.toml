@@ -927,6 +927,35 @@ it, check whether it still happens with `experimental = false`, then
 env = "MISE_EXPERIMENTAL"
 type = "Bool"
 
+[extra_ca_certs]
+description = "PEM bundle of CA certificates mise trusts in addition to the system's."
+docs = """
+Use it when mise's HTTPS traffic passes through a proxy whose CA is not in the
+system trust store, such as a traffic-inspecting proxy that generates a new CA
+for each run. The certificates are added to the roots mise already trusts, on
+every platform, so the file only needs the extra CAs. Unlike `SSL_CERT_FILE`,
+it never replaces the system store.
+
+```sh
+MISE_EXTRA_CA_CERTS=/path/to/proxy-ca.pem mise install
+```
+
+It applies to the connections mise makes with its own HTTP client: downloads,
+version lookups, GitHub API calls, attestation verification, vfox plugins and
+the GitHub relay. The package manager embedded in the `npm:` backend reads
+`NODE_EXTRA_CA_CERTS` instead, and programs mise runs, such as `git`, `uv` or a
+tool's installer, read their own certificate settings.
+
+If the file cannot be read or holds no certificates, mise warns and trusts the
+system store alone. This setting is only read from the environment and the
+global config, so a project's `mise.toml` cannot add a trusted CA. See
+[TLS certificates](/faq.html#tls-certificates).
+"""
+env = "MISE_EXTRA_CA_CERTS"
+global_only = true
+optional = true
+type = "Path"
+
 [extract_max_ratio]
 default = 100
 description = "How many times its own size a downloaded archive or compressed file may unpack to."

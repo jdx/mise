@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Builds an HTTP client and makes one request that fails at once.
+export MISE_HTTP_RETRIES=0
+ls_remote="mise ls-remote --no-versions-host 'github:jdx/mise-test-fixtures[api_url=http://127.0.0.1:1/api/v3]' 2>&1 || true"
+
+# A bundle mise cannot use is reported once, and mise carries on with its
+# usual roots.
+assert_contains "MISE_EXTRA_CA_CERTS='$HOME/missing.pem' $ls_remote" "ignoring extra_ca_certs $HOME/missing.pem"
+echo "not a certificate" >"$HOME/empty.pem"
+assert_contains "MISE_EXTRA_CA_CERTS='$HOME/empty.pem' $ls_remote" "ignoring extra_ca_certs $HOME/empty.pem: it holds no PEM certificates"
+assert_not_contains "$ls_remote" "ignoring extra_ca_certs"
+
+# A project config cannot add a trusted CA.
+cat >mise.toml <<'TOML'
+[settings]
+extra_ca_certs = "/tmp/project-ca.pem"
+TOML
+mise trust
+assert_contains "$ls_remote" "extra_ca_certs in non-global config"
+assert_not_contains "$ls_remote" "ignoring extra_ca_certs"

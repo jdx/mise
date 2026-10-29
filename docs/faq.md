@@ -260,13 +260,18 @@ export SSL_CERT_FILE=/etc/ssl/corporate-bundle.pem
 mise install
 ```
 
-On macOS, mise **adds** the certificates in `SSL_CERT_FILE` to the keychain
-rather than replacing it, so a bundle that holds only a proxy's CA is enough.
-This is what lets mise run under a tool that generates a new CA for each run and
-passes it in `SSL_CERT_FILE`, such as [Socket
-Firewall](/dev-tools/backends/npm.html#socket-firewall). If the file cannot be read or holds no
-certificates, mise warns and uses the keychain alone. `SSL_CERT_DIR` is ignored
-on macOS.
+To trust an extra CA without replacing the system store, on any platform, point
+[`extra_ca_certs`](/configuration/settings.html#extra_ca_certs) at a PEM bundle
+that holds it. mise adds those certificates to the roots it already trusts:
+
+```sh
+# adds to the system store: the bundle only needs the extra CA
+export MISE_EXTRA_CA_CERTS=/etc/ssl/proxy-ca.pem
+mise install
+```
+
+It is read only from the environment and the global config, never from a
+project's `mise.toml`.
 
 If no certificates can be loaded at all, for example in a minimal container
 without the `ca-certificates` package, or `SSL_CERT_FILE` points at a missing
