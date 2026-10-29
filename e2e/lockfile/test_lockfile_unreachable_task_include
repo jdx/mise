@@ -8,9 +8,20 @@ export MISE_LOCKFILE_MODE=generate
 export MISE_EXPERIMENTAL=1
 export GIT_TERMINAL_PROMPT=0
 
+# a lockfile that holds a tool only a task declares
 cat <<EOF >mise.toml
 [tools]
 "aqua:jqlang/jq" = "1.7.1"
+
+[tasks.t]
+run = "true"
+tools = { "aqua:mikefarah/yq" = "4.44.6" }
+EOF
+mise lock
+assert_contains "cat mise.lock" "mikefarah/yq"
+cp mise.lock mise.lock.before
+
+cat <<EOF >>mise.toml
 
 [task_config]
 includes = ["git::https://127.0.0.1:1/does-not-exist.git//tasks?ref=v1"]
@@ -18,6 +29,8 @@ EOF
 
 assert_contains "mise install 2>&1" "skipping lockfile update: failed to load tasks"
 assert 'mise install >/dev/null 2>&1; echo $?' "0"
+# the task-only tool survives because the lockfile is left alone
+assert "diff mise.lock mise.lock.before" ""
 
 # an explicit `mise lock` still reports the broken include
 assert_fail "mise lock"
