@@ -136,10 +136,24 @@ impl serde::Serialize for RequiredValue {
     }
 }
 
+/// Where a `_.path` entry goes relative to the paths mise adds for tools.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PathPosition {
+    /// ahead of tool paths
+    #[default]
+    Prepend,
+    /// after tool paths, ahead of the inherited PATH
+    Append,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EnvDirectiveOptions {
     #[serde(default)]
     pub tools: bool,
+    /// `_.path` only: where the entry goes relative to tool paths.
+    #[serde(default)]
+    pub position: PathPosition,
     #[serde(default)]
     pub redact: Option<bool>,
     #[serde(default)]
@@ -687,6 +701,7 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         expand: false,
                                         find_up: false,
                                         prompt: None,
+                                        position: PathPosition::default(),
                                     },
                                 });
                             }
@@ -941,6 +956,7 @@ mod schema_tests {
             keys::<VarsAgeTable>(),
             keys::<VarsAgeComplex>(),
             keys::<EnvDirectiveDecl>(),
+            keys::<EnvPathTable>(),
         ]
         .into_iter()
         .flatten()

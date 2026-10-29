@@ -76,4 +76,45 @@ mod tests {
         "#
         );
     }
+
+    #[tokio::test]
+    async fn test_env_path_append() {
+        let env = EnvMap::new();
+        let config = Config::get().await.unwrap();
+        let append = || crate::config::env_directive::EnvDirectiveOptions {
+            position: crate::config::env_directive::PathPosition::Append,
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &env,
+            vec![
+                (
+                    EnvDirective::Path("/first".into(), Default::default()),
+                    PathBuf::from("/config"),
+                ),
+                (
+                    EnvDirective::Path("/tail/1".into(), append()),
+                    PathBuf::from("/config"),
+                ),
+                (
+                    EnvDirective::Path("/tail/2".into(), append()),
+                    PathBuf::from("/config"),
+                ),
+            ],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::NonToolsOnly,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(results.env_paths, vec![PathBuf::from("/first")]);
+        assert_eq!(
+            results.env_paths_append,
+            vec![PathBuf::from("/tail/1"), PathBuf::from("/tail/2")]
+        );
+    }
 }

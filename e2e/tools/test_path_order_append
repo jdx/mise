@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+# `position = "append"` puts a `_.path` entry after tool paths, ahead of the inherited PATH
+cat <<EOF >mise.toml
+[env]
+_.path = ["bin", { path = ["tail", "tail2"], position = "append" }]
+[tools]
+dummy = "1.0.0"
+EOF
+
+mkdir bin tail tail2 subdir subdir/tail
+cat <<EOF >subdir/mise.toml
+[env]
+_.path = { path = "tail", position = "append" }
+[tools]
+jq = "1.7.1"
+EOF
+
+mise i
+
+dummy="$MISE_DATA_DIR/installs/dummy/1.0.0/bin"
+assert "mise env | grep PATH" "export PATH='$HOME/workdir/bin:$dummy:$HOME/workdir/tail:$HOME/workdir/tail2:$PATH'"
+assert "mise hook-env | grep PATH | tail -n1" "export PATH='$HOME/workdir/bin:$dummy:$HOME/workdir/tail:$HOME/workdir/tail2:$MISE_DATA_DIR/shims:$PATH'"
+assert "mise x -- sh -c 'echo \$PATH'" "$HOME/workdir/bin:$dummy:$HOME/workdir/tail:$HOME/workdir/tail2:$PATH"
+
+# a nested config's appended entries come first, and its tools follow the parent's
+cd subdir
+jq="$MISE_DATA_DIR/installs/jq/1.7.1"
+mise i
+assert "mise env | grep PATH" "export PATH='$HOME/workdir/bin:$jq:$dummy:$HOME/workdir/subdir/tail:$HOME/workdir/tail:$HOME/workdir/tail2:$PATH'"
+cd "$HOME/workdir" || exit 1
+
+# `tools = true` does not change the position
+cat <<EOF >mise.toml
+[env]
+_.path = { path = ["tail"], position = "append", tools = true }
+[tools]
+dummy = "1.0.0"
+EOF
+assert "mise env | grep PATH" "export PATH='$dummy:$HOME/workdir/tail:$PATH'"
+
+# prepend is the default
+cat <<EOF >mise.toml
+[env]
+_.path = { path = ["tail"], position = "prepend" }
+[tools]
+dummy = "1.0.0"
+EOF
+assert "mise env | grep PATH" "export PATH='$HOME/workdir/tail:$dummy:$PATH'"
+
+# an unknown position is rejected
+cat <<EOF >mise.toml
+[env]
+_.path = { path = ["tail"], position = "middle" }
+EOF
+assert_fail "mise env" "position"

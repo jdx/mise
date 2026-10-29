@@ -236,13 +236,14 @@ is in `.config/mise/` or `.mise/` (see
 `$VAR` and `~`. Directives run in the order you write them, so `_.path` can use
 a variable that `_.source` set above it; `_.python.venv` always runs last.
 
-| Option    | `_.file` | `_.source` | `_.path` | Effect                                                                   |
-| --------- | -------- | ---------- | -------- | ------------------------------------------------------------------------ |
-| `path`    | Yes      | Yes        | Yes      | One path or a list of paths                                              |
-| `tools`   | Yes      | Yes        | Yes      | Resolve after tools load ([details](#lazy-eval))                         |
-| `redact`  | Yes      | Yes        | No       | Mark every loaded value as [sensitive](/environments/secrets/#redaction) |
-| `expand`  | Yes      | No         | No       | Let the file use values loaded before it                                 |
-| `find_up` | Yes      | No         | No       | Search the config's directory and its parents for the file               |
+| Option     | `_.file` | `_.source` | `_.path` | Effect                                                                   |
+| ---------- | -------- | ---------- | -------- | ------------------------------------------------------------------------ |
+| `path`     | Yes      | Yes        | Yes      | One path or a list of paths                                              |
+| `tools`    | Yes      | Yes        | Yes      | Resolve after tools load ([details](#lazy-eval))                         |
+| `position` | No       | No         | Yes      | `"prepend"` (default) or `"append"` ([details](#env-path))               |
+| `redact`   | Yes      | Yes        | No       | Mark every loaded value as [sensitive](/environments/secrets/#redaction) |
+| `expand`   | Yes      | No         | No       | Let the file use values loaded before it                                 |
+| `find_up`  | Yes      | No         | No       | Search the config's directory and its parents for the file               |
 
 ### `env._.file` {#env-file}
 
@@ -352,6 +353,21 @@ _.path = [
 
 Use `_.path` for `PATH`. A `PATH` key in `[env]` is ignored by `mise exec`,
 `mise env` and activated shells.
+
+Entries go ahead of tool paths, so a `bin` directory in your project wins over a
+tool of the same name. To put an entry behind tool paths instead, still ahead of
+the `PATH` mise inherited, set `position = "append"`:
+
+```toml [mise.toml]
+[env]
+_.path = [
+  "bin",
+  { path = ["~/bin", "~/.cargo/bin"], position = "append" },
+]
+```
+
+`position` only orders an entry among the paths mise adds. `tools = true` does
+not change it.
 
 ### `env._.source` {#env-source}
 

@@ -181,6 +181,9 @@ impl InstallDependencyContext {
         for path in add_paths {
             path_env.add(path);
         }
+        for path in config.path_dirs_append().await?.clone() {
+            path_env.add(path);
+        }
         for path in pristine_path_without_install_dirs() {
             path_env.add(path);
         }
@@ -205,6 +208,9 @@ impl Toolset {
             path_env.add(p.clone());
         }
         for p in self.list_paths(config).await {
+            path_env.add(p);
+        }
+        for p in config.path_dirs_append().await?.clone() {
             path_env.add(p);
         }
         env.insert(PATH_KEY.to_string(), path_env.to_string());
@@ -604,6 +610,9 @@ impl Toolset {
             path_env.add(p.clone());
         }
         for p in self.list_paths(config).await {
+            path_env.add(p);
+        }
+        for p in config.path_dirs_append().await?.clone() {
             path_env.add(p);
         }
         tera_env.insert(PATH_KEY.to_string(), path_env.to_string());
