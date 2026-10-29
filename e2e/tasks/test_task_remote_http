@@ -48,3 +48,28 @@ file = "http://localhost:${HTTP_PORT}/test/extends-task"
 EOF
 
 assert_fail "mise run remote_extends_task" "which was not found"
+
+#################################################################################
+# A remote task with its own `env` run as a sub-task or dependency must run the
+# downloaded file, not its URL as a local path
+# Reproduces: https://github.com/jdx/mise/issues/15175
+#################################################################################
+
+cat <<EOF2 >mise.toml
+[tasks.remote_env]
+file = "http://localhost:${HTTP_PORT}/test/mytask"
+env.FOO = "1"
+
+[tasks.sub]
+run = [{ task = "remote_env" }]
+
+[tasks.dep]
+depends = ["remote_env"]
+run = "echo dep done"
+EOF2
+
+assert_contains "mise run remote_env" "running mytask"
+assert_contains "mise run sub" "running mytask"
+assert_contains "mise run dep" "running mytask"
+assert_not_contains "mise run sub 2>&1" "No such file"
+assert_not_contains "mise run dep 2>&1" "No such file"
