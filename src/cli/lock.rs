@@ -864,9 +864,22 @@ impl Lock {
                     if let Some(actual) = installed.iter().find(|actual| {
                         actual.ba().full() == tv.ba().full()
                             && request_matches(&actual.request, &tv.request)
-                            && actual.request.source() == tv.request.source()
+                            && (actual.request.source() == tv.request.source()
+                                || lockfile::lockfile_path_for_tool_source(
+                                    config,
+                                    actual.request.source(),
+                                )
+                                .is_some_and(|(path, _)| path == *lockfile_path))
                     }) {
+                        // A tool declared in several files that write this
+                        // lockfile has one entry per file but only the winning
+                        // request is installed. An equal request installs the
+                        // same version, so each entry takes it and keeps its
+                        // own source. A declaration that writes another
+                        // lockfile was not upgraded and keeps its pin.
+                        let source = tv.request.source().clone();
                         *tv = actual.clone();
+                        tv.request.set_source(source);
                         tv.strip_install_path_identity();
                     }
                 }
