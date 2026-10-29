@@ -509,7 +509,10 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
             daemon: &daemon.name,
             root: &daemon.root,
             what: format!("ports.{key}"),
-            kind: if claim.is_auto() {
+            // A container (the only daemon besides a preset with named ports) lists
+            // every port it publishes, fixed or allocated, and a fixed one clashing
+            // with a sibling fails to bind just the same. Presets keep the old rule.
+            kind: if claim.is_auto() || daemon.preset.is_none() {
                 PortKind::AutoNamed
             } else {
                 PortKind::PlainNamed
@@ -535,6 +538,37 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
                 );
             }
         }
+    }
+    // A container's `ports.http` is exported as `<NAME>_HTTP_PORT`, which is also the
+    // primary port of a daemon called `<name>-http`. The two are collected by
+    // different checks while loading, so compare the finished exports: a variable
+    // two daemons would set to different ports is withheld from both.
+    let mut exporters: BTreeMap<String, Vec<&str>> = BTreeMap::new();
+    for daemon in set
+        .daemons
+        .values()
+        .filter(|d| !d.imported && d.preset.is_none())
+    {
+        for var in daemon.exports.keys().filter(|var| var.ends_with("_PORT")) {
+            let owners = exporters.entry(var.clone()).or_default();
+            if !owners.contains(&daemon.name.as_str()) {
+                owners.push(&daemon.name);
+            }
+        }
+    }
+    let clashing: BTreeMap<String, Vec<String>> = exporters
+        .into_iter()
+        .filter(|(_, owners)| owners.len() > 1)
+        .map(|(var, owners)| (var, owners.into_iter().map(str::to_owned).collect()))
+        .collect();
+    for (var, owners) in &clashing {
+        warn_once!(
+            "[daemons] {} would all export {var}, so none of them exports it. Rename one of them.",
+            owners.join(", ")
+        );
+    }
+    for daemon in set.daemons.values_mut().filter(|d| !d.imported) {
+        daemon.exports.retain(|var, _| !clashing.contains_key(var));
     }
     // A preset's exports are its declared interface; `<NAME>_PORT` and
     // `<NAME>_URL` are a convenience derived from a name. When a custom
@@ -675,7 +709,7 @@ impl LoadState {
 enum PortKind {
     /// The daemon's own `port`, compared with every other daemon's.
     Primary,
-    /// A preset's named port declared `{ auto = true }`.
+    /// A named port declared `{ auto = true }`, or any port a container publishes.
     AutoNamed,
     /// A named port left at the preset default or fixed by hand.
     PlainNamed,
@@ -2225,6 +2259,30 @@ mod tests {
             &two("ports.http = { container = 80, auto = true, base = 27100 }\n"),
         )]))
         .unwrap();
+    }
+
+    #[test]
+    fn container_fixed_ports_are_checked_against_siblings_and_exports() {
+        let err = load(&files(&[(
+            "/project/mise.toml",
+            "[daemons.a]\nrun = 'x'\nport = 5000\n[daemons.b]\nimage = 'x'\nports.http = 5000\n",
+        )]))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("both use port 5000"), "{err}");
+        // `api`'s `http` port and `api-http`'s own port would both be API_HTTP_PORT.
+        let set = load(&files(&[(
+            "/project/mise.toml",
+            "[daemons.api]\nimage = 'x'\nports.http = 8080\n[daemons.api-http]\nrun = 'x'\nport = 3000\n",
+        )]))
+        .unwrap();
+        for daemon in set.daemons.values() {
+            assert!(
+                !daemon.exports.contains_key("API_HTTP_PORT"),
+                "{}",
+                daemon.name
+            );
+        }
     }
 
     #[test]

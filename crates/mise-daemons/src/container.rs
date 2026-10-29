@@ -589,10 +589,23 @@ fn resolve_volume(
     Ok(format!("{}:{rest}", path.to_string_lossy()))
 }
 
-/// The index of the script in `[<shell>, "-c", <script>, ...]`, which a shell evaluates.
+/// The index of the script in `[<shell>, <options>..., "-c", <script>, ...]`, which a
+/// shell evaluates. `-c` can be bundled with other short options (`-ec`) or follow
+/// them (`-eu -c`).
 fn shell_script_index(args: &[&str]) -> Option<usize> {
     let program = Path::new(args.first()?).file_name()?.to_str()?;
-    (matches!(program, "sh" | "bash" | "zsh" | "dash") && args.get(1) == Some(&"-c")).then_some(2)
+    if !matches!(program, "sh" | "bash" | "zsh" | "dash") {
+        return None;
+    }
+    for (i, arg) in args.iter().enumerate().skip(1) {
+        if arg.starts_with('-') && !arg.starts_with("--") && arg.contains('c') {
+            return Some(i + 1);
+        }
+        if !arg.starts_with('-') {
+            return None;
+        }
+    }
+    None
 }
 
 static RUNTIME_VARIABLE: std::sync::LazyLock<regex::Regex> =
@@ -976,6 +989,15 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("shell expression"), "{err}");
+        // Options may come with or before `-c`.
+        for shell in [
+            "[\"bash\", \"-ec\", \"{{ runtime }} exec\"]",
+            "[\"sh\", \"-eu\", \"-c\", \"{{ runtime }} exec\"]",
+            "[\"/bin/sh\", \"-c\", \"{{ runtime }} exec\"]",
+        ] {
+            let mut table: toml::Table = toml::from_str(&format!("ready_cmd = {shell}")).unwrap();
+            render_probes("db", &mut table, &built.probe_vars).unwrap();
+        }
         // Nor as an argument of another program, which gets it as a literal name.
         let mut timeout: toml::Table =
             toml::from_str("ready_cmd = [\"timeout\", \"5\", \"{{ runtime }}\", \"exec\"]")
