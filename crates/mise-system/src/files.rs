@@ -7092,7 +7092,14 @@ variants = [
             configs.insert(path.clone(), crate::host::parse_config_body(body, &path)?);
             validate_incoming_files(&configs)
         };
-        check("[dotfiles]\n\"/etc/service/credentials\" = { mode = \"fnox\" }\n")?;
+        let outside_home = if cfg!(windows) {
+            r"C:\service\credentials"
+        } else {
+            "/etc/service/credentials"
+        };
+        check(&format!(
+            "[dotfiles]\n'{outside_home}' = {{ mode = \"fnox\" }}\n"
+        ))?;
         check(
             "[dotfiles]\n\"~/.npmrc\" = { mode = \"fnox\", permissions = \"0640\", variants = [{ os = \"linux\", target = \"~/.config/npm/npmrc\" }] }\n",
         )?;
