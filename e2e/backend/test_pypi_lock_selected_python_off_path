@@ -22,6 +22,10 @@ pypi.registry_url = "http://127.0.0.1:$port/pypi/{}/json"
 EOF_CONFIG
 mise trust
 # Python 3.12.11 is only in mise's installs, not on PATH (the system Python is not 3.12.11).
+# Keep uv from downloading or finding its own copy, so only the path mise passes works.
+export UV_PYTHON_DOWNLOADS=never
+export UV_PYTHON_INSTALL_DIR="$PWD/uv-python"
+assert_fail "mise x uv@0.12.10 -- uv python find 3.12.11"
 mise lock
 assert_contains "cat mise.lock" 'path = ".mise/locks/pipx-mise-lock-cli/1.0.0~'
 assert_contains "cat .mise/locks/pipx-mise-lock-cli/1.0.0~*/uv.lock" 'name = "mise-lock-dep"'
