@@ -303,6 +303,11 @@ entries as tools are installed:
 lockfile_mode = "merge"
 ```
 
+::: warning `merge` mode is deprecated
+mise will start warning about `lockfile_mode = "merge"` in 2027.4.0 and remove
+it in 2027.10.0. Remove the setting to use the default `generate` mode.
+:::
+
 `lockfile_mode` does not turn on lockfile creation: run `mise lock` first, or
 set `lockfile = true`.
 

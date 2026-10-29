@@ -152,6 +152,10 @@ static EXPLICIT_INLINE_SHELL: RwLock<Option<bool>> = RwLock::new(None);
 static TRUSTED_PATHS_RESOLVED: Lazy<Mutex<std::collections::HashMap<PathBuf, Option<PathBuf>>>> =
     Lazy::new(Default::default);
 
+/// Queue key for the `lockfile_mode = "merge"` deprecation, which warns about a value rather than
+/// a whole setting, so it has no `SETTINGS_META` entry. [`warn_deprecated_now`] special-cases it.
+const LOCKFILE_MODE_MERGE: &str = "lockfile_mode.merge";
+
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
 /// `write_targets.*` keys a non-global config set, with the first file that set each one.
@@ -384,6 +388,15 @@ fn warn_deprecated(key: &'static str) {
 }
 
 fn warn_deprecated_now(key: &'static str) {
+    if key == LOCKFILE_MODE_MERGE {
+        deprecated_at!(
+            "2027.4.0",
+            "2027.10.0",
+            LOCKFILE_MODE_MERGE,
+            "lockfile_mode=\"merge\" is deprecated. Remove the setting to use the default \"generate\" mode."
+        );
+        return;
+    }
     if let Some(meta) = SETTINGS_META.get(key)
         && let (Some(msg), Some(warn_at), Some(remove_at)) = (
             meta.deprecated,
@@ -1933,6 +1946,9 @@ fn load() -> Result<Arc<Settings>> {
             "python.uv_venv_auto.true",
             "python.uv_venv_auto=true is deprecated. Use python.uv_venv_auto=\"create|source\" or \"source\" instead."
         );
+    }
+    if !settings.generate_lockfiles() {
+        warn_deprecated(LOCKFILE_MODE_MERGE);
     }
     if !settings.color {
         console::set_colors_enabled(false);
