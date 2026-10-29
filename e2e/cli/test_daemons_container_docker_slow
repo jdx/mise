@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+# A container daemon against a real Docker engine. test_daemons_container covers the
+# same behavior against a fake runtime; this proves the real `docker run` flags work.
+if ! command -v docker >/dev/null || ! docker info >/dev/null 2>&1; then
+  echo 'SKIP: Docker is unavailable'
+  exit 0
+fi
+
+# Set MISE_TEST_PITCHFORK to test a local build instead of the released version.
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  # Exercise this exact release even during the default release-age delay.
+  mise install pitchfork@2.25.0 --minimum-release-age 0s
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.25.0)"
+fi
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pfc"
+export PITCHFORK_PROXY_ENABLE=false
+export PITCHFORK_INTERVAL=100ms
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+
+IMAGE=busybox:1.37
+docker pull -q "$IMAGE" >/dev/null
+mkdir project
+cd project
+mkdir www
+echo hello-from-container >www/index.html
+cat >mise.toml <<TOML
+[tools]
+pitchfork = "system"
+[daemons.web]
+image = "$IMAGE"
+command = ["httpd", "-f", "-p", "8000", "-h", "/www"]
+port = { auto = true, base = 38000 }
+container_port = 8000
+volumes = ["./www:/www:ro"]
+proxy = false
+ready_cmd = "curl -fsS http://127.0.0.1:{{ port }}/"
+ready_delay = 0
+TOML
+name=""
+# `--rm` removes the container a moment after it exits.
+wait_removed() {
+  for _ in $(seq 50); do
+    [[ -z $(docker ps -aq --filter "name=$name") ]] && return 0
+    sleep 0.2
+  done
+  fail "container $name still exists after the daemon stopped"
+}
+cleanup() {
+  [[ -n $name ]] && docker rm -f "$name" >/dev/null 2>&1
+  pitchfork supervisor stop >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+# Work out the container's name from the project, so a stale one can be planted.
+mise daemons start web
+name=$(docker ps --filter label=dev.mise.daemon --format '{{.Names}}')
+assert_contains_text "$name" "mise-project-"
+assert_contains "curl --noproxy '*' -fsS http://127.0.0.1:38000/" hello-from-container
+# Published on loopback only.
+assert_contains "docker port $name" "127.0.0.1:38000"
+assert_contains "mise daemons ls --json" '"status": "running"'
+
+mise daemons stop web
+wait_removed
+
+# A leftover container with the same name does not block the next start.
+docker run -d --name "$name" "$IMAGE" sleep 600 >/dev/null
+mise daemons start web
+assert_contains "curl --noproxy '*' -fsS http://127.0.0.1:38000/" hello-from-container
+assert_contains "docker ps --format '{{.Image}} {{.Names}}'" "$IMAGE $name"
+mise daemons stop web
+wait_removed

@@ -194,6 +194,7 @@ export const sidebar: SidebarItem[] = [
         link: "/daemons/development-stack",
       },
       { text: "Service presets", link: "/daemons/presets" },
+      { text: "Container daemons", link: "/daemons/containers" },
       { text: "Ports, URLs, and worktrees", link: "/daemons/worktrees" },
       { text: "Share daemons across projects", link: "/daemons/sharing" },
       { text: "Data and cleanup", link: "/daemons/data" },

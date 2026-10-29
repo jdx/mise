@@ -1,4 +1,5 @@
 //! Project daemons: custom pitchfork definitions and embedded database presets.
+pub mod container;
 pub mod host;
 #[macro_use]
 mod macros;
@@ -677,6 +678,16 @@ fn build(
     let init = take_init(&mut table, name)?;
     let task = take_string(&mut table, "task")?;
     let args = take_args(&mut table, name)?;
+    // `image` makes this a container daemon: mise writes its `run` below.
+    let container = container::take(name, &mut table)?;
+    if container.is_some() {
+        if preset.is_some() {
+            bail!("[daemons.{name}] cannot combine image with preset");
+        }
+        if task.is_some() || table.contains_key("run") {
+            bail!("[daemons.{name}] cannot combine image with run or task");
+        }
+    }
     if preset.is_some() {
         // Name the key actually present; `args` without `task` is a
         // different mistake from `preset` with `task`.
@@ -790,10 +801,16 @@ fn build(
         }
     }
     // A task daemon's generated `run` may be an argv; one declared with `run` is a command line.
-    if task.is_none() && table.get("run").and_then(toml::Value::as_str).is_none() {
-        bail!("[daemons.{name}] requires run, task, preset, or project");
+    if task.is_none()
+        && container.is_none()
+        && table.get("run").and_then(toml::Value::as_str).is_none()
+    {
+        bail!("[daemons.{name}] requires run, task, image, preset, or project");
     }
     let claim = match request {
+        Some(PortRequest::Passthrough(_)) if container.is_some() => bail!(
+            "[daemons.{name}].port must be an integer or {{ auto = true, base = <port> }}; pitchfork's structured port is not available on container daemons"
+        ),
         Some(PortRequest::Passthrough(value)) => {
             table.insert("port".into(), value);
             None
@@ -804,8 +821,36 @@ fn build(
         }
         None => None,
     };
-    if let Some(claim) = claim {
-        table.insert("port".into(), expected_port(claim.port));
+    let mut data_dir = None;
+    let mut container_ports = IndexMap::new();
+    if let Some(container) = container {
+        let namespace = runtime::resolve_namespace(&root, Some(settings))?;
+        let env = table
+            .get("env")
+            .and_then(toml::Value::as_table)
+            .map(|env| env.keys().cloned().collect())
+            .unwrap_or_default();
+        let built = container.build(container::Context {
+            name,
+            root: &root,
+            namespace: &namespace,
+            claim,
+            env,
+            default_data_dir: state_dir(&root).join("data").join(name),
+        })?;
+        container::render_probes(&root, &mut table, &built.probe_ctx)?;
+        table.insert("run".into(), toml::Value::String(built.run));
+        data_dir = built.data_dir;
+        container_ports = built.ports;
+    }
+    // Every published port is reserved, so a taken one fails the start by name.
+    let expect: Vec<u16> = claim
+        .iter()
+        .map(|claim| claim.port)
+        .chain(container_ports.values().copied())
+        .collect();
+    if !expect.is_empty() {
+        table.insert("port".into(), expected_ports(&expect));
     }
     let proxy = urls::proxy_settings();
     let urls::Applied { host, .. } = urls::apply(
@@ -847,6 +892,25 @@ fn build(
             }
         }
     }
+    // A container's named ports are exported like a preset's, as
+    // `<NAME>_<PORT>_PORT`.
+    if !imported
+        && !container_ports.is_empty()
+        && let Some(base) = env_var_base(name)
+    {
+        for (key, port) in &container_ports {
+            let var = presets::named_port_var(&base, key);
+            if let Some(other) = state.port_vars.insert(var.clone(), name.to_string())
+                && other != name
+            {
+                warn_once!(
+                    "[daemons] {other} and {name} both map to {var}; their names differ only by punctuation, so neither port is exported. Rename one of them."
+                );
+                state.ambiguous.insert(var.clone());
+            }
+            exports.entry(var).or_insert_with(|| port.to_string());
+        }
+    }
     table
         .entry("mise".to_string())
         .or_insert(toml::Value::Boolean(true));
@@ -863,7 +927,7 @@ fn build(
         root,
         table,
         preset: None,
-        data_dir: None,
+        data_dir,
         task,
         tool: None,
         provider: None,
@@ -2029,6 +2093,100 @@ mod tests {
             set.daemons["api"].table["port"]["expect"][0].as_integer(),
             Some(3000)
         );
+    }
+
+    #[test]
+    fn container_daemons_are_custom_daemons_with_a_generated_run() {
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.crdb]\nimage = 'cockroachdb/cockroach:v25.1.0'\ncommand = 'start-single-node --insecure'\nport = { auto = true, base = 26257 }\nports.http = { container = 8080, auto = true, base = 27000 }\nready_cmd = '{{ runtime }} exec {{ container }} true'\nenv = { A = 'b' }\n",
+        )]);
+        let daemon = &load(&config).unwrap().daemons["crdb"];
+        let table = &daemon.table;
+        let run = table["run"].as_str().unwrap();
+        assert!(run.contains("-p 127.0.0.1:26257:26257"), "{run}");
+        assert!(run.contains("-p 127.0.0.1:27000:8080"), "{run}");
+        assert!(run.contains(" -e A "), "{run}");
+        assert!(run.contains("start-single-node --insecure"), "{run}");
+        assert!(run.contains("name='mise-project-"), "{run}");
+        // Reserved with pitchfork, and exported like a preset's ports.
+        assert_eq!(table["port"]["expect"][0].as_integer(), Some(26257));
+        assert_eq!(table["port"]["expect"][1].as_integer(), Some(27000));
+        assert_eq!(daemon.exports["CRDB_PORT"], "26257");
+        assert_eq!(daemon.exports["CRDB_HTTP_PORT"], "27000");
+        // Container keys never reach pitchfork, and the probe knows the container.
+        for key in ["image", "command", "ports", "runtime", "volumes"] {
+            assert!(!table.contains_key(key), "{key}");
+        }
+        let ready = table["ready_cmd"].as_str().unwrap();
+        assert!(ready.contains(" exec mise-project-"), "{ready}");
+        assert_eq!(table["mise"].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn container_daemons_do_not_combine_with_other_forms() {
+        for body in [
+            "[daemons.db]\nimage = 'x'\nrun = 'y'\n",
+            "[daemons.db]\nimage = 'x'\ntask = 'y'\n",
+            "[daemons.db]\nimage = 'x'\npreset = 'postgres'\nversion = '18'\n",
+            "[daemons.db]\nrun = 'y'\nvolumes = ['a:b']\n",
+            "[daemons.db]\nimage = 'x'\nport = 'auto'\n",
+            "[daemons.db]\nimage = 'x'\nport = { expect = [1] }\n",
+        ] {
+            assert!(
+                load(&files(&[("/project/mise.toml", body)])).is_err(),
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn container_daemons_get_their_own_ports_and_name_per_worktree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let primary = tmp.path().join("project");
+        std::fs::create_dir_all(primary.join(".git")).unwrap();
+        std::fs::write(primary.join(".git").join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let worktree = |name: &str| {
+            let private = primary.join(".git").join("worktrees").join(name);
+            std::fs::create_dir_all(&private).unwrap();
+            std::fs::write(private.join("commondir"), "../..\n").unwrap();
+            let root = tmp.path().join(name);
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(
+                root.join(".git"),
+                format!("gitdir: {}\n", private.display()),
+            )
+            .unwrap();
+            root
+        };
+        let body = "[daemons.db]\nimage = 'postgres:18'\nport = { auto = true, base = 5432 }\nports.admin = { container = 9000, auto = true, base = 9000 }\n";
+        let load_in = |root: &Path| {
+            let path = root.join("mise.toml");
+            let set = load(&files(&[(path.to_str().unwrap(), body)])).unwrap();
+            set.daemons["db"].clone()
+        };
+        let main = load_in(&primary);
+        assert_eq!(main.exports["DB_PORT"], "5432");
+        assert_eq!(main.exports["DB_ADMIN_PORT"], "9000");
+        let (a, b) = (worktree("wt-a"), worktree("wt-b"));
+        let (da, db) = (load_in(&a), load_in(&b));
+        let name = |d: &Daemon| {
+            let run = d.table["run"].as_str().unwrap();
+            run.lines()
+                .find(|l| l.starts_with("name="))
+                .unwrap()
+                .to_string()
+        };
+        // A worktree's name carries its own root, so two checkouts never share a container.
+        assert_ne!(name(&main), name(&da));
+        assert_ne!(name(&da), name(&db));
+        for d in [&da, &db] {
+            let port: u16 = d.exports["DB_PORT"].parse().unwrap();
+            let admin: u16 = d.exports["DB_ADMIN_PORT"].parse().unwrap();
+            assert!(port > 5432 && admin > 9000);
+            // The named port shares the primary's slot.
+            assert_eq!(port - 5432, admin - 9000);
+        }
     }
 
     /// A project whose daemons another project can import. The filename has to
