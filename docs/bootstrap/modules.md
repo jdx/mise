@@ -72,6 +72,10 @@ modules in the same directory declare the same key, the one listed later in
 `env` wins. With `env = ["ssh", "gpg"]`, a service declared in both files uses
 the definition from `config.gpg.toml`.
 
+To deploy a dotfile only while another module is also selected, give its entry a
+`profile` variant; see
+[Deploy an entry only for a profile](/dotfiles/managed.html#only-for-a-profile).
+
 `mise config` lists the files that loaded. `mise bootstrap plan --json`
 includes `origin.config` and `origin.environment` for each managed file and
 service, so you can trace a resource back to its declaration.
@@ -88,22 +92,6 @@ load only for that environment:
 ├── mise.toml          # always loaded; "~/.ssh/config" = "ssh_config"
 ├── mise.linux.toml    # when the linux environment is active
 └── ssh_config
-```
-
-## Setup that needs two modules {#setup-that-needs-two-modules}
-
-mise has no condition that loads a file only when two modules are both
-selected. Two patterns cover it:
-
-- For a dotfile, add a `profile` variant to its entry in one module. The entry
-  deploys only while the other module is also selected; see
-  [Deploy an entry only for a profile](/dotfiles/managed.html#only-for-a-profile).
-- For anything else, such as services or packages, make the combination its own
-  module. `config.ssh-work.toml` holds the setup that needs both, and you list
-  it in `env` beside the other two:
-
-```toml [~/.config/mise/miserc.local.toml]
-env = ["ssh", "work", "ssh-work"]
 ```
 
 ## Remove a module's resources

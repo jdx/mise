@@ -564,8 +564,6 @@ variants = [{ profile = "work" }]
 ```
 
 `MISE_ENV=ssh` skips `~/.ssh/work_key`, and `MISE_ENV=ssh,work` links it.
-Group entries take `variants` the same way. To gate other setup on the same
-combination, see [Combine modules](/bootstrap/modules.html#how-modules-combine).
 
 To give a whole set of entries to one operating system, put them in a
 platform config file such as `config.macos.toml` instead, with the
