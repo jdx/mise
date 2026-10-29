@@ -67,6 +67,12 @@ impl Backend for GemBackend {
         true
     }
 
+    /// The shared pattern misses RubyGems' dotted prereleases (`4.1.0.beta3`),
+    /// and neither the versions host nor the compact index flags them.
+    fn is_backend_prerelease(&self, version: &str) -> bool {
+        is_gem_prerelease(version)
+    }
+
     /// Gem installs via `gem install`, delegating fetch/resolve to RubyGems rather
     /// than downloading an artifact mise verifies, so a lockfile URL can't be
     /// enforced even though rubygems.org exposes one. Opt out of `--locked`.
@@ -157,6 +163,7 @@ impl Backend for GemBackend {
             .map(|v| VersionInfo {
                 version: v.number,
                 created_at: v.created_at,
+                prerelease: v.prerelease,
                 ..Default::default()
             })
             .collect();
@@ -494,6 +501,12 @@ fn gem_segments(version: &str) -> Vec<GemSegment<'_>> {
     release
 }
 
+/// Whether `version` is a prerelease as `Gem::Version#prerelease?` decides:
+/// it contains a letter, as in `4.1.0.beta3`, `2.0.0.rc1` or `1.0.0.pre`.
+fn is_gem_prerelease(version: &str) -> bool {
+    version.chars().any(|c| c.is_ascii_alphabetic())
+}
+
 /// RubyGems' version order (`Gem::Version#<=>`): runs of digits and of letters
 /// compared in turn, numbers numerically, letters (a prerelease) below any
 /// number, and missing trailing segments as zero, so `1.0` equals `1.0.0`
@@ -616,6 +629,7 @@ fn redacted(raw: &str) -> String {
 struct RubyGemsVersion {
     number: String,
     created_at: Option<String>,
+    prerelease: Option<bool>,
 }
 
 /// Parse gem sources output to extract the primary source URL.
@@ -1081,6 +1095,41 @@ mod tests {
                 "{version} should use remote discovery"
             );
         }
+    }
+
+    #[test]
+    fn dotted_prereleases_are_prereleases() {
+        for (version, prerelease) in [
+            ("4.1.0.beta3", true),
+            ("4.1.0.alpha1", true),
+            ("2.0.0.rc1", true),
+            ("1.0.0.pre", true),
+            ("1.0.0-beta", true),
+            ("4.0.23", false),
+            ("5.0.0.1", false),
+        ] {
+            assert_eq!(is_gem_prerelease(version), prerelease, "{version}");
+        }
+    }
+
+    /// The versions host and the compact index list dotted betas without a
+    /// prerelease flag, so `latest` relies on the backend to skip them.
+    #[test]
+    fn latest_skips_dotted_prereleases() {
+        let backend = GemBackend::from_arg("gem:bundler".into());
+        let versions = ["4.0.22", "4.0.23", "4.1.0.beta1", "4.1.0.beta3"]
+            .map(str::to_string)
+            .to_vec();
+
+        assert_eq!(
+            backend.fuzzy_match_filter(versions.clone(), "latest", true),
+            ["4.0.22", "4.0.23"]
+        );
+        // An explicit prerelease request still resolves.
+        assert_eq!(
+            backend.fuzzy_match_filter(versions, "4.1.0.beta3", true),
+            ["4.1.0.beta3"]
+        );
     }
 
     /// The version API path is appended to the source, so a source that does
