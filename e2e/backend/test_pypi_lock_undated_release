@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The index publishes no upload times (PEP 700 makes them optional). Version
+# selection allows a release it cannot date, so the dependency-graph lock must
+# too, for the tool being locked. Its dependencies keep the release-age cutoff.
+mise install uv@0.12.10 python@3.12.11
+python3 "$ROOT/e2e/fixtures/pypi/server.py" "$PWD/index" &
+server_pid=$!
+trap 'kill "$server_pid"' EXIT
+for _ in {1..100}; do
+  [[ -s index/port ]] && break
+  sleep 0.1
+done
+port=$(cat index/port)
+config() {
+  cat >mise.toml <<EOF_CONFIG
+[tools]
+uv = "0.12.10"
+python = "3.12.11"
+"pipx:$1" = "1.0.0"
+[settings]
+lockfile = true
+minimum_release_age = "7d"
+pypi.registry_url = "http://127.0.0.1:$port/pypi/{}/json"
+EOF_CONFIG
+  rm -rf mise.lock .mise
+}
+
+# A tool without dependencies locks its graph under the default-style cutoff.
+config mise-exposed
+mise trust
+mise lock
+assert_contains "cat mise.lock" 'path = ".mise/locks/pipx-mise-exposed/1.0.0"'
+assert_contains "mise x --locked -- exposed-cli" 'exposed'
+
+# Its undated dependencies stay held back, so the graph falls back to a
+# version-only entry instead of weakening the cutoff for them.
+config mise-lock-cli
+mise lock
+assert_contains "cat mise.lock" 'tools."pipx:mise-lock-cli"'
+assert_not_contains "cat mise.lock" '.mise/locks/pipx-mise-lock-cli'
+
+# Turning the cutoff off still locks the whole graph.
+sed -i 's/minimum_release_age = "7d"/minimum_release_age = "0"/' mise.toml
+rm -rf mise.lock .mise
+mise lock
+assert_contains "cat mise.lock" 'path = ".mise/locks/pipx-mise-lock-cli/1.0.0"'
