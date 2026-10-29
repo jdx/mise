@@ -7659,7 +7659,7 @@ fn keeps_payload_file_links_pointing_into_the_caskroom() -> Result<()> {
     );
     assert_eq!(
         std::fs::read_link(caskroom.join("pkg/bin/absolute"))?,
-        caskroom.join("pkg/lib/tool")
+        Path::new("../lib/tool")
     );
     mise_util::file::write(caskroom.join("pkg/lib/tool"), "edited")?;
     for link in ["relative", "absolute"] {
@@ -7694,10 +7694,7 @@ fn points_a_link_reached_through_a_directory_link_at_its_caskroom_file() -> Resu
     file::remove_all(&stage)?;
 
     let link = caskroom.join("payload/tool");
-    assert_eq!(
-        file::desymlink_path(&std::fs::read_link(&link)?),
-        file::desymlink_path(&caskroom.join("lib/tool"))
-    );
+    assert_eq!(std::fs::read_link(&link)?, Path::new("../lib/tool"));
     assert_eq!(mise_util::file::read_to_string(&link)?, "launcher");
     assert_eq!(
         std::fs::read_link(caskroom.join("real/nested/tool"))?,
@@ -7712,8 +7709,9 @@ fn points_a_link_reached_through_a_directory_link_at_its_caskroom_file() -> Resu
 fn rebases_links_inside_a_payload_directory_missing_from_the_caskroom() -> Result<()> {
     // `caskroom/pkg` exists but `pkg/bin` does not, so `bin` is copied into
     // it. An absolute link inside has to point into the caskroom, or it
-    // dangles once the stage is gone. A directory link stays a link, so a
-    // link back to its own directory does not recurse.
+    // dangles once the stage is gone, and has to survive activation renaming
+    // the caskroom even though `bin` is read-only by then. A directory link
+    // stays a link, so a link back to its own directory does not recurse.
     use std::os::unix::fs::PermissionsExt;
 
     let tmp = tempfile::tempdir()?;
@@ -7727,34 +7725,33 @@ fn rebases_links_inside_a_payload_directory_missing_from_the_caskroom() -> Resul
         stage.join("pkg/bin"),
         std::fs::Permissions::from_mode(0o555),
     )?;
+    let tmp_caskroom = tmp.path().join("tmp-caskroom");
     let caskroom = tmp.path().join("caskroom");
-    file::create_dir_all(caskroom.join("pkg"))?;
+    file::create_dir_all(tmp_caskroom.join("pkg"))?;
 
-    durabilize_stage_payload(&stage, &caskroom, &[])?;
+    durabilize_stage_payload(&stage, &tmp_caskroom, &[])?;
     std::fs::set_permissions(
         stage.join("pkg/bin"),
         std::fs::Permissions::from_mode(0o755),
     )?;
     file::remove_all(&stage)?;
+    std::fs::rename(&tmp_caskroom, &caskroom)?;
+    let activated = retarget_transient_symlinks(
+        &tmp_caskroom,
+        &caskroom,
+        &caskroom,
+        &FlightTargetTransaction::default(),
+    );
 
-    let launcher = caskroom.join("pkg/bin/launcher");
-    assert_eq!(
-        std::fs::read_link(&launcher)?,
-        caskroom.join("pkg/lib/tool")
-    );
-    assert_eq!(mise_util::file::read_to_string(&launcher)?, "launcher");
-    assert_eq!(
-        std::fs::read_link(caskroom.join("pkg/bin/current"))?,
-        Path::new(".")
-    );
-    let mode = std::fs::metadata(caskroom.join("pkg/bin"))?
-        .permissions()
-        .mode();
+    let bin = caskroom.join("pkg/bin");
+    let mode = std::fs::metadata(&bin)?.permissions().mode();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755))?;
+    activated?;
     assert_eq!(mode & 0o777, 0o555);
-    std::fs::set_permissions(
-        caskroom.join("pkg/bin"),
-        std::fs::Permissions::from_mode(0o755),
-    )?;
+    let launcher = bin.join("launcher");
+    assert_eq!(std::fs::read_link(&launcher)?, Path::new("../lib/tool"));
+    assert_eq!(mise_util::file::read_to_string(&launcher)?, "launcher");
+    assert_eq!(std::fs::read_link(bin.join("current"))?, Path::new("."));
     Ok(())
 }
 

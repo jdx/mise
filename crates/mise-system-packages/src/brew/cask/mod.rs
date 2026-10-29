@@ -4259,9 +4259,10 @@ fn durabilize_stage_payload(stage: &Path, caskroom: &Path, apps: &[AppArtifact])
                 // is kept when it reaches the same payload path from the
                 // caskroom; one that does not, such as a link reached through
                 // a followed directory link, or an absolute one, points at
-                // its resolved entry in the caskroom instead. A link into a
-                // skipped app bundle is copied, since nothing would be left
-                // for it to point at.
+                // its resolved entry in the caskroom instead, relative to its
+                // own directory so the caskroom rename at activation leaves it
+                // valid. A link into a skipped app bundle is copied, since
+                // nothing would be left for it to point at.
                 let link = std::fs::read_link(&source)?;
                 let reached_from = |directory: &Path, root: &Path| {
                     lexically_normalized_path(&file::desymlink_path(directory).join(&link))
@@ -4280,7 +4281,11 @@ fn durabilize_stage_payload(stage: &Path, caskroom: &Path, apps: &[AppArtifact])
                 let link = if keeps_its_meaning {
                     link
                 } else {
-                    caskroom.join(resolved_relative)
+                    let installed = caskroom.join(resolved_relative);
+                    target
+                        .parent()
+                        .and_then(|parent| relative_path_between(parent, &installed))
+                        .unwrap_or(installed)
                 };
                 file::make_symlink(&link, &target)?;
             } else if source.is_dir() && !is_link {
