@@ -8285,12 +8285,14 @@ mod write_target_tests {
     }
 }
 
-/// The tools that the inline tasks of one config file scope to themselves: concrete requests,
-/// plus the tools whose version is a template. A template can only be rendered in the context
-/// of the project, which a prune run from elsewhere does not have.
+/// The tools that the tasks of one config file scope to themselves: concrete requests, plus the
+/// tools whose version is a template. A template can only be rendered in the context of the
+/// project, which a prune run from elsewhere does not have.
 ///
-/// Each task is resolved the way `mise run` resolves it, with `extends` templates merged in. A
-/// tool that fails to parse is skipped without hiding the others.
+/// The tasks are the config's inline ones and those its project's task includes add (see
+/// [`included_task_definitions`]). Each task is resolved the way `mise run` resolves it, with
+/// `extends` templates merged in. A tool that fails to parse is skipped without hiding the
+/// others.
 pub(crate) fn task_tool_requests(
     config: &Arc<Config>,
     tracked: &ConfigMap,
@@ -8332,7 +8334,12 @@ pub(crate) fn task_tool_requests(
     }
     let mut requests = vec![];
     let mut templated = vec![];
-    for task in cf.tasks() {
+    let tasks = cf
+        .tasks()
+        .into_iter()
+        .map(|task| (task.clone(), cf.get_path().to_path_buf()))
+        .chain(included_task_definitions(&dir, tracked));
+    for (task, source) in tasks {
         let mut candidates = vec![];
         match &task.extends {
             None => candidates.push(task.clone()),
@@ -8362,7 +8369,7 @@ pub(crate) fn task_tool_requests(
                     warn!(
                         "task {} in {} extends template {name}, which was not found",
                         task.name,
-                        display_path(cf.get_path())
+                        display_path(&source)
                     );
                     candidates.push(task.clone());
                 }
@@ -8379,11 +8386,93 @@ pub(crate) fn task_tool_requests(
                     Err(err) => warn!(
                         "error loading tool {tool} of task {} in {}: {err:#}",
                         task.name,
-                        display_path(cf.get_path())
+                        display_path(&source)
                     ),
                 }
             }
         }
     }
     (requests, templated)
+}
+
+/// The tasks that the task includes of the project at `dir` define, each with the file it came
+/// from: TOML task files and executable task scripts found through `task_config.includes`, or
+/// through the default task directories when no config sets them. They are read unrendered,
+/// since only their `tools` matter to the caller, and remote includes are not fetched. A file
+/// that fails to read or parse is skipped with a warning.
+fn included_task_definitions(dir: &Path, config_files: &ConfigMap) -> Vec<(Task, PathBuf)> {
+    let includes = match task_includes_for_dir(dir, config_files) {
+        Ok(includes) => includes,
+        Err(err) => {
+            warn!(
+                "error loading task includes of {}: {err:#}",
+                display_path(dir)
+            );
+            return vec![];
+        }
+    };
+    let excludes = task_excludes_for_dir(dir, config_files).unwrap_or_else(|err| {
+        warn!(
+            "error loading task excludes of {}: {err:#}",
+            display_path(dir)
+        );
+        vec![]
+    });
+    let all_excludes = Settings::get()
+        .task
+        .disable_paths
+        .iter()
+        .chain(&excludes)
+        .cloned()
+        .collect::<Vec<_>>();
+    let is_toml = |p: &Path| p.extension().is_some_and(|e| e == "toml");
+    let mut tasks = vec![];
+    for include in includes {
+        if is_task_path_excluded(&include, &excludes) {
+            continue;
+        }
+        let files = if include.is_dir() {
+            match collect_task_files(&include, &all_excludes) {
+                Ok(files) => files
+                    .into_iter()
+                    .filter(|p| match is_toml(p) {
+                        true => !is_mise_config_file_in_task_include(&include, p),
+                        false => file::is_executable(p),
+                    })
+                    .collect(),
+                Err(err) => {
+                    warn!(
+                        "error reading task directory {}: {err:#}",
+                        display_path(&include)
+                    );
+                    continue;
+                }
+            }
+        } else if is_toml(&include) {
+            vec![include.clone()]
+        } else {
+            continue;
+        };
+        for path in files {
+            let loaded = if is_toml(&path) {
+                file::read_config_to_string(&path).and_then(|raw| {
+                    Ok(toml::from_str::<Tasks>(&raw)?
+                        .0
+                        .into_iter()
+                        .map(|(name, mut task)| {
+                            task.name = name;
+                            task
+                        })
+                        .collect())
+                })
+            } else {
+                Task::from_path_unrendered_with_cf(&path, &include, dir, None).map(|t| vec![t])
+            };
+            match loaded {
+                Ok(loaded) => tasks.extend(loaded.into_iter().map(|task| (task, path.clone()))),
+                Err(err) => warn!("error loading task file {}: {err:#}", display_path(&path)),
+            }
+        }
+    }
+    tasks
 }

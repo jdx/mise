@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# `mise prune` must keep versions that a tracked project's task includes scope
+# to their tasks, not only its inline tasks.
+# https://github.com/jdx/mise/issues/15150
+
+mkdir -p proj/tasks proj/mise-tasks other
+cat >proj/mise.toml <<'TOML'
+[task_config]
+includes = ["tasks.toml", "tasks", "mise-tasks"]
+TOML
+cat >proj/tasks.toml <<'TOML'
+[test]
+run = "true"
+tools.dummy = "1.0.0"
+TOML
+cat >proj/tasks/lint.toml <<'TOML'
+[lint]
+run = "true"
+tools.dummy = "2.0.0"
+TOML
+cat >proj/mise-tasks/build <<'SH'
+#!/usr/bin/env bash
+#MISE tools={tiny="2.1.0"}
+true
+SH
+chmod +x proj/mise-tasks/build
+# a script that is not executable is not a task
+cat >proj/mise-tasks/notes <<'SH'
+#MISE tools={tiny="1.0.0"}
+SH
+
+assert "mise trust proj/mise.toml"
+assert "mise install dummy@1.0.0 dummy@2.0.0 dummy@3.0.0 tiny@1.0.0 tiny@2.1.0"
+# track this config
+assert "mise ls -C proj"
+
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@1.0.0"
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@2.0.0"
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@2.1.0"
+assert_contains "mise prune --dry-run 2>&1" "dummy@3.0.0"
+assert_contains "mise prune --dry-run 2>&1" "tiny@1.0.0"
+
+# without task_config.includes, the default task directories count
+cd .. || exit 1
+mkdir -p proj2/.mise/tasks
+cat >proj2/mise.toml <<'TOML'
+[tools]
+TOML
+cat >proj2/.mise/tasks/deploy <<'SH'
+#!/usr/bin/env bash
+#MISE tools={tiny="1.0.0"}
+true
+SH
+chmod +x proj2/.mise/tasks/deploy
+assert "mise trust proj2/mise.toml"
+assert "mise ls -C proj2"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "tiny@1.0.0"
+assert_contains "mise prune --dry-run 2>&1" "dummy@3.0.0"
