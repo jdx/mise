@@ -290,8 +290,11 @@ sfw mise use -g npm:prettier
 
 This works at the network layer. mise's npm metadata client and embedded aube
 both use aube-registry, which honors `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY`
-and loads the `NODE_EXTRA_CA_CERTS` bundle. Socket does not list mise or aube as
-supported package managers, so Socket does not guarantee this setup.
+and loads the `NODE_EXTRA_CA_CERTS` bundle. mise's other HTTP clients, such as
+the ones that look up versions for other backends, trust the proxy through
+`SSL_CERT_FILE` on Linux and macOS (see
+[TLS certificates](/faq.html#tls-certificates)). Socket does not list mise or
+aube as supported package managers, so Socket does not guarantee this setup.
 
 ## Choosing an installer
 

@@ -14,7 +14,6 @@ use crate::install_before::{
 };
 use crate::install_context::install_dependency_declarations;
 use crate::semver::split_version_prefix;
-use crate::toolset::OutdatedSelection;
 use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::outdated_info::prefixed_latest_query;
@@ -23,6 +22,7 @@ use crate::toolset::{
     ToolVersion, Toolset, ToolsetBuilder, get_versions_needed_by_tracked_configs_excluding_locks,
     get_versions_needed_by_tracked_stubs,
 };
+use crate::toolset::{OutdatedSelection, OutdatedVersions};
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -286,7 +286,7 @@ impl Upgrade {
         opts: &ResolveOptions,
         filter_tools: Option<&[ToolArg]>,
         exclude_tools: Option<&[ToolArg]>,
-    ) -> (Vec<OutdatedInfo>, Vec<ToolRequest>) {
+    ) -> (OutdatedVersions, Vec<ToolRequest>) {
         let mut unrun = if self.tool.is_empty() {
             ts.list_current_versions()
                 .into_iter()
@@ -297,7 +297,7 @@ impl Upgrade {
         } else {
             vec![]
         };
-        let mut outdated = ts
+        let mut checked = ts
             .list_outdated_versions_selecting(
                 config,
                 self.bump,
@@ -312,9 +312,9 @@ impl Upgrade {
             .await;
         // Put back what an upgraded tool depends on, and what that depends on.
         let mut scanned = 0;
-        while scanned < outdated.len() && !unrun.is_empty() {
+        while scanned < checked.outdated.len() && !unrun.is_empty() {
             let declarations =
-                install_dependency_declarations(&outdated[scanned].tool_version.request);
+                install_dependency_declarations(&checked.outdated[scanned].tool_version.request);
             scanned += 1;
             let needed = unrun
                 .iter()
@@ -325,7 +325,7 @@ impl Upgrade {
                 continue;
             }
             unrun.retain(|request| !needed.contains(request));
-            outdated.extend(
+            checked.extend(
                 ts.list_outdated_versions_selecting(
                     config,
                     self.bump,
@@ -340,7 +340,7 @@ impl Upgrade {
                 .await,
             );
         }
-        (outdated, unrun)
+        (checked, unrun)
     }
 
     fn scope(&self) -> ConfigScope {
@@ -523,7 +523,7 @@ impl Upgrade {
             })
             .filter(|tools| !tools.is_empty())
             .unwrap_or_default();
-        let (mut outdated, left_alone) = if !explicit_filter_tools.is_empty() {
+        let (mut checked, left_alone) = if !explicit_filter_tools.is_empty() {
             let mut explicit = ts
                 .list_outdated_versions_with_progress(
                     &config,
@@ -564,6 +564,7 @@ impl Upgrade {
             )
             .await
         };
+        let mut outdated = std::mem::take(&mut checked.outdated);
         let pin = self.pin || Settings::get().pin;
         // Naming a tool without a version (`mise upgrade node --bump --pin`) pins
         // just that tool; a named version is handled as an explicit bump.
@@ -768,12 +769,16 @@ impl Upgrade {
                     },
                 )
                 .await
+                .outdated
                 .into_iter()
                 .filter(|o| o.bump.is_some() && (!self.installed_only || o.current.is_some()))
                 .collect::<Vec<_>>()
             };
             if bump_outdated.is_empty() && !has_explicit_config_bumps {
-                info!("All tools are up to date");
+                // A tool whose check failed may still be out of date.
+                if checked.unchecked.is_empty() {
+                    info!("All tools are up to date");
+                }
             } else if !bump_outdated.is_empty() {
                 let hidden = bump_outdated.len().saturating_sub(MAX_OUT_OF_RANGE_UPDATES);
                 let mut updates = bump_outdated
@@ -796,6 +801,7 @@ impl Upgrade {
             self.upgrade(&mut config, outdated, before_date, &explicit_config_bumps)
                 .await?;
         }
+        checked.warn_unchecked();
 
         Ok(())
     }

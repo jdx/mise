@@ -154,7 +154,7 @@ impl Outdated {
             .collect::<HashSet<_>>();
         ts.versions
             .retain(|_, tvl| tool_set.is_empty() || tool_set.contains(&tvl.backend));
-        let outdated = ts
+        let mut checked = ts
             .list_outdated_versions(
                 &config,
                 self.bump,
@@ -165,6 +165,7 @@ impl Outdated {
                 },
             )
             .await;
+        let outdated = std::mem::take(&mut checked.outdated);
         let bump_available = if !self.json && !self.bump && outdated.is_empty() {
             ts.list_outdated_versions(
                 &config,
@@ -175,26 +176,31 @@ impl Outdated {
                 },
             )
             .await
+            .outdated
             .iter()
             .any(|o| o.bump.is_some())
         } else {
             false
         };
-        self.display(outdated, bump_available)?;
-        Ok(())
-    }
-
-    fn display(&self, outdated: Vec<OutdatedInfo>, bump_available: bool) -> Result<()> {
+        let all_checked = checked.unchecked.is_empty();
         match self.json {
             true => self.display_json(outdated)?,
-            false => self.display_table(outdated, bump_available)?,
+            false => self.display_table(outdated, bump_available, all_checked)?,
         }
+        checked.warn_unchecked();
         Ok(())
     }
 
-    fn display_table(&self, outdated: Vec<OutdatedInfo>, bump_available: bool) -> Result<()> {
+    fn display_table(
+        &self,
+        outdated: Vec<OutdatedInfo>,
+        bump_available: bool,
+        all_checked: bool,
+    ) -> Result<()> {
         if outdated.is_empty() {
-            info!("All tools are up to date");
+            if all_checked {
+                info!("All tools are up to date");
+            }
             if bump_available {
                 info!(
                     "Newer versions are available outside the configured version ranges. Use `mise outdated --bump` to view them."

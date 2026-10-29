@@ -98,6 +98,38 @@ pub struct Toolset {
 }
 
 /// Which versions `Toolset::list_outdated_versions_selecting` looks up.
+/// What a check for newer versions found.
+#[derive(Debug, Default)]
+pub struct OutdatedVersions {
+    pub outdated: Vec<OutdatedInfo>,
+    /// The tool versions whose check failed, already reported with a warning.
+    /// A check that failed found nothing, so an empty `outdated` does not mean
+    /// these are up to date.
+    pub unchecked: Vec<String>,
+}
+
+impl OutdatedVersions {
+    pub fn extend(&mut self, other: OutdatedVersions) {
+        self.outdated.extend(other.outdated);
+        self.unchecked.extend(other.unchecked);
+    }
+
+    /// A warning naming the unchecked tool versions, if there are any.
+    pub fn warn_unchecked(&self) {
+        if !self.unchecked.is_empty() {
+            warn!(
+                "Could not check {} for updates: {}",
+                if self.unchecked.len() == 1 {
+                    "1 tool".to_string()
+                } else {
+                    format!("{} tools", self.unchecked.len())
+                },
+                self.unchecked.join(", ")
+            );
+        }
+    }
+}
+
 pub struct OutdatedSelection<'a> {
     pub filter_tools: Option<&'a [crate::args::ToolArg]>,
     pub exclude_tools: Option<&'a [crate::args::ToolArg]>,
@@ -482,7 +514,7 @@ impl Toolset {
         config: &Arc<Config>,
         bump: bool,
         opts: &ResolveOptions,
-    ) -> Vec<OutdatedInfo> {
+    ) -> OutdatedVersions {
         self.list_outdated_versions_filtered(config, bump, opts, None, None)
             .await
     }
@@ -494,7 +526,7 @@ impl Toolset {
         opts: &ResolveOptions,
         filter_tools: Option<&[crate::args::ToolArg]>,
         exclude_tools: Option<&[crate::args::ToolArg]>,
-    ) -> Vec<OutdatedInfo> {
+    ) -> OutdatedVersions {
         self.list_outdated_versions_with_progress(
             config,
             bump,
@@ -514,7 +546,7 @@ impl Toolset {
         filter_tools: Option<&[crate::args::ToolArg]>,
         exclude_tools: Option<&[crate::args::ToolArg]>,
         show_progress: bool,
-    ) -> Vec<OutdatedInfo> {
+    ) -> OutdatedVersions {
         self.list_outdated_versions_selecting(
             config,
             bump,
@@ -538,7 +570,7 @@ impl Toolset {
         bump: bool,
         opts: &ResolveOptions,
         selection: OutdatedSelection<'_>,
-    ) -> Vec<OutdatedInfo> {
+    ) -> OutdatedVersions {
         let OutdatedSelection {
             filter_tools,
             exclude_tools,
@@ -633,7 +665,7 @@ impl Toolset {
                             Ok(None) => {}
                             Err(e) => {
                                 error = Some(e.to_string());
-                                warn!("Error creating OutdatedInfo for {tv}: {e:#}");
+                                warn!("Error getting latest version for {tv}: {e:#}");
                             }
                         }
                         Ok(outdated)
@@ -643,7 +675,7 @@ impl Toolset {
                 if let Some(reporter) = reporter {
                     reporter.complete(error.as_deref());
                 }
-                result
+                result.map(|outdated| (outdated, error.map(|_| tv.to_string())))
             },
         )
         .await
@@ -654,7 +686,12 @@ impl Toolset {
         if let Some(progress) = progress.as_mut() {
             progress.finish(vec![]);
         }
-        outdated.into_iter().flatten().collect()
+        let mut versions = OutdatedVersions::default();
+        for (outdated, unchecked) in outdated {
+            versions.outdated.extend(outdated);
+            versions.unchecked.extend(unchecked);
+        }
+        versions
     }
 
     pub(crate) fn build_tools_tera_map(&self, config: &Arc<Config>) -> HashMap<String, ToolInfos> {

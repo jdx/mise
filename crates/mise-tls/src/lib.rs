@@ -7,6 +7,12 @@
 //! build with Mozilla's root certificates. Roots that load from the system are
 //! never supplemented, so `SSL_CERT_FILE` and `SSL_CERT_DIR` keep replacing the
 //! system store.
+//!
+//! macOS verifies against the keychain, which ignores `SSL_CERT_FILE`, so
+//! [`build_client`] adds the certificates in that file to the keychain roots
+//! there. Tools that run mise behind a traffic-inspecting proxy, such as Socket
+//! Firewall, point `SSL_CERT_FILE` at a CA they generate for each run, which no
+//! keychain entry can cover.
 
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -49,10 +55,75 @@ pub fn build_client(make: impl Fn() -> ClientBuilder) -> reqwest::Result<Client>
             builder
         }
     };
+    #[cfg(all(
+        target_vendor = "apple",
+        any(
+            feature = "native-tls",
+            feature = "rustls",
+            feature = "rustls-native-roots"
+        )
+    ))]
+    if let Some(client) = with_ssl_cert_file(make) {
+        return Ok(client);
+    }
     match make().build() {
         Ok(client) => Ok(client),
         Err(err) => with_bundled_roots(make, err),
     }
+}
+
+/// Builds the client with the certificates in `SSL_CERT_FILE` added to the
+/// keychain roots. Returns `None` when the variable is unset, or warns once and
+/// returns `None` when its certificates cannot be used, so the caller builds
+/// with the keychain alone.
+#[cfg(all(
+    target_vendor = "apple",
+    any(
+        feature = "native-tls",
+        feature = "rustls",
+        feature = "rustls-native-roots"
+    )
+))]
+fn with_ssl_cert_file(make: impl Fn() -> ClientBuilder) -> Option<Client> {
+    static WARN: std::sync::Once = std::sync::Once::new();
+    let path = std::env::var_os("SSL_CERT_FILE").filter(|path| !path.is_empty())?;
+    let path = std::path::Path::new(&path);
+    let built = certs_from_file(path).and_then(|certs| {
+        make()
+            .tls_certs_merge(certs)
+            .build()
+            .map_err(|err| err.to_string())
+    });
+    match built {
+        Ok(client) => Some(client),
+        Err(err) => {
+            WARN.call_once(|| {
+                log::warn!(
+                    "ignoring SSL_CERT_FILE {}: {err}. mise is trusting the keychain alone",
+                    path.display()
+                );
+            });
+            None
+        }
+    }
+}
+
+/// The certificates in the PEM bundle at `path`, or why there are none.
+#[cfg(all(
+    any(test, target_vendor = "apple"),
+    any(
+        feature = "native-tls",
+        feature = "rustls",
+        feature = "rustls-native-roots"
+    )
+))]
+fn certs_from_file(path: &std::path::Path) -> Result<Vec<reqwest::Certificate>, String> {
+    let pem = std::fs::read(path).map_err(|err| err.to_string())?;
+    let certs = reqwest::Certificate::from_pem_bundle(&pem).map_err(|err| err.to_string())?;
+    if certs.is_empty() {
+        return Err("it holds no PEM certificates".to_string());
+    }
+    Ok(certs)
 }
 
 #[cfg(all(
@@ -129,6 +200,78 @@ mod tests {
             "reqwest should refuse to build with no system roots"
         );
         assert!(build_client(|| Client::builder().tls_backend_rustls()).is_ok());
+    }
+}
+
+#[cfg(all(
+    test,
+    any(
+        feature = "native-tls",
+        feature = "rustls",
+        feature = "rustls-native-roots"
+    )
+))]
+mod ssl_cert_file_tests {
+    use super::*;
+
+    /// A self-signed CA that nothing else trusts.
+    const TEST_CA: &str = "\
+-----BEGIN CERTIFICATE-----\n\
+MIIBjDCCATOgAwIBAgIUVbPJq8yZLTrD7b6LnjSCd74GtaIwCgYIKoZIzj0EAwIw\n\
+GzEZMBcGA1UEAwwQbWlzZS10bHMgdGVzdCBDQTAgFw0yNjEwMjkxNjQwMzlaGA8y\n\
+MTI2MTAwNTE2NDAzOVowGzEZMBcGA1UEAwwQbWlzZS10bHMgdGVzdCBDQTBZMBMG\n\
+ByqGSM49AgEGCCqGSM49AwEHA0IABPQed437vHYum31giiyasubjKtaAWzsXo/Xy\n\
+qdnJFVjnzEH8obt4rsuMNjvL+GhHkBYGhaPpBoc7KmfwE65GhX2jUzBRMB0GA1Ud\n\
+DgQWBBTzcT7B5cYB99uU5FwcBbyQHNiKLDAfBgNVHSMEGDAWgBTzcT7B5cYB99uU\n\
+5FwcBbyQHNiKLDAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0cAMEQCICUf\n\
+CLpV/tzrPQzYoJdl9OQOZfmO5sXnPU7cjqX8MfUkAiBpCVZC4A7jcIz2+BAvMeNs\n\
+Xt7cNjbenv1c97l0t1O79g==\n\
+-----END CERTIFICATE-----\n";
+
+    fn write(name: &str, contents: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("mise-tls-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn reads_every_certificate_in_a_bundle() {
+        let path = write("bundle.pem", &format!("{TEST_CA}{TEST_CA}"));
+        assert_eq!(certs_from_file(&path).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_file_without_certificates_is_an_error() {
+        let path = write("empty.pem", "not a certificate\n");
+        assert!(certs_from_file(&path).is_err());
+        assert!(certs_from_file(std::path::Path::new("/nonexistent/mise-tls.pem")).is_err());
+    }
+
+    /// The keychain ignores `SSL_CERT_FILE`, so the client must still build
+    /// with the file's CA added, and with the keychain alone when the file is
+    /// unusable.
+    #[cfg(target_vendor = "apple")]
+    #[test]
+    fn builds_with_ssl_cert_file_on_macos() {
+        let ca = write("ca.pem", TEST_CA);
+        let _lock = CLIENT_BUILD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        for path in [
+            ca.as_path(),
+            std::path::Path::new("/nonexistent/mise-tls.pem"),
+        ] {
+            // SAFETY: no other thread reads or writes the environment here.
+            unsafe { std::env::set_var("SSL_CERT_FILE", path) };
+            let built = build_client(Client::builder);
+            unsafe { std::env::remove_var("SSL_CERT_FILE") };
+            assert!(built.is_ok(), "{}: {:?}", path.display(), built.err());
+        }
+        assert!(with_ssl_cert_file(Client::builder).is_none());
+        unsafe { std::env::set_var("SSL_CERT_FILE", &ca) };
+        let merged = with_ssl_cert_file(Client::builder);
+        unsafe { std::env::remove_var("SSL_CERT_FILE") };
+        assert!(merged.is_some(), "the CA in SSL_CERT_FILE should be added");
     }
 }
 
