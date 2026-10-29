@@ -535,6 +535,65 @@ fn jsonc_options() -> ParseOptions {
     }
 }
 
+/// Deserializes a JSONC document: JSON plus comments and trailing commas.
+pub fn from_jsonc_str<T: serde::de::DeserializeOwned>(text: &str) -> Result<T> {
+    Ok(jsonc_parser::parse_to_serde_value(text, &jsonc_options())?)
+}
+
+/// Deserializes JSON that allows comments but, unlike JSONC, not trailing
+/// commas or non-JSON whitespace, as the .NET host reads `global.json`.
+pub fn from_json_with_comments_str<T: serde::de::DeserializeOwned>(text: &str) -> Result<T> {
+    if let Some(c) = non_json_whitespace(text) {
+        bail!("invalid whitespace {c:?}: JSON allows only space, tab, CR and LF");
+    }
+    let options = ParseOptions {
+        allow_trailing_commas: false,
+        ..jsonc_options()
+    };
+    Ok(jsonc_parser::parse_to_serde_value(text, &options)?)
+}
+
+/// The first whitespace character outside strings and comments that JSON does
+/// not allow between tokens, which `jsonc-parser` accepts (U+00A0, U+2028, ...).
+fn non_json_whitespace(text: &str) -> Option<char> {
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => {
+                while let Some(c) = chars.next() {
+                    match c {
+                        '\\' => {
+                            chars.next();
+                        }
+                        '"' => break,
+                        _ => {}
+                    }
+                }
+            }
+            '/' if chars.peek() == Some(&'/') => {
+                for c in chars.by_ref() {
+                    if c == '\n' {
+                        break;
+                    }
+                }
+            }
+            '/' if chars.peek() == Some(&'*') => {
+                chars.next();
+                while let Some(c) = chars.next() {
+                    if c == '*' && chars.peek() == Some(&'/') {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            ' ' | '\t' | '\n' | '\r' => {}
+            c if c.is_whitespace() => return Some(c),
+            _ => {}
+        }
+    }
+    None
+}
+
 fn parse_jsonc(text: &str) -> Result<CstRootNode> {
     Ok(CstRootNode::parse(text, &jsonc_options())?)
 }

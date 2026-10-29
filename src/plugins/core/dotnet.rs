@@ -189,7 +189,9 @@ impl Backend for DotnetPlugin {
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let content = file::read_to_string(path)?;
-        let global_json: GlobalJson = serde_json::from_str(&content)?;
+        // the .NET host accepts comments in global.json, but not trailing commas
+        let global_json: GlobalJson =
+            mise_util::structured_merge::from_json_with_comments_str(&content)?;
         let sdk = global_json
             .sdk
             .ok_or_else(|| eyre::eyre!("no sdk.version found in {}", path.display()))?;
@@ -625,6 +627,62 @@ mod tests {
                 .resolve_lockfile_options(&request_no_runtime, &PlatformTarget::from_current())
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn parses_global_json_with_comments() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("global.json");
+        std::fs::write(
+            &path,
+            "{\n  // pin the SDK\n  \"sdk\": { \"version\": \"8.0.100\", /* roll forward */ \"rollForward\": \"latestFeature\" }\n}\n",
+        )
+        .unwrap();
+        let backend = DotnetPlugin::new();
+        assert_eq!(
+            backend._parse_idiomatic_file(&path).await.unwrap(),
+            vec!["8.0.100".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_global_json_with_trailing_comma() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("global.json");
+        std::fs::write(&path, "{\"sdk\": {\"version\": \"8.0.100\",}}").unwrap();
+        assert!(
+            DotnetPlugin::new()
+                ._parse_idiomatic_file(&path)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_global_json_with_duplicate_or_odd_whitespace() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("global.json");
+        for contents in [
+            r#"{"sdk": {"version": "8.0.100", "version": "9.0.100"}}"#,
+            "{\"sdk\":\u{a0}{\"version\": \"8.0.100\"}}",
+        ] {
+            std::fs::write(&path, contents).unwrap();
+            assert!(
+                DotnetPlugin::new()
+                    ._parse_idiomatic_file(&path)
+                    .await
+                    .is_err()
+            );
+        }
+        // whitespace inside a string or comment is not a token separator
+        std::fs::write(&path, "{\"sdk\": {\"version\": \"8.0.100\"}} // a\u{a0}b").unwrap();
+        assert_eq!(
+            DotnetPlugin::new()
+                ._parse_idiomatic_file(&path)
+                .await
+                .unwrap(),
+            vec!["8.0.100".to_string()]
         );
     }
 
