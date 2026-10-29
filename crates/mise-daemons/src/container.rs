@@ -15,9 +15,26 @@ use crate::ports::{self, PortClaim};
 use crate::presets::quote;
 
 /// Seconds the runtime waits for the container to exit after SIGTERM before it
-/// sends SIGKILL. Shorter than pitchfork's own stop timeout so the container is
-/// gone by the time the supervisor gives up on the process.
+/// sends SIGKILL. pitchfork's own stop timeout (5s by default) is raised above
+/// this for container daemons; see [`stop_signal`].
 const STOP_TIMEOUT_SECS: u32 = 10;
+
+/// Slack on top of [`STOP_TIMEOUT_SECS`] for the runtime client to exit and the
+/// script to clean up before pitchfork escalates to SIGKILL.
+const STOP_SLACK_SECS: u32 = 5;
+
+/// pitchfork's `stop_signal` for a container daemon: SIGTERM, then SIGKILL only
+/// after the runtime's own grace period has passed. Left alone, pitchfork's
+/// 5s default would kill the script in the middle of `<runtime> stop`.
+pub fn stop_signal() -> toml::Value {
+    toml::Value::Table(toml::Table::from_iter([
+        ("signal".to_string(), "SIGTERM".into()),
+        (
+            "timeout".to_string(),
+            format!("{}s", STOP_TIMEOUT_SECS + STOP_SLACK_SECS).into(),
+        ),
+    ]))
+}
 
 /// Set in the environment to run another docker-compatible CLI (`nerdctl`, a path)
 /// or to pick Docker or Podman without editing the project's `mise.toml`.
@@ -124,8 +141,9 @@ pub struct Built {
     pub ports: IndexMap<String, u16>,
     /// Host directory mounted at `data_mount`.
     pub data_dir: Option<PathBuf>,
-    /// Template variables for `ready_cmd` and `health_cmd`.
-    pub probe_ctx: tera::Context,
+    /// Values for `{{ container }}`, `{{ runtime }}`, `{{ port }}` and the named
+    /// ports in `ready_cmd` and `health_cmd`.
+    pub probe_vars: IndexMap<String, String>,
 }
 
 /// Remove the container keys from `table`. `None` means the daemon is not a
@@ -446,11 +464,13 @@ impl Decl {
         // behind; the name is ours, so it is safe to take.
         script.push_str("\"$rt\" rm -f \"$name\" >/dev/null 2>&1\n");
         script.push_str(&format!(
-            "trap 'stopping=1; \"$rt\" stop -t {STOP_TIMEOUT_SECS} \"$name\" >/dev/null 2>&1' TERM INT HUP\n"
+            "trap 'stopping=1; \"$rt\" stop -t {STOP_TIMEOUT_SECS} \"$name\" >/dev/null 2>&1; kill \"$pid\" 2>/dev/null' TERM INT HUP\n"
         ));
         for dir in &create {
             let dir = quote(dir.to_string_lossy());
-            script.push_str(&format!("[ -e {dir} ] || mkdir -p {dir}\n"));
+            // The runtime would create a missing source as root, which is what
+            // creating it here is meant to avoid, so a failure ends the start.
+            script.push_str(&format!("[ -e {dir} ] || mkdir -p {dir} || exit 1\n"));
         }
         script.push_str("[ -n \"$stopping\" ] && exit 0\n");
         let mut run = vec![
@@ -489,9 +509,13 @@ impl Decl {
         script.push_str("{ ");
         script.push_str(&run.join(" "));
         script.push_str("\n} &\npid=$!\nwait \"$pid\"\nstatus=$?\n");
-        // A trapped signal ends `wait` early; the container is stopping, and the
-        // runtime client exits once it has, so collect it before leaving.
-        script.push_str("if [ -n \"$stopping\" ]; then wait \"$pid\" 2>/dev/null; exit 0; fi\n");
+        // A trapped signal ends `wait` early. The container is stopping and the
+        // runtime client exits once it has; one still pulling the image is killed
+        // by the trap. Collect the client, then remove the container again in case
+        // a start that was already under way created it after the stop.
+        script.push_str(
+            "if [ -n \"$stopping\" ]; then wait \"$pid\" 2>/dev/null; \"$rt\" rm -f \"$name\" >/dev/null 2>&1; exit 0; fi\n",
+        );
         script.push_str("exit \"$status\"\n}");
 
         // Loading must still succeed on Windows, where `mise env` reads this
@@ -502,20 +526,20 @@ impl Decl {
             );
         }
 
-        let mut probe_ctx = tera::Context::new();
-        probe_ctx.insert("container", &container);
-        probe_ctx.insert("runtime", self.runtime.shell_expr());
+        let mut probe_vars = IndexMap::new();
+        probe_vars.insert("container".to_string(), container.clone());
+        probe_vars.insert("runtime".to_string(), self.runtime.shell_expr().to_string());
         if let Some(claim) = claim {
-            probe_ctx.insert("port", &claim.port);
+            probe_vars.insert("port".to_string(), claim.port.to_string());
         }
         for (key, host) in &named {
-            probe_ctx.insert(key.clone(), host);
+            probe_vars.insert(key.clone(), host.to_string());
         }
         Ok(Built {
             run: script,
             ports: named,
             data_dir,
-            probe_ctx,
+            probe_vars,
         })
     }
 }
@@ -556,24 +580,40 @@ fn resolve_volume(
     Ok(format!("{}:{rest}", path.to_string_lossy()))
 }
 
-/// Render `ready_cmd` and `health_cmd` with the container's variables
-/// (`container`, `runtime`, `port` and the named ports). These are the only
-/// probes a container daemon needs to template: the container name and the
-/// runtime are not known when the configuration is written.
-pub fn render_probes(root: &Path, table: &mut toml::Table, ctx: &tera::Context) -> Result<()> {
-    let mut renderer = mise_util::tera::get_tera(Some(root));
+/// Fill in `{{ container }}`, `{{ runtime }}`, `{{ port }}` and the named ports in
+/// `ready_cmd` and `health_cmd`: the container name and the runtime are not known
+/// when the configuration is written. Any other `{{ ... }}`, such as pitchfork's
+/// `{{ name }}`, is left for pitchfork.
+pub fn render_probes(table: &mut toml::Table, vars: &IndexMap<String, String>) {
     for key in ["ready_cmd", "health_cmd"] {
         match table.get_mut(key) {
             Some(toml::Value::Table(fields)) => {
                 if let Some(command) = fields.get_mut("run") {
-                    crate::presets::render_value(&mut renderer, command, ctx)?;
+                    substitute(command, vars);
                 }
             }
-            Some(command) => crate::presets::render_value(&mut renderer, command, ctx)?,
+            Some(command) => substitute(command, vars),
             None => {}
         }
     }
-    Ok(())
+}
+
+fn substitute(value: &mut toml::Value, vars: &IndexMap<String, String>) {
+    static VARIABLE: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\{\{\s*(\w+)\s*\}\}").unwrap());
+    match value {
+        toml::Value::String(text) => {
+            *text = VARIABLE
+                .replace_all(text, |caps: &regex::Captures<'_>| {
+                    vars.get(&caps[1])
+                        .cloned()
+                        .unwrap_or_else(|| caps[0].to_string())
+                })
+                .into_owned();
+        }
+        toml::Value::Array(items) => items.iter_mut().for_each(|item| substitute(item, vars)),
+        _ => {}
+    }
 }
 
 #[cfg(test)]
@@ -772,6 +812,14 @@ mod tests {
         let run = built.run.find("\"$rt\" run --rm").unwrap();
         assert!(rm < run);
         assert!(built.run.contains("trap 'stopping=1; \"$rt\" stop -t 10"));
+        // The client is killed too (it may still be pulling), and the name is
+        // cleared once more afterwards.
+        assert!(built.run.contains("kill \"$pid\""));
+        assert!(
+            built
+                .run
+                .contains("wait \"$pid\" 2>/dev/null; \"$rt\" rm -f")
+        );
     }
 
     #[test]
@@ -868,12 +916,14 @@ mod tests {
             .build(cx(Path::new("/work/proj"), Some(PortClaim::fixed(5432))))
             .unwrap();
         let mut table: toml::Table = toml::from_str(
-            "ready_cmd = \"{{ runtime }} exec {{ container }} true {{ port }} {{ http }}\"\nhealth_cmd = [\"c\", \"{{ container }}\"]",
+            "ready_cmd = \"{{ runtime }} exec {{ container }} true {{ port }} {{ http }} {{ name }}\"\nhealth_cmd = [\"c\", \"{{ container }}\"]",
         )
         .unwrap();
-        render_probes(Path::new("/work/proj"), &mut table, &built.probe_ctx).unwrap();
+        render_probes(&mut table, &built.probe_vars);
         let ready = table["ready_cmd"].as_str().unwrap();
         assert!(ready.contains(" exec mise-proj-abc-db-"), "{ready}");
+        // Pitchfork's own variables are left for pitchfork.
+        assert!(ready.ends_with(" 5432 8080 {{ name }}"), "{ready}");
         assert!(ready.starts_with("${MISE_CONTAINER_RUNTIME:-"), "{ready}");
         assert!(
             table["health_cmd"][1]

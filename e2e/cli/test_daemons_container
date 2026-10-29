@@ -83,7 +83,7 @@ container_port = 5432
 ports.admin = { container = 9000, auto = true, base = 39000 }
 env = { DB_PASSWORD = "hunter2" }
 data_mount = "/data"
-ready_cmd = "{{ runtime }} exec {{ container }} ready"
+ready_cmd = "{{ runtime }} exec {{ container }} ready {{ name }}"
 ready_delay = 0
 TOML
 git add mise.toml

@@ -88,7 +88,8 @@ your network can reach a container daemon.
 A published port opens on the host as soon as the container starts, before the
 server inside it can answer, so a `ready_port` check can pass early. Prefer a
 `ready_cmd` that asks the server. `ready_cmd` and `health_cmd` (as strings) can
-use these variables:
+use these variables, which mise fills in; other templates, such as
+pitchfork's <code v-pre>{{ name }}</code>, are left for pitchfork:
 
 | Variable                           | Value                                                |
 | ---------------------------------- | ---------------------------------------------------- |
@@ -134,6 +135,7 @@ When the daemon stops, mise runs `<runtime> stop` for the container and waits
 for it to exit, so the image's shutdown signal and grace period apply. If a
 previous run was killed rather than stopped and left its container behind, the
 next start removes the container with that name first. Nothing else is removed.
+Stopping a daemon while the image is still downloading cancels the start.
 
 ## Docker and Podman
 
@@ -158,4 +160,6 @@ Desktop, `podman machine`) must be running.
 - Variables from `[env]` are not passed into the container. Set `env` on the
   daemon.
 - Stopping gives the container a ten second grace period before the runtime
-  kills it.
+  kills it. mise sets the daemon's `stop_signal` timeout to 15 seconds so
+  pitchfork waits for that; a `stop_signal` you set yourself is kept, and should
+  be longer than ten seconds.

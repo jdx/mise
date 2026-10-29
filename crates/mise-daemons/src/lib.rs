@@ -903,8 +903,12 @@ fn build(
             env,
             default_data_dir: state_dir(&root).join("data").join(name),
         })?;
-        container::render_probes(&root, &mut table, &built.probe_ctx)?;
+        container::render_probes(&mut table, &built.probe_vars);
         table.insert("run".into(), toml::Value::String(built.run));
+        // pitchfork stops after 5s by default, in the middle of `<runtime> stop`.
+        table
+            .entry("stop_signal".to_string())
+            .or_insert_with(container::stop_signal);
         data_dir = built.data_dir;
         container_ports = built.ports;
     }
@@ -2187,6 +2191,18 @@ mod tests {
         let ready = table["ready_cmd"].as_str().unwrap();
         assert!(ready.contains(" exec mise-project-"), "{ready}");
         assert_eq!(table["mise"].as_bool(), Some(true));
+        // pitchfork waits longer than the runtime's own grace period before SIGKILL.
+        assert_eq!(table["stop_signal"]["signal"].as_str(), Some("SIGTERM"));
+        assert_eq!(table["stop_signal"]["timeout"].as_str(), Some("15s"));
+        let config = files(&[(
+            "/project/mise.toml",
+            "[daemons.db]\nimage = 'x'\nstop_signal = 'SIGINT'\n",
+        )]);
+        let set = load(&config).unwrap();
+        assert_eq!(
+            set.daemons["db"].table["stop_signal"].as_str(),
+            Some("SIGINT")
+        );
     }
 
     #[test]
