@@ -451,6 +451,32 @@ impl PIPXBackend {
         }
     }
 
+    /// The installed interpreter a tool's `python` option selects when none was bound
+    /// to the version: the lockfile may pin a patch release that is not installed
+    /// while another one matching the selector is, so look at the installed ones too.
+    async fn installed_selected_python(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Option<PathBuf> {
+        let dependency = super::selected_python_dependency(&tv.request)
+            .ok()
+            .flatten()?;
+        let unlocked = crate::toolset::ResolveOptions {
+            use_locked_version: false,
+            ..Default::default()
+        };
+        for opts in [Default::default(), unlocked] {
+            if let Ok(python) = ToolVersion::resolve(config, dependency.clone(), &opts).await
+                && let Ok(backend) = python.backend()
+                && let Ok(Some(path)) = backend.which(config, &python, "python").await
+            {
+                return Some(path);
+            }
+        }
+        None
+    }
+
     /// The interpreter uv resolves and replays a graph against. An installed
     /// interpreter is passed by path and never replaced. A selected Python that
     /// is not installed yet is passed as its version, which uv may download for
@@ -462,6 +488,10 @@ impl PIPXBackend {
             _ => None,
         };
         if let Some(selector) = PipxOptions::new(&tv.request.options()).selected_python()? {
+            let bound = match bound {
+                Some(path) => Some(path),
+                None => self.installed_selected_python(config, tv).await,
+            };
             return Ok(match bound {
                 Some(path) => LockPython::Installed(path.into()),
                 None => LockPython::Version {
