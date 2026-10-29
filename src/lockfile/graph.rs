@@ -318,6 +318,44 @@ pub(crate) fn variant_suffix(
     hex::encode(hash.finalize())[..8].to_owned()
 }
 
+impl UvLock {
+    /// The digest of this graph without the release-age cutoff uv records in
+    /// `[options]`, or `None` when the graph carries no cutoff.
+    ///
+    /// The cutoff is the time `mise lock` ran, so two repos locking the same
+    /// tool with the same dependencies record different `exclude-newer` values.
+    /// It only constrains resolution, which `uv sync --frozen` does not repeat
+    /// on install, so it must not make one installation of the graph differ
+    /// from another.
+    fn identity_without_cutoff(&self) -> Result<Option<String>> {
+        let mut graph = self.graph.clone();
+        let Some(options) = graph.get_mut("options").and_then(toml::Value::as_table_mut) else {
+            return Ok(None);
+        };
+        if options.remove("exclude-newer").is_none() {
+            return Ok(None);
+        }
+        if options.is_empty() {
+            graph.remove("options");
+        }
+        Ok(Some(digest_text(&toml::to_string(&graph)?)))
+    }
+}
+
+impl GraphRef<UvLock> {
+    /// What names an installation of this graph: [`Self::identity`], except
+    /// that the release-age cutoff in the graph's `[options]` is left out.
+    /// A graph without one keeps its [`Self::identity`], so installs made
+    /// before this stay where they are.
+    pub(crate) fn install_identity(&self) -> String {
+        self.load()
+            .and_then(UvLock::identity_without_cutoff)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| self.identity())
+    }
+}
+
 impl NativeGraph for UvLock {
     const GRAPH_FILE: &'static str = "uv.lock";
     fn graph_text(&self) -> Result<String> {
@@ -1069,6 +1107,91 @@ aube = {{ path = "graphs/npm", digest = "{}" }}
                 .unwrap_err()
                 .to_string()
                 .contains("mise lock")
+        );
+    }
+    fn uv_with_cutoff(cutoff: Option<&str>) -> UvLock {
+        let options = cutoff
+            .map(|cutoff| format!("\n[options]\nexclude-newer = \"{cutoff}\"\n"))
+            .unwrap_or_default();
+        let graph_text = format!("version = 1\nrevision = 3\n{options}");
+        UvLock {
+            project: toml::toml! { [project] name = "fixture" },
+            graph: graph_text.parse().unwrap(),
+            graph_text,
+        }
+    }
+    #[test]
+    fn uv_install_identity_ignores_the_release_age_cutoff() {
+        let monday = GraphRef::from(uv_with_cutoff(Some("2026-10-26T09:00:00Z")));
+        let tuesday = GraphRef::from(uv_with_cutoff(Some("2026-10-27T17:30:00Z")));
+        // The lockfile still records each graph as it was written ...
+        assert_ne!(monday.identity(), tuesday.identity());
+        // ... but the same dependencies are one installation.
+        assert_eq!(monday.install_identity(), tuesday.install_identity());
+    }
+    #[test]
+    fn uv_install_identity_keeps_graphs_without_a_cutoff_where_they_were() {
+        let graph = GraphRef::from(uv());
+        assert_eq!(graph.install_identity(), graph.identity());
+        // Another resolver option is not the cutoff.
+        let mut other = uv();
+        other.graph.insert(
+            "options".into(),
+            toml::toml! { prerelease-mode = "allow" }.into(),
+        );
+        other.graph_text.clear();
+        let other = GraphRef::from(other);
+        assert_eq!(other.install_identity(), other.identity());
+    }
+    #[test]
+    fn uv_install_identity_still_tells_different_graphs_apart() {
+        let cutoff = "2026-10-26T09:00:00Z";
+        let before = GraphRef::from(uv_with_cutoff(Some(cutoff)));
+        let mut changed = uv_with_cutoff(Some(cutoff));
+        changed
+            .graph
+            .insert("requires-python".into(), ">=3.10".into());
+        changed.graph_text.clear();
+        assert_ne!(
+            before.install_identity(),
+            GraphRef::from(changed).install_identity()
+        );
+        // An option that stays in the graph still counts.
+        let mut pre = uv_with_cutoff(Some(cutoff));
+        pre.graph["options"]
+            .as_table_mut()
+            .unwrap()
+            .insert("prerelease-mode".into(), "allow".into());
+        pre.graph_text.clear();
+        assert_ne!(
+            before.install_identity(),
+            GraphRef::from(pre).install_identity()
+        );
+    }
+    #[test]
+    fn uv_install_identity_is_the_same_for_a_sidecar_graph() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        let identities = ["2026-10-26T09:00:00Z", "2026-10-27T17:30:00Z"].map(|cutoff| {
+            let dir = sidecar_root(&path).join(format!("pypi-fixture/{cutoff}"));
+            let graph = uv_with_cutoff(Some(cutoff));
+            for (name, text) in graph.files().unwrap() {
+                std::fs::create_dir_all(&dir).unwrap();
+                std::fs::write(dir.join(name), text).unwrap();
+            }
+            let sidecar: GraphRef<UvLock> = GraphRef::Sidecar {
+                dir,
+                base: temp.path().to_path_buf(),
+                digest: digest_text(&graph.graph_text),
+                cell: OnceLock::new(),
+            };
+            (sidecar.identity(), sidecar.install_identity())
+        });
+        assert_ne!(identities[0].0, identities[1].0);
+        assert_eq!(identities[0].1, identities[1].1);
+        assert_eq!(
+            identities[0].1,
+            GraphRef::from(uv_with_cutoff(Some("2030-01-01T00:00:00Z"))).install_identity()
         );
     }
     #[test]

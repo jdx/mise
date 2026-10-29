@@ -503,7 +503,7 @@ impl ToolVersion {
                 "{}\n{}\n{}",
                 self.uv_lock
                     .as_ref()
-                    .map(|lock| lock.identity())
+                    .map(|lock| lock.install_identity())
                     .unwrap_or_else(|| "version-only".to_string()),
                 python,
                 toml::to_string(&options).ok()?
@@ -1758,6 +1758,29 @@ mod tests {
             let tv = ToolVersion::new(request, version.to_string());
             assert_eq!(tv.tv_pathname(), pathname);
         }
+    }
+
+    #[test]
+    fn uv_install_identity_ignores_when_the_graph_was_locked() {
+        use crate::lockfile::{GraphRef, UvLock};
+        let tv_locked_at = |cutoff: &str| {
+            let graph_text =
+                format!("version = 1\nrevision = 3\n\n[options]\nexclude-newer = \"{cutoff}\"\n");
+            let pipx = Arc::new(BackendArg::from("pipx:ansible-lint"));
+            let request = ToolRequest::new(pipx, "26.8.0", ToolSource::Argument).unwrap();
+            let mut tv = ToolVersion::new(request, "26.8.0".into());
+            tv.uv_python = Some((PathBuf::from("/python"), "cpython-3.13".into()));
+            tv.uv_lock = Some(GraphRef::from(UvLock {
+                project: toml::Table::new(),
+                graph: graph_text.parse().unwrap(),
+                graph_text,
+            }));
+            tv
+        };
+        let monday = tv_locked_at("2026-10-26T09:00:00Z");
+        let tuesday = tv_locked_at("2026-10-27T17:30:00Z");
+        assert_eq!(monday.tv_pathname(), tuesday.tv_pathname());
+        assert_eq!(monday, tuesday);
     }
 
     #[test]
