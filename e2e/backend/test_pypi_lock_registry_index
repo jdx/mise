@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mise install uv@0.12.10 python@3.12.11
+python3 "$ROOT/e2e/fixtures/pypi/server.py" "$PWD/index" &
+server_pid=$!
+trap 'kill "$server_pid"' EXIT
+for _ in {1..100}; do
+  [[ -s index/port ]] && break
+  sleep 0.1
+done
+port=$(cat index/port)
+# The global registry stands in for PyPI. The per-tool registry hosts only the tool
+# itself and answers 404 for its dependencies.
+write_config() {
+  cat >mise.toml <<EOF_CONFIG
+[tools]
+uv = "0.12.10"
+python = "3.12.11"
+"pypi:mise-lock-cli" = { version = "1.0.0", registry_url = "http://127.0.0.1:$port/private/simple/{}/"$1 }
+[settings]
+lockfile = true
+minimum_release_age = "0"
+pypi.registry_url = "http://127.0.0.1:$port/pypi/{}/json"
+EOF_CONFIG
+}
+write_config ""
+mise trust
+
+# By default the registry replaces the global index, so its missing dependencies
+# leave a version-only entry.
+assert_contains 'mise lock 2>&1' 'keeping a version-only lock entry'
+assert_not_contains 'cat mise.lock' 'uv ='
+
+# With `priority` the dependencies come from the global index.
+rm -rf mise.lock .mise
+write_config ', registry_index = "priority"'
+mise lock
+assert_contains 'cat mise.lock' 'path = ".mise/locks/pypi-mise-lock-cli/1.0.0"'
+graph=.mise/locks/pypi-mise-lock-cli/1.0.0/uv.lock
+# The tool itself still comes from the registry, although the global index also hosts it.
+assert_contains "grep -A3 '^name = \"mise-lock-cli\"' $graph" "registry = \"http://127.0.0.1:$port/private/simple/\""
+assert_contains "grep -A3 '^name = \"mise-lock-dep\"' $graph" "registry = \"http://127.0.0.1:$port/simple/\""
+assert_contains 'mise x --locked -- lock-cli' 'dependency=1.0.0'
+
+# An unknown value is rejected, and an explicit `default` keeps the replacing behavior.
+write_config ', registry_index = "sideways"'
+assert_fail 'mise lock' 'registry_index must be default or priority'
+rm -rf mise.lock .mise
+write_config ', registry_index = "default"'
+assert_contains 'mise lock 2>&1' 'keeping a version-only lock entry'
+
+# `install_env` cannot loosen the strategy: with `unsafe-best-match` uv would take the
+# newest dependency from either index, but the registry hosts the dependency (at 1.0.0
+# only), so it has to stay the one the registry has even though PyPI has 2.0.0.
+touch index/publish index/private-dep
+rm -rf mise.lock .mise
+write_config ', registry_index = "priority", install_env = { UV_INDEX_STRATEGY = "unsafe-best-match" }'
+mise lock
+assert_contains "grep -A3 '^name = \"mise-lock-dep\"' $graph" 'version = "1.0.0"'
+assert_contains "grep -A3 '^name = \"mise-lock-dep\"' $graph" "registry = \"http://127.0.0.1:$port/private/simple/\""

@@ -293,6 +293,7 @@ described under [tool options](/dev-tools/#tool-options).
 | Option                   | Installer                 |
 | ------------------------ | ------------------------- |
 | `registry_url`           | uv and pipx               |
+| `registry_index`         | dependency locking        |
 | `install_env`            | uv and pipx               |
 | `extras`                 | uv and pipx               |
 | `package_name`           | uv and pipx               |
@@ -315,9 +316,12 @@ placeholder for the package name. This overrides the
 "pypi:my-tool" = { version = "latest", registry_url = "https://packages.example.com/pypi/{}/json" }
 ```
 
-Dependency locking also derives the install index from this URL. For
-version-only installs, set the install index separately in `uvx_args` or
-`pipx_args`. For example, with pipx:
+Dependency locking also derives the index uv resolves from this URL, and by
+default that index replaces PyPI: every dependency of the tool has to come from
+the registry, as it does on a full PyPI mirror. A registry that hosts only its
+own packages cannot satisfy that, so set [`registry_index`](#registry-index) to
+let the rest come from PyPI. For version-only installs, set the install index
+separately in `uvx_args` or `pipx_args`. For example, with pipx:
 
 ```toml
 [tools."pypi:my-tool"]
@@ -326,6 +330,35 @@ uvx = false
 registry_url = "https://packages.example.com/pypi/{}/json"
 pipx_args = "--pip-args='--index-url https://packages.example.com/pypi/simple'"
 ```
+
+### `registry_index` {#registry-index}
+
+Choose how dependency locking uses this tool's [`registry_url`](#registry-url).
+
+- `default` (the default): the registry replaces PyPI, so the tool and all of its
+  dependencies must come from it. This is right for full PyPI mirrors and for
+  air-gapped setups. A dependency the registry lacks is never fetched from
+  elsewhere: mise warns and keeps a version-only lock entry for the tool.
+- `priority`: the registry is searched first and PyPI second, which suits a registry
+  that hosts only its own packages (Gitea, Forgejo, pypiserver, a static index).
+
+```toml
+[tools]
+"pypi:my-tool" = { version = "latest", registry_url = "https://gitea.example/api/packages/org/pypi/simple/{}/", registry_index = "priority" }
+```
+
+Each project comes only from the first index that hosts it. A package the registry
+hosts, starting with the tool itself, is never taken from PyPI, even when PyPI has
+a package of the same name, and not even when the registry lacks the pinned
+version. Only a project the registry answers 404 for falls through to PyPI. That
+also means a registry that hides a package on purpose, say a mirror that blocks
+it, no longer keeps that package out of the lock, so use `priority` only with a
+registry that is not meant to be the sole source. The index searched second is
+[`pypi.registry_url`](/dev-tools/backends/pypi.html#pypi.registry_url), which is
+PyPI unless you changed it. While locking in this mode, mise ignores
+`UV_EXTRA_INDEX_URL` and `UV_INDEX_URL` from the environment and `install_env`, so
+no other index is searched in between. The option affects locking only; it is not recorded
+in the lockfile, which pins every package to the index it came from.
 
 ### `install_env`
 

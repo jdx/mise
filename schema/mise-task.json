@@ -2675,6 +2675,11 @@
         "registry_url": {
           "type": "string",
           "description": "version-listing url containing a {} placeholder for the package name"
+        },
+        "registry_index": {
+          "type": "string",
+          "description": "how dependency locking uses registry_url: default replaces PyPI, priority searches it before PyPI",
+          "enum": ["default", "priority"]
         }
       }
     },

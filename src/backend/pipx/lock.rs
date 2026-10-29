@@ -411,11 +411,30 @@ impl PIPXBackend {
             .current_dir(project)
             .envs(config.env().await?)
             .env_values(tv.install_env())
-            .env("UV_DEFAULT_INDEX", index)
             .env_remove("UV_PROJECT")
             .env_remove("UV_WORKING_DIR")
             .env_remove("UV_PROJECT_ENVIRONMENT")
             .env_remove("VIRTUAL_ENV");
+        let raw = tv.request.options();
+        let default_index = uv_index_url(&global_registry_url())?;
+        cmd = if PipxOptions::new(&raw).registry_index_priority()? && index != default_index {
+            // The registry is searched first and the global index (PyPI unless
+            // `pypi.registry_url` says otherwise) only for projects the registry does
+            // not host. `first-index` takes each project from the first index that has
+            // it, so a project on the registry never comes from anywhere else, and it
+            // is pinned because `install_env` could otherwise pick `unsafe-best-match`.
+            // Extra indexes would be searched before the default index, so they and the
+            // deprecated spelling of the default index are dropped to keep that order.
+            cmd.env("UV_INDEX", index)
+                .env("UV_DEFAULT_INDEX", default_index)
+                .env("UV_INDEX_STRATEGY", "first-index")
+                .env_remove("UV_EXTRA_INDEX_URL")
+                .env_remove("UV_INDEX_URL")
+        } else {
+            // The registry replaces the default index, so every dependency has to
+            // come from it.
+            cmd.env("UV_DEFAULT_INDEX", index)
+        };
         // The lock runs with `--no-config`, which also skips a `keyring-provider` in
         // the user's uv.toml, so the setting that authenticates mise's own index
         // requests has to reach uv here too.
@@ -545,6 +564,11 @@ impl PIPXBackend {
             constraints.push(selector.requires_python());
         }
         constraints.extend(python_constraint(&root));
+        // In `priority` mode a pinned injection the registry does not host comes from
+        // the global index, so its release is looked up there too.
+        let fallback = (PipxOptions::new(&tv.request.options()).registry_index_priority()?
+            && uv_index_url(&registry)? != uv_index_url(&global_registry_url())?)
+        .then(global_registry_url);
         // Everything in `with` and `expose` shares the sidecar's interpreter, so a
         // pinned injection with a narrower floor narrows the whole project. uv
         // spreads an unpinned requirement across the range by itself, and a marker
@@ -553,10 +577,20 @@ impl PIPXBackend {
             let Some((package, version)) = pinned_requirement(requirement) else {
                 continue;
             };
-            match self
+            let mut release = self
                 .release_python_requirement(&registry, package, version)
-                .await
+                .await;
+            // Only a registry that does not host the project falls through; one that
+            // hosts it with unreadable metadata is the index uv will take it from.
+            if let Err(err) = &release
+                && err.downcast_ref::<InconsistentPythonMetadata>().is_none()
+                && let Some(fallback) = &fallback
             {
+                release = self
+                    .release_python_requirement(fallback, package, version)
+                    .await;
+            }
+            match release {
                 Ok(value) => constraints.extend(python_constraint(&value)),
                 // uv reports an unusable requirement far better than a partial
                 // lookup can, so an unreadable release just leaves the range alone.
@@ -927,12 +961,36 @@ fn simple_index_python_requirement(package: &str, version: &str, html: &str) -> 
         }
     }
     if constraints.len() != 1 {
-        bail!(
-            "package {} requires consistent Python metadata on published wheels to generate a portable lock",
-            package
-        );
+        return Err(InconsistentPythonMetadata(package.to_string()).into());
     }
     Ok(constraints.into_iter().next().unwrap())
+}
+
+/// An index hosts the project, but its wheels of the release do not agree on (or do not
+/// include) a Python requirement. Distinct from a project the index does not host.
+#[derive(Debug)]
+struct InconsistentPythonMetadata(String);
+
+impl std::fmt::Display for InconsistentPythonMetadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "package {} requires consistent Python metadata on published wheels to generate a portable lock",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for InconsistentPythonMetadata {}
+
+/// The `pypi.registry_url` setting, PyPI unless set: the index every tool without its own
+/// `registry_url` uses.
+fn global_registry_url() -> String {
+    Settings::get()
+        .pypi
+        .registry_url
+        .clone()
+        .unwrap_or_else(|| DEFAULT_REGISTRY_URL.to_string())
 }
 
 pub(super) fn uv_index_url(registry: &str) -> Result<String> {
@@ -1232,6 +1290,14 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
                 );
             }
         }
+    }
+
+    #[test]
+    fn unreadable_release_metadata_is_not_a_missing_project() {
+        let html = "<a href=\"demo-1.0-py3-none-any.whl\" data-requires-python=\">=3.10\">a</a>\
+                    <a href=\"demo-1.0-py2-none-any.whl\" data-requires-python=\">=3.11\">b</a>";
+        let err = simple_index_python_requirement("demo", "1.0", html).unwrap_err();
+        assert!(err.downcast_ref::<InconsistentPythonMetadata>().is_some());
     }
 
     #[test]
