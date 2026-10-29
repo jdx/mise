@@ -1772,6 +1772,7 @@ mod tests {
             version_json_path: Some(".releases[?channel=stable].version"),
             version_expr: None,
             deprecated: None,
+            requires_parser: false,
         };
 
         assert_eq!(
@@ -1792,6 +1793,7 @@ mod tests {
             version_json_path: Some(".version"),
             version_expr: None,
             deprecated: None,
+            requires_parser: false,
         }];
 
         assert_eq!(
@@ -1811,6 +1813,7 @@ mod tests {
             version_json_path: Some(".tool.version"),
             version_expr: None,
             deprecated: None,
+            requires_parser: false,
         }];
 
         assert_eq!(
@@ -1827,6 +1830,7 @@ mod tests {
             version_json_path: None,
             version_expr: None,
             deprecated: None,
+            requires_parser: false,
         };
 
         assert_eq!(
@@ -5001,10 +5005,29 @@ pub trait Backend: Debug + Send + Sync {
             .collect())
     }
 
+    /// Whether an idiomatic file the registry marks `requires_parser` matches `path`.
+    ///
+    /// Such a file (a `Gemfile`) is not plain text; a backend without a real parser for it
+    /// reads it verbatim and splits it into non-version tokens. This lets those backends skip
+    /// it rather than abort config loading. A backend that parses the file natively, like
+    /// `core:ruby`, overrides `_parse_idiomatic_file` and never consults this.
+    fn idiomatic_file_requires_parser(&self, path: &Path) -> bool {
+        REGISTRY.get(self.id()).is_some_and(|rt| {
+            rt.idiomatic_files
+                .iter()
+                .any(|spec| spec.requires_parser && path.ends_with(spec.path))
+        })
+    }
+
     /// Backend-specific implementation for `parse_idiomatic_file`.
     /// Default implementation reads the file and treats each whitespace-separated token as a version.
     /// Override to provide format-specific parsing; return `Err` on real failures so the plugin is skipped.
     async fn _parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
+        // The verbatim whitespace split only makes sense for a plain version file; a file the
+        // registry marks `requires_parser` is structured and would split into non-version tokens.
+        if self.idiomatic_file_requires_parser(path) {
+            return Ok(vec![]);
+        }
         let contents = file::read_to_string(path)?;
         let normalized = normalize_idiomatic_contents(&contents);
         if normalized.is_empty() {

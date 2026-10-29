@@ -19,5 +19,8 @@ bins = [
 ]
 description = "Ruby language"
 detect = ["Gemfile", ".ruby-version", "Rakefile"]
-idiomatic_files = [".ruby-version", "Gemfile"]
+idiomatic_files = [
+  ".ruby-version",
+  { path = "Gemfile", requires_parser = true },
+]
 version_order = "source"

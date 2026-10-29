@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# A Gemfile is a structured ruby idiomatic file (the registry marks it
+# `requires_parser`). When `ruby` is backed by an asdf plugin with no
+# `parse-legacy-file` script, mise must not read the Gemfile verbatim and split
+# it into non-version tokens such as `source` and `'https://rubygems.org'`,
+# which would abort config loading for every command in the directory. A plain
+# version file like `.ruby-version` is still read through the verbatim fallback.
+
+mkdir -p ruby-plugin/bin
+cat >ruby-plugin/bin/list-all <<'EOF'
+#!/usr/bin/env bash
+echo "3.2.3 3.3.6"
+EOF
+chmod +x ruby-plugin/bin/list-all
+git -C ruby-plugin init -q
+git -C ruby-plugin add -A
+git -C ruby-plugin -c user.email=e2e@mise.jdx.dev -c user.name=e2e commit -qm init
+
+# An asdf plugin named `ruby` shadows the core backend; installing from an
+# explicit source is how a user ends up with one.
+mise plugins install ruby "file://$PWD/ruby-plugin"
+assert_contains "mise plugins ls" "ruby"
+mise settings set idiomatic_version_file_enable_tools ruby
+
+# A Gemfile resolves no version instead of aborting the config load.
+cat >Gemfile <<EOF
+source "https://rubygems.org"
+gem "rails"
+EOF
+assert "mise tool ruby --requested" "[none]"
+assert_not_contains "mise tool ruby 2>&1" "invalid tool version request"
+
+# A plain .ruby-version is still read, including when it names several versions.
+rm -f Gemfile
+echo "3.3.6" >.ruby-version
+assert "mise tool ruby --requested" "3.3.6"
+
+printf '3.3.6\n3.2.3\n' >.ruby-version
+assert_contains "mise tool ruby --requested" "3.3.6"
+assert_contains "mise tool ruby --requested" "3.2.3"

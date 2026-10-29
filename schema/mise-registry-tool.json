@@ -212,6 +212,10 @@
               "deprecated": {
                 "type": "string",
                 "description": "Reason this file is no longer read; emits a deprecation warning when it resolves a version"
+              },
+              "requires_parser": {
+                "type": "boolean",
+                "description": "The file is not plain text and needs a real parser (such as a Gemfile); a backend that would read it verbatim skips it instead of misreading it"
               }
             },
             "required": ["path"],

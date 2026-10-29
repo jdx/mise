@@ -502,7 +502,7 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                     .iter()
                     .map(|f| match f {
                         toml::Value::String(path) => format!(
-                            "RegistryIdiomaticFile {{ path: {}, version_regex: None, version_json_path: None, version_expr: None, deprecated: None }}",
+                            "RegistryIdiomaticFile {{ path: {}, version_regex: None, version_json_path: None, version_expr: None, deprecated: None, requires_parser: false }}",
                             raw_string_literal(path)
                         ),
                         toml::Value::Table(spec) => {
@@ -515,6 +515,7 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                                             | "version_json_path"
                                             | "version_expr"
                                             | "deprecated"
+                                            | "requires_parser"
                                     ),
                                     "[{short}] unknown idiomatic file field: {key}"
                                 );
@@ -541,13 +542,24 @@ fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
                                     .map(|value| format!("Some({value})"))
                                     .unwrap_or_else(|| "None".to_string())
                             };
+                            let requires_parser = spec
+                                .get("requires_parser")
+                                .map(|value| {
+                                    value.as_bool().unwrap_or_else(|| {
+                                        panic!(
+                                            "[{short}] idiomatic_files.requires_parser must be a bool"
+                                        )
+                                    })
+                                })
+                                .unwrap_or(false);
                             format!(
-                                "RegistryIdiomaticFile {{ path: {}, version_regex: {}, version_json_path: {}, version_expr: {}, deprecated: {} }}",
+                                "RegistryIdiomaticFile {{ path: {}, version_regex: {}, version_json_path: {}, version_expr: {}, deprecated: {}, requires_parser: {} }}",
                                 raw_string_literal(required("path")),
                                 optional("version_regex"),
                                 optional("version_json_path"),
                                 optional("version_expr"),
                                 optional("deprecated"),
+                                requires_parser,
                             )
                         }
                         _ => panic!(

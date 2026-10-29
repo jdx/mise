@@ -152,6 +152,11 @@ pub struct RegistryIdiomaticFile {
     /// files that only declare a minimum compatible version rather than the version the
     /// project is built with.
     pub deprecated: Option<&'static str>,
+    /// Set when the file is not plain text and needs a real parser (such as a `Gemfile`,
+    /// which `core:ruby` parses natively). A backend that would otherwise read the file
+    /// verbatim — an asdf plugin with no `parse-legacy-file` script, or the generic
+    /// whitespace fallback — skips it instead of splitting it into non-version tokens.
+    pub requires_parser: bool,
 }
 
 impl RegistryIdiomaticFile {
@@ -597,6 +602,7 @@ fn parse_registry_idiomatic_file(value: &toml::Value) -> Result<RegistryIdiomati
             version_json_path: None,
             version_expr: None,
             deprecated: None,
+            requires_parser: false,
         }),
         toml::Value::Table(table) => {
             for key in table.keys() {
@@ -608,6 +614,7 @@ fn parse_registry_idiomatic_file(value: &toml::Value) -> Result<RegistryIdiomati
                             | "version_json_path"
                             | "version_expr"
                             | "deprecated"
+                            | "requires_parser"
                     ),
                     "unknown idiomatic file field: {key}"
                 );
@@ -625,12 +632,22 @@ fn parse_registry_idiomatic_file(value: &toml::Value) -> Result<RegistryIdiomati
             };
             let path = string("path")?
                 .ok_or_else(|| eyre::eyre!("idiomatic_files.path must be a string"))?;
+            let requires_parser = table
+                .get("requires_parser")
+                .map(|value| {
+                    value.as_bool().ok_or_else(|| {
+                        eyre::eyre!("idiomatic_files.requires_parser must be a bool")
+                    })
+                })
+                .transpose()?
+                .unwrap_or(false);
             Ok(RegistryIdiomaticFile {
                 path,
                 version_regex: string("version_regex")?,
                 version_json_path: string("version_json_path")?,
                 version_expr: string("version_expr")?,
                 deprecated: string("deprecated")?,
+                requires_parser,
             })
         }
         _ => Err(eyre::eyre!(
@@ -1941,6 +1958,7 @@ idiomatic_files = [
   { path = "example.json", version_json_path = ".tool.version" },
   { path = "example.txt", version_regex = 'version=(\S+)', version_expr = "versions[0]" },
   { path = "example.conf", version_regex = 'minimum=(\S+)', deprecated = "it declares a minimum." },
+  { path = "Example.lock", requires_parser = true },
 ]
 test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
 "#
@@ -1987,6 +2005,9 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
             tool.idiomatic_files[3].deprecated,
             Some("it declares a minimum.")
         );
+        assert!(!tool.idiomatic_files[3].requires_parser);
+        assert_eq!(tool.idiomatic_files[4].path, "Example.lock");
+        assert!(tool.idiomatic_files[4].requires_parser);
         assert_eq!(tool.test.as_ref().unwrap().tools, &["node"]);
         assert!(!registry.missing_version_order);
     }
