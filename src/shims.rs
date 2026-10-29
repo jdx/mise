@@ -2135,14 +2135,26 @@ fn active_version_lacks_bin_message(
             tv.request.source()
         ));
     }
+    // Installs are told apart by directory: the same name and version can be installed more than
+    // once with different options, and only one of them may provide the executable.
     let others = tvs
         .iter()
         .filter(|tv| {
             !active
                 .iter()
-                .any(|a| a.ba() == tv.ba() && a.version == tv.version)
+                .any(|a| a.ba() == tv.ba() && a.install_path() == tv.install_path())
         })
-        .map(|tv| format!("{}@{}", tv.ba(), tv.version))
+        .map(|tv| {
+            let label = format!("{}@{}", tv.ba(), tv.version);
+            let ambiguous = active
+                .iter()
+                .any(|a| a.ba() == tv.ba() && a.version == tv.version);
+            if ambiguous {
+                format!("{label} ({})", display_path(tv.install_path()))
+            } else {
+                label
+            }
+        })
         .collect_vec();
     if !others.is_empty() {
         msg.push_str(&format!(
