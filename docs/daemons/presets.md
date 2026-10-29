@@ -75,7 +75,8 @@ Instances that share a tool must use the same version request.
 
 Each preset listens on its default port, and on its named ports if it has any.
 Set `port` for a different port, `port = "auto"` to give each Git worktree its
-own, or `ports.<name>` to move a named port. See [Ports](/daemons/worktrees.html#ports).
+own, or `ports.<name>` to move a named port, or to allocate one per worktree
+with `ports.<name> = { auto = true, base = 27000 }`. See [Ports](/daemons/worktrees.html#ports).
 
 ## Preset options
 

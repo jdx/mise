@@ -446,6 +446,7 @@ pub fn binding(
         exports,
         imported: false,
         port: None,
+        named_ports: Default::default(),
         host: None,
     })
 }

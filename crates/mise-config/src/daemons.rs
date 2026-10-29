@@ -300,9 +300,29 @@ pub struct DaemonPresetDecl {
     pub proxy_idle_timeout: Option<DaemonProxyIdleTimeout>,
 }
 
-/// Port for this named port of the preset.
+/// Port for this named port of the preset: a fixed port, or an allocation that gives each linked git worktree its own.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-pub struct DaemonPortNumber(#[schemars(range(min = 1, max = 65535))] pub u16);
+#[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
+pub enum DaemonPortNumber {
+    Fixed(#[schemars(range(min = 1, max = 65535))] u16),
+    /// Offset a base port by the same worktree slot the daemon's `port = "auto"` uses.
+    PerWorktree(DaemonNamedPortAuto),
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DaemonNamedPortAuto {
+    /// Enable per-worktree allocation of this named port.
+    #[schemars(schema_with = "always_true")]
+    pub auto: bool,
+    /// Port used by the primary checkout. Defaults to the preset's default for this port; independent of the daemon's own `port`.
+    #[schemars(range(min = 1, max = 65535))]
+    pub base: Option<u16>,
+    /// Distance between consecutive worktree slots. Defaults to 1.
+    #[schemars(range(min = 1, max = 65535))]
+    pub stride: Option<u16>,
+}
 
 /// Daemon declared by another project, run under that project's namespace and root.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]

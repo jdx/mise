@@ -397,6 +397,7 @@ mod tests {
                             exports: Default::default(),
                             imported: false,
                             port: None,
+                            named_ports: Default::default(),
                             host: None,
                         },
                     )

@@ -89,6 +89,89 @@ pub fn parse(name: &str, value: toml::Value) -> Result<PortRequest> {
     }
 }
 
+/// A preset's named port, as declared under `ports.<key>`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum NamedPortRequest {
+    /// An explicit port, unchanged across checkouts.
+    Fixed(u16),
+    /// A base port offset by the slot, like the primary `port = "auto"`. With
+    /// no `base` the preset's default for this port is the base.
+    Auto { base: Option<u16>, stride: u16 },
+}
+
+/// Parse one `ports.<key>` value: an integer, or `{ auto = true, base, stride }`.
+pub fn parse_named(name: &str, key: &str, value: &toml::Value) -> Result<NamedPortRequest> {
+    let invalid = || {
+        eyre::eyre!(
+            "[daemons.{name}].ports.{key} must be an integer from 1 to 65535, or a table {{ auto = true, base = <port> }}"
+        )
+    };
+    match value {
+        toml::Value::Integer(port) => u16::try_from(*port)
+            .ok()
+            .filter(|p| *p > 0)
+            .map(NamedPortRequest::Fixed)
+            .ok_or_else(invalid),
+        toml::Value::Table(table) => {
+            if table.get("auto").and_then(toml::Value::as_bool) != Some(true) {
+                bail!(
+                    "[daemons.{name}].ports.{key}.auto must be true; use an integer for a fixed port"
+                );
+            }
+            for field in table.keys() {
+                if !matches!(field.as_str(), "auto" | "base" | "stride") {
+                    bail!("unknown [daemons.{name}].ports.{key} key {field:?}");
+                }
+            }
+            let field = |field: &str| {
+                table
+                    .get(field)
+                    .map(|value| {
+                        value
+                            .as_integer()
+                            .and_then(|n| u16::try_from(n).ok())
+                            .filter(|n| *n > 0)
+                            .ok_or_else(|| {
+                                eyre::eyre!(
+                                    "[daemons.{name}].ports.{key}.{field} must be an integer from 1 to 65535"
+                                )
+                            })
+                    })
+                    .transpose()
+            };
+            Ok(NamedPortRequest::Auto {
+                base: field("base")?,
+                stride: field("stride")?.unwrap_or(DEFAULT_STRIDE),
+            })
+        }
+        _ => Err(invalid()),
+    }
+}
+
+/// Resolve an `auto` named port for a slot. `preset_default` is the port the
+/// preset binds when nothing overrides it, used when no `base` is declared.
+pub fn resolve_named(
+    name: &str,
+    key: &str,
+    slot: u16,
+    base: Option<u16>,
+    stride: u16,
+    preset_default: u16,
+) -> Result<PortClaim> {
+    let base = base.unwrap_or(preset_default);
+    let offset = slot.checked_mul(stride).ok_or_else(|| {
+        eyre::eyre!("[daemons.{name}].ports.{key} stride {stride} overflows the port range")
+    })?;
+    // Clamping would let two worktrees resolve one listener to 65535.
+    let port = base.checked_add(offset).filter(|p| *p > 0).ok_or_else(|| {
+        eyre::eyre!(
+            "[daemons.{name}].ports.{key} base {base} with stride {stride} exceeds 65535 for this worktree; \
+             choose a lower base or stride"
+        )
+    })?;
+    Ok(PortClaim { port, base, stride })
+}
+
 fn port_field(name: &str, table: &toml::Table, key: &str) -> Result<Option<u16>> {
     table
         .get(key)
@@ -463,5 +546,72 @@ mod tests {
         ] {
             assert!(parse("api", invalid).is_err());
         }
+    }
+    #[test]
+    fn named_ports_parse_as_fixed_or_auto() {
+        let parse = |value: toml::Value| parse_named("db", "http_port", &value);
+        assert_eq!(
+            parse(toml::Value::Integer(8081)).unwrap(),
+            NamedPortRequest::Fixed(8081)
+        );
+        assert_eq!(
+            parse(toml::Value::Table(toml::toml! { auto = true })).unwrap(),
+            NamedPortRequest::Auto {
+                base: None,
+                stride: DEFAULT_STRIDE
+            }
+        );
+        assert_eq!(
+            parse(toml::Value::Table(
+                toml::toml! { auto = true base = 27000 stride = 4 }
+            ))
+            .unwrap(),
+            NamedPortRequest::Auto {
+                base: Some(27000),
+                stride: 4
+            }
+        );
+        for invalid in [
+            toml::Value::Integer(0),
+            toml::Value::Integer(70000),
+            toml::Value::String("auto".into()),
+            toml::Value::Table(toml::toml! { base = 27000 }),
+            toml::Value::Table(toml::toml! { auto = false }),
+            toml::Value::Table(toml::toml! { auto = true base = 0 }),
+            toml::Value::Table(toml::toml! { auto = true stride = 70000 }),
+            toml::Value::Table(toml::toml! { auto = true offset = 3 }),
+        ] {
+            assert!(parse(invalid.clone()).is_err(), "{invalid:?}");
+        }
+        let err = parse(toml::Value::Integer(0)).unwrap_err().to_string();
+        assert!(
+            err.contains("[daemons.db].ports.http_port") && err.contains("auto = true"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn named_auto_ports_follow_the_slot_with_their_own_base() {
+        // The primary checkout keeps the base; a worktree adds its slot times
+        // the stride, whatever the primary port's own base is.
+        assert_eq!(
+            resolve_named("db", "http_port", 0, Some(27000), 1, 8080)
+                .unwrap()
+                .port,
+            27000
+        );
+        let claim = resolve_named("db", "http_port", 7, Some(27000), 3, 8080).unwrap();
+        assert_eq!((claim.port, claim.base, claim.stride), (27021, 27000, 3));
+        assert!(claim.is_auto());
+        // No base means the preset's default for this port.
+        assert_eq!(
+            resolve_named("db", "http_port", 7, None, 1, 8080)
+                .unwrap()
+                .port,
+            8087
+        );
+        // Running out of range is an error, never a clamp two slots could share.
+        assert!(resolve_named("db", "http_port", 7, Some(65535), 1, 8080).is_err());
+        assert!(resolve_named("db", "http_port", 512, Some(1), u16::MAX, 8080).is_err());
     }
 }

@@ -1701,6 +1701,7 @@ cmd config help="Attach externally generated configuration to a project." {
             provider: None,
             exports: Default::default(),
             port: Some(PortClaim::fixed(port)),
+            named_ports: Default::default(),
             imported: false,
             host: None,
         };
@@ -1848,6 +1849,7 @@ cmd config help="Attach externally generated configuration to a project." {
             exports: Default::default(),
             imported: false,
             port: None,
+            named_ports: Default::default(),
             host: host.map(str::to_string),
         };
         let set = DaemonSet {
@@ -1921,6 +1923,7 @@ cmd config help="Attach externally generated configuration to a project." {
             exports: Default::default(),
             imported: false,
             port: None,
+            named_ports: Default::default(),
             host: None,
         };
         let set = DaemonSet {
@@ -1983,6 +1986,7 @@ cmd config help="Attach externally generated configuration to a project." {
             exports: Default::default(),
             imported: false,
             port: None,
+            named_ports: Default::default(),
             host: None,
         };
         let state = State {
