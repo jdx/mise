@@ -59,6 +59,7 @@ uses `dotfiles.default_mode`, which is `symlink` unless you change it.
 | `copy`         | Copy a file or directory, overwriting matching files.             | The application needs a regular file or writes its own configuration. |
 | `template`     | Render a source file with the [template engine](/templates.html). | The output depends on machine-specific variables.                     |
 | `absent`       | Remove a file or symlink at the target; takes no source.          | A file you no longer use should not exist on any machine.             |
+| `fnox`         | Write the file fnox stores for the target; takes no source.       | The file holds a secret that must stay out of your repository.        |
 
 `mode = "track"` and `mode = "track-local"` are not deployment modes: they
 save the history of a file where it is, without a source. See [Dotfiles history](/dotfiles/history.html).
@@ -238,6 +239,40 @@ sets others:
 options `block`, `line`, `template`, and `comment`. The
 [modes and keys table](/dotfiles/reference.html#modes-and-keys) compares all
 entry kinds.
+
+## Files stored in fnox {#fnox}
+
+`mode = "fnox"` deploys a file whose content [fnox](https://fnox.jdx.dev)
+stores, such as a credentials file, so the content never sits in your dotfiles
+repository. fnox keys the file by the same path as the target, so the entry
+takes no `source`:
+
+```toml
+[dotfiles]
+"~/.npmrc" = { mode = "fnox" }
+```
+
+Store the file with fnox 1.44.0 or newer first. fnox encrypts it with one of
+its providers, such as age, and keeps it in its global config:
+
+```sh
+mise use -g fnox
+fnox set --file ~/.npmrc
+```
+
+`mise dot apply` runs `fnox get --file` for the target and writes the result
+with permissions `0600`, unless [`permissions`](#permissions) sets others.
+`mise dot edit ~/.npmrc` runs `fnox edit --file`, which stores your change in
+fnox; apply again to deploy it. mise needs `fnox` on `PATH`. When a variant
+selects another `target`, fnox looks the file up by that path, so store it
+there with `fnox set --file`. `mise dot add` does not capture fnox files,
+because it would copy the secret into your dotfiles repository.
+
+Reading a file from fnox can prompt, for example for a passphrase. `--dry-run`
+lists fnox entries without reading them, and `mise dot diff` says that the
+content differs without printing it. `mise dot status` reads the file to
+compare it, as it renders a template. `mise oci build` skips fnox entries,
+because anyone who can pull an image can read its layers.
 
 ## Permissions {#permissions}
 

@@ -7073,7 +7073,7 @@
               },
               "mode": {
                 "type": "string",
-                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. \"absent\" removes a file or symlink at the target and takes no source. \"track\" saves the file's history where it is, and \"track-local\" saves it in this machine's local-only history, which is never shared",
+                "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode. \"absent\" removes a file or symlink at the target and takes no source. \"track\" saves the file's history where it is, and \"track-local\" saves it in this machine's local-only history, which is never shared. \"fnox\" writes the file fnox stores for the target (`fnox set --file`) with mode 0600 and takes no source",
                 "anyOf": [
                   {
                     "enum": [
@@ -7083,7 +7083,8 @@
                       "template",
                       "absent",
                       "track",
-                      "track-local"
+                      "track-local",
+                      "fnox"
                     ]
                   },
                   {
@@ -7435,7 +7436,7 @@
                   {
                     "properties": {
                       "mode": {
-                        "enum": ["copy", "template"]
+                        "enum": ["copy", "template", "fnox"]
                       },
                       "block": false,
                       "comment": false
@@ -7602,6 +7603,42 @@
                     "required": ["merge"]
                   }
                 ]
+              },
+              {
+                "if": {
+                  "properties": {
+                    "mode": {
+                      "const": "fnox"
+                    }
+                  },
+                  "required": ["mode"]
+                },
+                "then": {
+                  "properties": {
+                    "source": false,
+                    "content": false,
+                    "exclude": false,
+                    "manifest": false,
+                    "remove_empty": false,
+                    "create_if_missing": false,
+                    "dot_prefix": {
+                      "const": false
+                    },
+                    "relative": {
+                      "const": false
+                    },
+                    "encrypt": {
+                      "const": false
+                    },
+                    "merge": false,
+                    "format": false,
+                    "block": false,
+                    "line": false,
+                    "position": false,
+                    "template": false,
+                    "comment": false
+                  }
+                }
               }
             ],
             "anyOf": [
@@ -8066,7 +8103,7 @@
                         {
                           "properties": {
                             "mode": {
-                              "enum": ["copy", "template"]
+                              "enum": ["copy", "template", "fnox"]
                             },
                             "block": false,
                             "comment": false
@@ -8233,6 +8270,42 @@
                           "required": ["merge"]
                         }
                       ]
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "mode": {
+                            "const": "fnox"
+                          }
+                        },
+                        "required": ["mode"]
+                      },
+                      "then": {
+                        "properties": {
+                          "source": false,
+                          "content": false,
+                          "exclude": false,
+                          "manifest": false,
+                          "remove_empty": false,
+                          "create_if_missing": false,
+                          "dot_prefix": {
+                            "const": false
+                          },
+                          "relative": {
+                            "const": false
+                          },
+                          "encrypt": {
+                            "const": false
+                          },
+                          "merge": false,
+                          "format": false,
+                          "block": false,
+                          "line": false,
+                          "position": false,
+                          "template": false,
+                          "comment": false
+                        }
+                      }
                     }
                   ],
                   "anyOf": [

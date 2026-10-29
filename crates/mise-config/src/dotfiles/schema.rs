@@ -22,6 +22,7 @@ pub(crate) fn entry_rules(schema: &mut Schema) {
         rule_8(),
         rule_9(),
         rule_10(),
+        rule_11(),
     ];
     schema.insert("allOf".into(), rules.into());
     // an encrypted entry is a whole file from a source, never inline content or an edit
@@ -178,7 +179,7 @@ fn rule_5() -> Value {
         "oneOf": [
             {
                 "properties": {
-                    "mode": {"enum": ["copy", "template"]},
+                    "mode": {"enum": ["copy", "template", "fnox"]},
                     "block": false,
                     "comment": false
                 },
@@ -290,6 +291,34 @@ fn rule_9() -> Value {
                 ]
             }
         ]
+    })
+}
+
+/// `fnox` writes the file fnox stores for the target, so it takes no source,
+/// inline content, edit, or directory key.
+fn rule_11() -> Value {
+    json!({
+        "if": {"properties": {"mode": {"const": "fnox"}}, "required": ["mode"]},
+        "then": {
+            "properties": {
+                "source": false,
+                "content": false,
+                "exclude": false,
+                "manifest": false,
+                "remove_empty": false,
+                "create_if_missing": false,
+                "dot_prefix": {"const": false},
+                "relative": {"const": false},
+                "encrypt": {"const": false},
+                "merge": false,
+                "format": false,
+                "block": false,
+                "line": false,
+                "position": false,
+                "template": false,
+                "comment": false
+            }
+        }
     })
 }
 

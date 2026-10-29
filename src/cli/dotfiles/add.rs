@@ -144,6 +144,10 @@ impl DotfilesAdd {
             Some("absent") => bail!(
                 "`--mode absent` removes a file rather than capturing it; declare `mode = \"absent\"` in [dotfiles]"
             ),
+            // capturing would copy the secret into the dotfiles root as plaintext
+            Some("fnox") => bail!(
+                "`--mode fnox` takes no source; store the file with `fnox set --file <path>` and declare `mode = \"fnox\"` in [dotfiles]"
+            ),
             Some(mode) => {
                 FileMode::parse(mode).ok_or_else(|| eyre::eyre!("unknown dotfile mode: {mode}"))
             }
@@ -273,6 +277,30 @@ impl DotfilesAdd {
             {
                 bail!(
                     "{target_raw}: declared absent in {}; remove that entry before adding the file",
+                    req.origin.config.display_user()
+                );
+            }
+            if let Some(req) = existing
+                && req.mode == FileMode::Fnox
+            {
+                bail!(
+                    "{target_raw}: stored in fnox by {}; change it with `mise dot edit {target_raw}`",
+                    req.origin.config.display_user()
+                );
+            }
+            // capturing a directory copies every file under it, secrets too,
+            // and a symlink can reach a fnox target under another name
+            let canonical =
+                |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+            let target_canonical = canonical(&target);
+            if let Some(req) = managed.iter().find(|req| {
+                req.mode == FileMode::Fnox
+                    && (req.target.starts_with(&target)
+                        || canonical(&req.target).starts_with(&target_canonical))
+            }) {
+                bail!(
+                    "{target_raw}: reaches {}, which {} stores in fnox; capturing it would copy the secret into the dotfiles root, so add the other files one at a time",
+                    req.target.display_user(),
                     req.origin.config.display_user()
                 );
             }
@@ -863,7 +891,11 @@ fn describe_apply(item: &PlannedAdd) -> String {
         FileMode::Copy if item.source.is_dir() => format!("cp -r {source} {target}"),
         FileMode::Copy => format!("cp {source} {target}"),
         FileMode::Template => format!("render {source} -> {target}"),
-        FileMode::Content | FileMode::Track | FileMode::Absent | FileMode::Permissions => {
+        FileMode::Content
+        | FileMode::Track
+        | FileMode::Absent
+        | FileMode::Permissions
+        | FileMode::Fnox => {
             unreachable!("dotfiles add always captures a source file")
         }
     }

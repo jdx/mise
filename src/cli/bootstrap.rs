@@ -4828,6 +4828,7 @@ impl BootstrapStatus {
                         format!("permissions {:04o}", req.permissions.unwrap_or_default())
                     }
                     system::files::FileMode::Absent => "absent".to_string(),
+                    system::files::FileMode::Fnox => "fnox".to_string(),
                     _ => format!("{} {}", req.mode.name(), req.source.display_user()),
                 },
                 state_str,

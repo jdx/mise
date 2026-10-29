@@ -80,6 +80,7 @@ also accepts `enabled`.
 | `content`        | `content`, `permissions`, `create_if_missing`, `variants` (selectors only)                                                                                          | `autosave`                       |
 | Permissions only | `permissions`, `variants` (selectors and `target`)                                                                                                                  | `autosave`                       |
 | `absent`         | `variants` (selectors and `target`)                                                                                                                                 | `autosave`                       |
+| `fnox`           | `permissions`, `variants` (selectors and `target`)                                                                                                                  | `autosave`                       |
 | `track`          | `exclude`, `include`, `autosave`, `encrypt`, `allow_plaintext`, `variants` (selectors only)                                                                         |                                  |
 | `track-local`    | `exclude`, `include`, `autosave`, `allow_plaintext`                                                                                                                 |                                  |
 
