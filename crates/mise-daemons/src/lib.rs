@@ -916,7 +916,7 @@ fn build(
     let expect: Vec<u16> = claim
         .iter()
         .map(|claim| claim.port)
-        .chain(container_ports.values().copied())
+        .chain(container_ports.values().map(|claim| claim.port))
         .collect();
     if !expect.is_empty() {
         table.insert("port".into(), expected_ports(&expect));
@@ -977,7 +977,7 @@ fn build(
                 );
                 state.ambiguous.insert(var.clone());
             }
-            exports.entry(var).or_insert_with(|| port.to_string());
+            exports.entry(var).or_insert_with(|| port.port.to_string());
         }
     }
     table
@@ -1003,7 +1003,7 @@ fn build(
         exports,
         imported,
         port: claim,
-        named_ports: IndexMap::new(),
+        named_ports: container_ports,
         host,
     })
 }
@@ -2203,6 +2203,28 @@ mod tests {
             set.daemons["db"].table["stop_signal"].as_str(),
             Some("SIGINT")
         );
+    }
+
+    #[test]
+    fn container_named_ports_take_part_in_collision_checks() {
+        let two = |second: &str| {
+            format!(
+                "[daemons.a]\nimage = 'x'\nports.http = {{ container = 80, auto = true, base = 27000 }}\n[daemons.b]\nimage = 'x'\n{second}"
+            )
+        };
+        let err = load(&files(&[(
+            "/project/mise.toml",
+            &two("ports.http = { container = 80, auto = true, base = 27000 }\n"),
+        )]))
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("both use port 27000"), "{err}");
+        // A different base is fine.
+        load(&files(&[(
+            "/project/mise.toml",
+            &two("ports.http = { container = 80, auto = true, base = 27100 }\n"),
+        )]))
+        .unwrap();
     }
 
     #[test]

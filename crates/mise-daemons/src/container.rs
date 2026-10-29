@@ -137,8 +137,9 @@ pub struct Decl {
 pub struct Built {
     /// The long-running command for pitchfork.
     pub run: String,
-    /// Host ports of the named `ports`, in declaration order.
-    pub ports: IndexMap<String, u16>,
+    /// The named `ports` as resolved, in declaration order. Allocated ones are
+    /// marked auto, as a preset's are, so the load-time collision check sees them.
+    pub ports: IndexMap<String, PortClaim>,
     /// Host directory mounted at `data_mount`.
     pub data_dir: Option<PathBuf>,
     /// Values for `{{ container }}`, `{{ runtime }}`, `{{ port }}` and the named
@@ -407,10 +408,10 @@ impl Decl {
             Some(claim) if claim.is_auto() => (claim.port - claim.base) / claim.stride,
             _ => ports::slot(root),
         };
-        let mut named = IndexMap::new();
+        let mut named: IndexMap<String, PortClaim> = IndexMap::new();
         for (key, port) in &self.ports {
-            let (host, container_port) = match *port {
-                PortDecl::Fixed { host, container } => (host, container),
+            let (resolved, container_port) = match *port {
+                PortDecl::Fixed { host, container } => (PortClaim::fixed(host), container),
                 PortDecl::Auto {
                     container,
                     base,
@@ -425,12 +426,20 @@ impl Decl {
                                 "[daemons.{name}].ports.{key} base {base} with stride {stride} exceeds 65535 for this worktree; choose a lower base or stride"
                             )
                         })?;
-                    (host, container)
+                    (
+                        PortClaim {
+                            port: host,
+                            base,
+                            stride,
+                        },
+                        container,
+                    )
                 }
             };
+            let host = resolved.port;
             claim_host(host, &format!("ports.{key}"))?;
             publish.push((host, container_port));
-            named.insert(key.clone(), host);
+            named.insert(key.clone(), resolved);
         }
 
         let mut mounts = Vec::new();
@@ -532,8 +541,8 @@ impl Decl {
         if let Some(claim) = claim {
             probe_vars.insert("port".to_string(), claim.port.to_string());
         }
-        for (key, host) in &named {
-            probe_vars.insert(key.clone(), host.to_string());
+        for (key, claim) in &named {
+            probe_vars.insert(key.clone(), claim.port.to_string());
         }
         Ok(Built {
             run: script,
@@ -754,16 +763,18 @@ mod tests {
         )
         .build(cx(Path::new("/work/proj"), Some(claim)))
         .unwrap();
-        assert_eq!(built.ports["http"], 27014);
-        assert_eq!(built.ports["fixed"], 4000);
-        assert_eq!(built.ports["same"], 7000);
+        assert_eq!(built.ports["http"].port, 27014);
+        assert!(built.ports["http"].is_auto());
+        assert!(!built.ports["fixed"].is_auto());
+        assert_eq!(built.ports["fixed"].port, 4000);
+        assert_eq!(built.ports["same"].port, 7000);
         assert!(built.run.contains("-p 127.0.0.1:27014:8080"));
         assert!(built.run.contains("-p 127.0.0.1:4000:9"));
         // The base defaults to the container port.
         let built = decl("image = \"x\"\nports.http = { container = 8080, auto = true }")
             .build(cx(root, Some(claim)))
             .unwrap();
-        assert_eq!(built.ports["http"], 8087);
+        assert_eq!(built.ports["http"].port, 8087);
         let _ = root;
     }
 
