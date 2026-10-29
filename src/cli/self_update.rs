@@ -370,6 +370,74 @@ fn current_exe_stem() -> Option<String> {
     exe.file_stem().and_then(|s| s.to_str()).map(str::to_owned)
 }
 
+/// Put `new_binary` in place of the running mise.exe.
+///
+/// Antivirus briefly holds a binary that was just written or just started, so a step of
+/// `self-replace` can fail with `ERROR_ACCESS_DENIED` (5) or `ERROR_SHARING_VIOLATION` (32) that
+/// would succeed a moment later. Its first step renames the running mise.exe aside and nothing
+/// after it puts the binary back, so trying again is only safe while mise.exe is still at its
+/// path: then nothing has moved. A failure after the move has left no mise.exe at all, so the new
+/// one is copied there directly, which is what the update was about to leave there anyway.
+#[cfg(windows)]
+fn replace_running_binary(new_binary: &Path) -> Result<()> {
+    use color_eyre::eyre::WrapErr;
+
+    let exe = std::env::current_exe()?.canonicalize()?;
+    let result = retry_while_locked(
+        || self_replace::self_replace(new_binary),
+        || exe.exists(),
+        &LOCK_RETRY_DELAYS,
+    );
+    match result {
+        Ok(()) => Ok(()),
+        Err(err) if exe.exists() => Err(err.into()),
+        Err(err) => {
+            warn!(
+                "replacing {} failed after moving it aside ({err}); copying the new binary there",
+                exe.display()
+            );
+            retry_while_locked(|| fs::copy(new_binary, &exe), || true, &LOCK_RETRY_DELAYS)
+                .wrap_err_with(|| format!("failed to put the new mise at {}", exe.display()))?;
+            Ok(())
+        }
+    }
+}
+
+/// How long to wait before each retry of a step Windows refused with a transient lock: about six
+/// seconds in all, which covers an antivirus scan of mise.exe.
+#[cfg(windows)]
+const LOCK_RETRY_DELAYS: [Duration; 6] = [
+    Duration::from_millis(100),
+    Duration::from_millis(200),
+    Duration::from_millis(400),
+    Duration::from_millis(800),
+    Duration::from_millis(1600),
+    Duration::from_millis(3200),
+];
+
+/// Run `op`, and again after each of `delays` while it fails with `ERROR_ACCESS_DENIED` (5) or
+/// `ERROR_SHARING_VIOLATION` (32) and `can_retry` says running it again is safe.
+#[cfg(windows)]
+fn retry_while_locked<T>(
+    mut op: impl FnMut() -> std::io::Result<T>,
+    can_retry: impl Fn() -> bool,
+    delays: &[Duration],
+) -> std::io::Result<T> {
+    let mut delays = delays.iter();
+    loop {
+        match op() {
+            Err(err) if matches!(err.raw_os_error(), Some(5) | Some(32)) && can_retry() => {
+                let Some(delay) = delays.next() else {
+                    return Err(err);
+                };
+                debug!("{err}; retrying in {delay:?}");
+                std::thread::sleep(*delay);
+            }
+            result => return result,
+        }
+    }
+}
+
 /// Refresh the installed plugins, best effort.
 ///
 /// This runs after the binary has already been replaced, so a failure here says nothing about
@@ -763,6 +831,9 @@ impl SelfUpdate {
             )?;
             #[cfg(target_os = "macos")]
             Self::verify_macos_signature(&new_binary)?;
+            #[cfg(windows)]
+            replace_running_binary(&new_binary)?;
+            #[cfg(not(windows))]
             self_replace::self_replace(&new_binary)?;
             Ok(())
         })
@@ -1667,6 +1738,56 @@ mod tests {
 
     fn breaks(len: usize) -> bool {
         temp_dir_breaks_self_replace(&temp_dir_of_len(len), Some("mise"))
+    }
+
+    /// Runs `retry_while_locked` over `errors`, one per call and `Ok` once they run out, and
+    /// returns the result and how many calls it made.
+    fn retried(errors: &[i32], can_retry: bool, delays: usize) -> (std::io::Result<()>, usize) {
+        let mut calls = 0;
+        let delays = vec![Duration::ZERO; delays];
+        let result = retry_while_locked(
+            || {
+                calls += 1;
+                match errors.get(calls - 1) {
+                    Some(&code) => Err(std::io::Error::from_raw_os_error(code)),
+                    None => Ok(()),
+                }
+            },
+            || can_retry,
+            &delays,
+        );
+        (result, calls)
+    }
+
+    #[test]
+    fn a_transient_lock_is_retried_until_it_clears() {
+        let (result, calls) = retried(&[32, 5, 32], true, 6);
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(calls, 4);
+    }
+
+    #[test]
+    fn a_lock_that_outlasts_the_delays_is_returned() {
+        let (result, calls) = retried(&[32; 10], true, 2);
+        assert_eq!(result.unwrap_err().raw_os_error(), Some(32));
+        assert_eq!(calls, 3);
+    }
+
+    /// The case that matters: once mise.exe has been moved aside, running `self-replace` again
+    /// would move nothing back, so the first error has to come out.
+    #[test]
+    fn a_lock_is_not_retried_once_retrying_is_unsafe() {
+        let (result, calls) = retried(&[32], false, 6);
+        assert_eq!(result.unwrap_err().raw_os_error(), Some(32));
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn other_errors_are_not_retried() {
+        // ERROR_FILE_NOT_FOUND
+        let (result, calls) = retried(&[2], true, 6);
+        assert_eq!(result.unwrap_err().raw_os_error(), Some(2));
+        assert_eq!(calls, 1);
     }
 
     #[test]
