@@ -35,6 +35,6 @@ tokio = { version = "1", features = ["macros", "net", "rt-multi-thread"] }
 
 [features]
 default = ["rustls"]
-native-tls = ["reqwest/native-tls"]
+native-tls = ["reqwest/native-tls", "mise-tls/native-tls"]
 rustls = ["reqwest/rustls", "mise-tls/rustls"]
 rustls-native-roots = ["reqwest/rustls", "mise-tls/rustls"]

@@ -51,6 +51,7 @@ tokio = { version = "1", features = [
 default = ["rustls"]
 native-tls = [
   "reqwest/native-tls",
+  "mise-tls/native-tls",
   "sigstore-verify/native-tls",
   "sigstore-verify/tuf",
 ]

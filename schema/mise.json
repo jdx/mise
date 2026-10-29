@@ -1991,6 +1991,10 @@
           "description": "Enable experimental features, which may change or be removed in any release.",
           "type": "boolean"
         },
+        "extra_ca_certs": {
+          "description": "PEM bundle of CA certificates mise trusts in addition to its usual roots.",
+          "type": "string"
+        },
         "extract_max_ratio": {
           "default": 100,
           "description": "How many times its own size a downloaded archive or compressed file may unpack to.",

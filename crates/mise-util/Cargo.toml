@@ -162,6 +162,7 @@ native-tls = [
   "gix/blocking-http-transport-reqwest-native-tls",
   "mise-sigstore/native-tls",
   "reqwest/native-tls",
+  "mise-tls/native-tls",
 ]
 rustls = [
   "gix/blocking-http-transport-reqwest-rust-tls",

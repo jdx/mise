@@ -260,6 +260,19 @@ export SSL_CERT_FILE=/etc/ssl/corporate-bundle.pem
 mise install
 ```
 
+To trust an extra CA without replacing the system store, on any platform, point
+[`extra_ca_certs`](/configuration/settings.html#extra_ca_certs) at a PEM bundle
+that holds it. mise adds those certificates to the roots it already trusts:
+
+```sh
+# adds to the system store: the bundle only needs the extra CA
+export MISE_EXTRA_CA_CERTS=/etc/ssl/proxy-ca.pem
+mise install
+```
+
+It is read only from the environment and the global config, never from a
+project's `mise.toml`.
+
 If no certificates can be loaded at all, for example in a minimal container
 without the `ca-certificates` package, or `SSL_CERT_FILE` points at a missing
 file, mise warns and trusts a bundled copy of Mozilla's root certificates for

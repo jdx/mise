@@ -132,16 +132,10 @@ impl OutdatedInfo {
                 .await
                 .map(Option::from)
         };
-        let latest = match latest_result {
-            Ok(Some(latest)) => latest,
-            Ok(None) => {
-                warn!("Error getting latest version for {t}: no latest version found");
-                return Ok(None);
-            }
-            Err(e) => {
-                warn!("Error getting latest version for {t}: {e:#}");
-                return Ok(None);
-            }
+        // The caller warns, and counts the tool as unchecked rather than up to
+        // date.
+        let Some(latest) = latest_result? else {
+            eyre::bail!("no latest version found");
         };
         let mut oi = Self::new(config, tv, latest)?;
         if opts.inactive && oi.source == ToolSource::Unknown {

@@ -354,6 +354,7 @@ native-tls = [
   "rattler_repodata_gateway/native-tls",
   "mise-cache-core/native-tls",
   "mise-util/native-tls",
+  "mise-tls/native-tls",
   "ubi/native-tls",
   "vfox/native-tls",
   "xx/native-tls",
