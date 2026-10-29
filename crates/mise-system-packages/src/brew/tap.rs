@@ -6,7 +6,9 @@
 //! installation is the portable fallback and avoids duplicating Homebrew's
 //! bottle URL construction rules.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use eyre::{WrapErr, bail};
@@ -115,7 +117,28 @@ pub(super) async fn formula_from_ruby(
     Ok(formula)
 }
 
+/// Casks already evaluated by this process. `upgrade` resolves each cask once
+/// for the dependency closure and again for the plan, and both want the same
+/// definition, so the second Ruby process would only repeat the first.
+static EVALUATED_CASKS: LazyLock<Mutex<HashMap<String, Cask>>> = LazyLock::new(Default::default);
+
 pub(super) async fn cask_from_ruby(
+    owner: &str,
+    tap: &str,
+    token: &str,
+    tap_url: Option<&str>,
+    provision_ruby: bool,
+) -> Result<Cask> {
+    let key = format!("{owner}/{tap}/{token}\0{}", tap_url.unwrap_or_default());
+    if let Some(cask) = EVALUATED_CASKS.lock().unwrap().get(&key) {
+        return Ok(cask.clone());
+    }
+    let cask = evaluate_cask(owner, tap, token, tap_url, provision_ruby).await?;
+    EVALUATED_CASKS.lock().unwrap().insert(key, cask.clone());
+    Ok(cask)
+}
+
+async fn evaluate_cask(
     owner: &str,
     tap: &str,
     token: &str,
