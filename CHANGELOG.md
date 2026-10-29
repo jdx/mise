@@ -1,5 +1,46 @@
 # Changelog
 
+## [2026.10.23](https://github.com/jdx/mise/releases/tag/v2026.10.23) - 2026-10-29
+
+### 🚀 Features
+
+- **(dotfiles)** apply block, line, and merge edits from a dotfile group by @jdx in [#15131](https://github.com/jdx/mise/pull/15131)
+- **(dotfiles)** merge into INI files such as pip.conf and tox.ini by @jdx in [#15135](https://github.com/jdx/mise/pull/15135)
+- **(dotfiles)** deploy files stored in fnox with mode = "fnox" by @jdx in [#15134](https://github.com/jdx/mise/pull/15134)
+- **(gem)** list versions from a source's compact index, so GitHub Packages gems resolve latest by @waynehoover in [#15122](https://github.com/jdx/mise/pull/15122)
+
+### 🐛 Bug Fixes
+
+- **(backend)** name the program when a command can't be found by @jdx in [#15119](https://github.com/jdx/mise/pull/15119)
+- **(lock)** keep the locks/ sidecar layout for a symlinked global config dir by @jdx in [#15125](https://github.com/jdx/mise/pull/15125)
+- **(lockfile)** keep a dotfiles checkout's lockfile URLs when it is linked into global config by @jdx in [#15130](https://github.com/jdx/mise/pull/15130)
+- **(ls)** show uninstalled lazy tools as lazy instead of missing by @jdx in [#15114](https://github.com/jdx/mise/pull/15114)
+- **(node)** keep a packageManager checksum from pinning later installs to npm by @jdx in [#15124](https://github.com/jdx/mise/pull/15124)
+- **(self-update)** retry replacing mise.exe on Windows while antivirus holds it by @jdx in [#15138](https://github.com/jdx/mise/pull/15138)
+- **(shell)** convert MANPATH to POSIX form when activating under MSYS2/Cygwin by @jdx in [#15117](https://github.com/jdx/mise/pull/15117)
+- **(shim)** keep other command wrappers active inside a wrapped command by @jdx in [#15126](https://github.com/jdx/mise/pull/15126)
+- **(uninstall)** don't remove 3.4.12 when asked to uninstall 3.4.1 by @jdx in [#15116](https://github.com/jdx/mise/pull/15116)
+
+### 📚 Documentation
+
+- rewrite README with upfront config example and bootstrap guide by @jdx in [#15136](https://github.com/jdx/mise/pull/15136)
+
+### ⚡ Performance
+
+- **(dotfiles)** write snapshot blobs without a git process per tracked file by @waynehoover in [#15127](https://github.com/jdx/mise/pull/15127)
+
+### 🧪 Testing
+
+- **(dotfiles)** set group in the INI merge symlink test by @jdx in [#15139](https://github.com/jdx/mise/pull/15139)
+
+### 📦 Registry
+
+- stop checking cargo-msrv's reported version in its test by @jdx in [#15137](https://github.com/jdx/mise/pull/15137)
+
+### Security
+
+- **(secrets)** refuse project grants of keys from your own fnox config by @jdx in [#15133](https://github.com/jdx/mise/pull/15133)
+
 ## [2026.10.22](https://github.com/jdx/mise/releases/tag/v2026.10.22) - 2026-10-28
 
 ### 🚀 Features
