@@ -10659,10 +10659,38 @@
                 "type": "object",
                 "description": "Overrides for the preset's additional named ports.",
                 "additionalProperties": {
-                  "type": "integer",
-                  "description": "Port for this named port of the preset.",
-                  "minimum": 1,
-                  "maximum": 65535
+                  "description": "Port for this named port of the preset: a fixed port, or an allocation that gives each linked git worktree its own.",
+                  "oneOf": [
+                    {
+                      "type": "integer",
+                      "maximum": 65535,
+                      "minimum": 1
+                    },
+                    {
+                      "type": "object",
+                      "description": "Offset a base port by the same worktree slot the daemon's `port = \"auto\"` uses.",
+                      "additionalProperties": false,
+                      "properties": {
+                        "auto": {
+                          "description": "Enable per-worktree allocation of this named port.",
+                          "const": true
+                        },
+                        "base": {
+                          "type": "integer",
+                          "description": "Port used by the primary checkout. Defaults to the preset's default for this port; independent of the daemon's own `port`.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        },
+                        "stride": {
+                          "type": "integer",
+                          "description": "Distance between consecutive worktree slots. Defaults to 1.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        }
+                      },
+                      "required": ["auto"]
+                    }
+                  ]
                 }
               },
               "options": {
@@ -10766,10 +10794,38 @@
             "type": "object",
             "description": "Overrides for the preset's additional named ports.",
             "additionalProperties": {
-              "type": "integer",
-              "description": "Port for this named port of the preset.",
-              "minimum": 1,
-              "maximum": 65535
+              "description": "Port for this named port of the preset: a fixed port, or an allocation that gives each linked git worktree its own.",
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "maximum": 65535,
+                  "minimum": 1
+                },
+                {
+                  "type": "object",
+                  "description": "Offset a base port by the same worktree slot the daemon's `port = \"auto\"` uses.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "auto": {
+                      "description": "Enable per-worktree allocation of this named port.",
+                      "const": true
+                    },
+                    "base": {
+                      "type": "integer",
+                      "description": "Port used by the primary checkout. Defaults to the preset's default for this port; independent of the daemon's own `port`.",
+                      "minimum": 1,
+                      "maximum": 65535
+                    },
+                    "stride": {
+                      "type": "integer",
+                      "description": "Distance between consecutive worktree slots. Defaults to 1.",
+                      "minimum": 1,
+                      "maximum": 65535
+                    }
+                  },
+                  "required": ["auto"]
+                }
+              ]
             }
           },
           "options": {

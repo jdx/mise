@@ -705,18 +705,36 @@ pub fn expand(
             })?;
         }
     }
+    // Every named port the daemon ends up with, so a collision with another
+    // daemon in the project can be reported by name. Only those declared `auto`
+    // are marked as such; a default is recorded as the number it resolved to.
+    let mut named_ports: IndexMap<String, PortClaim> = ports
+        .iter()
+        .map(|(key, port)| (key.clone(), PortClaim::fixed(*port)))
+        .collect();
     if let Some(value) = overrides.remove("ports") {
         let table = value
             .as_table()
             .ok_or_else(|| eyre::eyre!("[daemons.{name}].ports must be a table"))?;
         for (key, value) in table {
-            if !ports.contains_key(key) {
+            let Some(default) = preset.ports.get(key) else {
                 bail!("unknown {preset_name} port {key:?}");
-            }
-            ports.insert(
-                key.clone(),
-                port_value(name, &format!("ports.{key}"), value)?,
-            );
+            };
+            let claim = match super::ports::parse_named(name, key, value)? {
+                super::ports::NamedPortRequest::Fixed(port) => PortClaim::fixed(port),
+                // The same slot the primary port uses: the allocation that was
+                // resolved for it when the primary is `auto`, else this root's.
+                super::ports::NamedPortRequest::Auto { base, stride } => {
+                    let slot = if claim.is_auto() {
+                        slot
+                    } else {
+                        super::ports::slot(root)
+                    };
+                    super::ports::resolve_named(name, key, slot, base, stride, *default)?
+                }
+            };
+            ports.insert(key.clone(), claim.port);
+            named_ports.insert(key.clone(), claim);
         }
     }
     let option_overrides = overrides.remove("options");
@@ -860,6 +878,7 @@ pub fn expand(
         exports,
         imported: extras.imported,
         port: Some(claim),
+        named_ports,
         host,
     })
 }
@@ -1921,6 +1940,143 @@ mod tests {
                 .to_string()
                 .contains("unknown cockroachdb port")
         );
+    }
+
+    #[test]
+    fn named_ports_can_be_allocated_with_their_own_base() {
+        let slotted = PortClaim {
+            port: 26257 + 7,
+            base: 26257,
+            stride: 1,
+        };
+        let expand_crdb = |overrides: toml::Table, port: PortClaim| {
+            expand(
+                "crdb",
+                "cockroachdb",
+                "26",
+                overrides,
+                Extras {
+                    init: &[],
+                    port: Some(port),
+                    labels: &labels(),
+                    imported: false,
+                },
+                Path::new("/p/mise.toml"),
+                Path::new("/p"),
+            )
+        };
+        // The named port takes the primary's slot but not its base, and the
+        // run command, the expected ports and the export all carry it.
+        let daemon = expand_crdb(
+            toml::toml! { [ports] http_port = { auto = true, base = 27000 } },
+            slotted,
+        )
+        .unwrap();
+        assert_eq!(daemon.exports["CRDB_HTTP_PORT"], "27007");
+        let run = daemon.table["run"].as_str().unwrap();
+        assert!(run.contains("--listen-addr=127.0.0.1:26264"), "{run}");
+        assert!(run.contains("--http-addr=127.0.0.1:27007"), "{run}");
+        assert_eq!(
+            daemon.table["port"]["expect"].as_array().unwrap(),
+            &vec![toml::Value::Integer(26264), toml::Value::Integer(27007)]
+        );
+        let named = daemon.named_ports["http_port"];
+        assert_eq!((named.port, named.base, named.stride), (27007, 27000, 1));
+        assert!(named.is_auto());
+
+        // Changing the primary's base leaves the named port where it was.
+        let moved = expand_crdb(
+            toml::toml! { [ports] http_port = { auto = true, base = 27000 } },
+            PortClaim {
+                port: 36257 + 7,
+                base: 36257,
+                stride: 1,
+            },
+        )
+        .unwrap();
+        assert_eq!(moved.exports["CRDB_HTTP_PORT"], "27007");
+
+        // Without a base the preset's default is the base, and a stride of its
+        // own is honoured.
+        let default_base =
+            expand_crdb(toml::toml! { [ports] http_port = { auto = true } }, slotted).unwrap();
+        assert_eq!(default_base.exports["CRDB_HTTP_PORT"], "8087");
+        let strided = expand_crdb(
+            toml::toml! { [ports] http_port = { auto = true, base = 27000, stride = 10 } },
+            slotted,
+        )
+        .unwrap();
+        assert_eq!(strided.exports["CRDB_HTTP_PORT"], "27070");
+
+        // A fixed primary port has no slot of its own, so the named port uses
+        // the project root's: /p is not a linked worktree, so it is slot 0.
+        let primary = expand_crdb(
+            toml::toml! { [ports] http_port = { auto = true, base = 27000 } },
+            PortClaim::fixed(26258),
+        )
+        .unwrap();
+        assert_eq!(primary.exports["CRDB_HTTP_PORT"], "27000");
+
+        // Fixed integers and the preset default keep working, and an `auto`
+        // port next to a default one leaves the default alone.
+        let nats = expand(
+            "events",
+            "nats",
+            "2",
+            toml::toml! { [ports] monitor_port = { auto = true, base = 9000 } },
+            Extras {
+                init: &[],
+                port: Some(PortClaim {
+                    port: 4222 + 3,
+                    base: 4222,
+                    stride: 1,
+                }),
+                labels: &labels(),
+                imported: false,
+            },
+            Path::new("/p/mise.toml"),
+            Path::new("/p"),
+        )
+        .unwrap();
+        assert_eq!(nats.exports["EVENTS_MONITOR_PORT"], "9003");
+
+        // Landing on the primary port is refused before anything starts.
+        let clash = expand_crdb(
+            toml::toml! { [ports] http_port = { auto = true, base = 26257 } },
+            slotted,
+        );
+        assert!(
+            clash
+                .unwrap_err()
+                .to_string()
+                .contains("uses port 26264 more than once")
+        );
+        // As is running past the end of the port range, naming the port.
+        let overflow = expand_crdb(
+            toml::toml! { [ports] http_port = { auto = true, base = 65535 } },
+            slotted,
+        );
+        let err = overflow.unwrap_err().to_string();
+        assert!(
+            err.contains("ports.http_port") && err.contains("exceeds 65535"),
+            "{err}"
+        );
+        // A table that is not an allocation, or a name the preset lacks, is
+        // refused with the key it was declared under.
+        let err = expand_crdb(
+            toml::toml! { [ports] http_port = { base = 27000 } },
+            slotted,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("ports.http_port.auto must be true"), "{err}");
+        let err = expand_crdb(
+            toml::toml! { [ports] grpc_port = { auto = true, base = 27000 } },
+            slotted,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("unknown cockroachdb port"), "{err}");
     }
 
     #[test]

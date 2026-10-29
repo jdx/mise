@@ -129,7 +129,36 @@ ports.http_port = 8081
 
 A daemon's primary port and named ports must all differ. With `port = "auto"`,
 the named ports move with the primary port, so each checkout keeps a complete
-set. A named port you set yourself is used exactly as written.
+set. A named port you set to an integer is used exactly as written.
+
+To give a named port its own range, allocate it per worktree with its own
+`base`, the same way as the primary port:
+
+```toml
+[daemons.cockroach]
+preset = "cockroachdb"
+version = "26"
+port = { auto = true, base = 26258 }
+ports.http_port = { auto = true, base = 27000 }
+```
+
+The primary checkout uses `27000`, and each linked worktree adds the same slot
+it adds to the primary port, so every checkout gets its own HTTP port whatever
+the primary port's `base` is. Leave out `base` to start from the preset's
+default for that port (`8080` here). That also works when the primary port is a
+fixed integer; the slot then comes from the project root. `stride` spaces the
+slots apart, as for [automatic ports](#automatic-ports), and defaults to `1`.
+A named port without `auto` is still an integer or the preset's default, so
+existing configuration is unaffected.
+
+When mise loads the config it rejects an allocated named port that resolves to
+a port another daemon in the same project uses, or that runs past 65535 in a
+worktree. That check covers one project in one checkout. mise does not compare
+ports across worktrees or projects, so ranges that overlap can still collide
+there: slots run up to 511 times the `stride`, so one daemon's `27000` in a
+worktree can equal another daemon's `27000 + n` in a different checkout. Give
+each daemon, and each named port, a `base` at least 512 ports (more with a larger
+`stride`) away from the others.
 
 mise exports each named port as `<NAME>_<PORT_NAME>`, with the daemon's name
 folded as for [port variables](#port-variables): a `crdb` daemon from the

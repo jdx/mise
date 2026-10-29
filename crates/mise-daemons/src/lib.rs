@@ -81,6 +81,10 @@ pub struct Daemon {
     /// The resolved allocation for a `port = "auto"` daemon, persisted so it
     /// survives a later change to the slot derivation.
     pub port: Option<PortClaim>,
+    /// A preset's named ports as resolved, by port name. Only those declared
+    /// with `ports.<name> = { auto = true }` are marked auto; the rest are the
+    /// numbers they ended up as, recorded for collision reporting.
+    pub named_ports: IndexMap<String, PortClaim>,
     /// The hostname pitchfork's proxy routes to this daemon, unless it set
     /// `proxy = false`. Unlike the port it does not move between checkouts.
     pub host: Option<String>,
@@ -484,21 +488,51 @@ pub fn load(files: &ConfigMap) -> Result<DaemonSet> {
     // Keyed by the canonical root, because that is what the port was derived
     // from: two roots reaching one directory through different paths resolve to
     // one port, and comparing the paths as written would call them distinct.
-    let mut claimed_ports: BTreeMap<(PathBuf, u16), String> = BTreeMap::new();
+    //
+    // A preset's named ports take part when they are `auto`: the daemon asked
+    // for a slot-derived number, so a clash with a sibling is a mistake in the
+    // declarations. A named port left at its default or fixed by hand is not
+    // compared, as before, so a config that loaded keeps loading.
+    let mut claimed_ports: BTreeMap<(PathBuf, u16), Vec<PortUse<'_>>> = BTreeMap::new();
     for daemon in set.daemons.values() {
-        let Some(claim) = daemon.port else {
-            continue;
-        };
         let root = canonical_root(&daemon.root);
-        if let Some(other) = claimed_ports.insert((root, claim.port), daemon.name.clone())
-            && other != daemon.name
-        {
-            bail!(
-                "daemons {other} and {} both use port {} in {}; give one of them its own port, or a different `base` if they use port = \"auto\"",
-                daemon.name,
-                claim.port,
-                daemon.root.display()
-            );
+        let primary = daemon.port.map(|claim| PortUse {
+            port: claim.port,
+            daemon: &daemon.name,
+            root: &daemon.root,
+            what: "port".into(),
+            kind: PortKind::Primary,
+        });
+        let named = daemon.named_ports.iter().map(|(key, claim)| PortUse {
+            port: claim.port,
+            daemon: &daemon.name,
+            root: &daemon.root,
+            what: format!("ports.{key}"),
+            kind: if claim.is_auto() {
+                PortKind::AutoNamed
+            } else {
+                PortKind::PlainNamed
+            },
+        });
+        for claimant in primary.into_iter().chain(named) {
+            claimed_ports
+                .entry((root.clone(), claimant.port))
+                .or_default()
+                .push(claimant);
+        }
+    }
+    for ((_, port), claimants) in &claimed_ports {
+        for (i, later) in claimants.iter().enumerate() {
+            if let Some(earlier) = claimants[..i].iter().find(|e| e.conflicts_with(later)) {
+                bail!(
+                    "daemons {} ({}) and {} ({}) both use port {port} in {}; give one of them its own port, or a different `base` if it uses an automatic port",
+                    earlier.daemon,
+                    earlier.what,
+                    later.daemon,
+                    later.what,
+                    later.root.display()
+                );
+            }
         }
     }
     // A preset's exports are its declared interface; `<NAME>_PORT` and
@@ -632,6 +666,37 @@ impl LoadState {
         let labels = urls::labels(root, settings)?;
         self.labels.insert(root.to_path_buf(), labels.clone());
         Ok(labels)
+    }
+}
+
+/// How a resolved port was asked for, which decides what it is compared with.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PortKind {
+    /// The daemon's own `port`, compared with every other daemon's.
+    Primary,
+    /// A preset's named port declared `{ auto = true }`.
+    AutoNamed,
+    /// A named port left at the preset default or fixed by hand.
+    PlainNamed,
+}
+
+struct PortUse<'a> {
+    port: u16,
+    daemon: &'a str,
+    root: &'a Path,
+    what: String,
+    kind: PortKind,
+}
+
+impl PortUse<'_> {
+    /// Two primary ports have always been compared; a named port is compared
+    /// only when it was allocated, so a config whose default or hand-set named
+    /// ports happen to overlap keeps loading, as it did before `auto` named ports.
+    fn conflicts_with(&self, other: &Self) -> bool {
+        self.daemon != other.daemon
+            && ((self.kind == PortKind::Primary && other.kind == PortKind::Primary)
+                || self.kind == PortKind::AutoNamed
+                || other.kind == PortKind::AutoNamed)
     }
 }
 
@@ -870,6 +935,7 @@ fn build(
         exports,
         imported,
         port: claim,
+        named_ports: IndexMap::new(),
         host,
     })
 }
@@ -3372,6 +3438,75 @@ three = ["two", "c"]
             set.daemons["main"].port.unwrap().port,
             set.daemons["analytics"].port.unwrap().port
         );
+    }
+
+    /// An `auto` named port takes part in the same check as the primary ports:
+    /// a sibling already holding the number it resolves to is named in the error.
+    #[test]
+    fn an_auto_named_port_cannot_land_on_a_sibling_port() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (primary, _) = checkout_pair(tmp.path());
+        let load_body = |body: &str| {
+            load(&files(&[(
+                primary.join("mise.toml").to_str().unwrap(),
+                body,
+            )]))
+        };
+        // Distinct bases keep every port apart, and each export carries its own.
+        let set = load_body(
+            "[daemons.cockroach]\npreset = 'cockroachdb'\nversion = '26'\n\
+             [daemons.cockroach.port]\nauto = true\nbase = 26258\n\
+             [daemons.cockroach.ports]\nhttp_port = { auto = true, base = 27000 }\n\
+             [daemons.nats]\npreset = 'nats'\nversion = '2'\n\
+             [daemons.nats.port]\nauto = true\nbase = 4223\n\
+             [daemons.nats.ports]\nmonitor_port = { auto = true, base = 28000 }\n",
+        )
+        .unwrap();
+        assert_eq!(
+            set.daemons["cockroach"].exports["COCKROACH_HTTP_PORT"],
+            "27000"
+        );
+        assert_eq!(set.daemons["nats"].exports["NATS_MONITOR_PORT"], "28000");
+
+        for (body, expected) in [
+            // The same named base for two daemons of one project.
+            (
+                "[daemons.a]\npreset = 'cockroachdb'\nversion = '26'\nport = 26300\n\
+                 [daemons.a.ports]\nhttp_port = { auto = true, base = 27000 }\n\
+                 [daemons.b]\npreset = 'cockroachdb'\nversion = '26'\nport = 26301\n\
+                 [daemons.b.ports]\nhttp_port = { auto = true, base = 27000 }\n",
+                "both use port 27000",
+            ),
+            // An auto named port against another daemon's primary port.
+            (
+                "[daemons.a]\npreset = 'cockroachdb'\nversion = '26'\n\
+                 [daemons.a.ports]\nhttp_port = { auto = true, base = 4222 }\n\
+                 [daemons.b]\npreset = 'nats'\nversion = '2'\nport = 'auto'\n",
+                "both use port 4222",
+            ),
+            // And against another daemon's fixed named port.
+            (
+                "[daemons.a]\npreset = 'cockroachdb'\nversion = '26'\n\
+                 [daemons.a.ports]\nhttp_port = { auto = true, base = 9000 }\n\
+                 [daemons.b]\npreset = 'nats'\nversion = '2'\nport = 4300\n\
+                 [daemons.b.ports]\nmonitor_port = 9000\n",
+                "both use port 9000",
+            ),
+        ] {
+            let err = load_body(body).unwrap_err().to_string();
+            assert!(err.contains(expected), "{body:?} produced {err}");
+            assert!(err.contains("ports.http_port"), "{err}");
+        }
+
+        // Without an `auto` named port nothing changes: two cockroach daemons
+        // that both keep the default http_port still load, as before.
+        let set = load_body(
+            "[daemons.a]\npreset = 'cockroachdb'\nversion = '26'\nport = 26300\n\
+             [daemons.b]\npreset = 'cockroachdb'\nversion = '26'\nport = 26301\n",
+        )
+        .unwrap();
+        assert_eq!(set.daemons["a"].exports["A_HTTP_PORT"], "8080");
+        assert_eq!(set.daemons["b"].exports["B_HTTP_PORT"], "8080");
     }
 
     /// A group covers the daemons its project declares. Naming one reached
