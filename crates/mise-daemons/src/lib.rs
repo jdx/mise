@@ -938,7 +938,16 @@ fn build(
             default_data_dir: state_dir(&root).join("data").join(name),
         })?;
         container::render_probes(name, &mut table, &built.probe_vars)?;
-        table.insert("run".into(), toml::Value::String(built.run));
+        // The command is a POSIX shell script. Loading must still succeed on Windows,
+        // where `mise env` reads this project too; only starting the daemon fails.
+        let run = if cfg!(windows) {
+            format!(
+                "echo mise: daemon {name} cannot start: container daemons are not supported on Windows 1>&2 & exit /b 1"
+            )
+        } else {
+            built.run
+        };
+        table.insert("run".into(), toml::Value::String(run));
         // pitchfork stops after 5s by default, in the middle of `<runtime> stop`.
         table
             .entry("stop_signal".to_string())
@@ -2200,6 +2209,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn container_daemons_are_custom_daemons_with_a_generated_run() {
         let config = files(&[(
             "/project/mise.toml",
@@ -2303,6 +2313,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn container_daemons_get_their_own_ports_and_name_per_worktree() {
         let tmp = tempfile::tempdir().unwrap();
         let primary = tmp.path().join("project");

@@ -527,14 +527,6 @@ impl Decl {
         );
         script.push_str("exit \"$status\"\n}");
 
-        // Loading must still succeed on Windows, where `mise env` reads this
-        // project too; only starting the daemon fails, and says why.
-        if cfg!(windows) {
-            script = format!(
-                "echo mise: daemon {name} cannot start: container daemons are not supported on Windows 1>&2 & exit /b 1"
-            );
-        }
-
         let mut probe_vars = IndexMap::new();
         probe_vars.insert("container".to_string(), container.clone());
         probe_vars.insert("runtime".to_string(), self.runtime.shell_expr().to_string());
@@ -874,6 +866,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn volumes_resolve_against_the_project_root() {
         let built = decl(
             "image = \"x\"\nvolumes = [\"./data:/data\", \"/abs:/abs:ro\", \"named:/n\", \"/anon\"]",
@@ -894,6 +887,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn data_mount_stores_data_per_checkout_by_default() {
         let built = decl("image = \"x\"\ndata_mount = \"/var/lib/data\"")
             .build(cx(Path::new("/work/proj"), None))
