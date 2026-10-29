@@ -101,7 +101,7 @@ run = "pytest && npm test"
   in `mise-tasks/`, with dependencies, parallel execution, file watching, and
   the project's tools and environment already configured.
 - Set up a machine with [`mise bootstrap`](https://mise.jdx.dev/bootstrap.html)
-  and [`mise dotfiles`](https://mise.jdx.dev/dotfiles.html) to apply system
+  and [`mise dot apply`](https://mise.jdx.dev/dotfiles.html) to apply system
   packages, dotfiles, Git repositories, macOS defaults, and background services.
 
 Adopt only the parts you need. Start with a single tool or task, and keep any
