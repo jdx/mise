@@ -500,11 +500,23 @@ fn store_immutable(url: &str, text: &str) {
     // never this one its answer.
     if let Err(err) = path
         .parent()
-        .map_or(Ok(()), mise_util::file::create_dir_all)
+        .map_or(Ok(()), create_owner_only_dir)
         .and_then(|()| mise_util::file::write_atomic(&path, text))
     {
         debug!("brew: could not cache {url}: {err:#}");
     }
+}
+
+/// A private tap is fetched with the GitHub token, so its cached sources must
+/// stay unreadable to other local users.
+fn create_owner_only_dir(dir: &Path) -> Result<()> {
+    mise_util::file::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
 }
 
 fn validate_name(name: &str) -> Result<()> {
