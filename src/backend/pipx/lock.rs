@@ -477,7 +477,10 @@ impl PIPXBackend {
             let mut release = self
                 .release_python_requirement(&registry, package, version)
                 .await;
-            if release.is_err()
+            // Only a registry that does not host the project falls through; one that
+            // hosts it with unreadable metadata is the index uv will take it from.
+            if let Err(err) = &release
+                && err.downcast_ref::<InconsistentPythonMetadata>().is_none()
                 && let Some(fallback) = &fallback
             {
                 release = self
@@ -860,13 +863,27 @@ fn simple_index_python_requirement(package: &str, version: &str, html: &str) -> 
         }
     }
     if constraints.len() != 1 {
-        bail!(
-            "package {} requires consistent Python metadata on published wheels to generate a portable lock",
-            package
-        );
+        return Err(InconsistentPythonMetadata(package.to_string()).into());
     }
     Ok(constraints.into_iter().next().unwrap())
 }
+
+/// An index hosts the project, but its wheels of the release do not agree on (or do not
+/// include) a Python requirement. Distinct from a project the index does not host.
+#[derive(Debug)]
+struct InconsistentPythonMetadata(String);
+
+impl std::fmt::Display for InconsistentPythonMetadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "package {} requires consistent Python metadata on published wheels to generate a portable lock",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for InconsistentPythonMetadata {}
 
 /// The `pypi.registry_url` setting, PyPI unless set: the index every tool without its own
 /// `registry_url` uses.
@@ -1175,6 +1192,14 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
                 );
             }
         }
+    }
+
+    #[test]
+    fn unreadable_release_metadata_is_not_a_missing_project() {
+        let html = "<a href=\"demo-1.0-py3-none-any.whl\" data-requires-python=\">=3.10\">a</a>\
+                    <a href=\"demo-1.0-py2-none-any.whl\" data-requires-python=\">=3.11\">b</a>";
+        let err = simple_index_python_requirement("demo", "1.0", html).unwrap_err();
+        assert!(err.downcast_ref::<InconsistentPythonMetadata>().is_some());
     }
 
     #[test]
