@@ -303,6 +303,34 @@ impl PIPXBackend {
         }
     }
 
+    /// Find the installed interpreter for a selected Python when the lock request
+    /// carries none, for example a version rebuilt for `mise lock --bump`. The
+    /// selector is resolved in its owner scope first; if that version (such as an
+    /// older locked patch) is not installed, the newest installed match is used.
+    /// Returns `None` when no installed Python satisfies the selector.
+    async fn selected_lock_python(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Option<PathBuf> {
+        let dependency = super::selected_python_dependency(&tv.request)
+            .ok()
+            .flatten()?;
+        let unlocked = crate::toolset::ResolveOptions {
+            use_locked_version: false,
+            ..Default::default()
+        };
+        for opts in [Default::default(), unlocked] {
+            if let Ok(python) = ToolVersion::resolve(config, dependency.clone(), &opts).await
+                && let Ok(backend) = python.backend()
+                && let Ok(Some(path)) = backend.which(config, &python, "python").await
+            {
+                return Some(path);
+            }
+        }
+        None
+    }
+
     pub(crate) async fn bind_uv_python(
         &self,
         ctx: &InstallContext,
@@ -490,7 +518,12 @@ impl PIPXBackend {
                 .selected_python()?
                 .is_some() =>
             {
-                bail!("the selected Python is not installed; install it before locking")
+                match self.selected_lock_python(config, tv).await {
+                    Some(python) => Some(python),
+                    None => {
+                        bail!("the selected Python is not installed; install it before locking")
+                    }
+                }
             }
             _ => self.spawnable_dependency(config, None, "python").await,
         };
