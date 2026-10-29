@@ -580,6 +580,9 @@ fn resolve_volume(
     Ok(format!("{}:{rest}", path.to_string_lossy()))
 }
 
+static RUNTIME_VARIABLE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"\{\{\s*runtime\s*\}\}").unwrap());
+
 /// Fill in `{{ container }}`, `{{ runtime }}`, `{{ port }}` and the named ports in
 /// `ready_cmd` and `health_cmd`: the container name and the runtime are not known
 /// when the configuration is written. Any other `{{ ... }}`, such as pitchfork's
@@ -597,11 +600,10 @@ pub fn render_probes(
         let Some(command) = command else { continue };
         // `runtime` is a shell expression, and an argv probe runs without a shell.
         if let toml::Value::Array(argv) = command
-            && argv.iter().filter_map(toml::Value::as_str).any(|arg| {
-                regex::Regex::new(r"\{\{\s*runtime\s*\}\}")
-                    .unwrap()
-                    .is_match(arg)
-            })
+            && argv
+                .iter()
+                .filter_map(toml::Value::as_str)
+                .any(|arg| RUNTIME_VARIABLE.is_match(arg))
         {
             bail!(
                 "[daemons.{name}].{key}: {{{{ runtime }}}} needs a shell, so use the string form of the command, for example \"{{{{ runtime }}}} exec {{{{ container }}}} ...\""
