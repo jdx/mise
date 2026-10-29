@@ -88,3 +88,4 @@ EOF2
 
 assert_fail "mise run deploy" "env-task FOO=1"
 assert_contains "mise tasks deps deploy" "remote_cleanup (post)"
+assert_contains "mise run deploy 2>&1 | grep -E '^deploying|env-task FOO=1' | tr '\n' ' '" "deploying env-task FOO=1"
