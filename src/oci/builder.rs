@@ -1110,6 +1110,7 @@ fn build_dotfiles_layer(
     owner: LayerOwner,
 ) -> Result<LayerBlob> {
     let mut entries = DotfilesLayerEntries::default();
+    let mut added = 0;
 
     for req in requests {
         if req.mode.has_source() && req.mode != FileMode::Track && !req.source.exists() {
@@ -1122,6 +1123,7 @@ fn build_dotfiles_layer(
 
         if req.dot_prefix {
             add_source_files(req, &oci_target_path(req)?, &mut entries)?;
+            added += 1;
             continue;
         }
 
@@ -1202,9 +1204,10 @@ fn build_dotfiles_layer(
                 )?;
             }
         }
+        added += 1;
     }
 
-    info!("oci: adding {} [dotfiles] entries", requests.len());
+    info!("oci: adding {added} [dotfiles] entries");
     let (files, dirs) = entries.into_layer_inputs();
     layer::build_layer_from_files_and_dirs(&files, &dirs, owner)
 }

@@ -96,6 +96,10 @@ TOML
 assert_succeed "mise dot apply --yes"
 assert_fail "mise dot add --no-apply ~/.config/app" "stores in fnox"
 assert_fail "test -e ~/.dotfiles/.config/app/token"
+# a symlink that reaches the fnox target under another name is refused too
+ln -s ~/.config/app ~/app-alias
+assert_fail "mise dot add --no-apply ~/app-alias" "stores in fnox"
+assert_fail "test -e ~/.dotfiles/app-alias"
 
 # an entry that names a source is ignored with a warning
 # schema: invalid

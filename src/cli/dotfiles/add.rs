@@ -288,13 +288,18 @@ impl DotfilesAdd {
                     req.origin.config.display_user()
                 );
             }
-            // capturing a directory copies every file under it, secrets too
-            if let Some(req) = managed
-                .iter()
-                .find(|req| req.mode == FileMode::Fnox && req.target.starts_with(&target))
-            {
+            // capturing a directory copies every file under it, secrets too,
+            // and a symlink can reach a fnox target under another name
+            let canonical =
+                |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+            let target_canonical = canonical(&target);
+            if let Some(req) = managed.iter().find(|req| {
+                req.mode == FileMode::Fnox
+                    && (req.target.starts_with(&target)
+                        || canonical(&req.target).starts_with(&target_canonical))
+            }) {
                 bail!(
-                    "{target_raw}: contains {}, which {} stores in fnox; add the other files one at a time",
+                    "{target_raw}: reaches {}, which {} stores in fnox; capturing it would copy the secret into the dotfiles root, so add the other files one at a time",
                     req.target.display_user(),
                     req.origin.config.display_user()
                 );
