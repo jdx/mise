@@ -152,7 +152,10 @@ with the tool, and configure [Python](#choosing-python) and the
 [registry URL](#registry-url) directly.
 
 `mise lock` can resolve a graph from package metadata without first installing
-the selected interpreter. Installs from a graph use the selected mise Python
+the selected interpreter. It resolves against the selected Python when mise has
+it installed, whether or not it is on `PATH`; for a per-tool `python` that is not
+installed yet, uv may download that version for the resolution unless
+[`offline`](/configuration/settings.html#offline) is set. Installs from a graph use the selected mise Python
 and do not download another. A locked install from a lockfile in format 2 or
 later fails if the tool's graph is missing; run `mise lock` to create it.
 
