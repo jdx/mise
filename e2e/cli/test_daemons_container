@@ -100,7 +100,7 @@ name=$(basename "$(ls "$FAKE"/state/run.mise-*)")
 name="${name#run.}"
 # The name carries the project checkout and the daemon.
 assert_contains_text "$name" "mise-project-"
-assert_contains_text "$name" "-db"
+assert_contains_text "$name" "-db-"
 run=$(cat "$FAKE/state/run.$name")
 assert_contains_text "$run" "docker run --rm --name $name"
 # Published on loopback only, on the slot-0 ports, with the container's own ports.
@@ -170,7 +170,7 @@ ready_cmd = "{{ runtime }} exec {{ container }} ready"
 ready_delay = 0
 TOML
 mise daemons start cache
-assert_contains "cat '$FAKE'/state/run.mise-*-cache" "podman run --rm --name"
+assert_contains "cat '$FAKE'/state/run.mise-*-cache-*" "podman run --rm --name"
 mise daemons stop cache
 
 # A missing runtime fails with a message that says what to do.

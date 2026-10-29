@@ -158,13 +158,23 @@ pub fn take(name: &str, table: &mut toml::Table) -> Result<Option<Decl>> {
         .remove("container_port")
         .map(|value| port_number(name, "container_port", &value))
         .transpose()?;
-    let mut ports = IndexMap::new();
+    let mut ports: IndexMap<String, PortDecl> = IndexMap::new();
     if let Some(value) = table.remove("ports") {
         let Some(declared) = value.as_table() else {
             bail!("[daemons.{name}].ports must be a table");
         };
         for (key, value) in declared {
             validate_port_name(name, key)?;
+            // `http` and `http_port` are exported as the same variable.
+            let var = crate::presets::named_port_var("DAEMON", key);
+            if let Some(other) = ports
+                .keys()
+                .find(|other| crate::presets::named_port_var("DAEMON", other) == var)
+            {
+                bail!(
+                    "[daemons.{name}].ports.{key} and ports.{other} are exported as the same variable; rename one of them"
+                );
+            }
             ports.insert(key.clone(), parse_port(name, key, value)?);
         }
     }
@@ -321,10 +331,14 @@ pub struct Context<'a> {
 
 /// The container's name: unique per project checkout and daemon, and stable, so
 /// a leftover container from an earlier run can be found and removed.
+///
+/// The readable part is lossy (a namespace `foo` with daemon `bar-db` and a
+/// namespace `foo-bar` with daemon `db` read alike, and a namespace set in a
+/// project's own pitchfork config can hold characters a name cannot), so a hash of
+/// the exact identity ends the name. Starting one daemon removes a container by
+/// this name, which must never be another daemon's.
 pub fn container_name(namespace: &str, name: &str) -> String {
-    // A namespace can be set in a project's own pitchfork config, where nothing
-    // limits its characters; a container name allows letters, digits, `_`, `.`, `-`.
-    let namespace: String = namespace
+    let readable: String = namespace
         .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-') {
@@ -334,7 +348,9 @@ pub fn container_name(namespace: &str, name: &str) -> String {
             }
         })
         .collect();
-    format!("mise-{namespace}-{name}")
+    let hash = mise_util::hash::hash_to_str(&(namespace, name));
+    let hash: String = hash.chars().take(8).collect();
+    format!("mise-{readable}-{name}-{hash}")
 }
 
 impl Decl {
@@ -468,8 +484,11 @@ impl Decl {
             Some(Command::Argv(argv)) => run.extend(argv.iter().map(quote)),
             None => {}
         }
+        // In a group of its own, so a `command` that ends in a newline or a comment
+        // cannot swallow the `&`.
+        script.push_str("{ ");
         script.push_str(&run.join(" "));
-        script.push_str(" &\npid=$!\nwait \"$pid\"\nstatus=$?\n");
+        script.push_str("\n} &\npid=$!\nwait \"$pid\"\nstatus=$?\n");
         // A trapped signal ends `wait` early; the container is stopping, and the
         // runtime client exits once it has, so collect it before leaving.
         script.push_str("if [ -n \"$stopping\" ]; then wait \"$pid\" 2>/dev/null; exit 0; fi\n");
@@ -613,6 +632,9 @@ mod tests {
         assert!(bad("image = \"x\"\ndata_mount = \"rel\"").contains("absolute"));
         assert!(bad("image = \"x\"\nports.port = 1").contains("cannot be"));
         assert!(bad("image = \"x\"\nports.a-b = 1").contains("port names"));
+        assert!(
+            bad("image = \"x\"\nports.http = 1\nports.http_port = 2").contains("same variable")
+        );
         assert!(bad("image = \"x\"\nports.http = { host = 1 }").contains("container"));
         assert!(
             bad("image = \"x\"\nports.http = { container = 1, host = 2, auto = true }")
@@ -724,12 +746,19 @@ mod tests {
 
     #[test]
     fn the_name_carries_the_checkout_identity() {
-        assert_eq!(container_name("proj-abc", "db"), "mise-proj-abc-db");
-        assert_eq!(container_name("my proj/x", "db"), "mise-my-proj-x-db");
+        let readable = container_name("proj-abc", "db");
+        assert!(readable.starts_with("mise-proj-abc-db-"), "{readable}");
+        assert!(container_name("my proj/x", "db").starts_with("mise-my-proj-x-db-"));
+        // Names that read alike stay distinct.
+        assert_ne!(
+            container_name("foo", "bar-db"),
+            container_name("foo-bar", "db")
+        );
+        assert_ne!(container_name("a b", "db"), container_name("a-b", "db"));
         let built = decl("image = \"x\"")
             .build(cx(Path::new("/work/proj"), None))
             .unwrap();
-        assert!(built.run.contains("name='mise-proj-abc-db'"));
+        assert!(built.run.contains("name='mise-proj-abc-db-"));
         assert!(built.run.contains("--label 'dev.mise.daemon=proj-abc/db'"));
         assert!(built.run.contains("--label 'dev.mise.project=/work/proj'"));
     }
@@ -794,11 +823,20 @@ mod tests {
         let line = decl("image = \"x\"\ncommand = \"start --insecure\"")
             .build(cx(Path::new("/work/proj"), None))
             .unwrap();
-        assert!(line.run.contains("-- 'x' start --insecure &"));
+        assert!(line.run.contains("-- 'x' start --insecure\n} &"));
+        // A trailing newline or comment stays inside the group.
+        let multi = decl("image = \"x\"\ncommand = \"\"\"\nserve --flag # why\n\"\"\"")
+            .build(cx(Path::new("/work/proj"), None))
+            .unwrap();
+        assert!(
+            multi.run.contains("serve --flag # why\n\n} &"),
+            "{}",
+            multi.run
+        );
         let argv = decl("image = \"x\"\ncommand = [\"sh\", \"-c\", \"a b\"]")
             .build(cx(Path::new("/work/proj"), None))
             .unwrap();
-        assert!(argv.run.contains("-- 'x' 'sh' '-c' 'a b' &"));
+        assert!(argv.run.contains("-- 'x' 'sh' '-c' 'a b'\n} &"));
     }
 
     #[test]
@@ -835,11 +873,13 @@ mod tests {
         .unwrap();
         render_probes(Path::new("/work/proj"), &mut table, &built.probe_ctx).unwrap();
         let ready = table["ready_cmd"].as_str().unwrap();
-        assert!(
-            ready.ends_with(" exec mise-proj-abc-db true 5432 8080"),
-            "{ready}"
-        );
+        assert!(ready.contains(" exec mise-proj-abc-db-"), "{ready}");
         assert!(ready.starts_with("${MISE_CONTAINER_RUNTIME:-"), "{ready}");
-        assert_eq!(table["health_cmd"][1].as_str(), Some("mise-proj-abc-db"));
+        assert!(
+            table["health_cmd"][1]
+                .as_str()
+                .unwrap()
+                .starts_with("mise-proj-abc-db-")
+        );
     }
 }

@@ -123,10 +123,11 @@ may still need `runtime_args = ["--user", "..."]` to write them.
 
 ## Worktrees and cleanup
 
-The container is named `mise-<namespace>-<daemon>`, where the
+The container is named `mise-<namespace>-<daemon>-<hash>`, where the
 [namespace](/daemons/worktrees.html#namespaces) carries the project and, in a
-linked worktree, the worktree. Two checkouts therefore never share or fight over
-a container name, and each container is labelled `dev.mise.daemon` and
+linked worktree, the worktree, and `<hash>` is a short hash of the exact
+namespace and daemon name. Two checkouts, or two daemons whose names only read
+alike, therefore never share or fight over a container name, and each container is labelled `dev.mise.daemon` and
 `dev.mise.project` so you can find it with `docker ps --filter label=...`.
 
 When the daemon stops, mise runs `<runtime> stop` for the container and waits
