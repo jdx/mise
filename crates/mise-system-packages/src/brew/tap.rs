@@ -418,22 +418,33 @@ async fn immutable_text(url: String) -> Result<String> {
         return Ok(text);
     }
     let text = HTTP_FETCH.get_text_cached(url.as_str()).await?;
-    let path = immutable_cache_path(&url);
+    store_immutable(&url, &text);
+    Ok(text)
+}
+
+/// Parsed before it is stored, and a stored copy that does not parse is fetched
+/// again, so a malformed 200 cannot pin this sha to an error for good.
+async fn immutable_json<T: serde::de::DeserializeOwned>(url: String) -> Result<T> {
+    if let Some(value) = cached_immutable(&url).and_then(|text| serde_json::from_str(&text).ok()) {
+        return Ok(value);
+    }
+    let text = HTTP_FETCH.get_text_cached(url.as_str()).await?;
+    let value = serde_json::from_str(&text)?;
+    store_immutable(&url, &text);
+    Ok(value)
+}
+
+fn store_immutable(url: &str, text: &str) {
+    let path = immutable_cache_path(url);
     // Best effort: a cache that cannot be written costs the next run a request,
     // never this one its answer.
     if let Err(err) = path
         .parent()
         .map_or(Ok(()), mise_util::file::create_dir_all)
-        .and_then(|()| mise_util::file::write_atomic(&path, &text))
+        .and_then(|()| mise_util::file::write_atomic(&path, text))
     {
         debug!("brew: could not cache {url}: {err:#}");
     }
-    Ok(text)
-}
-
-async fn immutable_json<T: serde::de::DeserializeOwned>(url: String) -> Result<T> {
-    let text = immutable_text(url).await?;
-    Ok(serde_json::from_str(&text)?)
 }
 
 fn validate_name(name: &str) -> Result<()> {
