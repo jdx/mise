@@ -757,22 +757,26 @@ impl Upgrade {
             } else {
                 // The note only reports, and installs nothing, so a missing lazy tool
                 // is left out even when a reported tool depends on it.
-                ts.list_outdated_versions_selecting(
-                    &config,
-                    true,
-                    &opts,
-                    OutdatedSelection {
-                        filter_tools,
-                        exclude_tools,
-                        show_progress: false,
-                        select: &|tv| !(self.tool.is_empty() && tv.is_unrun_lazy()),
-                    },
-                )
-                .await
-                .outdated
-                .into_iter()
-                .filter(|o| o.bump.is_some() && (!self.installed_only || o.current.is_some()))
-                .collect::<Vec<_>>()
+                let bumps = ts
+                    .list_outdated_versions_selecting(
+                        &config,
+                        true,
+                        &opts,
+                        OutdatedSelection {
+                            filter_tools,
+                            exclude_tools,
+                            show_progress: false,
+                            select: &|tv| !(self.tool.is_empty() && tv.is_unrun_lazy()),
+                        },
+                    )
+                    .await;
+                // A tool whose backend-wide lookup failed may be out of date too.
+                checked.unchecked.extend(bumps.unchecked);
+                bumps
+                    .outdated
+                    .into_iter()
+                    .filter(|o| o.bump.is_some() && (!self.installed_only || o.current.is_some()))
+                    .collect::<Vec<_>>()
             };
             if bump_outdated.is_empty() && !has_explicit_config_bumps {
                 // A tool whose check failed may still be out of date.

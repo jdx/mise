@@ -114,17 +114,19 @@ impl OutdatedVersions {
         self.unchecked.extend(other.unchecked);
     }
 
-    /// A warning naming the unchecked tool versions, if there are any.
+    /// A warning naming the unchecked tool versions, if there are any. A tool
+    /// that failed more than one lookup is named once.
     pub fn warn_unchecked(&self) {
-        if !self.unchecked.is_empty() {
+        let unchecked = self.unchecked.iter().unique().collect::<Vec<_>>();
+        if !unchecked.is_empty() {
             warn!(
                 "Could not check {} for updates: {}",
-                if self.unchecked.len() == 1 {
+                if unchecked.len() == 1 {
                     "1 tool".to_string()
                 } else {
-                    format!("{} tools", self.unchecked.len())
+                    format!("{} tools", unchecked.len())
                 },
-                self.unchecked.join(", ")
+                unchecked.iter().join(", ")
             );
         }
     }

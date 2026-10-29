@@ -167,18 +167,19 @@ impl Outdated {
             .await;
         let outdated = std::mem::take(&mut checked.outdated);
         let bump_available = if !self.json && !self.bump && outdated.is_empty() {
-            ts.list_outdated_versions(
-                &config,
-                true,
-                &ResolveOptions {
-                    inactive: self.inactive,
-                    ..Default::default()
-                },
-            )
-            .await
-            .outdated
-            .iter()
-            .any(|o| o.bump.is_some())
+            let bumps = ts
+                .list_outdated_versions(
+                    &config,
+                    true,
+                    &ResolveOptions {
+                        inactive: self.inactive,
+                        ..Default::default()
+                    },
+                )
+                .await;
+            // A tool whose backend-wide lookup failed may be out of date too.
+            checked.unchecked.extend(bumps.unchecked);
+            bumps.outdated.iter().any(|o| o.bump.is_some())
         } else {
             false
         };
