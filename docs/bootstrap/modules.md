@@ -72,6 +72,10 @@ modules in the same directory declare the same key, the one listed later in
 `env` wins. With `env = ["ssh", "gpg"]`, a service declared in both files uses
 the definition from `config.gpg.toml`.
 
+To deploy a dotfile only while another module is also selected, give its entry a
+`profile` variant; see
+[Deploy an entry only for a profile](/dotfiles/managed.html#only-for-a-profile).
+
 `mise config` lists the files that loaded. `mise bootstrap plan --json`
 includes `origin.config` and `origin.environment` for each managed file and
 service, so you can trace a resource back to its declaration.

@@ -549,6 +549,22 @@ variants = [
 which target a machine selects does not remove the file deployed at the old
 one.
 
+### Deploy an entry only for a profile {#only-for-a-profile}
+
+A variant without a `target` only selects. With no `default` variant, a machine
+that matches none skips the entry, so one entry can wait for an environment
+while another file selects the rest of the setup. This entry in
+`mise.ssh.toml` deploys only when `work` is also selected:
+
+```toml
+[dotfiles."~/.ssh/work_key"]
+source = "ssh/work_key"
+mode = "symlink"
+variants = [{ profile = "work" }]
+```
+
+`MISE_ENV=ssh` skips `~/.ssh/work_key`, and `MISE_ENV=ssh,work` links it.
+
 To give a whole set of entries to one operating system, put them in a
 platform config file such as `config.macos.toml` instead, with the
 [`auto_env`](/configuration/settings.html#auto_env) setting on; see
