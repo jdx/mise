@@ -192,10 +192,44 @@ pub fn build_client(make: impl Fn() -> ClientBuilder) -> reqwest::Result<Client>
             builder
         }
     };
-    match make().build() {
+    let build = || match make().build() {
         Ok(client) => Ok(client),
         Err(err) => with_bundled_roots(make, err),
+    };
+    match build() {
+        // With rustls a certificate is only checked when a client is built, so
+        // a bundle that loaded can still be what fails the build.
+        Err(err) if discard_extra_ca_certs(&err) => build(),
+        result => result,
     }
+}
+
+/// Drops the extra CA certificates, if there are any, after `err` failed a
+/// client build with them, so the next build has the usual roots alone and
+/// warns that the bundle was ignored. Returns whether there were any to drop.
+fn discard_extra_ca_certs(err: &reqwest::Error) -> bool {
+    let mut extra = EXTRA_CA_CERTS.lock().unwrap_or_else(|e| e.into_inner());
+    let Some(extra) = extra.as_mut() else {
+        return false;
+    };
+    #[cfg(any(
+        feature = "native-tls",
+        feature = "rustls",
+        feature = "rustls-native-roots"
+    ))]
+    if !extra.certs.is_empty() {
+        extra.certs.clear();
+        let mut message = err.to_string();
+        let mut source = std::error::Error::source(err);
+        while let Some(cause) = source {
+            message.push_str(&format!(": {cause}"));
+            source = cause.source();
+        }
+        extra.error = Some(message);
+        return true;
+    }
+    let _ = (extra, err);
+    false
 }
 
 #[cfg(all(
@@ -429,6 +463,17 @@ mod extra_ca_certs_tests {
         set_extra_ca_certs(Some(missing));
         assert!(extra_ca_certs_error().is_some());
         assert!(build_client(Client::builder).is_ok());
+        // A PEM block whose contents are not a certificate fails only when a
+        // rustls client is built, and that build falls back to the usual roots.
+        let malformed = temp_file(
+            "malformed.pem",
+            b"-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n",
+        );
+        set_extra_ca_certs(Some(&malformed));
+        for (name, make) in backends() {
+            assert!(build_client(make).is_ok(), "{name}");
+        }
+        assert!(extra_ca_certs_error().is_some());
         // Refused before it is opened, whatever the working directory holds.
         set_extra_ca_certs(Some(Path::new("certs/proxy.pem")));
         assert_eq!(

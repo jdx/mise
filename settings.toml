@@ -928,7 +928,7 @@ env = "MISE_EXPERIMENTAL"
 type = "Bool"
 
 [extra_ca_certs]
-description = "PEM bundle of CA certificates mise trusts in addition to the system's."
+description = "PEM bundle of CA certificates mise trusts in addition to its usual roots."
 docs = """
 Use it when mise's HTTPS traffic passes through a proxy whose CA is not in the
 system trust store, such as a traffic-inspecting proxy that generates a new CA
@@ -948,7 +948,9 @@ tool's installer, read their own certificate settings.
 
 The path must be absolute or start with `~/`: a relative path would resolve
 against the current directory, so mise ignores it. If the file cannot be read or
-holds no certificates, mise warns and trusts the system store alone. This setting is only read from the environment and the
+holds a certificate mise cannot use, mise warns and keeps its usual roots: the
+system store, `SSL_CERT_FILE` where that replaces it, or the bundled Mozilla
+roots when neither loads. This setting is only read from the environment and the
 global config, so a project's `mise.toml` cannot add a trusted CA. See
 [TLS certificates](/faq.html#tls-certificates).
 """

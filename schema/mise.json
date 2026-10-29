@@ -1992,7 +1992,7 @@
           "type": "boolean"
         },
         "extra_ca_certs": {
-          "description": "PEM bundle of CA certificates mise trusts in addition to the system's.",
+          "description": "PEM bundle of CA certificates mise trusts in addition to its usual roots.",
           "type": "string"
         },
         "extract_max_ratio": {
