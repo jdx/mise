@@ -584,18 +584,32 @@ fn resolve_volume(
 /// `ready_cmd` and `health_cmd`: the container name and the runtime are not known
 /// when the configuration is written. Any other `{{ ... }}`, such as pitchfork's
 /// `{{ name }}`, is left for pitchfork.
-pub fn render_probes(table: &mut toml::Table, vars: &IndexMap<String, String>) {
+pub fn render_probes(
+    name: &str,
+    table: &mut toml::Table,
+    vars: &IndexMap<String, String>,
+) -> Result<()> {
     for key in ["ready_cmd", "health_cmd"] {
-        match table.get_mut(key) {
-            Some(toml::Value::Table(fields)) => {
-                if let Some(command) = fields.get_mut("run") {
-                    substitute(command, vars);
-                }
-            }
-            Some(command) => substitute(command, vars),
-            None => {}
+        let command = match table.get_mut(key) {
+            Some(toml::Value::Table(fields)) => fields.get_mut("run"),
+            command => command,
+        };
+        let Some(command) = command else { continue };
+        // `runtime` is a shell expression, and an argv probe runs without a shell.
+        if let toml::Value::Array(argv) = command
+            && argv.iter().filter_map(toml::Value::as_str).any(|arg| {
+                regex::Regex::new(r"\{\{\s*runtime\s*\}\}")
+                    .unwrap()
+                    .is_match(arg)
+            })
+        {
+            bail!(
+                "[daemons.{name}].{key}: {{{{ runtime }}}} needs a shell, so use the string form of the command, for example \"{{{{ runtime }}}} exec {{{{ container }}}} ...\""
+            );
         }
+        substitute(command, vars);
     }
+    Ok(())
 }
 
 fn substitute(value: &mut toml::Value, vars: &IndexMap<String, String>) {
@@ -919,7 +933,7 @@ mod tests {
             "ready_cmd = \"{{ runtime }} exec {{ container }} true {{ port }} {{ http }} {{ name }}\"\nhealth_cmd = [\"c\", \"{{ container }}\"]",
         )
         .unwrap();
-        render_probes(&mut table, &built.probe_vars);
+        render_probes("db", &mut table, &built.probe_vars).unwrap();
         let ready = table["ready_cmd"].as_str().unwrap();
         assert!(ready.contains(" exec mise-proj-abc-db-"), "{ready}");
         // Pitchfork's own variables are left for pitchfork.
@@ -931,5 +945,12 @@ mod tests {
                 .unwrap()
                 .starts_with("mise-proj-abc-db-")
         );
+        // An argv probe has no shell to evaluate the runtime expression.
+        let mut argv: toml::Table =
+            toml::from_str("ready_cmd = [\"{{ runtime }}\", \"exec\"]").unwrap();
+        let err = render_probes("db", &mut argv, &built.probe_vars)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("needs a shell"), "{err}");
     }
 }

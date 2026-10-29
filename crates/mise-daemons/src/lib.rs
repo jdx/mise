@@ -903,7 +903,7 @@ fn build(
             env,
             default_data_dir: state_dir(&root).join("data").join(name),
         })?;
-        container::render_probes(&mut table, &built.probe_vars);
+        container::render_probes(name, &mut table, &built.probe_vars)?;
         table.insert("run".into(), toml::Value::String(built.run));
         // pitchfork stops after 5s by default, in the middle of `<runtime> stop`.
         table

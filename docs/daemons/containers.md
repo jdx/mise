@@ -87,9 +87,10 @@ your network can reach a container daemon.
 
 A published port opens on the host as soon as the container starts, before the
 server inside it can answer, so a `ready_port` check can pass early. Prefer a
-`ready_cmd` that asks the server. `ready_cmd` and `health_cmd` (as strings) can
+`ready_cmd` that asks the server. `ready_cmd` and `health_cmd` can
 use these variables, which mise fills in; other templates, such as
-pitchfork's <code v-pre>{{ name }}</code>, are left for pitchfork:
+pitchfork's <code v-pre>{{ name }}</code>, are left for pitchfork. `runtime` is a shell
+expression, so it needs the string form of the command, not an argument array:
 
 | Variable                           | Value                                                |
 | ---------------------------------- | ---------------------------------------------------- |
