@@ -189,7 +189,8 @@ impl Backend for DotnetPlugin {
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let content = file::read_to_string(path)?;
-        let global_json: GlobalJson = serde_json::from_str(&content)?;
+        // the .NET SDK reads global.json as JSONC
+        let global_json: GlobalJson = mise_util::structured_merge::from_jsonc_str(&content)?;
         let sdk = global_json
             .sdk
             .ok_or_else(|| eyre::eyre!("no sdk.version found in {}", path.display()))?;
@@ -625,6 +626,22 @@ mod tests {
                 .resolve_lockfile_options(&request_no_runtime, &PlatformTarget::from_current())
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn parses_global_json_with_comments() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("global.json");
+        std::fs::write(
+            &path,
+            "{\n  // pin the SDK\n  \"sdk\": { \"version\": \"8.0.100\", /* roll forward */ \"rollForward\": \"latestFeature\" }\n}\n",
+        )
+        .unwrap();
+        let backend = DotnetPlugin::new();
+        assert_eq!(
+            backend._parse_idiomatic_file(&path).await.unwrap(),
+            vec!["8.0.100".to_string()]
         );
     }
 

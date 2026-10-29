@@ -542,7 +542,8 @@ fn read_turbo_json(
             return Ok(None);
         }
     };
-    match serde_json::from_str(&contents) {
+    // turbo reads turbo.json as JSONC
+    match mise_util::structured_merge::from_jsonc_str(&contents) {
         Ok(turbo) => Ok(Some(turbo)),
         Err(error) => {
             warn!("failed to parse optional {}: {error}", path.display());
@@ -1009,6 +1010,41 @@ snapshots:
         assert_eq!(
             suggestions.provenance.depends,
             suggestions.provenance.inputs
+        );
+    }
+
+    #[test]
+    fn reads_turbo_json_with_comments() {
+        let temp = tempdir().unwrap();
+        write(
+            &temp.path().join(PACKAGE_JSON),
+            r#"{"packageManager":"pnpm@10.0.0","workspaces":["packages/*"]}"#,
+        );
+        write(
+            &temp.path().join("packages/app/package.json"),
+            r#"{"name":"app","scripts":{"build":"vite build"}}"#,
+        );
+        write(
+            &temp.path().join(TURBO_JSON),
+            r#"{
+                "$schema": "https://turborepo.com/schema.json",
+                // turbo accepts comments in turbo.json
+                "tasks": {
+                    /* build output */
+                    "build": { "outputs": ["dist/**"] }
+                }
+            }"#,
+        );
+
+        let projects = NodeWorkspaceProvider.discover(temp.path()).unwrap();
+        let suggestions = &projects[0].tasks["build"].suggestions;
+
+        assert_eq!(
+            suggestions
+                .outputs
+                .as_ref()
+                .map(|outputs| outputs.iter().map(String::as_str).collect::<Vec<_>>()),
+            Some(vec!["dist/**"])
         );
     }
 

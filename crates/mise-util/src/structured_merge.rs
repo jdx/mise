@@ -535,6 +535,12 @@ fn jsonc_options() -> ParseOptions {
     }
 }
 
+/// Deserializes a JSONC document: JSON plus comments and trailing commas.
+pub fn from_jsonc_str<T: serde::de::DeserializeOwned>(text: &str) -> Result<T> {
+    let value = parse_jsonc(text)?.to_serde_value().unwrap_or(Value::Null);
+    Ok(serde_json::from_value(value)?)
+}
+
 fn parse_jsonc(text: &str) -> Result<CstRootNode> {
     Ok(CstRootNode::parse(text, &jsonc_options())?)
 }
