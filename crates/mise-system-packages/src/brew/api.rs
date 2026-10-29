@@ -109,7 +109,7 @@ async fn formula_exact_from(base: &str, name: &str) -> Result<Formula> {
 /// Only for the real API: a `base` pointing anywhere else (a test server) is a
 /// different document than the one the bulk index caches.
 async fn bulk_formula(base: &str, name: &str, follow_aliases: bool) -> Option<Formula> {
-    if base != API_BASE || mirrors_formulae_but_not_index(name) {
+    if base != API_BASE || !formula_source_matches_index(name) {
         return None;
     }
     let body = super::bulk::entry(&super::bulk::FORMULAE, name, follow_aliases).await?;
@@ -124,20 +124,25 @@ async fn bulk_formula(base: &str, name: &str, follow_aliases: bool) -> Option<Fo
     }
 }
 
-/// A `url_replacements` rule that reroutes `formula/<name>.json` but not
-/// `formula.json` makes the mirror the source for that formula, so the public
-/// index must not answer for it.
-fn mirrors_formulae_but_not_index(name: &str) -> bool {
-    let rerouted = |url: String| {
-        let Ok(original) = url::Url::parse(&url) else {
-            return false;
-        };
-        let mut replaced = original.clone();
-        mise_util::http::apply_url_replacements(&mut replaced);
-        replaced != original
+/// The bulk index answers for a formula only when `url_replacements` sends
+/// `formula/<name>.json` to the same place as `formula.json`. A rule that gives
+/// the per-formula URL a source of its own keeps that source, as before.
+fn formula_source_matches_index(name: &str) -> bool {
+    let replaced = |url: String| {
+        let mut url = url::Url::parse(&url).ok()?;
+        mise_util::http::apply_url_replacements(&mut url);
+        Some(url.to_string())
     };
-    rerouted(format!("{API_BASE}/formula/{name}.json"))
-        && !rerouted(format!("{API_BASE}/formula.json"))
+    let (Some(formula), Some(index)) = (
+        replaced(format!("{API_BASE}/formula/{name}.json")),
+        replaced(format!("{API_BASE}/formula.json")),
+    ) else {
+        return false;
+    };
+    index
+        .strip_suffix("formula.json")
+        .and_then(|dir| url::Url::parse(&format!("{dir}formula/{name}.json")).ok())
+        .is_some_and(|expected| expected.as_str() == formula)
 }
 
 #[derive(Debug, Deserialize)]

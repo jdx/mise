@@ -67,6 +67,34 @@ pub(super) async fn formula_from_ruby(
     validate_name(name)?;
     let tap_source = resolve_tap_source(owner, tap, tap_url).await?;
     let (source, source_path) = fetch_formula_source(&tap_source, name).await?;
+    let source_url = ruby_source_url(&tap_source.raw_base, &source_path);
+    let evaluated = evaluate_formula(
+        owner,
+        tap,
+        name,
+        provision_ruby,
+        tap_source,
+        source,
+        source_path,
+    )
+    .await;
+    // A source that does not evaluate is dropped from the cache, so a broken
+    // 200 from a mirror or proxy is fetched again next run instead of for good.
+    if evaluated.is_err() {
+        forget_immutable(&source_url);
+    }
+    evaluated
+}
+
+async fn evaluate_formula(
+    owner: &str,
+    tap: &str,
+    name: &str,
+    provision_ruby: bool,
+    tap_source: TapSource,
+    source: String,
+    source_path: String,
+) -> Result<Formula> {
     let checksum = mise_util::hash::hash_sha256_to_str(&source);
     let ruby = ruby_for_metadata(name, provision_ruby).await?;
     let mut runner = CmdLineRunner::new(&ruby)
@@ -148,6 +176,24 @@ async fn evaluate_cask(
     validate_name(token)?;
     let tap_source = resolve_tap_source(owner, tap, tap_url).await?;
     let (source, source_path) = fetch_ruby_source(&tap_source.raw_base, "Casks", token).await?;
+    let source_url = format!("{}/{source_path}", tap_source.raw_base);
+    let evaluated =
+        evaluate_cask_source(token, provision_ruby, tap_source, source, source_path).await;
+    // A source that does not evaluate is dropped from the cache, so a broken
+    // 200 from a mirror or proxy is fetched again next run instead of for good.
+    if evaluated.is_err() {
+        forget_immutable(&source_url);
+    }
+    evaluated
+}
+
+async fn evaluate_cask_source(
+    token: &str,
+    provision_ruby: bool,
+    tap_source: TapSource,
+    source: String,
+    source_path: String,
+) -> Result<Cask> {
     let checksum = mise_util::hash::hash_sha256_to_str(&source);
     let ruby = ruby_for_metadata(token, provision_ruby).await?;
     let mut runner = CmdLineRunner::new(&ruby)
@@ -402,11 +448,25 @@ async fn fetch_ruby_source(
 /// turns an unchanged tap into one `commits/<branch>` request per run instead
 /// of the full walk down to the Ruby file. The branch head itself is still
 /// asked every time, so a new tap commit is seen at once.
+///
+/// Keyed by the URL after `url_replacements`, like the bulk index, so changing
+/// a mirror changes where the next run reads from.
 fn immutable_cache_path(url: &str) -> PathBuf {
+    let source = match url::Url::parse(url) {
+        Ok(mut parsed) => {
+            mise_util::http::apply_url_replacements(&mut parsed);
+            parsed.to_string()
+        }
+        Err(_) => url.to_string(),
+    };
     mise_util::dirs::CACHE
         .join("system-brew")
         .join("taps")
-        .join(mise_util::hash::hash_sha256_to_str(url))
+        .join(mise_util::hash::hash_sha256_to_str(&source))
+}
+
+fn forget_immutable(url: &str) {
+    let _ = std::fs::remove_file(immutable_cache_path(url));
 }
 
 fn cached_immutable(url: &str) -> Option<String> {
