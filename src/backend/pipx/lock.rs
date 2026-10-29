@@ -7,6 +7,34 @@ use std::path::PathBuf;
 
 const MIN_UV_VERSION: &str = "0.12.10";
 const PROJECT_NAME: &str = "mise-pypi-tool-environment";
+
+/// How `uv lock` and the `uv sync` replay are told which interpreter to use.
+#[derive(Clone)]
+enum LockPython {
+    /// An interpreter that is already installed.
+    Installed(OsString),
+    /// A selected version that is not installed; uv fetches it when `download` is set.
+    Version { request: OsString, download: bool },
+    /// Nothing mise knows about: uv searches on its own and never downloads.
+    Unspecified,
+}
+
+impl LockPython {
+    fn apply(&self, cmd: CmdLineRunner<'static>) -> CmdLineRunner<'static> {
+        match self {
+            Self::Installed(python) => cmd.arg("--python").arg(python).arg("--no-python-downloads"),
+            Self::Version { request, download } => {
+                let cmd = cmd.arg("--python").arg(request);
+                if *download {
+                    cmd
+                } else {
+                    cmd.arg("--no-python-downloads")
+                }
+            }
+            Self::Unspecified => cmd.arg("--no-python-downloads"),
+        }
+    }
+}
 const DISCOVER_SCRIPTS: &str = r#"
 import importlib.metadata
 import json
@@ -383,11 +411,30 @@ impl PIPXBackend {
             .current_dir(project)
             .envs(config.env().await?)
             .env_values(tv.install_env())
-            .env("UV_DEFAULT_INDEX", index)
             .env_remove("UV_PROJECT")
             .env_remove("UV_WORKING_DIR")
             .env_remove("UV_PROJECT_ENVIRONMENT")
             .env_remove("VIRTUAL_ENV");
+        let raw = tv.request.options();
+        let default_index = uv_index_url(&global_registry_url())?;
+        cmd = if PipxOptions::new(&raw).registry_index_priority()? && index != default_index {
+            // The registry is searched first and the global index (PyPI unless
+            // `pypi.registry_url` says otherwise) only for projects the registry does
+            // not host. `first-index` takes each project from the first index that has
+            // it, so a project on the registry never comes from anywhere else, and it
+            // is pinned because `install_env` could otherwise pick `unsafe-best-match`.
+            // Extra indexes would be searched before the default index, so they and the
+            // deprecated spelling of the default index are dropped to keep that order.
+            cmd.env("UV_INDEX", index)
+                .env("UV_DEFAULT_INDEX", default_index)
+                .env("UV_INDEX_STRATEGY", "first-index")
+                .env_remove("UV_EXTRA_INDEX_URL")
+                .env_remove("UV_INDEX_URL")
+        } else {
+            // The registry replaces the default index, so every dependency has to
+            // come from it.
+            cmd.env("UV_DEFAULT_INDEX", index)
+        };
         // The lock runs with `--no-config`, which also skips a `keyring-provider` in
         // the user's uv.toml, so the setting that authenticates mise's own index
         // requests has to reach uv here too.
@@ -471,6 +518,81 @@ impl PIPXBackend {
         ]
     }
 
+    /// The installed interpreter a tool's `python` option selects when none was bound
+    /// to the version: the lockfile may pin a patch release that is not installed
+    /// while another one matching the selector is, so look at the installed ones too.
+    async fn installed_selected_python(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Option<PathBuf> {
+        let dependency = super::selected_python_dependency(&tv.request)
+            .ok()
+            .flatten()?;
+        let unlocked = crate::toolset::ResolveOptions {
+            use_locked_version: false,
+            ..Default::default()
+        };
+        for opts in [Default::default(), unlocked] {
+            if let Ok(python) = ToolVersion::resolve(config, dependency.clone(), &opts).await
+                && let Ok(backend) = python.backend()
+                && let Ok(Some(path)) = backend.which(config, &python, "python").await
+            {
+                return Some(path);
+            }
+        }
+        None
+    }
+
+    /// The interpreter uv resolves and replays a graph against. An installed
+    /// interpreter is passed by path and never replaced. A selected Python that
+    /// is not installed yet is passed as its version, which uv may download for
+    /// the resolution alone: `mise lock` does not install tools, and a
+    /// download-free uv would otherwise skip the graph on a fresh checkout.
+    async fn lock_python(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<(LockPython, LockPython)> {
+        let bound = match &tv.uv_python {
+            Some((python, _)) if !python.as_os_str().is_empty() => Some(python.clone()),
+            _ => None,
+        };
+        if let Some(selector) = PipxOptions::new(&tv.request.options()).selected_python()? {
+            let bound = match bound {
+                Some(path) => Some(path),
+                None => self.installed_selected_python(config, tv).await,
+            };
+            let python = match bound {
+                Some(path) => LockPython::Installed(path.into()),
+                None => LockPython::Version {
+                    request: selector.request_version().into(),
+                    download: !Settings::get().offline(),
+                },
+            };
+            return Ok((python.clone(), python));
+        }
+        // Only mise's own Python is handed to `uv lock`, so a Python on PATH or a
+        // `UV_PYTHON` the user set still decides when mise has none. The replay
+        // always uses one, as install does.
+        let configured = match bound {
+            Some(path) => Some(path),
+            None => match self.dependency_toolset(config).await {
+                Ok(toolset) => toolset.which_bin_spawnable(config, "python").await,
+                Err(_) => None,
+            },
+        };
+        let replay = match &configured {
+            Some(path) => Some(path.clone()),
+            None => self.spawnable_dependency(config, None, "python").await,
+        };
+        let installed = |path: Option<PathBuf>| match path {
+            Some(path) => LockPython::Installed(path.into()),
+            None => LockPython::Unspecified,
+        };
+        Ok((installed(configured), installed(replay)))
+    }
+
     pub(crate) async fn resolve_uv_lock(
         &self,
         config: &Arc<Config>,
@@ -489,6 +611,11 @@ impl PIPXBackend {
             constraints.push(selector.requires_python());
         }
         constraints.extend(python_constraint(&root));
+        // In `priority` mode a pinned injection the registry does not host comes from
+        // the global index, so its release is looked up there too.
+        let fallback = (PipxOptions::new(&tv.request.options()).registry_index_priority()?
+            && uv_index_url(&registry)? != uv_index_url(&global_registry_url())?)
+        .then(global_registry_url);
         // Everything in `with` and `expose` shares the sidecar's interpreter, so a
         // pinned injection with a narrower floor narrows the whole project. uv
         // spreads an unpinned requirement across the range by itself, and a marker
@@ -497,10 +624,20 @@ impl PIPXBackend {
             let Some((package, version)) = pinned_requirement(requirement) else {
                 continue;
             };
-            match self
+            let mut release = self
                 .release_python_requirement(&registry, package, version)
-                .await
+                .await;
+            // Only a registry that does not host the project falls through; one that
+            // hosts it with unreadable metadata is the index uv will take it from.
+            if let Err(err) = &release
+                && err.downcast_ref::<InconsistentPythonMetadata>().is_none()
+                && let Some(fallback) = &fallback
             {
+                release = self
+                    .release_python_requirement(fallback, package, version)
+                    .await;
+            }
+            match release {
                 Ok(value) => constraints.extend(python_constraint(&value)),
                 // uv reports an unusable requirement far better than a partial
                 // lookup can, so an unreadable release just leaves the range alone.
@@ -525,12 +662,16 @@ impl PIPXBackend {
             temp.path().join("pyproject.toml"),
             toml::to_string(&project)?,
         )?;
+        // Resolve and replay against the interpreter the install will bind, not
+        // whichever Python uv happens to find on PATH.
+        let (lock_python, replay_python) = self.lock_python(config, tv).await?;
         let mut cmd = self
             .uv_lock_command(config, tv, &uv, temp.path())
             .await?
-            .args(["lock", "--no-build", "--no-config", "--no-python-downloads"])
+            .args(["lock", "--no-build", "--no-config"])
             .args(Self::uv_exclude_newer_args(tv.before_date))
             .args(self.uv_exempt_undated_release(config, tv).await);
+        cmd = lock_python.apply(cmd);
         let raw = tv.request.options();
         if let Some(value) = PipxOptions::new(&raw).dependency_prereleases()? {
             cmd = cmd.args(["--prerelease", value]);
@@ -539,7 +680,7 @@ impl PIPXBackend {
         // `uv lock` resolves for every platform and interpreter, but the install
         // replays the graph with `--no-build` on this one, so a graph that cannot
         // be installed here must fail now instead of at the next `mise install`.
-        let mut replay = self
+        let replay = self
             .uv_lock_command(config, tv, &uv, temp.path())
             .await?
             .args([
@@ -547,22 +688,13 @@ impl PIPXBackend {
                 "--frozen",
                 "--no-build",
                 "--no-config",
-                "--no-python-downloads",
                 "--no-install-project",
                 "--dry-run",
             ])
             .env("UV_PROJECT_ENVIRONMENT", temp.path().join(".venv"))
             .env_remove("UV_EXCLUDE_NEWER");
-        // Install binds the interpreter explicitly, so replay the same one rather
-        // than whichever Python uv finds first.
-        let python = match &tv.uv_python {
-            Some((python, _)) if !python.as_os_str().is_empty() => Some(python.clone()),
-            _ => self.spawnable_dependency(config, None, "python").await,
-        };
-        if let Some(python) = python {
-            replay = replay.arg("--python").arg(python);
-        }
-        replay
+        replay_python
+            .apply(replay)
             .execute()
             .wrap_err("the dependency graph cannot be installed without building distributions")?;
         let graph_text = crate::file::read_to_string(temp.path().join("uv.lock"))?;
@@ -877,12 +1009,36 @@ fn simple_index_python_requirement(package: &str, version: &str, html: &str) -> 
         }
     }
     if constraints.len() != 1 {
-        bail!(
-            "package {} requires consistent Python metadata on published wheels to generate a portable lock",
-            package
-        );
+        return Err(InconsistentPythonMetadata(package.to_string()).into());
     }
     Ok(constraints.into_iter().next().unwrap())
+}
+
+/// An index hosts the project, but its wheels of the release do not agree on (or do not
+/// include) a Python requirement. Distinct from a project the index does not host.
+#[derive(Debug)]
+struct InconsistentPythonMetadata(String);
+
+impl std::fmt::Display for InconsistentPythonMetadata {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "package {} requires consistent Python metadata on published wheels to generate a portable lock",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for InconsistentPythonMetadata {}
+
+/// The `pypi.registry_url` setting, PyPI unless set: the index every tool without its own
+/// `registry_url` uses.
+fn global_registry_url() -> String {
+    Settings::get()
+        .pypi
+        .registry_url
+        .clone()
+        .unwrap_or_else(|| DEFAULT_REGISTRY_URL.to_string())
 }
 
 pub(super) fn uv_index_url(registry: &str) -> Result<String> {
@@ -1182,6 +1338,14 @@ requires-dist = [{{ name = "demo", specifier = "==1.0.0" }}]
                 );
             }
         }
+    }
+
+    #[test]
+    fn unreadable_release_metadata_is_not_a_missing_project() {
+        let html = "<a href=\"demo-1.0-py3-none-any.whl\" data-requires-python=\">=3.10\">a</a>\
+                    <a href=\"demo-1.0-py2-none-any.whl\" data-requires-python=\">=3.11\">b</a>";
+        let err = simple_index_python_requirement("demo", "1.0", html).unwrap_err();
+        assert!(err.downcast_ref::<InconsistentPythonMetadata>().is_some());
     }
 
     #[test]

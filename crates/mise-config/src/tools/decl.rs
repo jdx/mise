@@ -359,6 +359,9 @@ pub struct ToolPypiOptions {
     pub uvx_args: Option<String>,
     /// version-listing url containing a {} placeholder for the package name
     pub registry_url: Option<String>,
+    /// how dependency locking uses registry_url: default replaces PyPI, priority searches it before PyPI
+    #[schemars(extend("enum" = ["default", "priority"]))]
+    pub registry_index: Option<String>,
 }
 
 #[derive(JsonSchema)]
