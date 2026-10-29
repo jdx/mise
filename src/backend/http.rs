@@ -1746,7 +1746,7 @@ impl Backend for HttpBackend {
 /// The local file a `file://` artifact URL names, so an archive fetched by hand
 /// (or from a mirror mise cannot reach) installs exactly like a downloaded one.
 /// Any other scheme is left to the HTTP client.
-fn local_artifact_path(url: &str) -> Result<Option<PathBuf>> {
+pub(crate) fn local_artifact_path(url: &str) -> Result<Option<PathBuf>> {
     let Ok(parsed) = url::Url::parse(url) else {
         return Ok(None);
     };

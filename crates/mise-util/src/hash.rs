@@ -46,10 +46,17 @@ pub fn file_hash_sha256(path: &Path, pr: Option<&dyn SingleReport>) -> Result<St
     let use_external_hasher = file::size(path).unwrap_or_default() > 50 * 1024 * 1024;
     if use_external_hasher && file::which("sha256sum").is_some() {
         let out = cmd!("sha256sum", path).read()?;
-        Ok(out.split_whitespace().next().unwrap().to_string())
+        Ok(parse_sum_output(&out))
     } else {
         file_hash_prog::<Sha256>(path, pr)
     }
+}
+
+/// The digest from `sha256sum`-style output. GNU coreutils prefixes the line
+/// with `\` when the file name contains a backslash or newline.
+fn parse_sum_output(out: &str) -> String {
+    let digest = out.split_whitespace().next().unwrap();
+    digest.trim_start_matches('\\').to_string()
 }
 
 pub fn file_hash_prog<D>(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String>
@@ -170,6 +177,16 @@ pub fn parse_shasums(text: &str) -> HashMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_sum_output_drops_the_escape_prefix() {
+        let digest = "a".repeat(64);
+        assert_eq!(parse_sum_output(&format!("{digest}  /tmp/tool\n")), digest);
+        assert_eq!(
+            parse_sum_output(&format!("\\{digest}  /tmp/my\\\\tool\n")),
+            digest
+        );
+    }
 
     #[test]
     fn test_corepack_checksum_algorithms() {
