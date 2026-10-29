@@ -73,3 +73,18 @@ assert_contains "mise run sub" "running mytask"
 assert_contains "mise run dep" "running mytask"
 assert_not_contains "mise run sub 2>&1" "No such file"
 assert_not_contains "mise run dep 2>&1" "No such file"
+
+# A remote cleanup task with its own `env` keeps its post phase: it runs after
+# its parent, even when the parent fails
+cat <<EOF2 >mise.toml
+[tasks.remote_cleanup]
+file = "http://localhost:${HTTP_PORT}/test/mytask"
+env.FOO = "1"
+
+[tasks.deploy]
+depends_post = ["remote_cleanup"]
+run = "echo deploying && exit 1"
+EOF2
+
+assert_fail "mise run deploy" "running mytask"
+assert_contains "mise tasks deps deploy" "remote_cleanup (post)"
