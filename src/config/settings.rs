@@ -1934,6 +1934,14 @@ fn load() -> Result<Arc<Settings>> {
             "python.uv_venv_auto=true is deprecated. Use python.uv_venv_auto=\"create|source\" or \"source\" instead."
         );
     }
+    if !settings.generate_lockfiles() {
+        deprecated_at!(
+            "2027.4.0",
+            "2027.10.0",
+            "lockfile_mode.merge",
+            "lockfile_mode=\"merge\" is deprecated. Remove the setting to use the default \"generate\" mode."
+        );
+    }
     if !settings.color {
         console::set_colors_enabled(false);
         console::set_colors_enabled_stderr(false);

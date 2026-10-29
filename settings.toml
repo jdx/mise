@@ -2186,9 +2186,14 @@ docs = """
 Neither mode creates lockfiles; set [`lockfile = true`](#lockfile) or run
 `mise lock`. See
 [Complete lockfile generation](/dev-tools/mise-lock-reference.html#complete-lockfile-generation).
+
+::: warning
+`merge` is deprecated. mise will start warning about it in 2027.4.0 and remove it in
+2027.10.0. Remove `lockfile_mode` to use the default `generate` mode.
+:::
 """
 enum = [
-  { value = "merge", description = "update entries as tools are installed" },
+  { value = "merge", description = "[deprecated] update entries as tools are installed" },
   { value = "generate", description = "rebuild the whole lockfile from the current requests, reusing unchanged entries, and lock other platforms during installs" },
 ]
 env = "MISE_LOCKFILE_MODE"
