@@ -547,6 +547,65 @@ end
         Ok(())
     }
 
+    /// `install_symlink` resolves a relative source against the receiving
+    /// directory, as Homebrew does. Without that, `relative_path_from` is
+    /// handed a relative path and an absolute base and raises "different
+    /// prefix", failing the whole build.
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn shim_install_symlink_resolves_relative_sources() -> Result<()> {
+        let Some(ruby) = super::super::tap::test_ruby().await? else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("shim.rb");
+        let formula_rb = tmp.path().join("example.rb");
+        let buildpath = tmp.path().join("build");
+        let cellar = tmp.path().join("Cellar");
+        mise_util::file::create_dir_all(&buildpath)?;
+        mise_util::file::write(&shim, SHIM_RB)?;
+        mise_util::file::write(
+            &formula_rb,
+            r##"class Example < Formula
+  def install
+    (bin/"example").write("#!/bin/sh\n")
+    bin.install_symlink "example" => "example-alias"
+    (libexec/"tool").write("tool")
+    bin.install_symlink libexec/"tool"
+  end
+end
+"##,
+        )?;
+
+        let output = std::process::Command::new(ruby)
+            .arg(&shim)
+            .current_dir(&buildpath)
+            .env("MISE_BREW_PREFIX", tmp.path())
+            .env("MISE_BREW_CELLAR", &cellar)
+            .env("MISE_BREW_FORMULA_FILE", &formula_rb)
+            .env("MISE_BREW_NAME", "example")
+            .env("MISE_BREW_VERSION", "1.0.0")
+            .env("MISE_BREW_PKG_VERSION", "1.0.0")
+            .env("MISE_BREW_BUILDPATH", &buildpath)
+            .env("MISE_BREW_CACHE", tmp.path().join("cache"))
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let bin = cellar.join("example/1.0.0/bin");
+        assert_eq!(
+            std::fs::read_link(bin.join("example-alias"))?,
+            std::path::PathBuf::from("example")
+        );
+        assert_eq!(
+            std::fs::read_link(bin.join("tool"))?,
+            std::path::PathBuf::from("../libexec/tool")
+        );
+        Ok(())
+    }
+
     /// A tap formula's `post_install` can rewrite install names through
     /// Homebrew's vendored ruby-macho. mise has no equivalent, but it does not
     /// relocate source-built kegs either, so each call is skipped with a

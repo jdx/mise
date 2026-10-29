@@ -256,14 +256,16 @@ class Pathname
   end
   private :install_one
 
+  # Like Homebrew, a relative source is resolved against this directory, so
+  # `bin.install_symlink "foo" => "bar"` links bin/bar to bin/foo.
   def install_symlink(*sources)
     mkpath
     sources.flatten.each do |src|
       case src
       when Hash
-        src.each { |from, to| make_relative_symlink(Pathname.new(from.to_s), self + to) }
+        src.each { |from, to| make_relative_symlink(Pathname.new(from.to_s).expand_path(self), self + to) }
       else
-        src = Pathname.new(src.to_s)
+        src = Pathname.new(src.to_s).expand_path(self)
         make_relative_symlink(src, self + src.basename)
       end
     end
