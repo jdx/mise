@@ -57,9 +57,11 @@ These templates can call <code v-pre>{{ secret(name="...") }}</code>:
 
 - [`[bootstrap.files]`](/bootstrap/files.html) content with `template = true`
 - [`[dotfiles]`](/dotfiles.html) entries with `mode = "template"`
+- [`[dotfiles]`](/dotfiles/edits.html#merge-secrets) `merge = "missing"` entries
+  with `template = "tera"`
 
-Block, line, and merge edits in `[dotfiles]` cannot. A `[dotfiles]` template
-uses a secret the same way; for example, `dotfiles/credentials.tmpl` might
+Block, line, and enforced `merge = true` edits in `[dotfiles]` cannot. A
+`[dotfiles]` template uses a secret the same way; for example, `dotfiles/credentials.tmpl` might
 contain <code v-pre>token = {{ secret(name="cache_token") }}</code> for this
 entry:
 
@@ -73,7 +75,9 @@ mise resolves only the inputs that the templates selected for a run use, so an
 unused declaration does not block anything. Before a full `mise bootstrap`
 changes anything, mise resolves those inputs and renders every template, so a
 missing value stops the run before it writes a partial file or runs earlier
-steps.
+steps. A `merge = "missing"` template is the exception: it needs a secret only
+for a key the target lacks, which is known when apply reaches that entry, so an
+unavailable secret stops the run there and earlier changes stay.
 
 `secret()` inserts the value as it is. It does not quote or escape it for a
 shell, JSON, TOML, or any other format, so the `.env` example above works only

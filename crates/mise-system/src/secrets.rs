@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -192,10 +192,70 @@ impl SecretValues {
         base: &Path,
         config_path: &Path,
     ) -> Result<String> {
+        self.render_dotfile_with(config, input, base, config_path, None)
+    }
+
+    /// Like [`Self::render_dotfile`], but `secret()` renders a placeholder
+    /// instead of reading the secret, so a template can be rendered to learn
+    /// which secrets it needs before any of them is read or prompted for.
+    /// [`Self::resolve_names`] gives the values to put in their place.
+    ///
+    /// A placeholder has to reach the output as it is: a filter that encodes
+    /// or drops it would leave nothing to put the value in place of, and is
+    /// an error.
+    pub(crate) fn render_dotfile_deferred(
+        &self,
+        config: &Config,
+        input: &str,
+        base: &Path,
+        config_path: &Path,
+    ) -> Result<String> {
+        let calls = Arc::new(Mutex::new(BTreeMap::new()));
+        let rendered =
+            self.render_dotfile_with(config, input, base, config_path, Some(calls.clone()))?;
+        let calls = calls
+            .lock()
+            .map_err(|_| eyre::eyre!("bootstrap secret resolver is unavailable"))?;
+        let found = deferred_counts(&rendered);
+        for (name, called) in calls.iter() {
+            if found.get(name).copied().unwrap_or(0) < *called {
+                bail!(
+                    "secret(name=\"{name}\") has to be inserted as it is here: a filter or other expression changed or dropped it"
+                );
+            }
+        }
+        Ok(rendered)
+    }
+
+    /// Read or prompt for `names`, the way `secret()` does.
+    pub(crate) fn resolve_names(
+        &self,
+        config: &Config,
+        names: &BTreeSet<String>,
+    ) -> Result<BTreeMap<String, String>> {
+        let used = Arc::new(Mutex::new(BTreeSet::new()));
+        let mut values = BTreeMap::new();
+        for name in names {
+            let value = resolve_secret(&self.resolution, &used, self.prompt, name)
+                .map_err(|err| eyre::eyre!(err))?;
+            values.insert(name.clone(), value);
+        }
+        self.finish_render(Some(config), used, Ok(String::new()))?;
+        Ok(values)
+    }
+
+    fn render_dotfile_with(
+        &self,
+        config: &Config,
+        input: &str,
+        base: &Path,
+        config_path: &Path,
+        deferred: Option<DeferredCalls>,
+    ) -> Result<String> {
         let mut tera = get_tera(Some(base));
         let used = match &mut tera {
-            TeraEngine::V2(tera) => self.register_v2(tera),
-            TeraEngine::V1(tera) => self.register_v1(tera),
+            TeraEngine::V2(tera) => self.register_v2(tera, deferred),
+            TeraEngine::V1(tera) => self.register_v1(tera, deferred),
         };
         let rendered = crate::host::render_config_str(
             &mut tera,
@@ -239,7 +299,7 @@ impl SecretValues {
         target: &Path,
     ) -> Result<String> {
         let mut tera = get_tera_v2(Some(base));
-        let used = self.register_v2(&mut tera);
+        let used = self.register_v2(&mut tera, None);
         let mut context = BASE_CONTEXT.clone();
         // Independently selected bootstrap roots keep their legacy template
         // context until scoped composition and execution semantics are defined.
@@ -262,7 +322,13 @@ impl SecretValues {
         self.finish_render(config.map(|(config, _)| config), used, rendered)
     }
 
-    fn register_v2(&self, tera: &mut tera::Tera) -> Arc<Mutex<BTreeSet<String>>> {
+    /// With `deferred`, `secret()` renders a placeholder and counts the call
+    /// there instead of reading the secret.
+    fn register_v2(
+        &self,
+        tera: &mut tera::Tera,
+        deferred: Option<DeferredCalls>,
+    ) -> Arc<Mutex<BTreeSet<String>>> {
         let resolution = self.resolution.clone();
         let used = Arc::new(Mutex::new(BTreeSet::new()));
         let used_by_function = used.clone();
@@ -271,15 +337,21 @@ impl SecretValues {
             "secret",
             move |args: Kwargs, _: &State| -> TeraResult<Value> {
                 let name = args.must_get::<&str>("name")?;
-                resolve_secret(&resolution, &used_by_function, prompt, name)
-                    .map(Value::from)
-                    .map_err(tera::Error::message)
+                let value = match &deferred {
+                    Some(calls) => deferred_placeholder(&resolution, calls, name),
+                    None => resolve_secret(&resolution, &used_by_function, prompt, name),
+                };
+                value.map(Value::from).map_err(tera::Error::message)
             },
         );
         used
     }
 
-    fn register_v1(&self, tera: &mut tera1::Tera) -> Arc<Mutex<BTreeSet<String>>> {
+    fn register_v1(
+        &self,
+        tera: &mut tera1::Tera,
+        deferred: Option<DeferredCalls>,
+    ) -> Arc<Mutex<BTreeSet<String>>> {
         let resolution = self.resolution.clone();
         let used = Arc::new(Mutex::new(BTreeSet::new()));
         let used_by_function = used.clone();
@@ -291,9 +363,11 @@ impl SecretValues {
                     .get("name")
                     .and_then(JsonValue::as_str)
                     .ok_or_else(|| tera1::Error::msg("missing required argument: name"))?;
-                resolve_secret(&resolution, &used_by_function, prompt, name)
-                    .map(JsonValue::from)
-                    .map_err(tera1::Error::msg)
+                let value = match &deferred {
+                    Some(calls) => deferred_placeholder(&resolution, calls, name),
+                    None => resolve_secret(&resolution, &used_by_function, prompt, name),
+                };
+                value.map(JsonValue::from).map_err(tera1::Error::msg)
             },
         );
         used
@@ -343,6 +417,66 @@ impl SecretValues {
             prompt: false,
         }
     }
+}
+
+const DEFERRED_OPEN: &str = "‹secret:";
+const DEFERRED_CLOSE: char = '›';
+
+/// How many times each name was called in one deferred render.
+type DeferredCalls = Arc<Mutex<BTreeMap<String, usize>>>;
+
+/// The text `secret()` renders for `name` in a deferred render: readable in a
+/// diff, valid inside a JSON, TOML, YAML or INI string, and never a legal
+/// secret name character, so [`deferred_counts`] cannot mistake other text for
+/// one. The secret itself is neither read nor prompted for.
+pub(crate) fn deferred_text(name: &str) -> String {
+    format!("{DEFERRED_OPEN}{name}{DEFERRED_CLOSE}")
+}
+
+fn deferred_placeholder(
+    resolution: &Arc<Mutex<SecretResolution>>,
+    calls: &DeferredCalls,
+    name: &str,
+) -> std::result::Result<String, String> {
+    let resolution = resolution
+        .lock()
+        .map_err(|_| "bootstrap secret resolver is unavailable".to_string())?;
+    if !resolution.declarations.contains_key(name) {
+        return Err(format!(
+            "bootstrap secret '{name}' is not declared in [bootstrap.secrets]"
+        ));
+    }
+    *calls
+        .lock()
+        .map_err(|_| "bootstrap secret resolver is unavailable".to_string())?
+        .entry(name.to_string())
+        .or_default() += 1;
+    Ok(deferred_text(name))
+}
+
+/// Whether `text` holds a placeholder.
+pub(crate) fn has_deferred(text: &str) -> bool {
+    text.contains(DEFERRED_OPEN)
+}
+
+/// The secret names whose placeholders appear in `text`.
+pub(crate) fn deferred_names(text: &str) -> BTreeSet<String> {
+    deferred_counts(text).into_keys().collect()
+}
+
+/// How many placeholders for each name appear in `text`.
+fn deferred_counts(text: &str) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(DEFERRED_OPEN) {
+        let after = &rest[start + DEFERRED_OPEN.len()..];
+        let Some(end) = after.find(DEFERRED_CLOSE) else {
+            break;
+        };
+        *counts.entry(after[..end].to_string()).or_default() += 1;
+        rest = &after[end + DEFERRED_CLOSE.len_utf8()..];
+    }
+    counts
 }
 
 fn resolve_secret(
@@ -498,6 +632,57 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn finds_deferred_placeholders() {
+        let text = "a = \"‹secret:token›\"\nb = \"Bearer ‹secret:cache.token›\" # ‹secret:token›";
+        assert!(has_deferred(text));
+        assert_eq!(
+            deferred_names(text),
+            BTreeSet::from(["cache.token".to_string(), "token".to_string()])
+        );
+        assert!(!has_deferred("a = \"secret:token\""));
+        assert!(deferred_names("a = \"‹secret:unterminated\"").is_empty());
+    }
+
+    #[test]
+    fn deferred_placeholders_cover_declared_names_only() {
+        let resolution = Arc::new(Mutex::new(SecretResolution {
+            declarations: IndexMap::from([(
+                "token".to_string(),
+                SecretDeclaration {
+                    name: "token".to_string(),
+                    env: "TOKEN".to_string(),
+                    description: None,
+                    allow_empty: false,
+                },
+            )]),
+            ..Default::default()
+        }));
+        let calls = DeferredCalls::default();
+        assert_eq!(
+            deferred_placeholder(&resolution, &calls, "token").unwrap(),
+            "‹secret:token›"
+        );
+        assert!(deferred_placeholder(&resolution, &calls, "other").is_err());
+        assert_eq!(
+            *calls.lock().unwrap(),
+            BTreeMap::from([("token".into(), 1)])
+        );
+        assert!(resolution.lock().unwrap().values.is_empty());
+    }
+
+    #[test]
+    fn counts_the_placeholders_a_filter_would_hide() {
+        let text = "a = \"‹secret:token›\"\nb = \"‹secret:token›\"";
+        assert_eq!(
+            deferred_counts(text),
+            BTreeMap::from([("token".to_string(), 2)])
+        );
+        // an encoded or upper-cased placeholder no longer counts
+        assert!(deferred_counts("a = \"4oC5c2VjcmV0OnRva2Vu\"").is_empty());
+        assert!(deferred_counts("a = \"‹SECRET:TOKEN›\"").is_empty());
     }
 
     #[test]

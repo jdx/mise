@@ -368,7 +368,7 @@ async fn apply_target(target: &str, group: Option<&str>, prompt_secrets: bool) -
             verbose: false,
             yes: true,
         };
-        system::edits::apply(&config, &edits, &opts, &mut vec![])?;
+        system::edits::apply(&config, &edits, &opts, &secrets, &mut vec![])?;
     }
     Ok(())
 }

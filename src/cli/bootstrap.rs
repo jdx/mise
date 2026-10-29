@@ -2759,7 +2759,7 @@ impl Bootstrap {
                 verbose: false,
                 yes: self.yes,
             };
-            if !system::edits::apply(config, edits, &opts, written)? {
+            if !system::edits::apply(config, edits, &opts, secrets, written)? {
                 return Ok(false);
             }
         }

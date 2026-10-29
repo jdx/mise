@@ -206,6 +206,51 @@ Merge entries for one file that declare different modes are refused, and
 `permissions` is ignored with a warning on Windows. Block and line edits do not
 take `permissions`.
 
+### Fill in secrets for missing keys {#merge-secrets}
+
+A `merge = "missing"` entry with `template = "tera"` can call
+<code v-pre>{{ secret(name="...") }}</code> for a declared
+[secret input](/bootstrap/secrets.html). mise reads or prompts for a secret only
+when the key it fills is missing from the target, so a key you have already
+set never asks for its value again:
+
+```toml
+[bootstrap.secrets]
+github_token = "MISE_GITHUB_TOKEN"
+npm_token = "NPM_TOKEN"
+
+[dotfiles]
+"~/.config/mise/conf.d/private.local.toml/seed" = { source = "templates/private.toml", template = "tera", merge = "missing", permissions = "0600" }
+```
+
+```toml
+# templates/private.toml
+[env]
+MISE_GITHUB_TOKEN = "{{ secret(name='github_token') }}"
+NPM_TOKEN = "{{ secret(name='npm_token') }}"
+```
+
+With `mise dot apply --prompt-secrets`, a new machine is prompted for both
+tokens and the file is created. Later, add `PYPI_TOKEN` to the source and apply
+again: mise prompts only for that token and leaves the other two as they are.
+
+- `mise dot status` and `mise dot diff` never read or prompt for a secret. They
+  report a key whose secret is not yet filled in as missing, and a diff shows
+  <code v-pre>‹secret:name›</code> in place of the value.
+- A secret that is not declared in `[bootstrap.secrets]` is an error, even when
+  the key it belongs to is already set.
+- Each `secret()` has to be inserted as it is. A filter such as `| upper` that
+  changes or drops it is an error, because mise could not tell which secret
+  the result stands for.
+- A `mise bootstrap` run cannot check these secrets up front, since which keys
+  need one depends on the file at that point. An unavailable secret stops the
+  run at that entry.
+- The value is inserted as it is, as in other templates, so a value with
+  quotes or newlines may need escaping for the format. If the file no longer
+  parses once the secrets are in, mise reports that without printing the text.
+- An enforced `merge = true` entry cannot use `secret()`: it would overwrite a
+  value you have since changed.
+
 ## Conflicts and removal {#conflicts}
 
 Edits apply without `--force`. mise reports an error when a block's markers
