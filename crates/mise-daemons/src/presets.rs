@@ -686,41 +686,27 @@ pub fn expand(
     } else {
         0
     };
-    let mut ports = preset.ports.clone();
-    if slot > 0 {
-        let offset = slot.checked_mul(claim.stride).ok_or_else(|| {
-            eyre::eyre!(
-                "[daemons.{name}].port stride {} overflows the port range",
-                claim.stride
-            )
-        })?;
-        for (key, value) in ports.iter_mut() {
-            // Clamping here would let two worktrees resolve the same listener to
-            // 65535 while their primary ports stayed distinct.
-            *value = value.checked_add(offset).filter(|p| *p > 0).ok_or_else(|| {
-                eyre::eyre!(
-                    "[daemons.{name}].ports.{key} {value} with stride {} exceeds 65535 for this worktree",
-                    claim.stride
-                )
-            })?;
-        }
+    let port_overrides = match overrides.remove("ports") {
+        Some(value) => value
+            .as_table()
+            .cloned()
+            .ok_or_else(|| eyre::eyre!("[daemons.{name}].ports must be a table"))?,
+        None => toml::Table::new(),
+    };
+    if let Some(key) = port_overrides
+        .keys()
+        .find(|k| !preset.ports.contains_key(*k))
+    {
+        bail!("unknown {preset_name} port {key:?}");
     }
     // Every named port the daemon ends up with, so a collision with another
     // daemon in the project can be reported by name. Only those declared `auto`
     // are marked as such; a default is recorded as the number it resolved to.
-    let mut named_ports: IndexMap<String, PortClaim> = ports
-        .iter()
-        .map(|(key, port)| (key.clone(), PortClaim::fixed(*port)))
-        .collect();
-    if let Some(value) = overrides.remove("ports") {
-        let table = value
-            .as_table()
-            .ok_or_else(|| eyre::eyre!("[daemons.{name}].ports must be a table"))?;
-        for (key, value) in table {
-            let Some(default) = preset.ports.get(key) else {
-                bail!("unknown {preset_name} port {key:?}");
-            };
-            let claim = match super::ports::parse_named(name, key, value)? {
+    let mut ports = IndexMap::new();
+    let mut named_ports: IndexMap<String, PortClaim> = IndexMap::new();
+    for (key, default) in &preset.ports {
+        let resolved = match port_overrides.get(key) {
+            Some(value) => match super::ports::parse_named(name, key, value)? {
                 super::ports::NamedPortRequest::Fixed(port) => PortClaim::fixed(port),
                 // The same slot the primary port uses: the allocation that was
                 // resolved for it when the primary is `auto`, else this root's.
@@ -732,10 +718,28 @@ pub fn expand(
                     };
                     super::ports::resolve_named(name, key, slot, base, stride, *default)?
                 }
-            };
-            ports.insert(key.clone(), claim.port);
-            named_ports.insert(key.clone(), claim);
-        }
+            },
+            // An auto allocation moves every port this daemon binds by the same
+            // slot. Only a default is moved: a port that is declared is resolved
+            // above, so an offset its default can't take doesn't reject it.
+            None => {
+                // Clamping would let two worktrees resolve the same listener to
+                // 65535 while their primary ports stayed distinct.
+                let port = slot
+                    .checked_mul(claim.stride)
+                    .and_then(|offset| default.checked_add(offset))
+                    .filter(|p| *p > 0)
+                    .ok_or_else(|| {
+                        eyre::eyre!(
+                            "[daemons.{name}].ports.{key} {default} with stride {} exceeds 65535 for this worktree",
+                            claim.stride
+                        )
+                    })?;
+                PortClaim::fixed(port)
+            }
+        };
+        ports.insert(key.clone(), resolved.port);
+        named_ports.insert(key.clone(), resolved);
     }
     let option_overrides = overrides.remove("options");
     let options = resolve_options(&preset, preset_name, option_overrides.as_ref(), root)?;
@@ -2077,6 +2081,38 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(err.contains("unknown cockroachdb port"), "{err}");
+
+        // A default the daemon replaces is never resolved, so an offset it
+        // could not take does not reject the port that replaces it. NATS in
+        // slot 7 with a stride of 8500 puts its monitor default past 65535.
+        let nats_far = |ports: toml::Table| {
+            expand(
+                "events",
+                "nats",
+                "2",
+                ports,
+                Extras {
+                    init: &[],
+                    port: Some(PortClaim {
+                        port: 4222 + 7 * 8500,
+                        base: 4222,
+                        stride: 8500,
+                    }),
+                    labels: &labels(),
+                    imported: false,
+                },
+                Path::new("/p/mise.toml"),
+                Path::new("/p"),
+            )
+        };
+        let allocated =
+            nats_far(toml::toml! { [ports] monitor_port = { auto = true, base = 27000 } }).unwrap();
+        assert_eq!(allocated.exports["EVENTS_MONITOR_PORT"], "27007");
+        let fixed = nats_far(toml::toml! { [ports] monitor_port = 9999 }).unwrap();
+        assert_eq!(fixed.exports["EVENTS_MONITOR_PORT"], "9999");
+        // Left at its default, the same port still overflows and says so.
+        let err = nats_far(toml::Table::new()).unwrap_err().to_string();
+        assert!(err.contains("exceeds 65535"), "{err}");
     }
 
     #[test]
