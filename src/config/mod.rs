@@ -8338,7 +8338,7 @@ pub(crate) fn task_tool_requests(
         .tasks()
         .into_iter()
         .map(|task| (task.clone(), cf.get_path().to_path_buf()))
-        .chain(included_task_definitions(&dir, tracked));
+        .chain(included_task_definitions(cf, &dir, tracked));
     for (task, source) in tasks {
         let mut candidates = vec![];
         match &task.extends {
@@ -8395,22 +8395,43 @@ pub(crate) fn task_tool_requests(
     (requests, templated)
 }
 
-/// The tasks that the task includes of the project at `dir` define, each with the file it came
+/// The tasks that the task includes of `cf`'s project at `dir` define, each with the file it came
 /// from: TOML task files and executable task scripts found through `task_config.includes`, or
 /// through the default task directories when no config sets them. They are read unrendered,
 /// since only their `tools` matter to the caller, and remote includes are not fetched. A file
 /// that fails to read or parse is skipped with a warning.
-fn included_task_definitions(dir: &Path, config_files: &ConfigMap) -> Vec<(Task, PathBuf)> {
-    let includes = match task_includes_for_dir(dir, config_files) {
-        Ok(includes) => includes,
-        Err(err) => {
-            warn!(
-                "error loading task includes of {}: {err:#}",
-                display_path(dir)
+///
+/// The includes `dir` resolves to only see the configs of the current `MISE_ENV`, so `cf`'s own
+/// `task_config.includes` are added to them: a tracked `mise.prod.toml` still names its task
+/// files when prune runs without `MISE_ENV=prod`.
+fn included_task_definitions(
+    cf: &Arc<dyn ConfigFile>,
+    dir: &Path,
+    config_files: &ConfigMap,
+) -> Vec<(Task, PathBuf)> {
+    let mut includes = task_includes_for_dir(dir, config_files).unwrap_or_else(|err| {
+        warn!(
+            "error loading task includes of {}: {err:#}",
+            display_path(dir)
+        );
+        vec![]
+    });
+    match cf.task_config_includes() {
+        Ok(Some(own)) => {
+            let root = cf.config_root();
+            includes.extend(
+                own.iter()
+                    .filter(|p| !is_remote_task_include(p))
+                    .flat_map(|p| expand_task_include(&root, p)),
             );
-            return vec![];
         }
-    };
+        Ok(None) => {}
+        Err(err) => warn!(
+            "error loading task includes of {}: {err:#}",
+            display_path(cf.get_path())
+        ),
+    }
+    let includes = includes.into_iter().unique().collect::<Vec<_>>();
     let excludes = task_excludes_for_dir(dir, config_files).unwrap_or_else(|err| {
         warn!(
             "error loading task excludes of {}: {err:#}",

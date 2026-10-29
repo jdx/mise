@@ -58,3 +58,24 @@ assert "mise ls -C proj2"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "tiny@1.0.0"
 assert_contains "mise prune --dry-run 2>&1" "dummy@3.0.0"
+
+# an environment config's includes count when prune runs without that environment
+cd .. || exit 1
+mkdir -p proj3
+cat >proj3/mise.toml <<'TOML'
+[tools]
+TOML
+cat >proj3/mise.prod.toml <<'TOML'
+[task_config]
+includes = ["prod-tasks.toml"]
+TOML
+cat >proj3/prod-tasks.toml <<'TOML'
+[release]
+run = "true"
+tools.dummy = "3.0.0"
+TOML
+assert "mise trust proj3/mise.toml"
+assert "mise trust proj3/mise.prod.toml"
+assert "MISE_ENV=prod mise ls -C proj3"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@3.0.0"
