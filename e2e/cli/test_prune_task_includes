@@ -131,31 +131,44 @@ assert "MISE_EXPERIMENTAL=1 mise ls -C mono/packages/a"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
 
-# so can a project that only a workspace provider discovers, such as a Cargo member
+# so can a project that only a workspace provider discovers, such as a Cargo member;
+# the members share one discovery of the workspace
 cd .. || exit 1
-mkdir -p cargo-mono/crates/app
+mkdir -p cargo-mono/crates/app cargo-mono/crates/lib
 cat >cargo-mono/mise.toml <<'TOML'
 monorepo_root = true
 
 [monorepo.task_defaults.build]
 tools = { dummy = "6.0.0" }
+
+[monorepo.task_defaults.test]
+tools = { dummy = "7.0.0" }
 TOML
 cat >cargo-mono/Cargo.toml <<'TOML'
 [workspace]
-members = ["crates/app"]
+members = ["crates/app", "crates/lib"]
 TOML
-cat >cargo-mono/crates/app/Cargo.toml <<'TOML'
+for crate in app lib; do
+  cat >"cargo-mono/crates/$crate/Cargo.toml" <<TOML
 [package]
-name = "app"
+name = "$crate"
 version = "0.1.0"
 TOML
+done
 cat >cargo-mono/crates/app/mise.toml <<'TOML'
 [tasks.build]
 run = "true"
 TOML
+cat >cargo-mono/crates/lib/mise.toml <<'TOML'
+[tasks.test]
+run = "true"
+TOML
 assert "mise trust cargo-mono/mise.toml"
 assert "mise trust cargo-mono/crates/app/mise.toml"
-assert "mise install dummy@6.0.0"
+assert "mise trust cargo-mono/crates/lib/mise.toml"
+assert "mise install dummy@6.0.0 dummy@7.0.0"
 assert "MISE_EXPERIMENTAL=1 mise ls -C cargo-mono/crates/app"
+assert "MISE_EXPERIMENTAL=1 mise ls -C cargo-mono/crates/lib"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "dummy@6.0.0"
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@7.0.0"

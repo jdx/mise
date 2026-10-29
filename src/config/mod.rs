@@ -8305,6 +8305,7 @@ pub(crate) fn task_tool_requests(
     config: &Arc<Config>,
     tracked: &ConfigMap,
     cf: &Arc<dyn ConfigFile>,
+    workspace_graphs: &mut WorkspaceGraphCache,
 ) -> (Vec<crate::toolset::ToolRequest>, Vec<String>) {
     // Templates come from this project: the tracked configs under the same roots and the
     // directories above it, plus the global configs, never from the directory prune happens to
@@ -8358,7 +8359,7 @@ pub(crate) fn task_tool_requests(
                 .flat_map(|(_, layer)| layer.iter())
                 .map(|other| (other.get_path().to_path_buf(), Arc::clone(other)))
                 .collect::<ConfigMap>();
-            project_workspace_task_defaults(&project_configs, &dir)
+            project_workspace_task_defaults(&project_configs, &dir, workspace_graphs)
         },
         ..Default::default()
     };
@@ -8424,26 +8425,42 @@ pub(crate) fn task_tool_requests(
     (requests, templated)
 }
 
+/// Workspace project graphs by monorepo root, discovered once per prune run and shared by the
+/// tracked configs of each monorepo. `None` records a discovery that failed.
+pub(crate) type WorkspaceGraphCache =
+    HashMap<PathBuf, Option<Arc<crate::task::workspace::WorkspaceProjectGraph>>>;
+
 /// The task defaults of the monorepo `config_files` are in, for the project at `dir`. The
 /// workspace providers only run when `config_roots` and the project overrides do not already
 /// name `dir`: they read every manifest of the workspace, and most projects are named.
 fn project_workspace_task_defaults(
     config_files: &ConfigMap,
     dir: &Path,
+    workspace_graphs: &mut WorkspaceGraphCache,
 ) -> Option<WorkspaceTaskDefaults> {
     let defaults = workspace_task_defaults(config_files, None)?;
     if defaults.project_roots.contains(&file::desymlink_path(dir)) {
         return Some(defaults);
     }
-    match discover_workspace_project_graph(config_files) {
-        Ok(graph) => workspace_task_defaults(config_files, Some(&graph)),
-        Err(err) => {
-            warn!(
-                "error discovering the workspace projects of {}: {err:#}",
-                display_path(dir)
-            );
-            Some(defaults)
-        }
+    let root = find_monorepo_config(config_files)?.root;
+    let graph = workspace_graphs
+        .entry(root)
+        .or_insert_with_key(
+            |root| match discover_workspace_project_graph(config_files) {
+                Ok(graph) => Some(Arc::new(graph)),
+                Err(err) => {
+                    warn!(
+                        "error discovering the workspace projects of {}: {err:#}",
+                        display_path(root)
+                    );
+                    None
+                }
+            },
+        )
+        .clone();
+    match graph {
+        Some(graph) => workspace_task_defaults(config_files, Some(&graph)),
+        None => Some(defaults),
     }
 }
 
