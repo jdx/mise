@@ -69,8 +69,8 @@ your shell, editor, and CI:
 node = "24"
 python = "3.14"
 rust = "stable"
-"cargo:ripgrep" = "15"
-"github:cli/cli" = "2"
+"cargo:cargo-nextest" = "0.9"
+"github:BurntSushi/ripgrep" = "15"
 "npm:prettier" = "3"
 
 [env]
