@@ -1031,21 +1031,7 @@ impl Config {
     fn discover_workspace_project_graph(
         &self,
     ) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
-        let monorepo_config = find_monorepo_config(&self.config_files)
-            .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
-        let monorepo_root = monorepo_config.root;
-        let overrides = monorepo_config.monorepo.projects;
-        let cargo = crate::task::workspace::cargo::CargoWorkspaceProvider;
-        let go = crate::task::workspace::go::GoWorkspaceProvider;
-        let gradle = crate::task::workspace::gradle::GradleWorkspaceProvider;
-        let node = crate::task::workspace::node::NodeWorkspaceProvider;
-        let uv = crate::task::workspace::uv::UvWorkspaceProvider;
-
-        crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides_lenient(
-            &[&cargo, &go, &gradle, &node, &uv],
-            &monorepo_root,
-            &overrides,
-        )
+        discover_workspace_project_graph(&self.config_files)
     }
 
     /// Returns the root lockfile directory when unified monorepo lockfiles are active.
@@ -2217,6 +2203,28 @@ pub(crate) fn monorepo_lockfile_root_from_dir(dir: &Path) -> Option<PathBuf> {
         .unwrap()
         .insert(dir.to_path_buf(), root.clone());
     root
+}
+
+/// The workspace projects of the monorepo `config_files` are in, as the workspace providers
+/// discover them, with the root config's project overrides applied.
+fn discover_workspace_project_graph(
+    config_files: &ConfigMap,
+) -> Result<crate::task::workspace::WorkspaceProjectGraph> {
+    let monorepo_config = find_monorepo_config(config_files)
+        .ok_or_else(|| eyre!("no config file in scope sets monorepo_root = true"))?;
+    let monorepo_root = monorepo_config.root;
+    let overrides = monorepo_config.monorepo.projects;
+    let cargo = crate::task::workspace::cargo::CargoWorkspaceProvider;
+    let go = crate::task::workspace::go::GoWorkspaceProvider;
+    let gradle = crate::task::workspace::gradle::GradleWorkspaceProvider;
+    let node = crate::task::workspace::node::NodeWorkspaceProvider;
+    let uv = crate::task::workspace::uv::UvWorkspaceProvider;
+
+    crate::task::workspace::WorkspaceProjectGraph::discover_all_with_overrides_lenient(
+        &[&cargo, &go, &gradle, &node, &uv],
+        &monorepo_root,
+        &overrides,
+    )
 }
 
 fn find_monorepo_config(config_files: &ConfigMap) -> Option<ResolvedMonorepoConfig> {
@@ -8332,25 +8340,30 @@ pub(crate) fn task_tool_requests(
         };
         layers.entry(key).or_default().push(other);
     }
-    // `[monorepo.task_defaults]` of a monorepo root above this project fill in what its tasks
-    // leave unset, tools included.
-    let project_configs = layers
-        .iter()
-        .filter(|((local, _), _)| *local)
-        .flat_map(|(_, layer)| layer.iter())
-        .map(|other| (other.get_path().to_path_buf(), Arc::clone(other)))
-        .collect::<ConfigMap>();
-    let workspace_defaults = TaskDefinitions {
-        workspace_defaults: workspace_task_defaults(&project_configs, None),
-        ..Default::default()
-    };
-    let mut requests = vec![];
-    let mut templated = vec![];
     let tasks = cf
         .tasks()
         .into_iter()
         .map(|task| (task.clone(), cf.get_path().to_path_buf()))
-        .chain(included_task_definitions(cf, &dir, tracked));
+        .chain(included_task_definitions(cf, &dir, tracked))
+        .collect::<Vec<_>>();
+    // `[monorepo.task_defaults]` of a monorepo root above this project fill in what its tasks
+    // leave unset, tools included.
+    let workspace_defaults = TaskDefinitions {
+        workspace_defaults: if tasks.is_empty() {
+            None
+        } else {
+            let project_configs = layers
+                .iter()
+                .filter(|((local, _), _)| *local)
+                .flat_map(|(_, layer)| layer.iter())
+                .map(|other| (other.get_path().to_path_buf(), Arc::clone(other)))
+                .collect::<ConfigMap>();
+            project_workspace_task_defaults(&project_configs, &dir)
+        },
+        ..Default::default()
+    };
+    let mut requests = vec![];
+    let mut templated = vec![];
     for (mut task, source) in tasks {
         if task.config_root.is_none() {
             task.config_root = Some(dir.clone());
@@ -8409,6 +8422,29 @@ pub(crate) fn task_tool_requests(
         }
     }
     (requests, templated)
+}
+
+/// The task defaults of the monorepo `config_files` are in, for the project at `dir`. The
+/// workspace providers only run when `config_roots` and the project overrides do not already
+/// name `dir`: they read every manifest of the workspace, and most projects are named.
+fn project_workspace_task_defaults(
+    config_files: &ConfigMap,
+    dir: &Path,
+) -> Option<WorkspaceTaskDefaults> {
+    let defaults = workspace_task_defaults(config_files, None)?;
+    if defaults.project_roots.contains(&file::desymlink_path(dir)) {
+        return Some(defaults);
+    }
+    match discover_workspace_project_graph(config_files) {
+        Ok(graph) => workspace_task_defaults(config_files, Some(&graph)),
+        Err(err) => {
+            warn!(
+                "error discovering the workspace projects of {}: {err:#}",
+                display_path(dir)
+            );
+            Some(defaults)
+        }
+    }
 }
 
 /// The tasks that the task includes of `cf`'s project at `dir` define, each with the file it came

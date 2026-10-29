@@ -130,3 +130,32 @@ assert "mise trust mono/packages/a/mise.toml"
 assert "MISE_EXPERIMENTAL=1 mise ls -C mono/packages/a"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "tiny@3.1.0"
+
+# so can a project that only a workspace provider discovers, such as a Cargo member
+cd .. || exit 1
+mkdir -p cargo-mono/crates/app
+cat >cargo-mono/mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo.task_defaults.build]
+tools = { dummy = "6.0.0" }
+TOML
+cat >cargo-mono/Cargo.toml <<'TOML'
+[workspace]
+members = ["crates/app"]
+TOML
+cat >cargo-mono/crates/app/Cargo.toml <<'TOML'
+[package]
+name = "app"
+version = "0.1.0"
+TOML
+cat >cargo-mono/crates/app/mise.toml <<'TOML'
+[tasks.build]
+run = "true"
+TOML
+assert "mise trust cargo-mono/mise.toml"
+assert "mise trust cargo-mono/crates/app/mise.toml"
+assert "mise install dummy@6.0.0"
+assert "MISE_EXPERIMENTAL=1 mise ls -C cargo-mono/crates/app"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@6.0.0"
