@@ -197,3 +197,32 @@ assert "mise install dummy@8.0.0"
 assert "MISE_ENV=prod mise ls -C proj5"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "dummy@8.0.0"
+
+# a script reached through two includes is a task under each name, and task
+# defaults match by name
+cd .. || exit 1
+mkdir -p mono2/packages/a/tasks/sub
+cat >mono2/mise.toml <<'TOML'
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+
+[monorepo.task_defaults.build]
+tools = { dummy = "9.0.0" }
+TOML
+cat >mono2/packages/a/mise.toml <<'TOML'
+[task_config]
+includes = ["tasks", "tasks/sub"]
+TOML
+cat >mono2/packages/a/tasks/sub/build <<'SH2'
+#!/usr/bin/env bash
+true
+SH2
+chmod +x mono2/packages/a/tasks/sub/build
+assert "mise trust mono2/mise.toml"
+assert "mise trust mono2/packages/a/mise.toml"
+assert "mise install dummy@9.0.0"
+assert "MISE_EXPERIMENTAL=1 mise ls -C mono2/packages/a"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@9.0.0"

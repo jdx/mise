@@ -8524,7 +8524,9 @@ fn included_task_definitions(
     groups.insert(0, (includes, excludes));
     let is_toml = |p: &Path| p.extension().is_some_and(|e| e == "toml");
     // An include is walked again under different excludes, which can let through a file the
-    // first walk skipped, so it is the task files that are read once.
+    // first walk skipped, so it is the task files that are read once. A script's task is named
+    // after its path below the include, and task defaults match by name, so a script reached
+    // through two includes is read for each.
     let mut walked = HashSet::new();
     let mut read = HashSet::new();
     let mut tasks = vec![];
@@ -8565,7 +8567,8 @@ fn included_task_definitions(
                 continue;
             };
             for path in files {
-                if !read.insert(path.clone()) {
+                let include_key = (!is_toml(&path)).then(|| include.clone());
+                if !read.insert((path.clone(), include_key)) {
                     continue;
                 }
                 let loaded = if is_toml(&path) {
