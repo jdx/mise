@@ -93,6 +93,7 @@ wheels = dict([
     wheel('mise-lock-extra', '1.0.0'),
     wheel('mise-lock-strict', '1.0.0', requires_python='>=3.12'),
     wheel('mise-exposed', '1.0.0', script=True, command='exposed-cli', output='exposed'),
+    wheel('mise-prerelease', '1.0.0rc1'),
     wheel('mise-data-cli', '1.0.0', data_script=True, command='data-cli', output='data-script'),
     sdist('mise-source-cli', '1.0.0'),
 ])
@@ -110,7 +111,13 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith('/pypi/') and path.endswith('/json'):
             package = path.strip('/').split('/')[1].replace('-', '_')
             requires_python = python_requirements.get(package, '>=3.10')
-            body = json.dumps({'info': {'requires_python': requires_python}, 'releases': {'1.0.0': [{}]}}).encode()
+            prereleases = [
+                name.split('-')[1]
+                for name in wheels
+                if name.startswith(package + '-') and name.endswith('.whl') and 'rc' in name.split('-')[1]
+            ]
+            releases = {version: [{}] for version in prereleases} or {'1.0.0': [{}]}
+            body = json.dumps({'info': {'requires_python': requires_python}, 'releases': releases}).encode()
             content_type = 'application/json'
         elif path.startswith('/simple/') or path.startswith('/private/simple/'):
             package = path.strip('/').split('/')[-1].replace('-', '_')

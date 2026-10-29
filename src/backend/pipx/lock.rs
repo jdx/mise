@@ -471,6 +471,61 @@ impl PIPXBackend {
         }
     }
 
+    /// Keeps the release-age cutoff from rejecting the locked tool's own release
+    /// when its index does not date it.
+    ///
+    /// PEP 700 upload times are optional, and mise's version selection allows a
+    /// release it cannot date (`VersionInfo::filter_by_date`), while uv treats a
+    /// file without one as newer than any `--exclude-newer`. The two have to agree
+    /// for the version mise picked, or `mise lock` would choose a release its own
+    /// graph lock then rejects. Only that package is exempt: a dated release, or
+    /// a dependency, keeps the cutoff, and an undated dependency stays held back.
+    async fn uv_exempt_undated_release(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Vec<OsString> {
+        if tv.before_date.is_none() {
+            return vec![];
+        }
+        let Ok(PipxRequest::Pypi(package)) = self.tool_name().parse() else {
+            return vec![];
+        };
+        // A pinned prerelease is a valid selection whatever `prerelease` says, so
+        // list with prereleases included to find it.
+        let mut opts = tv.request.options();
+        opts.opts
+            .insert("prerelease".into(), toml::Value::String("true".into()));
+        let versions = match self
+            .list_remote_versions_with_info_with_selection_options(config, &opts, false)
+            .await
+        {
+            Ok(versions) => versions,
+            Err(err) => {
+                debug!(
+                    "cannot check whether {package} {} is dated: {err:#}",
+                    tv.version
+                );
+                return vec![];
+            }
+        };
+        let undated = versions
+            .iter()
+            .find(|v| v.version == tv.version)
+            .is_some_and(|v| v.created_at_timestamp().is_none());
+        if !undated {
+            return vec![];
+        }
+        debug!(
+            "{package} {} has no upload time; exempting it from the release-age cutoff",
+            tv.version
+        );
+        vec![
+            "--exclude-newer-package".into(),
+            format!("{package}=false").into(),
+        ]
+    }
+
     /// The installed interpreter a tool's `python` option selects when none was bound
     /// to the version: the lockfile may pin a patch release that is not installed
     /// while another one matching the selector is, so look at the installed ones too.
@@ -622,7 +677,8 @@ impl PIPXBackend {
             .uv_lock_command(config, tv, &uv, temp.path())
             .await?
             .args(["lock", "--no-build", "--no-config"])
-            .args(Self::uv_exclude_newer_args(tv.before_date));
+            .args(Self::uv_exclude_newer_args(tv.before_date))
+            .args(self.uv_exempt_undated_release(config, tv).await);
         cmd = lock_python.apply(cmd);
         let raw = tv.request.options();
         if let Some(value) = PipxOptions::new(&raw).dependency_prereleases()? {

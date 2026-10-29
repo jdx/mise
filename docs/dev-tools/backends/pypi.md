@@ -199,6 +199,15 @@ the tool's dependencies when mise resolves a graph, not when it replays one. For
 version-only installs, mise passes uv's `--exclude-newer` flag (uv 0.2.22 or
 newer) or, through pipx, pip's `--uploaded-prior-to` flag.
 
+Upload times are optional in the index protocol, and many self-hosted registries
+do not publish them. mise allows a release it cannot date, so when the tool's own
+release has no upload time, `mise lock` exempts that package from the cutoff it
+passes to uv (`--exclude-newer-package <name>=false`). A dated release and the
+tool's dependencies keep the cutoff, and uv holds back a dependency without an
+upload time. When the graph cannot be locked for that reason, mise warns and
+keeps a version-only entry; set `minimum_release_age = "0s"` for the tool to lock
+the graph.
+
 ## Choosing Python
 
 Configure the interpreter in mise:
