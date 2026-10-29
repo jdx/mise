@@ -57,7 +57,7 @@ assert_fail "mise run remote_extends_task" "which was not found"
 
 cat <<EOF2 >mise.toml
 [tasks.remote_env]
-file = "http://localhost:${HTTP_PORT}/test/mytask"
+file = "http://localhost:${HTTP_PORT}/test/env-task"
 env.FOO = "1"
 
 [tasks.sub]
@@ -68,9 +68,9 @@ depends = ["remote_env"]
 run = "echo dep done"
 EOF2
 
-assert_contains "mise run remote_env" "running mytask"
-assert_contains "mise run sub" "running mytask"
-assert_contains "mise run dep" "running mytask"
+assert_contains "mise run remote_env" "env-task FOO=1"
+assert_contains "mise run sub" "env-task FOO=1"
+assert_contains "mise run dep" "env-task FOO=1"
 assert_not_contains "mise run sub 2>&1" "No such file"
 assert_not_contains "mise run dep 2>&1" "No such file"
 
@@ -78,7 +78,7 @@ assert_not_contains "mise run dep 2>&1" "No such file"
 # its parent, even when the parent fails
 cat <<EOF2 >mise.toml
 [tasks.remote_cleanup]
-file = "http://localhost:${HTTP_PORT}/test/mytask"
+file = "http://localhost:${HTTP_PORT}/test/env-task"
 env.FOO = "1"
 
 [tasks.deploy]
@@ -86,5 +86,5 @@ depends_post = ["remote_cleanup"]
 run = "echo deploying && exit 1"
 EOF2
 
-assert_fail "mise run deploy" "running mytask"
+assert_fail "mise run deploy" "env-task FOO=1"
 assert_contains "mise tasks deps deploy" "remote_cleanup (post)"
