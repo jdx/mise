@@ -1079,6 +1079,13 @@ async fn artifact_checksum(
     api_url: Option<&str>,
     headers: Option<&reqwest::header::HeaderMap>,
 ) -> Result<String> {
+    // A `file://` artifact is hashed in place, as the http backend installs it.
+    if let Some(local) = crate::backend::http::local_artifact_path(url)? {
+        return Ok(format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&local, None)?
+        ));
+    }
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("artifact");
     let url = if let Some(api_url) = api_url {
@@ -1104,7 +1111,10 @@ pub(crate) async fn download_for_verification(
 ) -> Result<tempfile::TempDir> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("artifact");
-    crate::http::HTTP.download_file(url, &path, None).await?;
+    match crate::backend::http::local_artifact_path(url)? {
+        Some(local) => crate::file::copy(&local, &path)?,
+        None => crate::http::HTTP.download_file(url, &path, None).await?,
+    }
     if let Some((algorithm, expected)) = checksum.as_deref().and_then(|value| value.split_once(':'))
     {
         crate::hash::ensure_checksum(&path, expected, None, algorithm)?;
@@ -2033,6 +2043,32 @@ mod tests {
         assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_err());
         new.additional_artifacts.pop();
         assert!(ensure_no_downgrade(&old, &new, "github:o/r").is_err());
+    }
+
+    #[tokio::test]
+    async fn artifact_checksum_hashes_local_file_urls() {
+        let tmp = tempfile::tempdir().unwrap();
+        let artifact = tmp.path().join("probe");
+        std::fs::write(&artifact, b"artifact").unwrap();
+        let url = url::Url::from_file_path(&artifact).unwrap().to_string();
+        let mut info = PlatformInfo {
+            url: Some(url.clone()),
+            ..Default::default()
+        };
+        complete_artifact_checksums(&mut info).await.unwrap();
+        let expected = format!(
+            "sha256:{}",
+            crate::hash::file_hash_sha256(&artifact, None).unwrap()
+        );
+        assert_eq!(info.checksum.as_deref(), Some(expected.as_str()));
+        // The recorded URL stays as written.
+        assert_eq!(info.url.as_deref(), Some(url.as_str()));
+
+        let mut checksum = None;
+        download_for_verification(&url, &mut checksum)
+            .await
+            .unwrap();
+        assert_eq!(checksum.as_deref(), Some(expected.as_str()));
     }
 
     #[tokio::test]
