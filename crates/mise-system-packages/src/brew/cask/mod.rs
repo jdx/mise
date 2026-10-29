@@ -926,6 +926,15 @@ impl BrewCaskManager {
             install_generic_artifact(&stage, &tmp_caskroom, artifact, &mut flight_targets)?;
             record_cask_action(cask.manager, &mut journal, &format!("artifact[{index}]"))?;
         }
+        // Postflight hooks receive the caskroom as staged_path and may modify
+        // the binary payload there before its artifacts are linked.
+        if artifacts
+            .binaries
+            .iter()
+            .any(|binary| payload_backed_binary(&stage, binary))
+        {
+            durabilize_stage_payload(&stage, &tmp_caskroom, &artifacts.apps)?;
+        }
         execute_flight_steps_recording(
             &cask,
             &artifacts.postflight_steps,
@@ -938,13 +947,6 @@ impl BrewCaskManager {
         execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
         if has_lifecycle_hook(&cask, "postflight") {
             record_cask_action(cask.manager, &mut journal, "postflight_hook")?;
-        }
-        if artifacts
-            .binaries
-            .iter()
-            .any(|binary| payload_backed_binary(&stage, binary))
-        {
-            durabilize_stage_payload(&stage, &tmp_caskroom, &artifacts.apps)?;
         }
         for (index, binary) in artifacts.binaries.iter().enumerate() {
             stage_binary(&stage, &tmp_caskroom, &cask, &artifacts.apps, binary)?;
@@ -4208,36 +4210,97 @@ fn durabilize_stage_payload(stage: &Path, caskroom: &Path, apps: &[AppArtifact])
         .filter_map(|app| find_app(stage, &app.source))
         .map(|source| file::desymlink_path(&source))
         .collect();
-    for entry in std::fs::read_dir(stage)? {
-        let source = entry?.path();
-        if !path_starts_with_resolved_root(&source, stage) {
-            continue;
+    // Directories are copied entry by entry so every link below them is
+    // rebased from its own installed location. Their permissions are applied
+    // last, so a read-only source directory can still be filled.
+    let mut directory_permissions = vec![];
+    let mut directories = vec![stage.to_path_buf()];
+    while let Some(directory) = directories.pop() {
+        for entry in std::fs::read_dir(directory)? {
+            let entry = entry?;
+            let source = entry.path();
+            if !path_starts_with_resolved_root(&source, stage) {
+                continue;
+            }
+            let resolved = file::desymlink_path(&source);
+            if app_sources.contains(&resolved) {
+                continue;
+            }
+            let Some(relative) = staged_relative_path(stage, &source) else {
+                continue;
+            };
+            let target = caskroom.join(&relative);
+            if let Ok(metadata) = target.symlink_metadata() {
+                // Generic artifacts can create a shared parent directory. Fill
+                // its missing entries without replacing installed files or links.
+                // `source` resolves inside the stage, so following a directory
+                // link here cannot leave it.
+                if metadata.is_dir() && source.is_dir() {
+                    directories.push(source);
+                }
+                continue;
+            }
+            if !path_starts_with_resolved_root(&target, caskroom) {
+                bail!(
+                    "brew-cask: refusing to stage cask payload through a path outside the caskroom: {}",
+                    target.display()
+                );
+            }
+            if let Some(parent) = target.parent() {
+                file::create_dir_all(parent)?;
+            }
+            let is_link = entry.file_type()?.is_symlink();
+            if is_link
+                && !app_sources.iter().any(|app| resolved.starts_with(app))
+                && let Some(resolved_relative) = staged_relative_path(stage, &resolved)
+            {
+                // Keep a link between payload entries a link, so a binary sees
+                // postflight edits to the file it points at. A relative link
+                // is kept when it reaches the same payload path from the
+                // caskroom; one that does not, such as a link reached through
+                // a followed directory link, or an absolute one, points at
+                // its resolved entry in the caskroom instead, relative to its
+                // own directory so the caskroom rename at activation leaves it
+                // valid. A link into a skipped app bundle is copied, since
+                // nothing would be left for it to point at.
+                let link = std::fs::read_link(&source)?;
+                let reached_from = |directory: &Path, root: &Path| {
+                    lexically_normalized_path(&file::desymlink_path(directory).join(&link))
+                        .strip_prefix(file::desymlink_path(root))
+                        .ok()
+                        .map(Path::to_path_buf)
+                };
+                let keeps_its_meaning = link.is_relative()
+                    && source
+                        .parent()
+                        .zip(target.parent())
+                        .is_some_and(|(from, to)| {
+                            let staged = reached_from(from, stage);
+                            staged.is_some() && staged == reached_from(to, caskroom)
+                        });
+                let link = if keeps_its_meaning {
+                    link
+                } else {
+                    let installed = caskroom.join(resolved_relative);
+                    target
+                        .parent()
+                        .and_then(|parent| relative_path_between(parent, &installed))
+                        .unwrap_or(installed)
+                };
+                file::make_symlink(&link, &target)?;
+            } else if source.is_dir() && !is_link {
+                file::create_dir_all(&target)?;
+                directory_permissions.push((target, entry.metadata()?.permissions()));
+                directories.push(source);
+            } else if source.is_dir() {
+                file::copy_dir_all_preserve_symlinks(&source, &target)?;
+            } else {
+                file::copy(&source, &target)?;
+            }
         }
-        let resolved = file::desymlink_path(&source);
-        if app_sources.contains(&resolved) {
-            continue;
-        }
-        let Some(relative) = staged_relative_path(stage, &source) else {
-            continue;
-        };
-        let target = caskroom.join(&relative);
-        if !path_starts_with_resolved_root(&target, caskroom) {
-            bail!(
-                "brew-cask: refusing to stage cask payload through a path outside the caskroom: {}",
-                target.display()
-            );
-        }
-        if target.symlink_metadata().is_ok() {
-            continue;
-        }
-        if let Some(parent) = target.parent() {
-            file::create_dir_all(parent)?;
-        }
-        if source.is_dir() {
-            file::copy_dir_all_preserve_symlinks(&source, &target)?;
-        } else {
-            file::copy(&source, &target)?;
-        }
+    }
+    for (directory, permissions) in directory_permissions.into_iter().rev() {
+        std::fs::set_permissions(directory, permissions)?;
     }
     Ok(())
 }

@@ -7591,6 +7591,172 @@ fn links_a_stage_sourced_binary_into_its_payload_when_the_target_moves_it() -> R
 
 #[cfg(unix)]
 #[test]
+fn merges_a_linked_payload_directory_into_an_existing_caskroom_directory() -> Result<()> {
+    // A generic artifact already created `payload/` in the caskroom, and the
+    // stage reaches its payload through a directory link. The merge has to
+    // follow that link to copy the binary, but only while it stays in the stage.
+    let tmp = tempfile::tempdir()?;
+    let stage = tmp.path().join("stage");
+    let outside = tmp.path().join("outside");
+    file::create_dir_all(stage.join("real/bin"))?;
+    file::create_dir_all(&outside)?;
+    mise_util::file::write(stage.join("real/bin/tool"), "launcher")?;
+    mise_util::file::write(outside.join("secret"), "secret")?;
+    std::os::unix::fs::symlink("real", stage.join("payload"))?;
+    std::os::unix::fs::symlink(&outside, stage.join("external"))?;
+    let caskroom = tmp.path().join("caskroom");
+    file::create_dir_all(caskroom.join("payload/docs"))?;
+    file::create_dir_all(caskroom.join("external"))?;
+
+    durabilize_stage_payload(&stage, &caskroom, &[])?;
+
+    assert_eq!(
+        mise_util::file::read_to_string(caskroom.join("payload/bin/tool"))?,
+        "launcher"
+    );
+    assert!(caskroom.join("payload/docs").is_dir());
+    assert!(
+        caskroom.join("external/secret").symlink_metadata().is_err(),
+        "a link out of the stage must not be merged"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn keeps_payload_file_links_pointing_into_the_caskroom() -> Result<()> {
+    // A launcher linked to a sibling file has to stay linked, or a postflight
+    // edit to that file never reaches the installed binary. A link into an app
+    // bundle the merge skips is copied, since the bundle will not be there.
+    let tmp = tempfile::tempdir()?;
+    let stage = tmp.path().join("stage");
+    file::create_dir_all(stage.join("pkg/bin"))?;
+    file::create_dir_all(stage.join("pkg/lib"))?;
+    file::create_dir_all(stage.join("Example.app/Contents/MacOS"))?;
+    mise_util::file::write(stage.join("pkg/lib/tool"), "launcher")?;
+    mise_util::file::write(stage.join("Example.app/Contents/MacOS/example"), "app")?;
+    std::os::unix::fs::symlink("../lib/tool", stage.join("pkg/bin/relative"))?;
+    std::os::unix::fs::symlink(stage.join("pkg/lib/tool"), stage.join("pkg/bin/absolute"))?;
+    std::os::unix::fs::symlink(
+        "../../Example.app/Contents/MacOS/example",
+        stage.join("pkg/bin/example"),
+    )?;
+    // An artifact phase already created `pkg/bin`, so its entries are merged
+    // one by one rather than copied as a tree.
+    let caskroom = tmp.path().join("caskroom");
+    file::create_dir_all(caskroom.join("pkg/bin"))?;
+    let app = AppArtifact {
+        source: "Example.app".to_string(),
+        target: None,
+    };
+
+    durabilize_stage_payload(&stage, &caskroom, &[app])?;
+    file::remove_all(&stage)?;
+
+    assert_eq!(
+        std::fs::read_link(caskroom.join("pkg/bin/relative"))?,
+        Path::new("../lib/tool")
+    );
+    assert_eq!(
+        std::fs::read_link(caskroom.join("pkg/bin/absolute"))?,
+        Path::new("../lib/tool")
+    );
+    mise_util::file::write(caskroom.join("pkg/lib/tool"), "edited")?;
+    for link in ["relative", "absolute"] {
+        assert_eq!(
+            mise_util::file::read_to_string(caskroom.join("pkg/bin").join(link))?,
+            "edited"
+        );
+    }
+    let example = caskroom.join("pkg/bin/example");
+    assert!(!example.is_symlink());
+    assert_eq!(mise_util::file::read_to_string(&example)?, "app");
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn points_a_link_reached_through_a_directory_link_at_its_caskroom_file() -> Result<()> {
+    // `payload` links to `real/nested`, so `../../lib/tool` from inside it
+    // reaches `lib/tool`. Kept verbatim at `caskroom/payload/tool`, the same
+    // text would climb out of the caskroom.
+    let tmp = tempfile::tempdir()?;
+    let stage = tmp.path().join("stage");
+    file::create_dir_all(stage.join("real/nested"))?;
+    file::create_dir_all(stage.join("lib"))?;
+    mise_util::file::write(stage.join("lib/tool"), "launcher")?;
+    std::os::unix::fs::symlink("../../lib/tool", stage.join("real/nested/tool"))?;
+    std::os::unix::fs::symlink("real/nested", stage.join("payload"))?;
+    let caskroom = tmp.path().join("caskroom");
+    file::create_dir_all(caskroom.join("payload"))?;
+
+    durabilize_stage_payload(&stage, &caskroom, &[])?;
+    file::remove_all(&stage)?;
+
+    let link = caskroom.join("payload/tool");
+    assert_eq!(std::fs::read_link(&link)?, Path::new("../lib/tool"));
+    assert_eq!(mise_util::file::read_to_string(&link)?, "launcher");
+    assert_eq!(
+        std::fs::read_link(caskroom.join("real/nested/tool"))?,
+        Path::new("../../lib/tool"),
+        "a link copied in place keeps its relative target"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn rebases_links_inside_a_payload_directory_missing_from_the_caskroom() -> Result<()> {
+    // `caskroom/pkg` exists but `pkg/bin` does not, so `bin` is copied into
+    // it. An absolute link inside has to point into the caskroom, or it
+    // dangles once the stage is gone, and has to survive activation renaming
+    // the caskroom even though `bin` is read-only by then. A directory link
+    // stays a link, so a link back to its own directory does not recurse.
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = tempfile::tempdir()?;
+    let stage = tmp.path().join("stage");
+    file::create_dir_all(stage.join("pkg/bin"))?;
+    file::create_dir_all(stage.join("pkg/lib"))?;
+    mise_util::file::write(stage.join("pkg/lib/tool"), "launcher")?;
+    std::os::unix::fs::symlink(stage.join("pkg/lib/tool"), stage.join("pkg/bin/launcher"))?;
+    std::os::unix::fs::symlink(".", stage.join("pkg/bin/current"))?;
+    std::fs::set_permissions(
+        stage.join("pkg/bin"),
+        std::fs::Permissions::from_mode(0o555),
+    )?;
+    let tmp_caskroom = tmp.path().join("tmp-caskroom");
+    let caskroom = tmp.path().join("caskroom");
+    file::create_dir_all(tmp_caskroom.join("pkg"))?;
+
+    durabilize_stage_payload(&stage, &tmp_caskroom, &[])?;
+    std::fs::set_permissions(
+        stage.join("pkg/bin"),
+        std::fs::Permissions::from_mode(0o755),
+    )?;
+    file::remove_all(&stage)?;
+    std::fs::rename(&tmp_caskroom, &caskroom)?;
+    let activated = retarget_transient_symlinks(
+        &tmp_caskroom,
+        &caskroom,
+        &caskroom,
+        &FlightTargetTransaction::default(),
+    );
+
+    let bin = caskroom.join("pkg/bin");
+    let mode = std::fs::metadata(&bin)?.permissions().mode();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755))?;
+    activated?;
+    assert_eq!(mode & 0o777, 0o555);
+    let launcher = bin.join("launcher");
+    assert_eq!(std::fs::read_link(&launcher)?, Path::new("../lib/tool"));
+    assert_eq!(mise_util::file::read_to_string(&launcher)?, "launcher");
+    assert_eq!(std::fs::read_link(bin.join("current"))?, Path::new("."));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
 fn retargets_a_payload_binary_link_when_the_caskroom_is_renamed() -> Result<()> {
     // The payload link is absolute and points into the temporary caskroom,
     // which only exists until activation renames it. `symlinks_under` takes a
