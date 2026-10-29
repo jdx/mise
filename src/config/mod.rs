@@ -8523,7 +8523,10 @@ fn included_task_definitions(
     }
     groups.insert(0, (includes, excludes));
     let is_toml = |p: &Path| p.extension().is_some_and(|e| e == "toml");
-    let mut seen = std::collections::HashSet::new();
+    // An include is walked again under different excludes, which can let through a file the
+    // first walk skipped, so it is the task files that are read once.
+    let mut walked = HashSet::new();
+    let mut read = HashSet::new();
     let mut tasks = vec![];
     for (includes, excludes) in groups {
         let all_excludes = Settings::get()
@@ -8534,7 +8537,9 @@ fn included_task_definitions(
             .cloned()
             .collect::<Vec<_>>();
         for include in includes {
-            if !seen.insert(include.clone()) || is_task_path_excluded(&include, &excludes) {
+            if !walked.insert((include.clone(), excludes.clone()))
+                || is_task_path_excluded(&include, &excludes)
+            {
                 continue;
             }
             let files = if include.is_dir() {
@@ -8560,6 +8565,9 @@ fn included_task_definitions(
                 continue;
             };
             for path in files {
+                if !read.insert(path.clone()) {
+                    continue;
+                }
                 let loaded = if is_toml(&path) {
                     file::read_config_to_string(&path).and_then(|raw| {
                         Ok(toml::from_str::<Tasks>(&raw)?

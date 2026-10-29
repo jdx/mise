@@ -172,3 +172,28 @@ assert "MISE_EXPERIMENTAL=1 mise ls -C cargo-mono/crates/lib"
 cd other || exit 1
 assert_not_contains "mise prune --dry-run 2>&1" "dummy@6.0.0"
 assert_not_contains "mise prune --dry-run 2>&1" "dummy@7.0.0"
+
+# a file one config excludes still counts when another includes it under other excludes
+cd .. || exit 1
+mkdir -p proj5/tasks
+cat >proj5/mise.toml <<'TOML'
+[task_config]
+includes = ["tasks"]
+excludes = ["tasks/release.toml"]
+TOML
+cat >proj5/mise.prod.toml <<'TOML'
+[task_config]
+includes = ["tasks"]
+excludes = ["tasks/dev.toml"]
+TOML
+cat >proj5/tasks/release.toml <<'TOML'
+[release]
+run = "true"
+tools.dummy = "8.0.0"
+TOML
+assert "mise trust proj5/mise.toml"
+assert "mise trust proj5/mise.prod.toml"
+assert "mise install dummy@8.0.0"
+assert "MISE_ENV=prod mise ls -C proj5"
+cd other || exit 1
+assert_not_contains "mise prune --dry-run 2>&1" "dummy@8.0.0"
