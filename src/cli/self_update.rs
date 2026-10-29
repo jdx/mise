@@ -380,14 +380,27 @@ fn current_exe_stem() -> Option<String> {
 /// one is copied there directly, which is what the update was about to leave there anyway.
 #[cfg(windows)]
 fn replace_running_binary(new_binary: &Path) -> Result<()> {
+    let exe = std::env::current_exe()?.canonicalize()?;
+    replace_binary_at(
+        &exe,
+        new_binary,
+        || self_replace::self_replace(new_binary),
+        &LOCK_RETRY_DELAYS,
+    )
+}
+
+/// [`replace_running_binary`] with the swap and its delays passed in, so a test can make the swap
+/// fail before or after it moves `exe` aside.
+#[cfg(windows)]
+fn replace_binary_at(
+    exe: &Path,
+    new_binary: &Path,
+    swap: impl FnMut() -> std::io::Result<()>,
+    delays: &[Duration],
+) -> Result<()> {
     use color_eyre::eyre::WrapErr;
 
-    let exe = std::env::current_exe()?.canonicalize()?;
-    let result = retry_while_locked(
-        || self_replace::self_replace(new_binary),
-        || exe.exists(),
-        &LOCK_RETRY_DELAYS,
-    );
+    let result = retry_while_locked(swap, || exe.exists(), delays);
     match result {
         Ok(()) => Ok(()),
         Err(err) if exe.exists() => Err(err.into()),
@@ -396,7 +409,7 @@ fn replace_running_binary(new_binary: &Path) -> Result<()> {
                 "replacing {} failed after moving it aside ({err}); copying the new binary there",
                 exe.display()
             );
-            retry_while_locked(|| fs::copy(new_binary, &exe), || true, &LOCK_RETRY_DELAYS)
+            retry_while_locked(|| fs::copy(new_binary, exe), || true, delays)
                 .wrap_err_with(|| format!("failed to put the new mise at {}", exe.display()))?;
             Ok(())
         }
@@ -1780,6 +1793,77 @@ mod tests {
         let (result, calls) = retried(&[32], false, 6);
         assert_eq!(result.unwrap_err().raw_os_error(), Some(32));
         assert_eq!(calls, 1);
+    }
+
+    /// A directory holding `mise.exe` with `old` in it and a staged `new.exe` with `new`.
+    fn install_dir(old: &[u8], new: &[u8]) -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("mise.exe");
+        let new_binary = dir.path().join("new.exe");
+        fs::write(&exe, old).unwrap();
+        fs::write(&new_binary, new).unwrap();
+        (dir, exe, new_binary)
+    }
+
+    /// A swap that moves `exe` aside, as `self-replace` does first, and then fails on a lock.
+    fn moves_aside_then_locks(exe: &Path) -> impl FnMut() -> std::io::Result<()> {
+        let exe = exe.to_path_buf();
+        move || {
+            fs::rename(&exe, exe.with_extension("relocated"))?;
+            Err(std::io::Error::from_raw_os_error(32))
+        }
+    }
+
+    #[test]
+    fn a_failure_after_the_move_leaves_the_new_binary_in_place() {
+        let (_dir, exe, new_binary) = install_dir(b"old", b"new");
+        replace_binary_at(
+            &exe,
+            &new_binary,
+            moves_aside_then_locks(&exe),
+            &[Duration::ZERO; 2],
+        )
+        .unwrap();
+        assert_eq!(fs::read(&exe).unwrap(), b"new");
+    }
+
+    #[test]
+    fn a_failed_recovery_copy_is_reported() {
+        let (_dir, exe, new_binary) = install_dir(b"old", b"new");
+        fs::remove_file(&new_binary).unwrap();
+        let err = replace_binary_at(
+            &exe,
+            &new_binary,
+            moves_aside_then_locks(&exe),
+            &[Duration::ZERO],
+        )
+        .unwrap_err();
+        assert!(
+            format!("{err}").contains("failed to put the new mise at"),
+            "{err}"
+        );
+        assert!(!exe.exists());
+    }
+
+    /// While `exe` is still in place nothing has moved, so the swap's own error comes out and the
+    /// old binary is left alone.
+    #[test]
+    fn a_failure_before_the_move_leaves_the_old_binary_alone() {
+        let (_dir, exe, new_binary) = install_dir(b"old", b"new");
+        let mut calls = 0;
+        let err = replace_binary_at(
+            &exe,
+            &new_binary,
+            || {
+                calls += 1;
+                Err(std::io::Error::from_raw_os_error(32))
+            },
+            &[Duration::ZERO; 2],
+        )
+        .unwrap_err();
+        assert_eq!(calls, 3, "a lock while mise.exe is in place is retried");
+        assert!(format!("{err}").contains("os error 32"), "{err}");
+        assert_eq!(fs::read(&exe).unwrap(), b"old");
     }
 
     #[test]
