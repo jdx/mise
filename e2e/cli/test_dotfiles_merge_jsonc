@@ -55,9 +55,9 @@ assert_contains "cat ~/settings.jsonc" '"editor.fontSize": 16'
 # an unknown format is refused
 cat <<'EOF' >mise.toml
 [dotfiles]
-"~/x.cfg/shared" = { source = "shared/vscode.json", merge = true, format = "ini" }
+"~/x.cfg/shared" = { source = "shared/vscode.json", merge = true, format = "xml" }
 EOF
-assert_contains "mise dotfiles status 2>&1" "unknown format 'ini'"
+assert_contains "mise dotfiles status 2>&1" "unknown format 'xml'"
 
 # format names the format of a merge; without merge the entry is refused
 # rather than linked over the file it meant to merge into

@@ -77,7 +77,7 @@ pub(crate) struct EditTomlTable {
     #[serde(default)]
     pub comment: Option<String>,
     /// `merge = true` sets the keys in `source` on a structured target file
-    /// (JSON, JSONC, TOML, or YAML) and leaves every other key to the application
+    /// (JSON, JSONC, TOML, YAML, or INI) and leaves every other key to the application
     /// that also writes it
     ///
     /// `merge = "missing"` sets only the keys of `source` the target has no
@@ -647,12 +647,12 @@ fn merge_op(
     let format = match entry.format.as_deref() {
         Some(name) => Format::from_name(name).ok_or_else(|| {
             eyre::eyre!(
-                "\"{path_raw}\".{id}: unknown format '{name}' (expected \"json\", \"jsonc\", \"toml\", or \"yaml\"), ignoring entry"
+                "\"{path_raw}\".{id}: unknown format '{name}' (expected \"json\", \"jsonc\", \"toml\", \"yaml\", or \"ini\"), ignoring entry"
             )
         })?,
         None => Format::from_path(path).ok_or_else(|| {
             eyre::eyre!(
-                "\"{path_raw}\".{id}: merge needs a .json, .jsonc, .toml, .yaml, or .yml target or a format, ignoring entry"
+                "\"{path_raw}\".{id}: merge needs a .json, .jsonc, .toml, .yaml, .yml, or .ini target or a format, ignoring entry"
             )
         })?,
     };
@@ -1912,6 +1912,9 @@ fn apply_one(
             .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
         std::fs::copy(&req.path, tmp.path())
             .wrap_err_with(|| format!("failed to replace symlink: {}", req.path.display_user()))?;
+        // the copy is the raw source, which a template may leave unparseable;
+        // fail before the link is gone rather than after
+        apply_to_string(req, desired, &file::read_to_string(tmp.path())?)?;
         // a read-only source (a Nix store file, `chmod -w`) must not leave a
         // copy the merge cannot write
         #[cfg(unix)]
@@ -2181,6 +2184,46 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_merge_that_cannot_read_its_linked_source_keeps_the_link() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("shared.ini");
+        // a template whose raw text is not INI, though it renders to INI
+        file::write(&source, "[{{ section }}\nk = 1\n")?;
+        let path = dir.path().join("app.ini");
+        std::os::unix::fs::symlink(&source, &path)?;
+        let req = EditRequest {
+            path_raw: path.to_string_lossy().to_string(),
+            path: path.clone(),
+            id: "shared".into(),
+            op: EditOp::Merge {
+                source: BlockSource::File(source.clone()),
+                template: true,
+                format: Format::Ini,
+                missing_only: false,
+                permissions: None,
+            },
+            base: dir.path().to_path_buf(),
+            config_path: dir.path().join("mise.toml"),
+            origin: ResourceOrigin {
+                config: dir.path().join("mise.toml"),
+                config_root: dir.path().to_path_buf(),
+                environment: vec![],
+                source: Some(source.clone()),
+            },
+        };
+        let mut written = vec![];
+        let err = apply_one(&req, Some("[app]\nk = 1\n"), None, &mut written).unwrap_err();
+        assert!(
+            format!("{err:?}").contains("failed to parse the INI target"),
+            "{err:?}"
+        );
+        assert!(path.is_symlink());
+        assert!(written.is_empty());
+        Ok(())
+    }
+
     fn resolve(path: &str, entry: &str) -> Result<EditRequest> {
         let entry: EditTomlEntry = toml::from_str(entry).map_err(|e| eyre::eyre!("{e}"))?;
         resolve_entry(
@@ -2199,6 +2242,7 @@ mod tests {
             ("~/a/settings.json", Format::Json),
             ("~/a/config.yml", Format::Yaml),
             ("~/a/config.yaml", Format::Yaml),
+            ("~/a/tox.ini", Format::Ini),
         ] {
             let req = resolve(path, "source = \"shared.txt\"\nmerge = true").unwrap();
             assert_eq!(
@@ -2315,8 +2359,8 @@ mod tests {
             ),
             (
                 "~/a/settings.json",
-                "source = \"s\"\nmerge = true\nformat = \"ini\"",
-                "unknown format 'ini'",
+                "source = \"s\"\nmerge = true\nformat = \"xml\"",
+                "unknown format 'xml'",
             ),
             (
                 "~/a/settings.json",
