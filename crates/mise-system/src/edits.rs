@@ -2212,6 +2212,7 @@ mod tests {
                 environment: vec![],
                 source: Some(source.clone()),
             },
+            group: None,
         };
         let mut written = vec![];
         let err = apply_one(&req, Some("[app]\nk = 1\n"), None, &mut written).unwrap_err();
