@@ -659,6 +659,33 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn rejects_global_json_with_duplicate_or_odd_whitespace() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("global.json");
+        for contents in [
+            r#"{"sdk": {"version": "8.0.100", "version": "9.0.100"}}"#,
+            "{\"sdk\":\u{a0}{\"version\": \"8.0.100\"}}",
+        ] {
+            std::fs::write(&path, contents).unwrap();
+            assert!(
+                DotnetPlugin::new()
+                    ._parse_idiomatic_file(&path)
+                    .await
+                    .is_err()
+            );
+        }
+        // whitespace inside a string or comment is not a token separator
+        std::fs::write(&path, "{\"sdk\": {\"version\": \"8.0.100\"}} // a\u{a0}b").unwrap();
+        assert_eq!(
+            DotnetPlugin::new()
+                ._parse_idiomatic_file(&path)
+                .await
+                .unwrap(),
+            vec!["8.0.100".to_string()]
+        );
+    }
+
     fn channel_releases(json: &str) -> ChannelReleases {
         serde_json::from_str(json).unwrap()
     }
