@@ -161,7 +161,7 @@ impl DotfilesApply {
             if edits.is_empty() {
                 return Ok(true);
             }
-            system::edits::apply(config, &edits, &self.edit_opts(), written)
+            system::edits::apply(config, &edits, &self.edit_opts(), &secrets, written)
         })?;
         Ok(done.then_some(handled))
     }
@@ -250,7 +250,7 @@ impl DotfilesApply {
         }
         if !edits.is_empty() {
             let opts = self.edit_opts();
-            if !system::edits::apply(config, edits, &opts, written)? {
+            if !system::edits::apply(config, edits, &opts, secrets, written)? {
                 return Ok(false);
             }
         }

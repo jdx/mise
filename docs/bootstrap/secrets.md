@@ -57,9 +57,11 @@ These templates can call <code v-pre>{{ secret(name="...") }}</code>:
 
 - [`[bootstrap.files]`](/bootstrap/files.html) content with `template = true`
 - [`[dotfiles]`](/dotfiles.html) entries with `mode = "template"`
+- [`[dotfiles]`](/dotfiles/edits.html#merge-secrets) `merge = "missing"` entries
+  with `template = "tera"`
 
-Block, line, and merge edits in `[dotfiles]` cannot. A `[dotfiles]` template
-uses a secret the same way; for example, `dotfiles/credentials.tmpl` might
+Block, line, and enforced `merge = true` edits in `[dotfiles]` cannot. A
+`[dotfiles]` template uses a secret the same way; for example, `dotfiles/credentials.tmpl` might
 contain <code v-pre>token = {{ secret(name="cache_token") }}</code> for this
 entry:
 

@@ -307,7 +307,9 @@ pub(crate) fn apply_shell_activation(
         verbose: Settings::get().verbose,
         yes,
     };
-    system::edits::apply(config, &edits, &opts, &mut vec![]).map(|_| ())
+    // shell activation blocks hold no `secret()` calls
+    let secrets = system::secrets::SecretValues::default();
+    system::edits::apply(config, &edits, &opts, &secrets, &mut vec![]).map(|_| ())
 }
 
 /// Apply `[bootstrap.repos]` entries that are missing or differ.

@@ -192,10 +192,36 @@ impl SecretValues {
         base: &Path,
         config_path: &Path,
     ) -> Result<String> {
+        self.render_dotfile_with(config, input, base, config_path, None)
+    }
+
+    /// Like [`Self::render_dotfile`], but `secret()` only resolves the names in
+    /// `resolve`. Any other declared name renders as a placeholder that
+    /// [`deferred_names`] finds again, so a template can be rendered to learn
+    /// which secrets it needs before any of them is read or prompted for.
+    pub(crate) fn render_dotfile_deferred(
+        &self,
+        config: &Config,
+        input: &str,
+        base: &Path,
+        config_path: &Path,
+        resolve: &BTreeSet<String>,
+    ) -> Result<String> {
+        self.render_dotfile_with(config, input, base, config_path, Some(resolve))
+    }
+
+    fn render_dotfile_with(
+        &self,
+        config: &Config,
+        input: &str,
+        base: &Path,
+        config_path: &Path,
+        resolve: Option<&BTreeSet<String>>,
+    ) -> Result<String> {
         let mut tera = get_tera(Some(base));
         let used = match &mut tera {
-            TeraEngine::V2(tera) => self.register_v2(tera),
-            TeraEngine::V1(tera) => self.register_v1(tera),
+            TeraEngine::V2(tera) => self.register_v2(tera, resolve),
+            TeraEngine::V1(tera) => self.register_v1(tera, resolve),
         };
         let rendered = crate::host::render_config_str(
             &mut tera,
@@ -239,7 +265,7 @@ impl SecretValues {
         target: &Path,
     ) -> Result<String> {
         let mut tera = get_tera_v2(Some(base));
-        let used = self.register_v2(&mut tera);
+        let used = self.register_v2(&mut tera, None);
         let mut context = BASE_CONTEXT.clone();
         // Independently selected bootstrap roots keep their legacy template
         // context until scoped composition and execution semantics are defined.
@@ -262,28 +288,43 @@ impl SecretValues {
         self.finish_render(config.map(|(config, _)| config), used, rendered)
     }
 
-    fn register_v2(&self, tera: &mut tera::Tera) -> Arc<Mutex<BTreeSet<String>>> {
+    /// `resolve` limits which names `secret()` reads; the rest render as
+    /// placeholders. `None` reads every name.
+    fn register_v2(
+        &self,
+        tera: &mut tera::Tera,
+        resolve: Option<&BTreeSet<String>>,
+    ) -> Arc<Mutex<BTreeSet<String>>> {
         let resolution = self.resolution.clone();
         let used = Arc::new(Mutex::new(BTreeSet::new()));
         let used_by_function = used.clone();
         let prompt = self.prompt;
+        let resolve = resolve.cloned();
         tera.register_function(
             "secret",
             move |args: Kwargs, _: &State| -> TeraResult<Value> {
                 let name = args.must_get::<&str>("name")?;
-                resolve_secret(&resolution, &used_by_function, prompt, name)
-                    .map(Value::from)
-                    .map_err(tera::Error::message)
+                let value = if resolve.as_ref().is_some_and(|names| !names.contains(name)) {
+                    deferred_placeholder(&resolution, name)
+                } else {
+                    resolve_secret(&resolution, &used_by_function, prompt, name)
+                };
+                value.map(Value::from).map_err(tera::Error::message)
             },
         );
         used
     }
 
-    fn register_v1(&self, tera: &mut tera1::Tera) -> Arc<Mutex<BTreeSet<String>>> {
+    fn register_v1(
+        &self,
+        tera: &mut tera1::Tera,
+        resolve: Option<&BTreeSet<String>>,
+    ) -> Arc<Mutex<BTreeSet<String>>> {
         let resolution = self.resolution.clone();
         let used = Arc::new(Mutex::new(BTreeSet::new()));
         let used_by_function = used.clone();
         let prompt = self.prompt;
+        let resolve = resolve.cloned();
         tera.register_function(
             "secret",
             move |args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
@@ -291,9 +332,12 @@ impl SecretValues {
                     .get("name")
                     .and_then(JsonValue::as_str)
                     .ok_or_else(|| tera1::Error::msg("missing required argument: name"))?;
-                resolve_secret(&resolution, &used_by_function, prompt, name)
-                    .map(JsonValue::from)
-                    .map_err(tera1::Error::msg)
+                let value = if resolve.as_ref().is_some_and(|names| !names.contains(name)) {
+                    deferred_placeholder(&resolution, name)
+                } else {
+                    resolve_secret(&resolution, &used_by_function, prompt, name)
+                };
+                value.map(JsonValue::from).map_err(tera1::Error::msg)
             },
         );
         used
@@ -343,6 +387,48 @@ impl SecretValues {
             prompt: false,
         }
     }
+}
+
+const DEFERRED_OPEN: &str = "‹secret:";
+const DEFERRED_CLOSE: char = '›';
+
+/// What `secret()` renders for a name that is not being resolved: readable in
+/// a diff, valid inside a JSON, TOML, YAML or INI string, and never a legal
+/// secret name character, so [`deferred_names`] cannot mistake other text for
+/// one. The secret itself is neither read nor prompted for.
+fn deferred_placeholder(
+    resolution: &Arc<Mutex<SecretResolution>>,
+    name: &str,
+) -> std::result::Result<String, String> {
+    let resolution = resolution
+        .lock()
+        .map_err(|_| "bootstrap secret resolver is unavailable".to_string())?;
+    if !resolution.declarations.contains_key(name) {
+        return Err(format!(
+            "bootstrap secret '{name}' is not declared in [bootstrap.secrets]"
+        ));
+    }
+    Ok(format!("{DEFERRED_OPEN}{name}{DEFERRED_CLOSE}"))
+}
+
+/// Whether `text` holds a placeholder.
+pub(crate) fn has_deferred(text: &str) -> bool {
+    text.contains(DEFERRED_OPEN)
+}
+
+/// The secret names whose placeholders appear in `text`.
+pub(crate) fn deferred_names(text: &str) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(DEFERRED_OPEN) {
+        let after = &rest[start + DEFERRED_OPEN.len()..];
+        let Some(end) = after.find(DEFERRED_CLOSE) else {
+            break;
+        };
+        names.insert(after[..end].to_string());
+        rest = &after[end + DEFERRED_CLOSE.len_utf8()..];
+    }
+    names
 }
 
 fn resolve_secret(
@@ -498,6 +584,40 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn finds_deferred_placeholders() {
+        let text = "a = \"‹secret:token›\"\nb = \"Bearer ‹secret:cache.token›\" # ‹secret:token›";
+        assert!(has_deferred(text));
+        assert_eq!(
+            deferred_names(text),
+            BTreeSet::from(["cache.token".to_string(), "token".to_string()])
+        );
+        assert!(!has_deferred("a = \"secret:token\""));
+        assert!(deferred_names("a = \"‹secret:unterminated\"").is_empty());
+    }
+
+    #[test]
+    fn deferred_placeholders_cover_declared_names_only() {
+        let resolution = Arc::new(Mutex::new(SecretResolution {
+            declarations: IndexMap::from([(
+                "token".to_string(),
+                SecretDeclaration {
+                    name: "token".to_string(),
+                    env: "TOKEN".to_string(),
+                    description: None,
+                    allow_empty: false,
+                },
+            )]),
+            ..Default::default()
+        }));
+        assert_eq!(
+            deferred_placeholder(&resolution, "token").unwrap(),
+            "‹secret:token›"
+        );
+        assert!(deferred_placeholder(&resolution, "other").is_err());
+        assert!(resolution.lock().unwrap().values.is_empty());
     }
 
     #[test]

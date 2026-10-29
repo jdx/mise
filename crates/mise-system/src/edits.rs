@@ -25,6 +25,7 @@
 //! `(path, id)` — a more local config overrides an edit with the same id,
 //! exactly like whole-file entries override by target.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use eyre::{Result, WrapErr, bail};
@@ -36,6 +37,7 @@ use crate::files::FileState;
 use crate::history::journal::{self, Capture};
 use crate::host::{Config, ConfigMap};
 use crate::resources::ResourceOrigin;
+use crate::secrets::{self, SecretValues};
 use mise_ui::prompt;
 use mise_util::file;
 use mise_util::path::PathExt;
@@ -768,6 +770,70 @@ fn find_block(
     }
 }
 
+/// Render the template source of a `merge = "missing"` entry. `secret()` reads
+/// only the names in `resolve`; any other renders as a placeholder.
+fn render_source(
+    config: &Config,
+    req: &EditRequest,
+    raw: &str,
+    values: &SecretValues,
+    resolve: &BTreeSet<String>,
+) -> Result<String> {
+    values
+        .render_dotfile_deferred(config, raw, &req.base, &req.origin.config, resolve)
+        .map_err(|err| {
+            eyre::eyre!(
+                "[dotfiles].\"{}/{}\": failed to render template: {err}",
+                req.path_raw,
+                req.id
+            )
+        })
+}
+
+/// The source of a `merge = "missing"` template with the secrets of the keys
+/// `text` lacks filled in, or `None` when no secret is needed. A key the target
+/// already holds is never resolved, so it asks for nothing.
+fn source_with_secrets(
+    config: &Config,
+    req: &EditRequest,
+    desired: &str,
+    text: &str,
+    values: &SecretValues,
+) -> Result<Option<String>> {
+    let EditOp::Merge {
+        source,
+        template: true,
+        format,
+        missing_only: true,
+        ..
+    } = &req.op
+    else {
+        return Ok(None);
+    };
+    let Some(missing) = structured_merge::missing(*format, text, desired)? else {
+        return Ok(None);
+    };
+    let names = secrets::deferred_names(&missing);
+    if names.is_empty() {
+        return Ok(None);
+    }
+    let raw = match source {
+        BlockSource::Inline(s) => s.clone(),
+        BlockSource::File(p) => file::read_to_string(p)?,
+    };
+    let rendered = render_source(config, req, &raw, values, &names)?;
+    // the parse error would quote the rendered text, secret values included
+    structured_merge::contains(*format, "", &rendered).map_err(|_| {
+        eyre::eyre!(
+            "[dotfiles].\"{}/{}\": the source is not valid once its secrets are filled in; \
+             a value may need quoting or escaping",
+            req.path_raw,
+            req.id
+        )
+    })?;
+    Ok(Some(rendered))
+}
+
 /// the content a block should contain, resolved and rendered at most once
 /// per check/apply cycle (templates may use exec())
 fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>> {
@@ -787,7 +853,12 @@ fn desired_content(config: &Config, req: &EditRequest) -> Result<Option<String>>
         BlockSource::Inline(s) => s.clone(),
         BlockSource::File(p) => file::read_to_string(p)?,
     };
-    let content = if *template {
+    let content = if *template && req.op.fills_missing_only() {
+        // `secret()` stays a placeholder: which keys the target lacks, and so
+        // which secrets are needed, is only known once apply compares them
+        let values = secrets::resolve(config, false)?;
+        render_source(config, req, &raw, &values, &BTreeSet::new())?
+    } else if *template {
         let mut tera = mise_util::tera::get_tera(Some(&req.base));
         crate::host::render_config_str(
             &mut tera,
@@ -1261,6 +1332,7 @@ pub fn apply(
     config: &Config,
     requests: &[EditRequest],
     opts: &ApplyOpts,
+    secrets: &SecretValues,
     written: &mut Vec<PathBuf>,
 ) -> Result<bool> {
     let mut todo: Vec<(&EditRequest, Option<String>)> = vec![];
@@ -1428,10 +1500,26 @@ pub fn apply(
     let mut waiting: Vec<(PathBuf, u32)> = vec![];
     let applied = (|| -> Result<()> {
         for (i, (req, desired)) in todo.iter().enumerate() {
+            // a fill-only template asks for the secrets of the keys it adds, and
+            // only those, once the file as earlier entries left it is known.
+            // This comes before the journal, so a secret that cannot be read
+            // leaves nothing to recover
+            let with_secrets = match desired.as_deref() {
+                Some(desired) => {
+                    let text = if req.path.exists() {
+                        file::read_to_string(&req.path)?
+                    } else {
+                        String::new()
+                    };
+                    source_with_secrets(config, req, desired, &text, secrets)?
+                }
+                None => None,
+            };
+            let desired = with_secrets.as_deref().or(desired.as_deref());
             let pending =
                 journal::begin_changes_with(opts.part, &req.path_raw, edit_paths(&req.path))?;
             let mode = creation_mode(&candidates, &req.path);
-            if apply_one(req, desired.as_deref(), mode, written)?
+            if apply_one(req, desired, mode, written)?
                 && let Some(mode) = mode
             {
                 waiting.push((req.path.clone(), mode));
@@ -1950,6 +2038,14 @@ fn apply_one(
         String::new()
     };
     let out = apply_to_string(req, desired, &text)?;
+    // a placeholder must never reach the file as if it were the secret
+    if req.op.is_template() && secrets::has_deferred(&out) && !secrets::has_deferred(&text) {
+        bail!(
+            "[dotfiles].\"{}/{}\": a secret placeholder was left in the merged file, not writing it",
+            req.path_raw,
+            req.id
+        );
+    }
     // a fill-only entry reconsidered after another merge may have nothing left to add
     if existed && req.op.fills_missing_only() && out == text {
         // a replaced link still changed the path, which reload commands key on
