@@ -4247,6 +4247,20 @@ fn durabilize_stage_payload(stage: &Path, caskroom: &Path, apps: &[AppArtifact])
             }
             if source.is_dir() {
                 file::copy_dir_all_preserve_symlinks(&source, &target)?;
+            } else if entry.file_type()?.is_symlink()
+                && !app_sources.iter().any(|app| resolved.starts_with(app))
+            {
+                // Keep a link between payload files a link, so a binary sees
+                // postflight edits to the file it points at. An absolute link
+                // into the stage is pointed at the same path in the caskroom.
+                // A link into a skipped app bundle is copied instead, since
+                // nothing would be left for it to point at.
+                let link = std::fs::read_link(&source)?;
+                let link = match staged_relative_path(stage, &link) {
+                    Some(relative) if link.is_absolute() => caskroom.join(relative),
+                    _ => link,
+                };
+                file::make_symlink(&link, &target)?;
             } else {
                 file::copy(&source, &target)?;
             }

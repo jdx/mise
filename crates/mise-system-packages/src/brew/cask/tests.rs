@@ -7624,6 +7624,58 @@ fn merges_a_linked_payload_directory_into_an_existing_caskroom_directory() -> Re
 
 #[cfg(unix)]
 #[test]
+fn keeps_payload_file_links_pointing_into_the_caskroom() -> Result<()> {
+    // A launcher linked to a sibling file has to stay linked, or a postflight
+    // edit to that file never reaches the installed binary. A link into an app
+    // bundle the merge skips is copied, since the bundle will not be there.
+    let tmp = tempfile::tempdir()?;
+    let stage = tmp.path().join("stage");
+    file::create_dir_all(stage.join("pkg/bin"))?;
+    file::create_dir_all(stage.join("pkg/lib"))?;
+    file::create_dir_all(stage.join("Example.app/Contents/MacOS"))?;
+    mise_util::file::write(stage.join("pkg/lib/tool"), "launcher")?;
+    mise_util::file::write(stage.join("Example.app/Contents/MacOS/example"), "app")?;
+    std::os::unix::fs::symlink("../lib/tool", stage.join("pkg/bin/relative"))?;
+    std::os::unix::fs::symlink(stage.join("pkg/lib/tool"), stage.join("pkg/bin/absolute"))?;
+    std::os::unix::fs::symlink(
+        "../../Example.app/Contents/MacOS/example",
+        stage.join("pkg/bin/example"),
+    )?;
+    // An artifact phase already created `pkg/bin`, so its entries are merged
+    // one by one rather than copied as a tree.
+    let caskroom = tmp.path().join("caskroom");
+    file::create_dir_all(caskroom.join("pkg/bin"))?;
+    let app = AppArtifact {
+        source: "Example.app".to_string(),
+        target: None,
+    };
+
+    durabilize_stage_payload(&stage, &caskroom, &[app])?;
+    file::remove_all(&stage)?;
+
+    assert_eq!(
+        std::fs::read_link(caskroom.join("pkg/bin/relative"))?,
+        Path::new("../lib/tool")
+    );
+    assert_eq!(
+        std::fs::read_link(caskroom.join("pkg/bin/absolute"))?,
+        caskroom.join("pkg/lib/tool")
+    );
+    mise_util::file::write(caskroom.join("pkg/lib/tool"), "edited")?;
+    for link in ["relative", "absolute"] {
+        assert_eq!(
+            mise_util::file::read_to_string(caskroom.join("pkg/bin").join(link))?,
+            "edited"
+        );
+    }
+    let example = caskroom.join("pkg/bin/example");
+    assert!(!example.is_symlink());
+    assert_eq!(mise_util::file::read_to_string(&example)?, "app");
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
 fn retargets_a_payload_binary_link_when_the_caskroom_is_renamed() -> Result<()> {
     // The payload link is absolute and points into the temporary caskroom,
     // which only exists until activation renames it. `symlinks_under` takes a
