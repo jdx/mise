@@ -52,7 +52,12 @@ assert_contains "cat ~/fake-fnox/.npmrc" "edited=1"
 assert_succeed "mise dot apply --yes"
 assert_contains "cat ~/.npmrc" "edited=1"
 
-# unapply removes the target while it still matches what fnox stores
+# unapply keeps a target changed since apply, and removes it while it still
+# matches what fnox stores
+printf 'token=local-change\n' >~/.npmrc
+assert_fail "mise dot unapply --yes ~/.npmrc" "use --force to remove it"
+assert "cat ~/.npmrc" "token=local-change"
+assert_succeed "mise dot apply --yes"
 assert_succeed "mise dot unapply --yes ~/.npmrc"
 assert_fail "test -e ~/.npmrc"
 

@@ -1110,7 +1110,7 @@ fn build_dotfiles_layer(
     owner: LayerOwner,
 ) -> Result<LayerBlob> {
     let mut entries = DotfilesLayerEntries::default();
-    let mut added = 0;
+    let mut skipped = 0;
 
     for req in requests {
         if req.mode.has_source() && req.mode != FileMode::Track && !req.source.exists() {
@@ -1123,7 +1123,6 @@ fn build_dotfiles_layer(
 
         if req.dot_prefix {
             add_source_files(req, &oci_target_path(req)?, &mut entries)?;
-            added += 1;
             continue;
         }
 
@@ -1131,7 +1130,10 @@ fn build_dotfiles_layer(
             // a tracked file lives on the machine that tracks it, and a
             // permissions-only entry adjusts a file the image does not
             // provide; an image has nothing to copy for either
-            FileMode::Track | FileMode::Permissions => continue,
+            FileMode::Track | FileMode::Permissions => {
+                skipped += 1;
+                continue;
+            }
             // the file fnox stores is a secret, and an image layer is
             // readable by anyone who can pull the image
             FileMode::Fnox => {
@@ -1139,6 +1141,7 @@ fn build_dotfiles_layer(
                     "oci: skipping [dotfiles].\"{}\": mode = \"fnox\" files are secrets and never go into an image",
                     req.target_raw
                 );
+                skipped += 1;
                 continue;
             }
             // an absent target is not added, and a whiteout hides one a
@@ -1204,10 +1207,12 @@ fn build_dotfiles_layer(
                 )?;
             }
         }
-        added += 1;
     }
 
-    info!("oci: adding {added} [dotfiles] entries");
+    info!(
+        "oci: adding {} [dotfiles] entries",
+        requests.len() - skipped
+    );
     let (files, dirs) = entries.into_layer_inputs();
     layer::build_layer_from_files_and_dirs(&files, &dirs, owner)
 }
