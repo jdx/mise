@@ -182,8 +182,13 @@ fn with_extra_ca_certs(builder: ClientBuilder) -> ClientBuilder {
 /// With [`set_ipv4_only`] on, the client connects over IPv4 only, and it trusts
 /// the certificates [`set_extra_ca_certs`] read as well as its usual roots.
 pub fn build_client(make: impl Fn() -> ClientBuilder) -> reqwest::Result<Client> {
-    let make = || {
-        let builder = with_extra_ca_certs(make().referer(false));
+    let make = |extra_ca_certs: bool| {
+        let builder = make().referer(false);
+        let builder = if extra_ca_certs {
+            with_extra_ca_certs(builder)
+        } else {
+            builder
+        };
         // Binding the unspecified IPv4 address leaves only IPv4 candidates
         // for the connector to try.
         if ipv4_only() {
@@ -192,44 +197,67 @@ pub fn build_client(make: impl Fn() -> ClientBuilder) -> reqwest::Result<Client>
             builder
         }
     };
-    let build = || match make().build() {
+    let build = |extra_ca_certs: bool| match make(extra_ca_certs).build() {
         Ok(client) => Ok(client),
-        Err(err) => with_bundled_roots(make, err),
+        Err(err) => with_bundled_roots(|| make(extra_ca_certs), err),
     };
-    match build() {
+    match build(true) {
         // With rustls a certificate is only checked when a client is built, so
-        // a bundle that loaded can still be what fails the build.
-        Err(err) if discard_extra_ca_certs(&err) => build(),
+        // a bundle that loaded can still be what fails the build. It is to
+        // blame only if the same client builds without it; otherwise the
+        // failure is the caller's and the bundle stays for later clients.
+        Err(err) if has_extra_ca_certs() => match build(false) {
+            Ok(client) => {
+                discard_extra_ca_certs(&err);
+                Ok(client)
+            }
+            Err(_) => Err(err),
+        },
         result => result,
     }
 }
 
-/// Drops the extra CA certificates, if there are any, after `err` failed a
-/// client build with them, so the next build has the usual roots alone and
-/// warns that the bundle was ignored. Returns whether there were any to drop.
-fn discard_extra_ca_certs(err: &reqwest::Error) -> bool {
+/// Whether [`set_extra_ca_certs`] loaded certificates that clients still add.
+fn has_extra_ca_certs() -> bool {
+    #[cfg(any(
+        feature = "native-tls",
+        feature = "rustls",
+        feature = "rustls-native-roots"
+    ))]
+    {
+        let extra = EXTRA_CA_CERTS.lock().unwrap_or_else(|e| e.into_inner());
+        extra.as_ref().is_some_and(|extra| !extra.certs.is_empty())
+    }
+    #[cfg(not(any(
+        feature = "native-tls",
+        feature = "rustls",
+        feature = "rustls-native-roots"
+    )))]
+    false
+}
+
+/// Drops the extra CA certificates after `err` failed a client build that
+/// worked without them, and warns that the bundle is ignored. Later clients
+/// have the usual roots alone.
+fn discard_extra_ca_certs(err: &reqwest::Error) {
     let mut extra = EXTRA_CA_CERTS.lock().unwrap_or_else(|e| e.into_inner());
     let Some(extra) = extra.as_mut() else {
-        return false;
+        return;
     };
     #[cfg(any(
         feature = "native-tls",
         feature = "rustls",
         feature = "rustls-native-roots"
     ))]
-    if !extra.certs.is_empty() {
-        extra.certs.clear();
-        let mut message = err.to_string();
-        let mut source = std::error::Error::source(err);
-        while let Some(cause) = source {
-            message.push_str(&format!(": {cause}"));
-            source = cause.source();
-        }
-        extra.error = Some(message);
-        return true;
+    extra.certs.clear();
+    let mut message = err.to_string();
+    let mut source = std::error::Error::source(err);
+    while let Some(cause) = source {
+        message.push_str(&format!(": {cause}"));
+        source = cause.source();
     }
-    let _ = (extra, err);
-    false
+    extra.error = Some(message);
+    warn_unusable_extra_ca_certs(extra);
 }
 
 #[cfg(all(
@@ -447,6 +475,32 @@ mod extra_ca_certs_tests {
                 response.err()
             );
         }
+    }
+
+    /// A client that fails to build for a reason of its own leaves the bundle
+    /// for later clients. Holds `CLIENT_BUILD_LOCK`, so no other test builds a
+    /// client while the extra CA certificates are set.
+    #[cfg(any(feature = "rustls", feature = "rustls-native-roots"))]
+    #[test]
+    fn a_build_that_fails_without_the_bundle_keeps_it() {
+        let (ca, _) = serve_https();
+        let ca = temp_file("kept-ca.pem", ca.as_bytes());
+        let _lock = CLIENT_BUILD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        set_extra_ca_certs(None);
+        set_extra_ca_certs(Some(&ca));
+        // rustls refuses a minimum TLS version above the maximum.
+        let built = build_client(|| {
+            Client::builder()
+                .tls_backend_rustls()
+                .min_tls_version(reqwest::tls::Version::TLS_1_3)
+                .max_tls_version(reqwest::tls::Version::TLS_1_2)
+        });
+        let kept = has_extra_ca_certs();
+        let error = extra_ca_certs_error();
+        set_extra_ca_certs(None);
+        assert!(built.is_err());
+        assert!(kept, "the bundle was not to blame");
+        assert_eq!(error, None);
     }
 
     #[test]
