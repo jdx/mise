@@ -591,10 +591,16 @@ end
                 "MachO::Tools.change_install_name",
                 r#"MachO::Tools.change_install_name("lib.dylib", "a", "@loader_path/a")"#,
             ),
+            (
+                "MachO::Tools.dylibs",
+                r#"MachO::Tools.dylibs("lib.dylib").each { |dep| raise "unreachable" }"#,
+            ),
             ("MachO.codesign!", r#"MachO.codesign!("lib.dylib")"#),
         ];
 
         for (feature, call) in calls {
+            let marker = tmp.path().join("Cellar/example/1.0.0/bin/after");
+            let _ = std::fs::remove_file(&marker);
             let output = run(&format!(
                 "  def install\n    (prefix/\"bin\").mkpath\n  end\n  def post_install\n    {call}\n    (prefix/\"bin/after\").write(\"ran\")\n  end"
             ))?;
@@ -605,7 +611,7 @@ end
                 "{feature}: {stderr}"
             );
             assert_eq!(
-                mise_util::file::read_to_string(tmp.path().join("Cellar/example/1.0.0/bin/after"))?,
+                mise_util::file::read_to_string(&marker)?,
                 "ran",
                 "{feature}: rest of post_install did not run"
             );

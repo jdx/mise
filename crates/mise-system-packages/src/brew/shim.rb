@@ -608,6 +608,7 @@ module MachO
 
   module Tools
     class << self
+      def dylibs(*) = shim_macho_call!("MachO::Tools.dylibs", [])
       def method_missing(name, *) = shim_macho_call!("MachO::Tools.#{name}")
       def respond_to_missing?(*) = true
     end
