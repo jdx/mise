@@ -4308,6 +4308,17 @@ docs = "Has no effect when [`auto_install`](/configuration/settings.html#auto_in
 env = "MISE_TASK_RUN_AUTO_INSTALL"
 type = "Bool"
 
+[task.show_description]
+description = "Print a task's description before it runs instead of its command line."
+docs = """
+A task without a `description` still prints its command. When `run` has several
+commands, the description is printed once, before the first. `--verbose`,
+[`task.show_full_cmd`](#task.show_full_cmd) and `mise run --dry-run` print the
+command instead.
+"""
+env = "MISE_TASK_SHOW_DESCRIPTION"
+type = "Bool"
+
 [task.show_full_cmd]
 description = "Print each task's full command line instead of truncating it to the terminal width."
 docs = "Setting [`truncate`](/configuration/settings.html#truncate) to `false` does this for all output."

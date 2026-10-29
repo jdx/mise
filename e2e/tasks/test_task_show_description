@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# task.show_description prints a task's description in place of its command line
+
+cat <<'EOF' >mise.toml
+[tasks.described]
+description = "Say hello twice"
+run = ["echo described-first", "echo described-second"]
+
+[tasks.plain]
+run = "echo plain-cmd"
+EOF
+
+mkdir -p mise-tasks
+cat <<'EOF' >mise-tasks/filetask
+#!/usr/bin/env bash
+#MISE description="Run the file task"
+echo file-ran
+EOF
+chmod +x mise-tasks/filetask
+
+# off by default: the command is printed
+assert_contains "mise run described 2>&1" '$ echo described-first'
+assert_not_contains "mise run described 2>&1" "Say hello twice"
+
+# on: the description is printed once, before the first command, and no command line is
+assert_contains "MISE_TASK_SHOW_DESCRIPTION=1 mise run described 2>&1" "[described] Say hello twice"
+assert_not_contains "MISE_TASK_SHOW_DESCRIPTION=1 mise run described 2>&1" '$ echo'
+assert "MISE_TASK_SHOW_DESCRIPTION=1 mise run described 2>&1 | grep -c 'Say hello twice'" "1"
+assert_contains "MISE_TASK_SHOW_DESCRIPTION=1 mise run described 2>&1" "described-second"
+
+# a task without a description still prints its command
+assert_contains "MISE_TASK_SHOW_DESCRIPTION=1 mise run plain 2>&1" '$ echo plain-cmd'
+
+# a file task prints its description instead of its path
+assert_contains "MISE_TASK_SHOW_DESCRIPTION=1 mise run filetask 2>&1" "[filetask] Run the file task"
+assert_not_contains "MISE_TASK_SHOW_DESCRIPTION=1 mise run filetask 2>&1" "mise-tasks/filetask"
+
+# --verbose, task.show_full_cmd and --dry-run print the command
+assert_contains "MISE_TASK_SHOW_DESCRIPTION=1 mise --verbose run described 2>&1" '$ echo described-first'
+assert_contains "MISE_TASK_SHOW_DESCRIPTION=1 MISE_TASK_SHOW_FULL_CMD=1 mise run described 2>&1" '$ echo described-first'
+assert_contains "MISE_TASK_SHOW_DESCRIPTION=1 mise run --dry-run described 2>&1" '$ echo described-first'

@@ -3413,6 +3413,10 @@
               "description": "Install missing tools automatically before tasks run.",
               "type": "boolean"
             },
+            "show_description": {
+              "description": "Print a task's description before it runs instead of its command line.",
+              "type": "boolean"
+            },
             "show_full_cmd": {
               "description": "Print each task's full command line instead of truncating it to the terminal width.",
               "type": "boolean"

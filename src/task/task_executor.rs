@@ -529,6 +529,17 @@ impl TaskExecutor {
         self.output_handler.raw(task)
     }
 
+    /// The description to print before a task runs in place of its command, when
+    /// `task.show_description` is set and nothing asks to see the command.
+    fn header_description<'t>(&self, task: &'t Task) -> Option<&'t str> {
+        let settings = Settings::get();
+        let show = settings.task.show_description
+            && !settings.task.show_full_cmd
+            && !settings.verbose
+            && !self.dry_run;
+        Some(task.description.trim()).filter(|d| show && !d.is_empty())
+    }
+
     /// Build a SandboxConfig for a task by merging task-level config with CLI overrides.
     ///
     /// Task-level relative `allow_read`/`allow_write` paths are resolved against the task's
@@ -1166,6 +1177,7 @@ impl TaskExecutor {
             Some(g) => Some(g),
             None => Some(acquire_runtime_lock(task.interactive).await),
         };
+        let mut first_script = true;
         for raw_entry in task.run() {
             let rendered;
             let entry = if let Some((ref mut tera, ref tera_ctx)) = tera_state
@@ -1182,7 +1194,8 @@ impl TaskExecutor {
                         if guard.is_none() {
                             guard = Some(acquire_runtime_lock(task.interactive).await);
                         }
-                        self.exec_script(&script, &args, exec).await?;
+                        self.exec_script(&script, &args, exec, first_script).await?;
+                        first_script = false;
                     }
                 }
                 RunEntry::SingleTask {
@@ -1498,6 +1511,7 @@ impl TaskExecutor {
         script: &str,
         args: &[String],
         ctx: TaskExecContext<'_>,
+        first_script: bool,
     ) -> Result<()> {
         let config = Config::get().await?;
         let script = script.trim_start();
@@ -1516,8 +1530,15 @@ impl TaskExecutor {
             true => "$".to_string(),
             false => format!("$ {display_script}"),
         };
-        if !self.quiet(Some(ctx.task)) {
-            let msg = style::ebold(trunc(ctx.prefix, config.redact(&cmd).trim()))
+        let header = match self.header_description(ctx.task) {
+            // the description stands for the whole task, so only its first command prints it
+            Some(description) => first_script.then(|| description.to_string()),
+            None => Some(cmd),
+        };
+        if let Some(header) = header
+            && !self.quiet(Some(ctx.task))
+        {
+            let msg = style::ebold(trunc(ctx.prefix, config.redact(&header).trim()))
                 .bright()
                 .to_string();
             self.eprint(ctx.task, ctx.prefix, &msg)
@@ -1783,10 +1804,14 @@ impl TaskExecutor {
         let args = ctx.task.args.iter().cloned().collect_vec();
 
         if !self.quiet(Some(ctx.task)) {
-            let cmd = format!("{} {}", display_path(file), args.join(" "))
-                .trim()
-                .to_string();
-            let cmd = style::ebold(format!("$ {cmd}")).bright().to_string();
+            let cmd = match self.header_description(ctx.task) {
+                Some(description) => description.to_string(),
+                None => {
+                    let cmd = format!("{} {}", display_path(file), args.join(" "));
+                    format!("$ {}", cmd.trim())
+                }
+            };
+            let cmd = style::ebold(cmd).bright().to_string();
             let cmd = trunc(ctx.prefix, config.redact(&cmd).trim());
             self.eprint(ctx.task, ctx.prefix, &cmd);
         }
