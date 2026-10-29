@@ -256,20 +256,35 @@ class Pathname
   end
   private :install_one
 
+  # Like Homebrew, a relative source is resolved against this directory, so
+  # `bin.install_symlink "foo" => "bar"` links bin/bar to bin/foo.
   def install_symlink(*sources)
     mkpath
     sources.flatten.each do |src|
       case src
       when Hash
-        src.each { |from, to| make_relative_symlink(Pathname.new(from.to_s), self + to) }
+        src.each { |from, to| make_relative_symlink(Pathname.new(from.to_s).expand_path(self), self + to) }
       else
-        src = Pathname.new(src.to_s)
+        src = Pathname.new(src.to_s).expand_path(self)
         make_relative_symlink(src, self + src.basename)
       end
     end
   end
 
   def make_relative_symlink(target, link)
+    # Checked before anything is unlinked: `bin.install_symlink "tool"` with an
+    # existing bin/tool would otherwise replace the file with a link to itself.
+    # The parents are also compared physically, so `"alias/tool" => "tool"` with
+    # bin/alias pointing at bin is caught too; the leaf is not resolved, since
+    # replacing an existing link that already points at the target is fine.
+    same_entry_through_aliased_parent =
+      target.basename == link.basename &&
+      target.dirname.exist? && link.dirname.exist? &&
+      target.dirname.realpath == link.dirname.realpath
+    if target.expand_path == link.expand_path || same_entry_through_aliased_parent
+      raise "cannot symlink #{link} to itself"
+    end
+
     link.dirname.mkpath
     link.unlink if link.symlink? || link.file?
     link.make_symlink(target.relative_path_from(link.dirname))
