@@ -547,6 +547,70 @@ end
         Ok(())
     }
 
+    /// A tap formula's `post_install` can rewrite install names through
+    /// Homebrew's vendored ruby-macho. mise has no equivalent, but it does not
+    /// relocate source-built kegs either, so the step is skipped with a
+    /// warning. The same call from `install` must still fail the build.
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn shim_skips_macho_post_install() -> Result<()> {
+        let Some(ruby) = super::super::tap::test_ruby().await? else {
+            return Ok(());
+        };
+        let tmp = tempfile::tempdir()?;
+        let shim = tmp.path().join("shim.rb");
+        let buildpath = tmp.path().join("build");
+        mise_util::file::create_dir_all(&buildpath)?;
+        mise_util::file::write(&shim, SHIM_RB)?;
+        let run = |body: &str| -> Result<std::process::Output> {
+            let formula_rb = tmp.path().join("example.rb");
+            mise_util::file::write(
+                &formula_rb,
+                format!("class Example < Formula\n{body}\nend\n"),
+            )?;
+            Ok(std::process::Command::new(&ruby)
+                .arg(&shim)
+                .current_dir(&buildpath)
+                .env("MISE_BREW_PREFIX", tmp.path())
+                .env("MISE_BREW_CELLAR", tmp.path().join("Cellar"))
+                .env("MISE_BREW_FORMULA_FILE", &formula_rb)
+                .env("MISE_BREW_NAME", "example")
+                .env("MISE_BREW_VERSION", "1.0.0")
+                .env("MISE_BREW_PKG_VERSION", "1.0.0")
+                .env("MISE_BREW_BUILDPATH", &buildpath)
+                .env("MISE_BREW_CACHE", tmp.path().join("cache"))
+                .output()?)
+        };
+        let macho_calls = r#"
+    MachO.open(prefix/"lib/libfoo.dylib").linked_dylibs.each do |dep|
+      MachO::Tools.change_install_name(prefix/"lib/libfoo.dylib", dep, "@loader_path/foo")
+    end
+    MachO.codesign!(prefix/"lib/libfoo.dylib")"#;
+
+        let output = run(&format!(
+            "  def install\n    (prefix/\"lib\").mkpath\n    (prefix/\"lib/libfoo.dylib\").write(\"x\")\n  end\n  def post_install{macho_calls}\n  end"
+        ))?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("skipping post_install"),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let output = run(&format!("  def install{macho_calls}\n  end"))?;
+        assert!(!output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("MachO.open"),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Ok(())
+    }
+
     /// GitHub's codeload URLs (`.../tar.gz/refs/tags/v1.0.0`) name no
     /// extension; the tarball must still be unpacked rather than staged as an
     /// opaque file the build then cannot find its sources in.

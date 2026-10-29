@@ -58,9 +58,15 @@ def odie(message)
 end
 
 class ShimUnsupportedError < StandardError; end
+class ShimMachOUnsupportedError < ShimUnsupportedError; end
 
 def shim_unsupported!(feature)
   raise ShimUnsupportedError,
+        "formula uses `#{feature}`, which mise's source-build shim does not support"
+end
+
+def shim_macho_unsupported!(feature)
+  raise ShimMachOUnsupportedError,
         "formula uses `#{feature}`, which mise's source-build shim does not support"
 end
 
@@ -572,6 +578,28 @@ class Requirement
   end
 end
 
+# Homebrew vendors ruby-macho as `MachO` (Library/Homebrew/vendor), and a tap
+# formula's `post_install` can use it to rewrite install names. Like the
+# `Language` mixins it is a constant reference, so it must exist for the
+# formula to even reach the call. mise does not vendor ruby-macho, and it does
+# not relocate source-built kegs either, so a `post_install` that edits dylibs
+# is normally undoing Homebrew's own relocation. Any use raises
+# ShimMachOUnsupportedError, which `main` turns into a skipped post_install
+# with a warning when it comes from there; from `install` it still fails.
+module MachO
+  class << self
+    def method_missing(name, *) = shim_macho_unsupported!("MachO.#{name}")
+    def respond_to_missing?(*) = true
+  end
+
+  module Tools
+    class << self
+      def method_missing(name, *) = shim_macho_unsupported!("MachO::Tools.#{name}")
+      def respond_to_missing?(*) = true
+    end
+  end
+end
+
 class Formula
   include FileUtils
 
@@ -961,7 +989,13 @@ def main
   ohai "#{MISE_BREW_NAME}: running install"
   formula.prefix.mkpath
   formula.install
-  formula.post_install
+  begin
+    formula.post_install
+  rescue ShimMachOUnsupportedError => e
+    # mise does not relocate source-built kegs, so there is nothing for a
+    # Mach-O rewriting post_install to undo
+    opoo "skipping post_install: #{e.message}"
+  end
 
   if formula.prefix.children.empty?
     odie "install completed but the keg at #{formula.prefix} is empty"
