@@ -8332,6 +8332,18 @@ pub(crate) fn task_tool_requests(
         };
         layers.entry(key).or_default().push(other);
     }
+    // `[monorepo.task_defaults]` of a monorepo root above this project fill in what its tasks
+    // leave unset, tools included.
+    let project_configs = layers
+        .iter()
+        .filter(|((local, _), _)| *local)
+        .flat_map(|(_, layer)| layer.iter())
+        .map(|other| (other.get_path().to_path_buf(), Arc::clone(other)))
+        .collect::<ConfigMap>();
+    let workspace_defaults = TaskDefinitions {
+        workspace_defaults: workspace_task_defaults(&project_configs, None),
+        ..Default::default()
+    };
     let mut requests = vec![];
     let mut templated = vec![];
     let tasks = cf
@@ -8339,7 +8351,10 @@ pub(crate) fn task_tool_requests(
         .into_iter()
         .map(|task| (task.clone(), cf.get_path().to_path_buf()))
         .chain(included_task_definitions(cf, &dir, tracked));
-    for (task, source) in tasks {
+    for (mut task, source) in tasks {
+        if task.config_root.is_none() {
+            task.config_root = Some(dir.clone());
+        }
         let mut candidates = vec![];
         match &task.extends {
             None => candidates.push(task.clone()),
@@ -8375,7 +8390,8 @@ pub(crate) fn task_tool_requests(
                 }
             }
         }
-        for task in candidates {
+        for mut task in candidates {
+            apply_workspace_task_default(&mut task, &workspace_defaults);
             for (tool, value) in &task.tools {
                 if value.has_template() {
                     templated.push(tool.clone());
@@ -8401,37 +8417,22 @@ pub(crate) fn task_tool_requests(
 /// since only their `tools` matter to the caller, and remote includes are not fetched. A file
 /// that fails to read or parse is skipped with a warning.
 ///
-/// The includes `dir` resolves to only see the configs of the current `MISE_ENV`, so `cf`'s own
-/// `task_config.includes` are added to them: a tracked `mise.prod.toml` still names its task
-/// files when prune runs without `MISE_ENV=prod`.
+/// The includes and excludes `dir` resolves to only see the configs of the current `MISE_ENV`,
+/// so `cf`'s own `task_config.includes` are added to them, filtered by `cf`'s own excludes when
+/// it sets any: a tracked `mise.prod.toml` still names its task files when prune runs without
+/// `MISE_ENV=prod`.
 fn included_task_definitions(
     cf: &Arc<dyn ConfigFile>,
     dir: &Path,
     config_files: &ConfigMap,
 ) -> Vec<(Task, PathBuf)> {
-    let mut includes = task_includes_for_dir(dir, config_files).unwrap_or_else(|err| {
+    let includes = task_includes_for_dir(dir, config_files).unwrap_or_else(|err| {
         warn!(
             "error loading task includes of {}: {err:#}",
             display_path(dir)
         );
         vec![]
     });
-    match cf.task_config_includes() {
-        Ok(Some(own)) => {
-            let root = cf.config_root();
-            includes.extend(
-                own.iter()
-                    .filter(|p| !is_remote_task_include(p))
-                    .flat_map(|p| expand_task_include(&root, p)),
-            );
-        }
-        Ok(None) => {}
-        Err(err) => warn!(
-            "error loading task includes of {}: {err:#}",
-            display_path(cf.get_path())
-        ),
-    }
-    let includes = includes.into_iter().unique().collect::<Vec<_>>();
     let excludes = task_excludes_for_dir(dir, config_files).unwrap_or_else(|err| {
         warn!(
             "error loading task excludes of {}: {err:#}",
@@ -8439,59 +8440,91 @@ fn included_task_definitions(
         );
         vec![]
     });
-    let all_excludes = Settings::get()
-        .task
-        .disable_paths
-        .iter()
-        .chain(&excludes)
-        .cloned()
-        .collect::<Vec<_>>();
-    let is_toml = |p: &Path| p.extension().is_some_and(|e| e == "toml");
-    let mut tasks = vec![];
-    for include in includes {
-        if is_task_path_excluded(&include, &excludes) {
-            continue;
-        }
-        let files = if include.is_dir() {
-            match collect_task_files(&include, &all_excludes) {
-                Ok(files) => files
-                    .into_iter()
-                    .filter(|p| match is_toml(p) {
-                        true => !is_mise_config_file_in_task_include(&include, p),
-                        false => file::is_executable(p),
-                    })
-                    .collect(),
+    let mut groups = vec![];
+    match cf.task_config_includes() {
+        Ok(Some(own)) => {
+            let root = cf.config_root();
+            let own_excludes = match cf.task_config_excludes() {
+                Ok(Some(own_excludes)) => resolve_task_excludes(&root, &own_excludes),
+                Ok(None) => excludes.clone(),
                 Err(err) => {
                     warn!(
-                        "error reading task directory {}: {err:#}",
-                        display_path(&include)
+                        "error loading task excludes of {}: {err:#}",
+                        display_path(cf.get_path())
                     );
-                    continue;
+                    excludes.clone()
                 }
-            }
-        } else if is_toml(&include) {
-            vec![include.clone()]
-        } else {
-            continue;
-        };
-        for path in files {
-            let loaded = if is_toml(&path) {
-                file::read_config_to_string(&path).and_then(|raw| {
-                    Ok(toml::from_str::<Tasks>(&raw)?
-                        .0
-                        .into_iter()
-                        .map(|(name, mut task)| {
-                            task.name = name;
-                            task
-                        })
-                        .collect())
-                })
-            } else {
-                Task::from_path_unrendered_with_cf(&path, &include, dir, None).map(|t| vec![t])
             };
-            match loaded {
-                Ok(loaded) => tasks.extend(loaded.into_iter().map(|task| (task, path.clone()))),
-                Err(err) => warn!("error loading task file {}: {err:#}", display_path(&path)),
+            let own = own
+                .iter()
+                .filter(|p| !is_remote_task_include(p))
+                .flat_map(|p| expand_task_include(&root, p))
+                .collect::<Vec<_>>();
+            groups.push((own, own_excludes));
+        }
+        Ok(None) => {}
+        Err(err) => warn!(
+            "error loading task includes of {}: {err:#}",
+            display_path(cf.get_path())
+        ),
+    }
+    groups.insert(0, (includes, excludes));
+    let is_toml = |p: &Path| p.extension().is_some_and(|e| e == "toml");
+    let mut seen = std::collections::HashSet::new();
+    let mut tasks = vec![];
+    for (includes, excludes) in groups {
+        let all_excludes = Settings::get()
+            .task
+            .disable_paths
+            .iter()
+            .chain(&excludes)
+            .cloned()
+            .collect::<Vec<_>>();
+        for include in includes {
+            if !seen.insert(include.clone()) || is_task_path_excluded(&include, &excludes) {
+                continue;
+            }
+            let files = if include.is_dir() {
+                match collect_task_files(&include, &all_excludes) {
+                    Ok(files) => files
+                        .into_iter()
+                        .filter(|p| match is_toml(p) {
+                            true => !is_mise_config_file_in_task_include(&include, p),
+                            false => file::is_executable(p),
+                        })
+                        .collect(),
+                    Err(err) => {
+                        warn!(
+                            "error reading task directory {}: {err:#}",
+                            display_path(&include)
+                        );
+                        continue;
+                    }
+                }
+            } else if is_toml(&include) {
+                vec![include.clone()]
+            } else {
+                continue;
+            };
+            for path in files {
+                let loaded = if is_toml(&path) {
+                    file::read_config_to_string(&path).and_then(|raw| {
+                        Ok(toml::from_str::<Tasks>(&raw)?
+                            .0
+                            .into_iter()
+                            .map(|(name, mut task)| {
+                                task.name = name;
+                                task
+                            })
+                            .collect())
+                    })
+                } else {
+                    Task::from_path_unrendered_with_cf(&path, &include, dir, None).map(|t| vec![t])
+                };
+                match loaded {
+                    Ok(loaded) => tasks.extend(loaded.into_iter().map(|task| (task, path.clone()))),
+                    Err(err) => warn!("error loading task file {}: {err:#}", display_path(&path)),
+                }
             }
         }
     }
