@@ -274,7 +274,16 @@ class Pathname
   def make_relative_symlink(target, link)
     # Checked before anything is unlinked: `bin.install_symlink "tool"` with an
     # existing bin/tool would otherwise replace the file with a link to itself.
-    raise "cannot symlink #{link} to itself" if target.expand_path == link.expand_path
+    # The parents are also compared physically, so `"alias/tool" => "tool"` with
+    # bin/alias pointing at bin is caught too; the leaf is not resolved, since
+    # replacing an existing link that already points at the target is fine.
+    same_entry_through_aliased_parent =
+      target.basename == link.basename &&
+      target.dirname.exist? && link.dirname.exist? &&
+      target.dirname.realpath == link.dirname.realpath
+    if target.expand_path == link.expand_path || same_entry_through_aliased_parent
+      raise "cannot symlink #{link} to itself"
+    end
 
     link.dirname.mkpath
     link.unlink if link.symlink? || link.file?

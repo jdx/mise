@@ -621,6 +621,22 @@ end
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+
+        // The same entry reached through a parent that is a link back to bin.
+        let output = run(
+            "Cellar-alias",
+            r##"    (bin/"tool").write("#!/bin/sh\n")
+    (bin/"alias").make_symlink(".")
+    bin.install_symlink "alias/tool" => "tool""##,
+        )?;
+        assert!(!output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("to itself"),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let tool = tmp.path().join("Cellar-alias/example/1.0.0/bin/tool");
+        assert!(tool.is_file() && !tool.is_symlink());
         Ok(())
     }
 
