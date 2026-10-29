@@ -264,26 +264,24 @@ fn github_repository<'a>(
 }
 
 async fn fetch_formula_source(tap_source: &TapSource, name: &str) -> Result<(String, String)> {
-    let root_tree: GithubTree = HTTP_FETCH
-        .json_cached(format!(
-            "{}/git/trees/{}",
-            tap_source.api_base, tap_source.commit
-        ))
-        .await
-        .wrap_err("failed to inspect tap formula directories")?;
+    let root_tree: GithubTree = immutable_json(format!(
+        "{}/git/trees/{}",
+        tap_source.api_base, tap_source.commit
+    ))
+    .await
+    .wrap_err("failed to inspect tap formula directories")?;
     if root_tree.truncated {
         bail!("tap repository tree was truncated");
     }
 
     let (directory, formula_tree) =
         if let Some((directory, sha)) = active_formula_directory(&root_tree) {
-            let tree: GithubTree = HTTP_FETCH
-                .json_cached(format!(
-                    "{}/git/trees/{sha}?recursive=1",
-                    tap_source.api_base
-                ))
-                .await
-                .wrap_err_with(|| format!("failed to inspect tap {directory} directory"))?;
+            let tree: GithubTree = immutable_json(format!(
+                "{}/git/trees/{sha}?recursive=1",
+                tap_source.api_base
+            ))
+            .await
+            .wrap_err_with(|| format!("failed to inspect tap {directory} directory"))?;
             if tree.truncated {
                 bail!("tap {directory} directory tree was truncated");
             }
@@ -300,8 +298,7 @@ async fn fetch_formula_source(tap_source: &TapSource, name: &str) -> Result<(Str
         };
         eyre::eyre!("tap has no formula named '{name}' in {location}")
     })?;
-    let source = HTTP_FETCH
-        .get_text(ruby_source_url(&tap_source.raw_base, &source_path))
+    let source = immutable_text(ruby_source_url(&tap_source.raw_base, &source_path))
         .await
         .wrap_err_with(|| format!("failed to fetch tap formula {source_path}"))?;
     Ok((source, source_path))
@@ -358,14 +355,62 @@ async fn fetch_ruby_source(
         format!("{directory}/{name}.rb"),
         format!("{directory}/{}/{name}.rb", &name[..1]),
     ];
+    // A cached hit on the second spelling must not cost a 404 on the first.
+    for path in &paths {
+        if let Some(source) = cached_immutable(&format!("{raw_base}/{path}")) {
+            return Ok((source, path.clone()));
+        }
+    }
     let mut last_error = None;
     for path in paths {
-        match HTTP_FETCH.get_text(format!("{raw_base}/{path}")).await {
+        match immutable_text(format!("{raw_base}/{path}")).await {
             Ok(source) => return Ok((source, path)),
             Err(err) => last_error = Some(err),
         }
     }
     Err(last_error.unwrap()).wrap_err_with(|| format!("tap has no {directory}/{name}.rb"))
+}
+
+/// Where a sha-addressed response is kept.
+///
+/// Every URL routed here names a commit or tree sha (`git/trees/<sha>`, or a
+/// raw file under `raw_base`, which `resolve_tap_source` pins to the commit),
+/// so its body can never change and needs no revalidation. Caching them on disk
+/// turns an unchanged tap into one `commits/<branch>` request per run instead
+/// of the full walk down to the Ruby file. The branch head itself is still
+/// asked every time, so a new tap commit is seen at once.
+fn immutable_cache_path(url: &str) -> PathBuf {
+    mise_util::dirs::CACHE
+        .join("system-brew")
+        .join("taps")
+        .join(mise_util::hash::hash_sha256_to_str(url))
+}
+
+fn cached_immutable(url: &str) -> Option<String> {
+    std::fs::read_to_string(immutable_cache_path(url)).ok()
+}
+
+async fn immutable_text(url: String) -> Result<String> {
+    if let Some(text) = cached_immutable(&url) {
+        return Ok(text);
+    }
+    let text = HTTP_FETCH.get_text_cached(url.as_str()).await?;
+    let path = immutable_cache_path(&url);
+    // Best effort: a cache that cannot be written costs the next run a request,
+    // never this one its answer.
+    if let Err(err) = path
+        .parent()
+        .map_or(Ok(()), mise_util::file::create_dir_all)
+        .and_then(|()| mise_util::file::write_atomic(&path, &text))
+    {
+        debug!("brew: could not cache {url}: {err:#}");
+    }
+    Ok(text)
+}
+
+async fn immutable_json<T: serde::de::DeserializeOwned>(url: String) -> Result<T> {
+    let text = immutable_text(url).await?;
+    Ok(serde_json::from_str(&text)?)
 }
 
 fn validate_name(name: &str) -> Result<()> {
