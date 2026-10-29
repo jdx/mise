@@ -68,7 +68,7 @@ your shell, editor, and CI:
 [tools]
 node = "24"
 python = "3.14"
-"cargo:ripgrep" = "15"
+"github:BurntSushi/ripgrep" = "15"
 
 [env]
 NODE_ENV = "development"
@@ -185,8 +185,9 @@ Commit `mise.toml` so teammates and CI get the same setup when they run
 ### 4. Activate mise in your shell (optional)
 
 Shell activation updates `PATH` and project environment variables whenever you
-change directories, so you can invoke `node` directly without `mise exec`. Run
-the command for your shell once, then open a new terminal:
+change directories, so you can invoke `node` directly without `mise exec`. If
+you installed with `mise.run`, run the command for your shell once, then open a
+new terminal:
 
 ```sh
 # bash
@@ -199,6 +200,9 @@ echo 'eval "$(~/.local/bin/mise activate zsh)"' >> "${ZDOTDIR:-$HOME}/.zshrc"
 mkdir -p ~/.config/fish
 echo '~/.local/bin/mise activate fish | source' >> ~/.config/fish/config.fish
 ```
+
+If a package manager installed mise, use `mise` in place of `~/.local/bin/mise`.
+With Homebrew, fish activates mise without this step.
 
 For PowerShell, Nushell, Elvish, Xonsh, and IDE or CI shims, see
 [Shell setup](https://mise.jdx.dev/shell-setup.html) and
@@ -253,15 +257,15 @@ dotfile tracking and templating, services, and remote SSH targets.
 
 ## Documentation
 
-| Topic                         | Guides                                                                                                                                                                                                    |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Onboarding                    | [Getting started](https://mise.jdx.dev/getting-started.html) · [Existing projects](https://mise.jdx.dev/walkthrough.html) · [Migrating from asdf](https://mise.jdx.dev/dev-tools/comparison-to-asdf.html) |
-| Dev tools                     | [Dev tools](https://mise.jdx.dev/dev-tools/) · [Registry](https://mise.jdx.dev/registry.html) · [Backends](https://mise.jdx.dev/dev-tools/backends/) · [Lockfile](https://mise.jdx.dev/dev-tools/mise-lock.html) |
-| Environments and tasks        | [Environments](https://mise.jdx.dev/environments/) · [Secrets](https://mise.jdx.dev/environments/secrets/) · [Tasks](https://mise.jdx.dev/tasks/) · [Task configuration](https://mise.jdx.dev/tasks/task-configuration.html) |
-| Machine setup                 | [Bootstrap](https://mise.jdx.dev/bootstrap.html) · [Packages](https://mise.jdx.dev/bootstrap/packages/) · [Dotfiles](https://mise.jdx.dev/dotfiles.html) · [Services](https://mise.jdx.dev/bootstrap/services.html) |
-| Shells, editors, and CI       | [Shell setup](https://mise.jdx.dev/shell-setup.html) · [Shims](https://mise.jdx.dev/dev-tools/shims.html) · [Editors and IDEs](https://mise.jdx.dev/ide-integration.html) · [Continuous integration](https://mise.jdx.dev/continuous-integration.html) |
+| Topic                         | Guides                                                                                                                                                                                                                                                                 |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Onboarding                    | [Getting started](https://mise.jdx.dev/getting-started.html) · [Existing projects](https://mise.jdx.dev/walkthrough.html) · [Migrating from asdf](https://mise.jdx.dev/dev-tools/comparison-to-asdf.html)                                                              |
+| Dev tools                     | [Dev tools](https://mise.jdx.dev/dev-tools/) · [Registry](https://mise.jdx.dev/registry.html) · [Backends](https://mise.jdx.dev/dev-tools/backends/) · [Lockfile](https://mise.jdx.dev/dev-tools/mise-lock.html)                                                       |
+| Environments and tasks        | [Environments](https://mise.jdx.dev/environments/) · [Secrets](https://mise.jdx.dev/environments/secrets/) · [Tasks](https://mise.jdx.dev/tasks/) · [Task configuration](https://mise.jdx.dev/tasks/task-configuration.html)                                           |
+| Machine setup                 | [Bootstrap](https://mise.jdx.dev/bootstrap.html) · [Packages](https://mise.jdx.dev/bootstrap/packages/) · [Dotfiles](https://mise.jdx.dev/dotfiles.html) · [Services](https://mise.jdx.dev/bootstrap/services.html)                                                    |
+| Shells, editors, and CI       | [Shell setup](https://mise.jdx.dev/shell-setup.html) · [Shims](https://mise.jdx.dev/dev-tools/shims.html) · [Editors and IDEs](https://mise.jdx.dev/ide-integration.html) · [Continuous integration](https://mise.jdx.dev/continuous-integration.html)                 |
 | Reference and troubleshooting | [mise.toml](https://mise.jdx.dev/configuration.html) · [Settings](https://mise.jdx.dev/configuration/settings.html) · [CLI reference](https://mise.jdx.dev/cli/) · [Troubleshooting](https://mise.jdx.dev/troubleshooting.html) · [FAQ](https://mise.jdx.dev/faq.html) |
-| Contributing                  | [Contributing](CONTRIBUTING.md) · [Writing docs](docs/README.md)                                                                                                                                          |
+| Contributing                  | [Contributing](CONTRIBUTING.md) · [Writing docs](docs/README.md)                                                                                                                                                                                                       |
 
 ## Get help
 
