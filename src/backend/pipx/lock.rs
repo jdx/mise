@@ -9,6 +9,7 @@ const MIN_UV_VERSION: &str = "0.12.10";
 const PROJECT_NAME: &str = "mise-pypi-tool-environment";
 
 /// How `uv lock` and the `uv sync` replay are told which interpreter to use.
+#[derive(Clone)]
 enum LockPython {
     /// An interpreter that is already installed.
     Installed(OsString),
@@ -482,7 +483,11 @@ impl PIPXBackend {
     /// is not installed yet is passed as its version, which uv may download for
     /// the resolution alone: `mise lock` does not install tools, and a
     /// download-free uv would otherwise skip the graph on a fresh checkout.
-    async fn lock_python(&self, config: &Arc<Config>, tv: &ToolVersion) -> Result<LockPython> {
+    async fn lock_python(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+    ) -> Result<(LockPython, LockPython)> {
         let bound = match &tv.uv_python {
             Some((python, _)) if !python.as_os_str().is_empty() => Some(python.clone()),
             _ => None,
@@ -492,22 +497,34 @@ impl PIPXBackend {
                 Some(path) => Some(path),
                 None => self.installed_selected_python(config, tv).await,
             };
-            return Ok(match bound {
+            let python = match bound {
                 Some(path) => LockPython::Installed(path.into()),
                 None => LockPython::Version {
                     request: selector.request_version().into(),
                     download: !Settings::get().offline(),
                 },
-            });
+            };
+            return Ok((python.clone(), python));
         }
-        let python = match bound {
+        // Only mise's own Python is handed to `uv lock`, so a Python on PATH or a
+        // `UV_PYTHON` the user set still decides when mise has none. The replay
+        // always uses one, as install does.
+        let configured = match bound {
             Some(path) => Some(path),
+            None => match self.dependency_toolset(config).await {
+                Ok(toolset) => toolset.which_bin_spawnable(config, "python").await,
+                Err(_) => None,
+            },
+        };
+        let replay = match &configured {
+            Some(path) => Some(path.clone()),
             None => self.spawnable_dependency(config, None, "python").await,
         };
-        Ok(match python {
+        let installed = |path: Option<PathBuf>| match path {
             Some(path) => LockPython::Installed(path.into()),
             None => LockPython::Unspecified,
-        })
+        };
+        Ok((installed(configured), installed(replay)))
     }
 
     pub(crate) async fn resolve_uv_lock(
@@ -566,13 +583,13 @@ impl PIPXBackend {
         )?;
         // Resolve and replay against the interpreter the install will bind, not
         // whichever Python uv happens to find on PATH.
-        let python = self.lock_python(config, tv).await?;
+        let (lock_python, replay_python) = self.lock_python(config, tv).await?;
         let mut cmd = self
             .uv_lock_command(config, tv, &uv, temp.path())
             .await?
             .args(["lock", "--no-build", "--no-config"])
             .args(Self::uv_exclude_newer_args(tv.before_date));
-        cmd = python.apply(cmd);
+        cmd = lock_python.apply(cmd);
         let raw = tv.request.options();
         if let Some(value) = PipxOptions::new(&raw).dependency_prereleases()? {
             cmd = cmd.args(["--prerelease", value]);
@@ -594,7 +611,7 @@ impl PIPXBackend {
             ])
             .env("UV_PROJECT_ENVIRONMENT", temp.path().join(".venv"))
             .env_remove("UV_EXCLUDE_NEWER");
-        python
+        replay_python
             .apply(replay)
             .execute()
             .wrap_err("the dependency graph cannot be installed without building distributions")?;
