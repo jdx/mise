@@ -492,12 +492,19 @@ impl ToolVersion {
             .uv_python
             .as_ref()
             .map(|(_, identity)| identity.as_str())?;
-        let options: BTreeMap<_, _> = self
+        let mut options: BTreeMap<_, _> = self
             .request
             .options()
             .opts_as_strings()
             .into_iter()
             .collect();
+        if self.uv_lock.is_some() {
+            // A locked graph already holds the cutoff it was resolved with, and the
+            // install replays it as it is, so a tool's own release-age options only
+            // move the installation when they change the graph.
+            options.remove("minimum_release_age");
+            options.remove("install_before");
+        }
         Some(hex::encode(Sha256::digest(
             format!(
                 "{}\n{}\n{}",
@@ -1763,11 +1770,18 @@ mod tests {
     #[test]
     fn uv_install_identity_ignores_when_the_graph_was_locked() {
         use crate::lockfile::{GraphRef, UvLock};
-        let tv_locked_at = |cutoff: &str| {
+        let tv_locked_at = |cutoff: &str, age: &str| {
             let graph_text =
                 format!("version = 1\nrevision = 3\n\n[options]\nexclude-newer = \"{cutoff}\"\n");
             let pipx = Arc::new(BackendArg::from("pipx:ansible-lint"));
-            let request = ToolRequest::new(pipx, "26.8.0", ToolSource::Argument).unwrap();
+            let mut options = ToolVersionOptions::default();
+            options.opts.insert(
+                "minimum_release_age".to_string(),
+                toml::Value::String(age.to_string()),
+            );
+            let request =
+                ToolRequest::new_with_options(pipx, "26.8.0", options, ToolSource::Argument)
+                    .unwrap();
             let mut tv = ToolVersion::new(request, "26.8.0".into());
             tv.uv_python = Some((PathBuf::from("/python"), "cpython-3.13".into()));
             tv.uv_lock = Some(GraphRef::from(UvLock {
@@ -1777,8 +1791,8 @@ mod tests {
             }));
             tv
         };
-        let monday = tv_locked_at("2026-10-26T09:00:00Z");
-        let tuesday = tv_locked_at("2026-10-27T17:30:00Z");
+        let monday = tv_locked_at("2026-10-26T09:00:00Z", "7d");
+        let tuesday = tv_locked_at("2026-10-27T17:30:00Z", "14d");
         assert_eq!(monday.tv_pathname(), tuesday.tv_pathname());
         assert_eq!(monday, tuesday);
     }

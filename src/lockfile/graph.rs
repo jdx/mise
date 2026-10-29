@@ -327,18 +327,28 @@ impl UvLock {
     /// It only constrains resolution, which `uv sync --frozen` does not repeat
     /// on install, so it must not make one installation of the graph differ
     /// from another.
+    ///
+    /// The cutoff is removed from the text as it is, not from a reserialized
+    /// table, so the rest of the graph hashes the bytes it always has: the
+    /// result is the [`digest_text`] of the graph uv writes without a cutoff.
     fn identity_without_cutoff(&self) -> Result<Option<String>> {
-        let mut graph = self.graph.clone();
-        let Some(options) = graph.get_mut("options").and_then(toml::Value::as_table_mut) else {
+        let mut doc = self.graph_text()?.parse::<toml_edit::DocumentMut>()?;
+        let Some(options) = doc
+            .get_mut("options")
+            .and_then(toml_edit::Item::as_table_mut)
+        else {
             return Ok(None);
         };
         if options.remove("exclude-newer").is_none() {
             return Ok(None);
         }
         if options.is_empty() {
-            graph.remove("options");
+            doc.remove("options");
+        } else if options.iter().all(|(_, item)| item.is_table()) {
+            // Only sub-tables are left, which uv writes without a `[options]` header.
+            options.set_implicit(true);
         }
-        Ok(Some(digest_text(&toml::to_string(&graph)?)))
+        Ok(Some(digest_text(&doc.to_string())))
     }
 }
 
@@ -1169,11 +1179,46 @@ aube = {{ path = "graphs/npm", digest = "{}" }}
         );
     }
     #[test]
+    fn uv_install_identity_is_the_identity_of_the_graph_uv_writes_without_a_cutoff() {
+        // `uv lock` output, with and without `--exclude-newer` (and an exempt package).
+        let package = r#"[[package]]
+name = "six"
+version = "1.17.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/six-1.17.0.tar.gz", hash = "sha256:ff70", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+"#;
+        let header = "version = 1\nrevision = 5\nrequires-python = \">=3.9\"\n";
+        let graph = |options: &str| {
+            let text = format!("{header}{options}\n{package}");
+            GraphRef::from(UvLock {
+                project: toml::Table::new(),
+                graph: text.parse().unwrap(),
+                graph_text: text,
+            })
+        };
+        let plain = graph("");
+        let cutoff = graph("\n[options]\nexclude-newer = \"2026-10-27T17:30:00Z\"\n");
+        assert_eq!(cutoff.install_identity(), plain.identity());
+        assert_eq!(plain.install_identity(), plain.identity());
+        let exempt = "\n[options.exclude-newer-package]\nsix = false\n";
+        assert_eq!(
+            graph(&format!(
+                "\n[options]\nexclude-newer = \"2026-10-27T17:30:00Z\"\n{exempt}"
+            ))
+            .install_identity(),
+            graph(exempt).identity()
+        );
+    }
+    #[test]
     fn uv_install_identity_is_the_same_for_a_sidecar_graph() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("mise.lock");
         let identities = ["2026-10-26T09:00:00Z", "2026-10-27T17:30:00Z"].map(|cutoff| {
-            let dir = sidecar_root(&path).join(format!("pypi-fixture/{cutoff}"));
+            let dir =
+                sidecar_root(&path).join(format!("pypi-fixture/{}", cutoff.replace(':', "-")));
             let graph = uv_with_cutoff(Some(cutoff));
             for (name, text) in graph.files().unwrap() {
                 std::fs::create_dir_all(&dir).unwrap();
