@@ -306,6 +306,13 @@ lists the installed versions to choose from.
 `Tool not installed for shim` means a config selects a version that is not
 installed, and automatic installation did not run. Run `mise install`.
 
+`<command> is not provided by the active <tool>@<version> (set by <config>)` means a config does
+select a version of the tool, but that version has no such executable while
+other installed versions do (the message lists them). This is common for
+executables a package manager adds to a version, such as Ruby gems after a Ruby
+upgrade. Install the executable for the active version, or switch to a version
+that provides it.
+
 ### `<tool>@<version> not installed` / `<command> is not a mise bin` {#not-installed}
 
 `mise where` and `mise which` report these when the version you name, or the

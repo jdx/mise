@@ -2083,6 +2083,9 @@ pub async fn err_no_version_set(
         if let Some(msg) = unavailable_configured_tool_message(config, &ts, bin_name) {
             return Err(eyre!(msg));
         }
+        if let Some(msg) = active_version_lacks_bin_message(&ts, bin_name, &missing_plugins, &tvs) {
+            return Err(eyre!(msg));
+        }
         let mut msg = format!("No version is set for shim: {bin_name}\n");
         msg.push_str("Set a global default version with one of the following:\n");
         for tv in tvs {
@@ -2101,6 +2104,66 @@ pub async fn err_no_version_set(
         msg.push_str("Install all missing tools with: mise install\n");
         Err(eyre!(msg.trim().to_string()))
     }
+}
+
+/// A config selects a version of the tool that is installed but does not provide `bin_name`, while
+/// other installed versions do (e.g. a Ruby gem executable after a Ruby upgrade). Naming the active
+/// version keeps the user from reading this as a missing config and from `mise use -g`-ing an
+/// older version just to run one executable.
+fn active_version_lacks_bin_message(
+    ts: &Toolset,
+    bin_name: &str,
+    providers: &HashSet<&BackendArg>,
+    tvs: &[ToolVersion],
+) -> Option<String> {
+    let active = ts
+        .list_current_versions()
+        .into_iter()
+        .map(|(_, tv)| tv)
+        .filter(|tv| providers.contains(tv.ba()))
+        .collect_vec();
+    if active.is_empty() {
+        return None;
+    }
+
+    let mut msg = String::new();
+    for tv in &active {
+        msg.push_str(&format!(
+            "{bin_name} is not provided by the active {}@{} (set by {})\n",
+            tv.ba(),
+            tv.version,
+            tv.request.source()
+        ));
+    }
+    // Installs are told apart by directory: the same name and version can be installed more than
+    // once with different options, and only one of them may provide the executable.
+    let others = tvs
+        .iter()
+        .filter(|tv| {
+            !active
+                .iter()
+                .any(|a| a.ba() == tv.ba() && a.install_path() == tv.install_path())
+        })
+        .map(|tv| {
+            let label = format!("{}@{}", tv.ba(), tv.version);
+            let ambiguous = active
+                .iter()
+                .any(|a| a.ba() == tv.ba() && a.version == tv.version);
+            if ambiguous {
+                format!("{label} ({})", display_path(tv.install_path()))
+            } else {
+                label
+            }
+        })
+        .collect_vec();
+    if !others.is_empty() {
+        msg.push_str(&format!(
+            "{bin_name} is provided by: {}\n",
+            others.join(", ")
+        ));
+    }
+    msg.push_str("Install it for the active version, or switch to a version that provides it.");
+    Some(msg)
 }
 
 pub fn unavailable_configured_tool_message(
