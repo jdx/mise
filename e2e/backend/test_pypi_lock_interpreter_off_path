@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# `mise lock` resolves the graph against the interpreter mise selected, so it
+# does not depend on a Python being on PATH, which is how a CI runner without
+# mise activated looks.
+mise install uv@0.12.10 python@3.12.11
+python3 "$ROOT/e2e/fixtures/pypi/server.py" "$PWD/index" &
+server_pid=$!
+trap 'kill "$server_pid"' EXIT
+for _ in {1..100}; do
+  [[ -s index/port ]] && break
+  sleep 0.1
+done
+port=$(cat index/port)
+mkdir -p nopython
+ln -s "$(command -v mise)" nopython/mise
+lock_without_python() {
+  PATH="$PWD/nopython" "$PWD/nopython/mise" lock
+}
+assert_fail "PATH='$PWD/nopython' command -v python3"
+
+# The configured Python is the one mise installed, not one found on PATH.
+cat >mise.toml <<EOF_CONFIG
+[tools]
+uv = "0.12.10"
+python = "3.12.11"
+"pipx:mise-lock-cli" = "1.0.0"
+[settings]
+lockfile = true
+minimum_release_age = "0"
+pypi.registry_url = "http://127.0.0.1:$port/pypi/{}/json"
+EOF_CONFIG
+mise trust
+lock_without_python
+assert_contains "cat mise.lock" 'tools."pipx:mise-lock-cli"'
+assert_contains "cat .mise/locks/pipx-mise-lock-cli/1.0.0/uv.lock" 'mise-lock-marker'
+
+# So is a per-tool selection.
+rm -rf mise.lock .mise
+cat >mise.toml <<EOF_CONFIG
+[tools]
+uv = "0.12.10"
+"pipx:mise-lock-cli" = { version = "1.0.0", python = "3.12.11" }
+[settings]
+lockfile = true
+minimum_release_age = "0"
+pypi.registry_url = "http://127.0.0.1:$port/pypi/{}/json"
+EOF_CONFIG
+lock_without_python
+assert_contains "find .mise/locks/pipx-mise-lock-cli -name uv.lock -exec cat {} +" 'requires-python = "==3.12.11"'
