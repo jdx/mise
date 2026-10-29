@@ -598,15 +598,16 @@ pub fn render_probes(
             command => command,
         };
         let Some(command) = command else { continue };
-        // `runtime` is a shell expression, and an argv probe runs without a shell.
+        // `runtime` is a shell expression. As the program of an argv probe, which
+        // runs without a shell, nothing would evaluate it; inside `sh -c "..."` it works.
         if let toml::Value::Array(argv) = command
             && argv
-                .iter()
-                .filter_map(toml::Value::as_str)
-                .any(|arg| RUNTIME_VARIABLE.is_match(arg))
+                .first()
+                .and_then(toml::Value::as_str)
+                .is_some_and(|program| RUNTIME_VARIABLE.is_match(program))
         {
             bail!(
-                "[daemons.{name}].{key}: {{{{ runtime }}}} needs a shell, so use the string form of the command, for example \"{{{{ runtime }}}} exec {{{{ container }}}} ...\""
+                "[daemons.{name}].{key}: {{{{ runtime }}}} is a shell expression, so it cannot be the program of an argument array; use the string form, for example \"{{{{ runtime }}}} exec {{{{ container }}}} ...\", or [\"sh\", \"-c\", \"...\"]"
             );
         }
         substitute(command, vars);
@@ -953,6 +954,17 @@ mod tests {
         let err = render_probes("db", &mut argv, &built.probe_vars)
             .unwrap_err()
             .to_string();
-        assert!(err.contains("needs a shell"), "{err}");
+        assert!(err.contains("cannot be the program"), "{err}");
+        // Inside a shell it is evaluated, so that form is fine.
+        let mut shell: toml::Table =
+            toml::from_str("ready_cmd = [\"sh\", \"-c\", \"{{ runtime }} exec {{ container }}\"]")
+                .unwrap();
+        render_probes("db", &mut shell, &built.probe_vars).unwrap();
+        assert!(
+            shell["ready_cmd"][2]
+                .as_str()
+                .unwrap()
+                .contains(" exec mise-proj-abc-db-")
+        );
     }
 }
