@@ -125,7 +125,9 @@ Each element of `variants` selects machines with these keys:
 | `default` | `true` marks the fallback for machines that match no other variant. It takes no `os` or `profile`, and an entry has at most one.                                                              |
 | `machine` | `true` gives each machine its own version; see [One version per machine](/dotfiles/history.html#machine-variants). It must be the entry's only variant and cannot be combined with `encrypt`. |
 
-A variant with both `os` and `profile` matches only when both do. When several
+A variant with both `os` and `profile` matches only when both do. A `profile`
+matches when its name is anywhere in the selected list, so
+`MISE_ENV=ssh,work` matches `profile = "work"` and `profile = "ssh"`. When several
 variants match, mise scores each one and the highest score wins:
 
 | Selector                      | Points |

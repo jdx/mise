@@ -90,6 +90,22 @@ load only for that environment:
 └── ssh_config
 ```
 
+## Setup that needs two modules {#setup-that-needs-two-modules}
+
+mise has no condition that loads a file only when two modules are both
+selected. Two patterns cover it:
+
+- For a dotfile, add a `profile` variant to its entry in one module. The entry
+  deploys only while the other module is also selected; see
+  [Deploy an entry only for a profile](/dotfiles/managed.html#only-for-a-profile).
+- For anything else, such as services or packages, make the combination its own
+  module. `config.ssh-work.toml` holds the setup that needs both, and you list
+  it in `env` beside the other two:
+
+```toml [~/.config/mise/miserc.local.toml]
+env = ["ssh", "work", "ssh-work"]
+```
+
 ## Remove a module's resources
 
 Removing a module from `env` stops loading its declarations, but leaves its
