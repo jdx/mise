@@ -239,6 +239,12 @@ again: mise prompts only for that token and leaves the other two as they are.
   <code v-pre>‹secret:name›</code> in place of the value.
 - A secret that is not declared in `[bootstrap.secrets]` is an error, even when
   the key it belongs to is already set.
+- Each `secret()` has to be inserted as it is. A filter such as `| upper` that
+  changes or drops it is an error, because mise could not tell which secret
+  the result stands for.
+- A `mise bootstrap` run cannot check these secrets up front, since which keys
+  need one depends on the file at that point. An unavailable secret stops the
+  run at that entry.
 - The value is inserted as it is, as in other templates, so a value with
   quotes or newlines may need escaping for the format. If the file no longer
   parses once the secrets are in, mise reports that without printing the text.
