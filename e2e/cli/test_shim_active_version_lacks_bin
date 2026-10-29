@@ -17,7 +17,7 @@ printf '[tools]\ntiny = "3.1.0"\n' >mise.toml
 mise trust
 
 output="$(extra 2>&1 || true)"
-assert_contains "echo '$output'" "extra is not provided by the active tiny@3.1.0"
+assert_contains "echo '$output'" "extra is not provided by the active tiny@3.1.0 (set by "
 assert_contains "echo '$output'" "extra is provided by: tiny@1.0.1"
 assert_not_contains "echo '$output'" "No version is set"
 assert_not_contains "echo '$output'" "mise use -g"

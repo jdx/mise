@@ -2129,9 +2129,10 @@ fn active_version_lacks_bin_message(
     let mut msg = String::new();
     for tv in &active {
         msg.push_str(&format!(
-            "{bin_name} is not provided by the active {}@{}\n",
+            "{bin_name} is not provided by the active {}@{} (set by {})\n",
             tv.ba(),
-            tv.version
+            tv.version,
+            tv.request.source()
         ));
     }
     let others = tvs
