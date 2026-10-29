@@ -673,14 +673,40 @@ impl EnvResults {
                         let existing_path =
                             env_map.get(&*env::PATH_KEY).cloned().unwrap_or_default();
                         let mut path_env = PathEnv::from_path_str(&existing_path);
-                        for (p, path_source) in paths.iter().chain(&append_paths) {
+                        let resolve = |(p, path_source): &(PathBuf, PathBuf)| {
                             let config_root =
                                 crate::config::config_file::config_root::config_root(path_source);
-                            for s in env::split_paths(p) {
-                                path_env.add(normalize_path(&config_root, s));
+                            env::split_paths(p)
+                                .map(|s| normalize_path(&config_root, s))
+                                .collect_vec()
+                        };
+                        for entry in paths.iter().flat_map(resolve) {
+                            path_env.add(entry);
+                        }
+                        // A `tools = true` module already has the tool paths in PATH, and
+                        // appended entries belong behind them, not ahead.
+                        let tool_paths = match toolset {
+                            Some(ts) => ts.list_paths(config).await,
+                            None => vec![],
+                        };
+                        let tools_in_path =
+                            env::split_paths(&existing_path).any(|e| tool_paths.contains(&e));
+                        let mut appended = vec![];
+                        for entry in append_paths.iter().flat_map(resolve) {
+                            if tools_in_path {
+                                appended.push(entry);
+                            } else {
+                                path_env.add(entry);
                             }
                         }
-                        env_map.insert(env::PATH_KEY.to_string(), path_env.to_string());
+                        let mut entries = env::split_paths(&path_env.to_string()).collect_vec();
+                        if let Some(i) = entries.iter().rposition(|e| tool_paths.contains(e)) {
+                            entries.splice(i + 1..i + 1, appended);
+                        }
+                        env_map.insert(
+                            env::PATH_KEY.to_string(),
+                            env::join_paths(entries)?.to_string_lossy().to_string(),
+                        );
                     }
                     if log::log_enabled!(log::Level::Trace) {
                         if let Some(path) = env_map.get(&*env::PATH_KEY) {
