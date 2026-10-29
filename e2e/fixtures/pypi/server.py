@@ -111,10 +111,12 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith('/pypi/') and path.endswith('/json'):
             package = path.strip('/').split('/')[1].replace('-', '_')
             requires_python = python_requirements.get(package, '>=3.10')
-            releases = {'1.0.0': [{}]}
-            for name in wheels:
-                if name.startswith(package + '-') and 'rc' in name:
-                    releases[name.split('-')[1]] = [{}]
+            prereleases = [
+                name.split('-')[1]
+                for name in wheels
+                if name.startswith(package + '-') and name.endswith('.whl') and 'rc' in name.split('-')[1]
+            ]
+            releases = {version: [{}] for version in prereleases} or {'1.0.0': [{}]}
             body = json.dumps({'info': {'requires_python': requires_python}, 'releases': releases}).encode()
             content_type = 'application/json'
         elif path.startswith('/simple/') or path.startswith('/private/simple/'):
