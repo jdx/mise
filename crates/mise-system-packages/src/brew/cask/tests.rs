@@ -7591,6 +7591,39 @@ fn links_a_stage_sourced_binary_into_its_payload_when_the_target_moves_it() -> R
 
 #[cfg(unix)]
 #[test]
+fn merges_a_linked_payload_directory_into_an_existing_caskroom_directory() -> Result<()> {
+    // A generic artifact already created `payload/` in the caskroom, and the
+    // stage reaches its payload through a directory link. The merge has to
+    // follow that link to copy the binary, but only while it stays in the stage.
+    let tmp = tempfile::tempdir()?;
+    let stage = tmp.path().join("stage");
+    let outside = tmp.path().join("outside");
+    file::create_dir_all(stage.join("real/bin"))?;
+    file::create_dir_all(&outside)?;
+    mise_util::file::write(stage.join("real/bin/tool"), "launcher")?;
+    mise_util::file::write(outside.join("secret"), "secret")?;
+    std::os::unix::fs::symlink("real", stage.join("payload"))?;
+    std::os::unix::fs::symlink(&outside, stage.join("external"))?;
+    let caskroom = tmp.path().join("caskroom");
+    file::create_dir_all(caskroom.join("payload/docs"))?;
+    file::create_dir_all(caskroom.join("external"))?;
+
+    durabilize_stage_payload(&stage, &caskroom, &[])?;
+
+    assert_eq!(
+        mise_util::file::read_to_string(caskroom.join("payload/bin/tool"))?,
+        "launcher"
+    );
+    assert!(caskroom.join("payload/docs").is_dir());
+    assert!(
+        caskroom.join("external/secret").symlink_metadata().is_err(),
+        "a link out of the stage must not be merged"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
 fn retargets_a_payload_binary_link_when_the_caskroom_is_renamed() -> Result<()> {
     // The payload link is absolute and points into the temporary caskroom,
     // which only exists until activation renames it. `symlinks_under` takes a

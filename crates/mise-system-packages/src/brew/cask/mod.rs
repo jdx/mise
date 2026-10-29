@@ -4229,7 +4229,9 @@ fn durabilize_stage_payload(stage: &Path, caskroom: &Path, apps: &[AppArtifact])
             if let Ok(metadata) = target.symlink_metadata() {
                 // Generic artifacts can create a shared parent directory. Fill
                 // its missing entries without replacing installed files or links.
-                if metadata.is_dir() && entry.file_type()?.is_dir() {
+                // `source` resolves inside the stage, so following a directory
+                // link here cannot leave it.
+                if metadata.is_dir() && source.is_dir() {
                     directories.push(source);
                 }
                 continue;
