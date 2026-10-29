@@ -25,7 +25,7 @@ cat >mise.toml <<EOF_CONFIG
 [tools]
 uv = "0.12.10"
 python = "3.12.11"
-"pipx:mise-lock-cli" = "1.0.0"
+"pipx:mise-lock-cli" = { version = "1.0.0", with = ["mise-lock-strict==1.0.0"] }
 [settings]
 lockfile = true
 minimum_release_age = "0"
@@ -34,7 +34,9 @@ EOF_CONFIG
 mise trust
 lock_without_python
 assert_contains "cat mise.lock" 'tools."pipx:mise-lock-cli"'
-assert_contains "cat .mise/locks/pipx-mise-lock-cli/1.0.0/uv.lock" 'mise-lock-marker'
+# mise-lock-strict needs Python >= 3.12, so the replay fails on any older interpreter.
+assert_contains "find .mise/locks/pipx-mise-lock-cli -name pyproject.toml -exec cat {} +" 'requires-python = ">=3.12"'
+assert_contains "find .mise/locks/pipx-mise-lock-cli -name uv.lock -exec cat {} +" 'mise-lock-strict'
 
 # So is a per-tool selection.
 rm -rf mise.lock .mise
