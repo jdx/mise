@@ -5,6 +5,8 @@ if ($wingetCommand) {
     $script:WingetReady = $LASTEXITCODE -eq 0
 }
 
+$script:ChocoReady = [bool](Get-Command choco -ErrorAction Ignore)
+
 $script:ScoopReady = $false
 $scoopCommand = Get-Command scoop -ErrorAction Ignore
 if ($scoopCommand) {
@@ -168,5 +170,27 @@ config_roots = ["service-root"]
         $out = mise bootstrap packages apply --manager scoop --dry-run --yes 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0
         $out | Should -BeLike '*scoop install --no-update-scoop mise-does-not-exist-0123456789@0.0-preview*'
+    }
+
+    It 'reports a Chocolatey package that is not installed' -Skip:(-not $script:ChocoReady) {
+        @"
+[bootstrap.packages]
+"choco:mise-does-not-exist-0123456789" = "latest"
+"@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
+
+        $out = mise bootstrap packages status 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0
+        $out | Should -BeLike '*choco*mise-does-not-exist-0123456789*missing*'
+    }
+
+    It 'passes Chocolatey version pins without interpreting them' -Skip:(-not $script:ChocoReady) {
+        @"
+[bootstrap.packages]
+"choco:mise-does-not-exist-0123456789" = "0.0-preview"
+"@ | Out-File -FilePath mise.toml -Encoding utf8NoBOM
+
+        $out = mise bootstrap packages apply --manager choco --dry-run --yes 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0
+        $out | Should -BeLike '*choco install mise-does-not-exist-0123456789 --version 0.0-preview --allow-downgrade --yes*'
     }
 }

@@ -93,6 +93,181 @@ These community plugins integrate with mise:
 | JetBrains IDEs | [intellij-mise](https://github.com/134130/intellij-mise)                               | Configures the IDE's SDKs from mise, runs mise tasks, and loads environment variables in run configurations.                        |
 | Neovim         | [miser.nvim](https://github.com/carldaws/miser.nvim)                                   | Starts language servers and formatters for the tools in `mise.toml`, and runs mise tasks from Neovim.                               |
 | Emacs          | [mise.el](https://github.com/eki3z/mise.el)                                            | Loads the mise environment for each buffer.                                                                                         |
+| Zed            | [mise-zed](https://github.com/hverlin/mise-zed)                                        | Runs `mise lsp` for mise config files, highlights the scripts of tasks, and runs mise tasks and tools.                              |
+
+## Language server {#language-server}
+
+`mise lsp` runs a [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
+server for mise config files. It reads the same schema mise validates configs
+against, so what it reports follows the installed mise. It serves `mise.toml`,
+`.mise.toml`, `mise.<env>.toml`, `mise.local.toml`, `mise/config.toml` and the
+files of a `conf.d`, and ignores every other file, so attaching it to the TOML
+language leaves `Cargo.toml` and `pyproject.toml` alone.
+
+It provides:
+
+- **Diagnostics**: TOML syntax errors, unknown keys with a "did you mean"
+  suggestion, values of the wrong type, deprecated keys, task names that no task
+  defines, and dependency cycles.
+- **Completion** of keys, including inside inline tables, and of values that
+  have a fixed set, such as booleans and enums. Keys a table already has are not
+  offered again.
+- **Tools**: completion of tool names under `[tools]` (and a task's `tools`)
+  from the [registry](/registry.html), and hover on a tool name showing its
+  description and backends. See [Tools](#language-server-tools).
+- **Hover** documentation for keys.
+- **Quick fixes** that replace an unknown key or task name with the suggested
+  one, and rewrite a deprecated key to its replacement.
+- **Formatting**, the same as [`mise fmt`](/cli/fmt.html).
+- **Semantic tokens** that color what a key is, which a TOML grammar cannot
+  tell: task and template names (`function`, `declaration` where defined,
+  including the names in `depends`, `depends_post`, `wait_for`, `extends` and
+  `run = [{ task = "..." }]`), tools (`type`), env vars (`variable`), vars
+  (`variable`, `readonly`), the `_` of env directives (`keyword`), the
+  `{{ }}`, `{% %}` and `{# #}` of templates (`macro`), and deprecated keys (the
+  `deprecated` modifier). Sent for the whole file and for a range. A file that
+  does not parse gets none, so the client keeps the colors it has.
+- **Tasks**: completion of task names in `depends`, `depends_post`, `wait_for`
+  and `run = [{ task = "..." }]`, and of template names in `extends`; hover on
+  such a name showing the task's description and command; go to definition and
+  find references; and rename of a task together with every reference to it in
+  the file. See [Tasks](#language-server-tasks).
+
+Diagnostics carry a `code` (`syntax`, `unknown-key`, `deprecated-key`,
+`invalid-value`, `unknown-task` or `task-cycle`), and a suggestion is in the
+diagnostic's `data`.
+Unknown `[settings]` keys are warnings, because mise still loads the file;
+other unknown keys are errors. While a file does not parse, the diagnostics of
+the parts you did not edit stay.
+
+### Tasks {#language-server-tasks}
+
+The server knows the tasks of the file you edit, of the configs in the
+directories above it, of the user's and system's configs (including
+`MISE_CONFIG_DIR` and `MISE_SYSTEM_CONFIG_DIR`), and of the TOML files their
+`[task_config] includes` name (a file, or a directory of TOML files). Globs,
+`git::` and `oci::` includes are not read. File tasks (scripts) are only known
+by name, for the `unknown-task` check below; their descriptions are not shown.
+
+```toml
+[tasks.build]
+description = "compile"
+run = "cargo build"
+
+[tasks.test]
+depends = ["bu"] # completes to "build"; hover on "build" shows the description and command
+```
+
+- Go to definition on a name in `depends` jumps to its `[tasks.<name>]`, in
+  another file when that is where it is defined. A task is found by its name or
+  by one of its `alias` names.
+- Find references lists the places in the open file that name a task.
+- Rename changes the `[tasks.<name>]` key (including `[tasks.<name>.env]` and
+  dotted spellings) and every reference to it in the same file, and keeps the
+  arguments after a name (`"build --release"`), including ones that start with
+  environment assignments (`"PROFILE=release build"`). The server does not edit
+  other files, so a rename is refused when another config or include file also
+  refers to the task, or when some config or include file could not be read (a
+  glob or remote include, or more files than the server reads). A task defined in another file is not renamed from here,
+  and neither is an alias. A rename that would leave the file meaning something
+  else, such as one that meets a spelling the server does not follow, is
+  refused instead of half done.
+- `extends` names a template, `[task_templates.<name>]`, so it completes, jumps
+  and renames within templates.
+
+### Tools {#language-server-tools}
+
+Under `[tools]`, a key completes to the short names in the registry, the same
+list `mise registry` prints, with each tool's description. Hovering a tool name
+shows its description and the backends that install it. Aliases the registry
+declares, such as `rg` for `ripgrep`, are recognized; other names that mise
+resolves some other way (`nodejs`, `golang`) are not. Deprecated tools are not offered, and the tools that
+`enable_tools` and `disable_tools` filter out are left out, as in `mise registry`.
+
+<!-- schema: skip -->
+
+```toml
+[tools]
+no # completes to node; hover on `node` shows "Node.js runtime" and `core:node`
+```
+
+The list is whatever `mise lsp` read when it started, from the registry built
+into mise (or the cached floating registry when `registry_floating` is on). The
+server looks up nothing: it does not list or resolve versions, and does not
+touch the network. Completion and hover for tools follow the `completion` and
+`hover` switches. A tool written with a backend (`"npm:prettier"`) is not in
+the registry, so it only gets the schema's hover.
+
+Two diagnostics check task references, the way
+[`mise tasks validate`](/cli/tasks/validate.html) does:
+
+- `unknown-task` (a warning) marks a name in `depends`, `depends_post`,
+  `wait_for` or `run = [{ task = "..." }]` that no task defines, and a template
+  in `extends` that no `[task_templates]` entry defines, with a "did you mean"
+  fix. Patterns (`lint:*`), monorepo references (`//app:build`, `:build`) and
+  `{ task = "x", optional = true }` are skipped. File tasks (scripts in
+  `mise-tasks/` and the other task directories, and the executable files in
+  directories that `includes` names; `node_modules` and `target` below them are
+  not scanned, which turns `unknown-task` off) count as defined, by their path with or without the
+  extension, and by the `#MISE alias=` lines in their header. Patterns with
+  `*`, `?`, `[` or `{` are skipped. The configs in the directories above the
+  file and the user's and system's config (including `MISE_CONFIG_DIR` and
+  `MISE_SYSTEM_CONFIG_DIR`) count too. A `mise.<env>.toml` is read only for an
+  environment in `MISE_ENV` when the server started; one for any other leaves
+  names unknown, which turns `unknown-task` off. When tasks can come from somewhere the
+  server does not read, which is a glob or a `git::`/`oci::` entry in
+  `includes`, a `task_config.dir`, or a directory with more entries than the
+  server scans (it looks at about 5000 entries in all), nothing is reported
+  rather than guessing.
+- `task-cycle` (an error) marks each `depends` that is part of a dependency
+  cycle among the tasks the file defines, with the cycle in the message. A task
+  that depends on itself is not reported, because mise ignores that.
+
+Files that `[task_config] includes` lists are tasks, not configs, so the server
+leaves them alone even when they are named like `mise.tasks.toml`.
+
+A deprecated key gets a quick fix only when its schema description names the
+replacement as a key (a description that only says `deprecated alias for run in
+hooks` names none) and rewriting is safe, checked again when you apply it: the replacement is a key the schema declares,
+the value fits the schema there, nothing is already at that key, and the file
+still parses to the same document. For example `env_path = ["bin"]` becomes
+`env._.path = ["bin"]` and `[settings] task_output = "prefix"` becomes
+`task.output = "prefix"`. Anything else is left for you to rewrite.
+
+The server only parses a config. It never renders templates or runs anything,
+so opening an untrusted file is safe.
+
+Configure your editor to start `mise lsp` for mise config files. For Neovim:
+
+```lua
+vim.lsp.config("mise", {
+  cmd = { "mise", "lsp" },
+  filetypes = { "toml" },
+  root_markers = { "mise.toml", ".mise.toml" },
+})
+vim.lsp.enable("mise")
+```
+
+In Zed, the [mise-zed](#zed) extension starts it. Other editors with a generic
+LSP client, such as Helix and Emacs, take the same command. See the
+[`mise lsp`](/cli/lsp.html) reference.
+
+If another TOML server, such as Tombi or Even Better TOML, runs on the same
+files, hover, completion and formatting show up twice. A client can turn them
+off with `initializationOptions`, keeping only what mise adds:
+
+```json
+{ "formatting": false, "hover": false, "completion": false }
+```
+
+`definition`, `references` and `rename` switch the task navigation off the same
+way. Task names and descriptions in `completion` and `hover` follow those two
+switches. Each capability is only advertised to the client while it is on.
+
+A mise that predates `mise lsp` runs a task named `lsp` if the project has one,
+and `mise lsp --help` then prints that task's help. To check that the command
+exists, look for `Usage: mise lsp` in the output of `mise help lsp`, which older
+versions answer with mise's own help.
 
 ## VS Code {#vscode}
 
@@ -103,6 +278,8 @@ to use mise tools. That is off by default; enable
 [`mise.configureExtensionsAutomatically`](https://hverlin.github.io/mise-vscode/reference/settings/#miseconfigureextensionsautomatically)
 to turn it on. See the extension's documentation for its environment and task
 settings.
+
+![mise-vscode in VS Code](./mise-vscode.png)
 
 Install mise on the machine that runs the extension. A local installation does
 not provide tools inside an SSH host, a WSL distribution or a
@@ -237,6 +414,28 @@ it:
 ```lisp
 (require 'mise)
 (add-hook 'after-init-hook #'global-mise-mode)
+```
+
+## Zed {#zed}
+
+The [mise-zed extension](https://github.com/hverlin/mise-zed) runs
+[`mise lsp`](#language-server) for mise config files, highlights the scripts of
+tasks in their language, and adds run buttons for tasks and tools. Zed loads
+your shell's environment for the project, so the tools that `mise activate`
+puts on `PATH` are found without shims.
+
+::: tip
+`mise lsp` needs mise 2026.10.18 or later. Semantic tokens need mise 2026.10.19
+or later.
+:::
+
+![mise-zed in Zed](./mise-zed.webp)
+
+Zed asks for the [semantic tokens](#language-server) of `mise lsp` only once
+they are turned on for the language, in Zed's settings:
+
+```json
+{ "languages": { "mise": { "semantic_tokens": "combined" } } }
 ```
 
 ## Xcode {#xcode}

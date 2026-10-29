@@ -1,7 +1,8 @@
 use crate::config::{Config, Settings, SettingsExt};
+use crate::daemons::glue::DaemonSetExt;
 use crate::daemons::{
     self,
-    runtime::{self, Runtime},
+    runtime::{self},
 };
 use crate::file::display_path;
 use crate::ui::prompt::{self, Confirmation};
@@ -54,11 +55,11 @@ enum Commands {
             help = "Start the shared server named local-postgres"
         )
     )]
-    Providers(daemons::providers::Providers),
+    Providers(daemons::provider_commands::Providers),
     #[usage(name = "__provider-exec", hide = true)]
-    ProviderExec(daemons::providers::Exec),
+    ProviderExec(daemons::provider_commands::Exec),
     #[usage(name = "__resource", hide = true)]
-    Resource(daemons::providers::Resource),
+    Resource(daemons::provider_commands::Resource),
     /// [experimental] Start project daemons and the daemons they depend on
     ///
     /// Installs missing tools and registers the project's daemons with pitchfork,
@@ -293,8 +294,10 @@ impl Daemons {
                 bail!("mise daemons tui opens the dashboard; pass TUI flags, not daemon names");
             }
             let previous = runtime::read_state(root)?;
-            let (config, ts) = runtime::toolset(&config, None).await?;
-            let runtime = Runtime::from_toolset(&config, &ts, Some(&previous.bin)).await?;
+            let (config, ts) = crate::daemons::glue::toolset(&config, None).await?;
+            let runtime =
+                crate::daemons::glue::runtime_from_toolset(&config, &ts, Some(&previous.bin))
+                    .await?;
             if !runtime.supervisor_up(root).await? {
                 bail!("pitchfork supervisor is not running; run mise daemons start");
             }
@@ -428,7 +431,7 @@ impl Daemons {
             while index < roots.len() {
                 let root = roots[index].clone();
                 index += 1;
-                let scoped = runtime::config_for_root(&config, &root).await?;
+                let scoped = crate::daemons::glue::config_for_root(&config, &root).await?;
                 if project_root.starts_with(&root) {
                     scoped.seed_daemons(loaded.for_root(&root));
                 }
@@ -528,7 +531,7 @@ impl Daemons {
             // The per-root configuration supplies this project's tools and env.
             let scoped = match owner_configs.remove(&root) {
                 Some(scoped) => scoped,
-                None => runtime::config_for_root(&config, &root).await?,
+                None => crate::daemons::glue::config_for_root(&config, &root).await?,
             };
             // What this invocation may act on, which for another project's root
             // is only what it imported.
@@ -571,8 +574,10 @@ impl Daemons {
             // depend on, since pitchfork starts dependencies with them. Their
             // tools are the ones installed and validated below.
             let here = set.restricted_to(&starting);
-            let (scoped, ts) = runtime::toolset(&scoped, install.then_some(&here)).await?;
-            let runtime = Runtime::from_toolset(&scoped, &ts, Some(&previous.bin)).await;
+            let (scoped, ts) =
+                crate::daemons::glue::toolset(&scoped, install.then_some(&here)).await?;
+            let runtime =
+                crate::daemons::glue::runtime_from_toolset(&scoped, &ts, Some(&previous.bin)).await;
             if matches!(action, "ls" | "urls") {
                 // Every listed root, labels or not. A root kept only by its
                 // recorded ids declares nothing now and so contributes no
@@ -648,7 +653,7 @@ impl Daemons {
                 // An unrelated daemon is registered but not started, so a
                 // missing tool or task reference of its own must not fail this
                 // command.
-                runtime::validate_tools(&here, &scoped, &ts).await?;
+                crate::daemons::glue::validate_tools(&here, &scoped, &ts).await?;
                 here.validate_tasks(&scoped).await?;
                 // This root's own configuration, which the check above cannot
                 // see: a referenced project declares its own imports.
@@ -804,11 +809,12 @@ impl Prune {
         // Pitchfork is resolved once from the ambient configuration; each entry
         // falls back to the executable its own state recorded.
         let config = Config::get().await?;
-        let (config, ts) = runtime::toolset(&config, None).await?;
+        let (config, ts) = crate::daemons::glue::toolset(&config, None).await?;
         for (entry, size) in &selected {
-            let runtime = Runtime::from_toolset(&config, &ts, Some(&entry.state.bin))
-                .await
-                .ok();
+            let runtime =
+                crate::daemons::glue::runtime_from_toolset(&config, &ts, Some(&entry.state.bin))
+                    .await
+                    .ok();
             if daemons::prune::remove(entry, runtime.as_ref()).await?
                 == daemons::prune::Outcome::Removed
             {
@@ -1259,7 +1265,7 @@ mod tests {
     /// loaded group.
     #[test]
     fn a_daemon_keeps_its_own_short_name_against_any_group() {
-        let set = daemons::load(&files(&[
+        let set = crate::daemons::glue::load(&files(&[
             (
                 "/parent/child/mise.toml",
                 "[daemons.web]\nrun = 'child web'\n",
@@ -1300,7 +1306,7 @@ mod tests {
     fn qualified_selectors_still_reach_the_port_check() {
         // A root whose daemons this command does not reach through the closure.
         let empty = daemons::DaemonSet::default();
-        let set = daemons::load(&files(&[(
+        let set = crate::daemons::glue::load(&files(&[(
             "/project/mise.toml",
             "[daemons.api]\nrun = 'server'\n[daemons.web]\nrun = 'web'\n",
         )]))
@@ -1328,7 +1334,7 @@ mod tests {
         // bound by this same command and have to reach the conflict check.
         // Naming only what the selector matched would let one collide with
         // another project in silence.
-        let set = daemons::load(&files(&[(
+        let set = crate::daemons::glue::load(&files(&[(
             "/project/mise.toml",
             "[daemons.api]\nrun = 'server'\nport = 3000\ndepends = ['db']\n\
              [daemons.db]\nrun = 'db'\nport = 5432\n",
@@ -1427,7 +1433,7 @@ mod tests {
 
     #[test]
     fn group_names_select_every_member() {
-        let set = daemons::load(&files(&[(
+        let set = crate::daemons::glue::load(&files(&[(
             "/project/mise.toml",
             "[daemons.api]\nrun = 'api'\n[daemons.worker]\nrun = 'worker'\n[daemons.web]\nrun = 'web'\n[daemon_groups]\nbackend = ['api', 'worker']\n",
         )]))
@@ -1456,7 +1462,7 @@ mod tests {
     fn a_group_selector_never_matches_a_same_named_daemon() {
         // One project declares the group; an unrelated project declares a daemon
         // that happens to share its name.
-        let loaded = daemons::load(&files(&[
+        let loaded = crate::daemons::glue::load(&files(&[
             (
                 "/parent/child/mise.toml",
                 "[daemons.api]\nrun = 'api'\n[daemon_groups]\nops = ['api']\n",
@@ -1480,7 +1486,7 @@ mod tests {
     #[test]
     fn a_positional_name_resolves_in_each_project_separately() {
         // `web` is a group in the child and a daemon in the parent.
-        let loaded = daemons::load(&files(&[
+        let loaded = crate::daemons::glue::load(&files(&[
             (
                 "/parent/child/mise.toml",
                 "[daemons.api]\nrun = 'api'\n[daemons.worker]\nrun = 'worker'\n[daemon_groups]\nweb = ['api']\n",
@@ -1504,7 +1510,7 @@ mod tests {
 
     #[test]
     fn a_default_group_applies_only_to_the_project_declaring_it() {
-        let loaded = daemons::load(&files(&[
+        let loaded = crate::daemons::glue::load(&files(&[
             (
                 "/parent/child/mise.toml",
                 "[daemons.web]\nrun = 'web'\n[daemons.extra]\nrun = 'extra'\n[daemon_groups]\ndefault = ['web']\n",

@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# A TOML parse error quotes the failing line. A project can ship the file mise parses as a symlink,
+# and then that line belongs to whichever file of the user's the link names -- while `.miserc.toml`,
+# `mise.lock` and, in safe mode, `mise.toml` are parsed with no trust decision behind them, and
+# stderr is often a CI log the project's author can read. `/proc/self/environ` has no newline, so
+# its failing "line" is the whole environment. The error has to say where the file broke without
+# showing what is in it.
+
+mkdir -p "$HOME/private"
+echo "token s3cr3t" >"$HOME/private/mise.toml"
+
+# Control: a file that is really here is still quoted, so nothing below passes by accident.
+cp "$HOME/private/mise.toml" mise.toml
+assert_fail_contains "mise ls" "s3cr3t"
+rm mise.toml
+
+# The error names the link, and the position inside it, but not the text behind it.
+ln -s "$HOME/private/mise.toml" mise.toml
+assert_fail_contains "mise ls" "Invalid TOML in config file ~/workdir/mise.toml:1:7"
+assert_not_contains "mise ls 2>&1 || true" "s3cr3t"
+assert_not_contains "MISE_SAFE=1 mise ls 2>&1 || true" "s3cr3t"
+rm mise.toml
+
+# `.miserc.toml` and `mise.lock` are read in every mode, and the settings layer parses `mise.toml`
+# before the trust check does, with its own warning.
+ln -s "$HOME/private/mise.toml" .miserc.toml
+assert_fail_contains "mise ls" "Invalid TOML in config file ~/workdir/.miserc.toml:1:7"
+assert_not_contains "mise ls 2>&1 || true" "s3cr3t"
+rm .miserc.toml
+
+echo "tools.dummy = '1'" >mise.toml
+ln -s "$HOME/private/mise.toml" mise.lock
+assert_contains "mise ls 2>&1" "failed to read lockfile"
+assert_not_contains "mise ls 2>&1" "s3cr3t"
+rm mise.lock
+
+# TOML task files in a task directory.
+mkdir mise-tasks
+ln -s "$HOME/private/mise.toml" mise-tasks/x.toml
+assert_not_contains "mise tasks ls 2>&1 || true" "s3cr3t"
+rm -r mise-tasks
+# A linked subdirectory of a task directory, whatever its name.
+cp "$HOME/private/mise.toml" "$HOME/private/x.toml"
+mkdir mise-tasks
+ln -s "$HOME/private" mise-tasks/group
+assert_contains "mise tasks ls 2>&1 || true" "x.toml"
+assert_not_contains "mise tasks ls 2>&1 || true" "s3cr3t"
+rm -r mise-tasks "$HOME/private/x.toml"
+
+# A link in the directory leading to the file is as good as a link to the file.
+ln -s "$HOME/private" .config
+assert_not_contains "mise ls 2>&1 || true" "s3cr3t"
+rm .config
+
+# So is a link in a directory a configured filename names, whatever its name.
+cp "$HOME/private/mise.toml" "$HOME/private/private.toml"
+ln -s "$HOME/private" custom
+echo 'override_config_filenames = ["custom/private.toml"]' >.miserc.toml
+assert_fail_contains "MISE_SAFE=1 mise ls" "Invalid TOML in config file ~/workdir/custom/private.toml"
+assert_not_contains "MISE_SAFE=1 mise ls 2>&1 || true" "s3cr3t"
+rm custom .miserc.toml "$HOME/private/private.toml"
+
+# The user's own links are fine: dotfile managers keep the global config behind one.
+ln -s "$HOME/private/mise.toml" "$MISE_CONFIG_DIR/config.toml"
+assert_fail_contains "mise ls" "s3cr3t"

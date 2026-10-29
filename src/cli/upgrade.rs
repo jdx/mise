@@ -76,10 +76,20 @@ pub(crate) struct Upgrade {
     /// command line (`node@latest`, `node@3`, or `node@prefix:3`), that request is
     /// written instead; `mise upgrade node@latest --bump` writes `latest`. With
     /// the `pin` setting on, a version request such as `node@3` is written as the
-    /// version it resolved to. Requests that do not come from a config file mise
+    /// version it resolved to, and a bare `mise upgrade --bump` writes the
+    /// resolved version for every request that is not exact, such as `latest`
+    /// or `20`. Requests that do not come from a config file mise
     /// can write, such as `MISE_NODE_VERSION`, are upgraded but not written.
     #[usage(long, short = 'b')]
     bump: bool,
+
+    /// With --bump, write the resolved version instead of keeping the request's precision
+    ///
+    /// `node = "latest"` and `node = "20"` become `node = "24.14.0"`. A named
+    /// request such as `node@3` is written as the version it resolved to. Make
+    /// this the default with the `pin` setting (`MISE_PIN=1`).
+    #[usage(long, requires = "bump")]
+    pin: bool,
 
     /// Choose which tools to upgrade from a multiselect menu
     #[usage(long, short, verbatim_doc_comment, conflicts = "tool")]
@@ -119,7 +129,7 @@ pub(crate) struct Upgrade {
     installed_only: bool,
 
     /// Also upgrade installed tools that the current config does not request
-    #[usage(long, verbatim_doc_comment, conflicts = "local")]
+    #[usage(long, verbatim_doc_comment, conflicts = ["local", "no_global"])]
     inactive: bool,
 
     /// Only upgrade tools defined in the global config
@@ -131,15 +141,21 @@ pub(crate) struct Upgrade {
     /// config, lockfiles, and `[env]` are neither read nor changed. Tools that
     /// update themselves, such as coding agents, run this instead of their own
     /// updater; see https://mise.jdx.dev/dev-tools/self-updating-tools.html
-    #[usage(long, conflicts = ["local", "inactive"])]
+    #[usage(long, conflicts = ["local", "no_global", "inactive"])]
     global: bool,
+
+    /// Deprecated alias for --no-global
+    ///
+    /// Removed in mise 2027.7.0.
+    #[usage(long, conflicts = ["global", "no_global"])]
+    local: bool,
 
     /// Only upgrade tools defined in project config files
     ///
     /// Skips tools defined in the global config (~/.config/mise/config.toml) and
     /// tools set through `MISE_<TOOL>_VERSION` environment variables.
-    #[usage(long)]
-    local: bool,
+    #[usage(long, conflicts = ["global", "local"])]
+    no_global: bool,
 
     /// Only upgrade to versions released before this date or older than this duration
     ///
@@ -330,7 +346,7 @@ impl Upgrade {
     fn scope(&self) -> ConfigScope {
         if self.for_auto_update || self.global {
             ConfigScope::GlobalOnly
-        } else if self.local {
+        } else if self.local || self.no_global {
             ConfigScope::LocalOnly
         } else {
             ConfigScope::All
@@ -338,12 +354,20 @@ impl Upgrade {
     }
 
     pub(crate) async fn run(mut self) -> Result<()> {
+        if self.local {
+            deprecated_at!(
+                "2027.1.0",
+                "2027.7.0",
+                "cli.upgrade.local",
+                "`mise upgrade --local` is deprecated. Use `mise upgrade --no-global` instead."
+            );
+        }
         if self.legacy_bump {
             deprecated_at!(
                 "2026.8.5",
                 "2027.8.5",
                 "cli.upgrade.bump-l",
-                "`mise upgrade -l` is deprecated. Use `mise upgrade -b` or `mise upgrade --bump` instead. After removal, `-l` will become shorthand for `--local`."
+                "`mise upgrade -l` is deprecated. Use `mise upgrade -b` or `mise upgrade --bump` instead."
             );
             self.bump = true;
         }
@@ -540,7 +564,58 @@ impl Upgrade {
             )
             .await
         };
-        if Settings::get().pin {
+        let pin = self.pin || Settings::get().pin;
+        // Naming a tool without a version (`mise upgrade node --bump --pin`) pins
+        // just that tool; a named version is handled as an explicit bump.
+        let pin_all = pin && self.bump && self.tool.iter().all(|tool| tool.tvr.is_none());
+        if pin {
+            if pin_all {
+                // With `pin` on, a bare `--bump` also records exact versions for
+                // requests that are not exact, such as `latest` or `20`.
+                for (_, tv) in ts.list_current_versions() {
+                    let ToolRequest::Version { version, .. } = &tv.request else {
+                        continue;
+                    };
+                    // A request with no version in it (`java = "zulu"`, `nightly`)
+                    // names a moving target, and the backend-wide latest need not
+                    // belong to it. Only `latest` is resolved without a version.
+                    if version != "latest" && !version.chars().any(|c| c.is_ascii_digit()) {
+                        continue;
+                    }
+                    if self
+                        .exclude
+                        .iter()
+                        .any(|tool| backend_args_match(tool.ba.as_ref(), tv.ba()))
+                        || !(self.tool.is_empty()
+                            || self
+                                .tool
+                                .iter()
+                                .any(|tool| backend_args_match(tool.ba.as_ref(), tv.ba())))
+                    {
+                        continue;
+                    }
+                    // Replacing a multi-entry tool would drop the entries for
+                    // other platforms, as the ordinary bump path also avoids.
+                    if ts
+                        .versions
+                        .iter()
+                        .any(|(ba, tvl)| backend_args_match(ba, tv.ba()) && tvl.requests.len() > 1)
+                    {
+                        continue;
+                    }
+                    let Some((_, configured)) = effective_persistable_request(&ts, tv.ba()) else {
+                        continue;
+                    };
+                    let Some(path) = configured.source().path() else {
+                        continue;
+                    };
+                    explicit_config_bumps.push(ExplicitConfigBump {
+                        path: path.to_path_buf(),
+                        persisted_request: configured.clone(),
+                        request: configured.clone(),
+                    });
+                }
+            }
             for bump in &mut explicit_config_bumps {
                 let resolved = outdated
                     .iter()
@@ -560,6 +635,20 @@ impl Upgrade {
                     && let ToolRequest::Version { version, .. } = &mut bump.persisted_request
                 {
                     *version = resolved;
+                }
+            }
+        }
+        if pin_all {
+            explicit_config_bumps
+                .retain(|bump| bump.persisted_request.version() != bump.request.version());
+            // The exact version is what gets written, so the precision-keeping
+            // bump must not also be applied or previewed.
+            for o in &mut outdated {
+                if explicit_config_bumps.iter().any(|bump| {
+                    backend_args_match(o.tool_version.ba(), bump.request.ba())
+                        && o.tool_version.request.version() == bump.request.version()
+                }) {
+                    o.bump = None;
                 }
             }
         }
@@ -605,8 +694,27 @@ impl Upgrade {
             .await;
         }
         if self.interactive && !outdated.is_empty() {
+            let offered = outdated
+                .iter()
+                .map(|o| o.tool_version.ba().clone())
+                .collect::<Vec<_>>();
             outdated = self.get_interactive_tool_set(&outdated)?;
-            if outdated.is_empty() {
+            if pin_all {
+                // A tool that was not selected is not upgraded, so its config
+                // must not move to a version that is not installed.
+                explicit_config_bumps.retain(|bump| {
+                    let deselected = offered
+                        .iter()
+                        .any(|ba| backend_args_match(ba, bump.request.ba()))
+                        && !outdated
+                            .iter()
+                            .any(|o| backend_args_match(o.tool_version.ba(), bump.request.ba()));
+                    !deselected
+                });
+            }
+            // Pins for requests that were not offered still apply when nothing
+            // was selected, as they do when something was.
+            if outdated.is_empty() && (!pin_all || explicit_config_bumps.is_empty()) {
                 return Ok(());
             }
         }
@@ -1654,7 +1762,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r###"<bold><underline>Deprecation:</underline></bold>
 
 The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
-After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead."###
+Use `-b` or `--bump` instead.
+
+The `--local` flag is deprecated in favor of `--no-global`. mise warns about it from
+2027.1.0 and removes it in 2027.7.0."###
 );
 
 #[cfg(test)]

@@ -92,10 +92,13 @@ pub mod testing;
 pub mod time;
 pub mod timeout;
 pub mod tokens;
+pub mod untrusted_hosts;
 pub mod user_agent;
 pub mod versions_host;
 pub mod wildcard;
 pub mod windows_console;
+#[cfg(windows)]
+pub mod windows_job;
 pub mod windows_posix;
 #[cfg(windows)]
 pub mod windows_process;

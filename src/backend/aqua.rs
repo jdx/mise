@@ -4,13 +4,13 @@ use crate::backend::{SecurityFeature, VersionInfo};
 
 use crate::args::BackendArg;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::get_filename_from_url;
+use crate::backend::static_helpers::{ensure_safe_relative_bin_path, get_filename_from_url};
 use crate::config::{Settings, SettingsExt};
 use crate::dirs;
 use crate::file::{ExtractOptions, ExtractionFormat};
 use crate::http::HTTP;
 use crate::install_context::InstallContext;
-use crate::lockfile::{PlatformInfo, ProvenanceType};
+use crate::lockfile::{ChecksumSource, PlatformInfo, ProvenanceType};
 use crate::path::{Path, PathBuf, PathExt};
 use crate::platform::{ARCH, OS};
 use crate::plugins::VERSION_REGEX;
@@ -211,6 +211,14 @@ enum GithubAttestationStatus {
 
 /// What `install_version_` needs before it fetches anything, and the point at which aqua can
 /// already tell that a version is not installable on this machine.
+/// The version as aqua templates it (`{{.Version}}`), and the release tag it
+/// names, when mise knows it.
+#[derive(Clone, Copy)]
+struct AquaVersion<'a> {
+    v: &'a str,
+    release_tag: Option<&'a str>,
+}
+
 struct ResolvedPackage {
     platform_key: String,
     existing_platform: Option<String>,
@@ -218,6 +226,10 @@ struct ResolvedPackage {
     pkg: AquaPackage,
     v: String,
     v_prefixed: Option<String>,
+    /// `v`, when it is the release tag and not a guess: the tag was listed, or
+    /// is in the lockfile's URL and maps back to the version, or the recipe's
+    /// `version_prefix` makes it.
+    release_tag: Option<String>,
 }
 
 /// The versions an aqua fuzzy `query` selects. Resolution runs this for every
@@ -405,6 +417,50 @@ impl Backend for AquaBackend {
         Ok(versions)
     }
 
+    /// Date one `github_tag` version for the release-age cutoff: the listing
+    /// dates only what mise-versions knows, and a commit lookup for every tag
+    /// would cost thousands of requests, so resolution asks for the few
+    /// candidates it is deciding on.
+    async fn fetch_version_created_at(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> Result<Option<String>> {
+        let pkg = AQUA_REGISTRY.package(&self.id).await?;
+        if pkg.version_source.as_deref() != Some("github_tag")
+            || pkg.repo_owner.is_empty()
+            || pkg.repo_name.is_empty()
+        {
+            return Ok(None);
+        }
+        // The tag comes from the same dated listing the candidate came from, not
+        // the names-only cache, which refreshes separately and can lag a new tag.
+        let target = PlatformTarget::from_current();
+        let (target_os, target_arch) = Self::to_aqua_platform(&target);
+        let target_libc = Self::target_variant_libc(&target, None);
+        let mut tag = None;
+        // Newest first and only tags with an asset, the same selection
+        // `_list_remote_versions` makes, so the date is the listed version's.
+        for (candidate, _, _) in get_tags_with_release_dates(&pkg).await?.into_iter().rev() {
+            if let Ok(Some((v, versioned_pkg))) = versioned_package_from_tag(
+                &pkg,
+                &candidate,
+                target_os,
+                target_arch,
+                target_libc.as_deref(),
+            ) && v == version
+                && package_has_asset(&versioned_pkg)
+            {
+                tag = Some(candidate);
+                break;
+            }
+        }
+        let Some(tag) = tag else {
+            return Ok(None);
+        };
+        github::tag_commit_date(&format!("{}/{}", pkg.repo_owner, pkg.repo_name), &tag).await
+    }
+
     // No `latest_stable_version` override: the trait tries
     // `latest_stable_version_info` first and only falls back to the string
     // variant when it returns `None`. Delegating one to the other would repeat
@@ -445,6 +501,7 @@ impl Backend for AquaBackend {
             mut pkg,
             v,
             v_prefixed,
+            release_tag,
         } = self.resolve_validated_package(&tv).await?;
 
         // Validate lockfile URL matches expected asset pattern from registry
@@ -565,6 +622,13 @@ impl Backend for AquaBackend {
             (url, url_api, v.to_string(), filename, digest)
         };
 
+        // A lockfile's URL only hints at `v` (the prefix may not be in it), so
+        // the tag is the one resolved before the URL was read.
+        let release_tag = match validated_url {
+            Some(_) => release_tag,
+            None => selected_release_tag(&pkg, &v, release_tag.as_deref()),
+        };
+
         let original_linux_replacement = pkg.replacements.get("linux").cloned();
         pkg = Self::apply_selected_asset_libc_replacement(pkg, os(), &filename);
         let selected_libc_sibling =
@@ -575,7 +639,11 @@ impl Backend for AquaBackend {
         // Public repos download from the browser URL; private repos return 404/HTML there
         // and must be fetched from the API asset endpoint instead.
         let download_url = select_github_download_url(pkg.private, &url, url_api.as_deref()).await;
-        self.download(ctx, &tv, &download_url, &filename, api_digest.as_deref())
+        // verify() still compares a digest mise-versions supplied after the
+        // download; it just may not pick a kept file.
+        let pin_digest =
+            crate::versions_host::digest_download_pin(api_digest.as_deref(), url_api.as_deref());
+        self.download(ctx, &tv, &download_url, &filename, pin_digest.as_deref())
             .await?;
 
         // Snapshot before any mutation so verify() knows whether the lockfile
@@ -601,8 +669,19 @@ impl Backend for AquaBackend {
         if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) || api_digest.is_some() {
             ctx.pr.next_operation();
         }
-        self.verify(ctx, &mut tv, &pkg, &v, &filename, lockfile_has_checksum)
-            .await?;
+        let version = AquaVersion {
+            v: &v,
+            release_tag: release_tag.as_deref(),
+        };
+        self.verify(
+            ctx,
+            &mut tv,
+            &pkg,
+            version,
+            &filename,
+            lockfile_has_checksum,
+        )
+        .await?;
 
         // Advance to extraction operation if applicable
         if needs_extraction(format, &pkg.package_type()) {
@@ -815,6 +894,8 @@ impl Backend for AquaBackend {
                 }
             });
         }
+        ensure_url_safe_version(&v)?;
+        let known_tag = (tag.is_some() || pkg.version_prefix.is_some()).then(|| v.clone());
 
         // Check if this platform is supported
         if !is_platform_supported(&pkg.supported_envs, target_os, target_arch) {
@@ -896,6 +977,13 @@ impl Backend for AquaBackend {
             pkg = Self::apply_selected_asset_libc_replacement(pkg, target_os, filename);
         }
 
+        // A digest from a release mise-versions served is recorded but marked,
+        // unless the lock-time provenance check below downloads the artifact.
+        let mut mirror_digest = checksum.is_some()
+            && url_api
+                .as_deref()
+                .is_some_and(crate::versions_host::is_mirrored_asset_api_url);
+
         // Try to get checksum from checksum file if not available from GitHub API
         let mut checksum = match checksum {
             Some(c) => Some(c),
@@ -915,8 +1003,15 @@ impl Backend for AquaBackend {
         };
 
         // Detect provenance from aqua registry config
-        let mut provenance = self.detect_provenance_type(&pkg);
-        if matches!(provenance, Some(ProvenanceType::GithubAttestations))
+        // A registry requirement is recorded without asking anyone (a "none" answer is
+        // exactly what it must not trust); the lock-time verification below still has to
+        // pass.
+        let required = self.registry_required_provenance(tv, &pkg);
+        let mut provenance = required
+            .clone()
+            .or_else(|| self.detect_provenance_type(&pkg));
+        if required.is_none()
+            && matches!(provenance, Some(ProvenanceType::GithubAttestations))
             && let Some(digest) = checksum.as_deref().filter(|d| d.starts_with("sha256:"))
             && let Some(attestations) = &pkg.github_artifact_attestations
         {
@@ -974,6 +1069,7 @@ impl Backend for AquaBackend {
         }
 
         // Record only cryptographically verified provenance for the target artifact.
+        let mut verified_at_lock_time = false;
         if provenance.is_some()
             && let Some(ref artifact_url) = url
         {
@@ -983,15 +1079,23 @@ impl Backend for AquaBackend {
             match verifier
                 .verify_provenance_at_lock_time(
                     &pkg,
-                    &v,
+                    AquaVersion {
+                        v: &v,
+                        release_tag: selected_release_tag(&pkg, &v, known_tag.as_deref())
+                            .as_deref(),
+                    },
                     artifact_url,
                     provenance.as_ref().unwrap(),
+                    required.is_some(),
                     &mut checksum,
                 )
                 .await
             {
                 Ok(verified) => {
                     provenance = verified;
+                    // The artifact was downloaded and checked against it.
+                    mirror_digest = false;
+                    verified_at_lock_time = true;
                 }
                 Err(e) => {
                     return Err(e.wrap_err(format!(
@@ -1001,7 +1105,18 @@ impl Backend for AquaBackend {
                 }
             }
         }
+        if let Some(required) = &required
+            && (!verified_at_lock_time || provenance.as_ref() != Some(required))
+        {
+            bail!(
+                "mise registry requires {required} provenance for {}@{} but none was verified. \
+                 This may indicate a downgrade attack.",
+                self.ba(),
+                tv.version
+            );
+        }
         Ok(PlatformInfo {
+            checksum_source: mirror_digest.then_some(ChecksumSource::VersionsHost),
             url,
             url_api,
             checksum,
@@ -1059,6 +1174,7 @@ impl AquaBackend {
         let locked_tag = existing_platform
             .as_deref()
             .and_then(github_release_tag_from_url);
+        let tag_is_locked = locked_tag.is_some();
         let tag = if let Some(tag) = locked_tag {
             Some(tag)
         } else if existing_platform.is_some() {
@@ -1093,6 +1209,17 @@ impl AquaBackend {
         let mut v_prefixed =
             (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
         let pkg = AQUA_REGISTRY.package(&self.id).await?;
+        // A listed tag was mapped to the version when it was listed; a locked
+        // URL's tag has to be mapped here, or it could name another release.
+        let current = PlatformTarget::from_current();
+        let tag_names_version = !tag_is_locked
+            || tag.as_deref().is_some_and(|tag| {
+                let (target_os, target_arch) = Self::to_aqua_platform(&current);
+                versioned_package_from_tag(&pkg, tag, target_os, target_arch, None)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|(version, _)| version == tv.version)
+            });
         let versions = resolved_package_version_candidates(&tv.version, tag.as_deref(), &pkg);
         let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
         let pkg = Self::package_with_options_for_pkg(tv, pkg, &versions)?;
@@ -1110,6 +1237,11 @@ impl AquaBackend {
             });
         }
         validate(&pkg, &v)?;
+        ensure_url_safe_version(&v)?;
+        let release_tag = match tag {
+            Some(_) => tag_names_version.then(|| v.clone()),
+            None => pkg.version_prefix.is_some().then(|| v.clone()),
+        };
 
         Ok(ResolvedPackage {
             platform_key,
@@ -1118,6 +1250,7 @@ impl AquaBackend {
             pkg,
             v,
             v_prefixed,
+            release_tag,
         })
     }
 
@@ -1474,6 +1607,28 @@ impl AquaBackend {
         Some((checksum, attestations))
     }
 
+    /// The provenance the mise registry requires for `tv`: GitHub attestations, when
+    /// the registry marks this backend as publishing them from a version on
+    /// (`attestations_since`) and the aqua recipe declares them. From that version
+    /// on, "no attestation for this file" is a downgrade, not a release that has
+    /// none. Earlier versions, versions the registry can't place, and users who
+    /// turned GitHub attestations off keep the recipe's best-effort check.
+    fn registry_required_provenance(
+        &self,
+        tv: &ToolVersion,
+        pkg: &AquaPackage,
+    ) -> Option<ProvenanceType> {
+        let settings = Settings::get();
+        (settings.github_attestations
+            && settings.aqua.github_attestations
+            && Self::has_github_attestations_config(pkg)
+            && crate::registry::requires_github_attestations(
+                &self.ba.full_without_opts(),
+                &tv.version,
+            ))
+        .then_some(ProvenanceType::GithubAttestations)
+    }
+
     fn has_github_attestations_config(pkg: &AquaPackage) -> bool {
         pkg.github_artifact_attestations
             .as_ref()
@@ -1633,11 +1788,13 @@ impl AquaBackend {
     async fn verify_provenance_at_lock_time(
         &self,
         pkg: &AquaPackage,
-        v: &str,
+        version: AquaVersion<'_>,
         artifact_url: &str,
         detected: &ProvenanceType,
+        attestations_required: bool,
         checksum: &mut Option<String>,
     ) -> Result<Option<ProvenanceType>> {
+        let AquaVersion { v, release_tag } = version;
         let tmp_dir = Self::lock_time_download_dir()?;
         let filename = get_filename_from_url(artifact_url);
         let artifact_path = tmp_dir.path().join(&filename);
@@ -1662,22 +1819,20 @@ impl AquaBackend {
         }
         let expected_checksum = checksum.as_deref();
 
-        match detected {
+        // GitHub attestations are the only mechanism that can come back with nothing to
+        // check. As at install, that is not the end of it: the next mechanism the registry
+        // declares (SLSA, cosign or minisign) still has to vouch for the artifact, or bytes
+        // nobody signed would be locked on the strength of their own checksum, and a later
+        // install would trust that entry without looking at any signature.
+        let detected = match detected {
             ProvenanceType::GithubAttestations => {
-                if let Some(attestations) = pkg
+                let status = if let Some(attestations) = pkg
                     .github_artifact_attestations
                     .as_ref()
                     .filter(|attestations| attestations.enabled != Some(false))
                 {
-                    match self
-                        .run_github_attestation_check(&artifact_path, pkg, attestations)
+                    self.run_github_attestation_check(&artifact_path, pkg, attestations)
                         .await?
-                    {
-                        GithubAttestationStatus::Verified => {
-                            Ok(Some(ProvenanceType::GithubAttestations))
-                        }
-                        GithubAttestationStatus::Unavailable => Ok(None),
-                    }
                 } else {
                     let (checksum_config, attestations) =
                         Self::checksum_github_attestations_config(pkg).wrap_err(
@@ -1686,26 +1841,50 @@ impl AquaBackend {
                     let checksum_path = self
                         .download_checksum_file(checksum_config, pkg, v, tmp_dir.path(), None)
                         .await?;
-                    match self
+                    let status = self
                         .run_github_attestation_check(&checksum_path, pkg, attestations)
-                        .await?
-                    {
-                        GithubAttestationStatus::Verified => {
-                            self.verify_checksum_file_matches_expected(
-                                checksum_config,
-                                &checksum_path,
-                                &filename,
-                                expected_checksum,
-                            )?;
-                            Ok(Some(ProvenanceType::GithubAttestations))
+                        .await?;
+                    if status == GithubAttestationStatus::Verified {
+                        self.verify_checksum_file_matches_expected(
+                            checksum_config,
+                            &checksum_path,
+                            &artifact_path,
+                            &filename,
+                            expected_checksum,
+                        )?;
+                    }
+                    status
+                };
+                match status {
+                    GithubAttestationStatus::Verified => {
+                        return Ok(Some(ProvenanceType::GithubAttestations));
+                    }
+                    GithubAttestationStatus::Unavailable if attestations_required => {
+                        bail!(
+                            "mise registry requires GitHub artifact attestations for {}/{} {v} \
+                             but none exist for {filename}. This may indicate a downgrade attack.",
+                            pkg.repo_owner,
+                            pkg.repo_name
+                        );
+                    }
+                    GithubAttestationStatus::Unavailable => {
+                        match self.detect_non_github_provenance_type(pkg) {
+                            Some(next) => next,
+                            None => return Ok(None),
                         }
-                        GithubAttestationStatus::Unavailable => Ok(None),
                     }
                 }
             }
+            detected => detected.clone(),
+        };
+
+        match detected {
+            ProvenanceType::GithubAttestations => {
+                unreachable!("detect_non_github_provenance_type never returns GitHub attestations")
+            }
             ProvenanceType::Slsa { .. } => {
                 let provenance_url = self
-                    .run_slsa_check(&artifact_path, pkg, v, tmp_dir.path(), None)
+                    .run_slsa_check(&artifact_path, pkg, v, release_tag, tmp_dir.path(), None)
                     .await?;
                 Ok(Some(ProvenanceType::Slsa {
                     url: Some(provenance_url),
@@ -1753,6 +1932,7 @@ impl AquaBackend {
                     self.verify_checksum_file_matches_expected(
                         checksum_config,
                         &checksum_path,
+                        &artifact_path,
                         &filename,
                         expected_checksum,
                     )?;
@@ -1775,6 +1955,7 @@ impl AquaBackend {
                     self.verify_checksum_file_matches_expected(
                         checksum_config,
                         &checksum_path,
+                        &artifact_path,
                         &filename,
                         expected_checksum,
                     )?;
@@ -1945,15 +2126,23 @@ impl AquaBackend {
         artifact_path: &Path,
         pkg: &AquaPackage,
         v: &str,
+        release_tag: Option<&str>,
         download_dir: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<String> {
         let (identity, issuer) = self.slsa_signer_identity(pkg, v)?.ok_or_else(|| {
             eyre!("SLSA provenance requires signer_identity and signer_issuer in Aqua registry metadata")
         })?;
+        let source_repository = slsa_source_repository(pkg);
+        let source_tag = slsa_source_tag(pkg, release_tag);
+        if source_tag.is_none() {
+            debug!("no release tag known for {v}; not checking the SLSA provenance's tag");
+        }
         let signer = crate::github::sigstore::SlsaSignerIdentity {
             identity: &identity,
             issuer: &issuer,
+            source_repository: Some(&source_repository),
+            source_tag,
         };
         let target = self.verification_target();
         let (provenance_url, url_api) = self
@@ -2308,10 +2497,16 @@ impl AquaBackend {
         }
     }
 
+    /// Bind the downloaded artifact to a checksum file whose signature has already been
+    /// verified. The expected checksum (usually GitHub's asset digest, which is sha256 and
+    /// follows a re-upload) can only be compared with the signed digest when both use the
+    /// same algorithm. Otherwise the artifact itself is hashed with the signed file's
+    /// algorithm: skipping the comparison would leave nothing tying it to the signature.
     fn verify_checksum_file_matches_expected(
         &self,
         checksum_config: &AquaChecksum,
         checksum_path: &Path,
+        artifact_path: &Path,
         artifact_filename: &str,
         expected_checksum: Option<&str>,
     ) -> Result<()> {
@@ -2321,29 +2516,37 @@ impl AquaBackend {
             checksum_config,
             artifact_filename,
         )?;
-        let checksum_val = format!("{}:{}", checksum_config.algorithm(), checksum_str);
+        let algorithm = checksum_config.algorithm();
+        let checksum_val = format!("{algorithm}:{checksum_str}");
         if let Some(expected) = expected_checksum
             && same_checksum_algorithm(expected, &checksum_val)
-            && expected != checksum_val
         {
-            bail!(
-                "verified checksum file digest does not match expected checksum for {artifact_filename}"
-            );
+            if expected != checksum_val {
+                bail!(
+                    "verified checksum file digest does not match expected checksum for {artifact_filename}"
+                );
+            }
+            return Ok(());
         }
-        Ok(())
+        crate::hash::ensure_checksum(artifact_path, &checksum_str, None, algorithm.as_ref())
+            .wrap_err_with(|| {
+                format!(
+                    "verified checksum file digest does not match downloaded {artifact_filename}"
+                )
+            })
     }
 
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         let full = ba.full_without_opts();
         let mut id = full.split_once(":").unwrap_or(("", &full)).1;
         if !id.contains("/") {
+            // A bare name that is not in mise's registry may be a package of a custom
+            // aqua registry, which can only be looked up asynchronously. If no registry
+            // has it, `AQUA_REGISTRY.package` reports "package not found" on first use.
             id = REGISTRY
                 .get(id)
                 .and_then(|t| t.backends.iter().find_map(|s| s.full.strip_prefix("aqua:")))
-                .unwrap_or_else(|| {
-                    warn!("invalid aqua tool: {}", id);
-                    id
-                });
+                .unwrap_or(id);
         }
         let cache_path = ba.cache_path().to_path_buf();
         Self {
@@ -2358,6 +2561,9 @@ impl AquaBackend {
             version_tags_cache: CacheManagerBuilder::new(
                 cache_path.join("version_tags_v2.msgpack.z"),
             )
+            // The directory is named by the kebab-cased short name, which two
+            // packages can share.
+            .with_cache_key(id.to_string())
             .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
             .build(),
         }
@@ -2783,9 +2989,21 @@ impl AquaBackend {
         ))
     }
 
+    /// Built from path segments like the API URLs below, so the tag (which may hold `/`, as in
+    /// `cli/v1.2.3`) cannot add `..` segments, a query or a fragment.
     fn github_archive_url(&self, pkg: &AquaPackage, v: &str) -> String {
-        let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        format!("https://github.com/{gh_id}/archive/refs/tags/{v}.tar.gz")
+        let mut url = Url::parse("https://github.com").expect("GitHub URL should be valid");
+        url.path_segments_mut()
+            .expect("GitHub URL should support path segments")
+            .extend([
+                pkg.repo_owner.as_str(),
+                pkg.repo_name.as_str(),
+                "archive",
+                "refs",
+                "tags",
+            ])
+            .extend(format!("{v}.tar.gz").split('/'));
+        url.to_string()
     }
 
     fn github_archive_api_url(&self, pkg: &AquaPackage, v: &str) -> String {
@@ -2803,9 +3021,17 @@ impl AquaBackend {
     }
 
     fn github_content_url(&self, pkg: &AquaPackage, v: &str) -> String {
-        let gh_id = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
-        let path = pkg.path.as_deref().unwrap();
-        format!("https://raw.githubusercontent.com/{gh_id}/{v}/{path}")
+        let mut url = Url::parse("https://raw.githubusercontent.com")
+            .expect("GitHub content URL should be valid");
+        {
+            let mut segments = url
+                .path_segments_mut()
+                .expect("GitHub content URL should support path segments");
+            segments.extend([pkg.repo_owner.as_str(), pkg.repo_name.as_str()]);
+            segments.extend(v.split('/'));
+            segments.extend(pkg.path.as_deref().unwrap().split('/'));
+        }
+        url.to_string()
     }
 
     fn github_content_api_url(&self, pkg: &AquaPackage, v: &str) -> String {
@@ -2986,7 +3212,7 @@ impl AquaBackend {
         let pinned = tv
             .lock_platforms
             .get(&self.get_platform_key())
-            .and_then(|platform| platform.checksum.clone())
+            .and_then(|platform| platform.pin_checksum().cloned())
             .or_else(|| api_digest.map(str::to_string));
         let headers = crate::http::host_auth_headers(&reqwest::Url::parse(url)?)?;
         HTTP.download_file_linked(
@@ -3005,7 +3231,7 @@ impl AquaBackend {
         ctx: &InstallContext,
         tv: &mut ToolVersion,
         pkg: &AquaPackage,
-        v: &str,
+        version: AquaVersion<'_>,
         filename: &str,
         lockfile_has_checksum: bool,
     ) -> Result<()> {
@@ -3021,14 +3247,21 @@ impl AquaBackend {
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();
         let platform_key = self.get_platform_key();
-        let has_lockfile_integrity = tv
-            .lock_platforms
-            .get(&platform_key)
-            .is_some_and(PlatformInfo::has_checksum_and_provenance);
-        let locked_provenance = tv
+        let recorded_provenance = tv
             .lock_platforms
             .get(&platform_key)
             .and_then(|p| p.provenance.clone());
+        // A lockfile entry stands in for verification only when it records what the
+        // registry requires: it may have been written after a wrong "no attestations".
+        let required = self.registry_required_provenance(tv, pkg);
+        let has_lockfile_integrity = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(PlatformInfo::has_checksum_and_provenance)
+            && required
+                .as_ref()
+                .is_none_or(|required| recorded_provenance.as_ref() == Some(required));
+        let locked_provenance = required.clone().or(recorded_provenance.clone());
         if lockfile_has_checksum && has_lockfile_integrity && !force_verify {
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
         } else if !force_verify && locked_provenance.is_none() && lockfile_has_checksum {
@@ -3040,8 +3273,9 @@ impl AquaBackend {
         } else {
             // Verifying for real needs the expected signer; without one the locked SLSA
             // requirement would be dropped silently.
-            Self::ensure_locked_slsa_signer(tv, locked_provenance.as_ref(), pkg)?;
-            self.verify_provenance(ctx, tv, pkg, v, filename).await?;
+            Self::ensure_locked_slsa_signer(tv, recorded_provenance.as_ref(), pkg)?;
+            self.verify_provenance(ctx, tv, pkg, version, filename, required)
+                .await?;
         }
 
         let tarball_path = tv.download_path().join(filename);
@@ -3071,17 +3305,22 @@ impl AquaBackend {
         ctx: &InstallContext,
         tv: &mut ToolVersion,
         pkg: &AquaPackage,
-        v: &str,
+        version: AquaVersion<'_>,
         filename: &str,
+        required: Option<ProvenanceType>,
     ) -> Result<()> {
+        let AquaVersion { v, release_tag } = version;
         // Check if the lockfile expects provenance for this platform, then clear it
-        // so we can detect whether verification actually re-set it
+        // so we can detect whether verification actually re-set it. The registry's
+        // requirement, when there is one, takes precedence: a lockfile may have been
+        // written without it.
         let platform_key = self.get_platform_key();
         let locked_provenance = tv
             .lock_platforms
             .get_mut(&platform_key)
             .and_then(|pi| pi.provenance.take());
-        let expected_provenance = locked_provenance.as_ref();
+        let expected = required.or(locked_provenance);
+        let expected_provenance = expected.as_ref();
 
         // When the lockfile specifies a provenance type, only run that specific mechanism.
         // This prevents false-positive downgrade errors when a tool supports multiple mechanisms
@@ -3114,7 +3353,8 @@ impl AquaBackend {
                 .and_then(|pi| pi.provenance.as_ref())
                 .is_some_and(|p| *p > ProvenanceType::Slsa { url: None });
             if !already_verified {
-                self.verify_slsa(ctx, tv, pkg, v, filename).await?;
+                self.verify_slsa(ctx, tv, pkg, v, release_tag, filename)
+                    .await?;
             }
         }
         if !skip_minisign {
@@ -3291,7 +3531,7 @@ impl AquaBackend {
                     .map(|g| g.to_string())
                     .unwrap_or_else(|| "no verification".to_string());
                 return Err(eyre!(
-                    "Lockfile requires {expected} provenance for {tv} but {got_str} was used. \
+                    "Lockfile or mise registry requires {expected} provenance for {tv} but {got_str} was used. \
                      This may indicate a downgrade attack. Enable the corresponding verification setting \
                      or update the lockfile."
                 ));
@@ -3370,6 +3610,7 @@ impl AquaBackend {
         tv: &mut ToolVersion,
         pkg: &AquaPackage,
         v: &str,
+        release_tag: Option<&str>,
         filename: &str,
     ) -> Result<()> {
         let settings = Settings::get();
@@ -3393,6 +3634,7 @@ impl AquaBackend {
                     &artifact_path,
                     pkg,
                     v,
+                    release_tag,
                     &tv.download_path(),
                     Some(ctx.pr.as_ref()),
                 )
@@ -3570,12 +3812,9 @@ impl AquaBackend {
         }
         let bin_paths: Vec<_> = bin_names
             .iter()
-            .map(|name| {
-                let name_str: &str = name.as_ref();
-                install_path.join(name_str)
-            })
-            .map(|path| complete_windows_ext(path, pkg, os(), v))
-            .collect();
+            .map(|name| join_registry_path(&install_path, name))
+            .map_ok(|path| complete_windows_ext(path, pkg, os(), v))
+            .collect::<Result<_>>()?;
         let first_bin_path = bin_paths
             .first()
             .expect("at least one bin path should exist");
@@ -3592,6 +3831,9 @@ impl AquaBackend {
                 extraction_format,
                 &extract_opts,
             )?;
+            #[cfg(unix)]
+            Self::rebase_embedded_guest_rootfs_links(&install_path, pkg)?;
+            file::ensure_symlinks_stay_within(&install_path)?;
             make_executable = true;
         } else if let AquaPackageType::GithubContent = pkg.package_type() {
             if let Some(parent) = first_bin_path.parent() {
@@ -3619,18 +3861,20 @@ impl AquaBackend {
                 extraction_format,
                 &extract_opts,
             )?;
+            #[cfg(unix)]
+            Self::rebase_embedded_guest_rootfs_links(&install_path, pkg)?;
+            // The bins are chmodded and linked by name below, which would
+            // follow a link the archive shipped out of the install directory.
+            file::ensure_symlinks_stay_within(&install_path)?;
             make_executable = true;
         }
 
         if make_executable {
-            for bin_path in &bin_paths {
-                // bin_path should exist, but doesn't when the registry is outdated
-                if bin_path.exists() {
-                    file::make_executable(bin_path)?;
-                } else {
-                    warn!("bin path does not exist: {}", bin_path.display());
-                }
-            }
+            let candidates: Vec<_> = Self::srcs_for_platform(pkg, v, &install_path, os(), arch())?
+                .into_iter()
+                .map(|link| link.src)
+                .collect();
+            Self::make_bins_executable(&bin_paths, &candidates)?;
         }
 
         let srcs = Self::srcs_for_platform(pkg, v, &install_path, os(), arch())?;
@@ -3647,6 +3891,62 @@ impl AquaBackend {
         }
 
         Ok(())
+    }
+
+    /// Marks each expected binary executable, falling back to an alternate layout (such as a
+    /// macOS universal archive) when the expected path is absent.
+    fn make_bins_executable(bin_paths: &[PathBuf], candidates: &[PathBuf]) -> Result<()> {
+        for bin_path in bin_paths {
+            // bin_path should exist, but doesn't when the registry is outdated
+            if bin_path.exists() {
+                file::make_executable(bin_path)?;
+            } else if let Some(alt) = candidates
+                .iter()
+                .find(|c| c.exists() && c.file_name() == bin_path.file_name())
+            {
+                file::make_executable(alt)?;
+            } else {
+                warn!("bin path does not exist: {}", bin_path.display());
+            }
+        }
+        Ok(())
+    }
+
+    /// Rebase the guest-rootfs links shipped by SmolVM-style sidecars before
+    /// applying the archive containment check. The marker is the guest agent
+    /// binary, which is mounted with this directory as the guest's `/`.
+    #[cfg(unix)]
+    fn rebase_embedded_guest_rootfs_links(install_path: &Path, pkg: &AquaPackage) -> Result<()> {
+        if pkg.repo_owner != "smol-machines" || pkg.repo_name != "smolvm" {
+            return Ok(());
+        }
+        for entry in fs::read_dir(install_path)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let rootfs = entry.path().join("agent-rootfs");
+            if Self::is_smolvm_agent_rootfs(&rootfs) {
+                file::rebase_guest_rootfs_absolute_symlinks(&rootfs)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn is_smolvm_agent_rootfs(rootfs: &Path) -> bool {
+        let mut path = rootfs.to_path_buf();
+        for component in ["usr", "local", "bin"] {
+            if !fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.file_type().is_dir()) {
+                return false;
+            }
+            path.push(component);
+        }
+        if !fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.file_type().is_dir()) {
+            return false;
+        }
+        fs::symlink_metadata(path.join("smolvm-agent"))
+            .is_ok_and(|metadata| metadata.file_type().is_file())
     }
 
     /// Creates a `.mise-bins` directory with symlinks only to the binaries defined in the aqua registry.
@@ -3734,7 +4034,7 @@ impl AquaBackend {
                 .and_then(|n| n.split('/').next_back())
                 .unwrap_or(&pkg.repo_name);
 
-            let mut path = install_path.join(fallback_name);
+            let mut path = join_registry_path(install_path, fallback_name)?;
             path = complete_windows_ext(path, pkg, os, version);
 
             return Ok(vec![AquaFileLink {
@@ -3780,28 +4080,32 @@ impl AquaBackend {
         install_path: &Path,
         os: &str,
         arch: &str,
-    ) -> Result<Option<AquaFileLink>> {
+    ) -> Result<Vec<AquaFileLink>> {
         let explicit_link = f.link.is_some();
         // Like aqua, a file without `src` is found at its `name`.
-        let src = f
-            .src(pkg, version, os, arch)?
-            .unwrap_or_else(|| f.name.clone());
         let link = f.link(pkg, version, os, arch)?;
+        f.src_candidates(pkg, version, os, arch)?
+            .into_iter()
+            .map(|src| {
+                let src = src.unwrap_or_else(|| f.name.clone());
+                let mut src = join_registry_path(install_path, &src)?;
+                let mut dst = join_registry_path(
+                    src.parent().wrap_err_with(|| {
+                        format!("file source has no parent: {}", src.display())
+                    })?,
+                    link.as_deref().unwrap_or(f.name.as_str()),
+                )?;
+                src = complete_windows_ext(src, pkg, os, version);
+                dst = complete_windows_dst_ext(&src, dst, pkg, os, version);
 
-        let mut src = install_path.join(src);
-        let mut dst = src
-            .parent()
-            .wrap_err_with(|| format!("file source has no parent: {}", src.display()))?
-            .join(link.as_deref().unwrap_or(f.name.as_str()));
-        src = complete_windows_ext(src, pkg, os, version);
-        dst = complete_windows_dst_ext(&src, dst, pkg, os, version);
-
-        Ok(Some(AquaFileLink {
-            src,
-            dst,
-            hard: f.hard,
-            explicit_link,
-        }))
+                Ok(AquaFileLink {
+                    src,
+                    dst,
+                    hard: f.hard,
+                    explicit_link,
+                })
+            })
+            .collect()
     }
 
     fn create_file_link(link: &AquaFileLink) -> Result<()> {
@@ -3849,6 +4153,17 @@ impl AquaBackend {
         }
         Ok(())
     }
+}
+
+/// Joins a path a registry entry names (`files[].src`, `name`, `link`, or the
+/// package name when there are no files) onto a directory of the install. A
+/// downloaded registry is remote data, so an absolute path or `..` must not
+/// place the download, its chmod or its link outside the install directory.
+fn join_registry_path(dir: &Path, path: &str) -> Result<PathBuf> {
+    // The standard registry has `src: ./cmd/topicctl`.
+    let rel = path.strip_prefix("./").unwrap_or(path);
+    ensure_safe_relative_bin_path("aqua registry file", rel)?;
+    Ok(dir.join(path))
 }
 
 fn same_disk_entry(a: &Path, b: &Path) -> bool {
@@ -3995,7 +4310,9 @@ async fn select_github_download_url(
     api_url: Option<&str>,
 ) -> String {
     match api_url {
-        Some(api_url) if private => api_url.to_string(),
+        // No probe for private repos, but an asset ID that mise-versions or a
+        // lockfile supplied still has to be confirmed before it is used.
+        Some(api_url) if private => github::checked_api_asset_url(browser_url, api_url).await,
         Some(api_url) => github::pick_reachable_asset_url(browser_url, api_url).await,
         None => browser_url.to_string(),
     }
@@ -4236,6 +4553,10 @@ pub(crate) fn is_install_time_option_key(key: &str) -> bool {
 mod tests;
 
 async fn get_tags(pkg: &AquaPackage) -> Result<Vec<String>> {
+    if pkg.version_source.as_deref() == Some("github_tag") {
+        // Names only: resolving a tag needs no dates.
+        return github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await;
+    }
     Ok(get_tags_with_release_dates(pkg)
         .await?
         .into_iter()
@@ -4332,9 +4653,14 @@ async fn get_tags_with_release_dates(
     pkg: &AquaPackage,
 ) -> Result<Vec<(String, Option<String>, Option<bool>)>> {
     if let Some("github_tag") = pkg.version_source.as_deref() {
-        // Tags don't have created_at timestamps or a prerelease flag
-        let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
-        return Ok(versions.into_iter().map(|v| (v, None, None)).collect());
+        // Tags carry no prerelease flag. Their dates are the ones mise-versions
+        // already has; the rest stay `None` and are dated one at a time by
+        // `fetch_version_created_at`, since a commit lookup per tag is thousands
+        // of requests for a repository like aws/aws-cli.
+        let tags =
+            github::list_tags_with_known_dates(&format!("{}/{}", pkg.repo_owner, pkg.repo_name))
+                .await?;
+        return Ok(tags.into_iter().map(|t| (t.name, t.date, None)).collect());
     }
     let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
     let releases = github::list_release_versions(github::API_URL, &repo, false).await?;
@@ -4342,6 +4668,28 @@ async fn get_tags_with_release_dates(
         .into_iter()
         .map(|r| (r.tag_name, r.released_at, Some(r.prerelease)))
         .collect())
+}
+
+/// The version or tag is rendered into registry URL templates (`{{.Version}}`) and checksum and
+/// signature options, none of which encode it. It can come from a config file or from release
+/// metadata, so refuse anything that would change the URL's structure: a percent escape (`%2e%2e`
+/// resolves like `..`), a query or fragment, a backslash, or a `.`/`..` path segment.
+fn ensure_url_safe_version(version: &str) -> Result<()> {
+    if let Some(c) = version
+        .chars()
+        .find(|c| matches!(c, '%' | '#' | '?' | '\\'))
+    {
+        bail!(
+            "invalid version {version:?}: contains {c:?}, which cannot be used in a download URL"
+        );
+    }
+    if version
+        .split('/')
+        .any(|segment| matches!(segment, "." | ".."))
+    {
+        bail!("invalid version {version:?}: contains a relative path segment");
+    }
+    Ok(())
 }
 
 fn validate(pkg: &AquaPackage, version: &str) -> Result<()> {
@@ -4407,6 +4755,50 @@ fn go_install_backend(pkg: &AquaPackage, version: &str) -> Result<String> {
 }
 
 /// Resolve repo owner and name from an override config, falling back to pkg defaults.
+/// The repository whose workflow run must have made a package's SLSA
+/// provenance, as slsa-verifier's `--source-uri` took it: the recipe's
+/// `source_uri`, or else the repository the provenance is published in.
+fn slsa_source_repository(pkg: &AquaPackage) -> String {
+    let slsa = pkg.slsa_provenance.as_ref();
+    if let Some(source_uri) = slsa.and_then(|s| s.source_uri.clone()) {
+        return source_uri;
+    }
+    let (owner, name) = resolve_repo_info(
+        slsa.and_then(|s| s.repo_owner.as_ref()),
+        slsa.and_then(|s| s.repo_name.as_ref()),
+        pkg,
+    );
+    format!("{owner}/{name}")
+}
+
+/// The release tag of `v`, the version an install or lock picked for `pkg`.
+/// A GitHub release package's asset was found in the release `v` names, so
+/// `v` is its tag. For other packages, a `v` whose URL happened to work is no
+/// tag, so it counts only when it is `known_tag`: listed, locked, or made by
+/// `version_prefix`.
+fn selected_release_tag(pkg: &AquaPackage, v: &str, known_tag: Option<&str>) -> Option<String> {
+    if pkg.package_type() == AquaPackageType::GithubRelease {
+        return Some(v.to_string());
+    }
+    known_tag.filter(|tag| *tag == v).map(str::to_string)
+}
+
+/// The tag a package's SLSA provenance must have been built from, as
+/// slsa-verifier's `--source-tag` took it: the recipe's `source_tag`, or else
+/// the version's release tag, when mise knows it. A `source_tag` of `-` turns
+/// the check off, for tools built from a branch.
+fn slsa_source_tag<'a>(pkg: &'a AquaPackage, release_tag: Option<&'a str>) -> Option<&'a str> {
+    match pkg
+        .slsa_provenance
+        .as_ref()
+        .and_then(|s| s.source_tag.as_deref())
+    {
+        Some("-") => None,
+        Some(tag) => Some(tag),
+        None => release_tag,
+    }
+}
+
 fn resolve_repo_info(
     override_owner: Option<&String>,
     override_name: Option<&String>,
@@ -4699,6 +5091,7 @@ mod lock_candidate_tests {
             .verify_checksum_file_matches_expected(
                 &checksum,
                 &path,
+                &tmp.path().join(ARTIFACT),
                 ARTIFACT,
                 Some(&format!("sha256:{DIGEST}")),
             )
@@ -4710,12 +5103,51 @@ mod lock_candidate_tests {
             .verify_checksum_file_matches_expected(
                 &checksum,
                 &path,
+                &tmp.path().join(ARTIFACT),
                 ARTIFACT,
                 Some(&format!("sha256:{}", "0".repeat(64))),
             )
             .unwrap_err()
             .to_string();
         assert!(err.contains("does not match expected checksum"), "{err}");
+    }
+
+    /// A signed sha512 checksum file cannot be compared with GitHub's sha256 asset digest, so
+    /// the downloaded artifact itself has to match it. Skipping the check let `mise lock`
+    /// record a re-uploaded artifact as signature-verified.
+    #[test]
+    fn test_verify_checksum_file_hashes_artifact_when_algorithms_differ() {
+        const ARTIFACT: &str = "tool_linux_amd64";
+
+        let tmp = tempfile::TempDir::new().unwrap();
+        let artifact = tmp.path().join(ARTIFACT);
+        std::fs::write(&artifact, "published").unwrap();
+        let sums = tmp.path().join("SHA512SUMS");
+        let digest = crate::hash::file_hash_prog::<sha2::Sha512>(&artifact, None).unwrap();
+        std::fs::write(&sums, format!("{digest}  {ARTIFACT}\n")).unwrap();
+
+        let backend = AquaBackend::from_arg(BackendArg::new(
+            "tool".to_string(),
+            Some("aqua:owner/repo".to_string()),
+        ));
+        let checksum: AquaChecksum = serde_json::from_str(r#"{"algorithm":"sha512"}"#).unwrap();
+        // the asset digest follows a re-upload, the signed file does not
+        let verify = || {
+            let api_digest = crate::hash::file_hash_sha256(&artifact, None).unwrap();
+            backend.verify_checksum_file_matches_expected(
+                &checksum,
+                &sums,
+                &artifact,
+                ARTIFACT,
+                Some(&format!("sha256:{api_digest}")),
+            )
+        };
+
+        verify().unwrap();
+
+        std::fs::write(&artifact, "replaced").unwrap();
+        let err = format!("{:?}", verify().unwrap_err());
+        assert!(err.contains("does not match downloaded"), "{err}");
     }
 
     /// A checksum file listing several other filenames, but not the requested one, must not
@@ -5108,6 +5540,63 @@ slsa_provenance:
             !AquaBackend::security_features(&pkg, &[])
                 .contains(&SecurityFeature::Slsa { level: None })
         );
+    }
+
+    #[test]
+    fn slsa_source_repository_follows_the_recipe() {
+        let pkg = |slsa: &str| {
+            pkg_from_yaml(&format!(
+                "type: github_release\nrepo_owner: owner\nrepo_name: tool\nslsa_provenance:\n  type: github_release\n  asset: tool.intoto.jsonl\n{slsa}"
+            ))
+        };
+        assert_eq!(slsa_source_repository(&pkg("")), "owner/tool");
+        assert_eq!(
+            slsa_source_repository(&pkg("  repo_name: releases\n")),
+            "owner/releases"
+        );
+        assert_eq!(
+            slsa_source_repository(&pkg("  source_uri: github.com/owner/source\n")),
+            "github.com/owner/source"
+        );
+    }
+
+    #[test]
+    fn selected_release_tag_needs_a_release_or_a_known_tag() {
+        let release = pkg_from_yaml(
+            "type: github_release\nrepo_owner: owner\nrepo_name: tool\nasset: tool.tar.gz\n",
+        );
+        let http = pkg_from_yaml(
+            "type: http\nrepo_owner: owner\nrepo_name: tool\nurl: https://example.com/tool-{{.SemVer}}.tar.gz\n",
+        );
+        // The asset was found in the release `v1.2.3` names.
+        assert_eq!(
+            selected_release_tag(&release, "v1.2.3", None).as_deref(),
+            Some("v1.2.3")
+        );
+        // A URL that worked for `v1.2.3` says nothing about the tag.
+        assert_eq!(selected_release_tag(&http, "v1.2.3", None), None);
+        assert_eq!(selected_release_tag(&http, "v1.2.3", Some("1.2.3")), None);
+        assert_eq!(
+            selected_release_tag(&http, "v1.2.3", Some("v1.2.3")).as_deref(),
+            Some("v1.2.3")
+        );
+    }
+
+    #[test]
+    fn slsa_source_tag_follows_the_recipe() {
+        let pkg = |slsa: &str| {
+            pkg_from_yaml(&format!(
+                "type: github_release\nrepo_owner: owner\nrepo_name: tool\nversion_prefix: tool-\nslsa_provenance:\n  type: github_release\n  asset: tool.intoto.jsonl\n{slsa}"
+            ))
+        };
+        let tag = Some("tool-1.2.3");
+        assert_eq!(slsa_source_tag(&pkg(""), tag), tag);
+        assert_eq!(slsa_source_tag(&pkg(""), None), None);
+        assert_eq!(
+            slsa_source_tag(&pkg("  source_tag: release-1.2.3\n"), None),
+            Some("release-1.2.3")
+        );
+        assert_eq!(slsa_source_tag(&pkg("  source_tag: \"-\"\n"), tag), None);
     }
 
     #[test]
@@ -5648,5 +6137,62 @@ no_asset: true
             pkg.replacements.get("linux").map(String::as_str),
             Some("unknown-linux-gnu")
         );
+    }
+
+    #[test]
+    fn test_bin_paths_include_darwin_universal_layout() {
+        // fastfetch 2.70.0 ships `fastfetch-macos-universal.tar.gz` where the registry
+        // templates a per-architecture asset directory.
+        let mut pkg = AquaPackage::default();
+        pkg.repo_owner = "fastfetch-cli".to_string();
+        pkg.repo_name = "fastfetch".to_string();
+        pkg.asset = "fastfetch-{{.OS}}-{{.Arch}}.{{.Format}}".to_string();
+        pkg.format = "tar.gz".to_string();
+        pkg.replacements
+            .insert("darwin".to_string(), "macos".to_string());
+        pkg.replacements
+            .insert("arm64".to_string(), "aarch64".to_string());
+        pkg.files = vec![aqua_registry::AquaFile {
+            name: "fastfetch".to_string(),
+            src: Some("{{.AssetWithoutExt}}/usr/bin/fastfetch".to_string()),
+            ..Default::default()
+        }];
+        let install = Path::new("/installs/fastfetch/2.70.0");
+        let paths = AquaBackend::candidate_bin_paths_for_platform(
+            &pkg, "2.70.0", install, "darwin", "arm64",
+        )
+        .unwrap();
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("fastfetch-macos-aarch64/usr/bin"),
+                PathBuf::from("fastfetch-macos-universal/usr/bin"),
+            ]
+        );
+        // other platforms are unchanged
+        let paths = AquaBackend::candidate_bin_paths_for_platform(
+            &pkg, "2.70.0", install, "linux", "arm64",
+        )
+        .unwrap();
+        assert_eq!(paths.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_make_bins_executable_falls_back_to_universal_layout() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let universal = dir
+            .path()
+            .join("fastfetch-macos-universal/usr/bin/fastfetch");
+        std::fs::create_dir_all(universal.parent().unwrap()).unwrap();
+        std::fs::write(&universal, "").unwrap();
+        std::fs::set_permissions(&universal, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let expected = dir.path().join("fastfetch-macos-aarch64/usr/bin/fastfetch");
+
+        AquaBackend::make_bins_executable(&[expected], std::slice::from_ref(&universal)).unwrap();
+
+        let mode = std::fs::metadata(&universal).unwrap().permissions().mode();
+        assert_ne!(mode & 0o111, 0);
     }
 }

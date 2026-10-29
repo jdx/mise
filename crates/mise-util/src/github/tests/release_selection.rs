@@ -1,6 +1,15 @@
 use super::*;
 
 #[test]
+fn cache_keys_omit_api_url_credentials() {
+    // The key names a persisted cache file, and its path is logged; a
+    // credential in `api_url` must not be spelled in it.
+    let api = "https://bot:t0ken@ghe.example.com/api/v3";
+    assert!(!releases_cache_key(api, "owner/foo", true).contains("t0ken"));
+    assert!(!release_cache_key(api, "owner/foo", "v1.0.0", false).contains("t0ken"));
+}
+
+#[test]
 fn releases_cache_key_separates_the_suffix_collision() {
     let api = "https://api.github.com";
 
@@ -26,6 +35,30 @@ fn releases_cache_key_separates_the_suffix_collision() {
     assert_eq!(
         releases_cache_key(api, "owner/foo", true),
         releases_cache_key(api, "owner/foo", true)
+    );
+}
+
+#[test]
+fn release_cache_key_separates_names_kebab_case_collapses() {
+    let api = "https://api.github.com";
+    let key = release_cache_key(api, "hasura/graphql-engine", "v2.40.0", false);
+    // Kebab-casing turns `/`, `-`, `.`, `_` and a case change into one `-`, so
+    // these would all share the persisted entry of one repository's release.
+    for (repo, tag) in [
+        ("hasura-graphql/engine", "v2.40.0"),
+        ("hasura/graphqlEngine", "v2.40.0"),
+        ("hasura/graphql.engine", "v2.40.0"),
+        ("hasura/graphql-engine-v2", "40.0"),
+    ] {
+        assert_ne!(
+            key,
+            release_cache_key(api, repo, tag, false),
+            "{repo} {tag}"
+        );
+    }
+    assert_eq!(
+        key,
+        release_cache_key(api, "hasura/graphql-engine", "v2.40.0", false)
     );
 }
 

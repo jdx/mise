@@ -279,10 +279,12 @@ impl TasksValidate {
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
 
-        // A `git::` file left unfetched (experimental is off) can't be read, so its usage
-        // header and file are not checked; the rest of the task's TOML still is.
-        let unfetched = TaskFetcher::is_unfetched_git_task(task);
-        if unfetched {
+        // A remote file left unfetched (a `git::` file with experimental off, or any remote
+        // file of project config in safe mode) can't be read, so its usage header and file
+        // are not checked; the rest of the task's TOML still is.
+        let unfetched = TaskFetcher::is_unfetched_remote_task(task);
+        if TaskFetcher::is_unfetched_git_task(task) && !crate::config::Settings::get().experimental
+        {
             issues.push(ValidationIssue {
                 task: task.name.clone(),
                 severity: Severity::Warning,
@@ -292,6 +294,18 @@ impl TasksValidate {
                 details: Some(
                     "Enable it with `mise settings experimental=true` to validate the file"
                         .to_string(),
+                ),
+            });
+        } else if unfetched {
+            issues.push(ValidationIssue {
+                task: task.name.clone(),
+                severity: Severity::Warning,
+                category: "safe_mode".to_string(),
+                message:
+                    "Task file is a remote source, which safe mode does not fetch; not validated"
+                        .to_string(),
+                details: Some(
+                    "Run `mise tasks validate` without MISE_SAFE to validate the file".to_string(),
                 ),
             });
         }
@@ -487,7 +501,7 @@ impl TasksValidate {
         // monorepo the daemon may be declared by a subproject, or a same-named
         // one in the caller's project may not be the one that would start.
         let scoped = match &task.config_root {
-            Some(root) => crate::daemons::runtime::config_for_root(config, root).await,
+            Some(root) => crate::daemons::glue::config_for_root(config, root).await,
             None => Ok(config.clone()),
         };
         // A malformed declaration fails the run, so it has to fail validation
@@ -882,7 +896,10 @@ impl TasksValidate {
 
         // Check if task has no run entries and no file
         // Allow tasks with dependencies but no run entries (meta/group tasks)
+        // An empty `run_windows` beside a `run` is a deliberate Windows skip, not a missing command
+        let skips_on_windows = task.run_windows_declared && !task.run.is_empty();
         if task.run().is_empty()
+            && !skips_on_windows
             && task.file.is_none()
             && task.depends.is_empty()
             && task.depends_post.is_empty()

@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+echo 'name={{ "one" }}' >tmpl
+cat <<EOT >mise.toml
+[dotfiles]
+"~/.rendered" = { source = "tmpl", mode = "template" }
+EOT
+
+assert_not_contains "mise dot apply --yes 2>&1" "was edited since"
+
+# A new render over an untouched target is the normal case.
+echo 'name={{ "two" }}' >tmpl
+assert_not_contains "mise dot apply --yes 2>&1" "was edited since"
+assert "cat $HOME/.rendered" "name=two"
+
+# Editing the rendered target first warns, then overwrites.
+echo 'extra=1' >>"$HOME/.rendered"
+echo 'name={{ "three" }}' >tmpl
+assert_contains "mise dot apply --yes 2>&1" "was edited since mise last wrote it"
+assert "cat $HOME/.rendered" "name=three"
+
+# A target that predates mise has no record, so there is nothing to compare.
+echo 'name={{ "other" }}' >tmpl2
+echo "hand written" >"$HOME/.preexisting"
+cat <<EOT >>mise.toml
+"~/.preexisting" = { source = "tmpl2", mode = "template" }
+EOT
+assert_not_contains "mise dot apply --yes 2>&1" "was edited since"
+assert "cat $HOME/.preexisting" "name=other"
+
+# Bytes that are not UTF-8 are an edit too.
+echo 'name={{ "four" }}' >tmpl
+printf '\xff' >>"$HOME/.rendered"
+assert_contains "mise dot apply --yes 2>&1" "was edited since mise last wrote it"

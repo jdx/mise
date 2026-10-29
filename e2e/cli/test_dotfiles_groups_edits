@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# A group holds edits next to its whole-file entries. They apply only while the
+# group is selected, and a relative source starts at the group root.
+
+DOTS="$HOME/.dotfiles"
+mkdir -p "$DOTS/common" "$DOTS/work" "$DOTS/templates"
+echo "common rc" >"$DOTS/common/.commonrc"
+cat <<'TOML' >"$DOTS/templates/private.toml"
+[env]
+MISE_GITHUB_TOKEN = "your_github_token"
+TOML
+
+cat <<'TOML' >mise.toml
+[dotfile_groups.common]
+root = "common"
+mode = "copy"
+
+[dotfile_groups.common.entries]
+"~/.config/mise/conf.d/private.local.toml/seed" = { source = "../templates/private.toml", merge = "missing", permissions = "0600" }
+
+[dotfile_groups.work]
+root = "work"
+
+[dotfile_groups.work.entries]
+"~/.workrc/path" = { line = "export WORK=1" }
+
+[bootstrap]
+dotfile_groups = ["common"]
+TOML
+target="$HOME/.config/mise/conf.d/private.local.toml"
+
+# the selected group deploys its files and applies its merge, from a source
+# relative to the group root
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/.commonrc" "common rc"
+assert_contains "cat $target" "your_github_token"
+assert "stat -c %a $target" "600"
+# the walk does not also deploy the tree's other files over the edit's file
+assert_fail "test -e $HOME/private.toml"
+assert_contains "mise dot status --verbose" "merge:seed"
+# the deselected group's edit is not applied
+assert_fail "test -e $HOME/.workrc"
+
+# the user's value survives later applies
+sed -i 's/your_github_token/ghp_secret/' "$target"
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $target" "ghp_secret"
+
+# selecting the other group applies its edit and stops applying the first's
+sed -i 's/dotfile_groups = \["common"\]/dotfile_groups = ["work"]/' mise.toml
+rm "$target"
+assert_succeed "mise dot apply --yes"
+assert "cat $HOME/.workrc" "export WORK=1"
+assert_fail "test -e $target"
+assert_not_contains "mise dot status --verbose" "merge:seed"
+
+# unapplying a group removes its files, never what its edits wrote
+sed -i 's/dotfile_groups = \["work"\]/dotfile_groups = ["common", "work"]/' mise.toml
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $target" "your_github_token"
+assert_succeed "mise dot unapply --group common --yes"
+assert_fail "test -e $HOME/.commonrc"
+assert_contains "cat $target" "your_github_token"
+
+# a key that only a whole-file entry takes refuses the group
+# schema: invalid
+cat <<'TOML' >mise.toml
+[dotfile_groups.common]
+root = "common"
+
+[dotfile_groups.common.entries]
+"~/.workrc/path" = { line = "export WORK=1", mode = "copy" }
+TOML
+assert_contains "mise dot status 2>&1" "mode applies to whole-file entries"

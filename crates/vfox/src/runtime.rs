@@ -11,6 +11,7 @@ pub(crate) struct Runtime {
     pub(crate) env_type: Option<String>,
     pub(crate) version: String,
     pub(crate) plugin_dir_path: PathBuf,
+    pub(crate) cache_dir_path: Option<PathBuf>,
 }
 
 static RUNTIME: Lazy<Mutex<Runtime>> = Lazy::new(|| {
@@ -20,21 +21,32 @@ static RUNTIME: Lazy<Mutex<Runtime>> = Lazy::new(|| {
         env_type: None,
         version: "0.6.0".to_string(), // https://github.com/version-fox/vfox/releases
         plugin_dir_path: PathBuf::new(),
+        cache_dir_path: None,
     })
 });
 
 impl Runtime {
-    pub(crate) fn get(plugin_dir_path: PathBuf, env_type_override: Option<&str>) -> Runtime {
+    pub(crate) fn get(
+        plugin_dir_path: PathBuf,
+        cache_dir_path: Option<PathBuf>,
+        env_type_override: Option<&str>,
+    ) -> Runtime {
         let mut runtime = RUNTIME.lock().unwrap().clone();
         runtime.plugin_dir_path = plugin_dir_path;
+        runtime.cache_dir_path = cache_dir_path;
         if let Some(env_type) = env_type_override {
             runtime.env_type = Some(env_type.to_string());
         }
         runtime
     }
 
-    pub(crate) fn with_platform(plugin_dir_path: PathBuf, os: &str, arch: &str) -> Runtime {
-        let mut runtime = Self::get(plugin_dir_path, None);
+    pub(crate) fn with_platform(
+        plugin_dir_path: PathBuf,
+        cache_dir_path: Option<PathBuf>,
+        os: &str,
+        arch: &str,
+    ) -> Runtime {
+        let mut runtime = Self::get(plugin_dir_path, cache_dir_path, None);
         runtime.os = os.to_string();
         runtime.arch = arch.to_string();
         runtime.env_type = None; // target libc is unknown in cross-platform context
@@ -75,5 +87,6 @@ impl UserData for Runtime {
         fields.add_field_method_get("envType", |_, t| Ok(t.env_type.clone()));
         fields.add_field_method_get("version", |_, t| Ok(t.version.clone()));
         fields.add_field_method_get("pluginDirPath", |_, t| Ok(t.plugin_dir_path.clone()));
+        fields.add_field_method_get("cacheDirPath", |_, t| Ok(t.cache_dir_path.clone()));
     }
 }

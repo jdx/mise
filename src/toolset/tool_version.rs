@@ -182,9 +182,16 @@ impl ToolVersion {
         opts: &ResolveOptions,
     ) -> Result<Self> {
         let install_env = request.options().core.install_env;
-        let mut tv =
-            crate::env::with_install_env(install_env, Self::resolve_(config, request, opts))
-                .await?;
+        let ba = request.ba().clone();
+        let resolve =
+            crate::toolset::with_safe_mode_tool_scope(&ba, Self::resolve_(config, request, opts));
+        let mut tv = crate::env::with_install_env(install_env, resolve).await?;
+        // Only the request has been validated so far. The version it resolved to came from a
+        // version list, a release tag or the lockfile, and for these requests it is what
+        // `logical_pathname` names the install, download and cache directories by.
+        if tv.request.uses_resolved_version_as_pathname() {
+            tool_request::validate_resolved_version(&tv.version)?;
+        }
         if tv.uv_lock.is_some() || crate::backend::pipx::has_selected_python(&tv).unwrap_or(false) {
             Box::pin(
                 crate::backend::pipx::PIPXBackend::from_arg(tv.ba().clone())
@@ -294,7 +301,7 @@ impl ToolVersion {
     /// Whether a command that runs tools may leave this lazy request unresolved
     /// rather than wait on remote version lists for a tool nobody has run yet.
     /// Installing the tool resolves the request then.
-    fn defers_missing_lazy(request: &ToolRequest, opts: &ResolveOptions) -> bool {
+    pub(crate) fn defers_missing_lazy(request: &ToolRequest, opts: &ResolveOptions) -> bool {
         opts.defer_missing_lazy_tools
             && !opts.latest_versions
             && request.options().lazy == Some(true)
@@ -851,6 +858,30 @@ impl ToolVersion {
             }
             _ => (),
         }
+
+        // An explicit release-age cutoff in the past pins a moving channel to the release it
+        // pointed at then (it may need the network, so offline, and prefer-offline for a config entry, leave it be). The built-in default and a cutoff in the future (how
+        // `--minimum-release-age 0s` turns the cooldown off) leave the channel alone.
+        let v = match opts.before_date {
+            Some(before)
+                if !opts.before_date_from_default
+                    && before < Timestamp::now()
+                    && !Settings::get().offline()
+                    && !opts.offline =>
+            {
+                backend
+                    .channel_for_cutoff(
+                        config,
+                        &v,
+                        before,
+                        Settings::get().prefer_offline()
+                            && !matches!(request.source(), ToolSource::Argument),
+                    )
+                    .await?
+                    .unwrap_or(v)
+            }
+            _ => v,
+        };
 
         let build = |v| Ok(Self::new(request.clone(), v));
 

@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+# version_date_expr gives http versions a created_at, so minimum_release_age can
+# hold them back; version_date_url and version_date_next_expr read a paged listing.
+
+FIXTURE_DIR="$TMPDIR/http-version-dates"
+mkdir -p "$FIXTURE_DIR"
+cat <<'JSON' >"$FIXTURE_DIR/releases.json"
+{"releases":[
+  {"version":"1.0.0","published":"2024-01-02T03:04:05Z"},
+  {"version":"2.0.0","published":"2024-05-06"},
+  {"version":"3.0.0","published":"Thu, 15 Oct 2026 11:33:41 GMT"}
+]}
+JSON
+cat <<'JSON' >"$FIXTURE_DIR/page1.json"
+{"items":[{"name":"r/1.0.0","created":"2024-01-02T03:04:05Z"}],"next":"page2.json"}
+JSON
+cat <<'JSON' >"$FIXTURE_DIR/page2.json"
+{"items":[{"name":"r/2.0.0","created":"2024-05-06T07:08:09Z"}]}
+JSON
+cat <<'JSON' >"$FIXTURE_DIR/escape.json"
+{"items":[],"next":"http://127.0.0.1:1/page2.json"}
+JSON
+
+start_http_server --dir "$FIXTURE_DIR"
+BASE="http://localhost:$HTTP_PORT"
+
+cat <<TOML >mise.toml
+[tools."http:dated"]
+version = "latest"
+url = "$BASE/{{ version }}"
+version_list_url = "$BASE/releases.json"
+version_expr = 'map(fromJSON(body).releases, { #.version })'
+version_date_expr = 'map(fromJSON(body).releases, { [#.version, #.published] })'
+TOML
+
+# An RFC 3339 timestamp and a plain date stay as written; an HTTP date is normalized.
+assert_contains "mise ls-remote --json http:dated" '"created_at":"2024-01-02T03:04:05Z"'
+assert_contains "mise ls-remote --json http:dated" '"created_at":"2024-05-06"'
+assert_contains "mise ls-remote --json http:dated" '"created_at":"2026-10-15T11:33:41Z"'
+
+# The dates are what the cooldown reads: a cutoff between two releases picks the older one.
+assert "mise latest http:dated --minimum-release-age 2024-03-01" "1.0.0"
+assert "mise latest http:dated --minimum-release-age 2025-01-01" "2.0.0"
+
+# Dates come from a second, paged document.
+cat <<TOML >mise.toml
+[tools."http:paged"]
+version = "latest"
+url = "$BASE/{{ version }}"
+version_list_url = "$BASE/releases.json"
+version_expr = 'map(fromJSON(body).releases, { #.version })'
+version_date_url = "$BASE/page1.json"
+version_date_next_expr = 'fromJSON(body).next == nil ? nil : hasPrefix(fromJSON(body).next, "http") ? fromJSON(body).next : "$BASE/" + fromJSON(body).next'
+version_date_expr = 'map(flatten(map(bodies, { fromJSON(#).items })), { [split(#.name, "/")[1], #.created] })'
+TOML
+assert_contains "mise ls-remote --json http:paged" '"created_at":"2024-01-02T03:04:05Z"'
+assert_contains "mise ls-remote --json http:paged" '"created_at":"2024-05-06T07:08:09Z"'
+# 3.0.0 is not in the date source, so it stays undated.
+assert_not_contains "mise ls-remote --json http:paged" '2026-10-15'
+
+# A next page on another host would receive the request headers, so it is refused.
+sed -i "s|page1.json|escape.json|; s|http:paged|http:escape|" mise.toml
+assert_fail_contains "mise ls-remote http:escape" "not on the host"
+
+# The date options mean nothing without the expression that reads them.
+cat <<TOML >mise.toml
+[tools."http:orphan"]
+version = "latest"
+url = "$BASE/{{ version }}"
+version_list_url = "$BASE/releases.json"
+version_expr = 'map(fromJSON(body).releases, { #.version })'
+version_date_url = "$BASE/page1.json"
+TOML
+assert_fail_contains "mise ls-remote http:orphan" "version_date_next_expr"
+
+# A next-page expression has nothing to page without a version_date_url.
+cat <<TOML >mise.toml
+[tools."http:nourl"]
+version = "latest"
+url = "$BASE/{{ version }}"
+version_list_url = "$BASE/releases.json"
+version_expr = 'map(fromJSON(body).releases, { #.version })'
+version_date_expr = 'map(fromJSON(body).releases, { [#.version, #.published] })'
+version_date_next_expr = 'nil'
+TOML
+assert_fail_contains "mise ls-remote http:nourl" "requires"

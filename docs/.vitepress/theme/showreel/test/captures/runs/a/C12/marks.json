@@ -1,6 +1,1 @@
-[
-  { "name": "start", "t": 0.542591 },
-  { "name": "ci-first", "t": 2.325604 },
-  { "name": "ci-skip", "t": 5.608628 },
-  { "name": "end", "t": 7.40963 }
-]
+[{"name":"start","t":0.544165},{"name":"ci-first","t":2.327306},{"name":"ci-skip","t":5.609854},{"name":"end","t":7.410953}]

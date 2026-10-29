@@ -25,6 +25,9 @@ use std::sync::{Arc, OnceLock, RwLock};
 
 // settings are generated from settings.toml in the project root
 // make sure you run `mise run render` after updating settings.toml
+mod paranoid;
+pub use paranoid::{Paranoid, ParanoidCategory};
+
 include!(concat!(env!("OUT_DIR"), "/settings.rs"));
 
 pub enum SettingsType {
@@ -39,6 +42,7 @@ pub enum SettingsType {
     SetString,
     IndexMap,
     BoolOrString,
+    BoolOrList,
 }
 
 pub struct SettingsMeta {
@@ -155,32 +159,7 @@ pub enum SystemPackagesOstree {
     Layer,
 }
 
-/// How task output is presented. mise's task runner resolves it further; see
-/// `TaskOutputExt` there.
-#[derive(
-    Debug,
-    Default,
-    Clone,
-    Copy,
-    PartialEq,
-    strum::Display,
-    strum::EnumString,
-    strum::EnumIs,
-    serde::Serialize,
-    serde::Deserialize,
-)]
-#[serde(rename_all = "kebab-case")]
-#[strum(serialize_all = "kebab-case")]
-pub enum TaskOutput {
-    Interleave,
-    KeepOrder,
-    #[default]
-    Prefix,
-    Replacing,
-    Timed,
-    Quiet,
-    Silent,
-}
+pub use mise_config::task::TaskOutput;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PythonUvVenvAuto {
@@ -381,21 +360,28 @@ fn remove_empty_nested_settings(table: &mut toml::Table, prefix: &str) {
     });
 }
 
-/// Replace secret values in a serialized settings table.
+/// Whether a setting or environment variable named `name` holds a credential,
+/// judged by the shape of the name: it ends in `_token`, `_key`, `_secret` or
+/// `_password`, in any case (`task.cache.remote_token`, `sops.age_key`,
+/// `MISE_FORGEJO_TOKEN`). Deciding by shape rather than by a list keeps a
+/// credential added later hidden by default. Names that hold a path, a flag or
+/// a command (`age_key_file`, `gh_cli_tokens`) do not match.
+pub fn is_secret_name(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    ["_token", "_key", "_secret", "_password"]
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
+}
+
+/// Replace secret values in a serialized settings table: every string value,
+/// at any depth, whose key [`is_secret_name`].
 pub fn redact_settings_table(table: &mut toml::Table) {
-    let Some(cache) = table
-        .get_mut("task")
-        .and_then(toml::Value::as_table_mut)
-        .and_then(|task| task.get_mut("cache"))
-        .and_then(toml::Value::as_table_mut)
-    else {
-        return;
-    };
-    if cache.contains_key("remote_token") {
-        cache.insert(
-            "remote_token".to_string(),
-            toml::Value::String("[redacted]".to_string()),
-        );
+    for (key, value) in table.iter_mut() {
+        match value {
+            toml::Value::Table(nested) => redact_settings_table(nested),
+            toml::Value::String(s) if is_secret_name(key) => *s = "[redacted]".to_string(),
+            _ => {}
+        }
     }
 }
 
@@ -446,6 +432,24 @@ where
         "false" | "no" | "0" => Ok(false),
         _ => Ok(true),
     }
+}
+
+/// Deserialize one path or a list of paths, so a setting that took a single path can take several
+/// without breaking the configs that already name one.
+fn path_or_paths<'de, D>(deserializer: D) -> Result<Vec<PathBuf>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(PathBuf),
+        Many(Vec<PathBuf>),
+    }
+    Ok(match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(path) => vec![path],
+        OneOrMany::Many(paths) => paths,
+    })
 }
 
 fn set_by_comma<T, C>(input: &str) -> Result<C, <T as FromStr>::Err>

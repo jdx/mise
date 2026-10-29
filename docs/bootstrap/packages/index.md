@@ -69,6 +69,7 @@ prerequisites, package names, and the commands mise runs.
 | [`aur`](/bootstrap/packages/aur.html)                       | Arch-based Linux with `yay` or `paru`             | No                                                  | No                 | No                                        |
 | [`brew`](/bootstrap/packages/brew.html)                     | macOS on Apple Silicon, Linux x86_64 and arm64    | No; use a versioned formula such as `postgresql@17` | No                 | Import and prune                          |
 | [`brew-cask`](/bootstrap/packages/brew-cask.html)           | macOS; font casks on Linux                        | No                                                  | No                 | Prune casks mise installed                |
+| [`choco`](/bootstrap/packages/choco.html)                   | Windows with Chocolatey; run elevated             | Yes                                                 | No                 | No                                        |
 | [`dnf`](/bootstrap/packages/dnf.html)                       | Fedora, RHEL, and derivatives                     | Yes                                                 | No                 | No                                        |
 | [`flatpak`](/bootstrap/packages/flatpak.html)               | Linux with `flatpak`; system-wide installation    | No                                                  | No                 | No                                        |
 | [`flatpak-user`](/bootstrap/packages/flatpak.html)          | Linux with `flatpak`; per-user installation       | No                                                  | No                 | No                                        |
@@ -273,7 +274,7 @@ prompt but does not supply a sudo password.
 `--update` refreshes the manager's package metadata first, for example with
 `apt-get update`, `apk add --update-cache`, `dnf install --refresh`,
 `pacman -Sy`, `zypper refresh`, `scoop update`, or `winget source update`.
-`brew`, `brew-cask`, `macos-app`, `flatpak`, `mas`, and `snap` ignore it.
+`brew`, `brew-cask`, `choco`, `macos-app`, `flatpak`, `mas`, and `snap` ignore it.
 
 Packages named on the command line, such as `apt:curl`, are installed without
 being recorded in a config file, and an unavailable manager is an error.
@@ -383,7 +384,8 @@ fails and prints the command to run yourself. If `sudo` is not installed, mise
 falls back to `run0` (systemd 256+) and then `doas`; if none is installed, it
 asks you to run the command as root. Set
 [`system_packages.elevate_with`](/configuration/settings.html#system_packages.elevate_with)
-to pin one, such as `run0`.
+to pin one, such as `run0`, or to an empty string to run commands as your user
+without any elevator, as on Termux.
 
 Set [`system_packages.sudo`](/configuration/settings.html#system_packages.sudo)
 to `false` to forbid elevation. Commands that need root then fail and print the
@@ -400,8 +402,8 @@ Other managers handle privileges differently:
   ([brew](/bootstrap/packages/brew.html#the-prefix)). Casks may need it for
   pkg installers and some install steps
   ([brew-cask](/bootstrap/packages/brew-cask.html#supported-artifacts)).
-- `nix`, `mas`, `scoop`, and `winget` never use sudo. A Windows installer can
-  still raise its own UAC prompt.
+- `nix`, `mas`, `scoop`, `winget`, and `choco` never use sudo. A Windows installer can
+  still raise its own UAC prompt, and `choco` needs an elevated terminal.
 - Package plugins never use sudo and must not elevate themselves.
 
 ## Use in CI {#ci-usage}

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# An unknown mise.toml key warns with where it is and the known key it most likely meant.
+
+# schema: invalid
+cat <<'EOF' >mise.toml
+[tool]
+node = "22"
+
+[settings]
+experimantal = true
+EOF
+assert_contains "mise env 2>&1" "mise.toml:1:2: tool (did you mean tools?)"
+assert_contains "mise env 2>&1" "mise.toml:5:1: settings.experimantal (did you mean experimental?)"
+
+# A key nothing is close to still warns, without a suggestion.
+# schema: invalid
+cat <<'EOF' >mise.toml
+zzzzzz = 1
+EOF
+assert_contains "mise env 2>&1" "mise.toml:1:1: zzzzzz"
+assert_not_contains "mise env 2>&1" "did you mean"

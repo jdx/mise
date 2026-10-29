@@ -75,6 +75,11 @@ pub(crate) struct Watch {
 }
 
 impl Watch {
+    /// `mise watch -- --help` prints this command's own help and runs nothing the project defines.
+    pub(crate) fn only_prints_help(&self) -> bool {
+        matches!(self.task.as_deref(), Some("-h" | "--help"))
+    }
+
     pub(crate) async fn run(self) -> Result<()> {
         if let Some(task) = &self.task {
             if task == "-h" {

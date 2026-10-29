@@ -228,6 +228,7 @@ export const sidebar: SidebarItem[] = [
           { text: "aur", link: "/bootstrap/packages/aur" },
           { text: "brew", link: "/bootstrap/packages/brew" },
           { text: "brew-cask", link: "/bootstrap/packages/brew-cask" },
+          { text: "choco", link: "/bootstrap/packages/choco" },
           { text: "dnf", link: "/bootstrap/packages/dnf" },
           { text: "flatpak", link: "/bootstrap/packages/flatpak" },
           { text: "macos-app", link: "/bootstrap/packages/macos-app" },
@@ -300,6 +301,8 @@ export const sidebar: SidebarItem[] = [
     collapsed: true,
     items: [
       { text: "mise.toml", link: "/configuration" },
+      { text: "mise.toml reference", link: "/configuration/reference" },
+      { text: "mise.toml playground", link: "/configuration/playground" },
       { text: "Config environments", link: "/configuration/environments" },
       { text: "Settings", link: "/configuration/settings" },
       { text: "Config variables", link: "/configuration/vars" },

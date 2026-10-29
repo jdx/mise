@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 
 # An unknown value for a setting with fixed choices is an error, not a panic.
+# The harness pins lockfile_mode to merge through the environment, which would
+# override the mode this test selects in config.
+unset MISE_LOCKFILE_MODE
 cat >mise.toml <<'TOML'
 [tools]
 dummy = "1"
@@ -23,6 +26,7 @@ dummy = "1"'
 
 # A bad value already in a config file can still be fixed with mise settings.
 mkdir -p ~/.config/mise
+# schema: invalid
 cat >~/.config/mise/config.toml <<'TOML'
 [settings]
 windows_shim_mode = "file"

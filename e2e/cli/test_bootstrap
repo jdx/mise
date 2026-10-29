@@ -192,6 +192,27 @@ assert_fail "test -f pre_tools_hook"
 assert_fail "test -f post_tools_hook"
 assert_fail "test -f final_hook"
 
+# a hook prints its description, else the first line of its command; --verbose prints it all
+cat <<'EOF' >mise.toml
+[bootstrap.hooks.pre-defaults]
+description = "Tidy the root copy"
+run = """
+echo described_first_line
+echo described_second_line
+"""
+
+[bootstrap.hooks.final]
+run = """
+echo plain_first_line
+echo plain_second_line
+"""
+EOF
+assert_contains "mise bootstrap --yes --skip packages --skip tools 2>&1" "Tidy the root copy"
+assert_not_contains "mise bootstrap --yes --skip packages --skip tools 2>&1" "echo described_first_line"
+assert_contains "mise bootstrap --yes --skip packages --skip tools 2>&1" '$ echo plain_first_line'
+assert_contains "mise --verbose bootstrap --yes --skip packages --skip tools 2>&1" "echo described_second_line"
+assert_contains "mise bootstrap --dry-run --skip packages --skip tools 2>&1" "echo described_second_line"
+
 # bootstrap hook commands render with the declaring config's Tera context
 rm -f "$MISE_CONFIG_DIR/bootstrap-hook-rendered" bootstrap-hook-root-rendered
 cat <<'EOF' >mise.toml
@@ -530,3 +551,33 @@ EOF
 rm -f mise_dir_hook_ran
 assert_contains "mise bootstrap --dry-run" "echo mise-dir > mise_dir_hook_ran"
 assert_fail "cat mise_dir_hook_ran"
+
+# a namespaced `system:bootstrap` task is not the special `bootstrap` task
+cat <<EOF2 >mise.toml
+[tasks."system:bootstrap"]
+run = "touch namespaced_ran"
+EOF2
+assert_succeed "mise bootstrap --dry-run"
+assert_not_contains "mise bootstrap --dry-run 2>&1" "task bootstrap found"
+assert_fail "test -f namespaced_ran"
+
+# a file task named `bootstrap.sh` is the special `bootstrap` task
+rm -f mise.toml
+mkdir -p mise-tasks
+cat <<'EOF2' >mise-tasks/bootstrap.sh
+#!/usr/bin/env bash
+echo file-ran >file_bootstrap_ran
+EOF2
+chmod +x mise-tasks/bootstrap.sh
+assert_succeed "mise bootstrap --yes"
+assert "cat file_bootstrap_ran" "file-ran"
+
+# a task aliased to `bootstrap` is the special `bootstrap` task
+rm -rf mise-tasks
+cat <<EOF2 >mise.toml
+[tasks.setup]
+alias = "bootstrap"
+run = "echo alias-ran > aliased_bootstrap_ran"
+EOF2
+assert_succeed "mise bootstrap --yes"
+assert "cat aliased_bootstrap_ran" "alias-ran"

@@ -548,6 +548,71 @@ fn github_contents_url(owner: &str, repo: &str, commit: &str, path: &str) -> Str
     )
 }
 
+/// What mise-versions says about a packslip project's signed release list.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PackslipList {
+    /// The repository's default branch has no list at that path.
+    Absent,
+    /// The list's exact text, which the caller verifies as it would the file
+    /// from GitHub.
+    Present(String),
+}
+
+#[derive(serde::Deserialize)]
+struct PackslipListResponse {
+    present: bool,
+    text: Option<String>,
+}
+
+/// A packslip project's signed release list, from mise-versions rather than
+/// raw.githubusercontent.com, which rate-limits by IP address and so fails
+/// on shared CI runners even though nearly every repository has no list at
+/// all. `sub` is the project's path inside its repository, if it has one.
+/// `Ok(None)` is a 404, a private or unknown repository the mirror does not
+/// serve, or a mirror turned off: the caller reads the file from GitHub with
+/// the user's credentials. Errors as in [`github_release`].
+pub async fn github_packslip_list(
+    repo: &str,
+    sub: Option<&str>,
+) -> eyre::Result<Option<PackslipList>> {
+    if !enabled_for_github_repo(repo) {
+        return Ok(None);
+    }
+    let Some((owner, repo_name)) = split_github_repo(repo) else {
+        return Ok(None);
+    };
+    let url = github_packslip_list_url(owner, repo_name, sub);
+    let ctx = VersionsHostLogContext::github_repo("github_packslip_list", repo);
+    let Some(response) = fetch_json_unless_not_found::<PackslipListResponse>(&url, ctx).await?
+    else {
+        return Ok(None);
+    };
+    let list = match (response.present, response.text) {
+        (false, _) => PackslipList::Absent,
+        (true, Some(text)) => PackslipList::Present(text),
+        (true, None) => bail!("invalid response from {url}: a list with no text"),
+    };
+    log_versions_host_trace(
+        ctx,
+        "success",
+        &format!("present={}", matches!(list, PackslipList::Present(_))),
+    );
+    Ok(Some(list))
+}
+
+fn github_packslip_list_url(owner: &str, repo: &str, sub: Option<&str>) -> String {
+    let mut url = format!(
+        "https://mise-versions.jdx.dev/api/github/repos/{}/{}/packslip-list",
+        encode_path_segment(owner),
+        encode_path_segment(repo),
+    );
+    for segment in sub.into_iter().flat_map(|sub| sub.split('/')) {
+        url.push('/');
+        url.push_str(&encode_path_segment(segment));
+    }
+    url
+}
+
 fn github_releases_url(owner: &str, repo: &str, page: u32) -> String {
     format!(
         "https://mise-versions.jdx.dev/api/github/repos/{}/{}/releases?page={page}",
@@ -652,7 +717,11 @@ where
         return Ok(None);
     }
     if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
+        let body = http::read_bounded_error_body(
+            resp,
+            crate::network::fetch_remote_versions_timeout(&Settings::get()),
+        )
+        .await;
         let message = versions_host_error_message(status.as_u16(), &body);
         log_versions_host_trace(
             ctx,
@@ -667,11 +736,23 @@ where
     }
     // The body is read first so that a connection lost while reading it is
     // mise-versions being unavailable, like one lost before the status;
-    // only a body that arrived and doesn't parse is a bad answer.
-    let body = resp.bytes().await.map_err(|err| VersionsHostUnavailable {
-        status: None,
-        message: format!("reading {url}: {err:#}"),
-    })?;
+    // only a body that arrived and doesn't parse, or is too large to hold,
+    // is a bad answer. A body still arriving when the download budget runs out
+    // is a slow host, not a bad answer.
+    let body = match http::buffer_body(resp).await {
+        Ok(resp) => resp.bytes().await?,
+        Err(err)
+            if err.downcast_ref::<reqwest::Error>().is_some()
+                || err.downcast_ref::<http::BodyTimedOut>().is_some() =>
+        {
+            return Err(VersionsHostUnavailable {
+                status: None,
+                message: format!("reading {url}: {err:#}"),
+            }
+            .into());
+        }
+        Err(err) => return Err(err),
+    };
     serde_json::from_slice(&body)
         .map(Some)
         .map_err(|err| eyre::eyre!("invalid response from {url}: {err}"))
@@ -933,11 +1014,14 @@ fn pin_github_release_assets(
     Ok(())
 }
 
-/// API asset URLs whose asset ID mise-versions chose. Only these need their
-/// identity confirmed before use (see `github::checked_api_asset_url`);
-/// GitHub's own release data, such as for private repos, is taken as given.
-/// Filled when mise-versions data is pinned, and again from each
-/// `GithubAsset::from_versions_host` when a release comes out of a cache.
+/// API asset URLs whose asset ID and digest mise-versions chose. Only these
+/// need their identity confirmed before use (see `github::checked_api_asset_url`),
+/// and only their digest may not pick a kept download (see
+/// `digest_download_pin`); GitHub's own release data, such as for private
+/// repos, is taken as given.
+/// Filled when mise-versions data is pinned, again from each
+/// `GithubAsset::from_versions_host` when a release comes out of a cache, and
+/// from every lockfile that is read (see `remember_locked_asset_api_url`).
 static MIRRORED_ASSET_API_URLS: LazyLock<std::sync::Mutex<HashSet<String>>> =
     LazyLock::new(Default::default);
 
@@ -948,8 +1032,36 @@ pub fn remember_mirrored_asset_api_url(url: &str) {
         .insert(url.to_string());
 }
 
+/// Have a lockfile's `url_api` confirmed before use like a mirrored one. A
+/// lockfile records the asset ID as it was resolved, not who chose it, so an
+/// ID mise-versions supplied at `mise lock` time would otherwise pass as
+/// GitHub's own in every later install from that lockfile. Only GitHub release
+/// assets are registered: the other API URLs a lockfile can hold (other
+/// forges, GitHub Enterprise, repository contents) name no asset ID GitHub
+/// could be asked about.
+pub fn remember_locked_asset_api_url(url: &str) {
+    let is_asset = url::Url::parse(url).is_ok_and(|parsed| {
+        let segments: Vec<_> = parsed.path_segments().into_iter().flatten().collect();
+        parsed.host_str() == Some("api.github.com")
+            && matches!(segments[..], ["repos", _, _, "releases", "assets", _])
+    });
+    if is_asset {
+        remember_mirrored_asset_api_url(url);
+    }
+}
+
 pub fn is_mirrored_asset_api_url(url: &str) -> bool {
     MIRRORED_ASSET_API_URLS.lock().unwrap().contains(url)
+}
+
+/// A release asset's `digest`, when it may serve as a download pin, which hands
+/// back a kept file with no request. A digest mise-versions supplied may not:
+/// it could choose which kept download is installed, so it is only compared
+/// with the file after the download. `url_api` is the asset's API URL.
+pub fn digest_download_pin(digest: Option<&str>, url_api: Option<&str>) -> Option<String> {
+    digest
+        .filter(|_| !url_api.is_some_and(is_mirrored_asset_api_url))
+        .map(str::to_string)
 }
 
 fn valid_github_release_tag(release: &GithubRelease, tag: &str) -> bool {
@@ -982,7 +1094,10 @@ fn pinned_browser_download_url(
         return None;
     }
     if github_repo_segment_matches(o, owner) && github_repo_segment_matches(r, repo) {
-        return Some(url.to_string());
+        // Rebuilt from the checked parts. The parser accepts other spellings
+        // (`HTTPS://`, a leading space, userinfo, `API.github.com`) that a
+        // prefix test downstream would not recognize as GitHub's own host.
+        return Some(format!("https://github.com/{}", segments.join("/")));
     }
     Some(format!(
         "https://github.com/{}/{}/{}",
@@ -1007,7 +1122,10 @@ fn pinned_asset_api_url(url: &str, owner: &str, repo: &str) -> Option<String> {
         return None;
     }
     if github_repo_segment_matches(o, owner) && github_repo_segment_matches(r, repo) {
-        return Some(url.to_string());
+        // Rebuilt from the checked parts, as above.
+        return Some(format!(
+            "https://api.github.com/repos/{o}/{r}/releases/assets/{id}"
+        ));
     }
     Some(format!(
         "https://api.github.com/repos/{}/{}/releases/assets/{id}",
@@ -1198,6 +1316,30 @@ mod tests {
     }
 
     #[test]
+    fn test_github_packslip_list_url() {
+        assert_eq!(
+            github_packslip_list_url("jdx", "hk", None),
+            "https://mise-versions.jdx.dev/api/github/repos/jdx/hk/packslip-list"
+        );
+        assert_eq!(
+            github_packslip_list_url("o", "r", Some("tools/my tool")),
+            "https://mise-versions.jdx.dev/api/github/repos/o/r/packslip-list/tools/my%20tool"
+        );
+    }
+
+    #[test]
+    fn test_packslip_list_response_deserialize() {
+        let absent: PackslipListResponse =
+            serde_json::from_str(r#"{"present":false,"fetched_at":"2026-10-26T12:00:00Z"}"#)
+                .unwrap();
+        assert!(!absent.present && absent.text.is_none());
+        let present: PackslipListResponse =
+            serde_json::from_str(r#"{"present":true,"text":"{}\n","fetched_at":"x"}"#).unwrap();
+        assert!(present.present);
+        assert_eq!(present.text.as_deref(), Some("{}\n"));
+    }
+
+    #[test]
     fn test_github_contents_deserialize() {
         let entries: Vec<GithubContentsEntry> = serde_json::from_str(
             r#"[{"name":"SKILL.md","path":"skills/fnox/SKILL.md","type":"file","size":12,"sha":"a"},{"name":"refs","path":"skills/fnox/refs","type":"dir","sha":"b"}]"#,
@@ -1205,6 +1347,140 @@ mod tests {
         .unwrap();
         assert_eq!(entries[1].name, "refs");
         assert_eq!(entries[1].kind, "dir");
+    }
+
+    /// A versions-host reply whose body never finishes within the download
+    /// budget is a host that is temporarily unavailable, so callers fall back
+    /// to api.github.com or a cached copy. An oversized reply stays a bad
+    /// answer.
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_slow_body_is_temporarily_unavailable() {
+        use confique::Layer;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        /// Holds the settings lock for the test and restores the settings after.
+        struct SettingsGuard {
+            _lock: std::sync::MutexGuard<'static, ()>,
+        }
+        impl Drop for SettingsGuard {
+            fn drop(&mut self) {
+                crate::testing::reset_settings(None);
+            }
+        }
+
+        let _settings = SettingsGuard {
+            _lock: crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK),
+        };
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.http_download_timeout = Some("200ms".to_string());
+        settings.http_retries = Some(0);
+        crate::testing::reset_settings(Some(settings));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let mut request = [0u8; 4096];
+            let _ = socket.read(&mut request).await;
+            let _ = socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 1000000\r\nConnection: close\r\n\r\n",
+                )
+                .await;
+            while socket.write_all(b" ").await.is_ok() {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        });
+        let url = format!("http://127.0.0.1:{port}/gh/v1/repos/jdx/mise/releases/v1.0.0");
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            fetch_json_unless_not_found::<serde_json::Value>(
+                &url,
+                VersionsHostLogContext::github_release("jdx/mise", "v1.0.0"),
+            ),
+        )
+        .await
+        .expect("the body deadline did not end the read");
+
+        let err = result.unwrap_err();
+        assert!(is_temporarily_unavailable(&err), "{err:#}");
+        assert!(retries_on_github(&err), "{err:#}");
+    }
+
+    /// The mirror's three answers to a packslip list lookup, and the failures
+    /// that send a caller on to raw.githubusercontent.com.
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_github_packslip_list_answers() {
+        use confique::Layer;
+
+        struct SettingsGuard {
+            _lock: std::sync::MutexGuard<'static, ()>,
+        }
+        impl Drop for SettingsGuard {
+            fn drop(&mut self) {
+                crate::testing::reset_settings(None);
+            }
+        }
+        let _settings = SettingsGuard {
+            _lock: crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK),
+        };
+        let mut server = mockito::Server::new_async().await;
+        let mut replacements = indexmap::IndexMap::new();
+        replacements.insert("https://mise-versions.jdx.dev".to_string(), server.url());
+        let mut settings = mise_settings::SettingsPartial::empty();
+        settings.url_replacements = Some(replacements);
+        settings.http_retries = Some(0);
+        crate::testing::reset_settings(Some(settings));
+
+        let route = |path: &str| format!("/api/github/repos/o/{path}");
+        server
+            .mock("GET", route("none/packslip-list").as_str())
+            .with_body(r#"{"present":false,"fetched_at":"2026-10-26T12:00:00Z"}"#)
+            .create_async()
+            .await;
+        server
+            .mock("GET", route("listed/packslip-list/tools/x").as_str())
+            .with_body(
+                r#"{"present":true,"text":"{\"a\":1}\n","fetched_at":"2026-10-26T12:00:00Z"}"#,
+            )
+            .create_async()
+            .await;
+        server
+            .mock("GET", route("private/packslip-list").as_str())
+            .with_status(404)
+            .create_async()
+            .await;
+        server
+            .mock("GET", route("limited/packslip-list").as_str())
+            .with_status(503)
+            .create_async()
+            .await;
+        server
+            .mock("GET", route("empty/packslip-list").as_str())
+            .with_body(r#"{"present":true,"fetched_at":"x"}"#)
+            .create_async()
+            .await;
+
+        assert_eq!(
+            github_packslip_list("o/none", None).await.unwrap(),
+            Some(PackslipList::Absent)
+        );
+        assert_eq!(
+            github_packslip_list("o/listed", Some("tools/x"))
+                .await
+                .unwrap(),
+            Some(PackslipList::Present("{\"a\":1}\n".to_string()))
+        );
+        // Not served here: the caller asks GitHub with the user's token.
+        assert_eq!(github_packslip_list("o/private", None).await.unwrap(), None);
+        // The mirror could not tell, which is not "no list".
+        let err = github_packslip_list("o/limited", None).await.unwrap_err();
+        assert!(retries_on_github(&err), "{err:#}");
+        // A list with no text is a bad answer, not an absent list.
+        let err = github_packslip_list("o/empty", None).await.unwrap_err();
+        assert!(!retries_on_github(&err), "{err:#}");
     }
 
     #[test]
@@ -1351,6 +1627,61 @@ mod tests {
             pin("https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/x").is_none()
         );
         assert!(pin("https://api.github.com/repos/jdx/mise-test-fixtures/git/blobs/1").is_none());
+
+        // Spellings the parser accepts leave the pin in one canonical form, so
+        // nothing downstream takes them for a custom API.
+        for odd in [
+            "HTTPS://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1",
+            " https://api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1",
+            "https://API.github.com/repos/jdx/mise-test-fixtures/releases/assets/1",
+            "https://x@api.github.com/repos/jdx/mise-test-fixtures/releases/assets/1",
+            "https://api.github.com:443/repos/jdx/mise-test-fixtures/releases/assets/1?a=b#c",
+        ] {
+            assert_eq!(pin(odd).as_deref(), Some(fixture), "{odd:?}");
+        }
+    }
+
+    #[test]
+    fn test_remember_locked_asset_api_url() {
+        let asset = "https://api.github.com/repos/jdx/locked/releases/assets/1";
+        assert!(!is_mirrored_asset_api_url(asset));
+        remember_locked_asset_api_url(asset);
+        assert!(is_mirrored_asset_api_url(asset));
+        // Nothing GitHub could be asked about as a release asset.
+        for other in [
+            "https://api.github.com/repos/jdx/locked/contents/releases/assets/1?ref=v1.0.0",
+            "https://api.github.com/repos/jdx/locked/tarball/v1.0.0",
+            "https://github.example.com/api/v3/repos/jdx/locked/releases/assets/1",
+            "https://gitlab.com/api/v4/projects/jdx%2Flocked/releases/assets/1",
+        ] {
+            remember_locked_asset_api_url(other);
+            assert!(!is_mirrored_asset_api_url(other), "{other}");
+        }
+    }
+
+    #[test]
+    fn test_pinned_browser_download_url_is_canonical() {
+        let fixture =
+            "https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz";
+        for odd in [
+            "HTTPS://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
+            " https://github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
+            "https://GitHub.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
+            "https://x@github.com/jdx/mise-test-fixtures/releases/download/v1.0.0/hello-world.tar.gz",
+        ] {
+            assert_eq!(
+                pinned_browser_download_url(
+                    odd,
+                    "jdx",
+                    "mise-test-fixtures",
+                    "v1.0.0",
+                    "hello-world.tar.gz"
+                )
+                .as_deref(),
+                Some(fixture),
+                "{odd:?}"
+            );
+        }
     }
 
     #[test]

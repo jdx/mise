@@ -225,6 +225,10 @@ Firewall management is Linux-only. On macOS and Windows, `mise bootstrap` and
 `mise bootstrap firewall apply` fails there, and
 `mise bootstrap firewall status` reports an unsupported platform.
 
+mise still parses the section on every platform. An invalid value, such as
+`backend = "iptables"`, is an error on a Mac that loads the config, not only on
+the Linux machines that apply it.
+
 To avoid the warning, keep the section in a config that only Linux machines
 load, such as a [machine module](/bootstrap/modules.html) that only Linux
 machines select, or a `mise.linux.toml` file with

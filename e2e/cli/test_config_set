@@ -109,3 +109,32 @@ printf '[env]\n_.python.venv = { path = ".venv", create = true }\n' >mise.toml
 mise config set env._.python.venv.path .venv2
 assert "mise config get env._.python.venv.path" ".venv2"
 assert "mise config get env._.python.venv.create" "true"
+
+# A key with a dot in its name is quoted, as in TOML, and stays one key.
+printf '[tasks."hello.sh"]\nrun = "echo hi"\n' >mise.toml
+mise config set 'tasks."hello.sh".dir' sub
+assert "mise config get 'tasks.\"hello.sh\".dir'" "sub"
+assert "mise config get 'tasks.\"hello\\u002esh\".run'" "echo hi"
+assert_not_contains "cat mise.toml" "[tasks.hello"
+# A shell that removed the quotes still reaches the one task named hello.sh.
+assert "mise config get tasks.hello.sh.dir" "sub"
+mise config set tasks.hello.sh.dir other
+assert "mise config get 'tasks.\"hello.sh\".dir'" "other"
+assert_not_contains "cat mise.toml" "[tasks.hello"
+mise config set tasks.hello.sh.description greeting
+assert "mise config get 'tasks.\"hello.sh\".description'" "greeting"
+assert_not_contains "cat mise.toml" "[tasks.hello"
+
+# A setting reached through a quoted key still gets its type.
+printf '' >mise.toml
+mise config set 'settings."jobs"' 4
+assert "mise config get settings.jobs" "4"
+assert_contains "cat mise.toml" "jobs = 4"
+
+# Quoted keys keep their edges even where the dotted name exists.
+printf '[_]\n"a.b" = "keep"\n' >mise.toml
+mise config set '_."a"."b"' new
+assert "mise config get '_.\"a.b\"'" "keep"
+# Unquoted, the keys as split win once both spellings exist.
+assert "mise config get '_.a.b'" "new"
+assert "mise config get '_.\"a\".\"b\"'" "new"

@@ -20,6 +20,10 @@ def run(binary, args, env, cwd):
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=240,
     )
     print(result.stdout, flush=True)
+    if result.returncode != 0:
+        # Pester drops a native command's stdout and shows only stderr, so a
+        # Windows failure would otherwise say nothing about why mise failed.
+        print(result.stdout, file=sys.stderr, flush=True)
     assert result.returncode == 0, f"{args} failed ({result.returncode})"
     return result.stdout
 

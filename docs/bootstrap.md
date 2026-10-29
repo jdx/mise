@@ -61,7 +61,12 @@ mise edits your shell startup files.
 
 The same configuration also works in a project `mise.toml`, but a project file
 needs [`mise trust`](/cli/trust.html) before mise reads it. The global config
-does not.
+does not. A project file with only `[tasks]` loads without trust, but its tasks
+can replace yours by name, so the `bootstrap` task runs only when it and every
+task it reaches (its `depends`, and tasks its `run` entries name) come from the
+global config or a trusted project. Other project tasks do not matter. If one of
+them is untrusted, trust the project, run `mise bootstrap` from another
+directory, or pass `--skip task`.
 
 ## What you can declare {#what-goes-where}
 
@@ -195,6 +200,7 @@ These flags change what the selected parts do:
 | ------------------ | -------------------------------------------------------------------------------------------------------------- |
 | `--update`         | Refresh package metadata before installing packages, and update [declared repositories](/bootstrap/repos.html) |
 | `--force-dotfiles` | Replace existing files that conflict with whole-file `[dotfiles]` entries instead of stopping                  |
+| `--prune-dotfiles` | Remove files that dotfile groups deployed and no active entry deploys now, like `mise dot apply --prune`       |
 | `--skip-dirty`     | Skip `[bootstrap.repos]` checkouts with local changes instead of failing                                       |
 | `--prompt-secrets` | Prompt for [secret inputs](/bootstrap/secrets.html) missing from the environment                               |
 | `--prompt-vars`    | Ask for [`[vars]` with a `prompt`](/configuration/vars.html#prompt) that have no saved answer                  |
@@ -203,7 +209,7 @@ These flags change what the selected parts do:
 The metadata refresh depends on the manager: apk adds `--update-cache`; apt runs
 `apt-get update`; dnf, nix, and AUR helpers add `--refresh`; pacman runs
 `pacman -Sy`; zypper runs `zypper refresh`; scoop runs `scoop update`; and
-winget runs `winget source update`. Homebrew, Flatpak, `macos-app`, and mas
+winget runs `winget source update`. Homebrew, Chocolatey, Flatpak, `macos-app`, and mas
 have no separate refresh.
 
 ## Preview and inspect {#previewing-changes}
@@ -285,6 +291,37 @@ run = [
 [bootstrap.hooks.final]
 run = "mise exec -- gh auth status"
 ```
+
+On Windows, `run_windows` replaces `run`. A table with only `run_windows` does
+nothing on other platforms:
+
+```toml
+[bootstrap.hooks.post-tools]
+run = "mise exec -- node --version"
+run_windows = "mise exec -- node.exe --version"
+```
+
+A table can also set `description`. `mise bootstrap` prints it in place of the
+command, which is useful when the command is a long script:
+
+```toml
+[bootstrap.hooks.final]
+description = "Remove the root copy of pam_reattach if Homebrew removed the module"
+run = '''
+copy=/usr/local/lib/pam/pam_reattach.so
+if [ ! -e /opt/homebrew/lib/pam/pam_reattach.so ] && [ -e "$copy" ]; then
+  sudo rm -f "$copy"
+fi
+'''
+```
+
+Without a `description`, mise prints `$` and the first line of the command, cut
+to the width of the terminal, as it does for [tasks](/tasks/). With a `run`
+array, the description is printed once, before the first command. `--verbose`
+prints each full command, and so does `--dry-run`, which shows what a real run
+would execute. When a [remote host's](/bootstrap/remote.html) own config and a shared config
+both have a hook for the same phase, mise combines their commands and prints
+them without the descriptions.
 
 The phases are `pre-packages`, `post-packages`, `pre-repos`, `post-repos`,
 `pre-dotfiles`, `post-dotfiles`, `pre-defaults`, `post-defaults`, `pre-user`,

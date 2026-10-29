@@ -19,7 +19,10 @@ fpm -s dir -t deb \
 	--maintainer "Jeff Dickey @jdx" \
 	mise/bin/mise=/usr/bin/mise \
 	mise/lib/mise-self-update-instructions.toml=/usr/lib/mise/mise-self-update-instructions.toml \
-	mise/man/man1/mise.1=/usr/share/man/man1/mise.1
+	mise/man/man1/mise.1=/usr/share/man/man1/mise.1 \
+	completions/mise.bash=/usr/share/bash-completion/completions/mise \
+	completions/_mise=/usr/share/zsh/site-functions/_mise \
+	completions/mise.fish=/usr/share/fish/vendor_completions.d/mise.fish
 
 tar -xvJf "dist/mise-$MISE_VERSION-linux-arm64.tar.xz"
 fpm -s dir -t deb \
@@ -32,7 +35,10 @@ fpm -s dir -t deb \
 	--maintainer "Jeff Dickey @jdx" \
 	mise/bin/mise=/usr/bin/mise \
 	mise/lib/mise-self-update-instructions.toml=/usr/lib/mise/mise-self-update-instructions.toml \
-	mise/man/man1/mise.1=/usr/share/man/man1/mise.1
+	mise/man/man1/mise.1=/usr/share/man/man1/mise.1 \
+	completions/mise.bash=/usr/share/bash-completion/completions/mise \
+	completions/_mise=/usr/share/zsh/site-functions/_mise \
+	completions/mise.fish=/usr/share/fish/vendor_completions.d/mise.fish
 
 mkdir -p dist/deb/pool/main
 cp -v ./*.deb dist/deb/pool/main

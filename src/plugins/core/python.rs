@@ -20,10 +20,8 @@ use crate::{Result, lock_file::LockFile};
 use crate::{dirs, file, plugins, sysconfig, versions_host};
 use async_trait::async_trait;
 use eyre::{bail, eyre};
-use flate2::read::GzDecoder;
 use itertools::Itertools;
 use std::collections::BTreeMap;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 use std::sync::{Arc, OnceLock};
@@ -265,21 +263,7 @@ impl PythonPlugin {
         }
     }
     fn python_build_definition_created_at(&self) -> eyre::Result<BTreeMap<String, String>> {
-        let output = crate::cmd!(
-            "git",
-            "-C",
-            self.python_build_path(),
-            "-c",
-            format!("safe.directory={}", self.python_build_path().display()),
-            "log",
-            "--format=%cI",
-            "--diff-filter=A",
-            "--name-only",
-            "--",
-            "plugins/python-build/share/python-build",
-        )
-        .read()?;
-        Ok(parse_python_build_definition_created_at(&output))
+        git_python_build_definition_created_at(&self.python_build_path())
     }
 
     /// Runs `python-build --definitions` from the pyenv clone, cloning or updating it first.
@@ -323,10 +307,7 @@ impl PythonPlugin {
             .get_or_try_init_async(async || {
                 let settings = Settings::get();
                 let url_path = python_precompiled_url_path(&settings);
-                let rsp = versions_host::python_precompiled(&url_path).await?;
-                let mut decoder = GzDecoder::new(rsp.as_ref());
-                let mut raw = String::new();
-                decoder.read_to_string(&mut raw)?;
+                let raw = versions_host::python_precompiled(&url_path).await?;
                 let platform = python_precompiled_platform();
                 let flavor = settings.python.precompiled_flavor.clone();
                 // order by version, whether it is a release candidate, date, and in the preferred order of install types
@@ -687,9 +668,13 @@ impl PythonPlugin {
             return Err(eyre!("Ref versions not supported for python"));
         }
         ctx.pr.set_message("python-build".into());
+        file::create_dir_all(tv.install_path())?;
         let mut cmd = CmdLineRunner::new(self.python_build_bin())
+            // python-build looks for its definition argument as a file first,
+            // so it must not start in the project's directory.
+            .current_dir(tv.install_path())
             .with_pr(ctx.pr.as_ref())
-            .arg(tv.version.as_str())
+            .arg(plugins::core::build_definition_name(&tv.version)?)
             .arg(tv.install_path())
             .envs(ctx.config.env().await?)
             .env_values(tv.install_env())
@@ -845,10 +830,7 @@ impl PythonPlugin {
 
         let platform = format!("{arch}-{os}");
         let url_path = format!("python-precompiled-{arch}-{os}.gz");
-        let rsp = versions_host::python_precompiled(&url_path).await?;
-        let mut decoder = GzDecoder::new(rsp.as_ref());
-        let mut raw = String::new();
-        decoder.read_to_string(&mut raw)?;
+        let raw = versions_host::python_precompiled(&url_path).await?;
 
         let flavor = settings.python.precompiled_flavor.clone();
 
@@ -1328,6 +1310,28 @@ fn python_build_version_infos(versions: impl IntoIterator<Item = VersionInfo>) -
         .filter(|v| !regex!(r"\dt(-dev)?$").is_match(&v.version))
         .sorted_by_cached_key(|v| python_version_sort_key(&v.version))
         .collect()
+}
+
+/// When each definition file first appeared in the pyenv clone at `repo`.
+fn git_python_build_definition_created_at(repo: &Path) -> eyre::Result<BTreeMap<String, String>> {
+    let output = crate::cmd!(
+        "git",
+        "-C",
+        repo.to_path_buf(),
+        "-c",
+        format!("safe.directory={}", repo.display()),
+        "log",
+        "--format=%cI",
+        // A definition made by copying or renaming another (`3.15.0` from `3.15.0rc3`) is not an
+        // addition to git's rename detection, so without this it would have no date at all.
+        "--no-renames",
+        "--diff-filter=A",
+        "--name-only",
+        "--",
+        "plugins/python-build/share/python-build",
+    )
+    .read()?;
+    Ok(parse_python_build_definition_created_at(&output))
 }
 
 fn parse_python_build_definition_created_at(output: &str) -> BTreeMap<String, String> {
@@ -1913,6 +1917,40 @@ mod tests {
 
         let opts = opts_with("patch_sysconfig", "true");
         assert!(PythonOptions::new(&opts).lockfile_options().is_empty());
+    }
+
+    #[test]
+    fn dates_definitions_that_git_sees_as_renames() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path();
+        let defs = repo.join("plugins/python-build/share/python-build");
+        std::fs::create_dir_all(&defs).unwrap();
+        let git = |date: &str, args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .arg("-C")
+                .arg(repo)
+                .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+                .args(["-c", "commit.gpgsign=false"])
+                .args(args)
+                .env("GIT_COMMITTER_DATE", date)
+                .env("GIT_AUTHOR_DATE", date)
+                .output()
+                .unwrap();
+            assert!(out.status.success(), "{args:?}: {out:?}");
+        };
+        git("2026-01-01T00:00:00Z", &["init", "-q"]);
+        let body = "install_package \"Python-3.15.0rc3\" \"https://example.com/py.tgz#abc\"\n";
+        std::fs::write(defs.join("3.15.0rc3"), body).unwrap();
+        git("2026-01-01T00:00:00Z", &["add", "."]);
+        git("2026-01-01T00:00:00Z", &["commit", "-q", "-m", "rc3"]);
+        std::fs::rename(defs.join("3.15.0rc3"), defs.join("3.15.0")).unwrap();
+        git("2026-02-02T00:00:00Z", &["add", "-A"]);
+        git("2026-02-02T00:00:00Z", &["commit", "-q", "-m", "final"]);
+
+        let created_at = git_python_build_definition_created_at(repo).unwrap();
+        // Git spells UTC `Z` or `+00:00` depending on its version, so compare instants.
+        let created: jiff::Timestamp = created_at["3.15.0"].parse().unwrap();
+        assert_eq!(created, "2026-02-02T00:00:00Z".parse().unwrap());
     }
 
     #[test]

@@ -139,6 +139,19 @@ impl NodePlugin {
                     bail!(
                         "precompiled node archive not found and locked mode requires the locked precompiled artifact"
                     )
+                } else if lock_pins_precompiled(
+                    &tv.lock_platforms,
+                    &self.get_platform_key(),
+                    &opts.binary_tarball_url,
+                ) {
+                    // The source tarball is another artifact, which the locked checksum
+                    // does not cover, so the download host must not be able to choose it
+                    // by answering 404 for the archive the lockfile pins.
+                    bail!(
+                        "precompiled node archive not found but mise.lock pins its checksum: {}\n\
+                         refusing to compile from source instead; run `mise lock node` to lock another artifact",
+                        opts.binary_tarball_url
+                    )
                 } else if Settings::get().node_compile(CompilePurpose::Inspect) != Some(false) {
                     if let Some(message) = node_flavor_not_found_message(opts) {
                         warn!("{message}");
@@ -284,7 +297,7 @@ impl NodePlugin {
                     info.url.as_deref() == Some(url.as_str())
                         && info.install.as_deref() == lockfile_install
                 })
-                .and_then(|info| info.checksum.clone());
+                .and_then(|info| info.pin_checksum().cloned());
             HTTP.download_file_stored(url.clone(), local, pinned.as_deref(), Some(ctx.pr.as_ref()))
                 .await?;
         }
@@ -381,8 +394,6 @@ impl NodePlugin {
         )
         .await?;
         // Node publishes SHASUMS256.txt.sig for releases on every line, not only 20 and later.
-        // Older releases that never published one are skipped by the 404 check in
-        // verify_with_gpg.
         if Settings::get().node.gpg_verify != Some(false) {
             self.verify_with_gpg(ctx, tv, &shasums_file, version, &tarball_name)
                 .await?;
@@ -404,14 +415,14 @@ impl NodePlugin {
         tarball_name: &str,
     ) -> Result<()> {
         let sig_file = shasums_file.with_extension("asc");
-        let sig_url = format!("{}.sig", self.shasums_url(v, tarball_name)?);
+        let shasums_url = self.shasums_url(v, tarball_name)?;
+        let sig_url = format!("{shasums_url}.sig");
         if let Err(e) = HTTP
             .download_file(sig_url, &sig_file, Some(ctx.pr.as_ref()))
             .await
         {
             if matches!(http::error_code(&e), Some(404)) {
-                warn!("gpg signature not found, skipping verification");
-                return Ok(());
+                return missing_signature(&shasums_url);
             }
             return Err(e);
         }
@@ -682,6 +693,7 @@ impl Backend for NodePlugin {
             ("lts/iron", "20"),
             ("lts/jod", "22"),
             ("lts/krypton", "24"),
+            ("lts/lithium", "26"),
             ("lts-argon", "4"),
             ("lts-boron", "6"),
             ("lts-carbon", "8"),
@@ -693,7 +705,8 @@ impl Backend for NodePlugin {
             ("lts-iron", "20"),
             ("lts-jod", "22"),
             ("lts-krypton", "24"),
-            ("lts", "24"),
+            ("lts-lithium", "26"),
+            ("lts", "26"),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -1000,9 +1013,41 @@ impl NodePlugin {
     ) -> Result<Option<String>> {
         let shasums_url = mirror.join(&format!("v{version}/SHASUMS256.txt"))?;
         let shasums_content = HTTP.get_text_cached(shasums_url.as_str()).await?;
+        // An install that finds a checksum in the lockfile does not call get_checksum,
+        // so this is where the signature behind a locked checksum is checked.
+        let settings = Settings::get();
+        if settings.node.verify && settings.node.gpg_verify != Some(false) {
+            self.verify_shasums_with_gpg(&shasums_url, &shasums_content)
+                .await?;
+        }
         Ok(hash::parse_shasums(&shasums_content)
             .get(filename)
             .map(|shasum| format!("sha256:{shasum}")))
+    }
+
+    /// `verify_with_gpg` for the `SHASUMS256.txt` that `mise lock` holds in memory. On an
+    /// error the caller locks the artifact without a checksum, so the install that follows
+    /// checks the signature itself and fails the same way.
+    async fn verify_shasums_with_gpg(&self, shasums_url: &Url, shasums: &str) -> Result<()> {
+        // `mise lock` asks once per target platform; fetch and check each signature once.
+        static VERIFIED: OnceLock<Mutex<BTreeMap<String, String>>> = OnceLock::new();
+        let mut verified = VERIFIED.get_or_init(Default::default).lock().await;
+        let key = shasums_url.to_string();
+        let digest = hash::hash_to_str(&shasums);
+        if verified.get(&key) == Some(&digest) {
+            return Ok(());
+        }
+        let result = match HTTP.get_bytes(format!("{shasums_url}.sig")).await {
+            Ok(signature) => gpg::verify_node(shasums.as_bytes(), signature.as_ref()),
+            Err(e) if matches!(http::error_code(&e), Some(404)) => missing_signature(shasums_url),
+            Err(e) => Err(e),
+        };
+        if let Err(e) = result {
+            warn_once!("not locking checksums from {shasums_url}: {e}");
+            return Err(e);
+        }
+        verified.insert(key, digest);
+        Ok(())
     }
 
     /// Map OS name from Platform to Node.js convention
@@ -1165,6 +1210,35 @@ fn mirror_url_for(node: &crate::config::settings::SettingsNode, filename: &str) 
     mirror
 }
 
+/// What to do when `SHASUMS256.txt.sig` is missing next to `shasums_url`.
+///
+/// The host that serves the archive and `SHASUMS256.txt` also answers the signature request,
+/// so its 404 cannot be what decides that a release is unsigned: a host that replaced both
+/// would only have to withhold the signature. A missing signature therefore fails, except on
+/// unofficial-builds, which signs none of its checksum files. Mirrors that do not copy the
+/// signatures need `node.gpg_verify = false`.
+///
+/// The error must not mention 404, not even in a URL: `fetch_binary` would take it for a
+/// missing archive and fall back to compiling from source.
+fn missing_signature(shasums_url: &Url) -> Result<()> {
+    ensure!(
+        !publishes_signatures(shasums_url),
+        "SHASUMS256.txt.sig not found, so SHASUMS256.txt cannot be verified\n\
+         A few early releases (such as 4.0.0 and 5.12.0) never published a signature.\n\
+         For those, or for a mirror that does not copy the signatures, skip the check with:\n  \
+         mise settings node.gpg_verify=false"
+    );
+    warn_once!("{shasums_url} is not signed, skipping signature verification");
+    Ok(())
+}
+
+/// Whether the host of `shasums_url` signs its `SHASUMS256.txt`. unofficial-builds does not;
+/// nodejs.org and every `node.mirror_url` are held to what nodejs.org publishes.
+fn publishes_signatures(shasums_url: &Url) -> bool {
+    let unofficial = Url::parse(UNOFFICIAL_NODE_MIRROR_URL).unwrap();
+    shasums_url.host_str() != unofficial.host_str()
+}
+
 fn node_flavor_not_found_message(opts: &BuildOpts) -> Option<String> {
     let settings = Settings::get();
     let flavor = settings.node.flavor.as_deref()?;
@@ -1256,6 +1330,22 @@ fn should_compile_from_source(
     } else {
         node_compile == Some(true)
     }
+}
+
+/// Whether mise.lock pins the checksum of the precompiled archive at `url`.
+///
+/// A source build is a different artifact, so `fetch_tarball` drops this pin and checks the
+/// tarball against the server's own SHASUMS256.txt. That is right when the user asked for a
+/// source build, but a 404 for the pinned archive must not be what selects it.
+fn lock_pins_precompiled(
+    lock_platforms: &BTreeMap<String, PlatformInfo>,
+    platform_key: &str,
+    url: &Url,
+) -> bool {
+    lock_platforms
+        .get(platform_key)
+        .filter(|pi| pi.install.is_none() && pi.url.as_deref() == Some(url.as_str()))
+        .is_some_and(|pi| pi.checksum.is_some())
 }
 
 #[derive(Debug, Deserialize)]
@@ -1372,6 +1462,57 @@ mod tests {
             "linux-x64",
             None
         ));
+    }
+
+    #[test]
+    fn test_lock_pins_precompiled_only_for_the_pinned_binary_archive() {
+        let url = "https://nodejs.org/dist/v22.0.0/node-v22.0.0-linux-x64.tar.gz";
+        let mut lock_platforms = BTreeMap::from([(
+            "linux-x64".to_string(),
+            PlatformInfo {
+                url: Some(url.to_string()),
+                checksum: Some("sha256:abc".to_string()),
+                ..Default::default()
+            },
+        )]);
+        let url = Url::parse(url).unwrap();
+        assert!(lock_pins_precompiled(&lock_platforms, "linux-x64", &url));
+        assert!(!lock_pins_precompiled(&lock_platforms, "linux-arm64", &url));
+
+        // Another mirror or flavor: the entry does not describe the archive asked for
+        let mirror = Url::parse("https://corp.example/node-v22.0.0-linux-x64.tar.gz").unwrap();
+        assert!(!lock_pins_precompiled(
+            &lock_platforms,
+            "linux-x64",
+            &mirror
+        ));
+
+        // A platform locked as a source build still compiles
+        lock_platforms.get_mut("linux-x64").unwrap().install = Some("source".to_string());
+        assert!(!lock_pins_precompiled(&lock_platforms, "linux-x64", &url));
+
+        let info = lock_platforms.get_mut("linux-x64").unwrap();
+        info.install = None;
+        info.checksum = None;
+        assert!(!lock_pins_precompiled(&lock_platforms, "linux-x64", &url));
+    }
+
+    #[test]
+    fn test_missing_signature_fails_except_on_unofficial_builds() {
+        let official = Url::parse("https://nodejs.org/dist/v20.11.0/SHASUMS256.txt").unwrap();
+        let err = missing_signature(&official).unwrap_err();
+        assert!(err.to_string().contains("node.gpg_verify=false"));
+        // fetch_binary reads any error that mentions 404 as a missing archive
+        assert_eq!(http::error_code(&err), None);
+        // A mirror is held to what nodejs.org publishes
+        let mirror = Url::parse("https://corp.example:404/node/v18.20.8/SHASUMS256.txt").unwrap();
+        let err = missing_signature(&mirror).unwrap_err();
+        assert_eq!(http::error_code(&err), None);
+        let unofficial = Url::parse(UNOFFICIAL_NODE_MIRROR_URL)
+            .unwrap()
+            .join("v24.14.0/SHASUMS256.txt")
+            .unwrap();
+        assert!(missing_signature(&unofficial).is_ok());
     }
 
     #[test]

@@ -123,6 +123,72 @@ pub(crate) async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> 
     fetch_checksum_from_file_with_headers(checksum_url, algo, &HeaderMap::new()).await
 }
 
+/// The checksum a publisher lists for `filename` in the SHASUMS-style file at `shasums_url`,
+/// for an install that has no checksum pinned. See [`fetch_published_checksum`].
+pub(crate) async fn fetch_published_checksum_from_shasums(
+    shasums_url: &str,
+    filename: &str,
+) -> Result<Option<String>> {
+    let algo = crate::backend::asset_matcher::detect_checksum_algorithm(&get_filename_from_url(
+        shasums_url,
+    ));
+    fetch_published_checksum(shasums_url, |content| {
+        hash::parse_shasums(content)
+            .get(filename)
+            .map(|h| format!("{algo}:{h}"))
+    })
+    .await
+}
+
+/// The checksum a publisher lists in the individual checksum file at `checksum_url`, for an
+/// install that has no checksum pinned. See [`fetch_published_checksum`].
+pub(crate) async fn fetch_published_checksum_from_file(
+    checksum_url: &str,
+    algo: &str,
+) -> Result<Option<String>> {
+    fetch_published_checksum(checksum_url, |content| {
+        parse_checksum_file_content(content, algo)
+    })
+    .await
+}
+
+/// Unlike the `fetch_checksum_from_*` helpers, which treat every failure as "no checksum",
+/// this fails unless the answer is clear: a checksum file that exists must list the artifact,
+/// and a failed request other than a 404 is an error, so a flaky or interfered-with request
+/// cannot turn the check off. Only a 404, a release that never published the file, gives
+/// `Ok(None)`.
+///
+/// This uses the uncached `get_text`: the in-process cache keeps only the message of a failed
+/// request, and recognizing a 404 by its message would also match a URL or version that
+/// happens to contain "404".
+async fn fetch_published_checksum(
+    checksum_url: &str,
+    parse: impl FnOnce(&str) -> Option<String>,
+) -> Result<Option<String>> {
+    let content = match HTTP.get_text(checksum_url).await {
+        Ok(content) => content,
+        Err(e) if is_not_found(&e) => return Ok(None),
+        Err(e) => {
+            return Err(e)
+                .wrap_err_with(|| format!("failed to fetch checksum from {checksum_url}"));
+        }
+    };
+    match parse(&content) {
+        Some(checksum) => Ok(Some(checksum)),
+        None => bail!("{checksum_url} does not list a checksum for this archive"),
+    }
+}
+
+/// Whether `e` is an HTTP 404 response, by its status rather than its message.
+fn is_not_found(e: &eyre::Report) -> bool {
+    e.chain().any(|cause| {
+        cause
+            .downcast_ref::<reqwest::Error>()
+            .and_then(reqwest::Error::status)
+            == Some(reqwest::StatusCode::NOT_FOUND)
+    })
+}
+
 fn parse_checksum_file_content(content: &str, algo: &str) -> Option<String> {
     // PowerShell Get-FileHash output:
     // Hash      : 7FDD...
@@ -396,6 +462,34 @@ where
     Fut: Future<Output = std::result::Result<T, E>>,
     E: VerifiableError,
 {
+    try_allowed_release_tags(
+        version,
+        version_prefix,
+        repo,
+        api_url,
+        known_tag,
+        |_| true,
+        resolver,
+    )
+    .await
+}
+
+/// [`try_release_tags`] over only the tags `allowed` accepts, hints included,
+/// for a tool whose options leave some of a version's spellings unlisted.
+pub(crate) async fn try_allowed_release_tags<F, Fut, T, E>(
+    version: &str,
+    version_prefix: Option<&str>,
+    repo: Option<&str>,
+    api_url: Option<&str>,
+    known_tag: Option<&str>,
+    allowed: impl Fn(&str) -> bool,
+    resolver: F,
+) -> Result<T>
+where
+    F: Fn(String) -> Fut,
+    Fut: Future<Output = std::result::Result<T, E>>,
+    E: VerifiableError,
+{
     let key = repo
         .zip(api_url)
         .map(|(repo, api_url)| resolved_tag_key(api_url, repo, version, version_prefix));
@@ -405,10 +499,11 @@ where
     let hints: IndexSet<String> = resolved
         .into_iter()
         .chain(known_tag.map(str::to_string))
+        .filter(|tag| allowed(tag))
         .collect();
     let generated = tag_candidates(version, version_prefix, repo)
         .into_iter()
-        .filter(|tag| !hints.contains(tag))
+        .filter(|tag| allowed(tag) && !hints.contains(tag))
         .map(|tag| (tag, false));
     let candidates = hints
         .iter()
@@ -842,6 +937,9 @@ pub(crate) fn install_artifact(
     if let Some(name) = lookup_with_fallback(opts, "rename_exe") {
         ensure_plain_bin_name("rename_exe", &name)?;
     }
+    let bin_path = lookup_with_fallback(opts, "bin_path")
+        .map(|template| render_bin_path(&template, tv))
+        .transpose()?;
 
     file::remove_all(&install_path)?;
     file::create_dir_all(&install_path)?;
@@ -870,9 +968,8 @@ pub(crate) fn install_artifact(
 
         // Determine the destination path with support for bin_path
         let rename_exe = lookup_with_fallback(opts, "rename_exe");
-        let dest = if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
-            let bin_path = template_string(&bin_path_template, tv);
-            let bin_dir = install_path.join(&bin_path);
+        let dest = if let Some(bin_path) = &bin_path {
+            let bin_dir = install_path.join(bin_path);
             file::create_dir_all(&bin_dir)?;
             if let Some(rename_to) = rename_exe {
                 bin_dir.join(rename_binary_name(decompressed_name, &rename_to))
@@ -894,9 +991,8 @@ pub(crate) fn install_artifact(
         file::make_executable(&dest)?;
     } else if format == file::ExtractionFormat::Raw {
         // Copy the file directly to the bin_path directory or install_path
-        if let Some(bin_path_template) = lookup_with_fallback(opts, "bin_path") {
-            let bin_path = template_string(&bin_path_template, tv);
-            let bin_dir = install_path.join(&bin_path);
+        if let Some(bin_path) = &bin_path {
+            let bin_dir = install_path.join(bin_path);
             file::create_dir_all(&bin_dir)?;
             let original_name = file_path.file_name().unwrap().to_string_lossy();
             let dest_name = lookup_with_fallback(opts, "rename_exe")
@@ -929,7 +1025,7 @@ pub(crate) fn install_artifact(
         // Auto-detect if we need strip_components=1 before extracting
         // Only do this if strip_components was not explicitly set by the user AND bin_path is not configured
         if strip_components.is_none()
-            && lookup_with_fallback(opts, "bin_path").is_none()
+            && bin_path.is_none()
             && let Ok(should_strip) = file::should_strip_components(file_path, format)
             && should_strip
         {
@@ -944,14 +1040,16 @@ pub(crate) fn install_artifact(
 
         // Extract with determined strip_components
         file::extract_archive(file_path, &install_path, format, &extract_opts)?;
+        // The steps below rename, chmod and link paths under the install
+        // directory by name, so a link the archive shipped must not lead out.
+        file::ensure_symlinks_stay_within(&install_path)?;
 
         // Extract just the repo name from tool_name (e.g., "opsgenie/opsgenie-lamp" -> "opsgenie-lamp")
         let full_tool_name = tv.ba().tool_name.as_str();
         let tool_name = full_tool_name.rsplit('/').next().unwrap_or(full_tool_name);
 
         // Determine search directory based on bin_path option
-        let explicit_bin_path = lookup_with_fallback(opts, "bin_path")
-            .map(|t| install_path.join(template_string(&t, tv)));
+        let explicit_bin_path = bin_path.as_ref().map(|p| install_path.join(p));
 
         // Handle bin= option for archives (renames executable to specified name)
         // bin= values are relative to install_path, so always use install_path or explicit bin_path
@@ -1063,7 +1161,8 @@ fn make_configured_bin_executable(search_dir: &Path, bin_name: &str) -> Result<(
 /// The checksum the lockfile records for this platform, if the entry describes
 /// the download of `url`. It names a kept download that can be reused, and is
 /// still checked after the download. An entry written for another URL, such as
-/// before a setting changed where the tool is fetched from, pins nothing.
+/// before a setting changed where the tool is fetched from, pins nothing, and
+/// neither does a checksum no download has confirmed (`checksum_source`).
 pub(crate) fn lock_checksum(
     tv: &crate::toolset::ToolVersion,
     platform_key: &str,
@@ -1073,7 +1172,7 @@ pub(crate) fn lock_checksum(
     if info.url.as_deref().is_some_and(|locked| locked != url) {
         return None;
     }
-    info.checksum.clone()
+    info.pin_checksum().cloned()
 }
 
 /// The checksum a tool pinned for this platform, in its options or in the
@@ -1086,7 +1185,7 @@ pub(crate) fn pinned_checksum(
     lookup_with_fallback(opts, "checksum").or_else(|| {
         tv.lock_platforms
             .get(platform_key)
-            .and_then(|platform| platform.checksum.clone())
+            .and_then(|platform| platform.pin_checksum().cloned())
     })
 }
 
@@ -1431,6 +1530,20 @@ pub(crate) fn ensure_plain_bin_name(option: &str, name: &str) -> eyre::Result<()
     Ok(())
 }
 
+/// Rejects a release asset name that is not a plain file name. The name comes
+/// from the forge's release JSON (a GitLab link label is free text) and is
+/// joined onto a download directory, so `../tool` or `/abs/tool` would
+/// otherwise write the download outside it.
+pub(crate) fn ensure_plain_asset_name(name: &str) -> eyre::Result<()> {
+    if !file::is_plain_file_name(name) {
+        bail!(
+            "release asset name {name:?} must be a plain file name \
+             (no path separators or parent directories)"
+        );
+    }
+    Ok(())
+}
+
 /// Rejects a configured binary path that is absolute or contains parent
 /// components, while preserving the established `bin = "bin/tool"` form.
 pub(crate) fn ensure_safe_relative_bin_path(option: &str, path: &str) -> eyre::Result<()> {
@@ -1441,6 +1554,31 @@ pub(crate) fn ensure_safe_relative_bin_path(option: &str, path: &str) -> eyre::R
         );
     }
     Ok(())
+}
+
+/// Rejects a configured `bin_path` that is absolute or contains parent
+/// components. It is joined onto the install directory and the result goes on
+/// PATH, so `/abs/dir` or `../dir` would otherwise put any directory there.
+/// Unlike `bin` it names a directory, so `.` (the install directory itself) and
+/// a leading `./` are allowed.
+pub(crate) fn ensure_safe_relative_bin_dir(option: &str, path: &str) -> eyre::Result<()> {
+    let normalized = path.replace('\\', "/");
+    let rest = normalized.trim_start_matches("./");
+    if !rest.is_empty() && rest != "." && !file::is_safe_relative_path(rest) {
+        bail!(
+            "{option}: '{path}' must be a directory inside the install directory \
+             (no absolute paths or parent directories)"
+        );
+    }
+    Ok(())
+}
+
+/// Renders the `bin_path` option, checking what it rendered to rather than the
+/// template. See [`ensure_safe_relative_bin_dir`].
+pub(crate) fn render_bin_path(template: &str, tv: &ToolVersion) -> eyre::Result<String> {
+    let bin_path = template_string(template, tv);
+    ensure_safe_relative_bin_dir("bin_path", &bin_path)?;
+    Ok(bin_path)
 }
 
 /// Renames `path` (named `file_name`) to `target` within `dir`, preserving any
@@ -2147,6 +2285,25 @@ mod tests {
                 ("custom".to_string(), "x".to_string()),
             ])
         );
+    }
+
+    #[test]
+    fn test_ensure_plain_asset_name() {
+        for ok in ["tool-linux-x64", "tool-1.0.0.tar.gz", "my tool.zip"] {
+            assert!(ensure_plain_asset_name(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../../.config/mise/conf.d/tool-linux-x64.toml",
+            "/abs/tool-linux-x64",
+            "sub/tool-linux-x64",
+            "..\\tool-linux-x64",
+        ] {
+            let err = ensure_plain_asset_name(bad).unwrap_err();
+            assert!(err.to_string().contains("plain file name"), "{bad}: {err}");
+        }
     }
 
     #[test]
@@ -3765,6 +3922,35 @@ bin = "tool.exe"
         );
         // Another tool's files are not rewritten as python's.
         assert_eq!(tool_link_path(&installs, &python, "ruby"), None);
+    }
+
+    #[test]
+    fn test_ensure_safe_relative_bin_dir() {
+        for ok in ["bin", "a/bin", "bin/", ".", "./", "./bin", ".\\bin", ""] {
+            assert!(
+                ensure_safe_relative_bin_dir("bin_path", ok).is_ok(),
+                "should accept {ok:?}"
+            );
+        }
+        for bad in [
+            "/abs/dir",
+            "/proc/self/cwd/evil",
+            "..",
+            "../evil",
+            "bin/../../evil",
+            "./../evil",
+            ".//abs/dir",
+            "..\\evil",
+            "\\abs\\dir",
+            "C:\\evil",
+            "C:evil",
+        ] {
+            let err = ensure_safe_relative_bin_dir("bin_path", bad).unwrap_err();
+            assert!(
+                err.to_string().contains("inside the install directory"),
+                "unexpected error for {bad:?}: {err}"
+            );
+        }
     }
 
     #[cfg(unix)]

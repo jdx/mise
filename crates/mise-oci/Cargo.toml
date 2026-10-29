@@ -1,0 +1,46 @@
+[package]
+name = "mise-oci"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "OCI registry client, layers, and image layout for mise"
+repository = "https://github.com/jdx/mise"
+include = ["src/**/*"]
+
+[dependencies]
+mise-config = { path = "../mise-config", version = "0.1" }
+zstd = "0.14"
+base64 = "0.23"
+eyre = "0.6"
+flate2 = "1"
+futures-util = "0.3"
+indexmap = { version = "2", features = ["serde"] }
+jdx-tar = "1"
+log = "0.4"
+mise-settings = { path = "../mise-settings", version = "2026" }
+mise-system = { path = "../mise-system", version = "0.1" }
+mise-ui = { path = "../mise-ui", version = "2026" }
+mise-util = { path = "../mise-util", version = "2026", default-features = false }
+reqwest = { version = "0.13", default-features = false, features = [
+  "json",
+  "form",
+  "gzip",
+  "zstd",
+  "charset",
+  "http2",
+  "socks",
+  "stream",
+  "system-proxy",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+tempfile = "3"
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io", "rt"] }
+url = "2"
+walkdir = "2"
+
+[dev-dependencies]
+filetime = "0.2"
+mockito = "1"

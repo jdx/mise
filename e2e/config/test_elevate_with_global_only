@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+# system_packages.elevate_with names the program mise runs to get root, so only
+# global config and the environment may set it, never a project, trusted or not.
+
+cat <<'EOF2' >mise.toml
+[settings]
+system_packages.elevate_with = "./attack/sudo"
+EOF2
+mise trust mise.toml
+assert_fail_contains "mise settings get system_packages.elevate_with" "ignored for security reasons"
+
+cat <<'EOF2' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+system_packages.elevate_with = "doas"
+EOF2
+assert_contains "mise settings get system_packages.elevate_with 2>/dev/null" "doas"
+assert_contains "MISE_SYSTEM_PACKAGES_ELEVATE_WITH=run0 mise settings get system_packages.elevate_with 2>/dev/null" "run0"

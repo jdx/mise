@@ -122,10 +122,11 @@ impl AttestationClientBuilder {
     pub fn build(self) -> Result<AttestationClient> {
         let mut headers = HeaderMap::new();
         headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_VALUE));
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .timeout(self.timeout.unwrap_or(DEFAULT_TIMEOUT))
-            .build()?;
+        let client = mise_tls::build_client(|| {
+            reqwest::Client::builder()
+                .default_headers(headers.clone())
+                .timeout(self.timeout.unwrap_or(DEFAULT_TIMEOUT))
+        })?;
 
         Ok(AttestationClient {
             client,
@@ -262,7 +263,14 @@ impl AttestationClient {
     /// The request must have no streaming body so it can be cloned per attempt —
     /// true for all GET calls here. Non-transient responses (incl. 4xx like 404)
     /// are returned as-is for the caller to interpret.
-    async fn send_with_retry(&self, request: reqwest::RequestBuilder) -> Result<HttpResponse> {
+    pub(crate) async fn send_with_retry(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> Result<HttpResponse> {
+        // Build once, so an error the builder holds (an invalid URL, say) is
+        // returned here: `RequestBuilder::try_clone` returns `None` for one,
+        // not only for a streaming body.
+        let request = request.build()?;
         let mut attempt = 1;
         loop {
             let req = request
@@ -275,7 +283,7 @@ impl AttestationClient {
             // whole delay. Each attempt either returns, errors out, or breaks
             // with the delay to wait before the next attempt.
             let delay = 'attempt: {
-                match req.send().await {
+                match self.client.execute(req).await {
                     Ok(response) => {
                         let status = response.status();
                         if !last && is_retryable_status(status) {
@@ -283,13 +291,18 @@ impl AttestationClient {
                                 .unwrap_or_else(|| backoff_delay(self.backoff_base, attempt));
                         }
                         let headers = response.headers().clone();
-                        match response.bytes().await {
-                            Ok(body) => {
+                        match read_body_limited(response).await {
+                            Ok(Some(body)) => {
                                 return Ok(HttpResponse {
                                     status,
                                     headers,
-                                    body: body.to_vec(),
+                                    body,
                                 });
+                            }
+                            Ok(None) => {
+                                return Err(AttestationError::Api(format!(
+                                    "response is larger than {MAX_RESPONSE_BYTES} bytes"
+                                )));
                             }
                             Err(err) if !last && is_retryable_error(&err) => {
                                 break 'attempt backoff_delay(self.backoff_base, attempt);
@@ -334,11 +347,17 @@ impl AttestationClient {
 
         let parsed: AttestationsResponse = serde_json::from_slice(&response.body)?;
         let mut attestations = Vec::new();
-        for attestation in parsed.attestations {
+        // One budget for every bundle the answer links to, so a long list of
+        // links cannot multiply the per-response limit.
+        let mut budget = MAX_RESPONSE_BYTES;
+        // Hold the answer to the `per_page` asked for: each entry without an
+        // inline bundle costs another request, with its own timeout and
+        // retries, so an oversized list could stall the lookup indefinitely.
+        for attestation in parsed.attestations.into_iter().take(params.limit) {
             if attestation.bundle.is_some() {
                 attestations.push(attestation);
             } else if let Some(bundle_url) = &attestation.bundle_url {
-                let bundle = self.fetch_bundle_url(bundle_url).await?;
+                let bundle = self.fetch_bundle_url(bundle_url, &mut budget).await?;
                 attestations.push(Attestation {
                     bundle: Some(bundle),
                     bundle_url: Some(bundle_url.clone()),
@@ -348,7 +367,11 @@ impl AttestationClient {
         Ok(attestations)
     }
 
-    async fn fetch_bundle_url(&self, bundle_url: &str) -> Result<serde_json::Value> {
+    async fn fetch_bundle_url(
+        &self,
+        bundle_url: &str,
+        budget: &mut usize,
+    ) -> Result<serde_json::Value> {
         // Without the query: a bundle URL can be pre-signed, its token there.
         log::debug!(
             "GET {}",
@@ -356,10 +379,18 @@ impl AttestationClient {
                 .split_once('?')
                 .map_or(bundle_url, |(url, _)| url)
         );
-        let request = self
-            .client
-            .get(bundle_url)
-            .headers(self.github_headers(bundle_url)?);
+        // A malformed answer, not an unreachable API: report it as a bad
+        // payload so `provenance_api_failures_fatal = false` can't wave it on.
+        let url = reqwest::Url::parse(bundle_url)
+            .ok()
+            .filter(|url| matches!(url.scheme(), "http" | "https") && url.host().is_some())
+            .ok_or_else(|| {
+                AttestationError::UnsupportedFormat(
+                    "attestation bundle_url is not an absolute http(s) URL".to_string(),
+                )
+            })?;
+        let headers = self.github_headers(url.as_str())?;
+        let request = self.client.get(url).headers(headers);
         let response = self.send_with_retry(request).await?;
         if !response.status.is_success() {
             return Err(AttestationError::Api(format!(
@@ -367,15 +398,48 @@ impl AttestationClient {
                 response.status
             )));
         }
+        let over_budget = || {
+            AttestationError::Api(format!(
+                "attestation bundles are larger than {MAX_RESPONSE_BYTES} bytes"
+            ))
+        };
         if is_snappy_content_type(&response.headers) {
+            // A raw Snappy stream declares its own decoded length, and the
+            // decoder allocates all of it up front.
+            let len = snap::raw::decompress_len(&response.body)
+                .map_err(|e| AttestationError::Api(format!("Snappy decompression failed: {e}")))?;
+            *budget = budget.checked_sub(len).ok_or_else(over_budget)?;
             let decompressed = snap::raw::Decoder::new()
                 .decompress_vec(&response.body)
                 .map_err(|e| AttestationError::Api(format!("Snappy decompression failed: {e}")))?;
             serde_json::from_slice(&decompressed).map_err(AttestationError::Json)
         } else {
+            *budget = budget
+                .checked_sub(response.body.len())
+                .ok_or_else(over_budget)?;
             serde_json::from_slice(&response.body).map_err(AttestationError::Json)
         }
     }
+}
+
+/// Most bytes one attestation response, or all the bundles one lookup links
+/// to, may hold in memory. A lookup returns at most 30 attestations of a few
+/// tens of KiB each; reqwest inflates compressed replies transparently, so the
+/// bytes on the wire bound nothing.
+pub(crate) const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+
+/// The decoded body, or `None` once it passes [`MAX_RESPONSE_BYTES`].
+async fn read_body_limited(
+    mut response: reqwest::Response,
+) -> std::result::Result<Option<Vec<u8>>, reqwest::Error> {
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
+            return Ok(None);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(Some(body))
 }
 
 #[cfg(test)]

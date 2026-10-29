@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 
-use crate::{Result, dirs, env, file, hash, http::HTTP, remote_source::RemoteSource};
+use crate::http::{HTTP, MAX_BODY_BYTES};
+use crate::{Result, dirs, env, file, hash, remote_source::RemoteSource};
 
 use super::{TaskFileArtifact, TaskFileProvider};
 
@@ -49,7 +50,10 @@ impl RemoteTaskHttp {
 
     async fn download_file(&self, file: &str, destination: &PathBuf) -> Result<()> {
         trace!("Downloading file: {}", file);
-        HTTP.download_file(file, destination, None).await?;
+        // The file is read whole into memory to list its task, so its size is
+        // capped like a response mise parses.
+        HTTP.download_file_limited(file, destination, MAX_BODY_BYTES as u64, None)
+            .await?;
         file::make_executable(destination)?;
         Ok(())
     }
@@ -114,6 +118,9 @@ impl TaskFileProvider for RemoteTaskHttp {
 mod tests {
 
     use super::*;
+    use crate::config::SettingsExt;
+    use crate::config::settings::{Settings, SettingsPartial};
+    use confique::Layer;
 
     #[tokio::test]
     async fn test_is_match() {
@@ -134,6 +141,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_remote_task_get_local_path_without_cache() {
+        // Generate mode shares one download per URL within an invocation; this
+        // test counts the requests of a plain download.
+        let _settings = crate::test::SettingsGuard::lock();
+        let mut partial = SettingsPartial::empty();
+        partial.lockfile_mode = Some("merge".into());
+        Settings::reset(Some(partial));
         let paths = vec![
             "/myfile.py",
             "/subpath/myfile.sh",

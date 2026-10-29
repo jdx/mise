@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use super::args::ToolArg;
 use crate::cli::{render_subcommand_help, unescape_task_args};
-use crate::config::{Config, Settings, SettingsExt};
+use crate::config::{Config, Settings, SettingsExt, config_file};
 use crate::deps::{DepsEngine, DepsOptions, DepsStepResult};
 use crate::duration;
 use crate::env;
@@ -665,6 +665,12 @@ fn display_affected_text(text: &str) -> String {
 }
 
 impl Run {
+    /// The parser leaves `--help` to the task, so `mise run --help` arrives here as a task name.
+    /// It prints this command's own help and runs nothing the project defines.
+    pub(crate) fn only_prints_help(&self) -> bool {
+        matches!(self.task.as_deref(), Some("-h" | "--help"))
+    }
+
     pub(crate) async fn run(mut self) -> Result<()> {
         // Check help flags before doing any work
         if self.task.as_deref() == Some("-h") {
@@ -826,6 +832,19 @@ impl Run {
                         .await?;
                 }
             }
+        }
+        // A process that requires explicit trust (a task hook, an MCP request) has no typed
+        // `mise run` behind it. Task files already need trust there, but the inline tasks of a
+        // tasks-only `mise.toml` load without it, so check every task this run would reach. The
+        // tasks carry the caller's arguments by now, so dependencies named from usage values
+        // resolve as they will when the run starts. The executor checks each task again as it
+        // schedules it.
+        if config_file::requires_explicit_trust()
+            && let Some(task) =
+                crate::config::untrusted_task_reached(&config, task_list.clone(), self.skip_deps)
+                    .await?
+        {
+            return Err(crate::errors::Error::UntrustedConfig(task.config_source.clone()).into());
         }
         time!("run get_task_lists");
 

@@ -91,8 +91,11 @@ test("the reference set holds every take the reel shows", () => {
     );
   }
   const start = f.files["C8/start/work/api/mise.toml"] ?? "";
+  // `mise use` writes the pin as `hk = "…"`, or as a table that also names
+  // the release workflow its packslip came from.
   assert.ok(
-    start.includes(`hk = "${oldV}"`),
+    start.includes(`hk = "${oldV}"`) ||
+      start.includes(`hk = { version = "${oldV}"`),
     `C8 starts with hk = "${oldV}":\n${start}`,
   );
   assert.ok(f.files["C15/offcam/history-after.txt"], "no history after");

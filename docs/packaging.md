@@ -29,7 +29,12 @@ disabled for this install, update mise the same way you installed it".
 | `self_update`       | The `mise self-update` implementation                                                  |
 
 The `rustls` and `rustls-native-roots` features use rustls in place of
-`native-tls`.
+`native-tls`. The official release binaries build with
+`--no-default-features` and `rustls-native-roots` in the feature list (see
+`scripts/build-tarball.sh` for the complete list, which also includes
+`self_update`, `vfox/vendored-lua` and per-target extras), so they use rustls
+for TLS. Both TLS choices verify certificates against the operating system's trust store; see
+[How does mise handle TLS certificates?](/faq.html#tls-certificates).
 
 The build needs Rust at or above the `rust-version` in `Cargo.toml`, a C
 compiler, and, with `native-tls` on Linux, `pkg-config` and the OpenSSL
@@ -65,6 +70,15 @@ prefix:
 - `lib/mise/.disable-self-update` (the AUR `mise-bin` package uses this one)
 - `lib64/mise/.disable-self-update`
 
+## WinGet
+
+mise recognizes a WinGet install by its executable path
+(`...\Microsoft\WinGet\Packages\` or `...\Microsoft\WinGet\Links\` for a per-user install, `C:\Program Files\WinGet\Packages\` or `...\Links\` for a machine-scope one) and turns
+self-update off, since replacing a WinGet-managed binary stops WinGet from
+updating or removing the package. mise tells the user to run
+`winget upgrade jdx.mise` instead. `MISE_SELF_UPDATE_AVAILABLE=true` turns
+self-update back on.
+
 ## Ship update instructions {#ship-update-instructions}
 
 An instructions file also turns off self-update, and gives users the command to
@@ -77,10 +91,14 @@ run instead. Install it at any one of:
 mise prints the file's `message`. Without a `message` key, it prints the value
 of the first other key in alphabetical order.
 
+<!-- schema: skip -->
+
 ```toml
 # Debian and Ubuntu (apt)
 message = "To update mise from the APT repository, run:\n\n  sudo apt update && sudo apt install --only-upgrade mise\n"
 ```
+
+<!-- schema: skip -->
 
 ```toml
 # Fedora and CentOS Stream (dnf)

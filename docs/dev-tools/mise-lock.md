@@ -139,6 +139,12 @@ is nothing to lock, because mise treats the file as global config. Run
 From other directories mise reads and writes `~/.config/mise/mise.lock`, so also
 symlink that path to `~/dotfiles/mise.lock`. Sidecars follow the symlink target.
 
+mise updates the target of a symlinked lockfile and keeps the link. A link that
+leaves the lockfile's directory is only followed for global and system config,
+and for [trusted](/security.html#configuration-trust) project config outside
+[safe mode](/security.html#safe-mode). Otherwise the write fails, so a checkout
+cannot choose which of your files `mise lock` replaces.
+
 ### Monorepos
 
 In a [monorepo](/tasks/monorepo.html) (`monorepo_root = true`), set
@@ -410,16 +416,37 @@ for the tool and platform you care about.
 | cargo, dotnet, gem, go, spinel, core:dotnet, core:rust                                             | The top-level version only; the language's installer resolves dependencies and build inputs               |
 | vfox tool plugins                                                                                  | URLs that the plugin's hooks return, which locked mode requires                                           |
 | asdf and vfox backend plugins                                                                      | The version only; the plugin performs the installation                                                    |
-| spm                                                                                                | The version only                                                                                          |
+| spm                                                                                                | The version, and the bundle's URL and checksum when installed from an artifact bundle                     |
 
 Locked mode does not require a URL for `asdf`, `cargo`, `dotnet`, `gem`, `go`,
 `npm`, `pypi` (`pipx`), `spinel`, `spm`, `ubi`, `core:dotnet`, `core:rust`,
-`core:swift` and vfox backend plugins, because those backends do not record
-one. The exemption covers artifact URLs only; npm and PyPI dependency graphs
-have their own checks.
+`core:swift` and vfox backend plugins. Most of them do not record one; `spm`
+(for an artifact bundle install) and `core:swift` record a URL and checksum,
+and a recorded checksum is still verified. The exemption covers artifact URLs
+only; npm and PyPI dependency graphs have their own checks.
 
 A `provenance` field is not proof that mise verified the bytes; see
 [provenance and verification](#provenance-and-security).
+
+### Checksums from mise-versions {#checksums}
+
+For a public GitHub repository, `mise lock` reads release metadata from
+[mise-versions](/configuration/settings.html#use_versions_host), including each
+asset's checksum, and records it without downloading the asset. Such a checksum
+is marked:
+
+```toml [mise.lock]
+[tools.ripgrep."platforms.linux-x64"]
+checksum = "sha256:…"
+checksum_source = "mise-versions"
+url = "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz"
+```
+
+mise compares a marked checksum with the file after a real download, as it does
+any checksum, but never uses it to reuse a kept download. Otherwise
+mise-versions could pick which file from the [download cache](#restored-caches)
+gets installed. A checksum that `mise lock` checked against a download, for a
+lock-time provenance check, is not marked. Older mise versions ignore the field.
 
 ## Dependency graphs
 
@@ -454,7 +481,10 @@ such as Ruby, the lockfile doesn't vouch for the compiled output, and a tool
 that downloads its own source may record no checksum for it at all.
 
 Downloads are different. mise keeps them in a cache and reuses one only when
-the server confirms it is unchanged, or when it hashes to a pinned checksum. A
+the server confirms it is unchanged, or when it hashes to a pinned checksum and
+was downloaded from the same URL. A lockfile checksum never hands back a file
+another URL served, and a [checksum from mise-versions](#checksums) never hands
+back a kept file at all. A
 pinned checksum is always checked after the download; without one, a cache that
 someone can write to is trusted. With `--locked`, only pinned downloads are
 reused, so a restored download cache is safe to trust. See
@@ -476,7 +506,16 @@ So treat a cache of installed files as trusted build input:
 
 For supported backends, `mise lock` records provenance such as SLSA, Cosign,
 Minisign or GitHub artifact attestations. mise verifies new provenance against
-each target platform's artifact before it records it.
+each target platform's artifact before it records it. For an aqua package that
+declares GitHub artifact attestations and also Cosign, Minisign or SLSA, a
+release without an attestation has to pass the other check, as it does at
+install, before `mise lock` records it.
+
+Recorded provenance belongs to the recorded checksum. If the artifact for a
+locked version has changed and mise cannot establish the same provenance for
+the new bytes, `mise lock` fails and the entry stays as it is. After checking
+that the release is authentic, remove the entry from `mise.lock` to lock the new
+artifact.
 
 When an entry has both a checksum and provenance, `mise install` can skip
 repeating the provenance check. That makes the lockfile a trust input: review

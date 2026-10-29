@@ -2,7 +2,8 @@
 
 use crate::cli::exec::Exec;
 use crate::config::{
-    CommandWrapper, CommandWrapperOptions, Config, Settings, load_command_wrappers,
+    CommandWrapper, CommandWrapperOptions, Config, Settings, command_wrapper_source,
+    insert_config_file_template_vars, load_command_wrappers,
 };
 use crate::file::display_path;
 use crate::request_exit;
@@ -108,11 +109,14 @@ pub(crate) async fn handle_shim() -> Result<()> {
         exec.run_with_command_wrapper(
             config,
             ts,
-            wrapper
-                .env()
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect(),
+            with_active_command_wrapper(
+                shim_name,
+                wrapper
+                    .env()
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect(),
+            ),
         )
         .await?;
     } else {
@@ -221,41 +225,64 @@ pub(crate) async fn apply_native_shim_command_wrapper(
     trace!("shim[{shim_name}] WRAPPER command: {}", wrapper.command());
     command[0] = wrapper.command().to_string();
     command.splice(1..1, wrapper.args().iter().cloned());
-    Ok(Some(
+    Ok(Some(with_active_command_wrapper(
+        shim_name,
         wrapper
             .env()
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect(),
-    ))
+    )))
 }
 
 /// The command wrapper configured for `shim_name`, with its command installed first when
-/// `install_command` is set and a tool provides it.
+/// `install_command` is set and a tool provides it. None while that wrapper's own command is
+/// running, so the command finds the real tool instead of the wrapper again.
 async fn command_wrapper_for(
     config: &mut Arc<Config>,
     ts: &mut Toolset,
     shim_name: &str,
     install_command: bool,
 ) -> Result<Option<CommandWrapper>> {
+    if is_active_command_wrapper(shim_name) {
+        return Ok(None);
+    }
     let wrappers = load_command_wrappers(
         &config.config_files,
         ts.versions.values().flat_map(|versions| &versions.requests),
     )?;
     validate_wrapper_names(wrappers.keys())?;
     // An exact match wins. macOS collisions are rejected above; Windows ones cannot both be shims.
-    let wrapper = wrappers.get(shim_name).or_else(|| {
+    let wrapper = wrappers.get_key_value(shim_name).or_else(|| {
         wrappers
             .iter()
             .find(|(name, _)| same_command_name(name, shim_name))
-            .map(|(_, wrapper)| wrapper)
     });
-    let Some(wrapper) = wrapper else {
+    let Some((name, wrapper)) = wrapper else {
         return Ok(None);
+    };
+    // Like the file's other values, a wrapper renders with its file's `config_root` and resolves
+    // relative paths from the file's directory.
+    let source = command_wrapper_source(&config.config_files, name)?;
+    let dir = match source.as_deref().and_then(Path::parent) {
+        Some(dir) => dir.to_path_buf(),
+        None => env::current_dir()?,
+    };
+    let with_source = |ctx: &tera::Context| {
+        let mut ctx = ctx.clone();
+        if let Some(source) = &source {
+            insert_config_file_template_vars(&mut ctx, source);
+        }
+        ctx
     };
     // `command` renders from `vars` and the process environment only: the full toolset context
     // needs the project's tools installed, and the command may be what installs them.
-    let command = render_template(wrapper.command(), &config.tera_ctx)?;
+    let command = render_template(
+        wrapper.command(),
+        &with_source(&config.tera_ctx),
+        &dir,
+        source.as_deref(),
+    )?;
     if command.trim().is_empty() {
         bail!(
             "command wrapper command rendered blank: {:?}",
@@ -281,16 +308,21 @@ async fn command_wrapper_for(
         })));
     }
     // The toolset context carries the resolved project `[env]`, which `config.tera_ctx` lacks.
-    let ctx = ts.tera_ctx(config).await?;
+    let ctx = with_source(ts.tera_ctx(config).await?);
     let args = wrapper
         .args()
         .iter()
-        .map(|arg| render_template(arg, ctx))
+        .map(|arg| render_template(arg, &ctx, &dir, source.as_deref()))
         .collect::<Result<Vec<_>>>()?;
     let env = wrapper
         .env()
         .iter()
-        .map(|(key, value)| Ok((key.clone(), render_template(value, ctx)?)))
+        .map(|(key, value)| {
+            Ok((
+                key.clone(),
+                render_template(value, &ctx, &dir, source.as_deref())?,
+            ))
+        })
         .collect::<Result<_>>()?;
     Ok(Some(CommandWrapper::Detailed(CommandWrapperOptions {
         command,
@@ -300,23 +332,22 @@ async fn command_wrapper_for(
 }
 
 /// Render a wrapper value as a template, so a wrapper can use `vars` and the path functions
-/// like a task. Values without template syntax are left untouched.
-fn render_template(input: &str, ctx: &tera::Context) -> Result<String> {
+/// like a task. Values without template syntax are left untouched. `source` is the file that
+/// declares the wrapper; one from global or system config keeps `env` in safe mode.
+fn render_template(
+    input: &str,
+    ctx: &tera::Context,
+    dir: &Path,
+    source: Option<&Path>,
+) -> Result<String> {
     if !crate::tera::contains_template_syntax(input) {
         return Ok(input.to_string());
     }
-    let mut tera = crate::tera::get_tera(Some(&env::current_dir()?));
-    Ok(crate::tera::render_str(&mut tera, input, ctx)?)
-}
-
-/// Whether two command names find the same shim. Windows file names are case-insensitive, so a
-/// shim can be invoked as `Cargo` for `[wrappers.cargo]`.
-fn same_command_name(a: &str, b: &str) -> bool {
-    if cfg!(windows) {
-        a.eq_ignore_ascii_case(b)
-    } else {
-        command_names_eq(a, b)
-    }
+    let mut tera = crate::tera::get_tera(Some(dir));
+    Ok(match source {
+        Some(source) => crate::tera::render_config_str(&mut tera, input, ctx, source)?,
+        None => crate::tera::render_str(&mut tera, input, ctx)?,
+    })
 }
 
 /// Shell completion invokes `usage complete-word` through the `usage` shim. It

@@ -85,11 +85,74 @@ impl TeraEngine {
 }
 
 pub fn render_str(tera: &mut TeraEngine, input: &str, context: &Context) -> TeraResult<String> {
+    tera.render_str(input, &safe_context(context))
+}
+
+/// [`render_str`] for a template the operator wrote, in global or system
+/// config, which keeps `env` in safe mode.
+pub fn render_str_with_env(
+    tera: &mut TeraEngine,
+    input: &str,
+    context: &Context,
+) -> TeraResult<String> {
     tera.render_str(input, context)
 }
 
 pub fn render_str_v2(tera: &mut Tera, input: &str, context: &Context) -> TeraResult<String> {
-    tera.render_str(input, context, false)
+    tera.render_str(input, &safe_context(context), false)
+}
+
+/// Whether safe mode is on. Unlike `Settings::get()` this never loads
+/// settings, because `.miserc.toml` and `[settings]` templates render while
+/// they load.
+fn safe_mode() -> bool {
+    match mise_settings::last_cached() {
+        Some(settings) => settings.safe,
+        None => env::var_is_true("MISE_SAFE"),
+    }
+}
+
+tokio::task_local! {
+    static TRUSTED_TEMPLATES: bool;
+}
+
+/// Runs `future` so that [`render_str`] keeps `env` in safe mode. It is for
+/// work done for a tool that global or system config declares, whose backends
+/// render that config's options (a global `[tool_alias]` such as
+/// `http:tool[url=https://files.example/{{ env.CHANNEL }}/tool]`) only when
+/// they need them, long after the file was read.
+pub async fn with_trusted_templates<T>(future: impl std::future::Future<Output = T>) -> T {
+    TRUSTED_TEMPLATES.scope(true, future).await
+}
+
+/// Runs `future` with `env` kept ([`with_trusted_templates`]) or explicitly
+/// emptied in safe mode, whatever an outer scope said.
+pub async fn with_templates_trusted<T>(
+    trusted: bool,
+    future: impl std::future::Future<Output = T>,
+) -> T {
+    TRUSTED_TEMPLATES.scope(trusted, future).await
+}
+
+/// Whether the current task runs inside [`with_trusted_templates`].
+pub fn in_trusted_templates() -> bool {
+    TRUSTED_TEMPLATES
+        .try_with(|trusted| *trusted)
+        .unwrap_or(false)
+}
+
+/// Empties `env` in safe mode. Project config loads without trust there, and
+/// what its templates render reaches the URLs mise requests, the lockfile and
+/// command output, so they must not see the credentials in the operator's
+/// environment. This is done on every render rather than where a context is
+/// built because backends and tasks render with contexts of their own.
+fn safe_context(context: &Context) -> std::borrow::Cow<'_, Context> {
+    if !context.contains_key("env") || !safe_mode() || in_trusted_templates() {
+        return std::borrow::Cow::Borrowed(context);
+    }
+    let mut context = context.clone();
+    context.insert("env", &EnvMap::new());
+    std::borrow::Cow::Owned(context)
 }
 
 fn tera_err(message: impl ToString) -> tera::Error {
@@ -312,19 +375,23 @@ fn tera_v1_float(value: Value, args: Kwargs) -> TeraResult<Value> {
 pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
-    context.insert("mise_bin", &*env::MISE_BIN);
+    // `Context::insert` panics when the value does not serialize, which a
+    // path that is not valid UTF-8 does not, so paths go in as lossy strings.
+    context.insert("mise_bin", &env::MISE_BIN.to_string_lossy());
     context.insert("mise_pid", &*env::MISE_PID);
     let mise_env = env::mise_env();
     if !mise_env.is_empty() {
         context.insert("mise_env", mise_env);
     }
     if let Ok(dir) = env::current_dir() {
-        context.insert("cwd", &dir);
+        context.insert("cwd", &dir.to_string_lossy());
     }
-    context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
-    context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
-    context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
-    context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
+    context.insert("xdg_cache_home", &env::XDG_CACHE_HOME.to_string_lossy());
+    context.insert("xdg_config_home", &env::XDG_CONFIG_HOME.to_string_lossy());
+    context.insert("xdg_data_home", &env::XDG_DATA_HOME.to_string_lossy());
+    context.insert("xdg_state_home", &env::XDG_STATE_HOME.to_string_lossy());
+    context.insert("mise_config_dir", &env::MISE_CONFIG_DIR.to_string_lossy());
+    context.insert("system_brew_prefix", &env::system_brew_prefix());
     context
 });
 
@@ -406,7 +473,8 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
         move |s: &str, args: Kwargs, _: &State| -> TeraResult<Value> {
             let path = Path::new(s);
             track_tera_file(path);
-            let mut hash = hash::file_hash_blake3(path, None).unwrap();
+            let mut hash =
+                hash::file_hash_blake3(path, None).map_err(|e| tera_err(e.to_string()))?;
             if let Some(len) = args.get::<u64>("len")? {
                 hash = hash.chars().take(len as usize).collect();
             }
@@ -493,7 +561,9 @@ static TERA: Lazy<Tera> = Lazy::new(|| {
             track_tera_file(p);
             let metadata = p.metadata()?;
             let modified = metadata.modified()?;
-            let modified = modified.duration_since(std::time::UNIX_EPOCH).unwrap();
+            let modified = modified
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| tera_err(e.to_string()))?;
             Ok(Value::from(modified.as_secs()))
         },
     );
@@ -1288,11 +1358,13 @@ pub fn get_tera_v2(dir: Option<&Path>) -> Tera {
     let mut tera = TERA.clone();
     let dir = dir.map(PathBuf::from);
     if Settings::get().safe {
-        tera.register_function("exec", safe_disabled_fn("exec"));
-        tera.register_function("read_file", safe_disabled_fn("read_file"));
+        disable_in_safe_mode(&mut tera);
     } else {
         tera.register_function("exec", tera_exec(dir.clone(), env::PRISTINE_ENV.clone()));
-        tera.register_function("read_file", tera_read_file(dir));
+        tera.register_function("read_file", tera_read_file(dir.clone()));
+        for (name, format) in STRUCTURED_FORMATS {
+            tera.register_function(name, tera_read_structured(name, format, dir.clone()));
+        }
     }
     tera
 }
@@ -1301,13 +1373,88 @@ fn get_tera_v1(dir: Option<&Path>) -> tera1::Tera {
     let mut tera = TERA1.clone();
     let dir = dir.map(PathBuf::from);
     if Settings::get().safe {
-        tera.register_function("exec", safe_disabled_fn_v1("exec"));
-        tera.register_function("read_file", safe_disabled_fn_v1("read_file"));
+        disable_in_safe_mode_v1(&mut tera);
     } else {
         tera.register_function("exec", tera1_exec(dir.clone(), env::PRISTINE_ENV.clone()));
-        tera.register_function("read_file", tera1_read_file(dir));
+        tera.register_function("read_file", tera1_read_file(dir.clone()));
+        for (name, format) in STRUCTURED_FORMATS {
+            tera.register_function(name, tera1_read_structured(name, format, dir.clone()));
+        }
     }
     tera
+}
+
+/// What safe mode takes away from templates: running commands, and reading the
+/// operator's environment (see also [`safe_context`]) or files. The filters only
+/// reveal a file's digest, size or age, but that is enough to confirm a guess
+/// about a file outside the project, and reading `/dev/zero` never ends.
+const SAFE_DISABLED_FUNCTIONS: [&str; 3] = ["exec", "read_file", "get_env"];
+const SAFE_DISABLED_FILTERS: [&str; 4] =
+    ["hash_file", "file_size", "last_modified", "canonicalize"];
+/// The tests that ask whether a path exists, which would let a template probe
+/// files outside the project.
+const SAFE_DISABLED_TESTS: [&str; 3] = ["dir", "file", "exists"];
+
+fn disable_in_safe_mode(tera: &mut Tera) {
+    let structured = STRUCTURED_FORMATS.iter().map(|(name, _)| *name);
+    for name in SAFE_DISABLED_FUNCTIONS.into_iter().chain(structured) {
+        tera.register_function(name, safe_disabled_fn(name));
+    }
+    for name in SAFE_DISABLED_FILTERS {
+        tera.register_filter(name, safe_disabled_filter(name));
+    }
+    for name in SAFE_DISABLED_TESTS {
+        tera.register_test(name, safe_disabled_test(name));
+    }
+}
+
+fn disable_in_safe_mode_v1(tera: &mut tera1::Tera) {
+    let structured = STRUCTURED_FORMATS.iter().map(|(name, _)| *name);
+    for name in SAFE_DISABLED_FUNCTIONS.into_iter().chain(structured) {
+        tera.register_function(name, safe_disabled_fn_v1(name));
+    }
+    for name in SAFE_DISABLED_FILTERS {
+        tera.register_filter(name, safe_disabled_filter_v1(name));
+    }
+    for name in SAFE_DISABLED_TESTS {
+        tera.register_tester(name, safe_disabled_test_v1(name));
+    }
+}
+
+fn safe_disabled_test(name: &'static str) -> impl Fn(Value, Kwargs, &State) -> TeraResult<bool> {
+    move |_: Value, _: Kwargs, _: &State| -> TeraResult<bool> {
+        Err(tera_err(format!(
+            "the {name} test is disabled in safe mode (MISE_SAFE=1)"
+        )))
+    }
+}
+
+fn safe_disabled_test_v1(
+    name: &'static str,
+) -> impl Fn(Option<&JsonValue>, &[JsonValue]) -> tera1::Result<bool> {
+    move |_: Option<&JsonValue>, _: &[JsonValue]| -> tera1::Result<bool> {
+        Err(tera1_err(format!(
+            "the {name} test is disabled in safe mode (MISE_SAFE=1)"
+        )))
+    }
+}
+
+fn safe_disabled_filter(name: &'static str) -> impl Fn(Value, Kwargs, &State) -> TeraResult<Value> {
+    move |_: Value, _: Kwargs, _: &State| -> TeraResult<Value> {
+        Err(tera_err(format!(
+            "the {name} filter is disabled in safe mode (MISE_SAFE=1)"
+        )))
+    }
+}
+
+fn safe_disabled_filter_v1(
+    name: &'static str,
+) -> impl Fn(&JsonValue, &HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |_: &JsonValue, _: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+        Err(tera1_err(format!(
+            "the {name} filter is disabled in safe mode (MISE_SAFE=1)"
+        )))
+    }
 }
 
 /// Replacement for template functions that must not run in safe mode. Kept
@@ -1336,8 +1483,13 @@ fn safe_disabled_fn_v1(
 /// because they are only registered in [`get_tera`], not in `TERA` itself — so they
 /// cannot accidentally become available here if `TERA` changes in the future. This also
 /// intentionally ignores `tera_v1`, since Settings are not fully loaded at this stage.
+/// In safe mode it also refuses what [`get_tera`] refuses there, such as `get_env()`.
 pub fn get_miserc_tera() -> TeraEngine {
-    TeraEngine::V2(Box::new(TERA.clone()))
+    let mut tera = TERA.clone();
+    if safe_mode() {
+        disable_in_safe_mode(&mut tera);
+    }
+    TeraEngine::V2(Box::new(tera))
 }
 
 /// Returns a renderer without mise's custom template functions or filters.
@@ -1375,6 +1527,11 @@ pub fn get_tera_for_oci(dir: Option<&Path>) -> TeraEngine {
         tera.register_function("read_file", move |_: &HashMap<String, JsonValue>| {
             Err(tera1_err(FILE_MESSAGE))
         });
+        for (name, _) in STRUCTURED_FORMATS {
+            tera.register_function(name, move |_: &HashMap<String, JsonValue>| {
+                Err(tera1_err(FILE_MESSAGE))
+            });
+        }
         TeraEngine::V1(Box::new(tera))
     } else {
         let mut tera = get_tera_v2(dir);
@@ -1389,6 +1546,11 @@ pub fn get_tera_for_oci(dir: Option<&Path>) -> TeraEngine {
             "read_file",
             move |_: Kwargs, _: &State| -> TeraResult<Value> { Err(tera_err(FILE_MESSAGE)) },
         );
+        for (name, _) in STRUCTURED_FORMATS {
+            tera.register_function(name, move |_: Kwargs, _: &State| -> TeraResult<Value> {
+                Err(tera_err(FILE_MESSAGE))
+            });
+        }
         TeraEngine::V2(Box::new(tera))
     }
 }
@@ -1969,6 +2131,86 @@ pub fn tera_read_file(dir: Option<PathBuf>) -> impl Fn(Kwargs, &State) -> TeraRe
             }
             _ => Err(tera_err("read_file path must be a string")),
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum StructuredFormat {
+    Json,
+    Yaml,
+    Toml,
+}
+
+/// The template functions that read a file and parse it, with the format each parses.
+const STRUCTURED_FORMATS: [(&str, StructuredFormat); 3] = [
+    ("read_json", StructuredFormat::Json),
+    ("read_yaml", StructuredFormat::Yaml),
+    ("read_toml", StructuredFormat::Toml),
+];
+
+/// Reads and parses `path` for `read_json`, `read_yaml` and `read_toml`. The result is a plain
+/// value, so a template reaches into it with `.key`, `["key"]` and `[0]`.
+fn read_structured(
+    name: &str,
+    format: StructuredFormat,
+    dir: Option<&Path>,
+    path_str: &str,
+) -> Result<JsonValue, String> {
+    let path = match dir {
+        Some(base_dir) => base_dir.join(path_str),
+        None => PathBuf::from(path_str),
+    };
+    track_tera_file(&path);
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("{name}({}): failed to read file: {e}", path.display()))?;
+    let parsed = match format {
+        StructuredFormat::Json => serde_json::from_str(&text).map_err(|e| e.to_string()),
+        StructuredFormat::Yaml => crate::yaml::from_str(&text).map_err(|e| e.to_string()),
+        StructuredFormat::Toml => toml::from_str::<toml::Value>(&text)
+            .map(toml_to_json)
+            .map_err(|e| e.to_string()),
+    };
+    parsed.map_err(|e| format!("{name}({}): failed to parse file: {e}", path.display()))
+}
+
+/// TOML dates and times become strings: serializing a `toml::Value` to JSON would wrap them in
+/// an internal marker table.
+fn toml_to_json(value: toml::Value) -> JsonValue {
+    match value {
+        toml::Value::String(s) => json!(s),
+        toml::Value::Integer(i) => json!(i),
+        toml::Value::Float(f) => json!(f),
+        toml::Value::Boolean(b) => json!(b),
+        toml::Value::Datetime(d) => json!(d.to_string()),
+        toml::Value::Array(a) => JsonValue::Array(a.into_iter().map(toml_to_json).collect()),
+        toml::Value::Table(t) => {
+            JsonValue::Object(t.into_iter().map(|(k, v)| (k, toml_to_json(v))).collect())
+        }
+    }
+}
+
+fn tera_read_structured(
+    name: &'static str,
+    format: StructuredFormat,
+    dir: Option<PathBuf>,
+) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
+    move |args: Kwargs, _: &State| -> TeraResult<Value> {
+        let Some(path_str) = args.get::<String>("path")? else {
+            return Err(tera_err(format!("{name} path must be a string")));
+        };
+        let value = read_structured(name, format, dir.as_deref(), &path_str).map_err(tera_err)?;
+        Ok(Value::from_serializable(&value))
+    }
+}
+
+fn tera1_read_structured(
+    name: &'static str,
+    format: StructuredFormat,
+    dir: Option<PathBuf>,
+) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+        let path_str = json_str_arg(args, "path")?;
+        read_structured(name, format, dir.as_deref(), path_str).map_err(tera1_err)
     }
 }
 

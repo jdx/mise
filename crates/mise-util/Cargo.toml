@@ -51,14 +51,17 @@ indoc = "2"
 itertools = "0.15"
 jdx-tar = "1"
 jiff = "0.2"
+jsonc-parser = { version = "0.34", features = ["cst", "serde_json"] }
 junction = "2"
 log = "0.4"
 md-5 = "0.11"
 mise-agent-env = { path = "../mise-agent-env", version = "0.1" }
 mise-cache-core = { path = "../mise-cache-core", version = "0.1", default-features = false }
+mise-config = { path = "../mise-config", version = "0.1" }
 mise-settings = { path = "../mise-settings", version = "2026" }
 mise-sigstore = { path = "../mise-sigstore", version = "0.1", default-features = false }
-netrc-rs = "0.1"
+mise-tls = { path = "../mise-tls", version = "0.1", default-features = false }
+netrc-jdx = "1"
 nodejs-semver = "7"
 nucleo-matcher = "0.3"
 num_cpus = "1"
@@ -84,9 +87,9 @@ rmp-serde = "1"
 same-file = "1"
 semver = "1"
 serde = { version = "1", features = ["derive"] }
-serde-saphyr = "1"
+serde-saphyr = "2"
 serde_json = { version = "1", features = ["preserve_order", "raw_value"] }
-sevenz-rust2 = "0.23"
+sevenz-rust2 = "0.24"
 sha1 = "0.11"
 sha2 = "0.11"
 shell-escape = "0.1"
@@ -122,7 +125,7 @@ which = "8"
 xx = { version = "2", default-features = false, features = ["glob"] }
 xz2 = "0.1"
 yaml-edit = "0.3"
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 zstd = "0.14"
 
 [target.'cfg(unix)'.dependencies]
@@ -164,9 +167,11 @@ rustls = [
   "gix/blocking-http-transport-reqwest-rust-tls",
   "mise-sigstore/rustls",
   "reqwest/rustls",
+  "mise-tls/rustls",
 ]
 rustls-native-roots = [
   "gix/blocking-http-transport-reqwest-rust-tls",
   "mise-sigstore/rustls",
   "reqwest/rustls",
+  "mise-tls/rustls",
 ]

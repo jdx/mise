@@ -61,6 +61,11 @@ mise runs `cargo install --git` with the matching `--tag`, `--branch` or
 `--rev`. A Git source lists only `HEAD` as a version, so `latest`, or no
 version at all, installs the default branch.
 
+For a private repository, keep the credentials in git's credential helper
+rather than in the URL. mise records the tool without URL credentials, but
+cargo writes the `--git` URL it was given, credentials included, to
+`.crates.toml` in the install directory.
+
 ## How mise installs a crate
 
 mise uses the first method that applies:
@@ -143,6 +148,19 @@ Install one executable from a crate that has several:
 ```toml
 [tools]
 "cargo:sqlx-cli" = { version = "latest", bin = "sqlx" }
+```
+
+### `rename_exe`
+
+Rename the installed executable, for example to avoid a clash with another tool
+on `PATH`:
+
+```toml
+[tools."cargo:https://github.com/Michael-F-Bryan/wit-lsp"]
+version = "rev:c90addb21d37f2bd62a9474adca1dd8f6320d437"
+crate = "wit-cli"
+bin = "wit"
+rename_exe = "wit-lsp"
 ```
 
 ### `crate`

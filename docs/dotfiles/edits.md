@@ -93,8 +93,18 @@ stays the application's:
 ```
 
 The source holds the keys you want, in the same format as the target, which
-mise infers from the target's `.json`, `.toml`, `.yaml`, or `.yml` extension.
+mise infers from the target's `.json`, `.jsonc`, `.toml`, `.yaml`, or `.yml`
+extension. For a file whose extension doesn't name its format, set `format` to
+`"json"`, `"jsonc"`, `"toml"`, or `"yaml"`:
+
+```toml
+[dotfiles]
+"~/.config/Code/User/settings.json/shared" = { source = "vscode/shared.json", merge = true, format = "jsonc" }
+```
+
 With `codex/shared.toml` containing:
+
+<!-- schema: skip -->
 
 ```toml
 model = "gpt-5"
@@ -118,6 +128,12 @@ the application wrote. A missing target is created from the source.
   order and indentation, and rewrites the file only when an owned key differs.
   A target that is not valid JSON, TOML, or YAML, including JSON with
   comments, is reported and never overwritten.
+- JSONC is JSON with comments and trailing commas, as VS Code's
+  `settings.json` is. It is edited in place like TOML and YAML: comments,
+  indentation, trailing commas, and the text of untouched keys stay. The
+  `format = "jsonc"` setting (or a `.jsonc` extension) applies to the source
+  too, so it may also hold comments. Other JSON5 syntax, such as single-quoted
+  strings or unquoted keys, is rejected.
 - `template = "tera"` renders the source first, as for blocks.
 - Like a `symlink` entry, a merge entry without `source` uses the target's path
   under [`dotfiles.root`](/configuration/settings.html#dotfiles.root), so
@@ -159,6 +175,26 @@ for, next to a regular `merge = true` entry for the keys you enforce:
 - A `missing` entry never conflicts with another entry for the same key: the
   other entry's value wins whichever applies first.
 
+### Set permissions when mise creates the file {#merge-permissions}
+
+A `merge` entry takes `permissions`, an octal string such as `"0600"`. mise sets
+that mode when apply creates the target and never changes the mode of a file
+that already exists, because the application that writes it owns the file. That
+suits a file you seed with placeholders and then fill in, such as a token:
+
+```toml
+[dotfiles]
+"~/.config/mise/conf.d/private.local.toml/seed" = { source = "templates/private.toml", merge = "missing", permissions = "0600" }
+```
+
+The first apply creates the file from the source at `0600`. Later applies add
+only the keys it lacks, so the token you type stays, and a deleted file is
+created again. To keep an existing file's mode too, add a
+[permissions-only entry](/dotfiles/managed.html#permissions) for the same path.
+Merge entries for one file that declare different modes are refused, and
+`permissions` is ignored with a warning on Windows. Block and line edits do not
+take `permissions`.
+
 ## Conflicts and removal {#conflicts}
 
 Edits apply without `--force`. mise reports an error when a block's markers
@@ -174,5 +210,7 @@ so removing one needs `mise dot unapply --force`. Merged keys stay, because
 the application may have changed them since.
 
 Edit entries merge across config files by target path and id, so a more local
-config replaces an edit with the same id. The
+config replaces an edit with the same id. An edit declared in
+[a dotfile group](/dotfiles/groups.html#group-edits) applies only while that
+group is selected. The
 [reference](/dotfiles/reference.html#edit-keys) lists every edit key.

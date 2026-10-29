@@ -39,12 +39,12 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::{
-    ArchiveLayout, get_filename_from_url, install_artifact, template_string,
+    ArchiveLayout, get_filename_from_url, install_artifact, render_bin_path, template_string,
     template_string_for_target, verify_artifact,
 };
 use crate::backend::version_list;
 use crate::backend::{Backend, VersionInfo, runtime_path_for_install_path};
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, SettingsExt};
 use crate::file;
 use crate::hash;
 use crate::install_context::InstallContext;
@@ -180,7 +180,12 @@ impl S3Backend {
     }
 
     /// Get or create the S3 client
+    ///
+    /// Every request it sends is signed with the AWS credentials of the process that runs mise,
+    /// while the bucket, key and endpoint come from tool options. Safe mode loads those from
+    /// config nobody reviewed, so it refuses the client and with it every S3 request.
     async fn get_client(&self, opts: &S3Options<'_>) -> Result<&S3Client> {
+        Settings::ensure_not_safe("accessing S3 with your AWS credentials")?;
         self.client
             .get_or_try_init(|| async {
                 let region = opts.region();
@@ -503,6 +508,13 @@ fn handle_s3_error<E: std::fmt::Debug>(err: E, bucket: &str, key: &str) -> eyre:
 
 #[async_trait]
 impl Backend for S3Backend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::with_platforms(
+            &["tool_s3_options"],
+            &["tool_s3_platforms"],
+        ))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::S3
     }
@@ -513,6 +525,15 @@ impl Backend for S3Backend {
 
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         true
+    }
+
+    /// `AWS_ENDPOINT_URL` points the AWS SDK at another S3-compatible service
+    /// than the one the shared versions host listed.
+    async fn remote_version_cache_context(&self, _config: &Arc<Config>) -> Result<Option<String>> {
+        Ok(["AWS_ENDPOINT_URL_S3", "AWS_ENDPOINT_URL"]
+            .into_iter()
+            .find_map(|key| std::env::var(key).ok().filter(|value| !value.is_empty()))
+            .map(|endpoint| hash::hash_to_str(&endpoint)))
     }
 
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
@@ -676,7 +697,7 @@ impl Backend for S3Backend {
 
         // Check for explicit bin_path
         if let Some(bin_path_template) = opts.bin_path() {
-            let bin_path = template_string(&bin_path_template, tv);
+            let bin_path = render_bin_path(&bin_path_template, tv)?;
             return Ok(vec![runtime_path_for_install_path(
                 tv,
                 tv.install_path().join(bin_path),

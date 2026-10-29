@@ -15,6 +15,12 @@ function util.parseVersions()
         error("Failed to fetch version list: " .. (err or "HTTP " .. resp.status_code))
     end
 
+    -- The Apache listing prints "YYYY-MM-DD HH:MM" after each entry.
+    local dates = {}
+    for href, day, time in string.gmatch(resp.body, '<a href="([^"]+)">[^<]*</a>%s+(%d%d%d%d%-%d%d%-%d%d) (%d%d:%d%d)') do
+        dates[href] = day .. "T" .. time .. ":00Z"
+    end
+
     local result = {}
     html.parse(resp.body):find("a"):each(function(i, selection)
         local href = selection:attr("href")
@@ -24,6 +30,7 @@ function util.parseVersions()
             table.insert(result, {
                 version = version,
                 note = "",
+                created_at = dates[href],
             })
         end
     end)

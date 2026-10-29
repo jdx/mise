@@ -56,6 +56,10 @@ name, as described in [file task grouping](/tasks/file-tasks.html#task-grouping)
 When two of these directories define the same task, the one later in the list
 wins.
 
+The search follows symlinks. It stops with an error after 100,000 entries in one
+task directory, which a real task directory never reaches but symlinks that
+lead into the same directories by many routes can.
+
 On Windows there is no execute permission; see
 [Windows](/tasks/file-tasks.html#windows) for how mise decides that a file is a
 task there.
@@ -76,8 +80,9 @@ Loading a task file can run code when the file contains Tera template syntax,
 because mise renders templates while it loads tasks. In a directory with no
 trusted config file, such a file, or one that lists `secrets`, must be trusted
 before mise loads it, the same way an untrusted config file must be. In
-[paranoid mode](/paranoid.html), every task file in such a directory needs
-trust. See [configuration trust](/security.html#configuration-trust).
+[paranoid mode](/paranoid.html), every task file outside global and system
+config needs trust of its own, bound to its content, also beside a trusted
+config: run `mise trust <file>` for each one. See [configuration trust](/security.html#configuration-trust).
 
 ## Which definition wins
 

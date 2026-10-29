@@ -111,18 +111,19 @@ to another backend; see
 
 ### Platform fields {#platform-information}
 
-| Field                  | Meaning                                                                                                                                                                                                 |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                  | Download URL of the artifact                                                                                                                                                                            |
-| `url_api`              | API URL of the same asset, for sources that need an authenticated API request to download it                                                                                                            |
-| `checksum`             | `<algorithm>:<hex>`, usually `sha256:`; `blake3:` when mise hashes the download itself, or the algorithm the aqua registry declares, such as `sha512:`                                                  |
-| `provenance`           | The verification mise used: `slsa`, `cosign`, `minisign` or `github-attestations`; SLSA can carry its file URL as `{ slsa = { url = "…" } }`                                                            |
-| `install`              | `"source"` when the entry describes a source build (Node.js, Erlang)                                                                                                                                    |
-| `additional_artifacts` | Further release assets extracted into the same installation, from [`additional_asset_patterns`](/dev-tools/backends/github.html#additional-asset-patterns), each with its own `url` and `checksum`      |
-| `conda_deps`           | File names of the tool's dependency packages in `[conda-packages]`                                                                                                                                      |
-| `signer`               | packslip: the signer the project committed to, as `scheme:identity`                                                                                                                                     |
-| `attested_by`          | packslip: `"repackager"` when a repackager signed the packslip instead of the vendor                                                                                                                    |
-| `repository_ids`       | packslip, version 3: the forge's repository ID from the signing certificate, such as `{ repository = "922514152" }`; see [renamed repositories](/dev-tools/backends/packslip.html#renamed-repositories) |
+| Field                  | Meaning                                                                                                                                                                                                   |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                  | Download URL of the artifact                                                                                                                                                                              |
+| `url_api`              | API URL of the same asset, for sources that need an authenticated API request to download it                                                                                                              |
+| `checksum`             | `<algorithm>:<hex>`, usually `sha256:`; `blake3:` when mise hashes the download itself, or the algorithm the aqua registry declares, such as `sha512:`                                                    |
+| `checksum_source`      | `"mise-versions"` when `mise lock` took the checksum from mise-versions without downloading; it is compared after a download but never reuses a kept one ([details](/dev-tools/mise-lock.html#checksums)) |
+| `provenance`           | The verification mise used: `slsa`, `cosign`, `minisign` or `github-attestations`; SLSA can carry its file URL as `{ slsa = { url = "…" } }`                                                              |
+| `install`              | `"source"` when the entry describes a source build (Node.js, Erlang)                                                                                                                                      |
+| `additional_artifacts` | Further release assets extracted into the same installation, from [`additional_asset_patterns`](/dev-tools/backends/github.html#additional-asset-patterns), each with its own `url` and `checksum`        |
+| `conda_deps`           | File names of the tool's dependency packages in `[conda-packages]`                                                                                                                                        |
+| `signer`               | packslip: the signer the project committed to, as `scheme:identity`                                                                                                                                       |
+| `attested_by`          | packslip: `"repackager"` when a repackager signed the packslip instead of the vendor                                                                                                                      |
+| `repository_ids`       | packslip, version 3: the forge's repository ID from the signing certificate, such as `{ repository = "922514152" }`; see [renamed repositories](/dev-tools/backends/packslip.html#renamed-repositories)   |
 
 mise still reads some fields that it no longer writes. `size` is ignored.
 `provenance_verified` is kept unchanged on unchanged artifacts but no longer
@@ -159,6 +160,8 @@ locked; Swift 5.10 has no arm64 build for `centos7`, for example.
 
 A platform `url` can pin a build revision of the same version. Precompiled Ruby
 keeps `version = "3.3.11"` and pins revision `3.3.11-1` in the URL:
+
+<!-- schema: skip -->
 
 ```toml
 url = "https://github.com/jdx/ruby/releases/download/3.3.11-1/ruby-3.3.11.x86_64_linux.tar.gz"
@@ -238,6 +241,13 @@ symlink's target and writes new sidecars beside it. A dotfiles repository that
 links each file individually therefore keeps new sidecars in the repository
 without extra symlinks.
 
+Below the lockfile's directory, mise does not follow symlinks to sidecars. A
+sidecar file that is a link, or that sits in a linked directory, counts as
+unreadable, writing a sidecar through such a link fails, and a linked `.mise`
+or `.mise/locks` directory is never cleaned up. A checkout therefore cannot make
+`mise lock` copy one of your files into the repository or delete directories
+outside it.
+
 ### Listing sidecars
 
 `mise lock --sidecars` prints each existing lockfile's sidecar directory and the
@@ -283,29 +293,26 @@ sidecar is missing.
 
 ## Complete lockfile generation
 
-The default `merge` mode updates entries as tools are installed. The `generate`
-mode of [`lockfile_mode`](/configuration/settings.html#lockfile_mode) instead
-rebuilds the whole lockfile from the current requests and reuses unchanged
-artifacts:
+By default, mise rebuilds the whole lockfile from the current requests and
+reuses unchanged artifacts. The older `merge` mode of
+[`lockfile_mode`](/configuration/settings.html#lockfile_mode) only updates
+entries as tools are installed:
 
 ```toml [mise.toml]
 [settings]
-lockfile_mode = "generate"
+lockfile_mode = "merge"
 ```
 
 `lockfile_mode` does not turn on lockfile creation: run `mise lock` first, or
-also set `lockfile = true`.
+set `lockfile = true`.
 
 During installation, a `lock` progress bar tracks background metadata
 downloads, hashing and verification. The first run can download artifacts for
 other platforms; later runs reuse unchanged entries, which reduces lockfile
 churn between platforms.
 
-Set `MISE_LOCKFILE_MODE=generate` to try it for one command, and
-`lockfile_mode = "merge"` to switch back; no format migration is needed.
-`generate` is a trial: share feedback in
-[Discussions](https://github.com/jdx/mise/discussions), since the default may
-change in a later release.
+Set `MISE_LOCKFILE_MODE=merge` to switch back for one command; no format
+migration is needed in either direction.
 
 ### Shared lockfiles
 

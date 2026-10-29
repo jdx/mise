@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -14,10 +14,13 @@ use crate::args::BackendArg;
 use crate::backend::Backend;
 use crate::backend::VersionInfo;
 use crate::backend::platform_target::PlatformTarget;
-use crate::backend::static_helpers::fetch_checksum_from_file;
 use crate::backend::static_helpers::lock_checksum;
+use crate::backend::static_helpers::{
+    fetch_checksum_from_file, fetch_published_checksum_from_file,
+};
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
+use crate::github::{self, ReleaseVersion};
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::lockfile::PlatformInfo;
@@ -54,7 +57,7 @@ impl DenoPlugin {
             .execute()
     }
 
-    async fn download(&self, tv: &ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
+    async fn download(&self, tv: &mut ToolVersion, pr: &dyn SingleReport) -> Result<PathBuf> {
         let url = self
             .get_tarball_url(tv, &PlatformTarget::from_current())
             .await?
@@ -70,6 +73,27 @@ impl DenoPlugin {
             Some(pr),
         )
         .await?;
+
+        // Without a checksum in the lockfile, take the one Deno publishes in the
+        // .sha256sum file next to the zip so verify_checksum compares the zip
+        // against it instead of only recording what was downloaded.
+        let checksum_url = format!("{url}.sha256sum");
+        let platform_info = tv
+            .lock_platforms
+            .entry(self.get_platform_key())
+            .or_default();
+        if platform_info.checksum.is_none() {
+            match fetch_published_checksum_from_file(&checksum_url, "sha256").await? {
+                Some(checksum) => {
+                    platform_info.url = Some(url.clone());
+                    platform_info.checksum = Some(checksum);
+                }
+                // A release that never published a .sha256sum file. It would come from
+                // the same host as the zip and is unsigned, so failing here would
+                // protect nothing that host could not also forge.
+                None => warn!("deno: {checksum_url} not found, skipping checksum verification"),
+            }
+        }
 
         Ok(tarball_path)
     }
@@ -113,18 +137,16 @@ impl Backend for DenoPlugin {
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let versions: DenoVersions = HTTP_FETCH.json("https://deno.com/versions.json").await?;
-        let versions = versions
-            .cli
-            .into_iter()
-            .filter(|v| v.starts_with('v'))
-            .map(|v| VersionInfo {
-                version: v.trim_start_matches('v').to_string(),
-                ..Default::default()
-            })
-            .unique_by(|v| v.version.clone())
-            .sorted_by_cached_key(|v| (Versioning::new(&v.version), v.version.clone()))
-            .collect();
-        Ok(versions)
+        // deno.com lists every version but no dates. GitHub's releases carry
+        // them; without them `minimum_release_age` could not hold a version back.
+        let dates = match deno_release_dates(&versions.cli).await {
+            Ok(dates) => dates,
+            Err(err) => {
+                warn!("could not read deno release dates from GitHub: {err}");
+                HashMap::new()
+            }
+        };
+        Ok(deno_versions(versions.cli, &dates))
     }
 
     async fn install_version_(
@@ -132,7 +154,7 @@ impl Backend for DenoPlugin {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        let tarball_path = self.download(&tv, ctx.pr.as_ref()).await?;
+        let tarball_path = self.download(&mut tv, ctx.pr.as_ref()).await?;
         ctx.pr.next_operation();
         self.verify_checksum(ctx, &mut tv, &tarball_path)?;
         ctx.pr.next_operation();
@@ -220,4 +242,116 @@ impl Backend for DenoPlugin {
 #[derive(Debug, Deserialize)]
 struct DenoVersions {
     cli: Vec<String>,
+}
+
+/// How many versions missing from the release list get a lookup of their own.
+const MAX_MISSING_DATE_LOOKUPS: usize = 5;
+
+/// Dates for the versions deno.com lists (newest first). The release list may
+/// be cached from before a new release, which would leave exactly the version
+/// a cooldown exists for undated, so the newest versions it lacks are looked
+/// up one by one.
+async fn deno_release_dates(cli: &[String]) -> Result<HashMap<String, String>> {
+    let repo = "denoland/deno";
+    let releases = github::list_release_versions(github::API_URL, repo, false).await?;
+    let mut dates = release_dates(&releases);
+    let missing = cli
+        .iter()
+        .filter_map(|v| v.strip_prefix('v'))
+        .filter(|v| !dates.contains_key(*v))
+        .take(MAX_MISSING_DATE_LOOKUPS)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    for version in missing {
+        match github::get_release(repo, &format!("v{version}")).await {
+            Ok(release) => {
+                dates.insert(version, release.released_at().to_string());
+            }
+            Err(err) => debug!("no GitHub release for deno {version}: {err}"),
+        }
+    }
+    Ok(dates)
+}
+
+/// Publication date by version, from the `vX.Y.Z` tags of denoland/deno releases.
+fn release_dates(releases: &[ReleaseVersion]) -> HashMap<String, String> {
+    releases
+        .iter()
+        .filter_map(|r| {
+            let version = r.tag_name.strip_prefix('v')?;
+            Some((version.to_string(), r.released_at.clone()?))
+        })
+        .collect()
+}
+
+fn deno_versions(cli: Vec<String>, dates: &HashMap<String, String>) -> Vec<VersionInfo> {
+    cli.into_iter()
+        .filter(|v| v.starts_with('v'))
+        .map(|v| v.trim_start_matches('v').to_string())
+        .map(|version| VersionInfo {
+            created_at: dates.get(&version).cloned(),
+            version,
+            ..Default::default()
+        })
+        .unique_by(|v| v.version.clone())
+        .sorted_by_cached_key(|v| (Versioning::new(&v.version), v.version.clone()))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::duration::parse_into_timestamp;
+
+    fn release(tag: &str, released_at: Option<&str>) -> ReleaseVersion {
+        ReleaseVersion {
+            tag_name: tag.to_string(),
+            released_at: released_at.map(str::to_string),
+            prerelease: false,
+            has_assets: true,
+        }
+    }
+
+    fn dated_versions() -> Vec<VersionInfo> {
+        let dates = release_dates(&[
+            release("v2.0.0", Some("2024-10-09T13:00:00Z")),
+            release("v2.0.1", Some("2024-10-17T09:00:00Z")),
+            release("v1.46.3", None),
+            release("canary", Some("2024-10-20T00:00:00Z")),
+        ]);
+        let cli = ["v1.46.3", "v2.0.1", "v2.0.0", "v2.0.0", "0.1.0"];
+        deno_versions(cli.map(String::from).to_vec(), &dates)
+    }
+
+    #[test]
+    fn deno_versions_are_sorted_deduped_and_dated() {
+        let dated: Vec<_> = dated_versions()
+            .into_iter()
+            .map(|v| (v.version, v.created_at))
+            .collect();
+        assert_eq!(
+            dated,
+            [
+                ("1.46.3".to_string(), None),
+                (
+                    "2.0.0".to_string(),
+                    Some("2024-10-09T13:00:00Z".to_string())
+                ),
+                (
+                    "2.0.1".to_string(),
+                    Some("2024-10-17T09:00:00Z".to_string())
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn deno_versions_released_after_the_cutoff_are_hidden() {
+        let cutoff = parse_into_timestamp("2024-10-10T00:00:00Z").unwrap();
+        let kept: Vec<_> = VersionInfo::filter_by_date(dated_versions(), cutoff)
+            .into_iter()
+            .map(|v| v.version)
+            .collect();
+        assert_eq!(kept, ["1.46.3", "2.0.0"]);
+    }
 }

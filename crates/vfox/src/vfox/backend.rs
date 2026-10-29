@@ -6,13 +6,26 @@ impl Vfox {
         sdk: &str,
         tool: &str,
         options: IndexMap<String, toml::Value>,
-    ) -> Result<Vec<String>> {
+    ) -> Result<Vec<BackendVersion>> {
+        self.backend_list_versions_and_aliases(sdk, tool, options)
+            .await
+            .map(|r| r.versions)
+    }
+
+    /// Like [`Self::backend_list_versions`], with the version aliases the
+    /// plugin reports.
+    pub async fn backend_list_versions_and_aliases(
+        &self,
+        sdk: &str,
+        tool: &str,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<BackendListVersionsResponse> {
         let plugin = self.get_sdk_with_env(sdk)?;
         let ctx = BackendListVersionsContext {
             tool: tool.to_string(),
             options,
         };
-        plugin.backend_list_versions(ctx).await.map(|r| r.versions)
+        plugin.backend_list_versions(ctx).await
     }
 
     pub async fn backend_search_tools(

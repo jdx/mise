@@ -85,15 +85,20 @@ Private registries take credentials as basic auth in the URL (`token@host` or
 install metadata. A source with credentials must use `https` unless it is on
 `localhost`.
 
+mise lists a source's versions from RubyGems' JSON API, or, for a registry
+without one such as GitHub Packages, from the compact index Bundler installs
+from. Either way `latest`, prefixes, `mise outdated` and `mise upgrade` work.
+GitHub Packages' compact index has no release dates, so release-age settings
+such as `minimum_release_age` cannot filter its versions.
+
 An `https` source on `rubygems.pkg.github.com` without credentials uses mise's
 GitHub token (see [`mise token github`](/cli/token/github.html)). The token
 needs the `read:packages` scope, which a default `gh auth login` lacks
-(`gh auth refresh -s read:packages`). GitHub Packages cannot list versions, so
-pin one:
+(`gh auth refresh -s read:packages`).
 
 ```toml
 [tools]
-"gem:internal-cli" = { version = "1.4.2", source = "https://rubygems.pkg.github.com/acme" }
+"gem:internal-cli" = { version = "latest", source = "https://rubygems.pkg.github.com/acme" }
 ```
 
 mise adds this source alongside rubygems.org; it does not replace it.

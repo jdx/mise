@@ -32,7 +32,7 @@ jobs:
           snapcraft-channel: stable
         id: snapbuild
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: snap-${{ matrix.runs-on }}
           path: ${{ steps.snapbuild.outputs.snap }}
@@ -40,7 +40,7 @@ jobs:
 
   check-release:
     needs: build-snapcraft
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     outputs:
       publish: ${{ steps.release.outputs.publish }}
@@ -78,10 +78,10 @@ jobs:
       fail-fast: false
       matrix:
         artifact: [snap-ubuntu-24.04, snap-ubuntu-24.04-arm]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ matrix.artifact }}
           path: dist
@@ -96,9 +96,22 @@ jobs:
           fi
           echo "path=${snaps[0]}" >> "$GITHUB_OUTPUT"
 
-      - uses: snapcore/action-publish@214b86e5ca036ead1668c79afb81e550e6c54d40 # v1.2.0
+      # Not snapcore/action-publish: it cannot retry, and the Snap Store
+      # occasionally drops the connection mid-upload.
+      - name: Publish snap
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        with:
-          snap: ${{ steps.snap.outputs.path }}
-          release: stable
+          SNAP_PATH: ${{ steps.snap.outputs.path }}
+        run: |
+          sudo snap install --classic snapcraft
+          for attempt in 1 2 3; do
+            if snapcraft upload "$SNAP_PATH" --release stable; then
+              exit 0
+            fi
+            if [[ "$attempt" != 3 ]]; then
+              echo "::warning::snapcraft upload failed (attempt $attempt); retrying"
+              sleep "$((attempt * 10))"
+            fi
+          done
+          echo "::error::snapcraft upload failed after 3 attempts"
+          exit 1

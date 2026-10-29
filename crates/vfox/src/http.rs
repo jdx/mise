@@ -5,22 +5,51 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::sync::watch;
 
-pub(crate) static CLIENT: LazyLock<Client> = LazyLock::new(|| {
-    ClientBuilder::new()
-        .user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
-        .build()
-        .expect("Failed to create reqwest client")
+// A client that cannot be built (e.g. no CA certificates on the system) is
+// kept as an error and reported by the request that needs it, as mise's own
+// HTTP client does, instead of aborting the process.
+static CLIENT: LazyLock<Result<Client, String>> = LazyLock::new(|| {
+    mise_tls::build_client(|| {
+        ClientBuilder::new().user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
+    })
+    .map_err(|err| error_chain(&err))
 });
+
+static NO_REDIRECT_CLIENT: LazyLock<Result<Client, String>> = LazyLock::new(|| {
+    mise_tls::build_client(|| {
+        ClientBuilder::new()
+            .user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
+            .redirect(reqwest::redirect::Policy::none())
+    })
+    .map_err(|err| error_chain(&err))
+});
+
+pub(crate) fn client() -> Result<&'static Client, String> {
+    initialized(&CLIENT)
+}
 
 /// Client that never follows redirects, for requests that carry plugin headers
 /// and have to decide per hop which headers to forward.
-pub(crate) static NO_REDIRECT_CLIENT: LazyLock<Client> = LazyLock::new(|| {
-    ClientBuilder::new()
-        .user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .expect("Failed to create reqwest client")
-});
+pub(crate) fn no_redirect_client() -> Result<&'static Client, String> {
+    initialized(&NO_REDIRECT_CLIENT)
+}
+
+/// `builder error` alone hides the cause, such as missing CA certificates.
+fn error_chain(err: &dyn std::error::Error) -> String {
+    let mut message = err.to_string();
+    let mut source = err.source();
+    while let Some(err) = source {
+        message.push_str(&format!(": {err}"));
+        source = err.source();
+    }
+    message
+}
+
+fn initialized(client: &Result<Client, String>) -> Result<&Client, String> {
+    client
+        .as_ref()
+        .map_err(|err| format!("Could not initialize the HTTP client: {err}"))
+}
 
 pub(crate) const URL_REWRITER_REGISTRY_KEY: &str = "url_rewriter_fn";
 pub(crate) const HTTP_HEADERS_RESOLVER_REGISTRY_KEY: &str = "http_headers_resolver_fn";
@@ -149,6 +178,175 @@ pub(crate) fn retry_delay(attempt: usize) -> Duration {
     Duration::from_millis(base_ms * jitter_pct / 100)
 }
 
+/// Most decoded bytes `http.get` and `http.try_get` hold in memory. reqwest
+/// inflates compressed replies transparently, so a few KiB on the wire can
+/// otherwise become gigabytes.
+/// Lower in tests, which have to send more than this to reach it.
+pub(crate) const MAX_BODY_BYTES: usize = if cfg!(test) {
+    1024 * 1024
+} else {
+    128 * 1024 * 1024
+};
+
+/// The body as text, decoded like [`reqwest::Response::text`], or the inner
+/// error once it passes [`MAX_BODY_BYTES`]. The outer error is the transfer's.
+pub(crate) async fn text_limited(
+    mut resp: reqwest::Response,
+) -> Result<Result<String, String>, reqwest::Error> {
+    let mut bytes = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        if bytes.len() + chunk.len() > MAX_BODY_BYTES {
+            return Ok(Err(format!(
+                "response body from {} is larger than {MAX_BODY_BYTES} bytes",
+                resp.url()
+            )));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    // Rebuilt so the charset in `Content-Type` decodes it as before.
+    let mut buffered = http::Response::new(bytes);
+    *buffered.headers_mut() = std::mem::take(resp.headers_mut());
+    reqwest::Response::from(buffered).text().await.map(Ok)
+}
+
+/// Writes the body to `file` as it arrives, so a download is never held in
+/// memory whole. The outer error is the transfer's, which the caller may
+/// retry; the inner one is the file's.
+pub(crate) async fn write_body(
+    mut resp: reqwest::Response,
+    file: &mut tokio::fs::File,
+) -> Result<std::io::Result<()>, reqwest::Error> {
+    use tokio::io::AsyncWriteExt;
+
+    while let Some(chunk) = resp.chunk().await? {
+        if let Err(err) = file.write_all(&chunk).await {
+            return Ok(Err(err));
+        }
+    }
+    Ok(file.sync_all().await)
+}
+
+/// Downloads with `send` (retried as a whole on transient failures) to
+/// `path`, streaming the body instead of buffering it. `send` returns `None`
+/// when there is nothing to download, which is passed on. The outer error is
+/// the transfer's, the inner one the file's.
+///
+/// The body goes to a temporary file beside `path`, which replaces `path` only
+/// once the whole body has arrived. A failed or cancelled download leaves an
+/// existing file at `path` as it was, and removes its temporary file, also
+/// when the future is dropped.
+pub(crate) async fn download_to_file<F, Fut>(
+    url: &str,
+    path: &std::path::Path,
+    mut send: F,
+) -> Result<std::io::Result<Option<()>>, reqwest::Error>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<Option<reqwest::Response>, reqwest::Error>>,
+{
+    let dir = path
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or(std::path::Path::new("."));
+    let downloaded = retry_async(url, || {
+        let send = send();
+        async move {
+            let Some(resp) = send.await? else {
+                return Ok(Ok(None));
+            };
+            let resp = resp.error_for_status()?;
+            let (temp, file) = match temp_file_in(dir) {
+                Ok(created) => created,
+                Err(err) => return Ok(Err(err)),
+            };
+            let mut file = tokio::fs::File::from_std(file);
+            let written = write_body(resp, &mut file).await?;
+            // Closed before the rename, which Windows refuses on an open file.
+            drop(file);
+            Ok(written.map(|()| Some(temp)))
+        }
+    })
+    .await?;
+    Ok(match downloaded {
+        Ok(Some(temp)) => replace_with(temp, path, dir).map(Some),
+        Ok(None) => Ok(None),
+        Err(err) => Err(err),
+    })
+}
+
+/// A temporary file in `dir`, removed when dropped, owner-only while the
+/// download is written.
+///
+/// Opened with `std::fs` rather than by tempfile, which on Windows marks its
+/// files `FILE_ATTRIBUTE_TEMPORARY` and relies on `persist` to clear it again;
+/// the download is moved into place with `std::fs::rename` instead (see
+/// [`replace_with`]), so the mark would stay on the installed file. tempfile
+/// still picks the name and removes the file on drop.
+fn temp_file_in(dir: &std::path::Path) -> std::io::Result<(TempDownload, std::fs::File)> {
+    let temp = tempfile::Builder::new()
+        .prefix(".vfox-download-")
+        .make_in(dir, |path| {
+            let mut options = std::fs::OpenOptions::new();
+            options.read(true).write(true).create_new(true);
+            #[cfg(unix)]
+            std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+            options.open(path)
+        })?;
+    let file = temp.as_file().try_clone()?;
+    Ok((temp, file))
+}
+
+type TempDownload = tempfile::NamedTempFile<std::fs::File>;
+
+/// Moves the finished download `temp` to `path`, with the permissions `path`
+/// already has, or for a new file the ones a file created in `dir` gets under
+/// the user's umask, as before downloads went through a temporary file.
+fn replace_with(
+    temp: TempDownload,
+    path: &std::path::Path,
+    dir: &std::path::Path,
+) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let permissions = match std::fs::metadata(path) {
+            Ok(existing) => existing.permissions(),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                default_file_permissions(dir)?
+            }
+            Err(err) => return Err(err),
+        };
+        std::fs::set_permissions(temp.path(), permissions)?;
+    }
+    #[cfg(not(unix))]
+    let _ = dir;
+    // `std::fs::rename`, not `NamedTempFile::persist`: on Windows persist does
+    // not get the extended-length path handling `std::fs` applies, and fails
+    // well before `MAX_PATH` (mise measured it breaking at a 253-character
+    // target where `fs::rename` succeeded at 415). Closing the file first lets
+    // the rename replace an existing target there. The `TempPath` is held
+    // until the rename succeeds, so any failure still removes the temporary
+    // file; only then is cleanup turned off. Not `keep()`: on Windows that
+    // resets the attributes of the old path, which no longer exists.
+    let mut temp = temp.into_temp_path();
+    std::fs::rename(&temp, path)?;
+    temp.disable_cleanup(true);
+    Ok(())
+}
+
+/// The permissions a file created in `dir` gets: mode 0666 masked by the
+/// umask (and any default ACL), read from a probe file because the umask
+/// cannot be read without changing it for every thread.
+#[cfg(unix)]
+fn default_file_permissions(dir: &std::path::Path) -> std::io::Result<std::fs::Permissions> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let probe = tempfile::Builder::new()
+        .prefix(".vfox-mode-")
+        .permissions(std::fs::Permissions::from_mode(0o666))
+        .tempfile_in(dir)?;
+    probe.as_file().metadata().map(|m| m.permissions())
+}
+
 /// Retry an async operation that issues a request AND extracts the body.
 /// Use for download/text/bytes flows where mid-stream failures (is_body()) need
 /// to restart the whole request. Warns immediately on each transient failure
@@ -186,4 +384,78 @@ where
         }
     }
     Err(last_err.expect("retry loop should always return"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(unix)]
+    fn mode(path: &std::path::Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_download_is_private_until_it_replaces_its_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let (temp, _file) = temp_file_in(dir.path()).unwrap();
+        assert_eq!(mode(temp.path()), 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_new_download_gets_the_mode_a_created_file_gets() {
+        let dir = tempfile::tempdir().unwrap();
+        let created = dir.path().join("created");
+        std::fs::File::create(&created).unwrap();
+        let target = dir.path().join("downloaded");
+        let (temp, _file) = temp_file_in(dir.path()).unwrap();
+        replace_with(temp, &target, dir.path()).unwrap();
+        assert_eq!(mode(&target), mode(&created));
+        // The probe and the temporary file are gone.
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_download_keeps_the_mode_of_the_file_it_replaces() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("downloaded");
+        std::fs::write(&target, "old").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let (temp, _file) = temp_file_in(dir.path()).unwrap();
+        std::fs::write(temp.path(), "new").unwrap();
+        replace_with(temp, &target, dir.path()).unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "new");
+        assert_eq!(mode(&target), 0o640);
+    }
+
+    #[test]
+    fn a_failed_replace_removes_the_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        // A non-empty directory where the download should go: the rename fails.
+        let target = dir.path().join("downloaded");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("inside"), "x").unwrap();
+        let (temp, file) = temp_file_in(dir.path()).unwrap();
+        drop(file);
+        let temp_path = temp.path().to_path_buf();
+        assert!(replace_with(temp, &target, dir.path()).is_err());
+        assert!(!temp_path.exists());
+        assert!(target.join("inside").exists());
+    }
+
+    #[test]
+    fn a_client_that_failed_to_build_is_an_error() {
+        let failed: Result<Client, String> = Err("No CA certificates were loaded".to_string());
+        let err = initialized(&failed).unwrap_err();
+        assert_eq!(
+            err,
+            "Could not initialize the HTTP client: No CA certificates were loaded"
+        );
+    }
 }

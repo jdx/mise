@@ -97,6 +97,14 @@ examples. Parse each complete example separately, and label fragments that need
 surrounding configuration. Alternative definitions of the same TOML key must
 be separate examples or commented out.
 
+The `schema_matches_parser` unit test reads every `toml` block as a whole
+`mise.toml` and fails when `schema/mise.json` and mise's parser disagree on it.
+It leaves out blocks titled with a file that is not a mise config, such as
+`[mise.lock]`. Put `<!-- schema: skip -->` on the line above any
+other block that is not a whole mise config, such as an excerpt or a registry
+file, and `<!-- schema: invalid -->` above an example of a mistake, which the
+schema must then reject.
+
 ## Voice and style
 
 - Write for a developer who knows their shell but not mise. Use "you", the

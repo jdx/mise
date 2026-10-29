@@ -133,6 +133,8 @@ impl Git {
     /// would be redundant (and on servers without
     /// `uploadpack.allowReachableSHA1InWant`, would fail).
     fn checkout(&self, gitref: &str) -> Result<()> {
+        validate_revision("revision", gitref)?;
+        let target = checkout_target(gitref);
         let cmd = git_cmd!(
             &self.dir,
             "-c",
@@ -141,7 +143,7 @@ impl Git {
             "advice.objectNameWarning=false",
             "checkout",
             "--force",
-            gitref,
+            &target,
         );
         let res = cmd
             .stderr_to_stdout()
@@ -155,7 +157,27 @@ impl Git {
                 String::from_utf8_lossy(&res.stdout)
             ));
         }
+        self.ensure_pinned_commit_checked_out(gitref)?;
         touch_dir(&self.dir)?;
+        Ok(())
+    }
+
+    /// When `gitref` is a full commit SHA, fails unless `HEAD` is that commit.
+    ///
+    /// The remote names the refs in a clone, and git does not reject a branch
+    /// or tag spelled like an object ID. 64 hex digits in a SHA-1 repository
+    /// can only be such a ref, which the remote is free to move.
+    fn ensure_pinned_commit_checked_out(&self, gitref: &str) -> Result<()> {
+        if !looks_like_sha(gitref) {
+            return Ok(());
+        }
+        let head = self.current_sha()?;
+        if !head.eq_ignore_ascii_case(gitref) {
+            return Err(eyre!(
+                "{gitref} is not a commit in {}: git checked out {head}",
+                self.dir.display()
+            ));
+        }
         Ok(())
     }
 
@@ -173,7 +195,7 @@ impl Git {
                 } else {
                     Err(eyre!(
                         "git failed: {cmd:?} {}",
-                        String::from_utf8(res.stdout).unwrap()
+                        String::from_utf8_lossy(&res.stdout)
                     ))
                 }
             }
@@ -195,8 +217,9 @@ impl Git {
         ))?;
         let prev_rev = self.current_sha()?;
         let checkout_ref = match (remote_ref_kind, qualified_ref.as_deref()) {
-            (Some(RemoteRefKind::Tag), Some(tag_ref)) => tag_ref,
-            _ => &gitref,
+            (Some(RemoteRefKind::Tag), Some(tag_ref)) => tag_ref.to_string(),
+            (None, _) => checkout_target(&gitref),
+            _ => gitref.clone(),
         };
         exec(git_cmd!(
             &self.dir,
@@ -208,6 +231,9 @@ impl Git {
             "--force",
             &checkout_ref
         ))?;
+        if remote_ref_kind.is_none() {
+            self.ensure_pinned_commit_checked_out(&gitref)?;
+        }
         let post_rev = self.current_sha()?;
         touch_dir(&self.dir)?;
 
@@ -316,7 +342,7 @@ impl Git {
                 } else {
                     Err(eyre!(
                         "git failed: {cmd:?} {}",
-                        String::from_utf8(res.stdout).unwrap()
+                        String::from_utf8_lossy(&res.stdout)
                     ))
                 }
             }
@@ -673,6 +699,53 @@ pub fn sanitize_git_command(cmd: &mut std::process::Command) {
     }
 }
 
+/// Prepares a Git command that needs no repository, such as `ls-remote <url>`
+/// or `credential fill`. Git still looks for a repository from its working
+/// directory upwards and obeys the config it finds there (`core.sshCommand`
+/// and `credential.helper` are shell commands), and the directory mise runs in
+/// may be a project the user has not trusted. Only the user's own and the
+/// system Git configuration apply to the command.
+pub fn detach_git_command(cmd: &mut std::process::Command) {
+    cmd.current_dir(detached_git_dir());
+    // An inherited GIT_DIR would select a repository again.
+    sanitize_git_command(cmd);
+}
+
+/// The user's home directory, or the filesystem root when there is none.
+fn detached_git_dir() -> &'static Path {
+    let home: &'static Path = crate::env::HOME.as_path();
+    if home.is_absolute() && home.is_dir() {
+        home
+    } else {
+        Path::new(std::path::MAIN_SEPARATOR_STR)
+    }
+}
+
+/// Reads `git ls-remote <options> -- <remote> <patterns>` for a remote given by
+/// URL. The `--` keeps a remote that starts with `-` from being read as an
+/// option (`--upload-pack=<cmd>` runs a command), and the command runs detached
+/// from the current directory (see [`detach_git_command`]).
+pub async fn ls_remote(options: &[&str], remote: &str, patterns: &[&str]) -> Result<String> {
+    let mut cmd = tokio::process::Command::new("git");
+    detach_git_command(cmd.as_std_mut());
+    let args = ls_remote_args(options, remote, patterns);
+    crate::cmd::cmd_read_async_command(cmd, "git", &args).await
+}
+
+/// The argument list for [`ls_remote`].
+pub fn ls_remote_args<'a>(
+    options: &[&'a str],
+    remote: &'a str,
+    patterns: &[&'a str],
+) -> Vec<&'a str> {
+    let mut args = vec!["ls-remote"];
+    args.extend_from_slice(options);
+    args.push("--");
+    args.push(remote);
+    args.extend_from_slice(patterns);
+    args
+}
+
 const GIT_CONTEXT_ENV: &[&str] = &[
     "GIT_DIR",
     "GIT_WORK_TREE",
@@ -729,13 +802,29 @@ fn remote_ref_kind(output: &str, branch_ref: &str, tag_ref: &str) -> Option<Remo
 
 /// Heuristic for whether a ref string is a commit SHA (full SHA-1 or SHA-256).
 ///
-/// Branch and tag names that happen to be all-hex would also match, but git
-/// disallows refs that are valid object IDs anyway (see `git check-ref-format`),
-/// so the heuristic is safe in practice. Abbreviated SHAs are intentionally not
+/// Branch and tag names that happen to be all-hex also match: git itself
+/// accepts them (`git check-ref-format` does), so a remote can publish one.
+/// Checking out a match therefore goes through `checkout_target` and
+/// `ensure_pinned_commit_checked_out`. Abbreviated SHAs are intentionally not
 /// matched — they are ambiguous with short branch names and need server-side
 /// resolution before they can be checked out.
 fn looks_like_sha(s: &str) -> bool {
     matches!(s.len(), 40 | 64) && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// The argument to hand `git checkout` for `gitref`.
+///
+/// `git checkout <name>` switches to a local branch called `<name>` before it
+/// considers `<name>` as a commit, and the remote names the branch a clone
+/// starts on. `^{commit}` cannot be part of a ref name, so git resolves the
+/// result as a revision, where a full object ID wins over a ref spelled the
+/// same way, and checks it out detached.
+fn checkout_target(gitref: &str) -> String {
+    if looks_like_sha(gitref) {
+        format!("{gitref}^{{commit}}")
+    } else {
+        gitref.to_string()
+    }
 }
 
 /// Whether `s` looks like a commit SHA shortened below its full length.
@@ -749,10 +838,12 @@ fn looks_like_abbreviated_sha(s: &str) -> bool {
 /// If `path` is inside a linked git worktree, returns the equivalent path in
 /// the repository's main checkout, e.g. `/repo-wt/sub/mise.toml` →
 /// `/repo/sub/mise.toml`. Returns None for paths in a main checkout, outside
-/// any git repository, or in worktrees of a bare repository.
+/// any git repository, or in worktrees of a bare repository, and when the
+/// equivalent leads out of the main checkout through a symlink.
 ///
 /// Detection is filesystem-only (no git subprocess): a linked worktree root
-/// contains a `.git` *file* pointing at `<main>/.git/worktrees/<name>`.
+/// contains a `.git` *file* pointing at `<main>/.git/worktrees/<name>`, whose
+/// `gitdir` file points back at it.
 pub fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
     static CACHE: LazyLock<Mutex<HashMap<PathBuf, Option<PathBuf>>>> =
         LazyLock::new(Default::default);
@@ -775,10 +866,21 @@ pub fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
                 .lock()
                 .unwrap()
                 .entry(wt_root.to_path_buf())
-                .or_insert_with(|| main_checkout_root(&dotgit))
+                .or_insert_with(|| registered_main_checkout_root(&dotgit))
                 .clone();
             if let Some(main_root) = main_root {
                 let equiv = main_root.join(path.strip_prefix(wt_root).ok()?);
+                // Callers stand `equiv` in for `path`, so it must be the main
+                // checkout's own file. `main_root` is canonical, so an
+                // existing `equiv` that canonicalizes to something else goes
+                // through a symlink below it, which would let a hand-made
+                // checkout borrow the trust of whatever the link names, such
+                // as the global config or a project trusted earlier. A path
+                // that does not exist in the main checkout still maps; the
+                // caller refuses it on its own.
+                if equiv.canonicalize().is_ok_and(|real| real != equiv) {
+                    return None;
+                }
                 return (equiv != path).then_some(equiv);
             }
         }
@@ -906,11 +1008,7 @@ fn worktree_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
 /// For a worktree of an ordinary repository this is `<main>/.git`; for one of a
 /// bare repository it is the bare repo itself.
 fn worktree_common_dir(gitdir: &Path) -> Option<PathBuf> {
-    let common = PathBuf::from(
-        std::fs::read_to_string(gitdir.join("commondir"))
-            .ok()?
-            .trim(),
-    );
+    let common = PathBuf::from(read_pointer_file(&gitdir.join("commondir"))?.trim());
     let common = if common.is_relative() {
         gitdir.join(common)
     } else {
@@ -959,10 +1057,28 @@ fn is_submodule_gitdir(dotgit_file: &Path) -> bool {
     false
 }
 
+/// Longest pointer file read: any path git records is far shorter.
+const POINTER_FILE_LIMIT: u64 = 16 * 1024;
+
+/// The contents of one of git's pointer files (`.git`, `gitdir`, `commondir`),
+/// each holding a single path. They are followed out of directories mise does
+/// not control, where the name may be a pipe or a link to a device, so anything
+/// other than a regular file of pointer size is skipped instead of read whole.
+fn read_pointer_file(path: &Path) -> Option<String> {
+    use std::io::Read;
+    let mut contents = String::new();
+    crate::file::open_regular_file(path)
+        .ok()?
+        .take(POINTER_FILE_LIMIT + 1)
+        .read_to_string(&mut contents)
+        .ok()?;
+    (contents.len() as u64 <= POINTER_FILE_LIMIT).then_some(contents)
+}
+
 /// The git dir a `.git` *file* names, resolved against that file's own
 /// directory when the recorded path is relative.
 fn read_gitdir(dotgit_file: &Path) -> Option<PathBuf> {
-    let contents = std::fs::read_to_string(dotgit_file).ok()?;
+    let contents = read_pointer_file(dotgit_file)?;
     let gitdir = PathBuf::from(contents.strip_prefix("gitdir:")?.trim());
     Some(if gitdir.is_relative() {
         dotgit_file.parent()?.join(gitdir)
@@ -997,7 +1113,7 @@ pub fn has_sibling_worktrees(worktree_root: &Path) -> bool {
             // inherit a namespace. Git decides that by the `gitdir` pointer
             // still naming something, so this does too, rather than sending a
             // user off to change a namespace nothing else shares.
-            let Ok(pointer) = std::fs::read_to_string(entry.path().join("gitdir")) else {
+            let Some(pointer) = read_pointer_file(&entry.path().join("gitdir")) else {
                 return false;
             };
             // `worktree.useRelativePaths` writes the pointer relative to the
@@ -1018,7 +1134,9 @@ pub fn has_sibling_worktrees(worktree_root: &Path) -> bool {
 ///
 /// Two questions share this answer: which working copy may share trust
 /// records, and which checkout names the project for [`Checkout`]. Both refuse
-/// a bare repository, having no working copy to point at.
+/// a bare repository, having no working copy to point at. Trust asks through
+/// [`registered_main_checkout_root`]: everything checked here is reached from
+/// a `.git` file that whoever wrote the directory controls.
 fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     let common = worktree_common_dir(&worktree_gitdir(dotgit_file)?)?;
     if common.file_name() == Some(OsStr::new(".git")) {
@@ -1026,6 +1144,34 @@ fn main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
     } else {
         None // bare repository — no main checkout to share trust with
     }
+}
+
+/// [`main_checkout_root`], but None unless the repository registered this very
+/// directory as the worktree, which is what sharing trust records requires.
+///
+/// Anyone can write a `.git` file naming an existing `worktrees/<name>` entry
+/// of somebody else's repository; only that repository can make the entry name
+/// the directory back. git records the worktree's `.git` file in the entry's
+/// `gitdir`, so a directory the entry does not point at is not that worktree,
+/// whatever its `.git` file says.
+fn registered_main_checkout_root(dotgit_file: &Path) -> Option<PathBuf> {
+    let gitdir = worktree_gitdir(dotgit_file)?;
+    let pointer = PathBuf::from(read_pointer_file(&gitdir.join("gitdir"))?.trim());
+    // `worktree.useRelativePaths` writes the pointer relative to the entry
+    // holding it, as `commondir` is written.
+    let pointer = if pointer.is_relative() {
+        gitdir.join(pointer)
+    } else {
+        pointer
+    };
+    // The directories are compared rather than the files, so that a `.git`
+    // symlinked to a real worktree's `.git` file does not pass for it.
+    if pointer.file_name() != Some(OsStr::new(".git"))
+        || pointer.parent()?.canonicalize().ok()? != dotgit_file.parent()?.canonicalize().ok()?
+    {
+        return None;
+    }
+    main_checkout_root(dotgit_file)
 }
 
 /// A git binary mise can run unattended for its own plumbing, or None.

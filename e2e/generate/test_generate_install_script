@@ -4,6 +4,11 @@ assert "mise generate install-script -w"
 # shellcheck disable=SC2016
 assert_contains "cat ./bin/mise" 'exec -a "$0" "$MISE_INSTALL_PATH" "$@"'
 assert "./bin/mise version"
+# The script is a committed file, so it ends in a newline like one; formatters such as an
+# end-of-file fixer would otherwise rewrite it on every regeneration.
+assert "tail -c 1 ./bin/mise | wc -l | tr -d ' '" "1"
+# ...and stdout gains no blank line from it.
+assert "mise generate install-script | tail -c 2 | wc -l | tr -d ' '" "1"
 
 # The Windows launcher is opt-in, so the default must leave a project with the one file it had
 # before the flag existed.

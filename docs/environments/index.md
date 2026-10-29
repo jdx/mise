@@ -242,7 +242,7 @@ a variable that `_.source` set above it; `_.python.venv` always runs last.
 | `tools`   | Yes      | Yes        | Yes      | Resolve after tools load ([details](#lazy-eval))                         |
 | `redact`  | Yes      | Yes        | No       | Mark every loaded value as [sensitive](/environments/secrets/#redaction) |
 | `expand`  | Yes      | No         | No       | Let the file use values loaded before it                                 |
-| `find_up` | Yes      | No         | No       | Search the current directory and its parents for a relative path         |
+| `find_up` | Yes      | No         | No       | Search the config's directory and its parents for the file               |
 
 ### `env._.file` {#env-file}
 
@@ -298,23 +298,44 @@ mise decrypts SOPS-encrypted JSON, YAML and TOML files as it loads them; see
 [SOPS files](/environments/secrets/sops.html).
 
 `_.file` resolves a relative path against the config's root, normally the
-project directory. To load a file from the current directory and every parent
-directory instead, set
-`find_up = true`. This works from a global config, so one entry covers every
-project:
+project directory. Set `find_up = true` to load it from the config's root and
+every parent directory instead, which suits a monorepo whose root `.env` applies
+to every package:
+
+```toml [mise.toml]
+[env]
+_.file = { path = ".env", find_up = true }
+```
+
+An absolute path starts at its own directory and searches that directory and
+each parent for the file name. A global config can use this with `cwd` so one
+entry covers every project:
 
 ```toml [~/.config/mise/config.toml]
 [env]
-_.file = [
-  { path = ".env", find_up = true },
-  { path = ".env.local", find_up = true },
-]
+_.file = { path = "{{cwd}}/.env", find_up = true }
 ```
 
-Files are loaded from the filesystem root down to the current directory, so a
-variable in a closer file wins. `find_up` has no effect on an absolute path. The
-[`env_file`](/configuration/settings.html#env_file) setting
-(`MISE_ENV_FILE=.env`) does the same for a single filename.
+Each entry is searched on its own, and entries apply in the order listed, so a
+later entry wins wherever its files are. Here a `.env.local` in a parent
+directory overrides a `.env` in the project. To search names together, put them
+in one entry's `path` list:
+
+```toml [mise.toml]
+[env]
+_.file = { path = [".env", ".env.local"], find_up = true }
+```
+
+Now the closest directory wins, and within one directory a later name wins, so
+the project's `.env` overrides the parent's `.env.local`. Only plain relative
+names are searched together. A name with a template, `$VAR` or `~`, or an
+absolute path, is searched on its own in list order.
+
+The [`env_file`](/configuration/settings.html#env_file) setting also finds
+dotenv files up the tree, but it is a separate feature. It applies after every
+config file's `[env]` and overrides it, except for files already loaded by
+`_.file`. It skips those files, so the `[env]` precedence applies to them.
+`_.file` is an ordinary entry that a project's own `[env]` can override.
 
 ### `env._.path` {#env-path}
 

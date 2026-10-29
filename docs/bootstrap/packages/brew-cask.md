@@ -192,8 +192,37 @@ with an error that tells you how to repair them in Homebrew.
 ## Casks mise installed
 
 mise records these casks in its own receipt in the Caskroom and does not write
-Homebrew's cask metadata, so they stay mise-owned. Use mise, not Homebrew, to
-upgrade or prune them.
+Homebrew's cask metadata by default, so they stay mise-owned. Use mise, not
+Homebrew, to upgrade or prune them. Homebrew does not see them: `brew upgrade`
+and `brew outdated` skip them, and `brew doctor` reports their Caskroom
+directory as having no valid metadata.
+
+### Let Homebrew upgrade them {#let-homebrew-upgrade-them}
+
+If you keep Homebrew and want `brew upgrade` to handle every cask, set
+`homebrew_metadata` under `[bootstrap.brew]`:
+
+```toml
+[bootstrap.brew]
+homebrew_metadata = true
+```
+
+After mise installs a cask, it then writes the metadata file Homebrew looks for
+(`.metadata/<version>/<timestamp>/Casks/<token>.json`, containing `{}` as for a
+cask Homebrew loaded from its API). Homebrew reads the cask definition from its
+API and takes the installed version from the Caskroom folder name, so
+`brew upgrade`, `brew outdated` and `brew doctor` treat the cask like one it
+installed.
+
+This hands the cask to Homebrew, as [casks installed by
+Homebrew](#casks-installed-by-homebrew) describes: mise leaves it alone from then
+on, and `apply`, `upgrade` and `prune` skip it. A cask mise installed earlier
+gets the metadata on the next `apply`. Casks from third-party taps stay with
+mise, because Homebrew's record names only the token and would look it up in
+`homebrew/cask`. So do casks installed outside the default application
+directory (an `appdir` entry or `MISE_BREW_CASK_OPT_APPDIR`), which
+`brew upgrade` would reinstall into `/Applications`. The setting applies on
+Apple Silicon Macs only, where mise's Caskroom is Homebrew's.
 
 A cask counts as installed while its app, font, binary, and completion files
 are in place. Changes inside an installed app, such as a self-update, do not
@@ -225,6 +254,22 @@ uninstall steps; casks whose files changed or are shared with another cask;
 interrupted installs; and casks installed by a mise version that did not record
 prune information, until an upgrade refreshes them. Prune never runs a cask's
 `zap` cleanup. Casks cannot be imported.
+
+To remove a cask that prune skipped only because mise cannot prove it is
+unchanged, such as a self-updating app or a cask with install steps, pass
+`--force`:
+
+```sh
+mise bootstrap packages prune --manager brew-cask --force
+```
+
+Prune names the casks `--force` would remove when it skips them. A forced prune
+removes the app, binary, font, and completion files mise recorded installing,
+except a link that now points elsewhere, and the cask's Caskroom directory.
+Anything a cask's own install steps created, such as a privileged helper or a
+launch agent, stays in place. `--force` never removes a cask Homebrew installed,
+a cask with no mise receipt, an interrupted install, or files shared with
+another cask.
 
 Deleting a `brew-cask:` entry does not uninstall the cask until you prune.
 

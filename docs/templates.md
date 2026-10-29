@@ -16,6 +16,7 @@ share task definitions through `extends`.
 | File or section                                             | What is rendered                                                                                                                                                | Extra context                                                 |
 | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | `mise.toml`                                                 | String values in most sections, such as `[env]`, `[tools]`, `[vars]`, `[hooks]`, and `[plugins]`. Keys are not rendered, and the file must be valid TOML first. | `config_source`                                               |
+| `[settings]`                                                | Only `dotfiles.root`, the `write_targets` paths, and the `age` key and identity files; see [settings](#settings-templates)                                      | Limited, like `.miserc.toml`                                  |
 | `[bootstrap]`                                               | Some values only; see [bootstrap templates](/bootstrap.html#templates)                                                                                          | None                                                          |
 | Task fields, such as `run`                                  | When the task runs                                                                                                                                              | `usage`, `tools`, [`task_source_files()`](#task-source-files) |
 | [Dotfiles](/dotfiles/managed.html) with `mode = "template"` | The source file's content                                                                                                                                       | See the dotfiles page                                         |
@@ -100,6 +101,8 @@ Tera v2 also has slices (`parts[0:2]`, `parts[-1]`), spread
 | `mise_pid`                                                             | Process ID of the running mise                                                                                                                                                                                | Everywhere except `.miserc.toml`                                                 |
 | `mise_env`                                                             | List of the [config environments](/configuration/environments.html) you selected. Undefined when none is selected, so check it with <span v-pre>`{% if mise_env is defined %}`</span>                         | Everywhere except `.miserc.toml`                                                 |
 | `xdg_cache_home`, `xdg_config_home`, `xdg_data_home`, `xdg_state_home` | XDG base directories                                                                                                                                                                                          | Everywhere                                                                       |
+| `mise_config_dir`                                                      | The config directory mise resolves: `MISE_CONFIG_DIR`, else `xdg_config_home` + `/mise`                                                                                                                       | Everywhere                                                                       |
+| `system_brew_prefix`                                                   | The prefix of mise's built-in [Homebrew support](/bootstrap/packages/brew.html): `/opt/homebrew` on macOS, `/home/linuxbrew/.linuxbrew` elsewhere                                                             | Everywhere                                                                       |
 | `tools`                                                                | Active tools that are installed (see below)                                                                                                                                                                   | Tasks, and `[env]` directives with `tools = true`                                |
 | `usage`                                                                | Parsed task arguments; see [Task arguments](#task-arguments)                                                                                                                                                  | Task `run` scripts                                                               |
 
@@ -135,6 +138,9 @@ and selected versions that are not installed, are left out.
 | --------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `exec(command, [cache_key], [cache_duration])`            | string  | Runs `command` with the default inline shell and returns its output without the trailing newline. See [`exec()`](#exec).                                                                                                                              |
 | `read_file(path)`                                         | string  | Returns a file's contents. Relative paths resolve from the template's directory, not from `cwd`; see [`exec()`](#exec).                                                                                                                               |
+| `read_json(path)`                                         | any     | Parses a JSON file. See [`read_json()`](#read-structured).                                                                                                                                                                                            |
+| `read_yaml(path)`                                         | any     | Parses a YAML file. See [`read_json()`](#read-structured).                                                                                                                                                                                            |
+| `read_toml(path)`                                         | any     | Parses a TOML file. See [`read_json()`](#read-structured).                                                                                                                                                                                            |
 | `get_env(name, [default])`                                | string  | Returns a variable from the environment mise started with, or `default` when it is unset. An empty value is returned as is. It does not see `[env]` values; prefer <span v-pre>`{{ env.NAME \| default(value="...") }}`</span>.                       |
 | `arch([x64=...], [arm64=...])`                            | string  | The CPU architecture: `x64`, `arm64`, or another Rust architecture name. Pass a keyword named after an architecture to rename it, as in <span v-pre>`{{ arch(x64="amd64", arm64="aarch64") }}`</span>.                                                |
 | `os([linux=...], [macos=...], [windows=...])`             | string  | The operating system: `linux`, `macos`, or `windows`. Keywords rename it the same way, as in <span v-pre>`{{ os(macos="darwin") }}`</span>.                                                                                                           |
@@ -178,7 +184,9 @@ AWS_ACCOUNT_ID = "{{ exec(command='aws sts get-caller-identity --query Account -
 
 Both functions need a [trusted](/security.html#configuration-trust) config. In
 [safe mode](/security.html#safe-mode) (`MISE_SAFE=1`), they fail with an error
-instead of running, and neither is available in `.miserc.toml`.
+instead of running, and neither is available in `.miserc.toml`. Safe mode also
+refuses `get_env()` and the `hash_file`, `file_size` and `last_modified`
+filters, and `env` is empty outside global and system config files.
 
 ::: warning
 `exec()` runs every time its template renders, including under `--dry-run`.
@@ -188,6 +196,39 @@ disabled, so a hook command that calls `exec()` stops the preview with
 `exec() is disabled during dry run`. `[vars]` and `[env]` are still rendered
 when the config loads, so their `exec()` calls run even under `--dry-run`.
 :::
+
+### read_json(), read_yaml() and read_toml() {#read-structured}
+
+These read a file and parse it, so a template can use one value from a file that
+already records it instead of repeating it in `mise.toml`. Relative paths
+resolve like `read_file()`, from the directory of the config file.
+
+Index into the result with `["key"]` and `[0]`:
+
+```toml
+[tools]
+node = "{{ read_json(path='package.json')['volta']['node'] }}"
+pnpm = "{{ read_json(path='package.json')['packageManager'] | split(pat='@') | last }}"
+pulumi = "{{ read_yaml(path='Pulumi.yaml')['requiredPulumiVersion'] }}"
+mytool = "{{ read_toml(path='pyproject.toml')['tool']['mytool']['version'] }}"
+```
+
+Tera does not parse `.key` straight after a call. To read several values from one
+file, bind the result with `set` first, where `.key` works:
+<span v-pre>`{% set pkg = read_json(path='package.json') %}{{ pkg.volta.node }}`</span>.
+
+- A file that cannot be read or parsed fails with an error naming the function
+  and the file.
+- A key that is not there is an error. Add
+  <span v-pre>`| default(value="...")`</span> for a fallback.
+- TOML dates and times are strings.
+- YAML follows mise's other YAML reads: only `true` and `false` are booleans, so
+  `yes` and `on` stay strings. An unquoted number such as `3.270` is a number
+  and renders as `3.27`, so quote versions in the file.
+
+They need a [trusted](/security.html#configuration-trust) config, are refused in
+[safe mode](/security.html#safe-mode), and are not available in `.miserc.toml`,
+like `read_file()`.
 
 ## Filters {#filters}
 
@@ -410,22 +451,52 @@ share a whole task, use a [task template](/tasks/templates.html); to share shell
 logic across scripts, source a shell file. Components need the default Tera v2
 engine and do not work with `tera_v1`.
 
+## Templates in settings {#settings-templates}
+
+Most settings are taken literally: a template in their value is not
+rendered. A few path settings render templates because they have to resolve
+against the file that sets them:
+
+- [`dotfiles.root`](/configuration/settings.html#dotfiles.root)
+- [`write_targets`](/configuration/settings.html#write_targets) paths
+- [`age.key_file`](/configuration/settings.html#age.key_file),
+  [`age.identity_files`](/configuration/settings.html#age.identity_files) and
+  [`age.ssh_identity_files`](/configuration/settings.html#age.ssh_identity_files)
+
+These render while mise reads settings, so they get the limited context of a
+global [`.miserc.toml`](#miserc-template-support), plus `config_source`. Unlike
+a project `.miserc.toml`, a project `mise.toml` gets `env` here too.
+`config_root` is the [config root](/configuration.html#config-root) of the file
+that sets them, and a relative result resolves against it.
+
+<div v-pre>
+
+```toml [~/.dotfiles/mise.toml]
+[settings]
+dotfiles.root = "{{ mise_config_dir }}/home"
+```
+
+</div>
+
 ## Templates in .miserc.toml {#miserc-template-support}
 
 mise renders [`.miserc.toml`](/configuration.html#miserc) before it reads
 `mise.toml` or settings, so only information from the operating system is
 available:
 
-- `env`: the environment mise started with
+- `env`: the environment mise started with, in the global and system files
+  only (see [below](#miserc-project-templates))
 - `config_root`: the directory that holds the `.miserc.toml` file
 - `cwd`
 - `xdg_cache_home`, `xdg_config_home`, `xdg_data_home`, `xdg_state_home`
+- `mise_config_dir`
+- `system_brew_prefix`
 - Functions that need no project context, such as `arch()`, `os()`,
   `os_family()`, `libc()`, `avx2()`, `num_cpus()`, `choice()`, and `get_env()`
 - All [filters](#filters) and [tests](#tests)
 
 Not available: `mise_env` (which `.miserc.toml` itself sets), `exec()`,
-`read_file()`, `mise_bin`, `mise_pid`, `vars`, and `tools`.
+`read_file()`, `read_json()`, `read_yaml()`, `read_toml()`, `mise_bin`, `mise_pid`, `vars`, and `tools`.
 
 <div v-pre>
 
@@ -455,7 +526,42 @@ ceiling_paths = ["{{ env.HOME }}/work"]
 If a template fails to render, for example because of an undefined variable or
 a call to `exec()`, mise silently uses the file's raw, unrendered content. No
 warning is printed, because mise reads `.miserc.toml` before logging starts. To
-keep a literal <span v-pre>`{{`</span>, use a [`raw` block](#syntax).
+keep a literal <span v-pre>`{{`</span>, use a [`raw` block](#syntax) (in the
+global and system files).
+
+### Project .miserc.toml files {#miserc-project-templates}
+
+A `.miserc.toml`, `.miserc.local.toml` or `.config/miserc.toml` in a project
+loads without [trust](/security.html#configuration-trust), so its templates are
+limited, and the global and system files keep everything above:
+
+- `env` is empty, and `get_env()` is not available, so a repository cannot
+  copy your environment into the config environments it selects.
+- The only statements are `if`, `elif`, `else` and `endif`, so a template cannot
+  loop. The only functions are `arch()`, `os()`, `os_family()`, `libc()`,
+  `avx2()` and `num_cpus()`. The filters are `default`, `lower`, `upper`,
+  `capitalize`, `title`, `trim`, `trim_start`, `trim_end`, `basename`,
+  `dirname`, `extname`, `file_stem`, `first`, `last`, `length`, `str`, `int`,
+  `float` and the case filters such as `kebabcase`, and the tests are `defined`,
+  `undefined`, `string`, `number`, `starting_with`, `ending_with` and
+  `containing`.
+- The file may be at most 16 KiB.
+
+These limits keep a template from taking unbounded time or memory, which would
+otherwise stall every mise command, the shell prompt hook included, below the
+project. mise leaves a file that breaks them unrendered and warns.
+
+<div v-pre>
+
+```toml [.miserc.toml]
+{% if os() == "macos" %}
+env = ["mac"]
+{% else %}
+env = ["{{ config_root | basename }}"]
+{% endif %}
+```
+
+</div>
 
 ## Migrating from Tera v1 {#tera-v2-migration}
 

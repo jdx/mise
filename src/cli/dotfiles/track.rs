@@ -149,6 +149,9 @@ impl DotfilesTrack {
         let global = declaration_file(false)?;
         let mut edits: BTreeMap<PathBuf, DeclarationEdit> = BTreeMap::new();
         let mut locations = BTreeMap::new();
+        // targets another declaration already owns in a mode that is not
+        // `track`: the tracking entry goes in its own file beside it
+        let mut alongside: BTreeMap<String, (PathBuf, &'static str)> = BTreeMap::new();
         let mut declared: Vec<(String, PathBuf)> = vec![];
         // targets this file already declares exactly as this command would:
         // no prompt and no rewrite, and their baseline records a checkpoint
@@ -359,14 +362,23 @@ impl DotfilesTrack {
                 && !crate::config::is_system_config(&existing.origin.config)
             {
                 existing.origin.config.clone()
-            } else if managed
+            } else if let Some(other) = managed
                 .iter()
-                .any(|req| req.target == target && req.mode != FileMode::Track)
+                .find(|req| req.target == target && req.mode != FileMode::Track)
             {
-                global
+                let tracking = global
                     .parent()
                     .unwrap_or(Path::new("."))
-                    .join("conf.d/dotfiles-tracking.toml")
+                    .join("conf.d/dotfiles-tracking.toml");
+                // the entry is replaced, not kept, only when it lives in the
+                // tracking file under the very key this run writes
+                if other.origin.config != tracking || other.target_raw != target_key {
+                    alongside.insert(
+                        target_key.clone(),
+                        (other.origin.config.clone(), other.mode.name()),
+                    );
+                }
+                tracking
             } else {
                 global.clone()
             };
@@ -583,6 +595,13 @@ impl DotfilesTrack {
             } else {
                 info!(
                     "dotfiles: tracking {key} ({summary}; declared in {})",
+                    display_path(&locations[key])
+                );
+            }
+            if let Some((other, mode)) = alongside.get(key) {
+                info!(
+                    "dotfiles: {key} is also declared with mode = \"{mode}\" in {}, which was left as it is. To track it from that entry instead, replace it with {{ mode = \"track\" }} (dropping source, content, and manifest) and remove the entry from {}",
+                    display_path(other),
                     display_path(&locations[key])
                 );
             }
@@ -1491,6 +1510,7 @@ mod declaration_tests {
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            create_if_missing: false,
             dot_prefix: false,
             relative: false,
             group: None,

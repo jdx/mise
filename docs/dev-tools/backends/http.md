@@ -55,6 +55,7 @@ The URL is a [Tera template](/templates.html). Write values in double braces:
 ::: v-pre
 
 - `{{ version }}`: the version being installed
+  Tera filters work on it, for example `{{ version | replace(from='-build1', to='') }}`.
 - `{{ os() }}`: `linux`, `macos` or `windows`
 - `{{ arch() }}`: `x64` or `arm64`
 - `{{ os_family() }}`: `unix` or `windows`
@@ -210,6 +211,8 @@ version_json_path = ".[].tag_name"
 A filter keeps one channel of an API that returns several, such as Flutter's
 stable releases:
 
+<!-- schema: skip -->
+
 ```toml
 version_json_path = ".releases[?channel=stable].version"
 ```
@@ -231,10 +234,14 @@ version_expr = 'filter(split(body, "\n"), # != "")'
 
 Other examples:
 
+<!-- schema: skip -->
+
 ```toml
 # keys of a JSON object, as in {"versions": {"1.0.0": {}, "2.0.0": {}}}
 version_expr = 'keys(fromJSON(body).versions)'
 ```
+
+<!-- schema: skip -->
 
 ```toml
 # sort with mise's version-aware comparator
@@ -247,6 +254,49 @@ are available, such as `fromJSON`, `keys`, `filter`, `map` and `split`. mise add
 [`version_order = "semver"`](#version-order) when the versions follow semantic
 versioning, and use `sortVersions()` when the expression needs a sorted value
 along the way.
+
+### `version_date_expr` and `version_date_url` {#version-date-expr}
+
+A version list without dates cannot take part in
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age): a
+version with no release date is never held back by the cooldown. When the
+upstream publishes dates, `version_date_expr` reads them. It is an
+[expr-lang](https://expr-lang.org/) expression that receives `body` (the
+`version_list_url` response), `bodies` (see below) and `versions` (the list that
+`version_expr` produced), and returns a list of `[version, date]` pairs, or a map
+of version to date. A date is an RFC 3339 timestamp, an HTTP date such as a `Last-Modified` value,
+or a `YYYY-MM-DD` day; mise skips and warns about any other form.
+
+```toml
+[tools."http:my-tool"]
+version = "latest"
+url = "https://example.com/releases/my-tool-v{{ version }}.tar.gz"
+version_list_url = "https://example.com/releases.json"
+version_expr = 'map(fromJSON(body).releases, { #.version })'
+version_date_expr = 'map(fromJSON(body).releases, { [#.version, #.published_at] })'
+```
+
+Versions that the expression leaves out stay undated, and a version the expression
+names that is not in the list is ignored. A malformed expression fails the listing.
+
+When the dates live somewhere other than the version list, set `version_date_url`.
+`body` is then that response, not the version list. An upstream that pages its
+listing needs `version_date_next_expr`, which sees each page as `body` and its
+address as `url`, and returns the address of the next page, or `nil` after the last.
+`bodies` holds every page in order. The next page must be on the same host, because
+`headers` are sent with every request, and mise stops after 100 pages.
+
+<!-- schema: skip -->
+
+```toml
+# GCS object listing: 1000 objects a page, with a token for the next one
+version_date_url = "https://storage.googleapis.com/storage/v1/b/my-bucket/o?prefix=releases/"
+version_date_next_expr = 'fromJSON(body).nextPageToken != nil ? split(url, "&pageToken=")[0] + "&pageToken=" + fromJSON(body).nextPageToken : nil'
+version_date_expr = 'map(flatten(map(bodies, { fromJSON(#).items })), { [split(#.name, "/")[1], #.timeCreated] })'
+```
+
+`version_date_url` and `version_date_next_expr` require `version_date_expr`, and
+all three are sent the same `headers` as `version_list_url`.
 
 ### `version_order` {#version-order}
 
@@ -366,6 +416,13 @@ For HTTP Basic auth, add the host to your netrc file; see the
 [`netrc`](/configuration/settings.html#netrc) setting. Use `headers` for a token
 or an API key.
 
+Credentials in the URL itself stay out of `mise.lock`: userinfo
+(`https://user:token@host/...`) is removed from the recorded URL, and a URL
+whose query string carries a credential (`?token=`, `?access_token=`, `?key=`,
+`?sig=`, `?X-Amz-Signature=` and similar) is refused, so `mise lock` and
+installs that write the lockfile fail with an error naming the parameter. Move
+such a credential to `headers` or netrc.
+
 ### `headers`
 
 Extra request headers for the download and for the
@@ -385,9 +442,9 @@ linux-x64 = { url = "https://ghcr.io/v2/acme/polaris/blobs/sha256:...", format =
 macos-arm64 = { url = "https://ghcr.io/v2/acme/polaris/blobs/sha256:...", format = "tar.gz" }
 ```
 
-mise redacts header values from debug output, and headers do not change where a
-tool is installed. A `headers` entry replaces any token mise would otherwise
-send to the same host.
+mise redacts header values from debug output and does not record them with the
+installation, and headers do not change where a tool is installed. A `headers`
+entry replaces any token mise would otherwise send to the same host.
 
 mise sends headers only to the host in `url`. When the server redirects to a
 different host, port or scheme, mise drops every header for the rest of the
@@ -458,7 +515,8 @@ ripgrep's archives do (`ripgrep-14.1.1-x86_64-unknown-linux-musl/rg`).
 
 The directory, relative to the install directory, that holds the executables,
 or where mise places a single downloaded file. It is a template, and setting it
-turns off the automatic stripping.
+turns off the automatic stripping. An absolute path, or one that contains `..`,
+is rejected.
 
 ::: v-pre
 For an archive laid out as `my-tool-1.0.0/bin/my-tool`, remove the outer

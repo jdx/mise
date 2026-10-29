@@ -17,18 +17,20 @@ values you mark as sensitive in the output it captures.
 
 ## Use a secret manager {#use-a-secret-manager}
 
-mise secrets is experimental. Enable it and add fnox to the project:
+Add fnox to the project:
 
 ```sh
-mise settings experimental=true
 mise use fnox
 ```
 
-Then name fnox as the project's secrets source and list the keys each task
-needs:
+Then enable mise secrets, which is experimental, name fnox as the project's
+secrets source, and list the keys each task needs:
 
 ```mise-toml [mise.toml]
 min_version = "2026.10.4"
+
+[settings]
+experimental = true
 
 [secrets.fnox]
 
@@ -107,7 +109,10 @@ run = "./deploy.sh"
 ```
 
 mise matches values, not names: once a value is marked, mise replaces that text
-wherever it appears in the output it processes.
+wherever it appears in the output it processes. Task output is redacted line by
+line, so each line of a multi-line value (a private key, a token read from a
+file that ends in a newline) is replaced on its own; lines shorter than four
+characters are left as they are.
 
 ### What redaction covers {#what-redaction-covers}
 

@@ -82,6 +82,11 @@ dot_prefix = true
   `~/git/config.tmpl`.
 - An entry without `mode` deploys like the group: a directory the group's way,
   a file as one link, or as one copy in a `copy` group.
+  The exception is an entry that sets only `permissions`: it does not inherit
+  the group's `mode`, deploys nothing, and only adjusts the permissions of an
+  existing target (see [Permissions](/dotfiles/managed.html#permissions)). To
+  deploy a file and set its permissions, set `mode` too, for example
+  `{ mode = "copy", permissions = "0600" }`.
 - An entry that walks a directory inherits the group's `dot_prefix` and
   `manifest`, and the group's `exclude` patterns that contain no `/`, unless
   it sets its own.
@@ -91,10 +96,36 @@ dot_prefix = true
   linked as a whole would change a file in the root itself, so mise reports it
   as a conflict before anything is written.
 
-Group entries are whole-file entries only. Declare
-[block, line, and merge edits](/dotfiles/edits.html) in `[dotfiles]`. To put an
-entry in a group, declare it under `[dotfile_groups.<name>.entries]`; a
-`[dotfiles]` entry with a `group` key is invalid.
+To put an entry in a group, declare it under `[dotfile_groups.<name>.entries]`;
+a `[dotfiles]` entry with a `group` key is invalid.
+
+### Edits in a group {#group-edits}
+
+An entry can also [edit part of a file](/dotfiles/edits.html) instead of
+deploying one. Key it like a `[dotfiles]` edit, with the path of the file
+followed by an id, and write it as a table with `block`, `line`, or `merge`:
+
+```toml
+[dotfile_groups.common]
+root = "common"
+
+[dotfile_groups.common.entries]
+"~/.config/mise/conf.d/private.local.toml/defaults" = { source = "../templates/private.toml", merge = "missing", permissions = "0600" }
+```
+
+- The edit applies only while the group is selected. A machine that selects
+  other groups leaves the file alone.
+- A relative `source` starts at the group root, like the group's other
+  entries, and a `merge` without one reads the file at the same path inside the
+  root. A walking group does not also deploy a file that an edit reads or
+  changes.
+- The file being edited must lie inside the group's target. An edit takes the
+  keys it takes in `[dotfiles]`, and a key that only whole-file entries take,
+  such as `mode`, makes mise ignore the whole group with a warning.
+- Deselecting the group stops the edit but leaves what it wrote in the file.
+  `mise dot unapply --group` removes only the group's deployed files, so to
+  remove an edit's block or line, run `mise dot unapply <path>` while the group
+  is still selected.
 
 ## Select groups {#selecting-groups}
 
@@ -108,8 +139,33 @@ dotfile_groups = ["home", "zsh"]
 ```
 
 A more local config file's list replaces the others. `[dotfiles]` entries
-apply on every machine, whichever groups it selects. mise warns when the list
-names a group that nothing declares.
+apply on every machine, whichever groups it selects; the entries of a group,
+including its [edits](#group-edits), apply only while it is selected.
+
+### Groups without a table {#groups-without-a-table}
+
+A selected name that no `[dotfile_groups]` table declares, but that names a
+directory under [`dotfiles.root`](/configuration/settings.html#dotfiles.root),
+is a group with the defaults: its directory is the root, deployed into `~`
+file by file. A directory of packages then needs no tables at all:
+
+```text
+~/.dotfiles/
+├── kitty/.config/kitty/kitty.conf
+├── nvim/.config/nvim/init.lua
+└── zsh/.zshrc
+```
+
+```toml
+[bootstrap]
+dotfile_groups = ["kitty", "nvim", "zsh"]
+```
+
+`~/.config/kitty/kitty.conf` links to `~/.dotfiles/kitty/.config/kitty/kitty.conf`,
+and so on. Write a table only for a group that needs more, such as
+`entries`, `dot_prefix`, or another `target`; a table replaces the defaults
+for its name. These groups exist only while a list selects them. mise warns
+when the list names something that is neither declared nor a directory.
 
 Two selected groups cannot deploy the same target file, and one group cannot
 link a directory as a whole while another places files inside it. mise
@@ -125,14 +181,17 @@ records what each group deployed in its
 orphaned when a selected group stops deploying it, for example after a new
 `exclude` pattern or after you delete a copied source file. A file that any
 active entry still deploys is never orphaned, even when the entry has moved to
-another group. If mise cannot read a group, for example because its `root` is
+another group. A permissions-only entry deploys nothing, so it does not keep a file
+from being orphaned: dropping `mode` from an entry that deployed a file leaves
+that file orphaned, and `--prune` removes it. If mise cannot read a group, for example because its `root` is
 missing, it warns about the group instead of listing its files.
 
 To remove orphaned files, or every file of one group:
 
 ```sh
-mise dot apply --prune          # apply, then remove orphaned files
-mise dot unapply --group work   # remove one group's files
+mise dot apply --prune           # apply, then remove orphaned files
+mise bootstrap --prune-dotfiles  # the same, as part of a bootstrap run
+mise dot unapply --group work    # remove one group's files
 ```
 
 `--prune` and `unapply --group` remove a link only while it still points at
@@ -176,15 +235,23 @@ index, so `add` refuses to capture into it; copy the file into the root and
 
 Groups cover the same ground as Stow packages:
 
-| GNU Stow                        | mise                                                                                                         |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| A package directory             | A group, `[dotfile_groups.<name>]`, with that directory as `root`                                            |
-| `stow --dotfiles`               | `dot_prefix = true`                                                                                          |
-| Relative links (Stow's default) | [`dotfiles.relative_symlinks`](/configuration/settings.html#dotfiles.relative_symlinks) or `relative = true` |
-| `stow -D <package>`             | `mise dot unapply --group <name>`                                                                            |
-| `stow --adopt`                  | `mise dot add --group <name> <file>`                                                                         |
-| Choosing which packages to stow | `[bootstrap] dotfile_groups`                                                                                 |
+| GNU Stow                        | mise                                                                                                                             |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| A package directory             | A directory under `dotfiles.root` that `[bootstrap] dotfile_groups` names; see [Groups without a table](#groups-without-a-table) |
+| `stow --dotfiles`               | `dot_prefix = true`                                                                                                              |
+| Relative links (Stow's default) | [`dotfiles.relative_symlinks`](/configuration/settings.html#dotfiles.relative_symlinks) or `relative = true`                     |
+| `stow -D <package>`             | `mise dot unapply --group <name>`                                                                                                |
+| `stow --adopt`                  | `mise dot add --group <name> <file>`                                                                                             |
+| Choosing which packages to stow | `[bootstrap] dotfile_groups`                                                                                                     |
 
 Stow links a whole directory when nothing else lives in it. A `symlink-each`
 group always links file by file; to link a directory as a whole, add a
 `symlink` [group entry](#group-entries) for it.
+
+To switch a machine from Stow, select the same packages and run
+`mise dot apply`; there is no need to unstow first. Where Stow linked a whole
+directory, such as `~/.config/kitty` to `~/.dotfiles/kitty/.config/kitty`,
+`mise dot status` reports the link, and apply replaces it with a real
+directory that links each file. A link into the group's root that does not
+point at the directory belonging there is refused, even with `--force`,
+because writing through it would change the files in the root.

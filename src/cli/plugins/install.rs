@@ -167,10 +167,12 @@ pub(crate) async fn install_plugin(
         .as_deref()
         .is_some_and(|url| url.starts_with("packslip:"))
     {
-        if explicit_type && plugin_type != PluginType::Vfox {
-            bail!("packslip plugin sources require the vfox plugin type");
+        if explicit_type && !matches!(plugin_type, PluginType::Vfox | PluginType::VfoxBackend) {
+            bail!("packslip plugin sources require the vfox or vfox-backend plugin type");
         }
-        plugin_type = PluginType::Vfox;
+        if plugin_type != PluginType::VfoxBackend {
+            plugin_type = PluginType::Vfox;
+        }
     }
     let name = name.to_string();
     if plugin_type == PluginType::Package && crate::system::packages::is_builtin_manager_name(&name)

@@ -159,7 +159,9 @@ active `[tools]`.
 The option applies to the first Rust version the configuration selects for this
 platform. mbx keeps its own version and lockfile entry, independent of Rust. In
 [safe mode](/security.html#safe-mode), project config cannot turn the option
-on. To turn off an opt-in inherited from another config, set
+on: it counts only when the global Rust entry or a `rust[mr_boxington=true]`
+argument sets it, not when a `[tool_alias]` adds it or a `rust@<version>`
+argument inherits it. To turn off an opt-in inherited from another config, set
 `mr_boxington = false` in the project's Rust entry.
 
 An explicit [`[wrappers.cargo]`](/dev-tools/shims.html#command-wrappers) takes

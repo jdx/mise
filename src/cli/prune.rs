@@ -8,7 +8,8 @@ use crate::config::{Config, Settings};
 use crate::file::display_path;
 use crate::runtime_symlinks;
 use crate::toolset::{
-    NeededVersions, PrunableTools, RunningProcess, ToolVersion, prunable_tools_with_sources,
+    NeededVersions, PrunableTools, RunningProcess, ToolVersion, needed_key,
+    prunable_tools_with_sources,
 };
 use crate::ui::install_progress::removal_progress;
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -143,15 +144,37 @@ impl Prune {
     }
 }
 
-pub(super) async fn prune(
+/// Prune every unused version of `tools`, plus the unused ones among `versions`.
+///
+/// A version in `versions` is one the caller was asked to remove by name, so its
+/// siblings are none of its business: they stay even when nothing uses them. When
+/// such a version is kept because something still needs it, say what, since
+/// otherwise the command that was asked to remove it appears to do nothing.
+pub(super) async fn prune_scoped(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
+    versions: Vec<ToolVersion>,
     dry_run: bool,
 ) -> Result<()> {
     let _suspended = crate::install_layout::snapshots::suspend();
+    let scanned = tools
+        .iter()
+        .copied()
+        .chain(versions.iter().map(|tv| tv.ba()))
+        .collect::<Vec<_>>();
     let PrunableTools {
-        to_delete, running, ..
-    } = scan_prunable(config, tools).await?;
+        mut to_delete,
+        needed,
+        running,
+    } = scan_prunable(config, scanned).await?;
+    let selected = versions.iter().map(needed_key).collect::<BTreeSet<_>>();
+    to_delete.retain(|(_, tv)| tools.contains(&tv.ba()) || selected.contains(&needed_key(tv)));
+    // A running process only matters for what this call could have removed.
+    let running = running
+        .into_iter()
+        .filter(|(tv, _)| tools.contains(&tv.ba()) || selected.contains(&needed_key(tv)))
+        .collect::<Vec<_>>();
+    explain_kept(&versions, &needed);
     explain_running(&running);
     delete(
         config,
@@ -161,6 +184,16 @@ pub(super) async fn prune(
         UnavailableConfirmation::Decline,
     )
     .await
+}
+
+/// Say which of the versions that were asked for stay, and what needs them.
+fn explain_kept(versions: &[ToolVersion], needed: &NeededVersions) {
+    for tv in versions {
+        if let Some(sources) = needed.get(&needed_key(tv)) {
+            let sources = sources.iter().map(display_path).collect::<Vec<_>>();
+            info!("{} is kept: required by {}", tv.style(), sources.join(", "));
+        }
+    }
 }
 
 /// Find the prunable versions behind a progress line, since resolving every

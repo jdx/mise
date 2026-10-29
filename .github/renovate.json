@@ -10,6 +10,11 @@
   },
   "packageRules": [
     {
+      "description": "The perf-runner image sets the toolchain every perf baseline is measured on; review bumps instead of automerging them.",
+      "matchPackageNames": ["ghcr.io/jdx/perf-runner"],
+      "automerge": false
+    },
+    {
       "description": "copr image is rebuilt from source on Dockerfile changes; pinning a digest would cause stale image regressions.",
       "matchPackageNames": ["ghcr.io/jdx/mise"],
       "matchCurrentValue": "copr",

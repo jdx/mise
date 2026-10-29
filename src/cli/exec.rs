@@ -280,7 +280,7 @@ impl Exec {
         resolve_options: ResolveOptions,
         has_explicit_latest: bool,
         wrapper_env: BTreeMap<String, String>,
-        strip_dispatch_dirs: bool,
+        wrapper_dispatch: bool,
     ) -> eyre::Result<()> {
         let opts = InstallOptions {
             force: false,
@@ -353,15 +353,7 @@ impl Exec {
             warn!("failed to create shims for lazy tools: {err:#}");
         }
 
-        let warned = warn_if_command_falls_back(
-            &config,
-            &ts,
-            &opts,
-            &missing,
-            &program,
-            strip_dispatch_dirs,
-        )
-        .await?;
+        let warned = warn_if_command_falls_back(&config, &ts, &opts, &missing, &program).await?;
         // Those were just named; the generic notice below would repeat them.
         missing.retain(|tv| !warned.contains(tv));
 
@@ -392,8 +384,10 @@ impl Exec {
                 env.insert(crate::shims::TASK_TOOL_ARGS_ENV.into(), value);
             }
         }
-        if strip_dispatch_dirs && let Some(path) = env.get_mut(&*env::PATH_KEY) {
-            *path = crate::file::strip_dispatch_dirs_from_path(path);
+        // The wrapper directory stays: a wrapper this command runs still applies, and one that is
+        // already running is skipped by name.
+        if wrapper_dispatch && let Some(path) = env.get_mut(&*env::PATH_KEY) {
+            *path = crate::file::strip_shims_dir_from_path(path);
         }
 
         // Run auto-enabled deps steps (unless --no-deps)
@@ -434,6 +428,9 @@ impl Exec {
             None
         };
         env.remove("__MISE_DIFF");
+        // Not mise-managed env: a hook-env in the child would revert it from the diff and the
+        // child's descendants would apply the running wrapper again.
+        let active_wrappers_marker = env.remove(crate::shims::ACTIVE_WRAPPERS_ENV);
         let mut final_env = env::PRISTINE_ENV.clone();
         for key in &env_remove {
             final_env.remove(key);
@@ -442,6 +439,9 @@ impl Exec {
         let serialized = EnvDiff::from_final_env(&env::PRISTINE_ENV, &final_env).serialize();
         if let Some(mise_env) = removed_mise_env {
             env.insert("MISE_ENV".to_string(), mise_env);
+        }
+        if let Some(marker) = active_wrappers_marker {
+            env.insert(crate::shims::ACTIVE_WRAPPERS_ENV.to_string(), marker);
         }
         if let Ok(serialized) = serialized {
             env.insert("__MISE_DIFF".to_string(), serialized);
@@ -467,7 +467,9 @@ impl Exec {
                 symlinked_allow_paths: vec![],
             },
         );
-        sandbox.resolve_paths();
+        let project_roots: Vec<&std::path::Path> =
+            config.project_root.as_deref().into_iter().collect();
+        sandbox.resolve_paths(&project_roots)?;
 
         // Only when asked: `mise x` hands the command nothing by default, and fnox never
         // runs. This sees the unfiltered env, which G11 compares against; G13 and the
@@ -483,8 +485,18 @@ impl Exec {
         )
         .await?;
 
+        // A sandbox that denies env would drop the marker that makes a wrapper's command skip
+        // that wrapper, so its descendants would reach the wrapper again. A wrapper dispatch sets
+        // it; a command that skipped its wrapper only inherits it.
+        let active_wrappers = env
+            .get(crate::shims::ACTIVE_WRAPPERS_ENV)
+            .cloned()
+            .or_else(|| env::var(crate::shims::ACTIVE_WRAPPERS_ENV).ok());
         if sandbox.is_active() {
             env = sandbox.filter_env(&env);
+            if let Some(active_wrappers) = active_wrappers {
+                env.insert(crate::shims::ACTIVE_WRAPPERS_ENV.into(), active_wrappers);
+            }
         }
         // The grants go in after the sandbox filter: under deny-env it copies allow_env names
         // back in from mise's own environment, which would undo a key fnox asked to remove.
@@ -521,7 +533,7 @@ impl Exec {
                 }
                 cmd.push(format!(
                     "set -gx {} \"${tmp}\"; set -e {tmp}",
-                    shell_escape::escape(k.as_str().into()),
+                    crate::shell::fish_escape(k.as_str().into()),
                 ));
                 env.insert(tmp, v);
             }
@@ -537,9 +549,11 @@ impl Exec {
                 // each call prepends, so sequential calls reversed the order
                 // `list_final_paths` returns, pushing `env._.path` entries and
                 // command wrappers behind every tool directory.
+                // fish's own quoting, not POSIX: in fish `\'` inside single quotes is an
+                // escaped quote, so a directory name holding one ended the string early.
                 let paths = paths
                     .iter()
-                    .map(|p| shell_escape::escape(p.to_string_lossy()))
+                    .map(|p| crate::shell::fish_escape(p.to_string_lossy()))
                     .join(" ");
                 cmd.push(format!("fish_add_path -gm {paths}"));
             }
@@ -634,7 +648,6 @@ async fn warn_if_command_falls_back(
     opts: &InstallOptions,
     missing: &[ToolVersion],
     program: &str,
-    strip_dispatch_dirs: bool,
 ) -> Result<Vec<ToolVersion>> {
     // A path names its binary directly; there is no lookup to fall through.
     if program.contains(['/', '\\']) {
@@ -662,10 +675,10 @@ async fn warn_if_command_falls_back(
         return Ok(vec![]);
     }
     // A command wrapper configured for this command runs in place of any tool's binary. Its
-    // shim may not exist yet, so read the configuration. A wrapper dispatch resolves its own
-    // command with the wrapper directories stripped, so no wrapper applies there.
-    if !strip_dispatch_dirs {
-        let name = crate::shims::command_name_without_exe_suffix(program);
+    // shim may not exist yet, so read the configuration. The wrapper of a command that is
+    // already running does not apply: that command runs the real tool.
+    let name = crate::shims::command_name_without_exe_suffix(program);
+    if !crate::shims::is_active_command_wrapper(name) {
         let wrappers = crate::config::load_command_wrappers(
             &config.config_files,
             ts.versions.values().flat_map(|versions| &versions.requests),

@@ -30,6 +30,8 @@ PreInstall {
             slsa_min_level: None,
             slsa_signer_identity: None,
             slsa_signer_issuer: None,
+            slsa_source_repository: None,
+            slsa_source_tag: None,
         },
     ),
     headers: None,

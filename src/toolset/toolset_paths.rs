@@ -57,7 +57,17 @@ impl Toolset {
 
         let installed_strs: Vec<String> = installed
             .iter()
-            .map(|(p, tv)| format!("{}@{}={}", p.id(), tv.request.version(), tv.version))
+            .map(|(p, tv)| {
+                // runtime_path differs between a locked and a fuzzy tool version
+                // (the latter follows a runtime symlink that may be stale)
+                format!(
+                    "{}@{}={}:{}",
+                    p.id(),
+                    tv.request.version(),
+                    tv.version,
+                    tv.runtime_path().display()
+                )
+            })
             .sorted()
             .collect();
         key_parts.extend(installed_strs);
@@ -71,10 +81,12 @@ impl Toolset {
         Self::sort_by_overrides(&mut installed).unwrap();
 
         let mut paths: Vec<PathBuf> = Vec::new();
+        let mut had_error = false;
         for (p, tv) in installed {
             let start = std::time::Instant::now();
             let new_paths = p.list_bin_paths(config, &tv).await.unwrap_or_else(|e| {
                 warn!("Error listing bin paths for {tv}: {e:#}");
+                had_error = true;
                 Vec::new()
             });
             trace!(
@@ -85,7 +97,9 @@ impl Toolset {
             );
             paths.extend(new_paths);
         }
-        LIST_PATHS_CACHE.insert(cache_key, paths.clone());
+        if !had_error {
+            LIST_PATHS_CACHE.insert(cache_key, paths.clone());
+        }
         paths
             .into_iter()
             .filter(|p| p.parent().is_some()) // TODO: why?

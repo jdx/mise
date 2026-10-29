@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+
+# GNU Stow folds a directory into one link when nothing else lives in it.
+# A symlink-each group that deploys the same package finds its files through
+# that link, so apply replaces the link with a real directory of links instead
+# of writing links into the source.
+DOTS="$HOME/.dotfiles"
+mkdir -p "$DOTS/kitty/.config/kitty/themes" "$DOTS/kitty/.config/elsewhere" "$HOME/.config"
+echo "kitty" >"$DOTS/kitty/.config/kitty/kitty.conf"
+echo "dark" >"$DOTS/kitty/.config/kitty/themes/dark.conf"
+ln -s "$DOTS/kitty/.config/kitty" "$HOME/.config/kitty"
+
+cat <<EOF >mise.toml
+[bootstrap]
+dotfile_groups = ["kitty"]
+EOF
+
+assert_contains "mise dot status 2>&1" "is a link to its source directory"
+assert_succeed "mise dot apply --yes"
+assert_fail "test -L $HOME/.config/kitty"
+assert "readlink $HOME/.config/kitty/kitty.conf" "$DOTS/kitty/.config/kitty/kitty.conf"
+assert "readlink $HOME/.config/kitty/themes/dark.conf" "$DOTS/kitty/.config/kitty/themes/dark.conf"
+# the sources are untouched files, not links to themselves
+assert_fail "test -L $DOTS/kitty/.config/kitty/kitty.conf"
+assert "cat $DOTS/kitty/.config/kitty/kitty.conf" "kitty"
+assert_not_contains "mise dot status 2>&1" "differs"
+
+# A link into the source that is not the directory belonging there is
+# refused, even with --force, and the source is left alone.
+rm -rf "$HOME/.config/kitty"
+ln -s "$DOTS/kitty/.config/elsewhere" "$HOME/.config/kitty"
+assert_fail "mise dot apply --yes --force" "not to the directory that belongs there"
+assert "readlink $HOME/.config/kitty" "$DOTS/kitty/.config/elsewhere"
+assert "cat $DOTS/kitty/.config/kitty/kitty.conf" "kitty"

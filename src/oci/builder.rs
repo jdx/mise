@@ -339,7 +339,10 @@ impl Builder {
         // from the cache image and aren't rebuilt, so they don't carry
         // host-native binaries. Warning on reused-only pushes (the CI re-push
         // the reuse feature speeds up) would be a false alarm.
-        let built_tool_count = tool_reuse.iter().filter(|r| r.is_none()).count();
+        // The rust homes layer is packed from the host on every build, even when
+        // the rust tool layer itself is reused.
+        let built_tool_count = tool_reuse.iter().filter(|r| r.is_none()).count()
+            + usize::from(versions.iter().any(|(_, tv)| is_rust_tool(tv)));
         if built_tool_count > 0 && std::env::consts::OS != "linux" {
             warn!(
                 "building on {host} host — {n} tool layer(s) contain {host} binaries that \
@@ -420,7 +423,18 @@ impl Builder {
                     Vec::new()
                 };
                 let relocation = layer::ToolRelocation::new(paths).with_pythons(pythons);
-                let blob = if self.opts.no_cache {
+                let blob = if is_rust_tool(tv) {
+                    // rustup keeps the toolchain outside the install dir, which
+                    // holds only a symlink to the cargo bin dir. Point that link
+                    // at the copy in the rust homes layer instead.
+                    layer::build_layer_from_sources(
+                        &[layer::LayerSource::Symlink {
+                            image: tv_prefix.clone(),
+                            target: PathBuf::from(rust_cargo_bin_in_image(&mount_point)),
+                        }],
+                        owner,
+                    )
+                } else if self.opts.no_cache {
                     layer::build_relocated_tool_layer_from_dir(
                         &tv.install_path(),
                         &tv_prefix,
@@ -454,6 +468,42 @@ impl Builder {
                 layer,
             });
         }
+
+        // --- 4b. Rust homes layer ---
+        let rust_homes_layer = {
+            let rust_versions: Vec<&ToolVersion> = versions
+                .iter()
+                .map(|(_, tv)| tv)
+                .filter(|tv| is_rust_tool(tv))
+                .collect();
+            if rust_versions.is_empty() {
+                None
+            } else {
+                // Same order as an install: the tool's lock, then rustup's state
+                // locks. They stay held until the layer is built, so a reinstall,
+                // update, or uninstall cannot change the files mid-copy.
+                // Sorted and deduplicated so concurrent builds that list the same
+                // versions in another order take the locks in the same order.
+                let mut lock_order = rust_versions.clone();
+                lock_order.sort_by_key(|tv| tv.tv_pathname());
+                lock_order.dedup_by_key(|tv| tv.tv_pathname());
+                let mut _tool_locks = Vec::new();
+                for tv in &lock_order {
+                    _tool_locks.push(lock_tool_install(tv)?);
+                    // The homes come from the build host even when the tool layer
+                    // itself is reused from the cache image.
+                    require_tool_install(tv)?;
+                }
+                let _state_locks = crate::plugins::core::rust::RustOciHomes::lock_state(&self.cfg)
+                    .await
+                    .wrap_err("locking the rust homes")?;
+                Some(
+                    build_rust_homes_layer(&self.cfg, &rust_versions, &mount_point, owner)
+                        .await
+                        .wrap_err("building the rust toolchain layer")?,
+                )
+            }
+        };
 
         // --- 5. Arbitrary host-path layers ---
         let mut copy_layers: Vec<(&OciCopy, LayerBlob)> = Vec::new();
@@ -613,6 +663,20 @@ impl Builder {
                 size,
                 reused,
             });
+        }
+
+        if let Some(blob) = &rust_homes_layer {
+            layout.write_blob_with_digest(&blob.digest, &blob.bytes)?;
+            let mut annotations = IndexMap::new();
+            annotations.insert("dev.mise.rust.homes".to_string(), "true".to_string());
+            manifest_layers.push(Descriptor {
+                media_type: manifest::MEDIA_TYPE_OCI_LAYER_GZIP.to_string(),
+                size: blob.size,
+                digest: blob.digest.clone(),
+                annotations,
+                platform: None,
+            });
+            all_diff_ids.push(blob.diff_id.clone());
         }
 
         for (copy, blob) in &copy_layers {
@@ -833,6 +897,19 @@ impl Builder {
                     );
                 }
             }
+        }
+
+        // rustup's homes live in the rust homes layer, not under the build
+        // host's home directory that exec_env reported.
+        if versions.iter().any(|(_, tv)| is_rust_tool(tv)) {
+            env_pairs.insert(
+                "CARGO_HOME".to_string(),
+                rust_cargo_home_in_image(mount_point),
+            );
+            env_pairs.insert(
+                "RUSTUP_HOME".to_string(),
+                rust_rustup_home_in_image(mount_point),
+            );
         }
 
         // Extra env from [oci].env section (explicit image-only vars).
@@ -1476,7 +1553,7 @@ fn value_refers_to_dir(value: &str, dir: &std::path::Path) -> bool {
 /// camelCase boundaries. Mismatching would mean files land at a path mise
 /// can't resolve inside the container.
 fn tool_in_image_path(mount_point: &str, tv: &ToolVersion) -> String {
-    let plugin_dir = tv.ba().tool_dir_name();
+    let plugin_dir = tv.ba().standalone_dir_name();
     let version_dir = tv.tv_pathname();
     // `mount_point` is guaranteed absolute and trimmed of trailing slashes
     // by the validation in Builder::build (empty + must-start-with-/
@@ -1493,7 +1570,9 @@ fn tool_tar_prefix(mount_point: &str, tv: &ToolVersion) -> String {
 }
 
 fn tool_layer_relocation_key(tv: &ToolVersion, pythons: &[PythonRelocation]) -> String {
-    if tv.ba().backend_type() == BackendType::Pipx {
+    if is_rust_tool(tv) {
+        format!("{TOOL_LAYER_RELOCATION_VERSION}:rust-homes")
+    } else if tv.ba().backend_type() == BackendType::Pipx {
         format!(
             "{TOOL_LAYER_RELOCATION_VERSION}:python={}",
             python_relocation_fingerprint(pythons)
@@ -1501,6 +1580,127 @@ fn tool_layer_relocation_key(tv: &ToolVersion, pythons: &[PythonRelocation]) -> 
     } else {
         TOOL_LAYER_RELOCATION_VERSION.to_string()
     }
+}
+
+fn is_rust_tool(tv: &ToolVersion) -> bool {
+    tv.ba().backend_type() == BackendType::Core && tv.ba().tool_name == "rust"
+}
+
+fn rust_cargo_home_in_image(mount_point: &str) -> String {
+    format!("{mount_point}/rust/cargo")
+}
+
+fn rust_rustup_home_in_image(mount_point: &str) -> String {
+    format!("{mount_point}/rust/rustup")
+}
+
+fn rust_cargo_bin_in_image(mount_point: &str) -> String {
+    format!("{}/bin", rust_cargo_home_in_image(mount_point))
+}
+
+/// One layer holding what rustup needs at run time: the proxies, its settings,
+/// and the directory of every toolchain the toolset uses. The rest of the build
+/// host's cargo and rustup homes (registry caches, other toolchains, binaries
+/// installed with `cargo install`) stays out of the image.
+async fn build_rust_homes_layer(
+    cfg: &Arc<Config>,
+    versions: &[&ToolVersion],
+    mount_point: &str,
+    owner: LayerOwner,
+) -> Result<LayerBlob> {
+    use crate::plugins::core::rust::{RustOciHomes, oci_proxy_names};
+
+    let mut homes: Vec<RustOciHomes> = Vec::new();
+    for tv in versions {
+        homes.push(RustOciHomes::resolve(cfg, tv).await?);
+    }
+    let first = &homes[0];
+    if homes
+        .iter()
+        .any(|h| h.cargo_bin != first.cargo_bin || h.rustup_home != first.rustup_home)
+    {
+        bail!("the rust versions in the toolset use different cargo or rustup homes");
+    }
+    let cargo_image = rust_cargo_home_in_image(mount_point);
+    let rustup_image = rust_rustup_home_in_image(mount_point);
+    let mut sources = Vec::new();
+
+    // The proxies are copies of one binary that picks its role from its name.
+    let mut proxies = oci_proxy_names();
+    let rustup_name = proxies.next().expect("rustup is the first proxy name");
+    let rustup_bin = first.cargo_bin.join(&rustup_name);
+    if !rustup_bin.is_file() {
+        bail!("rustup not found at {}", rustup_bin.display());
+    }
+    sources.push(layer::LayerSource::Path {
+        host: rustup_bin,
+        image: format!("{cargo_image}/bin/{rustup_name}"),
+    });
+    for name in proxies {
+        if first.cargo_bin.join(&name).is_file() {
+            sources.push(layer::LayerSource::Symlink {
+                image: format!("{cargo_image}/bin/{name}"),
+                target: PathBuf::from(&rustup_name),
+            });
+        }
+    }
+
+    let settings = first.rustup_home.join("settings.toml");
+    if settings.is_file() {
+        sources.push(layer::LayerSource::Path {
+            host: settings,
+            image: format!("{rustup_image}/settings.toml"),
+        });
+    }
+
+    // A toolchain can also be reached through a symlink, so keep every entry that
+    // resolves to one. mise's `nightly-<host>` beside a dated nightly is a
+    // separate copy of it, so it is kept by name.
+    let sysroots: IndexSet<PathBuf> = homes.iter().map(|h| h.sysroot.clone()).collect();
+    let aliases: IndexSet<&str> = homes
+        .iter()
+        .filter_map(|h| h.nightly_alias.as_deref())
+        .collect();
+    let toolchains = first.rustup_home.join("toolchains");
+    let mut packaged: IndexSet<PathBuf> = IndexSet::new();
+    for entry in std::fs::read_dir(&toolchains)
+        .wrap_err_with(|| format!("reading {}", toolchains.display()))?
+    {
+        let path = entry?.path();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let is_symlink = path.symlink_metadata()?.file_type().is_symlink();
+        let image = format!("{rustup_image}/toolchains/{name}");
+        if !is_symlink && aliases.contains(name.as_str()) {
+            sources.push(layer::LayerSource::Path { host: path, image });
+            continue;
+        }
+        let Ok(resolved) = std::fs::canonicalize(&path) else {
+            continue;
+        };
+        if !sysroots.contains(&resolved) {
+            continue;
+        }
+        if is_symlink {
+            let target = resolved.file_name().unwrap().to_string_lossy().into_owned();
+            sources.push(layer::LayerSource::Symlink {
+                image,
+                target: PathBuf::from(format!("{rustup_image}/toolchains/{target}")),
+            });
+        } else {
+            packaged.insert(resolved);
+            sources.push(layer::LayerSource::Path { host: path, image });
+        }
+    }
+    if let Some(missing) = sysroots.iter().find(|s| !packaged.contains(*s)) {
+        bail!(
+            "the toolchain at {} is not a direct entry of {}; rustup may have been \
+             reconfigured since mise installed it",
+            missing.display(),
+            toolchains.display()
+        );
+    }
+
+    layer::build_layer_from_sources(&sources, owner)
 }
 
 fn is_python_backend(backend: &dyn crate::backend::Backend) -> bool {
@@ -1531,7 +1731,9 @@ fn synthesize_embedded_config_toml(
     render_config_toml(&group_versions(versions.iter().map(|(_, tv)| tv)))
 }
 
-/// Groups tool versions by backend short name. Preserves both the order in
+/// Groups tool versions by the key the image config writes for them: the
+/// backend short name, or the resolved backend when a `[tool_alias]` named it
+/// (the image does not carry the alias table). Preserves both the order in
 /// which tools were first seen and the order of versions within a tool —
 /// mise resolves PATH precedence by array position, so this is not cosmetic.
 fn group_versions<'a>(
@@ -1539,7 +1741,7 @@ fn group_versions<'a>(
 ) -> IndexMap<String, Vec<String>> {
     let mut grouped: IndexMap<String, Vec<String>> = IndexMap::new();
     for tv in versions {
-        let entry = grouped.entry(tv.ba().short.clone()).or_default();
+        let entry = grouped.entry(tv.ba().standalone_key()).or_default();
         if !entry.iter().any(|v| v == &tv.version) {
             entry.push(tv.version.clone());
         }
@@ -1728,6 +1930,7 @@ mod tests {
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            create_if_missing: false,
             relative: false,
             group: None,
             dot_prefix: false,
@@ -1812,6 +2015,7 @@ mod tests {
             variants: vec![],
             enabled: true,
             remove_empty: false,
+            create_if_missing: false,
             relative: false,
             group: None,
             dot_prefix: true,

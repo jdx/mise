@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+TOMBI_VERSION="0.9.22"
+mise use -g tombi@$TOMBI_VERSION
+TOMBI_LINT="mise x tombi@$TOMBI_VERSION -- tombi lint --offline --no-cache --error-on-warnings --quiet"
+cat >"$HOME/tombi.toml" <<TOML
+[schema]
+enabled = true
+strict = true
+[[schemas]]
+path = "file://$ROOT/schema/mise.json"
+include = ["create-if-missing-valid.toml", "create-if-missing-invalid.toml"]
+TOML
+cat >create-if-missing-valid.toml <<'TOML'
+[dotfiles]
+"~/.token" = { source = "token", mode = "copy", permissions = "0600", create_if_missing = true }
+"~/.rendered" = { source = "rendered.tera", mode = "template", create_if_missing = true }
+"~/.seed" = { content = "seed = true\n", permissions = "0600", create_if_missing = true }
+"~/.other" = { source = "other", mode = "symlink", create_if_missing = false }
+# an omitted mode may resolve to dotfiles.default_mode = "copy"
+"~/.implied" = { source = "implied", create_if_missing = true }
+
+[dotfile_groups.home]
+root = "home"
+mode = "copy"
+
+[dotfile_groups.home.entries]
+"~/.token" = { mode = "copy", create_if_missing = true }
+TOML
+assert_succeed "$TOMBI_LINT create-if-missing-valid.toml"
+for entry in \
+  '{ source = "other", mode = "symlink", create_if_missing = true }' \
+  '{ source = "other", mode = "symlink-each", create_if_missing = true }' \
+  '{ permissions = "0600", create_if_missing = true }' \
+  '{ mode = "absent", create_if_missing = true }' \
+  '{ mode = "track", create_if_missing = true }' \
+  '{ create_if_missing = true }'; do
+  printf '[dotfiles]\n"~/.app" = %s\n' "$entry" >create-if-missing-invalid.toml
+  assert_fail "$TOMBI_LINT create-if-missing-invalid.toml"
+done

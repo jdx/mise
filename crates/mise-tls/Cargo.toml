@@ -1,0 +1,21 @@
+[package]
+name = "mise-tls"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Root certificate fallback for mise's HTTPS clients"
+repository = "https://github.com/jdx/mise"
+
+[dependencies]
+log = "0.4"
+reqwest = { version = "0.13", default-features = false }
+webpki-root-certs = { version = "1", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt"] }
+
+[features]
+default = []
+native-tls = ["reqwest/native-tls"]
+rustls = ["reqwest/rustls", "dep:webpki-root-certs"]
+rustls-native-roots = ["reqwest/rustls", "dep:webpki-root-certs"]

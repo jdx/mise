@@ -542,6 +542,16 @@ fn validate_cache_symlink_target(path: &Path, target: &Path) -> Result<()> {
     if target.is_absolute() {
         bail!("remote cache symlink target must be relative");
     }
+    // The depth count below is lexical. A named component may be another symlink in the
+    // same tree (`up -> ..`), so a `..` that follows one can climb further than the count
+    // shows. Leading `..` apply to the link's own directory, which is a real one.
+    if target
+        .components()
+        .skip_while(|component| !matches!(component, Component::Normal(_)))
+        .any(|component| component == Component::ParentDir)
+    {
+        bail!("remote cache symlink target has `..` after a named component");
+    }
     let resolved = path.parent().unwrap_or(Path::new("")).join(target);
     let mut depth = 0_i64;
     for component in resolved.components() {
@@ -1198,6 +1208,25 @@ mod tests {
         );
         assert!(validate_cache_symlink_target(Path::new("link"), Path::new("..")).is_err());
         assert!(validate_cache_symlink_target(Path::new("link"), Path::new("/outside")).is_err());
+        assert!(
+            validate_cache_symlink_target(
+                Path::new("dist/a/link"),
+                Path::new("../../lib/artifact")
+            )
+            .is_ok()
+        );
+        // With `dist/up -> ..` these resolve above the root although they never count
+        // below zero.
+        for target in [
+            "up/../../.bashrc",
+            "up/dist/../../../outside",
+            "a/up/../../x",
+        ] {
+            assert!(
+                validate_cache_symlink_target(Path::new("dist/link"), Path::new(target)).is_err(),
+                "{target}"
+            );
+        }
     }
 
     #[tokio::test]

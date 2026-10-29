@@ -119,7 +119,7 @@ cat <<'EOF' >mise.toml
 [dotfiles]
 "~/notes.txt/shared" = { source = "shared/codex.toml", merge = true }
 EOF
-assert_contains "mise dotfiles status 2>&1" "merge needs a .json, .toml, .yaml, or .yml target"
+assert_contains "mise dotfiles status 2>&1" "merge needs a .json, .jsonc, .toml, .yaml, or .yml target"
 
 # a target that does not parse is reported, never overwritten
 cat <<'EOF' >mise.toml
@@ -226,6 +226,7 @@ assert_fail "test -e ~/sibling-exec-ran"
 
 # whole-file keys on a merge entry are refused by name and never make the
 # target a directory
+# schema: invalid
 cat <<'EOF' >mise.toml
 [dotfiles]
 "~/withx.json/shared" = { source = "shared/claude.json", merge = true, exclude = [] }

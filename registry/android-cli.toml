@@ -16,6 +16,10 @@ bin = "android"
 # dl.google.com publishes no version index for the raw binaries, but the apt
 # repo behind the documented `apt-get install android-cli` carries the current
 # build number, and older builds stay downloadable at their versioned URLs.
+# The apt repo's Release file is dated when the index was regenerated, which is never
+# before the build it lists was published.
+version_date_expr = '[[versions[0], replace(trim(split(split(body, "Date: ")[1], "\n")[0]), "UTC", "GMT")]]'
+version_date_url = "https://dl.google.com/android/cli/latest/debian/dists/stable/Release"
 version_list_url = "https://dl.google.com/android/cli/latest/debian/dists/stable/main/binary-amd64/Packages"
 version_regex = '(?m)^Version: (\S+)$'
 

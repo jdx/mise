@@ -1,6 +1,6 @@
 ---
-description: "Run your own programs and mise's built-in services in the background, or start and enable existing Linux system services."
-socialDescription: "Run background services for your user, or manage Linux system services."
+description: "Run your own programs and mise's built-in services in the background, or start and enable existing Linux system and user units."
+socialDescription: "Run background services for your user, or manage existing Linux units."
 ---
 
 # Services
@@ -15,6 +15,7 @@ something in the background; pick the one that fits:
 | Run one program in the background on Linux, macOS, and Windows        | A [user service](#user-services) (`scope = "user"`)           |
 | Save dotfile edits or update tools in the background                  | A [built-in service](#built-in-services)                      |
 | Start, stop, or enable a unit that a package or managed file provides | A [system service](#system-services)                          |
+| Start, stop, or enable a systemd user unit that a package provides    | An [existing user unit](#existing-user-units)                 |
 | Use systemd features such as timers, dependencies, or hardening       | [`[bootstrap.linux.systemd.units]`](/bootstrap/systemd.html)  |
 | Use launchd features such as calendar schedules or queue directories  | [`[bootstrap.macos.launchd.agents]`](/bootstrap/launchd.html) |
 | Run containers                                                        | [`[bootstrap.compose]`](/bootstrap/compose.html)              |
@@ -69,6 +70,38 @@ are not on its `PATH`. Use absolute paths, or run the tool through
 [Set up a development stack](/daemons/development-stack.html#keep-the-supervisor-available-at-login)
 shows a complete example: a user service that keeps the Pitchfork supervisor
 running from login.
+
+### Existing user units {#existing-user-units}
+
+Some packages install systemd user units, such as `gnome-keyring-daemon` from
+`gnome-keyring`. To start and enable one without writing a definition of your
+own, set `scope = "user"` and leave out `command` and `builtin`:
+
+```toml
+[bootstrap.packages]
+"pacman:gnome-keyring" = "latest"
+
+[bootstrap.services.gnome-keyring-daemon]
+scope = "user"
+state = "running"
+enabled = true
+```
+
+mise runs `systemctl --user` against the unit that already exists, which
+needs no root, and writes no `dev.mise.*` unit. A name without a unit suffix
+gets `.service`; sockets and timers such as `gnome-keyring-daemon.socket` work
+too. `state`, `enabled`, and `masked` behave as they do for
+[system services](#system-service-options). `command`, `builtin`,
+`description`, `restart`, `environment`, `working_directory`,
+`requires_tools`, and `state = "absent"` configure a definition, so they are
+rejected here; add a `command` to define the service instead.
+
+This is Linux-only. mise does not guess when the unit is missing or the user
+manager is unavailable, such as in a container without a login session: status
+and plans report the service as `unknown`, and apply fails. `mise bootstrap`
+applies packages before services, so one configuration can install the package
+and start its unit. Managed files cannot [`notify`](/bootstrap/files.html#restart-a-service-after-a-change)
+a user unit.
 
 ### Built-in services
 

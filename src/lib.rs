@@ -11,9 +11,6 @@ use crate::config::SettingsExt;
 #[macro_use]
 mod test;
 
-#[cfg(test)]
-#[path = "../build/lockfile_rollout.rs"]
-mod lockfile_rollout;
 #[path = "../build/registry_url.rs"]
 mod registry_url;
 
@@ -126,7 +123,7 @@ pub mod watch_files;
 pub mod wildcard;
 pub mod windows_console;
 #[cfg(windows)]
-mod windows_job;
+pub use mise_util::windows_job;
 pub mod windows_posix;
 
 pub use crate::exit::request as request_exit;
@@ -140,7 +137,12 @@ pub fn register_util_hooks() {
     // First: `version::VERSION` below reads it.
     mise_util::deprecation::set_version(env!("CARGO_PKG_VERSION"));
     config::settings::register_loader();
+    config::env_directive::register_hooks();
+    config::config_file::register_deprecation_handler();
     system::packages_host::register();
+    system::bootstrap_host::register();
+    daemons::glue::register();
+    config::register_reset_hook(system::files::clear_invalid_declarations);
     enclave::register();
     cache::register_base_cache_keys();
     let shell = env::MISE_SHELL.map(|s| s.to_string()).unwrap_or_default();

@@ -254,6 +254,33 @@ mod tests {
         SecretsToml::from_value(&val(s), Path::new("/p/mise.toml"))
     }
 
+    // The schema is generated from `mise_config::secrets::FnoxDecl`; this parser reads the same
+    // keys. A key added to one without the other fails here.
+    #[test]
+    fn the_fnox_keys_match_the_declaration() {
+        let declared = mise_config::de::struct_fields::<mise_config::secrets::FnoxDecl>();
+        for key in declared {
+            let table = format!("[secrets.fnox]\n{key} = \"dev\"\n");
+            let parsed = parse(&table);
+            assert!(
+                parsed.is_ok(),
+                "the declaration lists `{key}`, which the parser rejects: {parsed:?}"
+            );
+        }
+        let unknown = parse("[secrets.fnox]\nnot_a_key = \"dev\"\n").unwrap_err();
+        assert!(unknown.to_string().contains("unknown field"), "{unknown}");
+        // The keys the parser lists as supported are exactly the declared ones, so a key added
+        // to the parser alone fails here too.
+        let message = unknown.to_string();
+        let listed: std::collections::BTreeSet<&str> = message
+            .split_once("(supported: ")
+            .and_then(|(_, rest)| rest.split_once(')'))
+            .map(|(keys, _)| keys.split(", ").collect())
+            .expect("the error lists the supported keys");
+        let declared: std::collections::BTreeSet<&str> = declared.iter().copied().collect();
+        assert_eq!(listed, declared);
+    }
+
     #[test]
     fn parses_fnox() {
         let p = parse("[secrets.fnox]\n").unwrap();

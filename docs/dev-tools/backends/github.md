@@ -104,6 +104,7 @@ such as `postinstall` and `os`, are described in
 | [`no_app`](#no-app)                                                                          | Prefer a command-line archive over a macOS `.app` bundle           |
 | [`additional_asset_patterns`](#additional-asset-patterns)                                    | Extract more archives from the same release into the install       |
 | [`version_prefix`](#version-prefix)                                                          | Read versions from tags with a prefix other than `v`               |
+| [`version_regex`](#version-regex)                                                            | List only the release tags that match a pattern                    |
 | [`prerelease`](#prerelease)                                                                  | Include prereleases                                                |
 | [`version_order`](#version-order)                                                            | Order versions by semantic version                                 |
 | [`url`](#platform-specific-urls)                                                             | Download a URL instead of a release asset on one platform          |
@@ -230,6 +231,26 @@ With `version_prefix = "release-"`, mise lists only tags that start with
 `mise use github:user/repo@1.0.0`. Set `version_prefix = ""` to keep tags
 exactly as published, including a leading `v`.
 
+#### `version_regex` {#version-regex}
+
+A regular expression that a release tag must match to be listed. Use it when a
+repository publishes releases that are not versions of the tool, such as a
+release that only holds build data:
+
+```toml
+[tools]
+"github:owner/tool" = { version = "latest", prerelease = true, version_regex = '^(v\d+\.\d+\.\d+|nightly)$' }
+```
+
+This lists the `v1.2.3` releases and the `nightly` prerelease and leaves out
+every other tag. The pattern can match anywhere in the tag, so anchor it with
+`^` and `$` to match the whole tag. It only filters: mise names each listed
+version as it would without it, so the tag `v1.2.3` is still listed as `1.2.3`.
+With `version_prefix` also set, a tag must start with the prefix and match the
+pattern. Installing never uses a tag the pattern leaves out, so in a repository
+with both `1.2.3` and `v1.2.3`, `version_regex = '^\d'` installs `1.2.3` from
+the `1.2.3` release.
+
 #### `prerelease`
 
 By default, mise leaves releases that GitHub marks as prereleases out of
@@ -317,6 +338,9 @@ you support sets `url`, mise lists releases even if they have no assets; see
 
 ### Extracting and naming executables
 
+mise refuses an archive that contains a symlink pointing outside the install
+directory, and a release asset whose name is not a plain file name.
+
 #### `format`
 
 The archive format, such as `tar.gz`, `tar.xz` or `zip`. Set it when an asset
@@ -345,7 +369,8 @@ ripgrep's archives do (`ripgrep-14.1.1-x86_64-unknown-linux-musl/rg`).
 
 The directory, relative to the install directory, that holds the executables.
 Set it when mise does not find them. mise applies it after `strip_components`,
-and setting it turns off the automatic stripping.
+and setting it turns off the automatic stripping. An absolute path, or one that
+contains `..`, is rejected.
 
 ::: v-pre
 For an archive laid out as `tool-1.0.0/bin/tool`, set `strip_components = 1`
@@ -527,12 +552,33 @@ The identity must match the workflow ref in the certificate exactly. It is a
 [template](#templates), so `{{ version }}` is the resolved version.
 :::
 
-Without both options, mise skips SLSA provenance and uses the other checks. A
-lockfile entry that records a checksum and SLSA provenance installs without
-verifying again, unless
+The workflow run that made the provenance must also belong to the tool's
+repository (`myorg/mytool` here) or to the repository that holds the signing
+workflow. A reusable workflow such as `slsa-framework/slsa-github-generator`
+has the same identity in every repository that calls it, so the identity alone
+does not say whose release was signed. Provenance names the repository as it
+was when the release was built, so after a rename or transfer mise asks
+api.github.com whether the two names are the same repository. A
+[`url_replacements`](/url-replacements.html) mirror for the API cannot confirm a
+rename.
+
+The provenance must also have been built from the tag of the release being
+installed. Without that check, a reusable workflow's provenance for an older
+release would pass for a newer one. A tool whose releases are built from a
+branch rather than a tag cannot be verified this way.
+
+With both options set, a release that has no SLSA provenance mise can verify
+for the asset, because it publishes none or the file is empty or unreadable,
+fails to install and to lock, unless GitHub artifact attestations verify it
+first. Without both options, mise skips SLSA provenance and uses the other
+checks. A lockfile entry that records a checksum and SLSA provenance installs
+without verifying again, unless
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
-is set; that setting also makes missing signer options an error. These options
-are GitHub only.
+is set; that setting also makes missing signer options an error. A lockfile
+entry that records a checksum but no provenance installs on the checksum alone,
+even with both options set, unless `locked_verify_provenance` or
+[paranoid mode](/paranoid.html) for provenance is on. These options are GitHub
+only.
 
 ### Templates
 
@@ -631,6 +677,8 @@ source archives, so a release without assets has nothing to install. A release
 whose assets do not cover your platform is still listed, so the version list is
 the same on every machine and cross-platform lockfiles work. Draft releases are
 never listed, and prereleases only with [`prerelease`](#prerelease).
+[`version_prefix`](#version-prefix) and [`version_regex`](#version-regex) leave
+out tags that do not match them.
 
 If every platform you support sets [`url`](#platform-specific-urls), mise lists
 releases whether or not they have assets. A `url` for only some platforms also

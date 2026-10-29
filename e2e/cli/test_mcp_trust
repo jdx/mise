@@ -35,8 +35,12 @@ proc.stdout.readline()
 send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 send({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
       "params": {"name": sys.argv[1], "arguments": json.loads(sys.argv[2])}})
-result = json.loads(proc.stdout.readline())["result"]
+response = json.loads(proc.stdout.readline())
 proc.terminate()
+if "error" in response:
+    print(response["error"]["message"])
+    sys.exit(1)
+result = response["result"]
 print("status=error" if result.get("isError") else "status=ok")
 print(result["content"][0]["text"])
 EOF
@@ -80,3 +84,103 @@ assert_contains "$run_render" "are not trusted"
 mise trust sub
 assert_contains "$run_render" "status=ok"
 assert_contains "$run_render" "rendered"
+
+# A project can hold scripts and no config file. A template-free task file
+# loads without trust because typing `mise run` is the consent to run it, and
+# a client's request is not.
+script_marker="$PWD/script-ran"
+mkdir -p ../scripts_only/mise-tasks
+cat >../scripts_only/mise-tasks/build <<EOF
+#!/bin/sh
+touch '$script_marker'
+EOF
+chmod +x ../scripts_only/mise-tasks/build
+run_script="cd ../scripts_only && python3 ../workdir/mcp_call.py run_task '{\"task\": \"build\"}'"
+assert_contains "$run_script" "status=error"
+assert_contains "$run_script" "not trusted"
+assert_fail "test -e '$script_marker'"
+mise trust ../scripts_only
+assert_contains "$run_script" "status=ok"
+assert "test -e '$script_marker' && rm '$script_marker' && echo ran" "ran"
+
+# A script given by path is not one of the project's tasks, even from a trusted
+# project.
+cp ../scripts_only/mise-tasks/build ../build.sh
+run_path="python3 mcp_call.py run_task '{\"task\": \"../build.sh\"}'"
+assert_fail_contains "$run_path" "not a file path"
+assert_fail "test -e '$script_marker'"
+
+# The trust check sees the tasks with the arguments they run with: the
+# client's, and those of a `run` entry.
+mkdir -p ../with_args
+cat >../with_args/mise.toml <<'EOF'
+[tasks.pick]
+usage = 'arg "[target]" default="missing"'
+depends = ["{{usage.target}}"]
+run = "echo picked"
+
+[tasks.real]
+run = "echo REAL-DEP"
+
+[tasks.nested]
+run = [{ task = "pick", args = ["real"] }]
+
+[tasks.outer]
+run = [{ task = "inner" }]
+
+[tasks.inner]
+depends = ["not-defined"]
+run = "echo INNER-RAN"
+EOF
+mise trust ../with_args
+run_pick="cd ../with_args && python3 ../workdir/mcp_call.py run_task '{\"task\": \"pick\", \"args\": [\"real\"]}'"
+assert_contains "$run_pick" "status=ok"
+assert_contains "$run_pick" "REAL-DEP"
+run_nested="cd ../with_args && python3 ../workdir/mcp_call.py run_task '{\"task\": \"nested\"}'"
+assert_contains "$run_nested" "status=ok"
+assert_contains "$run_nested" "REAL-DEP"
+
+# With dependencies skipped, a task a `run` entry starts runs without them,
+# so a dependency nobody defined does not stop the check.
+run_outer="cd ../with_args && MISE_TASK_SKIP_DEPENDS=1 python3 ../workdir/mcp_call.py run_task '{\"task\": \"outer\"}'"
+assert_contains "$run_outer" "status=ok"
+assert_contains "$run_outer" "INNER-RAN"
+
+# A `//` name with a `:` is a monorepo task name, so the server lets it
+# through, but the child resolves it as a task only: a file at the path it
+# spells never runs, even one created after the server checked the name.
+race_marker="$PWD/race-ran"
+mkdir -p ../race
+cat >"../race/x:build" <<EOF
+#!/bin/sh
+touch '$race_marker'
+EOF
+chmod +x "../race/x:build"
+race_dir="$(cd ../race && pwd)"
+# `//` names are monorepo task names, so the project is a monorepo root
+mkdir -p ../mono
+cat >../mono/mise.toml <<'EOF'
+monorepo_root = true
+
+[tasks.build]
+run = "echo BUILD"
+EOF
+mise trust ../mono
+run_race="cd ../mono && python3 ../workdir/mcp_call.py run_task '{\"task\": \"/$race_dir/x:build\"}' || true"
+assert_not_contains "$run_race" "status=ok"
+assert_fail "test -e '$race_marker'"
+
+# A `mise run` that a task makes is the project's own and still runs scripts.
+cat >>../with_args/mise.toml <<'EOF'
+
+[tasks.adhoc]
+run = "mise run ./helper.sh"
+EOF
+cat >../with_args/helper.sh <<'EOF'
+#!/bin/sh
+echo HELPER-RAN
+EOF
+chmod +x ../with_args/helper.sh
+run_adhoc="cd ../with_args && python3 ../workdir/mcp_call.py run_task '{\"task\": \"adhoc\"}'"
+assert_contains "$run_adhoc" "status=ok"
+assert_contains "$run_adhoc" "HELPER-RAN"

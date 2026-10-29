@@ -21,13 +21,14 @@ use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 use crate::ui::progress_report::SingleReport;
 use async_trait::async_trait;
 use aube::embed::{EmbedderInstallOverrides, EmbedderRuntime};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use bytesize::ByteSize;
 use jiff::Timestamp;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, OnceLock};
 use std::{fmt::Debug, sync::Arc};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -154,8 +155,8 @@ fn redact_git_stderr(stderr: &str, remote: &str, display_remote: &str) -> String
     redact_credentials(&redacted)
 }
 
-fn git_ls_remote_args(remote: &str) -> [&str; 3] {
-    ["ls-remote", remote, "HEAD"]
+fn git_ls_remote_args(remote: &str) -> Vec<&str> {
+    crate::git::ls_remote_args(&[], remote, &["HEAD"])
 }
 
 /// Resolve a git remote's default-branch HEAD to a concrete commit.
@@ -166,7 +167,9 @@ async fn git_head(remote: &str) -> eyre::Result<String> {
             // Keep the actual remote intact for Git, but never let userinfo or
             // query tokens reach the command trace or command-derived errors.
             debug!("$ git ls-remote {display_remote} HEAD");
-            let output = tokio::process::Command::new("git")
+            let mut command = tokio::process::Command::new("git");
+            crate::git::detach_git_command(command.as_std_mut());
+            let output = command
                 .args(git_ls_remote_args(remote))
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::piped())
@@ -224,6 +227,30 @@ fn validate_git_alias(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Reject a registry package version that is not a version, range or dist-tag.
+///
+/// The version reaches the package manager as `<name>@<version>` or as the
+/// root dependency's specifier, and both are parsed as full package specs: a
+/// version that is a path (`/x`, `~/x`, `x.tgz`), a URL or `owner/repo` would
+/// install that in place of the registry package. A plain tool list sets the
+/// version without trust, so only the characters a version, a range or a
+/// dist-tag needs are accepted.
+fn validate_registry_version(name: &str, version: &str) -> Result<()> {
+    let lower = version.to_ascii_lowercase();
+    let valid = !version.is_empty()
+        && !version.starts_with('.')
+        && version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || " .-_+^~<>=|*".contains(c))
+        && ![".tgz", ".tar", ".tar.gz"]
+            .iter()
+            .any(|ext| lower.ends_with(ext));
+    if !valid {
+        eyre::bail!("npm:{name}: {version:?} is not a version, range or dist-tag");
+    }
+    Ok(())
+}
+
 fn git_package_install_spec(name: &str, version: &str, has_checksum: bool) -> Result<String> {
     validate_git_alias(name)?;
     if has_checksum {
@@ -239,7 +266,7 @@ fn git_package_install_spec(name: &str, version: &str, has_checksum: bool) -> Re
 pub(crate) struct NPMBackend {
     ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
-    latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
+    latest_version_cache: OnceLock<TokioMutex<CacheManager<Option<String>>>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -648,25 +675,6 @@ fn virtual_store_entry_links_dependencies(entry: &Path) -> bool {
     true
 }
 
-/// Whether `path` is the running mise binary: a symlink to it, or a hard link that shares
-/// its file identity (which `file::same_file` does not see, as it compares paths).
-#[cfg(unix)]
-fn is_mise_binary(path: &Path) -> bool {
-    if crate::file::same_file(path, &crate::env::MISE_BIN) {
-        return true;
-    }
-    same_inode(path, &crate::env::MISE_BIN)
-}
-
-#[cfg(unix)]
-fn same_inode(a: &Path, b: &Path) -> bool {
-    use std::os::unix::fs::MetadataExt;
-    match (a.metadata(), b.metadata()) {
-        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
-        _ => false,
-    }
-}
-
 /// The `npm` that `npm view` should run, resolved from the child PATH on unix.
 ///
 /// `dependency_env` already drops this mise's own shims dir, but it recognizes shims by
@@ -704,7 +712,7 @@ fn npm_view_program_in(env: &BTreeMap<String, String>, cwd: &Path) -> eyre::Resu
         if !candidate.is_file() || !crate::file::is_spawnable(&candidate) {
             continue;
         }
-        if is_mise_binary(&candidate) {
+        if super::is_mise_binary(&candidate) {
             skipped_mise_shim.get_or_insert(candidate);
             continue;
         }
@@ -741,6 +749,69 @@ fn forget_aube_install_health(install_path: &Path) {
         .lock()
         .unwrap()
         .remove(install_path);
+    let _ = std::fs::remove_file(aube_health_marker(install_path));
+}
+
+/// Where a self-contained verdict for `install_path` is remembered across
+/// processes. It lives in the state dir rather than the install prefix so a CI
+/// cache that restores only the installs dir cannot carry a stale verdict
+/// along with a tree that lost its Windows junctions.
+fn aube_health_marker(install_path: &Path) -> PathBuf {
+    crate::dirs::STATE
+        .join("npm-tree-health")
+        .join(crate::hash::hash_to_str(&install_path.to_string_lossy()))
+}
+
+/// Identifies the state of the virtual stores: their modification times change
+/// whenever an entry is added or removed, which is what a reinstall does.
+fn aube_virtual_store_stamp(install_path: &Path) -> Option<String> {
+    let mut stamp = String::new();
+    for name in [".mise", ".aube"] {
+        let store = install_path.join("node_modules").join(name);
+        let nanos = |time: std::io::Result<std::time::SystemTime>| {
+            time.ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |duration| duration.as_nanos())
+        };
+        let meta = store.symlink_metadata().ok();
+        // The creation time is when this copy of the directory was made: an archive
+        // restore keeps the stored mtimes but creates the directories anew.
+        match meta.map(|meta| (nanos(meta.modified()), nanos(meta.created()))) {
+            Some((modified, created)) => {
+                stamp.push_str(&format!("{name}={modified}/{created};"));
+            }
+            None if store.exists() => return None,
+            None => {}
+        }
+    }
+    Some(stamp)
+}
+
+/// Whether an earlier mise process found this prefix self-contained and its
+/// virtual stores have not changed since. On Windows the check behind it reads
+/// every package manifest in the tree, which takes seconds on a large tool and
+/// would otherwise run in every `hook-env`.
+fn aube_health_marker_matches(install_path: &Path) -> bool {
+    let Some(stamp) = aube_virtual_store_stamp(install_path) else {
+        return false;
+    };
+    std::fs::read_to_string(aube_health_marker(install_path)).is_ok_and(|saved| saved == stamp)
+}
+
+fn write_aube_health_marker(install_path: &Path) {
+    let Some(stamp) = aube_virtual_store_stamp(install_path) else {
+        return;
+    };
+    let marker = aube_health_marker(install_path);
+    if let Some(parent) = marker.parent()
+        && let Err(err) = std::fs::create_dir_all(parent)
+    {
+        trace!("failed to create npm tree health dir: {err}");
+        return;
+    }
+    if let Err(err) = std::fs::write(&marker, stamp) {
+        trace!("failed to write npm tree health marker: {err}");
+    }
 }
 
 fn aube_install_tree_is_healthy_cached(install_path: &Path) -> bool {
@@ -751,6 +822,13 @@ fn aube_install_tree_is_healthy_cached(install_path: &Path) -> bool {
     {
         return true;
     }
+    if cfg!(windows) && aube_health_marker_matches(install_path) {
+        SELF_CONTAINED_AUBE_INSTALLS
+            .lock()
+            .unwrap()
+            .insert(install_path.to_path_buf());
+        return true;
+    }
     match aube_install_tree_health(install_path) {
         AubeTreeHealth::Broken => false,
         AubeTreeHealth::Linked => true,
@@ -759,6 +837,9 @@ fn aube_install_tree_is_healthy_cached(install_path: &Path) -> bool {
                 .lock()
                 .unwrap()
                 .insert(install_path.to_path_buf());
+            if cfg!(windows) {
+                write_aube_health_marker(install_path);
+            }
             true
         }
     }
@@ -776,6 +857,10 @@ impl Backend for NPMBackend {
         _ctx: &InstallContext,
     ) -> Vec<f64> {
         AUBE_OPERATION_WEIGHTS.to_vec()
+    }
+
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_npm_options"]))
     }
 
     fn get_type(&self) -> BackendType {
@@ -892,6 +977,76 @@ impl Backend for NPMBackend {
         options
     }
 
+    /// A registry other than npmjs.org, from `.npmrc` or `NPM_CONFIG_*`, lists
+    /// its own versions, which the shared versions host cannot know.
+    ///
+    /// `npm.shell_out` lists through `npm view` in the dependency environment,
+    /// whose registry settings mise does not interpret, so it always lists
+    /// directly. Its cache is keyed by what `npm` reads there, so one
+    /// registry's list is not reused for another.
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        if Settings::get().npm.shell_out {
+            let env = self.dependency_env(config).await?;
+            // `npm view` resolves its registry from the whole environment, since
+            // an `.npmrc` can interpolate any variable (`registry=${REGISTRY}`),
+            // and from the `.npmrc` files it finds: the global config, the user config (under
+            // `HOME`, `USERPROFILE`, or `NPM_CONFIG_USERCONFIG`) and the one in
+            // the prefix it runs in. Hash all of them.
+            let env_path = |name: &str| {
+                env.iter()
+                    .find(|(key, _)| key.eq_ignore_ascii_case(name))
+                    .map(|(_, path)| PathBuf::from(path))
+            };
+            let user_config = env_path("npm_config_userconfig");
+            // The global config: the file `NPM_CONFIG_GLOBALCONFIG` names, or
+            // `etc/npmrc` under the prefix an environment variable sets.
+            let global_configs = env_path("npm_config_globalconfig").into_iter().chain(
+                ["npm_config_prefix", "prefix"]
+                    .into_iter()
+                    .filter_map(env_path)
+                    .map(|prefix| prefix.join("etc").join("npmrc")),
+            );
+            let homes = ["HOME", "USERPROFILE"]
+                .into_iter()
+                .filter_map(|key| env.get(key))
+                .map(|home| PathBuf::from(home).join(".npmrc"));
+            let prefix = Self::npm_meta_prefix().ok().map(|dir| dir.join(".npmrc"));
+            let npmrcs = user_config
+                .into_iter()
+                .chain(global_configs)
+                .chain(homes)
+                .chain(prefix)
+                .map(|path| std::fs::read_to_string(path).ok())
+                .collect::<Vec<_>>();
+            // Only what decides npm's registry stays in the key: its own
+            // `NPM_CONFIG_*` settings, the variables that locate its config
+            // files, and any variable an `.npmrc` interpolates
+            // (`registry=${MISE_ENV}`). The rest of the environment (mise's
+            // `MISE_OFFLINE`, session state, `PATH`) changes with how mise runs
+            // and would only miss the cache, an offline run most of all.
+            static VAR_REF: LazyLock<regex::Regex> =
+                LazyLock::new(|| regex::Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)").unwrap());
+            let referenced = npmrcs
+                .iter()
+                .flatten()
+                .flat_map(|rc| VAR_REF.captures_iter(rc))
+                .map(|cap| cap[1].to_ascii_lowercase())
+                .collect::<HashSet<_>>();
+            let env = env
+                .iter()
+                .filter(|(key, _)| {
+                    let key = key.to_ascii_lowercase();
+                    referenced.contains(&key)
+                        || key.starts_with("npm_config_")
+                        || matches!(key.as_str(), "home" | "userprofile" | "prefix")
+                })
+                .collect::<BTreeMap<_, _>>();
+            return Ok(Some(crate::hash::hash_to_str(&(env, npmrcs))));
+        }
+        let registry = npm_registry::package_registry(&self.tool_name());
+        Ok((!npm_registry::is_public_registry(&registry)).then_some(registry))
+    }
+
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         let name = self.tool_name();
         if is_git_spec(&name) {
@@ -967,7 +1122,7 @@ impl Backend for NPMBackend {
             self.ensure_npm_for_version_check(config).await;
         }
 
-        let cache = self.latest_version_cache.lock().await;
+        let cache = self.latest_version_cache().lock().await;
         let this = self;
         timeout::run_with_timeout_async(
             async || {
@@ -1334,10 +1489,10 @@ impl NPMBackend {
         };
         // Cheap exit before parsing the config: only a tool the lockfile
         // already records can have had a graph.
-        if !request
+        if request
             .read_lockfile(config)?
-            .tools()
-            .contains_key(&request.ba().short)
+            .tools_for(&request.ba().short)
+            .is_none()
         {
             return Ok(None);
         }
@@ -1411,6 +1566,7 @@ impl NPMBackend {
         if is_git_spec(&tool_name) {
             return git_package_install_spec(&tool_name, &tv.version, options.checksum().is_some());
         }
+        validate_registry_version(&tool_name, &tv.version)?;
         let Some(checksum) = options.checksum() else {
             return Ok(format!("{tool_name}@{}", tv.version));
         };
@@ -1426,7 +1582,69 @@ impl NPMBackend {
         ctx.pr
             .set_message(format!("verify {}@{}", self.tool_name(), tv.version));
         crate::hash::ensure_checksum(&archive, digest, Some(ctx.pr.as_ref()), algorithm)?;
+        if let Some(lock) = &tv.aube_lock {
+            self.ensure_aube_lock_installs_archive(tv, lock.load()?, &archive)?;
+        }
         Ok(archive.to_string_lossy().into_owned())
+    }
+
+    /// With a dependency graph, the install is a frozen one that fetches whatever the graph
+    /// names for the root package, not `archive`, the download the `checksum` option was
+    /// verified against. aube holds that fetch to the graph's integrity, so require the
+    /// integrity to describe `archive`.
+    fn ensure_aube_lock_installs_archive(
+        &self,
+        tv: &ToolVersion,
+        lock: &crate::lockfile::AubeLock,
+        archive: &Path,
+    ) -> Result<()> {
+        let key = self.package_key();
+        let root_version = lock
+            .graph
+            .get("importers")
+            .and_then(|v| v.get("."))
+            .and_then(|v| v.get("dependencies"))
+            .and_then(|v| v.get(&key))
+            .and_then(|v| v.get("version"))
+            .and_then(toml::Value::as_str)
+            // a `(peer@version)` suffix follows the version when the package has peers
+            .filter(|version| version.split('(').next() == Some(tv.version.as_str()));
+        let packages = lock.graph.get("packages");
+        let integrity = root_version
+            .and_then(|version| {
+                packages
+                    .and_then(|p| p.get(format!("{key}@{version}")))
+                    .or_else(|| packages.and_then(|p| p.get(format!("{key}@{}", tv.version))))
+            })
+            .and_then(|v| v.get("resolution"))
+            .and_then(|v| v.get("integrity"))
+            .and_then(toml::Value::as_str);
+        let verified = integrity.is_some_and(|integrity| {
+            let mut hashes = integrity.split_whitespace().peekable();
+            hashes.peek().is_some()
+                && hashes.all(|hash| {
+                    hash.split_once('-')
+                        .and_then(|(algorithm, digest)| {
+                            Some((algorithm, BASE64_STANDARD.decode(digest).ok()?))
+                        })
+                        .is_some_and(|(algorithm, digest)| {
+                            crate::hash::ensure_checksum(
+                                archive,
+                                &hex::encode(digest),
+                                None,
+                                algorithm,
+                            )
+                            .is_ok()
+                        })
+                })
+        });
+        if !verified {
+            eyre::bail!(
+                "npm:{} dependency graph does not install the archive its checksum was verified against; run `mise lock --bump`",
+                self.display_tool_name()
+            );
+        }
+        Ok(())
     }
 
     /// The dependency name the package is installed under: the registry name,
@@ -1441,24 +1659,37 @@ impl NPMBackend {
     }
 
     /// The root dependency specifier: the version, or a git URL with the ref.
-    fn package_requirement(&self, tv: &ToolVersion) -> String {
+    fn package_requirement(&self, tv: &ToolVersion) -> Result<String> {
         let name = self.tool_name();
         if is_git_spec(&name) {
-            git_requirement(&name, &tv.version)
+            Ok(git_requirement(&name, &tv.version))
         } else {
-            tv.version.clone()
+            validate_registry_version(&name, &tv.version)?;
+            Ok(tv.version.clone())
         }
     }
 
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self {
-            latest_version_cache: TokioMutex::new(
-                CacheManagerBuilder::new(ba.cache_path().join("latest_version.msgpack.z"))
-                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-                    .build(),
-            ),
+            latest_version_cache: OnceLock::new(),
             ba: Arc::new(ba),
         }
+    }
+
+    /// The cache of the package's `latest` dist-tag. Its directory is named by
+    /// the kebab-cased short name, which `npm:@acme/cli` and `npm:acme-cli`
+    /// share, so the package is in the key too. Built on first use: `full()`
+    /// reads aliases and the lockfile, which are only known once config loads,
+    /// as for the version-list cache.
+    fn latest_version_cache(&self) -> &TokioMutex<CacheManager<Option<String>>> {
+        self.latest_version_cache.get_or_init(|| {
+            TokioMutex::new(
+                CacheManagerBuilder::new(self.ba.cache_path().join("latest_version.msgpack.z"))
+                    .with_cache_key(self.ba.full())
+                    .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
+                    .build(),
+            )
+        })
     }
 
     /// Legacy `npm view` version listing, kept behind `npm.shell_out` for
@@ -1727,11 +1958,17 @@ impl NPMBackend {
         let npm = npm_view_program(&env)?;
         CmdLineRunner::new(npm)
             .arg("view")
-            .arg(package)
-            .args(fields)
             .arg(format!("--json={json}"))
             .arg("--prefix")
-            .arg(prefix)
+            .arg(&prefix)
+            // The package comes from config that need not be trusted, and npm
+            // reads an argument with a leading dash as an option wherever it
+            // stands (`--userconfig=.npmrc`).
+            .arg("--")
+            .arg(package)
+            .args(fields)
+            // Nor should a relative path npm resolves find the project's files.
+            .current_dir(&prefix)
             .env_clear()
             .envs(env)
             .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
@@ -2118,7 +2355,14 @@ impl NPMBackend {
     ) -> Result<()> {
         // Validate the fallible options before writing anything, so a malformed
         // value fails without leaving a half-written project dir behind.
-        let aube_config = self.aube_project_config(before_date, options, resolved_from_lockfile)?;
+        let mut aube_config =
+            self.aube_project_config(before_date, options, resolved_from_lockfile)?;
+        // mise reads and writes `aube-lock.yaml` here; a user's own
+        // `defaultLockfile`/`defaultLockfileFormat` must not redirect it.
+        aube_config.insert(
+            "defaultLockfile".to_string(),
+            toml::Value::String("aube-lock.yaml".to_string()),
+        );
 
         let mut manifest = serde_json::json!({
             "name": "mise-npm-install",
@@ -2159,7 +2403,7 @@ impl NPMBackend {
         let mut manifest: serde_json::Value =
             serde_json::from_str(&crate::file::read_to_string(&path)?)?;
         manifest["dependencies"] =
-            serde_json::json!({ self.package_key(): self.package_requirement(tv) });
+            serde_json::json!({ self.package_key(): self.package_requirement(tv)? });
         crate::file::write(
             path,
             format!("{}\n", serde_json::to_string_pretty(&manifest)?),
@@ -2180,7 +2424,7 @@ impl NPMBackend {
             .and_then(|v| v.get(self.package_key()))
             .and_then(|v| v.get("specifier"))
             .and_then(toml::Value::as_str);
-        if requirement != Some(self.package_requirement(tv).as_str()) {
+        if requirement != Some(self.package_requirement(tv)?.as_str()) {
             eyre::bail!(
                 "npm:{} dependency graph does not match root version {}; run `mise lock`",
                 self.display_tool_name(),
@@ -2261,7 +2505,23 @@ impl NPMBackend {
         let trust_policy_excludes = options.trust_policy_excludes()?;
         let allow_low_downloads = options.allow_low_downloads()?;
         let allow_exotic_deps = options.allow_exotic_deps()?;
+        let allow_builds = options.allow_builds()?;
         let mut config = toml::Table::new();
+        if !matches!(allow_builds, AllowBuilds::None) {
+            // The user's `.npmrc` `ignore-scripts=true` would otherwise win over
+            // the in-process `ignore_scripts = false` and silently skip the
+            // scripts `allow_builds` approved. Project config outranks it.
+            config.insert("ignoreScripts".to_string(), toml::Value::Boolean(false));
+        }
+        if matches!(allow_builds, AllowBuilds::Packages(_)) {
+            // aube merges its bundled trusted-dependencies list into every
+            // allowlist, so a package list would approve far more than it
+            // names. An explicit list means exactly those packages.
+            config.insert(
+                "useDefaultTrustedDependencies".to_string(),
+                toml::Value::Boolean(false),
+            );
+        }
         if let Some(before_date) = before_date {
             let minutes = Self::build_aube_minimum_release_age(elapsed_seconds_ceil(
                 before_date,
@@ -2890,6 +3150,7 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
         "trust_policy_excludes".into(),
         "allow_low_downloads".into(),
         "allow_exotic_deps".into(),
+        "checksum".into(),
     ]
 }
 
@@ -2984,21 +3245,6 @@ mod tests {
         let env = npm_view_env(&[shims.path()]);
         let err = npm_view_program(&env).unwrap_err().to_string();
         assert!(err.contains("only npm on PATH is a mise shim"), "{err}");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn same_inode_recognizes_a_hard_link() {
-        let dir = tempfile::tempdir().unwrap();
-        let original = dir.path().join("mise");
-        std::fs::write(&original, "x").unwrap();
-        let link = dir.path().join("npm");
-        std::fs::hard_link(&original, &link).unwrap();
-        let other = dir.path().join("other");
-        std::fs::write(&other, "x").unwrap();
-        assert!(!crate::file::same_file(&link, &original));
-        assert!(same_inode(&link, &original));
-        assert!(!same_inode(&other, &original));
     }
 
     #[cfg(unix)]
@@ -3140,7 +3386,7 @@ mod tests {
             assert_eq!(remote, expected_remote);
             assert_eq!(
                 git_ls_remote_args(&remote),
-                ["ls-remote", remote.as_str(), "HEAD"]
+                ["ls-remote", "--", remote.as_str(), "HEAD"]
             );
 
             let display_remote = display_git_remote(&remote);
@@ -3208,6 +3454,50 @@ mod tests {
             );
         }
         assert!(error.contains("git ls-remote 127.0.0.1:mise-git-head-does-not-exist?"));
+    }
+
+    #[test]
+    fn registry_version_rejects_package_spec_syntax() {
+        for version in [
+            "3.6.2",
+            "3",
+            "^3",
+            "~3.6",
+            ">=3 <4",
+            "1.x || 2.x",
+            "1.2.3 - 2.3.4",
+            "*",
+            "latest",
+            "next",
+            "1.0.0-rc.1+build.5",
+        ] {
+            assert!(
+                validate_registry_version("prettier", version).is_ok(),
+                "{version}"
+            );
+        }
+        for version in [
+            "/proc/self/cwd/payload",
+            "./payload",
+            "~/payload",
+            "attacker/repo#v1.0.0",
+            "github:attacker/repo",
+            "file:payload",
+            "link:payload",
+            "https://example.com/x.tgz",
+            "payload.tgz",
+            "payload.TAR.GZ",
+            "payload.tar",
+            ".",
+            "ref:sqlite",
+            "npm:other@1",
+            "",
+        ] {
+            assert!(
+                validate_registry_version("prettier", version).is_err(),
+                "{version}"
+            );
+        }
     }
 
     #[test]
@@ -3291,6 +3581,49 @@ mod tests {
     }
     use crate::toolset::ToolVersionOptions;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn aube_lock_must_install_the_checksum_verified_archive() {
+        use sha2::{Digest, Sha512};
+
+        let backend = create_npm_backend("pnpm");
+        let request =
+            ToolRequest::new(backend.ba().clone(), "10.15.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "10.15.0".to_string());
+        let tmp = tempfile::tempdir().unwrap();
+        let archive = tmp.path().join("package.tgz");
+        std::fs::write(&archive, "genuine").unwrap();
+        let check = |version: &str, key: &str, tarball: &str| {
+            let lock = crate::lockfile::AubeLock::from_yaml(&format!(
+                r#"importers:
+  .:
+    dependencies:
+      pnpm:
+        specifier: 10.15.0
+        version: {version}
+packages:
+  {key}:
+    resolution: {{integrity: sha512-{}}}
+"#,
+                BASE64_STANDARD.encode(Sha512::digest(tarball))
+            ))
+            .unwrap();
+            backend.ensure_aube_lock_installs_archive(&tv, &lock, &archive)
+        };
+
+        check("10.15.0", "pnpm@10.15.0", "genuine").unwrap();
+        check("10.15.0(peer@1.0.0)", "pnpm@10.15.0", "genuine").unwrap();
+        check("10.15.0(peer@1.0.0)", "pnpm@10.15.0(peer@1.0.0)", "genuine").unwrap();
+        assert!(check("10.15.0", "pnpm@10.15.0", "altered").is_err());
+        assert!(check("10.16.0", "pnpm@10.16.0", "genuine").is_err());
+        assert!(check("10.15.0", "other@10.15.0", "genuine").is_err());
+        let empty = crate::lockfile::AubeLock::default();
+        assert!(
+            backend
+                .ensure_aube_lock_installs_archive(&tv, &empty, &archive)
+                .is_err()
+        );
+    }
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
         let ba = BackendArg::new_raw(
@@ -3394,6 +3727,23 @@ mod tests {
             backend.list_installed_versions_matching("1.3.1-3"),
             ["1.3.1-3"]
         );
+    }
+
+    #[tokio::test]
+    async fn latest_version_cache_is_not_shared_between_packages() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let scoped = NPMBackend::from_arg("npm:@acme-latest-cache/cli".into());
+        let unscoped = NPMBackend::from_arg("npm:acme-latest-cache-cli".into());
+        // Kebab-casing gives both the same cache directory.
+        assert_eq!(scoped.ba.cache_path(), unscoped.ba.cache_path());
+
+        let latest = Some("1.0.0".to_string());
+        let unscoped_cache = unscoped.latest_version_cache().lock().await;
+        unscoped_cache.write(&latest).unwrap();
+        assert_eq!(unscoped_cache.get_cached().unwrap(), latest);
+
+        let scoped_cache = scoped.latest_version_cache().lock().await;
+        assert!(scoped_cache.get_cached().is_err());
     }
 
     #[tokio::test]
@@ -4437,6 +4787,10 @@ pkg@1.2.0 '1.2.0'
                 toml::Value::String("undici@^5".to_string()),
             ])
         );
+        assert_eq!(
+            config["defaultLockfile"],
+            toml::Value::String("aube-lock.yaml".to_string())
+        );
         assert!(!install_path.join(".npmrc").exists());
         // The build-script allowlist goes in package.json's aube namespace.
         let manifest: serde_json::Value =
@@ -4445,6 +4799,13 @@ pkg@1.2.0 '1.2.0'
         assert_eq!(
             manifest["aube"]["allowBuilds"],
             serde_json::json!({ "esbuild": true })
+        );
+        // Approved builds must run even if the user's .npmrc ignores scripts.
+        assert_eq!(config["ignoreScripts"], toml::Value::Boolean(false));
+        // A package list approves exactly those packages, not aube's defaults.
+        assert_eq!(
+            config["useDefaultTrustedDependencies"],
+            toml::Value::Boolean(false)
         );
         assert_eq!(
             std::fs::read_to_string(install_path.join("aube-workspace.yaml")).unwrap(),
@@ -4555,6 +4916,28 @@ pkg@1.2.0 '1.2.0'
                 .unwrap()
                 .contains(tmp.path())
         );
+    }
+
+    #[test]
+    fn aube_health_marker_tracks_virtual_store_changes() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("node_modules/.mise");
+        std::fs::create_dir_all(store.join("pkg@1.0.0/node_modules/pkg")).unwrap();
+
+        assert!(!aube_health_marker_matches(tmp.path()));
+        write_aube_health_marker(tmp.path());
+        assert!(aube_health_marker_matches(tmp.path()));
+
+        // A reinstall adds or removes entries, which moves the store's mtime.
+        std::fs::create_dir_all(store.join("other@1.0.0")).unwrap();
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+        filetime::set_file_mtime(&store, filetime::FileTime::from_system_time(later)).unwrap();
+        assert!(!aube_health_marker_matches(tmp.path()));
+
+        write_aube_health_marker(tmp.path());
+        assert!(aube_health_marker_matches(tmp.path()));
+        forget_aube_install_health(tmp.path());
+        assert!(!aube_health_marker_matches(tmp.path()));
     }
 
     #[test]
@@ -4882,6 +5265,9 @@ pkg@1.2.0 '1.2.0'
         )
         .unwrap();
         assert!(!config.contains_key("allowedUnpopularPackages"));
+        // Without allow_builds, the user's ignore-scripts stays in charge.
+        assert!(!config.contains_key("ignoreScripts"));
+        assert!(!config.contains_key("useDefaultTrustedDependencies"));
         assert!(!install_path.join(".npmrc").exists());
     }
 

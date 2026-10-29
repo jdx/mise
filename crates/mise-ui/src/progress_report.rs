@@ -9,6 +9,9 @@ use std::sync::OnceLock;
 
 use crate::ctrlc;
 use crate::style;
+// Text here reaches the terminal through clx or stderr, not the logger, so it is
+// redacted the way the logger would.
+use mise_util::redactions::redact_output;
 
 pub use mise_util::progress::{ProgressIcon, SingleReport};
 
@@ -64,7 +67,7 @@ impl ProgressReport {
 
         let job = ProgressJobBuilder::new()
             .body(body)
-            .prop("prefix", &formatted_prefix)
+            .prop("prefix", &redact_output(&formatted_prefix))
             .prop("message", "")
             .start();
 
@@ -83,13 +86,13 @@ impl ProgressReport {
         } else {
             format!("{phase}  {detail}")
         };
-        self.job.prop("message", &message);
+        self.job.prop("message", &redact_output(&message));
     }
 }
 
 impl SingleReport for ProgressReport {
     fn println(&self, message: String) {
-        self.job.println(&message);
+        self.job.println(&redact_output(&message));
     }
 
     fn set_message(&self, message: String) {
@@ -177,7 +180,7 @@ impl VerboseReport {
 
 impl SingleReport for VerboseReport {
     fn println(&self, message: String) {
-        safe_eprintln!("{message}");
+        safe_eprintln!("{}", redact_output(&message));
     }
     fn set_process_output(&self, message: String) {
         // Not set_message: its dedup collapses repeated phase text, which would

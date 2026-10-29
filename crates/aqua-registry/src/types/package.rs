@@ -138,7 +138,7 @@ impl AquaPackage {
 
     /// Apply user-provided variable values used by aqua `vars` templates.
     pub fn with_var_values(mut self, var_values: HashMap<String, String>) -> Result<AquaPackage> {
-        self.var_values = var_values;
+        self.var_values = var_values.into_iter().collect();
         self.validate_vars()?;
         Ok(self)
     }
@@ -170,13 +170,20 @@ impl AquaPackage {
                     if vo.version_constraint.is_empty() {
                         true
                     } else {
-                        expr.eval(&vo.version_constraint, ctx)
-                            .map_err(|e| {
-                                log::debug!("error parsing {}: {e}", vo.version_constraint)
-                            })
-                            .unwrap_or(false.into())
-                            .as_bool()
-                            .unwrap()
+                        match expr.eval(&vo.version_constraint, ctx) {
+                            Ok(Value::Bool(matched)) => matched,
+                            Ok(_) => {
+                                log::warn!(
+                                    "invalid response from version constraint: {}",
+                                    vo.version_constraint
+                                );
+                                false
+                            }
+                            Err(e) => {
+                                log::debug!("error parsing {}: {e}", vo.version_constraint);
+                                false
+                            }
+                        }
                     }
                 })
             })

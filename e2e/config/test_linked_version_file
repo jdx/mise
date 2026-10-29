@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# A project can ship `.tool-versions` or an idiomatic version file as a symlink
+# to a file of the user's. Read as a version file, `~/.netrc` turns into tools
+# named `machine` and `password` with the secret as a version, which mise then
+# prints in warnings and errors. A linked version file is read only when the
+# target has the same name, the way a monorepo shares one.
+
+mkdir -p "$HOME/private"
+printf 'machine example.com\nlogin me\npassword s3cr3t\n' >"$HOME/private/netrc"
+
+ln -s "$HOME/private/netrc" .tool-versions
+for cmd in "mise hook-env -s bash" "mise ls" "mise env" "mise current" "mise install" "MISE_SAFE=1 mise hook-env -s bash"; do
+  assert_not_contains "$cmd 2>&1 || true" "s3cr3t"
+done
+assert_contains "mise ls 2>&1" "not reading ~/workdir/.tool-versions"
+# Nothing is written back through the link either.
+assert_fail "mise use --path .tool-versions dummy@1" "not writing ~/workdir/.tool-versions"
+assert_contains "cat $HOME/private/netrc" "password s3cr3t"
+rm .tool-versions
+
+echo "s3cr3t" >"$HOME/private/token"
+ln -s "$HOME/private/token" .node-version
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node
+for cmd in "mise ls" "mise current" "mise install"; do
+  assert_not_contains "$cmd 2>&1 || true" "s3cr3t"
+done
+rm .node-version
+unset MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS
+
+# A link to a version file of the same name is read as before.
+mkdir shared
+echo "dummy 1.0.0" >shared/.tool-versions
+ln -s shared/.tool-versions .tool-versions
+assert_contains "mise ls dummy" "1.0.0"
+
+rm .tool-versions
+
+# A skipped link does not hide the file it points to. A project that keeps
+# `.nvmrc` for nvm as a link to `.node-version` still gets that Node version,
+# and no warning: the link stays in its directory and ends at a version file.
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node
+echo "20.0.0" >.node-version
+ln -s .node-version .nvmrc
+assert_not_contains "mise ls 2>&1" "not reading"
+assert "mise ls --current --json | jq -r '.node[0].requested_version'" "20.0.0"
+assert_contains "mise ls --current node" "~/workdir/.node-version"
+rm .nvmrc
+
+# A target that is disabled is not read under its own name, so the skipped link
+# still warns.
+ln -s .node-version .nvmrc
+export MISE_IDIOMATIC_VERSION_FILE_DISABLE_FILES=node:.node-version
+assert_contains "mise ls 2>&1" "not reading ~/workdir/.nvmrc"
+unset MISE_IDIOMATIC_VERSION_FILE_DISABLE_FILES
+rm .nvmrc
+
+# A link to any other sibling is still skipped with the warning, and its text
+# is never read as a version.
+echo "NODE_AUTH_TOKEN=s3cr3t" >.env
+ln -s .env .nvmrc
+assert_contains "mise ls 2>&1" "not reading ~/workdir/.nvmrc"
+assert_not_contains "mise ls 2>&1 || true" "s3cr3t"
+assert "mise ls --current --json | jq -r '.node[0].requested_version'" "20.0.0"
+rm .nvmrc .env .node-version
+unset MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS
+
+# The same holds for a tool-versions filename that ends in `.toml`.
+export MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES=.tool-versions:versions.toml
+echo "dummy 1.0.0" >.tool-versions
+ln -s .tool-versions versions.toml
+assert_not_contains "mise ls dummy 2>&1" "not reading"
+assert_contains "mise ls dummy 2>&1" "1.0.0"
+rm versions.toml .tool-versions
+unset MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
+
+# Both spellings may be links, to a file in another directory.
+export MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node
+mkdir client
+echo "22.2.0" >client/.node-version
+ln -s client/.node-version .node-version
+ln -s client/.node-version .nvmrc
+assert_contains "mise ls --current node 2>&1" "22.2.0"
+assert_contains "mise ls --current node 2>&1" "not reading ~/workdir/.nvmrc"
+rm .nvmrc .node-version
+unset MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS
+
+# A TOML config under a custom filename linked to another name is one config,
+# not two.
+export MISE_OVERRIDE_CONFIG_FILENAMES=config:mise.toml
+printf '[tools]\ndummy = "1.0.0"\n' >mise.toml
+ln -s mise.toml config
+assert_not_contains "mise ls dummy 2>&1" "not reading"
+assert "mise config ls --no-header | wc -l | tr -d ' '" "1"
+rm config mise.toml
+unset MISE_OVERRIDE_CONFIG_FILENAMES
+
+# The user's own global `~/.tool-versions` may link to a file of any name, as
+# a dotfiles manager sets it up.
+mkdir -p "$HOME/dotfiles"
+echo "dummy 2.0.0" >"$HOME/dotfiles/tool-versions"
+ln -s "$HOME/dotfiles/tool-versions" "$HOME/.tool-versions"
+assert_contains "mise ls dummy 2>&1" "2.0.0"
+assert_not_contains "mise ls dummy 2>&1" "not reading"

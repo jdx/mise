@@ -30,7 +30,9 @@ activated shell at its next prompt, and immediately in `mise exec` commands.
 ## Arguments
 - **`<TOOL@VERSION>`** — Tool to add to the config file, such as node@24, cargo:ripgrep@latest, or npm:prettier@3
 
-  Without a version, mise requests `latest`; with --pin it writes the resolved version.
+  Without a version, mise requests `latest` but reuses the newest installed version.
+  Write `@latest` to install the newest release; in locked mode the lockfile still decides.
+  With --pin it writes the resolved version.
   Tool options can also be set inline:
 
   ```
@@ -52,6 +54,9 @@ activated shell at its next prompt, and immediately in `mise exec` commands.
 - **`-p --path <PATH>`** — Write to this config file, or to the config file in this directory
 
   For a directory, mise picks the file by the usual write-target rules.
+- **`--override`** — Write to the global override file, `config.override.toml`
+
+  The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See <https://mise.jdx.dev/configuration.html#override-file>
 - **`--dry-run-code`** — Like --dry-run, but exit with code 1 if there are changes to make
 
   Use it in scripts that check whether tools need to be added or removed.

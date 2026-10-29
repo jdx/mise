@@ -19,9 +19,11 @@ remove `node = "20"`, use `mise unuse node@20`, not the installed version it
 resolved to. Omit the version to remove every request for that tool from the
 selected file.
 
-Versions are pruned only when no remaining tracked config or tool stub needs
-them. Pass `--no-prune` to edit the config and keep the installations. To
-remove an installation without editing config, use `mise uninstall`.
+The installed versions the arguments name are pruned only when no remaining
+tracked config or tool stub needs them; mise says which file keeps one. A tool
+named without a version has all of its unused versions pruned. Pass
+`--no-prune` to edit the config and keep the installations. To remove an
+installation without editing config, use `mise uninstall`.
 
 ## Arguments
 - **`<INSTALLED_TOOL@VERSION>…`** — Tools to remove from the config, with the version written as in the config
@@ -34,6 +36,9 @@ remove an installation without editing config, use `mise uninstall`.
 - **`-p --path <PATH>`** — Edit this config file, or the config file in this directory
 
   **Aliases:** `--file`
+- **`--override`** — Write to the global override file, `config.override.toml`
+
+  The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See <https://mise.jdx.dev/configuration.html#override-file>
 - **`--no-prune`** — Do not also prune the installed version
 - **`-h --help`** — Print help
 

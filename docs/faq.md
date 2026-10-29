@@ -239,6 +239,42 @@ To route downloads through an internal mirror instead, use
 mise runs, such as npm, pip, cargo, and asdf plugins, read their own proxy and
 certificate settings.
 
+### How does mise handle TLS certificates? {#tls-certificates}
+
+mise verifies HTTPS connections against your operating system's trust store, so
+a certificate authority (CA) installed there, such as a corporate or
+traffic-inspecting proxy CA, is trusted. That holds for the official release
+binaries, including the deb and rpm packages built from them. They use rustls
+with the platform's certificate verifier. A build from source with default
+Cargo features, such as `cargo install`, uses the platform TLS library instead
+(OpenSSL on Linux). See [build features](/packaging.html#build-features).
+
+On Linux, the release binaries also honor `SSL_CERT_FILE` and `SSL_CERT_DIR`.
+Setting either one **replaces** the system store rather than adding to it, so a
+bundle that holds only your private CA makes every public site fail with
+`UnknownIssuer`:
+
+```sh
+# trusts only this file: the bundle must include the public roots too
+export SSL_CERT_FILE=/etc/ssl/corporate-bundle.pem
+mise install
+```
+
+If no certificates can be loaded at all, for example in a minimal container
+without the `ca-certificates` package, or `SSL_CERT_FILE` points at a missing
+file, mise warns and trusts a bundled copy of Mozilla's root certificates for
+its own HTTP clients, such as downloads, `mise self-update`, vfox plugins, the
+remote task cache and attestation lookups. Git operations and sigstore's
+trust-root updates use separate clients that this does not cover. Install
+`ca-certificates` or fix the path
+to use your system store again. Certificates that do load are never
+supplemented, so a bundle that loads still replaces the system store as
+described above. This fallback applies to Linux and other Unix systems except
+macOS, and only to the rustls release binaries. The npm backend always trusts
+the same bundled roots in addition to the system store. Package managers and plugins that mise runs read their own
+certificate settings, for example `NODE_EXTRA_CA_CERTS` for node or
+`REQUESTS_CA_BUNDLE` for Python's requests.
+
 ## Coming from asdf {#migration}
 
 ### How do I switch from asdf? {#how-do-i-migrate-from-asdf}

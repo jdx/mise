@@ -93,7 +93,197 @@ pub fn redact_url_userinfo_in_arg(arg: &str) -> Cow<'_, str> {
     redact_userinfo(arg, false)
 }
 
+/// Remove the credentials of every `scheme://` URL in `text`.
+///
+/// Unlike [`redact_url_userinfo`], which marks where a credential was for a
+/// reader, this is for values that are stored, compared or used as names
+/// (lockfiles, install manifests, directory names), where `[redacted]` would be
+/// recorded as if it were part of the URL. `https://user:token@host/path`
+/// becomes `https://host/path`. The user of an `ssh` URL is an account name
+/// rather than a secret, so `ssh://git@host/repo` is kept as it is and only a
+/// password is removed from it. Everything else is kept byte for byte, so the
+/// text need not parse as a URL.
+///
+/// Whitespace ends a URL, as in [`redact_url_userinfo`]; for a single argument
+/// or name that may hold a raw space use [`strip_url_credentials_in_arg`].
+pub fn strip_url_credentials(text: &str) -> Cow<'_, str> {
+    rewrite_userinfo(text, true, Userinfo::Strip)
+}
+
+/// [`strip_url_credentials`] for a stored value. A value that is itself a URL
+/// (`source = "https://user:my pass@host/"`) is read as one argument, where
+/// whitespace can be part of the userinfo; anything else, an argument list such
+/// as `npm_args` for one, is free text.
+pub fn strip_url_credentials_in_value(value: &str) -> Cow<'_, str> {
+    let scheme = value
+        .split_once("://")
+        .map(|(scheme, _)| scheme)
+        .unwrap_or_default();
+    let is_url = scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+    if is_url {
+        strip_url_credentials_in_arg(value)
+    } else {
+        strip_url_credentials(value)
+    }
+}
+
+/// [`strip_url_credentials`] for one command-line argument or tool name, where
+/// only `/`, `?` or `#` ends the authority.
+pub fn strip_url_credentials_in_arg(arg: &str) -> Cow<'_, str> {
+    rewrite_userinfo(arg, false, Userinfo::Strip)
+}
+
+/// Whether a URL query parameter named `name` (decoded) carries a credential,
+/// judged by its name: `token`, `access_token`, `key`, `sig`, `signature`,
+/// `password`, `X-Amz-Credential`, or one ending in `_token`, `-key`,
+/// `_secret`, `_password`, `-signature` and the like.
+pub fn is_credential_query_param(name: &str) -> bool {
+    const NAMES: &[&str] = &[
+        "token",
+        "access_token",
+        "private_token",
+        "auth",
+        "api_key",
+        "apikey",
+        "key",
+        "sig",
+        "signature",
+        "password",
+        "passwd",
+        "pwd",
+        "secret",
+        "credential",
+        "credentials",
+        "x-amz-credential",
+        "x-goog-credential",
+    ];
+    const SUFFIXES: &[&str] = &["token", "key", "secret", "password", "signature"];
+    let name = name.to_ascii_lowercase();
+    NAMES.contains(&name.as_str())
+        || SUFFIXES.iter().any(|suffix| {
+            name.strip_suffix(suffix)
+                .is_some_and(|rest| rest.ends_with('_') || rest.ends_with('-'))
+        })
+}
+
+static URL_QUERY: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r#"(://[^\s?#'"]*)\?([^\s#'"]*)"#).unwrap());
+
+/// The decoded names of the query parameters of every URL in `text`.
+pub fn url_query_param_names(text: &str) -> Vec<String> {
+    URL_QUERY
+        .captures_iter(text)
+        .flat_map(|captures| {
+            url::form_urlencoded::parse(captures[2].as_bytes())
+                .map(|(name, _)| name.into_owned())
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// `text` without the query parameters, of any URL in it, whose names say
+/// they carry a credential ([`is_credential_query_param`]). The other
+/// parameters are kept as written, so two URLs that select different things
+/// stay different, and stripping twice changes nothing. For identifiers that
+/// are stored or used as names; a lockfile refuses such URLs instead.
+pub fn strip_credential_query_params(text: &str) -> Cow<'_, str> {
+    if !text.contains("://") || !text.contains('?') {
+        return Cow::Borrowed(text);
+    }
+    let mut changed = false;
+    let out = URL_QUERY.replace_all(text, |captures: &regex::Captures<'_>| {
+        let kept = captures[2]
+            .split('&')
+            .filter(|pair| {
+                let name = url::form_urlencoded::parse(pair.as_bytes())
+                    .next()
+                    .map(|(name, _)| name.into_owned())
+                    .unwrap_or_default();
+                let credential = is_credential_query_param(&name);
+                changed |= credential;
+                !credential
+            })
+            .collect::<Vec<_>>();
+        if kept.is_empty() {
+            captures[1].to_string()
+        } else {
+            format!("{}?{}", &captures[1], kept.join("&"))
+        }
+    });
+    if changed {
+        Cow::Owned(out.into_owned())
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+
+/// Text that mise writes to the terminal or a file without going through the
+/// logger, redacted the way the logger redacts every record: registered secrets,
+/// then the userinfo of every URL.
+pub fn redact_output(text: &str) -> String {
+    let text = redact_global(text);
+    match redact_url_userinfo(&text) {
+        Cow::Borrowed(_) => text,
+        Cow::Owned(redacted) => redacted,
+    }
+}
+
+/// `value` with every string in it, keys included, redacted the way the
+/// logger redacts a record ([`redact_output`]), for JSON that mise prints.
+/// Redacting the strings rather than the serialized text keeps the JSON valid
+/// whatever a registered secret is (`false`, `"`, `:`).
+pub fn redact_json(value: serde_json::Value) -> serde_json::Value {
+    redact_json_with(value, &redact_output)
+}
+
+/// [`redact_json`] with `redact` applied to each string.
+pub fn redact_json_with(
+    value: serde_json::Value,
+    redact: &dyn Fn(&str) -> String,
+) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Value::String(s) => Value::String(redact(&s)),
+        Value::Array(values) => Value::Array(
+            values
+                .into_iter()
+                .map(|v| redact_json_with(v, redact))
+                .collect(),
+        ),
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(k, v)| (redact(&k), redact_json_with(v, redact)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 fn redact_userinfo(text: &str, whitespace_ends_url: bool) -> Cow<'_, str> {
+    rewrite_userinfo(text, whitespace_ends_url, Userinfo::Redact)
+}
+
+#[derive(Clone, Copy)]
+enum Userinfo {
+    /// Replace it with `[redacted]`.
+    Redact,
+    /// Remove it and its `@`, keeping the user of an `ssh` URL.
+    Strip,
+}
+
+/// The scheme of the URL whose `://` ends `head`.
+fn trailing_scheme(head: &str) -> &str {
+    let head = head.strip_suffix("://").unwrap_or(head);
+    let start = head
+        .rfind(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')))
+        .map_or(0, |i| i + 1);
+    &head[start..]
+}
+
+fn rewrite_userinfo(text: &str, whitespace_ends_url: bool, mode: Userinfo) -> Cow<'_, str> {
     if !text.contains("://") {
         return Cow::Borrowed(text);
     }
@@ -111,10 +301,26 @@ fn redact_userinfo(text: &str, whitespace_ends_url: bool) -> Cow<'_, str> {
                 matches!(c, '/' | '?' | '#') || (whitespace_ends_url && c.is_whitespace())
             })
             .unwrap_or(tail.len());
-        if let Some(at) = tail[..end].rfind('@').filter(|&at| at > 0) {
-            out.push_str("[redacted]");
-            rest = &tail[at..];
-            redacted = true;
+        let Some(at) = tail[..end].rfind('@').filter(|&at| at > 0) else {
+            continue;
+        };
+        match mode {
+            Userinfo::Redact => {
+                out.push_str("[redacted]");
+                rest = &tail[at..];
+                redacted = true;
+            }
+            Userinfo::Strip if trailing_scheme(head).to_ascii_lowercase().ends_with("ssh") => {
+                if let Some((user, _password)) = tail[..at].split_once(':') {
+                    out.push_str(user);
+                    rest = &tail[at..];
+                    redacted = true;
+                }
+            }
+            Userinfo::Strip => {
+                rest = &tail[at + 1..];
+                redacted = true;
+            }
         }
     }
     if !redacted {
@@ -246,6 +452,118 @@ fn replace_spans(input: &str, mut spans: Vec<(usize, usize)>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_strip_url_credentials_in_value() {
+        // A value that is one URL may hold a raw space in its password.
+        assert_eq!(
+            strip_url_credentials_in_value("https://user:my password@gems.example.com/"),
+            "https://gems.example.com/"
+        );
+        // An argument list is free text: whitespace ends each URL.
+        assert_eq!(
+            strip_url_credentials_in_value(
+                "--index-url https://u:p@h.example/x --other https://h2/y"
+            ),
+            "--index-url https://h.example/x --other https://h2/y"
+        );
+        assert_eq!(strip_url_credentials_in_value("plain value"), "plain value");
+    }
+
+    #[test]
+    fn test_strip_credential_query_params() {
+        let cases = [
+            (
+                "cargo:https://host/r.git?token=s3cret",
+                "cargo:https://host/r.git",
+            ),
+            (
+                "http:https://host/t.tgz?ref=main&private_token=s3cret&page=2",
+                "http:https://host/t.tgz?ref=main&page=2",
+            ),
+            ("https://host/t?api%5Fkey=s3cret&x=1", "https://host/t?x=1"),
+            ("https://host/t?ref=main", "https://host/t?ref=main"),
+            ("not a url?token=x", "not a url?token=x"),
+        ];
+        for (input, want) in cases {
+            let got = strip_credential_query_params(input);
+            assert_eq!(got, want, "{input}");
+            assert_eq!(strip_credential_query_params(&got), got, "idempotent");
+        }
+        assert!(matches!(
+            strip_credential_query_params("https://host/t?ref=main"),
+            Cow::Borrowed(_)
+        ));
+        assert_eq!(
+            url_query_param_names("https://h/t?api%5Fkey=1&b"),
+            ["api_key", "b"]
+        );
+    }
+
+    #[test]
+    fn test_strip_url_credentials() {
+        let cases = [
+            ("https://user:tok@host/a?b=1", "https://host/a?b=1"),
+            ("https://tok@host", "https://host"),
+            ("https://u:p@ss@host/x", "https://host/x"),
+            (
+                "cargo:https://bot:t0ken@host/acme/tool.git",
+                "cargo:https://host/acme/tool.git",
+            ),
+            (
+                "ssh://git@github.com/o/r.git",
+                "ssh://git@github.com/o/r.git",
+            ),
+            (
+                "git+ssh://git:pw@github.com/o/r",
+                "git+ssh://git@github.com/o/r",
+            ),
+            (
+                "--index-url https://u:p@h.example/x --other https://h2/y",
+                "--index-url https://h.example/x --other https://h2/y",
+            ),
+            ("https://host/a@b", "https://host/a@b"),
+            ("plain value", "plain value"),
+        ];
+        for (input, want) in cases {
+            assert_eq!(strip_url_credentials(input), want, "{input}");
+        }
+        assert!(matches!(
+            strip_url_credentials("https://host/x"),
+            Cow::Borrowed(_)
+        ));
+        assert_eq!(
+            strip_url_credentials_in_arg("cargo:https://bot:my t0ken@host/r"),
+            "cargo:https://host/r"
+        );
+    }
+
+    /// A registered secret that happens to be JSON syntax (`false`) must not
+    /// turn into `[redacted]` outside a string.
+    #[test]
+    fn test_redact_json_redacts_strings_not_syntax() {
+        let redactor = Redactor::new(["false".to_string(), "s3cret".to_string()]);
+        let redact = |s: &str| redact_url_userinfo(&redactor.redact(s)).into_owned();
+        let value = serde_json::json!({
+            "activated": false,
+            "env": {"TOKEN": "s3cret", "s3cret": "x"},
+            "urls": ["https://u:p@host/x"],
+        });
+        let out = serde_json::to_string(&redact_json_with(value, &redact)).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["activated"], false);
+        assert_eq!(parsed["env"]["TOKEN"], "[redacted]");
+        assert_eq!(parsed["env"]["[redacted]"], "x");
+        assert_eq!(parsed["urls"][0], "https://[redacted]@host/x");
+    }
+
+    #[test]
+    fn test_redact_output_hides_url_userinfo() {
+        assert_eq!(
+            redact_output("GET https://u:p@host/x failed"),
+            "GET https://[redacted]@host/x failed"
+        );
+    }
 
     #[test]
     fn test_secret_patterns_single_line() {

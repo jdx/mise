@@ -4,7 +4,7 @@ use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::runtime_path_for_install_path;
-use crate::backend::static_helpers::try_with_v_prefix;
+use crate::backend::static_helpers::{ensure_safe_relative_bin_dir, try_with_v_prefix};
 use crate::config::{Config, Settings};
 use crate::env::{
     GITHUB_TOKEN, GITLAB_TOKEN, MISE_GITHUB_ENTERPRISE_TOKEN, MISE_GITLAB_ENTERPRISE_TOKEN,
@@ -135,6 +135,13 @@ pub(crate) fn ubi_fuzzy_match(
 
 #[async_trait]
 impl Backend for UbiBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::with_platforms(
+            &["tool_ubi_options"],
+            &["tool_ubi_platforms"],
+        ))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Ubi
     }
@@ -287,7 +294,7 @@ impl Backend for UbiBackend {
                                     format!("{}/-/releases/{}", release_url_base, r.tag_name);
                                 VersionInfo {
                                     version: strip_v_prefix(&r.tag_name),
-                                    created_at: r.released_at,
+                                    created_at: r.published_at().map(str::to_string),
                                     release_url: Some(release_url),
                                     ..Default::default()
                                 }
@@ -328,6 +335,7 @@ impl Backend for UbiBackend {
         let raw_opts = tv.request.options();
         let opts = UbiOptions::new(&raw_opts);
         let bin_path = opts.bin_path().unwrap_or_else(|| "bin".to_string());
+        ensure_safe_relative_bin_dir("bin_path", &bin_path)?;
         let extract_all = opts.extract_all();
         let bin_dir = tv.install_path();
 
@@ -444,6 +452,7 @@ impl Backend for UbiBackend {
         let opts = UbiOptions::new(&raw_opts);
         if let Some(bin_path) = opts.bin_path() {
             // bin_path should always point to a directory containing binaries
+            ensure_safe_relative_bin_dir("bin_path", &bin_path)?;
             Ok(vec![runtime_path_for_install_path(
                 tv,
                 tv.install_path().join(&bin_path),
@@ -567,14 +576,25 @@ async fn install(
 
     let forge = opts.provider()?;
     builder = builder.forge(forge.clone());
-    builder = set_token(builder, &forge);
+    // An `api_url` that project config named in safe mode gets no token; see
+    // `mise_util::untrusted_hosts`.
+    let token_denied = opts
+        .api_url_override()
+        .and_then(|api_url| url::Url::parse(api_url).ok())
+        .and_then(|url| url.host_str().map(str::to_string))
+        .is_some_and(|host| mise_util::untrusted_hosts::forge_token_denied(&host));
+    if !token_denied {
+        builder = set_token(builder, &forge);
+    }
 
     if let Some(api_url) = opts.api_url_override()
         && !api_url.contains("github.com")
         && !api_url.contains("gitlab.com")
     {
         builder = builder.api_base_url(api_url.strip_suffix("/").unwrap_or(api_url));
-        builder = set_enterprise_token(builder, &forge);
+        if !token_denied {
+            builder = set_enterprise_token(builder, &forge);
+        }
     }
 
     let mut ubi = builder.build().map_err(|e| eyre::eyre!("{e:#}"))?;

@@ -74,7 +74,7 @@ pub struct SourceInfo {
     pub declared_in: Vec<PathBuf>,
     pub profile: Option<String>,
     pub tool_path: PathBuf,
-    /// The source's cache, when it has one (`daemon: running (protocol 6)`)
+    /// The source's cache, when it has one (`daemon: running (protocol 7)`)
     pub daemon: Option<String>,
 }
 

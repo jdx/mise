@@ -4,6 +4,7 @@ use crate::file::display_path;
 use crate::git::Git;
 use crate::lock_file::LockFile;
 use crate::plugins::PluginType;
+use crate::toolset::tool_version_options::strip_options_credentials;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, parse_tool_options};
 use crate::{dirs, env, file, runtime_symlinks};
 use eyre::{Ok, Result, WrapErr};
@@ -28,8 +29,28 @@ fn normalize_version_for_sort(v: &str) -> &str {
 pub(crate) fn sort_versions(versions: &mut [String]) {
     versions.sort_by_cached_key(|v| {
         let normalized = normalize_version_for_sort(v);
-        (Versioning::new(normalized), v.to_string())
+        (
+            Versioning::new(normalized),
+            build_metadata_key(normalized),
+            v.to_string(),
+        )
     });
+}
+
+/// Orders versions that `Versioning` treats as equal because they differ only
+/// in the build metadata after a `+`, such as Java's `temurin-25.0.4+7.0.LTS`
+/// and `temurin-25.0.4+101.0.LTS`. Numeric segments compare as numbers, so
+/// build 101 follows build 7 instead of preceding it as text.
+fn build_metadata_key(v: &str) -> Vec<(bool, u64, String)> {
+    let Some((_, meta)) = v.split_once('+') else {
+        return vec![];
+    };
+    meta.split('.')
+        .map(|seg| match seg.parse::<u64>().ok() {
+            Some(n) => (false, n, String::new()),
+            None => (true, 0, seg.to_string()),
+        })
+        .collect()
 }
 
 type InstallStatePlugins = BTreeMap<String, PluginType>;
@@ -65,6 +86,41 @@ fn default_true() -> bool {
     true
 }
 
+/// The spelling install state records a tool under: `short` without the
+/// credentials of a URL in it, its userinfo and the query parameters named
+/// like a credential (`cargo:https://user:token@host/repo?token=x` is recorded
+/// as `cargo:https://host/repo`). Other query parameters are kept, so two
+/// tools that differ in what they select stay apart. Lookups take the configured spelling and go
+/// through this too, so both meet. The credential is read from config when an
+/// install needs it, never from install state.
+pub fn state_short(short: &str) -> std::borrow::Cow<'_, str> {
+    use mise_util::redactions::{strip_credential_query_params, strip_url_credentials_in_arg};
+    match strip_url_credentials_in_arg(short) {
+        std::borrow::Cow::Borrowed(short) => strip_credential_query_params(short),
+        std::borrow::Cow::Owned(stripped) => {
+            std::borrow::Cow::Owned(strip_credential_query_params(&stripped).into_owned())
+        }
+    }
+}
+
+impl ManifestTool {
+    /// This entry as install state records it: `short` and `full` without URL
+    /// credentials, and options without credentials.
+    fn without_credentials(&self) -> ManifestTool {
+        ManifestTool {
+            short: state_short(&self.short).into_owned(),
+            full: self.full.as_deref().map(|f| state_short(f).into_owned()),
+            explicit_backend: self.explicit_backend,
+            opts: strip_options_credentials(&self.opts).collect(),
+        }
+    }
+
+    fn has_credentials(&self) -> bool {
+        let stripped = self.without_credentials();
+        stripped.short != self.short || stripped.full != self.full || stripped.opts != self.opts
+    }
+}
+
 /// In-memory representation of the manifest keyed by short name.
 type Manifest = BTreeMap<String, ManifestTool>;
 
@@ -97,12 +153,60 @@ fn tool_manifest_path(installs_dir: &Path, short: &str) -> PathBuf {
         .join(".mise.backend.toml")
 }
 
-/// Read the consolidated manifest file. Returns empty map if it doesn't exist.
-fn read_manifest() -> Manifest {
-    read_manifest_from(&manifest_path())
+/// The consolidated manifest at `path` as install state uses it: every entry
+/// without credentials (see [`ManifestTool::without_credentials`]).
+fn read_manifest_from(path: &Path) -> Manifest {
+    read_raw_manifest_from(path)
+        .iter()
+        .map(|(dir, mt)| (dir.clone(), mt.without_credentials()))
+        .collect()
 }
 
-fn read_manifest_from(path: &Path) -> Manifest {
+/// The root manifest, with the files it describes brought in line with it:
+/// credential-named install directories whose versions are installed under
+/// the tool's own directory are removed, and when the file holds credentials
+/// it is rewritten without them.
+fn load_root_manifest() -> Manifest {
+    let path = manifest_path();
+    let raw = read_raw_manifest_from(&path);
+    for (dir, mt) in &raw {
+        if credential_named_dir(&mt.short).as_deref() == Some(dir.as_str()) {
+            remove_credential_named_installs(&mt.short);
+        }
+    }
+    let (manifest, changed) = clean_root_manifest(&raw);
+    // Best effort, and never waiting on a writer that is mid-update: the next
+    // write of this file leaves it without credentials anyway. The file is read
+    // again under the lock, so an entry written since the read above is kept.
+    if changed && let std::result::Result::Ok(_lock) = MANIFEST_LOCK.try_lock() {
+        let (manifest, changed) = clean_root_manifest(&read_raw_manifest_from(&path));
+        if changed && let Err(err) = write_manifest_to(&path, &manifest) {
+            debug!("could not rewrite {}: {err:#}", display_path(&path));
+        }
+        return manifest;
+    }
+    manifest
+}
+
+/// `raw` without credentials and without the entries of credential-named
+/// directories that no longer exist, and whether that changed anything.
+fn clean_root_manifest(raw: &Manifest) -> (Manifest, bool) {
+    let mut changed = false;
+    let mut manifest = Manifest::new();
+    for (dir, mt) in raw {
+        if credential_named_dir(&mt.short).as_deref() == Some(dir.as_str())
+            && dirs::INSTALLS.join(dir).symlink_metadata().is_err()
+        {
+            changed = true;
+            continue;
+        }
+        changed |= mt.has_credentials();
+        manifest.insert(dir.clone(), mt.without_credentials());
+    }
+    (manifest, changed)
+}
+
+fn read_raw_manifest_from(path: &Path) -> Manifest {
     match file::read_to_string(path) {
         std::result::Result::Ok(body) => match toml::from_str(&body) {
             std::result::Result::Ok(m) => m,
@@ -124,18 +228,32 @@ fn write_manifest(manifest: &Manifest) -> Result<()> {
 }
 
 fn write_manifest_to(path: &Path, manifest: &Manifest) -> Result<()> {
-    let body = toml::to_string_pretty(manifest)?;
+    // Every entry is written without credentials, whatever it was read with.
+    let manifest: Manifest = manifest
+        .iter()
+        .map(|(dir, mt)| (dir.clone(), mt.without_credentials()))
+        .collect();
+    let body = toml::to_string_pretty(&manifest)?;
     file::write_atomic(path, body.trim())?;
     Ok(())
 }
 
+/// A tool's own manifest, without credentials. A file that holds them is
+/// rewritten without them (best effort).
 fn read_tool_manifest_from(path: &Path) -> Option<ManifestTool> {
     if !path.exists() {
         return None;
     }
     match file::read_to_string(path) {
         std::result::Result::Ok(body) if body.trim().is_empty() => None,
-        std::result::Result::Ok(body) => match toml::from_str(&body) {
+        std::result::Result::Ok(body) => match toml::from_str::<ManifestTool>(&body) {
+            std::result::Result::Ok(m) if m.has_credentials() => {
+                let m = m.without_credentials();
+                if let Err(err) = write_tool_manifest_to(path, &m) {
+                    debug!("could not rewrite {}: {err:#}", display_path(path));
+                }
+                Some(m)
+            }
             std::result::Result::Ok(m) => Some(m),
             Err(err) => {
                 warn!(
@@ -150,7 +268,7 @@ fn read_tool_manifest_from(path: &Path) -> Option<ManifestTool> {
 }
 
 fn write_tool_manifest_to(path: &Path, tool: &ManifestTool) -> Result<()> {
-    let body = toml::to_string_pretty(tool)?;
+    let body = toml::to_string_pretty(&tool.without_credentials())?;
     file::write_atomic(path, body.trim())?;
     Ok(())
 }
@@ -370,12 +488,12 @@ fn scan_tool_dir(
         {
             let stripped = stripped_str.to_string();
             let parsed = parse_tool_options(opts_str);
-            for (k, v) in &parsed.opts {
-                if EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
-                    continue;
-                }
-                opts.insert(k.clone(), v.clone());
-            }
+            opts.extend(strip_options_credentials(
+                parsed
+                    .opts
+                    .iter()
+                    .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str())),
+            ));
             full = Some(stripped);
             migrate = Some(ManifestTool {
                 short: mt.short.clone(),
@@ -398,14 +516,14 @@ fn scan_tool_dir(
     };
 
     let tool = InstallStateTool {
-        short,
-        full,
+        short: state_short(&short).into_owned(),
+        full: full.map(|f| state_short(&f).into_owned()),
         versions,
         explicit_backend,
         opts,
         installs_path: Some(dir.to_path_buf()),
     };
-    Ok(Some((tool, migrate)))
+    Ok(Some((tool, migrate.map(|mt| mt.without_credentials()))))
 }
 
 /// Merge the versions (and missing identity) of a shared-dir install into an
@@ -503,7 +621,7 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
                     .get_or_insert_with(|| manifest.as_ref().clone())
                     .insert(dir_name.clone(), mt);
             }
-            tools.insert(tool.short.clone(), tool);
+            insert_scanned_tool(&mut tools, &dir_name, tool);
         }
 
         // Write updated manifest if we migrated any legacy entries
@@ -587,7 +705,7 @@ fn root_manifest() -> Arc<Manifest> {
     let mut memo = ROOT_MANIFEST_MEMO
         .lock()
         .expect("ROOT_MANIFEST_MEMO lock failed");
-    memo.get_or_insert_with(|| Arc::new(read_manifest()))
+    memo.get_or_insert_with(|| Arc::new(load_root_manifest()))
         .clone()
 }
 
@@ -601,6 +719,10 @@ fn root_manifest() -> Arc<Manifest> {
 /// that requires enumeration, which mise itself never produces, and full-scan
 /// callers still see such dirs.
 pub(crate) fn get_tool(short: &str) -> Option<InstallStateTool> {
+    // Looked up by the spelling install state records; `raw` keeps the
+    // configured one, which names any credential-named directory to clean up.
+    let raw = short;
+    let short = &*state_short(raw);
     // A completed full scan is authoritative (it includes plugin identities and
     // shared dirs), so serve from it when available.
     if let Some(tools) = INSTALL_STATE_TOOLS
@@ -620,7 +742,7 @@ pub(crate) fn get_tool(short: &str) -> Option<InstallStateTool> {
             return hit.clone();
         }
     }
-    let tool = load_tool(short);
+    let tool = load_tool(raw);
     // The disk read above runs without the memo lock, so add_tool_version may
     // have landed meanwhile. Neither side is authoritative: this one scanned
     // every version on disk, that one knows about an install that may have
@@ -646,6 +768,24 @@ pub(crate) fn get_tool(short: &str) -> Option<InstallStateTool> {
     }
 }
 
+/// Add the scan of directory `dir_name` to `tools`. Two directories can record
+/// the same tool: its own and a credential-named one. The tool's own directory
+/// is the one its versions are installed in, so it alone stands for the tool,
+/// whichever is scanned first; a version left only in the credential-named one
+/// is installed again under the tool's own name, and the old copy then goes.
+fn insert_scanned_tool(tools: &mut InstallStateTools, dir_name: &str, tool: InstallStateTool) {
+    match tools.entry(tool.short.clone()) {
+        std::collections::btree_map::Entry::Vacant(v) => {
+            v.insert(tool);
+        }
+        std::collections::btree_map::Entry::Occupied(mut o) => {
+            if crate::backend::tool_directory_name(&tool.short) == dir_name {
+                o.insert(tool);
+            }
+        }
+    }
+}
+
 /// Fold a directory scan into an entry an installer already recorded. The
 /// recorded identity wins — it was just written — and any version either side
 /// saw is kept.
@@ -667,6 +807,8 @@ fn merge_scanned_into(recorded: &mut InstallStateTool, scanned: InstallStateTool
 }
 
 fn load_tool(short: &str) -> Option<InstallStateTool> {
+    remove_credential_named_installs(short);
+    let short = &*state_short(short);
     let manifest = root_manifest();
     let dir_name = crate::backend::tool_directory_name(short);
     let scan_named = |dir_name: &str| {
@@ -783,6 +925,8 @@ fn is_banned_plugin(path: &Path) -> bool {
 /// it. Backend resolution and `list_installed_versions` do that per backend, so
 /// the copies add up on enumerating commands.
 fn with_tool<T>(short: &str, f: impl FnOnce(&InstallStateTool) -> T) -> Option<T> {
+    let raw = short;
+    let short = &*state_short(raw);
     if let Some(tools) = INSTALL_STATE_TOOLS
         .lock()
         .expect("INSTALL_STATE_TOOLS lock failed")
@@ -798,11 +942,26 @@ fn with_tool<T>(short: &str, f: impl FnOnce(&InstallStateTool) -> T) -> Option<T
             return hit.as_ref().map(f);
         }
     }
-    get_tool(short).as_ref().map(f)
+    get_tool(raw).as_ref().map(f)
 }
 
 pub(crate) fn get_tool_full(short: &str) -> Option<String> {
-    with_tool(short, |t| t.full.clone()).flatten()
+    with_tool(short, |t| t.full.clone())
+        .flatten()
+        .map(|full| with_request_credentials(short, full))
+}
+
+/// `full` as a request spelled `short` uses it. Install state and lockfiles
+/// record a URL-named tool without its credentials; when `full` is that record
+/// of `short`, the request's own spelling, credentials included, is what
+/// downloads and builds use.
+pub(crate) fn with_request_credentials(short: &str, full: String) -> String {
+    let stripped = state_short(short);
+    if stripped != short && full == stripped {
+        short.to_string()
+    } else {
+        full
+    }
 }
 
 pub fn get_plugin_type(short: &str) -> Option<PluginType> {
@@ -920,8 +1079,9 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
     } else {
         install_path.parent().map(Path::to_path_buf)
     };
-    let full = ba.full_without_opts();
-    let explicit_backend = ba.has_explicit_backend();
+    let short = state_short(&ba.short).into_owned();
+    let full = state_short(&ba.full_without_opts()).into_owned();
+    let explicit_backend = ba.records_explicit_backend();
     let opts = persistent_opts(ba);
 
     let update = |tool: &mut InstallStateTool| {
@@ -944,7 +1104,7 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
     };
     let new_tool = || {
         let mut tool = InstallStateTool {
-            short: ba.short.clone(),
+            short: short.clone(),
             full: Some(full.clone()),
             versions: Vec::new(),
             explicit_backend,
@@ -963,7 +1123,7 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
             .expect("INSTALL_STATE_TOOLS lock failed");
         if let Some(existing_tools) = tools.as_ref() {
             let mut next_tools = existing_tools.deref().clone();
-            update(next_tools.entry(ba.short.clone()).or_insert_with(new_tool));
+            update(next_tools.entry(short.clone()).or_insert_with(new_tool));
             *tools = Some(Arc::new(next_tools));
         }
     }
@@ -972,7 +1132,7 @@ pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &s
         .expect("INSTALL_STATE_TOOL_MEMO lock failed");
     let entry = memo
         .get_or_insert_with(Default::default)
-        .entry(ba.short.clone())
+        .entry(short.clone())
         .or_insert(None);
     match entry {
         Some(tool) => update(tool),
@@ -1018,14 +1178,14 @@ pub(crate) fn write_backend_meta(ba: &BackendArg) -> Result<()> {
 
 /// Writes backend metadata to a manifest at a specific install path.
 pub(crate) fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
-    let full = ba.full_without_opts();
-    let explicit = ba.has_explicit_backend();
+    let full = state_short(&ba.full_without_opts()).into_owned();
+    let explicit = ba.records_explicit_backend();
     let opts_map = persistent_opts(ba);
 
     let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
     let mut manifest = read_manifest_from(path);
     let manifest_tool = ManifestTool {
-        short: ba.short.clone(),
+        short: state_short(&ba.short).into_owned(),
         full: Some(full),
         explicit_backend: explicit,
         opts: opts_map,
@@ -1034,6 +1194,12 @@ pub(crate) fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> 
         crate::backend::tool_directory_name(&ba.short),
         manifest_tool.clone(),
     );
+    if let Some(named) = credential_named_dir(&ba.short)
+        && let Some(installs_dir) = path.parent()
+        && installs_dir.join(&named).symlink_metadata().is_err()
+    {
+        manifest.remove(&named);
+    }
     write_manifest_to(path, &manifest)?;
     if let Some(installs_dir) = path.parent() {
         let tool_manifest = tool_manifest_path(installs_dir, &ba.short);
@@ -1044,47 +1210,180 @@ pub(crate) fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> 
     Ok(())
 }
 
-fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
-    // Store opts as native TOML values, filtering out ephemeral keys.
-    let mut opts_map: BTreeMap<String, toml::Value> = BTreeMap::new();
-    if let Some(o) = ba.opts.as_ref() {
-        for (k, v) in &o.opts {
-            if !EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
-                opts_map.insert(k.clone(), strip_url_credentials(v));
+/// The installs directory named after `short` with its URL credentials spelled
+/// out, when that differs from [`crate::backend::tool_directory_name`].
+fn credential_named_dir(short: &str) -> Option<String> {
+    use heck::ToKebabCase;
+    // Cheap test first: this runs for every tool lookup.
+    if !(short.contains("://") && (short.contains('@') || short.contains('?'))) {
+        return None;
+    }
+    let named = short.to_kebab_case();
+    (named != crate::backend::tool_directory_name(short)).then_some(named)
+}
+
+/// Remove each version under the credential-named installs directory of
+/// `short` that is also installed under the tool's own directory, with the
+/// runtime symlinks and shims that point into it. The directory name spells the
+/// credentials of the tool's URL, and the path reaches logs, errors and `PATH`.
+///
+/// Only that one directory directly under the installs directory is touched,
+/// symlinks are removed rather than followed, and a removal that fails is a
+/// warning: the install under the tool's own directory is what gets used.
+pub(crate) fn remove_credential_named_installs(short: &str) {
+    let Some(named) = credential_named_dir(short) else {
+        return;
+    };
+    let clean = crate::backend::tool_directory_name(short);
+    let clean_dir = dirs::INSTALLS.join(&clean);
+    remove_credential_named_installs_in(
+        &dirs::INSTALLS,
+        &named,
+        &clean,
+        &[mise_util::dirs::shims(), mise_util::dirs::system_shims()],
+        &|version| claim_complete_install(&clean, &clean_dir.join(version), version),
+    );
+}
+
+/// Locks for the install of `version` under the tool's own directory, held
+/// while its credential-named copy is removed, once that install is complete:
+/// no incomplete marker, and no other process holding its install lock. An
+/// identity-layout install is also checked under its own directory's name,
+/// which is the key its marker and lock use. `None` leaves the copy alone.
+fn claim_complete_install(
+    clean: &str,
+    path: &Path,
+    version: &str,
+) -> Option<Vec<fslock::LockFile>> {
+    let mut keys = vec![version.to_string()];
+    if let Some(target) = std::fs::read_link(path).ok()
+        && let Some(name) = target.file_name()
+    {
+        keys.push(name.to_string_lossy().into_owned());
+    }
+    let mut locks = vec![];
+    for key in &keys {
+        let identity = dirs::CACHE.join(clean).join(key).join("incomplete");
+        locks.push(LockFile::new(&identity).with_pid().try_lock().ok()??);
+    }
+    // Checked under the locks, so an install cannot start in between.
+    keys.iter()
+        .all(|key| !is_incomplete_in(clean, key))
+        .then_some(locks)
+}
+
+fn remove_credential_named_installs_in<G>(
+    installs: &Path,
+    named: &str,
+    clean: &str,
+    shims_dirs: &[PathBuf],
+    claim: &dyn Fn(&str) -> Option<G>,
+) {
+    let named_dir = installs.join(named);
+    // A real directory, not a link that would lead out of the installs dir.
+    if !named_dir.symlink_metadata().is_ok_and(|m| m.is_dir()) {
+        return;
+    }
+    let clean_dir = installs.join(clean);
+    let Some(entries) = std::fs::read_dir(&named_dir).ok() else {
+        return;
+    };
+    let mut removed: Vec<PathBuf> = vec![];
+    let mut kept_versions = false;
+    let mut links = vec![];
+    for entry in entries.flatten() {
+        // `file_type` does not follow symlinks.
+        let Some(file_type) = entry.file_type().ok() else {
+            continue;
+        };
+        let path = entry.path();
+        if file_type.is_symlink() {
+            links.push(path);
+            continue;
+        }
+        if !file_type.is_dir() {
+            continue;
+        }
+        let version = entry.file_name().to_string_lossy().into_owned();
+        // Only once the version is installed under the tool's own directory,
+        // and that install is complete and not being changed right now.
+        let claimed = clean_dir
+            .join(&version)
+            .symlink_metadata()
+            .is_ok()
+            .then(|| claim(&version))
+            .flatten();
+        let Some(_claimed) = claimed else {
+            kept_versions = true;
+            continue;
+        };
+        for shims in shims_dirs {
+            remove_links_into(shims, &path);
+        }
+        match file::remove_all(&path) {
+            std::result::Result::Ok(()) => removed.push(path),
+            Err(err) => {
+                kept_versions = true;
+                warn!("could not remove {}: {err:#}", display_path(&path));
             }
         }
     }
-    opts_map
+    if removed.is_empty() {
+        return;
+    }
+    // Runtime symlinks (`latest`, `1`, ...) that pointed at a removed version.
+    for link in links {
+        let Some(target) = std::fs::read_link(&link).ok() else {
+            continue;
+        };
+        let target = named_dir.join(target);
+        if removed.iter().any(|r| target.starts_with(r)) || !target.exists() {
+            let _ = file::remove_all(&link);
+        }
+    }
+    if !kept_versions && let Err(err) = file::remove_all(&named_dir) {
+        warn!("could not remove {}: {err:#}", display_path(&named_dir));
+    }
 }
 
-/// Remove userinfo from an option that is a URL carrying credentials.
-///
-/// These manifests are written under the data directory, which gets backed up,
-/// synced between machines and left group-readable, so a live credential must
-/// not reach them. It can: a registry URL authenticates as basic-auth userinfo
-/// (mise's gem `source` option, for one), and templating the token in from the
-/// environment does not help, because rendering happens before the value is
-/// stored.
-///
-/// The rest of the URL is kept, since it is genuine identity: which registry a
-/// tool came from is worth recording. A consumer that needs the credential
-/// reads it from config, which is where it was configured.
-fn strip_url_credentials(value: &toml::Value) -> toml::Value {
-    let Some(raw) = value.as_str() else {
-        return value.clone();
+/// Remove the symlinks directly in `dir` whose target lies inside `inside`.
+fn remove_links_into(dir: &Path, inside: &Path) {
+    let Some(entries) = std::fs::read_dir(dir).ok() else {
+        return;
     };
-    // `.ok()` rather than `let Ok(..)`: `Ok` is shadowed by eyre's in this module.
-    let Some(mut url) = raw.parse::<url::Url>().ok() else {
-        return value.clone();
-    };
-    if url.username().is_empty() && url.password().is_none() {
-        return value.clone();
+    for entry in entries.flatten() {
+        if !entry.file_type().is_ok_and(|t| t.is_symlink()) {
+            continue;
+        }
+        let path = entry.path();
+        if std::fs::read_link(&path).is_ok_and(|target| dir.join(target).starts_with(inside))
+            && let Err(err) = file::remove_all(&path)
+        {
+            warn!("could not remove {}: {err:#}", display_path(&path));
+        }
     }
-    // Both calls fail only for a URL that cannot have credentials at all, which
-    // is precisely the case already returned above.
-    let _ = url.set_username("");
-    let _ = url.set_password(None);
-    toml::Value::String(url.to_string())
+}
+
+fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
+    // Store opts as native TOML values, filtering out ephemeral keys.
+    //
+    // These manifests are written under the data directory, which gets backed
+    // up, synced between machines and left group-readable, so a live credential
+    // must not reach them. It can: a registry URL authenticates as basic-auth
+    // userinfo (mise's gem `source` option, for one), the http backend's
+    // `headers` carry a bearer token, and templating the token in from the
+    // environment does not help, because rendering happens before the value is
+    // stored. The rest of a URL is kept, since it is genuine identity: which
+    // registry a tool came from is worth recording.
+    match ba.opts.as_ref() {
+        Some(o) => strip_options_credentials(
+            o.opts
+                .iter()
+                .filter(|(k, _)| !EPHEMERAL_OPT_KEYS.contains(&k.as_str())),
+        )
+        .collect(),
+        None => BTreeMap::new(),
+    }
 }
 
 /// Marks `v` of the tool whose directory is `tool_dir_name` as mid-install.
@@ -1415,6 +1714,24 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
     use versions::Versioning;
+
+    #[test]
+    fn sort_versions_orders_build_metadata_numerically() {
+        let mut versions = vec![
+            "temurin-25.0.4+7.0.LTS".to_string(),
+            "temurin-25.0.4+101.0.LTS".to_string(),
+            "temurin-25.0.4+36.0.LTS".to_string(),
+        ];
+        super::sort_versions(&mut versions);
+        assert_eq!(
+            versions,
+            [
+                "temurin-25.0.4+7.0.LTS",
+                "temurin-25.0.4+36.0.LTS",
+                "temurin-25.0.4+101.0.LTS"
+            ]
+        );
+    }
 
     #[test]
     fn empty_tool_manifest_is_ignored() {
@@ -1889,7 +2206,231 @@ explicit_backend = true
 
 #[cfg(test)]
 mod credential_tests {
-    use super::strip_url_credentials;
+    use super::{credential_named_dir, persistent_opts};
+    use crate::args::BackendArg;
+    use crate::toolset::ToolVersionOptions;
+    use crate::toolset::tool_version_options::strip_option_credentials as strip_url_credentials;
+
+    #[test]
+    fn credential_named_dir_only_for_urls_with_credentials() {
+        assert_eq!(
+            credential_named_dir("cargo:https://bot:t0ken@host/r.git").as_deref(),
+            Some("cargo-https-bot-t0ken-host-r-git")
+        );
+        assert_eq!(credential_named_dir("cargo:https://host/r.git"), None);
+        assert_eq!(
+            credential_named_dir("cargo:https://host/r.git?token=t0ken").as_deref(),
+            Some("cargo-https-host-r-git-token-t0ken")
+        );
+        assert_eq!(
+            credential_named_dir("cargo:https://host/r.git?ref=main"),
+            None
+        );
+        assert_eq!(credential_named_dir("cargo:ssh://git@host/r.git"), None);
+        assert_eq!(credential_named_dir("npm:@antfu/ni"), None);
+    }
+
+    /// The credential-named copy of a version goes once the tool's own
+    /// directory has it, with the links into it; nothing is followed out.
+    #[cfg(unix)]
+    #[test]
+    fn credential_named_installs_are_removed_once_installed_cleanly() {
+        use std::os::unix::fs::symlink;
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path().join("installs");
+        let shims = tmp.path().join("shims");
+        let outside = tmp.path().join("outside");
+        let named = installs.join("named");
+        for dir in [
+            named.join("1.0.0/bin"),
+            named.join("2.0.0"),
+            installs.join("clean/1.0.0"),
+            shims.clone(),
+            outside.clone(),
+        ] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(named.join("1.0.0/bin/tool"), "").unwrap();
+        std::fs::write(named.join(".mise.backend.toml"), "").unwrap();
+        std::fs::write(outside.join("keep"), "").unwrap();
+        symlink(&outside, named.join("1.0.0/escape")).unwrap();
+        symlink("./1.0.0", named.join("latest")).unwrap();
+        symlink("./2.0.0", named.join("2")).unwrap();
+        symlink(named.join("1.0.0/bin/tool"), shims.join("tool")).unwrap();
+        symlink(outside.join("keep"), shims.join("other")).unwrap();
+
+        super::remove_credential_named_installs_in(
+            &installs,
+            "named",
+            "clean",
+            std::slice::from_ref(&shims),
+            &|_: &str| Some(()),
+        );
+
+        assert!(!named.join("1.0.0").exists());
+        assert!(named.join("latest").symlink_metadata().is_err());
+        assert!(named.join("2.0.0").is_dir(), "not installed cleanly yet");
+        assert!(named.join("2").symlink_metadata().is_ok());
+        assert!(shims.join("tool").symlink_metadata().is_err());
+        assert!(shims.join("other").symlink_metadata().is_ok());
+        assert!(outside.join("keep").exists(), "a symlink was followed");
+
+        // An install under the tool's own name that is not complete (or is in
+        // progress) does not stand in for the copy yet.
+        std::fs::create_dir_all(installs.join("clean/2.0.0")).unwrap();
+        super::remove_credential_named_installs_in(
+            &installs,
+            "named",
+            "clean",
+            std::slice::from_ref(&shims),
+            &|_: &str| None::<()>,
+        );
+        assert!(
+            named.join("2.0.0").is_dir(),
+            "removed for an incomplete install"
+        );
+
+        super::remove_credential_named_installs_in(
+            &installs,
+            "named",
+            "clean",
+            std::slice::from_ref(&shims),
+            &|_: &str| Some(()),
+        );
+        assert!(named.symlink_metadata().is_err());
+        assert!(installs.join("clean/2.0.0").is_dir());
+    }
+
+    /// The tool's own directory and a credential-named one record the same
+    /// tool; a full scan takes the tool's own directory, in either order, so
+    /// every version it lists exists under the tool's install path.
+    #[test]
+    fn the_tools_own_directory_stands_for_it() {
+        let short = "cargo:https://host/acme/tool.git";
+        let tool = |dir: &str, versions: &[&str]| super::InstallStateTool {
+            short: short.to_string(),
+            full: Some(short.to_string()),
+            versions: versions.iter().map(|v| v.to_string()).collect(),
+            explicit_backend: true,
+            opts: Default::default(),
+            installs_path: Some(std::path::PathBuf::from(dir)),
+        };
+        let own = crate::backend::tool_directory_name(short);
+        let named = "cargo-https-bot-t0ken-host-acme-tool-git";
+        for order in [[named, own.as_str()], [own.as_str(), named]] {
+            let mut tools = super::InstallStateTools::new();
+            for dir in order {
+                let versions: &[&str] = if dir == named { &["1.0.0"] } else { &["2.0.0"] };
+                super::insert_scanned_tool(&mut tools, dir, tool(dir, versions));
+            }
+            let found = &tools[short];
+            assert_eq!(found.versions, ["2.0.0"], "{order:?}");
+            assert_eq!(
+                found.installs_path.as_deref(),
+                Some(std::path::Path::new(&own)),
+                "{order:?}"
+            );
+        }
+        // Alone, the credential-named directory still lists what it holds.
+        let mut tools = super::InstallStateTools::new();
+        super::insert_scanned_tool(&mut tools, named, tool(named, &["1.0.0"]));
+        assert_eq!(tools[short].versions, ["1.0.0"]);
+    }
+
+    /// What install state and lockfiles record is credential-free; a request
+    /// spelled with credentials still downloads and builds with them.
+    #[test]
+    fn a_request_keeps_its_own_credentials() {
+        use super::with_request_credentials;
+        let short = "cargo:https://ci:t0ken@host/r.git";
+        let clean = "cargo:https://host/r.git";
+        assert_eq!(with_request_credentials(short, clean.into()), short);
+        assert_eq!(with_request_credentials(clean, clean.into()), clean);
+        assert_eq!(
+            with_request_credentials(short, "cargo:other".into()),
+            "cargo:other"
+        );
+        assert_eq!(BackendArg::from(short).stored_full(), clean);
+    }
+
+    /// An install that is incomplete, or locked by an install in progress, is
+    /// not taken as the replacement of a credential-named copy.
+    #[test]
+    fn an_incomplete_or_locked_install_is_not_claimed() {
+        let ba = BackendArg::from("cargo:https://host/acme/claim-test.git");
+        let clean = crate::backend::tool_directory_name(&ba.short);
+        let path = std::path::Path::new("/nonexistent/claim-test");
+        super::mark_incomplete(&ba, "9.9.9").unwrap();
+        assert!(super::claim_complete_install(&clean, path, "9.9.9").is_none());
+        super::clear_incomplete_marker(&ba, "9.9.9").unwrap();
+        assert!(super::claim_complete_install(&clean, path, "9.9.9").is_some());
+        let _lock = super::lock_tool_version(&ba, "9.9.9").unwrap();
+        assert!(super::claim_complete_install(&clean, path, "9.9.9").is_none());
+    }
+
+    /// A manifest that records a tool's URL with its credentials is read
+    /// without them, so the configured spelling still finds the tool, and the
+    /// files are rewritten without them.
+    #[test]
+    fn manifests_with_credentials_are_read_and_rewritten_without_them() {
+        use super::{
+            ManifestTool, read_manifest_from, read_tool_manifest_from, state_short,
+            write_manifest_to,
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let short = "cargo:https://bot:t0ken@host/acme/tool.git";
+        let raw =
+            format!("[cargo-https-host-acme-tool-git]\nshort = \"{short}\"\nfull = \"{short}\"\n");
+        let root = tmp.path().join(".mise-installs.toml");
+        std::fs::write(&root, &raw).unwrap();
+        let manifest = read_manifest_from(&root);
+        let mt = &manifest["cargo-https-host-acme-tool-git"];
+        assert_eq!(mt.short, "cargo:https://host/acme/tool.git");
+        assert_eq!(mt.full.as_deref(), Some("cargo:https://host/acme/tool.git"));
+        assert_eq!(mt.short, state_short(short));
+        write_manifest_to(&root, &manifest).unwrap();
+        assert!(!std::fs::read_to_string(&root).unwrap().contains("t0ken"));
+
+        let sidecar = tmp.path().join(".mise.backend.toml");
+        std::fs::write(
+            &sidecar,
+            format!("short = \"{short}\"\nfull = \"{short}\"\n"),
+        )
+        .unwrap();
+        let mt: ManifestTool = read_tool_manifest_from(&sidecar).unwrap();
+        assert_eq!(mt.short, "cargo:https://host/acme/tool.git");
+        assert!(!std::fs::read_to_string(&sidecar).unwrap().contains("t0ken"));
+    }
+
+    #[test]
+    fn written_identity_has_no_credentials() {
+        let mut ba = BackendArg::from("cargo:https://bot:t0ken@host/acme/tool.git");
+        ba.set_opts(None);
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join(".mise-installs.toml");
+        super::write_backend_meta_to(&ba, &root).unwrap();
+        let body = std::fs::read_to_string(&root).unwrap();
+        assert!(!body.contains("t0ken"), "{body}");
+        assert!(body.contains("cargo:https://host/acme/tool.git"), "{body}");
+    }
+
+    /// A credential-named entry that is a symlink is not followed.
+    #[cfg(unix)]
+    #[test]
+    fn credential_named_symlink_is_left_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs = tmp.path().join("installs");
+        let elsewhere = tmp.path().join("elsewhere");
+        std::fs::create_dir_all(elsewhere.join("1.0.0")).unwrap();
+        std::fs::create_dir_all(installs.join("clean/1.0.0")).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, installs.join("named")).unwrap();
+
+        super::remove_credential_named_installs_in(&installs, "named", "clean", &[], &|_: &str| {
+            Some(())
+        });
+
+        assert!(elsewhere.join("1.0.0").is_dir());
+    }
 
     /// These manifests live under the data directory, which is backed up and
     /// synced, so a registry URL must not carry its token onto disk. Templating
@@ -1912,6 +2453,11 @@ mod credential_tests {
             stripped("https://user:s3cret@gems.example.com/"),
             "https://gems.example.com/"
         );
+        // A value that is one URL may hold a raw space in its password.
+        assert_eq!(
+            stripped("https://user:my s3cret@gems.example.com/"),
+            "https://gems.example.com/"
+        );
         // Identity worth keeping is kept, and non-URL options are untouched.
         assert_eq!(
             stripped("https://gems.example.com/acme"),
@@ -1922,5 +2468,44 @@ mod credential_tests {
             strip_url_credentials(&toml::Value::Integer(7)),
             toml::Value::Integer(7)
         );
+    }
+
+    /// Options are TOML values, and the ones that are tables carry credentials
+    /// too: `platforms.<platform>` holds the same options one level down, and
+    /// `headers` holds nothing else.
+    #[test]
+    fn credentials_in_table_options_are_stripped() {
+        let mut ba = BackendArg::from("http:hello");
+        ba.set_opts(Some(ToolVersionOptions {
+            opts: toml::from_str(
+                r#"
+                url = "https://ci:s3cret@example.com/hello.tar.gz"
+                mirrors = ["https://ci:s3cret@mirror.example.com/hello.tar.gz"]
+                headers = { Authorization = "Bearer s3cret" }
+                headers_forward = { Authorization = "cdn.example.com" }
+                platforms_macos_arm64_headers = { X-Api-Key = "s3cret" }
+
+                [platforms.linux-x64]
+                url = "https://ci:s3cret@example.com/hello-linux.tar.gz"
+                headers = { Authorization = "Bearer s3cret" }
+                bin_path = "bin"
+                "#,
+            )
+            .unwrap(),
+            ..Default::default()
+        }));
+
+        let expected: toml::Table = toml::from_str(
+            r#"
+            url = "https://example.com/hello.tar.gz"
+            mirrors = ["https://mirror.example.com/hello.tar.gz"]
+
+            [platforms.linux-x64]
+            url = "https://example.com/hello-linux.tar.gz"
+            bin_path = "bin"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(toml::Table::from_iter(persistent_opts(&ba)), expected);
     }
 }

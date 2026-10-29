@@ -208,6 +208,11 @@ signed under the new name, and mise warns once with the new name; update your
 configuration when convenient. The pin and the `mise.lock` commitment follow the
 repository, so you do not need `mise packslip forget`.
 
+A pin or `mise.lock` entry without a repository ID holds by name and never
+follows a rename. For a machine pin, run
+`mise packslip forget <tool>` and install again. For a `mise.lock` entry,
+remove the entry and run `mise lock` again.
+
 A different repository that takes the old name is refused, because that is what
 a deleted repository whose name someone else took looks like. The error names
 the record that pins the original: this machine's pin, the `mise.lock` entries,
@@ -252,7 +257,9 @@ provide the variant you request.
 
 For a key-signed project, get the publisher's public key through a channel you
 trust. Set `pubkey` to the minisign-format public-key line or the path of its
-`.pub` file. The release list and bundles must verify against that key.
+`.pub` file. A value that parses as a key is the key, whatever files exist; a
+path is looked up only otherwise, and a relative one from the directory mise
+runs in. The release list and bundles must verify against that key.
 
 ```toml
 [tools]
@@ -293,7 +300,10 @@ cannot be combined with `pubkey`, `identity`, `identity_prefix`, or `issuer`;
 use those to pin another ref or forge. When the registry supplies a `workflow`
 default and you set one of those options on the shorthand, yours replaces the
 default. Like those options, it pins the signer by name, so a renamed repository
-needs the new name here.
+needs the new name here. Unlike them, the release is still held to the
+[repository ID](/dev-tools/packslip-verification.html#renamed-transferred-and-re-created-repositories)
+mise pinned for the project, so a repository re-created under the name is
+refused.
 
 A project whose signing workflow changed across the releases you install can
 name several; a release signed by any one of them is accepted:
@@ -322,7 +332,10 @@ When a different workflow signs the vendor's release list, pin its certificate
 identity prefix separately. It replaces `identity` and `identity_prefix` for the
 vendor's list only; release bundles still need their original signer. The OIDC
 `issuer` is shared, including an issuer derived from a forge project. Without
-this option, the list uses the same policy as release bundles.
+this option, the list uses the same policy as release bundles. For a GitHub or
+GitLab project, the list is still held to the
+[repository ID](#renamed-repositories) mise pinned: its certificate must record
+the project's repository.
 
 The value must be a non-empty string and requires an issuer. It cannot be
 combined with `pubkey`, and it does not affect configured stampers, whose lists

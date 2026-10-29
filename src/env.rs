@@ -170,7 +170,8 @@ pub(crate) static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         .unwrap_or_default()
 });
 /// `ignored_config_paths` without project `.miserc.toml` files, for operations
-/// over every tracked config whose result must not depend on the working directory.
+/// over every tracked config whose result must not depend on the working directory,
+/// and for global and system config, which a project must not be able to hide.
 pub(crate) static MISE_GLOBAL_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
     env_ignored_config_paths()
         .or_else(|| {

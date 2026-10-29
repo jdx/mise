@@ -15,6 +15,7 @@ use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::config;
 use crate::config::Config;
+use crate::config::project::{effective_requests, nearest_project_tool_requests, tool_request_set};
 use crate::env;
 use crate::file;
 use crate::runtime_symlinks::is_runtime_symlink;
@@ -25,10 +26,12 @@ use crate::ui::table::MiseTable;
 ///
 /// Lists the tools mise knows about: versions that are installed, and versions
 /// requested by a config file (active) whether or not they are installed. Each row
-/// shows the tool, the version (marked `(missing)` when it is not installed), the
-/// config file that requests it, and the request as written.
+/// shows the tool, the version (marked `(missing)` when it is not installed, or
+/// `(lazy)` when it is a lazy tool that installs on first use), the config file
+/// that requests it, and the request as written.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
+    after_long_help = AFTER_LONG_HELP,
     visible_alias = "list",
     verbatim_doc_comment,
     example(
@@ -84,7 +87,7 @@ pub(crate) struct Ls {
     current: bool,
 
     /// Only show versions the global config requests
-    #[usage(long, short, conflicts = "local")]
+    #[usage(long, short, conflicts = ["local", "no_global", "project"])]
     global: bool,
 
     /// Only show installed versions
@@ -103,9 +106,32 @@ pub(crate) struct Ls {
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Only show versions the local config requests
-    #[usage(long, short, conflicts = "global")]
+    /// Deprecated alias for --no-global
+    ///
+    /// Removed in mise 2027.7.0.
+    #[usage(long, short, conflicts = ["global", "no_global", "project"])]
     local: bool,
+
+    /// Only show versions that non-global config files request
+    ///
+    /// Includes config files in parent directories and skips the global config,
+    /// system config, and `MISE_<TOOL>_VERSION` environment variables. See
+    /// --project for the nearest project's config alone.
+    #[usage(long, conflicts = ["global", "local", "project"])]
+    no_global: bool,
+
+    /// Only show versions the nearest project config requests
+    ///
+    /// The project is the nearest directory, starting at the current one and
+    /// moving up, that has a mise config file. Every config file in that
+    /// directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d`
+    /// fragments, `.tool-versions` and idiomatic version files. Configs in
+    /// parent directories and global or system configs do not, nor do
+    /// `MISE_<TOOL>_VERSION` environment variables. A version that a later file
+    /// in that directory overrides is not listed, as with --no-global; `mise
+    /// uninstall --project` still removes it.
+    #[usage(long, conflicts = ["global", "local", "no_global", "monorepo", "prunable"])]
+    project: bool,
 
     /// Only show requested versions that are not installed
     #[usage(long, short, conflicts = "installed")]
@@ -122,7 +148,7 @@ pub(crate) struct Ls {
     ///
     /// mise tracks the config files it loads so `mise prune` keeps the versions
     /// they use.
-    #[usage(long, conflicts = &["current", "global", "local", "prunable"])]
+    #[usage(long, conflicts = &["current", "global", "local", "no_global", "project", "prunable"])]
     all_sources: bool,
 
     /// Also list tools from every config root in `[monorepo].config_roots`
@@ -170,7 +196,15 @@ impl Ls {
         } else {
             (self.get_runtime_list(&config).await?, None)
         };
-        if self.current || self.global || self.local {
+        if self.local {
+            deprecated_at!(
+                "2027.1.0",
+                "2027.7.0",
+                "cli.ls.local",
+                "`mise ls --local` is deprecated. Use `mise ls --no-global` instead."
+            );
+        }
+        if self.current || self.global || self.local || self.no_global || self.project {
             // TODO: global is a little weird: it will show global versions as the active ones even if
             // they're overridden locally
             runtimes.retain(|(_, _, _, source)| !source.is_unknown());
@@ -398,7 +432,10 @@ impl Ls {
         )
     }
     async fn get_runtime_list(&self, config: &Arc<Config>) -> Result<Vec<RuntimeRow<'_>>> {
-        let mut trs = if self.monorepo {
+        let mut trs = if self.project {
+            let (_, requests) = nearest_project_tool_requests(config)?;
+            tool_request_set(effective_requests(requests))
+        } else if self.monorepo {
             config.monorepo_union_tool_request_set().await?
         } else {
             config.get_tool_request_set().await?.clone()
@@ -414,7 +451,7 @@ impl Ls {
                 })
                 .map(|(fa, tv, ts)| (fa.clone(), tv.clone(), ts.clone()))
                 .collect()
-        } else if self.local {
+        } else if self.local || self.no_global {
             trs = trs
                 .iter()
                 .filter(|(.., ts)| {
@@ -639,6 +676,10 @@ impl Row {
             VersionStatus::Missing(version) => Cell::new(annotate(format!("{version} (missing)")))
                 .fg(Color::Red)
                 .add_attribute(Attribute::CrossedOut),
+            // Not installed, but nothing is wrong: it installs the first time it runs.
+            VersionStatus::Lazy(version) => {
+                Cell::new(annotate(format!("{version} (lazy)"))).add_attribute(Attribute::Dim)
+            }
             VersionStatus::Symlink(version, active) => {
                 let mut cell = Cell::new(annotate(format!("{version} (symlink)")));
                 if !*active {
@@ -761,7 +802,7 @@ async fn json_tool_version_from(
         // keeping the `incomplete` marker for one.
         installed: !matches!(
             vs,
-            VersionStatus::Missing(_) | VersionStatus::BrokenSymlink(_)
+            VersionStatus::Missing(_) | VersionStatus::Lazy(_) | VersionStatus::BrokenSymlink(_)
         ),
         active: match &vs {
             VersionStatus::Active(_, _) => true,
@@ -806,6 +847,10 @@ enum VersionStatus {
     Active(String, bool),
     Inactive(String),
     Missing(String),
+    /// A lazy tool's version that is not installed yet. Unlike `Missing`, that is
+    /// expected: it installs the first time one of its commands runs, through the
+    /// shims its declaration provides.
+    Lazy(String),
     Symlink(String, bool),
     /// A link that is still on disk but no longer resolves — a `mise link` whose target moved or
     /// was deleted. Distinct from `Missing`, which is a version that was never there: this one
@@ -845,7 +890,13 @@ async fn resolve_version_status(
             VersionStatus::BrokenSymlink(tv.display_version().to_string())
         }
     } else if !p.is_version_installed(config, tv, true) {
-        VersionStatus::Missing(tv.display_version().to_string())
+        // A lazy declaration safe mode refuses, or with no command left to shim,
+        // does not install on first use, so it is just missing.
+        if tv.request.installs_on_first_use() {
+            VersionStatus::Lazy(tv.display_version().to_string())
+        } else {
+            VersionStatus::Missing(tv.display_version().to_string())
+        }
     } else {
         let category = env::install_path_category(&install_path);
         if category != env::InstallPathCategory::Local {
@@ -868,6 +919,13 @@ async fn resolve_version_status(
         }
     }
 }
+
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r###"<bold><underline>Deprecation:</underline></bold>
+
+The `-l` and `--local` flags are deprecated in favor of `--no-global`. mise warns about
+them from 2027.1.0 and removes them in 2027.7.0."###
+);
 
 #[cfg(test)]
 mod tests {

@@ -254,13 +254,19 @@ pub(crate) fn apply_login_shell_with_report(
         });
     }
     let status = login_shell::status(&request)?;
+    let shell = status.resolved.clone().unwrap_or(request.shell.clone());
     if status.state == LoginShellState::Set {
-        info!("login_shell: already set to {}", request.shell);
+        info!("login_shell: already set to {shell}");
         return Ok(BootstrapApplyReport::default());
     }
     let needs_follow_up = status.state != LoginShellState::Set;
-    if !dry_run && !yes && console::user_attended_stderr() {
-        let msg = format!("login_shell: run `chsh -s {}`?", request.shell);
+    // an unresolved name skips the prompt so `apply` reports the error
+    if !dry_run
+        && !yes
+        && status.state != LoginShellState::Unresolved
+        && console::user_attended_stderr()
+    {
+        let msg = format!("login_shell: run `chsh -s {shell}`?");
         if !crate::ui::prompt::confirm(msg)?.is_yes() {
             info!("login_shell: skipped");
             return Ok(BootstrapApplyReport::default());
@@ -270,12 +276,9 @@ pub(crate) fn apply_login_shell_with_report(
     login_shell::apply(&request, dry_run)?;
     if !dry_run {
         if print_follow_up {
-            info!(
-                "login_shell: set to {} - start a new login session for it to take effect",
-                request.shell
-            );
+            info!("login_shell: set to {shell} - start a new login session for it to take effect");
         } else {
-            info!("login_shell: set to {}", request.shell);
+            info!("login_shell: set to {shell}");
         }
     }
     Ok(BootstrapApplyReport {

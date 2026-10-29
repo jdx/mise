@@ -6,17 +6,17 @@ use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::path_env::PathEnv;
 use crate::tera::{
-    TeraEngine, contains_template_syntax, get_tera, render_str, tera_exec, tera1_exec,
+    TeraEngine, contains_template_syntax, get_tera, render_config_str, tera_exec, tera1_exec,
 };
 use crate::toolset::Toolset;
 use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::{cmp::PartialEq, sync::Arc};
 
 use super::{Config, Settings};
 pub(crate) use mise_util::env_value::EnvValue;
@@ -29,225 +29,11 @@ pub mod prompt;
 mod source;
 pub(crate) mod venv;
 
-#[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) enum RequiredValue {
-    #[default]
-    False,
-    True,
-    Help(String),
-}
+pub use mise_config::env::{AgeFormat, EnvDirective, EnvDirectiveOptions, RequiredValue};
 
-impl RequiredValue {
-    pub(crate) fn is_required(&self) -> bool {
-        !matches!(self, RequiredValue::False)
-    }
-
-    pub(crate) fn help_text(&self) -> Option<&str> {
-        match self {
-            RequiredValue::Help(text) => Some(text.as_str()),
-            _ => None,
-        }
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for RequiredValue {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use serde::de::{self, Visitor};
-        use std::fmt;
-
-        struct RequiredVisitor;
-
-        impl<'de> Visitor<'de> for RequiredVisitor {
-            type Value = RequiredValue;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a boolean or a string")
-            }
-
-            fn visit_bool<E>(self, value: bool) -> Result<RequiredValue, E>
-            where
-                E: de::Error,
-            {
-                Ok(if value {
-                    RequiredValue::True
-                } else {
-                    RequiredValue::False
-                })
-            }
-
-            fn visit_str<E>(self, value: &str) -> Result<RequiredValue, E>
-            where
-                E: de::Error,
-            {
-                Ok(RequiredValue::Help(value.to_string()))
-            }
-
-            fn visit_string<E>(self, value: String) -> Result<RequiredValue, E>
-            where
-                E: de::Error,
-            {
-                Ok(RequiredValue::Help(value))
-            }
-        }
-
-        deserializer.deserialize_any(RequiredVisitor)
-    }
-}
-
-impl serde::Serialize for RequiredValue {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            RequiredValue::False => serializer.serialize_bool(false),
-            RequiredValue::True => serializer.serialize_bool(true),
-            RequiredValue::Help(text) => serializer.serialize_str(text),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct EnvDirectiveOptions {
-    #[serde(default)]
-    pub(crate) tools: bool,
-    #[serde(default)]
-    pub redact: Option<bool>,
-    #[serde(default)]
-    pub(crate) required: RequiredValue,
-    #[serde(default)]
-    pub(crate) expand: bool,
-    /// `_.file` only: look for a relative path in the current directory and each parent
-    /// directory, rather than only in the config file's directory.
-    #[serde(default)]
-    pub(crate) find_up: bool,
-    /// `[vars]` only: ask for this value once and remember the answer on this machine.
-    #[serde(default)]
-    pub(crate) prompt: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum EnvDirective {
-    /// simple key/value pair
-    Val(String, String, EnvDirectiveOptions),
-    /// use a fallback value if the key is not already set
-    Default(String, String, EnvDirectiveOptions),
-    /// remove a key
-    Rm(String, EnvDirectiveOptions),
-    /// Required variable that must be defined elsewhere
-    Required(String, EnvDirectiveOptions),
-    /// dotenv file
-    File(String, EnvDirectiveOptions),
-    /// add a path to the PATH
-    Path(String, EnvDirectiveOptions),
-    /// run a bash script and apply the resulting env diff
-    Source(String, EnvDirectiveOptions),
-    /// [experimental] age-encrypted value
-    Age {
-        key: String,
-        value: String,
-        format: Option<AgeFormat>,
-        options: EnvDirectiveOptions,
-    },
-    PythonVenv {
-        path: String,
-        create: bool,
-        python: Option<String>,
-        uv_create_args: Option<Vec<String>>,
-        python_create_args: Option<Vec<String>>,
-        options: EnvDirectiveOptions,
-    },
-    Module(String, toml::Value, EnvDirectiveOptions),
-}
-
-impl EnvDirective {
-    pub(crate) fn options(&self) -> &EnvDirectiveOptions {
-        match self {
-            EnvDirective::Val(_, _, opts)
-            | EnvDirective::Default(_, _, opts)
-            | EnvDirective::Rm(_, opts)
-            | EnvDirective::Required(_, opts)
-            | EnvDirective::File(_, opts)
-            | EnvDirective::Path(_, opts)
-            | EnvDirective::Source(_, opts)
-            | EnvDirective::Age { options: opts, .. }
-            | EnvDirective::PythonVenv { options: opts, .. }
-            | EnvDirective::Module(_, _, opts) => opts,
-        }
-    }
-}
-
-impl From<(String, String)> for EnvDirective {
-    fn from((k, v): (String, String)) -> Self {
-        Self::Val(k, v, Default::default())
-    }
-}
-
-impl From<(String, i64)> for EnvDirective {
-    fn from((k, v): (String, i64)) -> Self {
-        (k, v.to_string()).into()
-    }
-}
-
-impl Display for EnvDirective {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EnvDirective::Val(k, v, _) => write!(f, "{k}={v}"),
-            EnvDirective::Default(k, v, _) => write!(f, "{k} default={v}"),
-            EnvDirective::Rm(k, _) => write!(f, "unset {k}"),
-            EnvDirective::Required(k, _) => write!(f, "{k} (required)"),
-            EnvDirective::File(path, _) => write!(f, "_.file = \"{}\"", display_path(path)),
-            EnvDirective::Path(path, _) => write!(f, "_.path = \"{}\"", display_path(path)),
-            EnvDirective::Source(path, _) => write!(f, "_.source = \"{}\"", display_path(path)),
-            EnvDirective::Age { key, format, .. } => {
-                write!(f, "{key} (age-encrypted")?;
-                if let Some(fmt) = format {
-                    let fmt_str = match fmt {
-                        AgeFormat::Zstd => "zstd",
-                        AgeFormat::Raw => "raw",
-                    };
-                    write!(f, ", {fmt_str}")?;
-                }
-                write!(f, ")")
-            }
-            EnvDirective::Module(name, _, _) => write!(f, "module {name}"),
-            EnvDirective::PythonVenv {
-                path,
-                create,
-                python,
-                uv_create_args,
-                python_create_args,
-                ..
-            } => {
-                write!(f, "python venv path={}", display_path(path))?;
-                if *create {
-                    write!(f, " create")?;
-                }
-                if let Some(python) = python {
-                    write!(f, " python={python}")?;
-                }
-                if let Some(args) = uv_create_args {
-                    write!(f, " uv_create_args={args:?}")?;
-                }
-                if let Some(args) = python_create_args {
-                    write!(f, " python_create_args={args:?}")?;
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
-pub enum AgeFormat {
-    #[serde(rename = "zstd")]
-    Zstd,
-    #[serde(rename = "raw")]
-    #[default]
-    Raw,
+/// Show env directive paths the way the rest of mise does.
+pub(crate) fn register_hooks() {
+    mise_config::env::set_display_path(|path| display_path(path));
 }
 
 #[derive(Default, Clone)]
@@ -503,8 +289,8 @@ impl EnvResults {
             //     &source
             // );
             let config_root = crate::config::config_file::config_root::config_root(&source);
-            ctx.insert("cwd", &*dirs::CWD);
-            ctx.insert("config_root", &config_root);
+            ctx.insert("cwd", &dirs::CWD.as_ref().map(|p| p.to_string_lossy()));
+            ctx.insert("config_root", &config_root.to_string_lossy());
             ctx.insert(
                 "config_source",
                 &crate::config::config_file::config_root::config_source(&source),
@@ -765,7 +551,12 @@ impl EnvResults {
                     // Don't modify PATH in env - just add to env_paths
                     // This allows consumers to control PATH ordering
                 }
-                EnvDirective::File(input, opts) => {
+                directive @ (EnvDirective::File(..) | EnvDirective::FileGroup(..)) => {
+                    let (inputs, opts) = match directive {
+                        EnvDirective::File(input, opts) => (vec![input], opts),
+                        EnvDirective::FileGroup(inputs, opts) => (inputs, opts),
+                        _ => unreachable!(),
+                    };
                     let mut directive_ctx = EnvDirectiveContext {
                         config,
                         tera_ctx: &mut ctx,
@@ -778,7 +569,7 @@ impl EnvResults {
                         toolset,
                     };
                     let files =
-                        Self::file(&mut directive_ctx, input, opts.expand, opts.find_up).await?;
+                        Self::file(&mut directive_ctx, inputs, opts.expand, opts.find_up).await?;
                     for (f, new_env) in files {
                         r.env_files.push(f.clone());
                         for (k, v) in new_env {
@@ -1110,7 +901,7 @@ impl EnvResults {
                 }
                 tera
             });
-            output = render_str(tera, input, ctx)
+            output = render_config_str(tera, input, ctx, path)
                 .wrap_err_with(|| eyre!("failed to parse template: '{input}'"))?;
         }
 

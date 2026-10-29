@@ -361,7 +361,14 @@ impl Tick {
         }
         #[cfg(windows)]
         {
-            let (child, job) = crate::windows_job::spawn(&mut command, 0)?;
+            use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+            // No terminal reads a pass, and the detached process a prompt
+            // started has no console at all: Windows gives a console program
+            // started by a process with no console a console of its own — a
+            // window on the desktop until the pass ends (jdx/mise#14995).
+            // This starts it with a console that has no window instead, and
+            // everything the pass starts inherits that and stays hidden too.
+            let (child, job) = crate::windows_job::spawn(&mut command, CREATE_NO_WINDOW)?;
             Ok(Self {
                 child,
                 job,
@@ -435,7 +442,9 @@ pub fn record_result(tool_id: &str, result: &Result<()>) {
         Err(err) => {
             let failure = Failure {
                 tool: tool_id.to_string(),
-                error: format!("{err:#}"),
+                // Written to the state directory and printed by `mise doctor`, so
+                // redacted the way the logger would redact it.
+                error: mise_util::redactions::redact_output(&format!("{err:#}")),
             };
             serde_json::to_string(&failure)
                 .map_err(eyre::Report::from)

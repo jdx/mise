@@ -102,7 +102,11 @@ a GitLab shorthand or a self-hosted GitLab URL.
 The provider's API URL. For a self-hosted package, write the full package URL,
 so that source builds clone from that server. mise derives the API URL from its
 host, `https://<host>/api/v3` for GitHub or `https://<host>/api/v4` for GitLab;
-set `api_url` when the API lives somewhere else:
+set `api_url` when the API lives somewhere else. That host receives your GitHub
+or GitLab token, so, as with `api_url`, a config that names a package on a host
+other than github.com or gitlab.com this way needs [trust](/cli/trust.html).
+[Safe mode](/security.html#safe-mode) refuses such a package unless its
+`api_url` is set:
 
 ```toml
 [tools]
@@ -128,6 +132,12 @@ matches. Set `artifactbundle = true` to require a bundle: the install fails when
 no bundle matches the current Swift target triple. Set `artifactbundle = false`
 to always build from source; it conflicts with the
 [`spm.artifactbundle_only`](/configuration/settings.html#spm.artifactbundle_only) setting.
+
+Installing from a bundle records its checksum in `mise.lock`. While the lockfile
+has a checksum for the current platform, a bundle that is missing from the
+release, does not match the checksum, or has no binary for the current Swift
+target fails the install instead of falling back to a source build. Set
+`artifactbundle = false` to build from source instead.
 
 ```toml
 [tools]
@@ -171,6 +181,7 @@ manages on `PATH`, and `PREFIX` and `MISE_TOOL_INSTALL_PATH` set to the install
 directory. It applies
 only to source builds and cannot be combined with `filter_bins`. mise never runs
 a package's Makefile or install script unless you configure it here.
+[Safe mode](/security.html#safe-mode) refuses to install a tool that sets it.
 
 Use it for packages that install more than the executable, such as a dynamic
 library or Swift modules placed by the package's own `make install`:

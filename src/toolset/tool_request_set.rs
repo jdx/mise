@@ -1,3 +1,4 @@
+use crate::daemons::glue::DaemonSetExt;
 use std::fmt::{Debug, Display};
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
@@ -52,6 +53,11 @@ impl ToolRequestSet {
     }
 
     pub fn add_version(&mut self, tr: ToolRequest, source: &ToolSource) {
+        if tr.ignored_in_safe_mode() {
+            debug!("ignoring {tr} in {source}: safe mode (MISE_SAFE=1)");
+            return;
+        }
+        tr.record_safe_mode_credential_hosts();
         let fa = tr.ba();
         if !self.tools.contains_key(fa) {
             self.sources.insert(fa.clone(), source.clone());
@@ -135,7 +141,7 @@ pub struct ToolRequestSetBuilder {
 }
 
 impl ToolRequestSetBuilder {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         let settings = Settings::get();
         Self {
             disable_tools: settings.disable_tools().iter().map(|s| s.into()).collect(),
@@ -194,7 +200,9 @@ impl ToolRequestSetBuilder {
         Ok(trs)
     }
 
-    fn is_disabled(&self, ba: &BackendArg) -> bool {
+    /// Whether the tool is ignored: an unknown backend, an unsupported platform, or
+    /// `enable_tools` / `disable_tools` leaving it out.
+    pub fn is_disabled(&self, ba: &BackendArg) -> bool {
         let backend_type = ba.backend_type();
         backend_type == BackendType::Unknown
             || (cfg!(windows) && backend_type == BackendType::Asdf)
@@ -220,7 +228,7 @@ impl ToolRequestSetBuilder {
         if self.config_files.is_none() {
             config.daemons()?.add_tool_requests(&mut trs)?;
         } else {
-            crate::daemons::load(config_files)?.add_tool_requests(&mut trs)?;
+            crate::daemons::glue::load(config_files)?.add_tool_requests(&mut trs)?;
         }
         Ok(trs)
     }

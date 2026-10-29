@@ -270,7 +270,7 @@ impl PluginType {
     }
 
     pub fn plugin(&self, short: String) -> PluginEnum {
-        let path = dirs::PLUGINS.join(short.to_kebab_case());
+        let path = dirs::PLUGINS.join(crate::backend::tool_directory_name(&short));
         match self {
             PluginType::Asdf => PluginEnum::Asdf(Arc::new(AsdfPlugin::new(short, path))),
             PluginType::Vfox => PluginEnum::Vfox(Arc::new(VfoxPlugin::new(short, path))),

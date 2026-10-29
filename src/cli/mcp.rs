@@ -205,17 +205,24 @@ fn untrusted_project_refusal() -> Option<CallToolResult> {
     ))]))
 }
 
-/// `tool@version` for `mise install`, refusing a tool it would parse as a flag.
+/// `tool@version` for `mise install`, refusing a tool it would parse as a flag
+/// or as `tool[option=value]`: options such as `postinstall` are commands, which
+/// come from config the user trusts and not from a client.
 fn tool_spec(tool: &str, version: Option<&str>) -> std::result::Result<String, ErrorData> {
+    let spec = match version.filter(|v| !v.is_empty()) {
+        Some(version) => format!("{tool}@{version}"),
+        None => tool.to_string(),
+    };
     let message = if tool.is_empty() {
         "invalid tool '': a tool name is required".to_string()
     } else if tool.starts_with('-') {
         format!("invalid tool '{tool}': tool names cannot start with '-'")
+    } else if spec.contains('[') {
+        // The version counts too: `npm:` and `pkg[option=value]` join into a
+        // scoped package name with options.
+        format!("invalid tool '{spec}': tool options are not accepted")
     } else {
-        return Ok(match version.filter(|v| !v.is_empty()) {
-            Some(version) => format!("{tool}@{version}"),
-            None => tool.to_string(),
-        });
+        return Ok(spec);
     };
     Err(ErrorData {
         code: ErrorCode::INVALID_PARAMS,
@@ -331,6 +338,9 @@ impl MiseServer {
         }
 
         let mut command = mise_child(&cmd_args)?;
+        // The child looks the name up as a task only, never as the path of a script: the check in
+        // `validate_task_name` cannot see a file that appears before the child starts.
+        command.env(crate::env::MISE_TASK_NAMES_ONLY_ENV, "1");
         // Answers a task's `confirm` prompt. It cannot grant trust: the child
         // requires explicit trust, which ignores `yes`.
         command.env("MISE_YES", "1");
@@ -617,7 +627,11 @@ impl ServerHandler for MiseServer {
                 })?;
 
                 let config_info = json!({
-                    "config_files": config.config_files.keys().collect::<Vec<_>>(),
+                    "config_files": config
+                        .config_files
+                        .keys()
+                        .map(|p| p.to_string_lossy())
+                        .collect::<Vec<_>>(),
                     "project_root": config.project_root.as_ref().map(|p| p.to_string_lossy()),
                 });
 
@@ -681,12 +695,16 @@ impl Mcp {
 }
 
 /// `task` is handed to `mise run` as an argument, so a leading dash would be
-/// parsed as a flag (`--raw`, `--cd=...`) instead of naming a task.
+/// parsed as a flag (`--raw`, `--cd=...`) instead of naming a task, and the
+/// path of an existing file would run that file, which no project config names
+/// and no trust check covers.
 fn validate_task_name(task: &str) -> std::result::Result<(), ErrorData> {
     let message = if task.is_empty() {
         "invalid task name '': a task name is required".to_string()
     } else if task.starts_with('-') {
         format!("invalid task name '{task}': task names cannot start with '-'")
+    } else if is_path_like(task) {
+        format!("invalid task name '{task}': only the project's tasks can be run, not a file path")
     } else {
         return Ok(());
     };
@@ -695,6 +713,22 @@ fn validate_task_name(task: &str) -> std::result::Result<(), ErrorData> {
         message: message.into(),
         data: None,
     })
+}
+
+/// Whether `mise run` could take `task` for the path of a script rather than a task name.
+///
+/// Decided by its shape, not by whether the file exists: the child looks again when it starts,
+/// and a file that appears in between must not turn a refused name into a script. Relative
+/// (`./`, `../`, `~/`, `.\`), absolute (`/x`, `\x`, UNC `\\host\share`) and drive (`C:\`,
+/// `C:/`) paths all count, and none of them is a task name. A leading `//` is the monorepo
+/// spelling (`//packages/app:build`), which names a task by its `:`; without one there is no
+/// task in it, only the path `mise run` makes of it by dropping a `/`. A monorepo name that is
+/// also the path of a file is no risk: the child `run_task` starts resolves names as tasks only.
+fn is_path_like(task: &str) -> bool {
+    if task.starts_with("//") {
+        return !task.contains(':');
+    }
+    xx::regex!(r"^((\.*|~)[/\\]|\w:[/\\])").is_match(task)
 }
 
 #[cfg(test)]
@@ -714,8 +748,65 @@ mod tests {
     }
 
     #[test]
+    fn validate_task_name_rejects_file_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("build.sh");
+        std::fs::write(&script, "#!/bin/sh\n").unwrap();
+        let script = script.to_string_lossy().to_string();
+        let mut tasks = vec![script.clone()];
+        // `mise run` strips one `/` from a leading `//`, so on Unix `//abs/path` runs
+        // `/abs/path`. A Windows absolute path starts with a drive letter, so a `/` in front of
+        // it is no path to `mise run` either.
+        if cfg!(unix) {
+            tasks.push(format!("/{script}"));
+        }
+        for task in tasks {
+            // The validator refuses exactly what `mise run` would run as a script.
+            assert!(
+                crate::task::task_list::script_path_arg(&task).is_some(),
+                "{task:?}"
+            );
+            let err = validate_task_name(&task).unwrap_err();
+            assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{task:?}");
+            assert!(err.message.contains("not a file path"), "{task:?}");
+        }
+    }
+
+    #[test]
+    fn validate_task_name_rejects_path_shapes_whether_or_not_they_exist() {
+        for task in [
+            "./build.sh",
+            "../clone/build.sh",
+            "~/build.sh",
+            "/does/not/exist/build.sh",
+            "//does/not/exist/build.sh",
+            r".\build.cmd",
+            r"..\clone\build.cmd",
+            r"\does\not\exist.cmd",
+            r"\\server\share\build.cmd",
+            r"C:\build.cmd",
+            "C:/build.cmd",
+        ] {
+            let err = validate_task_name(task).unwrap_err();
+            assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{task:?}");
+            assert!(err.message.contains("not a file path"), "{task:?}");
+        }
+    }
+
+    #[test]
     fn validate_task_name_accepts_task_names() {
-        for task in ["build", "//sub:build", "lint:fix", "a-b", "test:e2e"] {
+        for task in [
+            "build",
+            "//sub:build",
+            "//packages/app:build",
+            "lint:fix",
+            "a-b",
+            "test:e2e",
+            "test/e2e",
+            "a/b:c",
+            "docs:build/site",
+            ".hidden",
+        ] {
             validate_task_name(task).unwrap_or_else(|_| panic!("{task:?} should be accepted"));
         }
     }
@@ -729,6 +820,25 @@ mod tests {
             let err = tool_spec(tool, Some("1")).unwrap_err();
             assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{tool:?}");
         }
+    }
+
+    #[test]
+    fn tool_spec_rejects_tool_options() {
+        for (tool, version) in [
+            ("node[postinstall=touch x]", None),
+            ("node[postinstall=touch x]", Some("20")),
+            ("node[postinstall=touch x", Some("]")),
+            ("npm:", Some("pkg[postinstall=touch x]")),
+        ] {
+            let err = tool_spec(tool, version).unwrap_err();
+            assert_eq!(err.code, ErrorCode::INVALID_PARAMS, "{tool:?} {version:?}");
+        }
+        assert_eq!(
+            tool_spec("node[postinstall=touch x]", Some("20"))
+                .unwrap_err()
+                .message,
+            "invalid tool 'node[postinstall=touch x]@20': tool options are not accepted"
+        );
     }
 
     /// The text of every command row `list_commands` returns.

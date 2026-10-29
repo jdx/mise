@@ -138,6 +138,201 @@ fn test_desymlink_path_preserves_absolute_target() {
     assert_eq!(desymlink_path(&link), target.canonicalize().unwrap());
 }
 
+#[cfg(unix)]
+#[test]
+fn test_ensure_symlinks_stay_within_accepts_links_inside_the_tree() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    fs::create_dir_all(root.join("libexec/bin")).unwrap();
+    fs::write(root.join("libexec/bin/tool"), "tool").unwrap();
+    symlink("libexec/bin", root.join("bin")).unwrap();
+    symlink("../bin/tool", root.join("libexec/alias")).unwrap();
+    symlink("missing", root.join("dangling")).unwrap();
+    // Absolute targets inside the tree, spelled from the root as given and
+    // from its real path.
+    symlink(root.join("libexec/bin/tool"), root.join("abs")).unwrap();
+    symlink(
+        root.canonicalize().unwrap().join("libexec/bin"),
+        root.join("libexec/abs-dir"),
+    )
+    .unwrap();
+    symlink(&root, root.join("libexec/to-root")).unwrap();
+
+    ensure_symlinks_stay_within(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn test_ensure_symlinks_stay_within_refuses_links_out_of_the_tree() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = tmp.path().join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    for (name, target) in [
+        ("bin", PathBuf::from("../outside")),
+        ("nested/deep/bin", PathBuf::from("../../../outside")),
+        ("abs", outside.clone()),
+        // Starts with the root's path but climbs out of it.
+        ("abs-climb", tmp.path().join("install-abs-climb/../outside")),
+        // The root's parent, and a sibling sharing the root's name as a prefix.
+        ("abs-parent", tmp.path().to_path_buf()),
+        ("abs-sibling", tmp.path().join("install-abs-sibling-2")),
+    ] {
+        let root = tmp
+            .path()
+            .join(format!("install-{}", name.replace('/', "-")));
+        let link = root.join(name);
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+        symlink(&target, &link).unwrap();
+        let err = ensure_symlinks_stay_within(&root).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("points outside of"),
+            "{name}: {err:#}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_keeps_the_tree_contained() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    let rootfs = root.join("agent-rootfs");
+    fs::create_dir_all(rootfs.join("var")).unwrap();
+    fs::create_dir_all(rootfs.join("bin")).unwrap();
+    fs::write(rootfs.join("bin/busybox"), "busybox").unwrap();
+    symlink("/run", rootfs.join("var/run")).unwrap();
+    symlink("/bin/busybox", rootfs.join("bin/sh")).unwrap();
+
+    rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
+
+    assert_eq!(
+        fs::read_link(rootfs.join("var/run")).unwrap(),
+        PathBuf::from("../run")
+    );
+    assert_eq!(
+        fs::read_link(rootfs.join("bin/sh")).unwrap(),
+        PathBuf::from("busybox")
+    );
+    ensure_symlinks_stay_within(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_refuses_traversal() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let rootfs = tmp.path().join("agent-rootfs");
+    fs::create_dir_all(rootfs.join("bin")).unwrap();
+    symlink("/../outside", rootfs.join("bin/tool")).unwrap();
+
+    let err = rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap_err();
+    assert!(format!("{err:#}").contains("escapes guest rootfs"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_refuses_a_symlinked_root() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let rootfs = tmp.path().join("agent-rootfs");
+    let outside = tmp.path().join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    symlink(&outside, &rootfs).unwrap();
+
+    let err = rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap_err();
+    assert!(format!("{err:#}").contains("is a symlink"));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_preserves_dangling_guest_link() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    let rootfs = root.join("agent-rootfs");
+    fs::create_dir_all(rootfs.join("bin")).unwrap();
+    symlink("/run/missing", rootfs.join("bin/missing")).unwrap();
+
+    rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
+
+    assert_eq!(
+        fs::read_link(rootfs.join("bin/missing")).unwrap(),
+        PathBuf::from("../run/missing")
+    );
+    ensure_symlinks_stay_within(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_rebases_owning_directory_to_dot() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    let rootfs = root.join("agent-rootfs");
+    fs::create_dir_all(rootfs.join("usr/bin")).unwrap();
+    symlink("/usr/bin", rootfs.join("usr/bin/X11")).unwrap();
+
+    rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
+
+    assert_eq!(
+        fs::read_link(rootfs.join("usr/bin/X11")).unwrap(),
+        PathBuf::from(".")
+    );
+    ensure_symlinks_stay_within(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_rebases_guest_root_to_dot() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    let rootfs = root.join("agent-rootfs");
+    fs::create_dir_all(&rootfs).unwrap();
+    symlink("/", rootfs.join("root")).unwrap();
+
+    rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
+
+    assert_eq!(
+        fs::read_link(rootfs.join("root")).unwrap(),
+        PathBuf::from(".")
+    );
+    ensure_symlinks_stay_within(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn test_rebase_guest_rootfs_absolute_symlinks_leaves_chained_escapes_for_containment_check() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("install");
+    let rootfs = root.join("agent-rootfs");
+    fs::create_dir_all(rootfs.join("etc")).unwrap();
+    symlink("../../outside", rootfs.join("chain")).unwrap();
+    symlink("/chain", rootfs.join("etc/config")).unwrap();
+
+    rebase_guest_rootfs_absolute_symlinks(&rootfs).unwrap();
+
+    assert_eq!(
+        fs::read_link(rootfs.join("etc/config")).unwrap(),
+        PathBuf::from("../chain")
+    );
+    let err = ensure_symlinks_stay_within(&root).unwrap_err();
+    assert!(format!("{err:#}").contains("points outside of"));
+}
+
 #[test]
 fn test_retry_remove_all_retries_directory_not_empty() {
     let mut attempts = 0;
@@ -382,6 +577,37 @@ fn test_copy_dir_all_preserve_symlinks_does_not_follow_loops() {
         fs::read_link(dest.join("Applications")).unwrap(),
         Path::new(".")
     );
+}
+
+#[test]
+fn test_copy_dir_all_preserve_symlinks_copies_empty_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source");
+    let dest = dir.path().join("dest");
+    fs::create_dir(&source).unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = fs::metadata(&source).unwrap().permissions();
+        permissions.set_mode(0o555);
+        fs::set_permissions(&source, permissions).unwrap();
+    }
+
+    copy_dir_all_preserve_symlinks(&source, &dest).unwrap();
+
+    assert!(dest.is_dir());
+    assert_eq!(fs::read_dir(&dest).unwrap().count(), 0);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        assert_eq!(
+            fs::metadata(&dest).unwrap().permissions().mode() & 0o777,
+            0o555
+        );
+    }
 }
 
 #[test]

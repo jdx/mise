@@ -32,6 +32,10 @@ pub struct CatalogEntry {
     pub injectable: bool,
     /// ASCII control characters stripped
     pub description: Option<String>,
+    /// The file, when the key is defined in the user's own config rather than the project's:
+    /// fnox's global config, or a file in or above `$HOME`. Only the user's command line may
+    /// grant such a key. `None` also when the source did not say.
+    pub personal: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug)]
@@ -138,6 +142,11 @@ impl Resolved {
             map.retain(|name, _| match catalog.entries.get(name) {
                 Some(entry) if !entry.injectable => {
                     hidden.insert(name.clone());
+                    false
+                }
+                // the user's own keys are not the project's to hand out
+                Some(entry) if entry.personal.is_some() => {
+                    debug!("secrets: --secrets-all leaves out {name}, which comes from your own fnox config");
                     false
                 }
                 Some(_) => true,

@@ -26,6 +26,14 @@ cd ../wt || exit 1
 assert_contains "mise trust --show" ": trusted"
 assert_contains "mise env" "TRUSTED_ENV=1"
 
+# a directory whose .git file merely names the worktree's entry is not that worktree
+mkdir -p ../claimed
+cd ../claimed || exit 1
+cp ../wt/mise.toml ../wt/.git .
+assert_contains "mise trust --show" ": untrusted"
+assert_not_contains "mise hook-env -s bash 2>&1" "TRUSTED_ENV"
+cd ../wt || exit 1
+
 # untrusting inside the worktree warns that the main checkout still trusts it
 assert_contains "mise untrust 2>&1" "git worktree"
 assert_contains "mise trust --show" ": trusted"
@@ -36,3 +44,21 @@ mise untrust
 assert_contains "mise trust --show" ": untrusted"
 cd ../wt || exit 1
 assert_contains "mise trust --show" ": untrusted"
+
+# a hand-made worktree cannot borrow trust through a symlink in its "main
+# checkout": the counterpart of forged/mise.toml is a link to the global config
+cd .. || exit 1
+mise settings set color false
+mkdir -p forged/main/.git/worktrees/x
+echo "ref: refs/heads/main" >forged/main/.git/HEAD
+echo "../.." >forged/main/.git/worktrees/x/commondir
+echo "gitdir: main/.git/worktrees/x" >forged/.git
+echo "$PWD/forged/.git" >forged/main/.git/worktrees/x/gitdir
+ln -s "$MISE_CONFIG_DIR/config.toml" forged/main/mise.toml
+cat <<EOF2 >forged/mise.toml
+[env]
+FORGED_ENV = "1"
+EOF2
+cd forged || exit 1
+assert_contains "mise trust --show" ": untrusted"
+assert_not_contains "mise hook-env -s bash 2>&1" "FORGED_ENV"

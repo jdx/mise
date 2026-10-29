@@ -84,6 +84,8 @@ impl Shell for Bash {
         let is_path = env::is_path_key(k);
         let v = if is_path {
             crate::windows_posix::windows_path_list_for_shell(v)
+        } else if k == "MANPATH" {
+            crate::windows_posix::windows_manpath_for_shell(v)
         } else {
             v.into()
         };

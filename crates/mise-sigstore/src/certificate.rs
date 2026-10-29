@@ -14,6 +14,12 @@ pub(crate) const FULCIO_SOURCE_REPOSITORY_URI_OID: &str = "1.3.6.1.4.1.57264.1.1
 /// Fulcio's deprecated GitHub Workflow Repository (`owner/repo`), found on
 /// certificates issued before the one above existed. Raw bytes, not DER.
 pub(crate) const FULCIO_GITHUB_WORKFLOW_REPOSITORY_OID: &str = "1.3.6.1.4.1.57264.1.5";
+/// Fulcio's Source Repository Ref: the git ref the signed workflow run
+/// built, such as `refs/tags/v1.2.3`. A DER UTF8String.
+pub(crate) const FULCIO_SOURCE_REPOSITORY_REF_OID: &str = "1.3.6.1.4.1.57264.1.14";
+/// Fulcio's deprecated GitHub Workflow Ref, found on certificates issued
+/// before the one above existed. Raw bytes, not DER.
+pub(crate) const FULCIO_GITHUB_WORKFLOW_REF_OID: &str = "1.3.6.1.4.1.57264.1.6";
 /// The identity GitHub signs its own release attestations with.
 pub(crate) const GITHUB_RELEASE_ATTESTER_IDENTITY: &str = "https://dotcom.releases.github.com";
 pub(crate) const IN_TOTO_RELEASE_PREDICATE_PREFIX: &str = "https://in-toto.io/attestation/release/";
@@ -49,23 +55,36 @@ pub(crate) fn bundle_source_repository(bundle: &Bundle) -> Option<String> {
     release_statement_repository(envelope.payload.as_bytes())
 }
 
+fn certificate_extension<'c>(cert: &'c x509_cert::Certificate, oid: &str) -> Option<&'c [u8]> {
+    cert.tbs_certificate()
+        .extensions()?
+        .iter()
+        .find(|ext| ext.extn_id.to_string() == oid)
+        .map(|ext| ext.extn_value.as_bytes())
+}
+
 pub(crate) fn certificate_source_repository(cert: &x509_cert::Certificate) -> Option<String> {
     use x509_cert::der::Decode;
     use x509_cert::der::asn1::Utf8StringRef;
-    let extensions = cert.tbs_certificate().extensions()?;
-    let extension = |oid: &str| {
-        extensions
-            .iter()
-            .find(|ext| ext.extn_id.to_string() == oid)
-            .map(|ext| ext.extn_value.as_bytes())
-    };
-    if let Some(value) = extension(FULCIO_SOURCE_REPOSITORY_URI_OID) {
+    if let Some(value) = certificate_extension(cert, FULCIO_SOURCE_REPOSITORY_URI_OID) {
         let uri = Utf8StringRef::from_der(value).ok()?;
         return github_repository_from_uri(uri.as_str());
     }
-    let value = extension(FULCIO_GITHUB_WORKFLOW_REPOSITORY_OID)?;
+    let value = certificate_extension(cert, FULCIO_GITHUB_WORKFLOW_REPOSITORY_OID)?;
     let repository = std::str::from_utf8(value).ok()?;
     valid_github_repository(repository).then(|| repository.to_string())
+}
+
+/// The git ref, such as `refs/tags/v1.2.3`, that a certificate's workflow
+/// run built.
+pub(crate) fn certificate_source_ref(cert: &x509_cert::Certificate) -> Option<String> {
+    use x509_cert::der::Decode;
+    use x509_cert::der::asn1::Utf8StringRef;
+    if let Some(value) = certificate_extension(cert, FULCIO_SOURCE_REPOSITORY_REF_OID) {
+        return Some(Utf8StringRef::from_der(value).ok()?.as_str().to_string());
+    }
+    let value = certificate_extension(cert, FULCIO_GITHUB_WORKFLOW_REF_OID)?;
+    std::str::from_utf8(value).ok().map(str::to_string)
 }
 
 pub(crate) fn certificate_uri_sans(cert: &x509_cert::Certificate) -> Vec<String> {
@@ -96,7 +115,87 @@ pub(crate) fn verify_slsa_signer_certificate(
     let cert = Certificate::from_der(cert_der).map_err(|e| {
         AttestationError::Verification(format!("failed to parse SLSA signer certificate: {e}"))
     })?;
-    if !certificate_uri_sans(&cert)
+    verify_slsa_signer_identity(&cert, expected)?;
+
+    // A reusable workflow has the same identity and issuer in every
+    // repository that calls it; only the source repository extension says
+    // whose workflow run was signed. Accept the repository that holds the
+    // signing workflow, or the one the caller expects.
+    if let Some(workflow_repository) = github_workflow_repository(expected.identity) {
+        let source = certificate_source_repository(&cert);
+        if !source
+            .as_deref()
+            .is_some_and(|source| slsa_source_accepted(source, workflow_repository, expected))
+        {
+            let expected = match expected
+                .source_repository
+                .and_then(normalize_github_repository)
+            {
+                Some(expected) if !expected.eq_ignore_ascii_case(workflow_repository) => {
+                    format!("{expected} or {workflow_repository}")
+                }
+                _ => workflow_repository.to_string(),
+            };
+            return Err(AttestationError::WorkflowMismatch(format!(
+                "SLSA provenance was built in {}, expected {expected}",
+                source.as_deref().unwrap_or("an unknown repository"),
+            )));
+        }
+    }
+
+    // Each release of a tool built with a reusable workflow carries that
+    // workflow's identity, so without this an older release's genuine
+    // provenance and artifact would pass as a newer version's.
+    if let Some(tag) = expected.source_tag {
+        let expected_ref = format!("refs/tags/{tag}");
+        let source_ref = certificate_source_ref(&cert);
+        if source_ref.as_deref() != Some(expected_ref.as_str()) {
+            return Err(AttestationError::WorkflowMismatch(format!(
+                "SLSA provenance was built from {}, expected {expected_ref}",
+                source_ref.as_deref().unwrap_or("an unknown ref"),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The repository a certificate says its workflow run belonged to, when the
+/// certificate names `expected`'s identity and issuer but that repository is
+/// not one `expected` accepts. The certificate is not verified here, so this
+/// is only a lead (to a renamed or transferred repository, say); provenance
+/// must be verified again in full before it is trusted.
+pub(crate) fn unaccepted_slsa_source_repository(
+    cert_der: &[u8],
+    expected: SlsaSignerIdentity<'_>,
+) -> Option<String> {
+    use x509_cert::Certificate;
+    use x509_cert::der::Decode;
+
+    let cert = Certificate::from_der(cert_der).ok()?;
+    verify_slsa_signer_identity(&cert, expected).ok()?;
+    let workflow_repository = github_workflow_repository(expected.identity)?;
+    let source = certificate_source_repository(&cert)?;
+    (!slsa_source_accepted(&source, workflow_repository, expected)).then_some(source)
+}
+
+fn slsa_source_accepted(
+    source: &str,
+    workflow_repository: &str,
+    expected: SlsaSignerIdentity<'_>,
+) -> bool {
+    source.eq_ignore_ascii_case(workflow_repository)
+        || expected
+            .source_repository
+            .and_then(normalize_github_repository)
+            .is_some_and(|expected| source.eq_ignore_ascii_case(expected))
+}
+
+/// The certificate's URI SAN and OIDC issuer must be `expected`'s exactly.
+fn verify_slsa_signer_identity(
+    cert: &x509_cert::Certificate,
+    expected: SlsaSignerIdentity<'_>,
+) -> Result<()> {
+    if !certificate_uri_sans(cert)
         .iter()
         .any(|identity| identity == expected.identity)
     {
@@ -125,6 +224,25 @@ pub(crate) fn verify_slsa_signer_certificate(
         )));
     }
     Ok(())
+}
+
+/// The `owner/repo` that holds the workflow a GitHub Actions signer identity
+/// (a certificate's URI SAN) names, or `None` for any other identity.
+pub(crate) fn github_workflow_repository(identity: &str) -> Option<&str> {
+    let (repository, _) = identity
+        .strip_prefix("https://github.com/")?
+        .split_once("/.github/workflows/")?;
+    valid_github_repository(repository).then_some(repository)
+}
+
+/// `owner/repo` from `owner/repo`, `github.com/owner/repo` or
+/// `https://github.com/owner/repo`.
+pub fn normalize_github_repository(repository: &str) -> Option<&str> {
+    let repository = repository.trim_end_matches('/');
+    let repository = repository.strip_prefix("https://").unwrap_or(repository);
+    let repository = repository.strip_prefix("github.com/").unwrap_or(repository);
+    let repository = repository.strip_suffix(".git").unwrap_or(repository);
+    valid_github_repository(repository).then_some(repository)
 }
 
 pub(crate) fn release_statement_repository(payload: &[u8]) -> Option<String> {

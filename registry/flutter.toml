@@ -10,6 +10,8 @@ full = "http:flutter"
 # Each platform's sha256 lives in its OS-specific releases manifest, matched by
 # the resolved artifact's archive path (checksum_url is set per platform below).
 checksum_expr = '"sha256:" + filter(fromJSON(body).releases, { #.archive endsWith filename })[0].sha256'
+# The same manifest dates each release.
+version_date_expr = 'fromJSON(body).releases | filter({ #.channel == "stable" }) | map({ [replace(#.version, "-stable", ""), #.release_date] })'
 # version_expr strips the channel suffix, and the URLs below append it back, so a
 # version that already carries it (as the older vfox backend listed them) would
 # otherwise produce `...-stable-stable`. trim_end makes appending idempotent.

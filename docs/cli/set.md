@@ -26,6 +26,9 @@ See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
 ## Flags
 - **`-E --env <ENV>`** — Write to mise.&lt;ENV>.toml in the current directory, or to .mise.&lt;ENV>.toml if that exists
 - **`-g --global`** — Set the environment variable in the global config file
+- **`--override`** — Set the environment variable in the global override file, `config.override.toml`
+
+  The override file outranks all project config. With `--env`, writes `config.<ENV>.override.toml` instead. See <https://mise.jdx.dev/configuration.html#override-file>
 - **`--age-encrypt`** — [experimental] Encrypt the value with age before storing
 - **`--age-key-file <PATH>`** — [experimental] Age identity file whose public keys to encrypt to
 

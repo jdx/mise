@@ -963,7 +963,7 @@ impl SidecarLock {
         // Options can differ per platform, and `mise lock` files each
         // platform's data under its own options, so do the same here.
         for target in &self.targets {
-            let options = backend.resolve_lockfile_options(&tv.request, target)?;
+            let options = backend.lockfile_options(&tv.request, target)?;
             let info = self.platforms.get(&target.to_key()).cloned();
             // An empty info still creates the entry, so a backend without
             // URL locking pins the version.

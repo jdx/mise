@@ -27,6 +27,22 @@ pub fn is_root() -> bool {
     }
 }
 
+/// Whether `system_packages.elevate_with` is set to an empty string, which
+/// means commands run as the current user without an elevator (Termux, rootless
+/// containers). Unset is different: it picks one from `PATH`.
+fn elevation_disabled() -> bool {
+    Settings::get()
+        .system_packages
+        .elevate_with
+        .as_deref()
+        .is_some_and(|cmd| cmd.trim().is_empty())
+}
+
+/// Whether commands run directly rather than through an elevator.
+fn runs_unelevated() -> bool {
+    is_root() || elevation_disabled()
+}
+
 /// The command used to elevate: `system_packages.elevate_with` when set,
 /// otherwise the first of `sudo`, `run0` and `doas` on `PATH`. Falls back to
 /// `sudo` when none is installed so errors name the conventional tool.
@@ -71,7 +87,7 @@ pub fn argv(program: &str, args: &[String]) -> Vec<String> {
 }
 
 pub fn argv_with_env(program: &str, args: &[String], envs: &[(String, String)]) -> Vec<String> {
-    if !is_root() && Settings::get().system_packages.sudo {
+    if !runs_unelevated() && Settings::get().system_packages.sudo {
         build_argv(program, args, envs, !console::user_attended_stderr())
     } else {
         std::iter::once(program.to_string())
@@ -146,7 +162,10 @@ fn build_argv(
 pub fn subprocess_mode() -> &'static str {
     if is_root() {
         "interactive"
-    } else if !Settings::get().system_packages.sudo || mise_util::file::which("sudo").is_none() {
+    } else if elevation_disabled()
+        || !Settings::get().system_packages.sudo
+        || mise_util::file::which("sudo").is_none()
+    {
         // the brew cask shim only knows how to call sudo
         "deny"
     } else if console::user_attended_stderr() {
@@ -263,8 +282,9 @@ pub fn output(program: &str, args: &[String], envs: &[(String, String)]) -> Resu
     let argv = argv_with_env(program, args, envs);
     let manual_cmd = manual_command(program, args, envs);
     ensure_elevation_available(&manual_cmd)?;
-    let interactive =
-        !is_root() && Settings::get().system_packages.sudo && console::user_attended_stderr();
+    let interactive = !runs_unelevated()
+        && Settings::get().system_packages.sudo
+        && console::user_attended_stderr();
     if interactive && is_sudo(&argv[0]) {
         let _progress_pause = pause_progress_for_child();
         CmdLineRunner::new(&argv[0]).arg("-v").raw(true).execute()?;
@@ -367,7 +387,10 @@ fn attempt<T>(manual_cmd: &str, f: impl FnOnce() -> Result<T>) -> Result<T> {
 /// so a password requirement surfaces as the command failing. Say how to retry.
 fn manual_hint(manual_cmd: &str) -> Option<String> {
     let elevator = elevator();
-    if is_root() || console::user_attended_stderr() || noninteractive_flag(&elevator).is_none() {
+    if runs_unelevated()
+        || console::user_attended_stderr()
+        || noninteractive_flag(&elevator).is_none()
+    {
         return None;
     }
     Some(format!(
@@ -409,6 +432,9 @@ fn root_fallback(manual_cmd: &str, elevator: &str) -> String {
 /// Verify that the elevation command mise is configured to use can run
 /// without violating mise's elevation policy or hanging without a TTY.
 pub fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
+    if elevation_disabled() {
+        return Ok(());
+    }
     let elevator = elevator();
     check_elevation(
         &elevator,
@@ -434,6 +460,9 @@ pub fn ensure_sudo_available(manual_cmd: &str) -> Result<()> {
 fn ensure_stdin_elevation_available() -> Result<()> {
     const HINT: &str = "Re-run this mise command as root. The privileged helper \
         receives its plan on stdin, so it cannot be run by itself.";
+    if elevation_disabled() {
+        return Ok(());
+    }
     check_elevation(&elevator(), HINT, HINT)
 }
 

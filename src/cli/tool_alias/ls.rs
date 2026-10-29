@@ -23,7 +23,7 @@ use crate::ui::table;
     example(
         r###"mise tool-alias ls node
 tool  alias      version
-node  lts        24
+node  lts        26
 node  lts-jod    22
 node  project    20"###,
         help = "List node's version aliases"

@@ -475,3 +475,232 @@ fn test_list_tags_with_dates_sends_auth_on_every_page() {
         assert!(tags.iter().all(|t| t.date.is_none()));
     });
 }
+
+// A repository with thousands of tags must not cost a commit request per tag:
+// the known-dates listing pages the tags and leaves the dates to `tag_commit_date`.
+#[test]
+fn test_list_tags_with_known_dates_makes_no_commit_requests() {
+    with_token_lock(async {
+        let mut server = mockito::Server::new_async().await;
+        let base = server.url();
+        let api = ghes_api_url(&base);
+        let repo = "owner/known-dates-no-commits";
+        let commit_url = format!("{api}/repos/{repo}/git/commits/abc");
+        let body = serde_json::json!([
+            {"name": "v2.0.0", "commit": {"sha": "abc", "url": commit_url}},
+            {"name": "v1.0.0", "commit": {"sha": "abc", "url": commit_url}},
+        ]);
+        let tags_mock = server
+            .mock("GET", format!("{API_PATH}/repos/{repo}/tags").as_str())
+            .match_query(mockito::Matcher::UrlEncoded(
+                "per_page".into(),
+                "100".into(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(body.to_string())
+            .expect(1)
+            .create_async()
+            .await;
+        let commit_mock = server
+            .mock("GET", mockito::Matcher::Regex("git/commits".into()))
+            .expect(0)
+            .create_async()
+            .await;
+
+        let tags = list_tags_with_known_dates_(&api, repo, true).await.unwrap();
+        tags_mock.assert_async().await;
+        commit_mock.assert_async().await;
+        assert_eq!(
+            tags.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+            ["v2.0.0", "v1.0.0"]
+        );
+        assert!(tags.iter().all(|t| t.date.is_none()));
+    });
+}
+
+#[test]
+fn test_tag_commit_url_encodes_reserved_characters() {
+    assert_eq!(
+        tag_commit_url("https://api.github.com", "o/r", "release/v1#x?%"),
+        "https://api.github.com/repos/o/r/commits/release/v1%23x%3F%25"
+    );
+}
+// be5invis/Iosevka: each release carries ~450 assets, and api.github.com times
+// out on a list of 100 of them while serving a smaller page of the same list.
+#[tokio::test]
+async fn test_list_releases_asks_for_fewer_after_a_server_error() {
+    let mut server = mockito::Server::new_async().await;
+    let base = server.url();
+    let repo = "owner/huge-releases";
+    let path = format!("/repos/{repo}/releases");
+
+    let too_big = server
+        .mock("GET", path.as_str())
+        .match_query(mockito::Matcher::UrlEncoded(
+            "per_page".into(),
+            "100".into(),
+        ))
+        .with_status(504)
+        .expect_at_least(1)
+        .create_async()
+        .await;
+    let smaller = server
+        .mock("GET", path.as_str())
+        .match_query(mockito::Matcher::UrlEncoded("per_page".into(), "30".into()))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(serde_json::to_string(&vec![make_release("v1.0.0")]).unwrap())
+        .expect(1)
+        .create_async()
+        .await;
+
+    let releases = list_releases_(&base, repo, false).await.unwrap();
+    too_big.assert_async().await;
+    smaller.assert_async().await;
+    assert_eq!(releases.len(), 1);
+    assert_eq!(releases[0].tag_name, "v1.0.0");
+}
+
+// A 4xx is the answer, not a reason to ask again with a smaller page.
+#[tokio::test]
+async fn test_list_releases_does_not_shrink_the_page_on_a_client_error() {
+    let mut server = mockito::Server::new_async().await;
+    let base = server.url();
+    let repo = "owner/missing-releases";
+
+    let missing = server
+        .mock("GET", format!("/repos/{repo}/releases").as_str())
+        .match_query(mockito::Matcher::Any)
+        .with_status(404)
+        .expect(1)
+        .create_async()
+        .await;
+
+    assert!(list_releases_(&base, repo, false).await.is_err());
+    missing.assert_async().await;
+}
+
+// Both larger sizes can time out: the last resort is a page of ten.
+#[tokio::test]
+async fn test_list_releases_falls_back_to_the_smallest_page_size() {
+    let mut server = mockito::Server::new_async().await;
+    let base = server.url();
+    let repo = "owner/huge-releases-smallest";
+    let path = format!("/repos/{repo}/releases");
+
+    let mut failing = Vec::new();
+    for per_page in ["100", "30"] {
+        failing.push(
+            server
+                .mock("GET", path.as_str())
+                .match_query(mockito::Matcher::UrlEncoded(
+                    "per_page".into(),
+                    per_page.into(),
+                ))
+                .with_status(504)
+                .expect_at_least(1)
+                .create_async()
+                .await,
+        );
+    }
+    let smallest = server
+        .mock("GET", path.as_str())
+        .match_query(mockito::Matcher::UrlEncoded("per_page".into(), "10".into()))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(serde_json::to_string(&vec![make_release("v1.0.0")]).unwrap())
+        .expect(1)
+        .create_async()
+        .await;
+
+    let releases = list_releases_(&base, repo, false).await.unwrap();
+    for mock in &failing {
+        mock.assert_async().await;
+    }
+    smallest.assert_async().await;
+    assert_eq!(releases.len(), 1);
+}
+
+// When even the smallest page fails, the listing fails with that error.
+#[tokio::test]
+async fn test_list_releases_fails_when_the_smallest_page_size_fails() {
+    let mut server = mockito::Server::new_async().await;
+    let base = server.url();
+    let repo = "owner/huge-releases-all-fail";
+    let path = format!("/repos/{repo}/releases");
+
+    // One mock per size: the client retries a 504 at the same URL, so a
+    // catch-all could be satisfied without the smaller sizes ever being asked.
+    let mut failing = Vec::new();
+    for per_page in ["100", "30", "10"] {
+        failing.push(
+            server
+                .mock("GET", path.as_str())
+                .match_query(mockito::Matcher::UrlEncoded(
+                    "per_page".into(),
+                    per_page.into(),
+                ))
+                .with_status(504)
+                .expect_at_least(1)
+                .create_async()
+                .await,
+        );
+    }
+
+    let err = list_releases_(&base, repo, false).await.unwrap_err();
+    for mock in &failing {
+        mock.assert_async().await;
+    }
+    assert!(is_server_error(&err), "got {err:#}");
+}
+
+// The `Link` header of the smaller page carries the page after it.
+#[tokio::test]
+async fn test_list_releases_paginates_after_shrinking_the_page() {
+    let mut server = mockito::Server::new_async().await;
+    let base = server.url();
+    let repo = "owner/huge-releases-paged";
+    let path = format!("/repos/{repo}/releases");
+
+    let too_big = server
+        .mock("GET", path.as_str())
+        .match_query(mockito::Matcher::UrlEncoded(
+            "per_page".into(),
+            "100".into(),
+        ))
+        .with_status(504)
+        .expect_at_least(1)
+        .create_async()
+        .await;
+    let page1 = server
+        .mock("GET", path.as_str())
+        .match_query(mockito::Matcher::UrlEncoded("per_page".into(), "30".into()))
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_header("link", format!("<{base}/page2>; rel=\"next\"").as_str())
+        .with_body(serde_json::to_string(&vec![make_prerelease("v2.0.0-alpha.1")]).unwrap())
+        .expect(1)
+        .create_async()
+        .await;
+    let page2 = server
+        .mock("GET", "/page2")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(serde_json::to_string(&vec![make_release("v1.0.0")]).unwrap())
+        .expect(1)
+        .create_async()
+        .await;
+
+    let releases = list_releases_(&base, repo, false).await.unwrap();
+    too_big.assert_async().await;
+    page1.assert_async().await;
+    page2.assert_async().await;
+    assert_eq!(
+        releases
+            .iter()
+            .map(|r| r.tag_name.as_str())
+            .collect::<Vec<_>>(),
+        ["v2.0.0-alpha.1", "v1.0.0"]
+    );
+}

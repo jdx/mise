@@ -55,6 +55,23 @@ impl SelfUpdateSource {
             && self.repository == DEFAULT_SELF_UPDATE_REPOSITORY
     }
 
+    /// Headers for a request to `url`: GitHub's usual API auth, plus the token
+    /// for the configured `api_url` on that same origin. A configured API may
+    /// use any HTTPS host and path, so its token is resolved explicitly, but it
+    /// never goes to another origin, such as a download host.
+    pub(crate) fn request_headers(&self, url: &str) -> Result<reqwest::header::HeaderMap> {
+        let mut headers = crate::github::get_headers(url, &self.api_url)?;
+        if url::Url::parse(url)?.origin() == url::Url::parse(&self.api_url)?.origin()
+            && let Some(token) = crate::github::resolve_token_for_api_url(&self.api_url)
+        {
+            headers.insert(
+                reqwest::header::AUTHORIZATION,
+                crate::tokens::bearer_header("GitHub", &token)?,
+            );
+        }
+        Ok(headers)
+    }
+
     /// Whether mise's own releases are read from mise-versions instead of
     /// api.github.com: the default source, unless `use_versions_host` is off.
     pub(crate) fn uses_versions_host(&self) -> bool {
@@ -147,7 +164,7 @@ impl Version {
     async fn json(&self) -> Result<()> {
         let json = serde_json::json!({
             "version": *VERSION,
-            "latest": get_latest_version(duration::DAILY).await,
+            "latest": clamp_latest(get_latest_version(duration::DAILY).await, &V),
             "os": *OS,
             "arch": *ARCH,
             "build_time": BUILD_TIME.to_string(),
@@ -218,9 +235,13 @@ fn select_version_hint(
     auto_update: bool,
     homebrew: bool,
     windows: bool,
+    winget: bool,
 ) -> Option<VersionHint> {
     if self_update_available {
         (!auto_update).then_some(VersionHint::AutoUpdate)
+    } else if winget {
+        // WinGet installs the official build, and `upgrade_instructions_or_hint` already says how to update it.
+        None
     } else if homebrew {
         Some(VersionHint::Homebrew)
     } else if windows {
@@ -239,6 +260,7 @@ pub(crate) fn show_auto_update_hint() {
         settings.self_update.auto.is_on(),
         false,
         cfg!(windows),
+        false,
     ) == Some(VersionHint::AutoUpdate)
     {
         hint!(
@@ -259,6 +281,7 @@ pub(crate) fn show_version_hint() {
         settings.self_update.auto.is_on(),
         is_homebrew_install(),
         cfg!(windows),
+        crate::upgrade_hint::installed_by_winget(),
     ) {
         Some(VersionHint::AutoUpdate) => show_auto_update_hint(),
         Some(VersionHint::Homebrew) => hint!(
@@ -295,6 +318,15 @@ pub(crate) async fn check_for_new_version(cache_duration: Duration) -> Option<St
         return Some(latest.to_string());
     }
     None
+}
+
+/// A build newer than the newest release past the age gate has nothing newer to
+/// update to, so report itself as the latest instead of an older release.
+fn clamp_latest(latest: Option<String>, current: &Versioning) -> Option<String> {
+    match latest {
+        Some(l) if Versioning::new(&l).is_some_and(|l| *current > l) => Some(current.to_string()),
+        other => other,
+    }
 }
 
 /// State of the `latest-version` cache file.
@@ -450,7 +482,7 @@ async fn fetch_release_index(source: &SelfUpdateSource) -> Result<String> {
                 "{}/repos/{}/releases?per_page=100&page={page}",
                 source.api_url, source.repository
             );
-            let headers = crate::github::get_headers(&url)?;
+            let headers = source.request_headers(&url)?;
             let (releases, _): (Vec<crate::github::GithubRelease>, _) = crate::http::HTTP
                 .json_headers_with_headers(&url, &headers)
                 .await?;
@@ -482,6 +514,49 @@ async fn fetch_release_index(source: &SelfUpdateSource) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A configured API on any path (here not `/api/v3`) gets its token on its
+    /// own origin, for the release index and the downloads alike, and never on
+    /// another origin.
+    #[test]
+    fn configured_api_token_follows_its_origin() {
+        let mut env = mise_util::testing::EnvVarGuard::new();
+        env.set("MISE_GITHUB_ENTERPRISE_TOKEN", "ghes-self-update-token");
+        let source = SelfUpdateSource {
+            api_url: "https://releases.example.com/github".to_string(),
+            repository: "acme/mise".to_string(),
+        };
+        let auth = |url: &str| {
+            source
+                .request_headers(url)
+                .unwrap()
+                .get(reqwest::header::AUTHORIZATION)
+                .map(|v| v.to_str().unwrap().to_string())
+        };
+        assert_eq!(
+            auth("https://releases.example.com/github/repos/acme/mise/releases?page=1").as_deref(),
+            Some("Bearer ghes-self-update-token")
+        );
+        assert_eq!(auth("https://downloads.example.com/mise.zip"), None);
+    }
+
+    #[test]
+    fn latest_is_never_older_than_current() {
+        let current = Versioning::new("2026.10.21").unwrap();
+        assert_eq!(
+            clamp_latest(Some("2026.10.19".into()), &current).as_deref(),
+            Some("2026.10.21")
+        );
+        assert_eq!(
+            clamp_latest(Some("2026.10.21".into()), &current).as_deref(),
+            Some("2026.10.21")
+        );
+        assert_eq!(
+            clamp_latest(Some("2026.10.22".into()), &current).as_deref(),
+            Some("2026.10.22")
+        );
+        assert_eq!(clamp_latest(None, &current), None);
+    }
 
     #[test]
     fn self_update_age_precedence() {
@@ -668,25 +743,30 @@ mod tests {
     #[test]
     fn version_hint_promotes_auto_update_for_official_binaries() {
         assert_eq!(
-            select_version_hint(true, false, false, false),
+            select_version_hint(true, false, false, false, false),
             Some(VersionHint::AutoUpdate)
         );
-        assert_eq!(select_version_hint(true, true, false, false), None);
+        assert_eq!(select_version_hint(true, true, false, false, false), None);
     }
 
     #[test]
     fn version_hint_promotes_optimized_binaries_for_package_installs() {
         assert_eq!(
-            select_version_hint(false, false, true, false),
+            select_version_hint(false, false, true, false, false),
             Some(VersionHint::Homebrew)
         );
         assert_eq!(
-            select_version_hint(false, false, false, false),
+            select_version_hint(false, false, false, false, false),
             Some(VersionHint::OptimizedBinary)
         );
         assert_eq!(
-            select_version_hint(false, false, false, true),
+            select_version_hint(false, false, false, true, false),
             Some(VersionHint::OptimizedBinaryWindows)
         );
+    }
+
+    #[test]
+    fn version_hint_stays_quiet_for_winget_installs() {
+        assert_eq!(select_version_hint(false, false, false, true, true), None);
     }
 }

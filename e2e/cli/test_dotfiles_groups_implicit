@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+# A selected group name that no [dotfile_groups] table declares, but that
+# names a directory under dotfiles.root, deploys that directory into ~ file by
+# file, like a GNU Stow package.
+DOTS="$HOME/.dotfiles"
+mkdir -p "$DOTS/kitty/.config/kitty" "$DOTS/zsh" "$DOTS/nvim/.config/nvim" "$DOTS/alacritty/.config/alacritty"
+echo "kitty" >"$DOTS/kitty/.config/kitty/kitty.conf"
+echo "zshrc" >"$DOTS/zsh/.zshrc"
+echo "init" >"$DOTS/nvim/.config/nvim/init.lua"
+echo "alacritty" >"$DOTS/alacritty/.config/alacritty/alacritty.toml"
+
+# nvim has a table, which replaces the implicit group: it links the
+# directory whole.
+cat <<EOF >mise.toml
+[dotfile_groups.nvim]
+root = "nvim"
+entries."~/.config/nvim" = { mode = "symlink" }
+
+[bootstrap]
+dotfile_groups = ["kitty", "zsh", "nvim"]
+EOF
+
+assert_succeed "mise dot apply --yes"
+assert "readlink $HOME/.config/kitty/kitty.conf" "$DOTS/kitty/.config/kitty/kitty.conf"
+assert_fail "test -L $HOME/.config/kitty"
+assert "readlink $HOME/.zshrc" "$DOTS/zsh/.zshrc"
+assert "readlink $HOME/.config/nvim" "$DOTS/nvim/.config/nvim"
+assert_fail "test -e $HOME/.config/alacritty"
+assert_not_contains "mise dot status 2>&1" "no [dotfile_groups] table declares it"
+
+# Adding a file captures it into the package directory, with no table.
+echo "theme" >"$HOME/.config/kitty/theme.conf"
+assert_succeed "mise dot add --yes --group kitty $HOME/.config/kitty/theme.conf"
+assert "cat $DOTS/kitty/.config/kitty/theme.conf" "theme"
+assert "readlink $HOME/.config/kitty/theme.conf" "$DOTS/kitty/.config/kitty/theme.conf"
+assert_not_contains "cat mise.toml" "theme"
+
+# Deselecting a package leaves its files, orphaned, until it is unapplied.
+cat <<EOF >mise.toml
+[dotfile_groups.nvim]
+root = "nvim"
+entries."~/.config/nvim" = { mode = "symlink" }
+
+[bootstrap]
+dotfile_groups = ["kitty", "nvim"]
+EOF
+assert_succeed "mise dot apply --yes"
+assert "readlink $HOME/.zshrc" "$DOTS/zsh/.zshrc"
+assert_contains "mise dot status" "orphaned"
+assert_contains "mise dot status --json" '"group": "zsh"'
+assert_succeed "mise dot unapply --group zsh --yes"
+assert_fail "test -e $HOME/.zshrc"
+
+# A table that cannot be expanded still owns its name: the directory is not
+# deployed with defaults in its place.
+# schema: invalid
+cat <<EOF >mise.toml
+[dotfile_groups.alacritty]
+root = "alacritty"
+mode = "symlinks"
+
+[bootstrap]
+dotfile_groups = ["kitty", "alacritty"]
+EOF
+assert_contains "mise dot apply --yes 2>&1" "ignoring group"
+assert_fail "test -e $HOME/.config/alacritty"
+
+# A name with neither a table nor a directory is still reported.
+cat <<EOF >mise.toml
+[bootstrap]
+dotfile_groups = ["kitty", "ktity"]
+EOF
+assert_contains "mise dot status 2>&1" "has no directory of that name"

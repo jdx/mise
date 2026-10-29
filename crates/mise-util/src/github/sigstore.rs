@@ -24,7 +24,8 @@
 //! [`crate::github::resolve_token_for_api_url`] can parse the host correctly; a bare hostname
 //! would be silently misrouted for GitHub Enterprise Server tenants. After token resolution,
 //! the API URL is routed through [`crate::http::apply_url_replacements`] so attestation
-//! requests follow the same trusted proxy/cache replacements as normal mise HTTP requests.
+//! requests follow the same trusted proxy/cache replacements as normal mise HTTP requests. A
+//! replacement that changes the host drops the token, which was resolved for the original host.
 
 use std::path::Path;
 
@@ -81,19 +82,37 @@ fn resolve_token_for_wrapper(api_url: Option<&str>) -> Option<String> {
     crate::github::resolve_token_for_api_url(url)
 }
 
-fn routed_api_url(api_url: &str, has_credentials: bool) -> AttestationResult<String> {
+/// Apply `url_replacements` to the attestation API base URL with the credential rules
+/// [`crate::http`] applies to any rewritten request: credentials resolved for the original
+/// host are dropped when the rule changes the host, then an HTTPS-to-HTTP downgrade is
+/// refused for whatever credentials are left.
+///
+/// `token` is the token resolved for `api_url`. Returns the URL to use and the token that
+/// may still be sent to it.
+fn routed_api_url(
+    api_url: &str,
+    token: Option<String>,
+) -> AttestationResult<(String, Option<String>)> {
     let Ok(mut url) = url::Url::parse(api_url) else {
         debug!("invalid GitHub attestation API URL, skipping url_replacements: {api_url}");
-        return Ok(api_url.to_string());
+        return Ok((api_url.to_string(), token));
     };
     let original = url.clone();
     crate::http::apply_url_replacements(&mut url);
-    crate::http::ensure_secure_url_replacement(&original, &url, has_credentials)
+    // mise-sigstore builds the Authorization header itself, so the token is scoped here;
+    // `clear_cross_host_credentials` only has inherited userinfo left to strip.
+    let token = token.filter(|_| url.host() == original.host());
+    crate::http::clear_cross_host_credentials(
+        &mut reqwest::header::HeaderMap::new(),
+        &original,
+        &mut url,
+    );
+    crate::http::ensure_secure_url_replacement(&original, &url, token.is_some())
         .map_err(|err| AttestationError::Verification(err.to_string()))?;
     if url == original {
-        Ok(api_url.to_string())
+        Ok((api_url.to_string(), token))
     } else {
-        Ok(url.to_string())
+        Ok((url.to_string(), token))
     }
 }
 
@@ -133,8 +152,7 @@ fn mise_retry_config() -> RetryConfig {
 }
 
 fn attestation_client(api_url: &str) -> AttestationResult<AttestationClient> {
-    let token = resolve_token_for_wrapper(Some(api_url));
-    let base_url = routed_api_url(api_url, token.is_some())?;
+    let (base_url, token) = routed_api_url(api_url, resolve_token_for_wrapper(Some(api_url)))?;
     let mut builder = AttestationClient::builder()
         .base_url(&base_url)
         .retry_config(mise_retry_config());
@@ -215,8 +233,10 @@ async fn verify_attestation_uncached(
         digest = Some(artifact_digest);
     }
 
-    let token = resolve_token_for_wrapper(api_url);
-    let base_url = routed_api_url(api_url.unwrap_or(crate::github::API_URL), token.is_some())?;
+    let (base_url, token) = routed_api_url(
+        api_url.unwrap_or(crate::github::API_URL),
+        resolve_token_for_wrapper(api_url),
+    )?;
     let result = if let Some(digest) = digest {
         mise_sigstore::verify_github_attestation_with_base_url_and_digest(
             mise_sigstore::GithubAttestationRequest {
@@ -243,7 +263,32 @@ async fn verify_attestation_uncached(
         )
         .await
     };
-    result.map_err(|err| after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+    accept_renamed_repository(owner, repo, api_url, result)
+        .await
+        .map_err(|err| after_mirror_failure(err, owner, repo, mirror_err.as_ref()))
+}
+
+/// Attestations name the repository as it was when they were made, so after
+/// a rename or transfer GitHub lists some under a name that was not
+/// requested. Accept those when GitHub confirms both names are one
+/// repository. [`crate::github::canonical_repo`] refuses to answer when
+/// `url_replacements` reroutes the API: the host that picked the
+/// attestations must not also vouch for the rename.
+async fn accept_renamed_repository(
+    owner: &str,
+    repo: &str,
+    api_url: Option<&str>,
+    result: AttestationResult<bool>,
+) -> AttestationResult<bool> {
+    let on_github = api_url.is_none_or(|url| url.trim_end_matches('/') == crate::github::API_URL);
+    match result {
+        Err(AttestationError::RepositoryMismatch { found, .. })
+            if on_github && crate::github::attested_by_repository(owner, repo, &found).await =>
+        {
+            Ok(true)
+        }
+        result => result,
+    }
 }
 
 /// Verify a GitHub artifact attestation filtered by predicate type.
@@ -301,12 +346,15 @@ pub async fn verify_attestation_with_predicate_type(
         })
         .await
         .map_err(|err| after_mirror_failure(err, owner, repo, mirror_err.as_ref()))?;
-    mise_sigstore::verify_github_attestation_with_attestations(
+    let result = mise_sigstore::verify_github_attestation_with_attestations(
         artifact_path,
         &attestations,
+        owner,
+        repo,
         expected_workflow,
     )
-    .await
+    .await;
+    accept_renamed_repository(owner, repo, api_url, result).await
 }
 
 /// Reason the pre-download attestation probe could not complete.
@@ -362,8 +410,8 @@ pub async fn detect_attestations(
         }
     }
 
-    let token = resolve_token_for_wrapper(Some(api_url));
-    let base_url = routed_api_url(api_url, token.is_some()).map_err(DetectError::SourceCreation)?;
+    let (base_url, token) = routed_api_url(api_url, resolve_token_for_wrapper(Some(api_url)))
+        .map_err(DetectError::SourceCreation)?;
     let source = GitHubSource::with_base_url(owner, repo, token.as_deref(), &base_url)
         .map_err(DetectError::SourceCreation)?;
     let artifact_ref = ArtifactRef::from_digest(digest);
@@ -453,7 +501,7 @@ async fn mirrored_attestations(repo: &str, digest: &str) -> eyre::Result<Mirrore
     if !crate::versions_host::enabled_for_github_repo(repo) {
         return Ok(None);
     }
-    if mise_settings::Settings::get().paranoid {
+    if mise_settings::Settings::get().paranoid.provenance() {
         return crate::versions_host::github_attestations(repo, digest).await;
     }
     let key = mirrored_attestations_key(repo, digest);
@@ -509,7 +557,7 @@ async fn refreshed_mirrored_attestations(
     digest: &str,
 ) -> eyre::Result<MirroredAttestations> {
     let fresh = crate::versions_host::github_attestations(repo, digest).await?;
-    if keep_mirrored_attestations(&fresh) && !mise_settings::Settings::get().paranoid {
+    if keep_mirrored_attestations(&fresh) && !mise_settings::Settings::get().paranoid.provenance() {
         let key = mirrored_attestations_key(repo, digest);
         if let Err(err) = mirrored_attestations_cache(&key).write(&fresh) {
             debug!("failed to keep refreshed attestations for {repo}: {err:#}");
@@ -860,7 +908,7 @@ fn mirror_failure(full: &str, err: &eyre::Report) -> AttestationError {
 }
 
 fn mirror_may_answer_none() -> bool {
-    !mise_settings::Settings::get().paranoid
+    !mise_settings::Settings::get().paranoid.provenance()
 }
 
 fn use_versions_host_for_attestations(api_url: Option<&str>, use_versions_host: bool) -> bool {
@@ -882,26 +930,40 @@ pub async fn verify_slsa_provenance(
     signer: SlsaSignerIdentity<'_>,
 ) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
-    if !mise_settings::Settings::get().generate_lockfiles() {
-        return mise_sigstore::verify_slsa_provenance(
+    let verify = async {
+        let result = mise_sigstore::verify_slsa_provenance(
             artifact_path,
             provenance_path,
             min_level,
             signer,
         )
         .await;
+        match renamed_slsa_source(&result, provenance_path, signer, None).await {
+            Some(renamed) => {
+                mise_sigstore::verify_slsa_provenance(
+                    artifact_path,
+                    provenance_path,
+                    min_level,
+                    SlsaSignerIdentity {
+                        source_repository: Some(&renamed),
+                        ..signer
+                    },
+                )
+                .await
+            }
+            None => result,
+        }
+    };
+    if !mise_settings::Settings::get().generate_lockfiles() {
+        return verify.await;
     }
     let artifact_digest = mise_sigstore::calculate_file_digest(artifact_path).await?;
     let provenance_digest = mise_sigstore::calculate_file_digest(provenance_path).await?;
     let key = format!(
-        "slsa:{artifact_digest}:{provenance_digest}:{min_level}:{}:{}",
-        signer.identity, signer.issuer
+        "slsa:{artifact_digest}:{provenance_digest}:{min_level}:{}:{}:{:?}:{:?}",
+        signer.identity, signer.issuer, signer.source_repository, signer.source_tag
     );
-    shared_verification(
-        key,
-        mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level, signer),
-    )
-    .await
+    shared_verification(key, verify).await
 }
 
 pub async fn verify_slsa_provenance_artifacts(
@@ -910,9 +972,85 @@ pub async fn verify_slsa_provenance_artifacts(
     min_level: u8,
     signer: SlsaSignerIdentity<'_>,
 ) -> AttestationResult<bool> {
+    verify_slsa_provenance_artifacts_with(provenance_path, artifacts, min_level, signer, None).await
+}
+
+/// Stands in for GitHub's answer to "are these one repository?" in tests.
+type ConfirmRename<'a> = Option<&'a (dyn Fn(&str, &str, &str) -> bool + Sync)>;
+
+async fn verify_slsa_provenance_artifacts_with(
+    provenance_path: &Path,
+    artifacts: &[SlsaArtifact],
+    min_level: u8,
+    signer: SlsaSignerIdentity<'_>,
+    confirm: ConfirmRename<'_>,
+) -> AttestationResult<bool> {
     mise_sigstore::set_tuf_url(routed_tuf_url());
-    mise_sigstore::verify_slsa_provenance_artifacts(provenance_path, artifacts, min_level, signer)
-        .await
+    let result = mise_sigstore::verify_slsa_provenance_artifacts(
+        provenance_path,
+        artifacts,
+        min_level,
+        signer,
+    )
+    .await;
+    match renamed_slsa_source(&result, provenance_path, signer, confirm).await {
+        Some(renamed) => {
+            mise_sigstore::verify_slsa_provenance_artifacts(
+                provenance_path,
+                artifacts,
+                min_level,
+                SlsaSignerIdentity {
+                    source_repository: Some(&renamed),
+                    ..signer
+                },
+            )
+            .await
+        }
+        None => result,
+    }
+}
+
+/// When `result` failed because the provenance was built in a repository
+/// `signer` doesn't accept, the name `signer.source_repository` had when it
+/// was built, if GitHub confirms that both names are one repository (renamed
+/// or transferred since). Provenance names the repository as it was when it
+/// was signed. The caller verifies again in full with that name.
+///
+/// Only api.github.com itself can confirm a rename:
+/// [`crate::github::canonical_repo`] refuses when `url_replacements`
+/// reroutes it, since that host may have served the provenance.
+async fn renamed_slsa_source(
+    result: &AttestationResult<bool>,
+    provenance_path: &Path,
+    signer: SlsaSignerIdentity<'_>,
+    confirm: ConfirmRename<'_>,
+) -> Option<String> {
+    if result.is_ok() {
+        return None;
+    }
+    let (owner, repo) = signer
+        .source_repository
+        .and_then(mise_sigstore::normalize_github_repository)?
+        .split_once('/')?;
+    let unaccepted =
+        mise_sigstore::slsa_provenance_unaccepted_source_repositories(provenance_path, signer)
+            .await
+            .ok()?;
+    // A handful at most; each one costs GitHub API requests.
+    for other in unaccepted.into_iter().take(3) {
+        let confirmed = match confirm {
+            Some(confirm) => confirm(owner, repo, &other),
+            None => {
+                crate::github::attested_by_repository(owner, repo, std::slice::from_ref(&other))
+                    .await
+            }
+        };
+        if confirmed {
+            debug!("SLSA provenance for {owner}/{repo} was built in {other}, its former name");
+            return Some(other);
+        }
+    }
+    None
 }
 
 pub fn is_slsa_subject_mismatch(error: &AttestationError) -> bool {
@@ -1357,15 +1495,192 @@ mod tests {
         ));
     }
 
+    /// slsa-github-generator provenance for sops v3.9.0, built in
+    /// getsops/sops, which was mozilla/sops until its transfer.
+    fn sops_provenance() -> &'static Path {
+        Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../mise-sigstore/tests/fixtures/sops_v3_9_0.intoto.jsonl"
+        ))
+    }
+
+    fn sops_artifact() -> SlsaArtifact {
+        SlsaArtifact {
+            name: "sops-v3.9.0.linux.amd64".to_string(),
+            sha256: "0d65660fbe785647ff4f1764d7f69edf598f79d6d79ebbef4a501909b6ff6b82".to_string(),
+        }
+    }
+
+    /// The generator's identity, expecting sops under its former name.
+    const SOPS_SIGNER_BEFORE_TRANSFER: SlsaSignerIdentity<'static> = SlsaSignerIdentity {
+        identity: "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@refs/tags/v2.0.0",
+        issuer: "https://token.actions.githubusercontent.com",
+        source_repository: Some("mozilla/sops"),
+        source_tag: None,
+    };
+
+    /// Verifies the sops provenance against `SOPS_SIGNER_BEFORE_TRANSFER`,
+    /// with `confirm` standing in for api.github.com's answer to whether two
+    /// names are one repository. Each verification is a full Sigstore check,
+    /// so each test runs only one to stay within the per-test time limit.
+    fn verify_sops_rename(
+        confirm: &(dyn Fn(&str, &str, &str) -> bool + Sync),
+    ) -> AttestationResult<bool> {
+        let _settings = SettingsGuard::new(None);
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(verify_slsa_provenance_artifacts_with(
+                sops_provenance(),
+                &[sops_artifact()],
+                1,
+                SOPS_SIGNER_BEFORE_TRANSFER,
+                Some(confirm),
+            ))
+    }
+
+    #[test]
+    fn test_slsa_refuses_a_rename_github_does_not_confirm() {
+        // Without GitHub's word, provenance built in getsops/sops is not
+        // mozilla/sops's.
+        let err = verify_sops_rename(&|_, _, _| false).unwrap_err();
+        assert!(err.to_string().contains("built in getsops/sops"), "{err}");
+    }
+
+    #[test]
+    fn test_slsa_accepts_a_rename_github_confirms() {
+        // api.github.com says getsops/sops is mozilla/sops, transferred.
+        let confirmed = verify_sops_rename(&|owner, repo, other| {
+            (owner, repo, other) == ("mozilla", "sops", "getsops/sops")
+        });
+        assert!(confirmed.unwrap());
+    }
+
+    fn verify_sops_v3_9_0_as(tag: &str) -> AttestationResult<bool> {
+        let _settings = SettingsGuard::new(None);
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(verify_slsa_provenance_artifacts(
+                sops_provenance(),
+                &[sops_artifact()],
+                1,
+                SlsaSignerIdentity {
+                    source_repository: Some("getsops/sops"),
+                    source_tag: Some(tag),
+                    ..SOPS_SIGNER_BEFORE_TRANSFER
+                },
+            ))
+    }
+
+    #[test]
+    fn test_slsa_rejects_provenance_of_another_release() {
+        // A host serving sops v3.9.0's genuine artifact and provenance as
+        // v3.10.0: the generator signs every release with one identity.
+        let err = verify_sops_v3_9_0_as("v3.10.0").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("built from refs/tags/v3.9.0, expected refs/tags/v3.10.0"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn test_slsa_accepts_provenance_of_its_release() {
+        assert!(verify_sops_v3_9_0_as("v3.9.0").unwrap());
+    }
+
+    #[test]
+    fn test_slsa_rename_cannot_be_confirmed_by_a_mirror() {
+        // A host standing in for api.github.com claims both names are one
+        // repository. It must not get to vouch for the provenance it may
+        // have served.
+        let mut mirror = mockito::Server::new();
+        let lookups = ["mozilla/sops", "getsops/sops"].map(|repo| {
+            mirror
+                .mock("GET", format!("/repos/{repo}").as_str())
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"id": 1, "full_name": "getsops/sops"}"#)
+                .expect(0)
+                .create()
+        });
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => mirror.url(),
+        }));
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let err = runtime
+            .block_on(verify_slsa_provenance_artifacts(
+                sops_provenance(),
+                &[sops_artifact()],
+                1,
+                SOPS_SIGNER_BEFORE_TRANSFER,
+            ))
+            .unwrap_err();
+        assert!(err.to_string().contains("built in getsops/sops"), "{err}");
+        for lookup in lookups {
+            lookup.assert();
+        }
+    }
+
+    #[test]
+    fn test_rerouted_api_cannot_confirm_a_rename() {
+        // The host that stands in for api.github.com also picked the
+        // attestations, so it must not get to say that the repository that
+        // made them is the requested one under an older name.
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => "https://github-proxy.invalid".to_string(),
+        }));
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let err = runtime
+            .block_on(crate::github::canonical_repo("erlang/rebar3"))
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("only GitHub can confirm a repository rename"),
+            "{err}"
+        );
+
+        let result = runtime.block_on(accept_renamed_repository(
+            "erlang",
+            "rebar3",
+            None,
+            Err(AttestationError::RepositoryMismatch {
+                expected: "erlang/rebar3".to_string(),
+                found: vec!["jdx/mise".to_string()],
+            }),
+        ));
+        assert!(
+            matches!(result, Err(AttestationError::RepositoryMismatch { .. })),
+            "{result:?}"
+        );
+    }
+
+    fn original_host_token() -> Option<String> {
+        Some("ghp_original_host".to_string())
+    }
+
     #[test]
     fn test_routed_api_url_applies_simple_url_replacement() {
         let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
             "https://api.github.com".to_string() => "https://github-proxy.example.com".to_string(),
         }));
 
-        let routed = routed_api_url(crate::github::API_URL, true).unwrap();
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
 
         assert_eq!(routed, "https://github-proxy.example.com/");
+        // The token was resolved for api.github.com; the proxy does not get it.
+        assert_eq!(token, None);
     }
 
     #[test]
@@ -1374,30 +1689,77 @@ mod tests {
             "regex:^https://api\\.github\\.com".to_string() => "https://github-proxy.example.com/api".to_string(),
         }));
 
-        let routed = routed_api_url(crate::github::API_URL, true).unwrap();
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
 
         assert_eq!(routed, "https://github-proxy.example.com/api/");
+        assert_eq!(token, None);
     }
 
     #[test]
     fn test_routed_api_url_keeps_original_url_without_replacement() {
         let _settings = SettingsGuard::new(None);
 
-        let routed = routed_api_url(crate::github::API_URL, true).unwrap();
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
 
         assert_eq!(routed, crate::github::API_URL);
+        assert_eq!(token, original_host_token());
+    }
+
+    #[test]
+    fn test_routed_api_url_keeps_token_on_same_host_replacement() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => "https://api.github.com/proxy".to_string(),
+        }));
+
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
+
+        assert_eq!(routed, "https://api.github.com/proxy/");
+        assert_eq!(token, original_host_token());
+    }
+
+    #[test]
+    fn test_routed_api_url_drops_inherited_userinfo_on_cross_host_replacement() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "regex:^https://(.*)ghe\\.example\\.com".to_string()
+                => "https://${1}github-proxy.example.com".to_string(),
+        }));
+
+        let (routed, token) = routed_api_url(
+            "https://user:password@ghe.example.com/api/v3",
+            original_host_token(),
+        )
+        .unwrap();
+
+        assert_eq!(routed, "https://github-proxy.example.com/api/v3");
+        assert_eq!(token, None);
     }
 
     #[test]
     fn test_routed_api_url_rejects_credential_downgrade() {
         let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
-            "https://api.github.com".to_string() => "http://github-proxy.example.com".to_string(),
+            "https://api.github.com".to_string() => "http://api.github.com".to_string(),
         }));
 
-        let err = routed_api_url(crate::github::API_URL, true).unwrap_err();
+        let err = routed_api_url(crate::github::API_URL, original_host_token()).unwrap_err();
 
         assert!(err.to_string().contains("refusing to send credentials"));
         assert!(!is_api_failure(&err));
+    }
+
+    #[test]
+    fn test_routed_api_url_drops_token_on_cross_host_downgrade() {
+        let _settings = SettingsGuard::new(Some(indexmap::indexmap! {
+            "https://api.github.com".to_string() => "http://github-proxy.example.com".to_string(),
+        }));
+
+        let (routed, token) =
+            routed_api_url(crate::github::API_URL, original_host_token()).unwrap();
+
+        assert_eq!(routed, "http://github-proxy.example.com/");
+        assert_eq!(token, None);
     }
 
     #[test]
@@ -1407,7 +1769,7 @@ mod tests {
                 => "http://user:password@github-proxy.example.com".to_string(),
         }));
 
-        let err = routed_api_url(crate::github::API_URL, false).unwrap_err();
+        let err = routed_api_url(crate::github::API_URL, None).unwrap_err();
 
         assert!(err.to_string().contains("refusing to send credentials"));
         assert!(!err.to_string().contains("password"));

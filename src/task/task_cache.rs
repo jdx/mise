@@ -35,17 +35,7 @@ const TASK_ACTION_VERSION: u8 = 1;
 static CLEANED_PARTIAL_CACHE_DIRS: LazyLock<Mutex<BTreeSet<PathBuf>>> =
     LazyLock::new(|| Mutex::new(BTreeSet::new()));
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct TaskCacheConfig {
-    pub enabled: bool,
-    /// Report project files read or written outside the declared cache contract.
-    pub audit: bool,
-    /// Ambient environment variables whose resolved values affect the cache key.
-    pub env: Vec<String>,
-    /// Commands whose stdout and stderr affect the cache key.
-    pub command_inputs: Vec<String>,
-}
+pub use mise_config::task::TaskCacheConfig;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, usage_rs::ValueEnum)]
 pub enum TaskCacheMode {
@@ -641,6 +631,8 @@ impl TaskArtifactCache {
                 ensure_no_symlink_ancestors(staging.path(), rel)?;
                 ensure_no_symlink_ancestors(&self.root, rel)?;
             }
+            let output_matcher = build_output_matcher(&self.root, &task.outputs.patterns())?;
+            ensure_declared_outputs(task, staging.path(), &manifest.roots, &output_matcher)?;
 
             let mut remove = resolve_output_roots(task, &self.root, false)?;
             remove.extend(manifest.roots.iter().cloned());
@@ -648,7 +640,6 @@ impl TaskArtifactCache {
             for rel in &remove {
                 ensure_no_symlink_ancestors(&self.root, rel)?;
             }
-            let output_matcher = build_output_matcher(&self.root, &task.outputs.patterns())?;
             install_transactionally(
                 &self.root,
                 staging.path(),
@@ -1378,6 +1369,50 @@ fn ensure_no_symlink_ancestors(root: &Path, rel: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Reject a staged entry that would install anything the task does not declare
+/// as an output. An entry's roots and contents come from the cache, which for a
+/// remote cache is whoever serves or publishes it, so they are held to the same
+/// selection `store` applies when it writes an entry: otherwise an entry could
+/// create files such as `mise.local.toml` or a git hook next to the outputs.
+fn ensure_declared_outputs(
+    task: &Task,
+    staging: &Path,
+    roots: &[PathBuf],
+    matcher: &Override,
+) -> Result<()> {
+    let declared = resolve_output_roots(task, staging, false)?;
+    for root in roots {
+        if !declared.contains(root) {
+            bail!(
+                "task cache entry contains undeclared output {}",
+                root.display()
+            );
+        }
+        let staged_root = staging.join(root);
+        if fs::symlink_metadata(&staged_root)?.file_type().is_symlink() {
+            continue;
+        }
+        for entry in WalkDir::new(&staged_root).follow_links(false) {
+            let entry = entry?;
+            let rel = entry.path().strip_prefix(staging)?;
+            let is_dir = entry.file_type().is_dir();
+            if is_output(matcher, &matcher.path().join(rel), is_dir) {
+                continue;
+            }
+            // `store` archives only selected entries, so an excluded directory is
+            // staged only as the parent of one; its contents are checked in turn.
+            if is_dir && fs::read_dir(entry.path())?.next().is_some() {
+                continue;
+            }
+            bail!(
+                "task cache entry contains undeclared output {}",
+                rel.display()
+            );
+        }
+    }
+    Ok(())
+}
+
 fn install_transactionally(
     root: &Path,
     staging: &Path,
@@ -1476,6 +1511,10 @@ fn copy_excluded_outputs(
             }
             let to = staging.join(rel);
             ensure_no_symlink_ancestors(staging, rel)?;
+            // The staged node comes from the cache entry; never write through its symlinks.
+            if fs::symlink_metadata(&to).is_ok_and(|staged| staged.file_type().is_symlink()) {
+                file::remove_all(&to)?;
+            }
             if metadata.is_dir() {
                 file::create_dir_all(&to)?;
                 directories.push((
@@ -2085,6 +2124,80 @@ mod tests {
             fs::read_to_string(root.path().join("dist/private/token")).unwrap(),
             "local token"
         );
+    }
+
+    #[test]
+    fn staged_artifacts_are_limited_to_declared_outputs() {
+        let root = tempfile::tempdir().unwrap();
+        let staging = tempfile::tempdir_in(root.path()).unwrap();
+        fs::create_dir_all(staging.path().join("dist/private")).unwrap();
+        fs::create_dir(staging.path().join("nested")).unwrap();
+        fs::write(staging.path().join("dist/result.txt"), "cached").unwrap();
+        fs::write(staging.path().join("dist/private/keep"), "cached").unwrap();
+        fs::write(staging.path().join("mise.local.toml"), "planted").unwrap();
+        fs::write(staging.path().join("nested/dist"), "planted").unwrap();
+        let check = |outputs: &[&str], roots: &[&str]| {
+            let outputs = outputs.iter().map(|o| o.to_string()).collect::<Vec<_>>();
+            let matcher = build_output_matcher(root.path(), &outputs).unwrap();
+            let task = Task {
+                outputs: crate::task::task_sources::TaskOutputs::Files(outputs),
+                ..Default::default()
+            };
+            let roots = roots.iter().map(PathBuf::from).collect::<Vec<_>>();
+            ensure_declared_outputs(&task, staging.path(), &roots, &matcher)
+        };
+
+        assert!(check(&["dist"], &["dist"]).is_ok());
+        assert!(check(&["dist/**/*.txt"], &["dist/result.txt"]).is_ok());
+        assert!(check(&["dist", "!dist/private", "dist/private/keep"], &["dist"]).is_ok());
+        assert!(check(&["dist"], &["dist", "mise.local.toml"]).is_err());
+        assert!(check(&["dist"], &["nested/dist"]).is_err());
+        assert!(check(&[], &["mise.local.toml"]).is_err());
+        assert!(check(&["dist", "!dist/private/**"], &["dist"]).is_err());
+
+        // An excluded directory may only be the parent of selected entries.
+        fs::remove_file(staging.path().join("dist/private/keep")).unwrap();
+        assert!(check(&["dist"], &["dist"]).is_ok());
+        assert!(check(&["dist", "!dist/private"], &["dist"]).is_err());
+        fs::create_dir(staging.path().join("dist/private/nested")).unwrap();
+        assert!(check(&["dist", "!dist/private"], &["dist"]).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_does_not_write_excluded_outputs_through_staged_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let staging = tempfile::tempdir_in(root.path()).unwrap();
+        fs::create_dir(root.path().join("dist")).unwrap();
+        fs::write(root.path().join("dist/local.cfg"), "local").unwrap();
+        fs::create_dir(staging.path().join("dist")).unwrap();
+        symlink(
+            outside.path().join("target"),
+            staging.path().join("dist/local.cfg"),
+        )
+        .unwrap();
+        let matcher = build_output_matcher(
+            root.path(),
+            &["dist".to_string(), "!dist/local.cfg".to_string()],
+        )
+        .unwrap();
+
+        install_transactionally(
+            root.path(),
+            staging.path(),
+            &[PathBuf::from("dist")],
+            &[PathBuf::from("dist")],
+            Some(&matcher),
+        )
+        .unwrap();
+
+        assert!(!outside.path().join("target").exists());
+        let restored = root.path().join("dist/local.cfg");
+        assert!(fs::symlink_metadata(&restored).unwrap().is_file());
+        assert_eq!(fs::read_to_string(restored).unwrap(), "local");
     }
 
     #[test]

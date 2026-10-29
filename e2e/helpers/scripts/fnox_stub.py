@@ -3,7 +3,9 @@
 
 Knobs: FNOX_STUB_LOG (jsonl call log), FNOX_STUB_LEGACY=1 (no env command),
 FNOX_STUB_SCHEMA=<n>, FNOX_STUB_FAIL=<key> (resolution error),
-FNOX_STUB_MODE=garbage|extra|nul|ansi.
+FNOX_STUB_MODE=garbage|extra|nul|ansi, FNOX_STUB_SOURCES=1 (describe names each
+key's file, and adds keys from the user's own config: PERSONAL_TOKEN from the
+global config and HOME_TOKEN from $HOME/fnox.toml).
 '''
 import json
 import os
@@ -58,6 +60,14 @@ def main(argv):
         print('error: unrecognized subcommand env', file=sys.stderr)
         return 2
     rest = argv[i + 1:]
+    sources = bool(os.environ.get('FNOX_STUB_SOURCES'))
+    if sources:
+        home = os.environ['HOME']
+        SECRETS['PERSONAL_TOKEN'] = {'env': 'exec', 'value': 'personal-s3cr3t-0011',
+                                     'source': (os.path.join(home, '.config/fnox/config.toml'), True)}
+        SECRETS['HOME_TOKEN'] = {'env': 'exec', 'value': 'home-s3cr3t-0012',
+                                 'source': (os.path.join(home, 'fnox.toml'), False)}
+    project = (os.path.join(os.getcwd(), 'fnox.toml'), False)
     schema = int(os.environ.get('FNOX_STUB_SCHEMA', '1'))
     mode = os.environ.get('FNOX_STUB_MODE', '')
     if mode == 'garbage':
@@ -70,9 +80,15 @@ def main(argv):
                     'injectable': {'exec': injectable(s['env']), 'shell': s['env'] is True}}
             if 'description' in s:
                 info['description'] = s['description']
+            if sources:
+                path, is_global = s.get('source', project)
+                info['source'] = {'path': path, 'global': is_global}
             keys.append(info)
         for k, (lease, _) in LEASES.items():
-            keys.append({'key': k, 'kind': 'lease', 'lease': lease, 'injectable': {'exec': True, 'shell': False}})
+            info = {'key': k, 'kind': 'lease', 'lease': lease, 'injectable': {'exec': True, 'shell': False}}
+            if sources:
+                info['source'] = {'path': project[0], 'global': False}
+            keys.append(info)
         version = '1.\x1b[31m38.0' if mode == 'ansi' else '1.38.0'
         if mode == 'ansi':
             profile = ['dev\x1b]0;pwned\x07']

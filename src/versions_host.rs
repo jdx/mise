@@ -245,11 +245,29 @@ fn track_install_url(tool: &str, full: &str, version: &str, os: &str, arch: &str
         urlencoding::encode(arch),
     )
 }
-/// Fetch a gzipped python-build-standalone index (`python-precompiled-<arch>-<os>.gz`).
-pub(crate) async fn python_precompiled(file: &str) -> eyre::Result<impl AsRef<[u8]>> {
-    HTTP_FETCH
+/// Fetch and unpack a gzipped python-build-standalone index
+/// (`python-precompiled-<arch>-<os>.gz`).
+pub(crate) async fn python_precompiled(file: &str) -> eyre::Result<String> {
+    let gz = HTTP_FETCH
         .get_bytes_with_headers(python_precompiled_url(file), VERSIONS_HOST_HEADERS.clone())
-        .await
+        .await?;
+    gunzip_text(gz.as_ref(), http::MAX_BODY_BYTES)
+}
+
+/// Unpacks gzipped text held in memory, failing once it passes `limit` bytes:
+/// a few kilobytes of gzip can unpack to gigabytes.
+fn gunzip_text(gz: &[u8], limit: usize) -> eyre::Result<String> {
+    use std::io::Read;
+
+    let mut raw = String::new();
+    flate2::read::GzDecoder::new(gz)
+        .take(limit as u64 + 1)
+        .read_to_string(&mut raw)?;
+    eyre::ensure!(
+        raw.len() <= limit,
+        "unpacked index is larger than {limit} bytes"
+    );
+    Ok(raw)
 }
 fn python_precompiled_url(file: &str) -> String {
     format!("https://mise-versions.jdx.dev/data/{file}")
@@ -331,6 +349,18 @@ mod tests {
             ),
             "https://mise-versions.jdx.dev/t?tool=foo&version=1.0.0&os=linux&arch=x64"
         );
+    }
+    #[test]
+    fn test_gunzip_text_stops_at_its_limit() {
+        use std::io::Write;
+
+        let gzip = |text: &[u8]| {
+            let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            gz.write_all(text).unwrap();
+            gz.finish().unwrap()
+        };
+        assert_eq!(gunzip_text(&gzip(b"3.12.0"), 6).unwrap(), "3.12.0");
+        assert!(gunzip_text(&gzip(b"3.12.0\n"), 6).is_err());
     }
     #[test]
     fn test_python_precompiled_url_uses_static_data_path() {

@@ -82,6 +82,12 @@ fn main() -> ExitCode {
     if let Some(code) = backend::aube_host::try_run_embedded_cli(&early_args) {
         return exit::status(code);
     }
+    // Before the hook-env fast path: anything that builds an `eyre::Report` there makes eyre
+    // install its default handler, after which this install fails (mise#14954).
+    if let Err(err) = install_error_hooks() {
+        eprintln!("Error: {err:?}");
+        return exit::status(1);
+    }
     if cli::Cli::exit_early_for_unchanged_hook_env(&early_args) {
         return ExitCode::SUCCESS;
     }
@@ -121,7 +127,11 @@ fn main() -> ExitCode {
                 (code, true)
             }
             None => {
-                eprintln!("Error: {err:?}");
+                // Printed outside the logger, so redacted here as the logger would.
+                eprintln!(
+                    "Error: {}",
+                    mise_util::redactions::redact_output(&format!("{err:?}"))
+                );
                 (1, false)
             }
         },
@@ -140,8 +150,7 @@ fn main() -> ExitCode {
     }
 }
 
-async fn main_() -> eyre::Result<()> {
-    let _downloads = http::InvocationDownloads;
+fn install_error_hooks() -> eyre::Result<()> {
     // Configure color-eyre based on color preferences
     let hook_builder = if *env::CLICOLOR == Some(false) {
         // Use blank theme (no colors) when colors are disabled
@@ -152,6 +161,11 @@ async fn main_() -> eyre::Result<()> {
     let (panic_hook, eyre_hook) = hook_builder.into_hooks();
     eyre_hook.install()?;
     install_panic_hook(panic_hook);
+    Ok(())
+}
+
+async fn main_() -> eyre::Result<()> {
+    let _downloads = http::InvocationDownloads;
     measure!("main", {
         let args = env::args_safe();
         match Cli::run(&args)
@@ -198,7 +212,10 @@ fn handle_err(err: Report) -> eyre::Result<()> {
     // Check for miette diagnostic errors and render them specially
     if let Some(diagnostic) = err.downcast_ref::<config::config_file::diagnostic::MiseDiagnostic>()
     {
-        safe_eprintln!("{}", diagnostic.render());
+        safe_eprintln!(
+            "{}",
+            mise_util::redactions::redact_output(diagnostic.render())
+        );
         return Err(request_exit(1));
     }
 

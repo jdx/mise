@@ -18,7 +18,7 @@ repository's config run code.
 | Automation has to read config that someone else wrote                    | [Safe mode](#safe-mode)                         | Off; set `MISE_SAFE=1`                                       |
 | A trusted config changes after you reviewed it                           | [Paranoid mode](/paranoid.html)                 | Off                                                          |
 | A download was tampered with or replaced                                 | [Download verification](#download-verification) | On, where the backend and the upstream project support it    |
-| A newly published release is malicious                                   | [Minimum release age](#minimum-release-age)     | 24 hours for [most backends](#which-backends-have-a-default) |
+| A newly published release is malicious                                   | [Minimum release age](#minimum-release-age)     | 24 hours for [every backend](#which-backends-have-a-default) |
 | A task or command reads, writes or reaches more than it needs            | [Sandboxing](/sandboxing.html)                  | Off; Linux and macOS only                                    |
 | A secret ends up in your shell, a log or a process that does not need it | [Secrets](#secrets)                             | Opt in                                                       |
 
@@ -45,7 +45,9 @@ A `mise.toml` loads without trust when it has no template syntax
 
 - `min_version`
 - `[tools]` entries whose values are version strings or arrays of version
-  strings, with no options in the tool name (`"tool[opt=value]"`)
+  strings, with no options in the tool name (`"tool[opt=value]"`) and no
+  [`path:`](/dev-tools/versions.html) version, which puts a directory on `PATH`
+  without an install
 - `[tasks]`, as long as no task lists `secrets`
 
 Anything else needs trust, including tool option tables, `[env]`, `[hooks]`,
@@ -54,15 +56,36 @@ config that is not trusted, so a repository cannot change mirrors, build
 commands or other settings before you trust it. Other files follow the same
 idea:
 
-- `.tool-versions` needs trust only when it contains template syntax or inline
-  tool options such as `node[postinstall=...] 24`.
-- Idiomatic version files such as `.nvmrc` never need trust.
+- `.tool-versions` needs trust only when it contains template syntax, inline
+  tool options such as `node[postinstall=...] 24`, or a `path:` version.
+- Idiomatic version files such as `.nvmrc` need trust only when they contain a
+  `path:` version.
+- A project's [`mise.lock`](/dev-tools/mise-lock.html) is read with its config.
+  Until that config is trusted, the lockfile only pins versions and checksums:
+  mise ignores an entry that locks a tool to a backend other than the one its
+  tool key or the registry selects, or that adds options, and downloads from
+  where the backend normally would instead of the lockfile's URLs and
+  dependency graphs.
 - Task files, including TOML files from
   [`task_config.includes`](/tasks/task-discovery.html), need trust only when they
   contain template syntax or list `secrets`.
+  `mise lock` still asks for trust before it resolves a task's tools that carry
+  options, as it would for a tool option table.
+- A [tool stub](/dev-tools/tool-stubs.html) needs no trust to run, since running
+  it is your approval. `mise lock` also reads the stubs that `mise.lock` lists
+  under `tool-stubs`, and for that the project's config needs trust. In safe
+  mode it does not apply the options of those stubs.
 - A [`.miserc.toml`](/configuration.html#miserc) never needs trust. It only
-  holds early settings that choose which config files load, and its templates
-  cannot call `exec()` or `read_file()`.
+  holds early settings that choose which config files load. Templates in a
+  project `.miserc.toml` see no environment variables and may use only `if`
+  statements and a short list of functions and filters, so they cannot leak your
+  environment or hang mise; see
+  [templates in .miserc.toml](/templates.html#miserc-template-support).
+
+Tasks that load without trust run nothing until you run one. Shell completion
+of their arguments leaves out the commands a
+[usage spec](/tasks/task-arguments.html) can name, `complete run=`,
+`complete delegate=`, `choices run=` and `mount`, until the project is trusted.
 
 [Paranoid mode](/paranoid.html) removes these exemptions apart from
 `.miserc.toml`: every other config file outside global and system config needs
@@ -97,10 +120,16 @@ these are `mise run`, task shorthand such as `mise build`, `mise install`,
 `mise exec`, `mise watch`, and `mise daemons start`, `restart` and `register`.
 They record trust for every non-global config they load, including configs in
 parent directories, as if you had run `mise trust`. A config on the ignore list
-stays ignored.
+stays ignored. Asking one of these commands for its own help, as in
+`mise run --help`, records nothing. Neither does a command mise starts on your
+behalf: the `mise x` a shim runs for a tool, or the `mise run` of a task hook.
 
 mise also trusts a config file when it writes one, for example with
-[`mise use`](/cli/use.html) or [`mise set`](/cli/set.html).
+[`mise use`](/cli/use.html) or [`mise set`](/cli/set.html). That trust covers
+the file's whole config root, so if another config file there is not trusted
+yet, such as a `mise.local.toml` or a `mise.staging.toml`, mise asks about it
+first, the way it does when that file loads. In safe mode a write records no
+trust.
 
 ### CI and `--yes`
 
@@ -125,8 +154,11 @@ mise trust --ignore            # never load this config
 ```
 
 In normal mode, trust belongs to a config root, usually the directory that holds
-`mise.toml`, so it covers every config file there, such as `mise.local.toml`.
-`mise trust --all` walks subdirectories, skipping hidden and gitignored ones and
+`mise.toml`, so it covers every config file there, such as `mise.local.toml` or
+`.mise/config.toml`. A `mise/`, `.mise/` or `.config/` directory that is a git
+checkout of its own, such as a repository cloned there, is a separate project:
+its config and tasks are not loaded as the directory's, and it is trusted on its
+own. `mise trust --all` walks subdirectories, skipping hidden and gitignored ones and
 `node_modules`, `vendor`, `target`, `dist` and `build`. Trust records are kept in
 the [state directory](/directories.html). See [`mise trust`](/cli/trust.html)
 for every flag.
@@ -147,7 +179,8 @@ Two settings decide trust by location:
   stops configs under these paths from loading. It overrides
   `trusted_config_paths` and `mise trust`. mise reads it before it looks for
   config files, so set it in a [`.miserc.toml`](/configuration.html#miserc) or
-  in `MISE_IGNORED_CONFIG_PATHS`.
+  in `MISE_IGNORED_CONFIG_PATHS`. A project's `.miserc.toml` cannot ignore
+  global or system config.
 
 ```toml
 # ~/.config/mise/config.toml
@@ -159,8 +192,11 @@ trusted_config_paths = ["~/src/work"]
 
 In normal mode, trusting a config with `monorepo_root = true` also trusts every
 config file below its directory, so review the subprojects' config as part of
-the repository. See [Monorepo tasks](/tasks/monorepo.html). In paranoid mode,
-trusting the root trusts only that file.
+the repository. They stay trusted only while the root is: after
+`mise trust --ignore` on the root, or once a `trusted_config_paths` entry that
+covered it is gone, they need trust of their own again. See
+[Monorepo tasks](/tasks/monorepo.html). In paranoid mode, trusting the root
+trusts only that file.
 
 ### Git worktrees
 
@@ -168,6 +204,12 @@ A config in a linked git worktree is trusted when the same path in the main
 checkout is trusted. `mise trust --untrust` in the worktree warns that the file
 stays trusted for that reason; use `mise trust --ignore` there to stop it
 loading. Paranoid mode does not share trust between worktrees.
+
+The repository has to list the worktree at its current location: a `.git` file
+that only names one of the repository's worktrees shares nothing. After moving a
+worktree by hand, run `git worktree repair`. A path in the main checkout that is
+a symlink, or sits below one, shares nothing either; trust the worktree's config
+directly instead.
 
 ## Safe mode
 
@@ -197,11 +239,17 @@ build scripts, such as a `cargo:` crate's `build.rs`.
 
 These fail with `<operation> is disabled in safe mode (MISE_SAFE=1)`:
 
-- `exec()` and `read_file()` in templates, in any config.
+- `exec()`, `read_file()`, `read_json()`, `read_yaml()`, `read_toml()` and
+  `get_env()` in templates, the `hash_file`, `file_size`, `last_modified` and
+  `canonicalize` filters, and the `dir`, `file` and `exists` tests, in any
+  config.
 - Running tasks.
-- The tool options `postinstall` and `install_env`.
+- The tool options `postinstall` and `install_env`, and the `spm:` backend's
+  `install_command`.
 - asdf plugin scripts, so tools from the `asdf:` backend cannot list or install
   versions.
+- Requests to S3, which are signed with your AWS credentials, so tools from the
+  `s3:` backend cannot list or install versions.
 - Installing plugins. vfox plugins that are already installed or built in still
   run, because the operator chose them.
 - mise secrets: `[secrets]` sources, `mise secrets ls`, tasks that list
@@ -217,12 +265,37 @@ These are skipped without an error, so resolution commands keep working:
   config, and bootstrap hooks, as with `--no-hooks`.
 - Project `[env]`, `[vars]` and environment directives such as `_.path` and
   `_.file`.
+- Project `path:` tool versions, and project `[tool_alias]` versions that point
+  to one.
+- The environment of the process that runs mise, in templates: `env` is empty
+  in templates outside global and system config files, so a repository cannot
+  put your credentials into a URL mise requests, into `mise.lock` or into
+  command output. A template that reads a variable without a `default` fails, as
+  it does when the variable is unset. This covers a project's `.miserc.toml`
+  too. The options of a tool from global or system config, including a global
+  `[tool_alias]`, keep `env` when a backend renders them later.
 - `_.source` in every config, including global config.
 - Project `[shell_alias]`.
+- The commands in a project task's usage spec that shell completion would run.
 - Project `[wrappers]` and the `rust` tool's `mr_boxington` option.
+- Your credentials, for hosts project config chooses: a project `api_url` gets
+  no GitHub, GitLab or Forgejo token (unless global config names the same host),
+  and a tool that project config declares gets no `~/.netrc` credentials for
+  the hosts its `url`, `checksum_url`, `version_list_url`, `version_date_url`
+  or `api_url` names. Tools from global and system config keep theirs. A
+  project that points at a private forge or file server therefore cannot list
+  or download versions there.
+- A project `[tool_alias]` for a tool that global config declares, so a
+  repository cannot point your tool at another backend, options or versions.
+- Project [lazy tools](/dev-tools/shims.html#lazy-tools): mise writes no shims
+  for their commands and does not install them on first use.
 - Project `[settings]`, so a repository cannot turn off verification or redirect
   a backend.
 - Remote `include` entries in project config, which mise does not fetch.
+- Remote task files (`file = "https://…"` or `git::…`) in project config. Their
+  tasks are listed from their TOML alone.
+- Project `[deps]`, so `mise deps` and `mise exec` do not run a repository's
+  dependency providers. Providers in global and system config still run.
 - Project daemon declarations. Daemons also do not start or stop when you change
   directories.
 - Project `[bootstrap]`, `[dotfiles]` and `[dotfile_groups]`, and the
@@ -242,11 +315,14 @@ Version resolution keeps working for backends that query HTTP APIs, such as core
 tools, `aqua:`, `github:`, `gitlab:`, `http:`, `cargo:`, `pypi:`, `gem:`,
 `dotnet:` and `npm:`. The `go:` backend runs `go list` with
 `GOTOOLCHAIN=local`, so a project's `go.mod` cannot make Go download another
-toolchain. Listing installed tools and refreshing `mise.lock` work as usual.
+toolchain. Listing installed tools and refreshing `mise.lock` work as usual,
+except that a project's `mise.lock` is not written through a symlink that leaves
+its directory.
 
 Safe mode loads untrusted config without a prompt or an error, in paranoid mode
-too. It does not mark the config trusted for later runs without safe mode. Syntax
-errors and refused operations still fail.
+too. It does not mark the config trusted for later runs without safe mode, not
+even when a command such as `mise use` or `mise set` edits it. Syntax errors and
+refused operations still fail.
 
 Safe mode limits what project config can do. It is not an operating-system
 sandbox for mise, its network requests or the plugins the operator installed.
@@ -274,7 +350,7 @@ mise tool jq
 | `aqua:`                     | Checksums, Cosign and Minisign signatures, SLSA provenance and GitHub artifact attestations, as the aqua registry declares them for the tool | [`aqua.cosign`](/configuration/settings.html#aqua.cosign), [`aqua.minisign`](/configuration/settings.html#aqua.minisign), [`aqua.slsa`](/configuration/settings.html#aqua.slsa), [`aqua.github_attestations`](/configuration/settings.html#aqua.github_attestations)                                                                                            |
 | `github:`                   | GitHub artifact attestations when a github.com release publishes them; SLSA provenance when the tool names its signer                        | [`github.github_attestations`](/configuration/settings.html#github.github_attestations), [`github.slsa`](/configuration/settings.html#github.slsa), and the [`github_attestations`](/dev-tools/backends/github.html#github-attestations) and [`slsa_signer_identity`](/dev-tools/backends/github.html#slsa-signer-identity-and-slsa-signer-issuer) tool options |
 | `packslip:`                 | A signed release manifest, artifact digests and a pinned signer; see [verification and policy](/dev-tools/packslip-verification.html)        | [Tool options](/dev-tools/backends/packslip.html#tool-options)                                                                                                                                                                                                                                                                                                  |
-| Node.js                     | Checksums from `SHASUMS256.txt`, and its OpenPGP signature when the release publishes one                                                    | [`node.verify`](/configuration/settings.html#node.verify), [`node.gpg_verify`](/configuration/settings.html#node.gpg_verify)                                                                                                                                                                                                                                    |
+| Node.js                     | Checksums from `SHASUMS256.txt` and its OpenPGP signature, which must be present except on unofficial-builds                                 | [`node.verify`](/configuration/settings.html#node.verify), [`node.gpg_verify`](/configuration/settings.html#node.gpg_verify)                                                                                                                                                                                                                                    |
 | Swift on Linux              | OpenPGP signatures                                                                                                                           | [`swift.gpg_verify`](/configuration/settings.html#swift.gpg_verify)                                                                                                                                                                                                                                                                                             |
 | Zig                         | Minisign signatures, always                                                                                                                  | None                                                                                                                                                                                                                                                                                                                                                            |
 | Precompiled Ruby and Python | GitHub artifact attestations                                                                                                                 | [`ruby.github_attestations`](/configuration/settings.html#ruby.github_attestations), [`python.github_attestations`](/configuration/settings.html#python.github_attestations)                                                                                                                                                                                    |
@@ -322,11 +398,9 @@ accepts relative durations (`7d`, `6mo`, `1y`) and dates (`2024-06-01`,
 
 ### Which backends have a default
 
-Without a configured value, mise applies the 24-hour default to `aqua:`,
-`cargo:`, core tools, `forgejo:`, `gem:`, `github:`, `gitlab:`, `go:`, `npm:`,
-`packslip:`, `pypi:`, `spm:` and `ubi:` tools. Other backends, such as `http:`,
-`s3:`, `conda:`, `dotnet:`, `asdf:` and `vfox:`, apply a cutoff only when you
-set one.
+Without a configured value, mise applies the 24-hour default to every backend.
+Use [`minimum_release_age_excludes`](/configuration/settings.html#minimum_release_age_excludes)
+to leave a tool or backend out.
 
 A backend can filter only versions it knows a release date for:
 
@@ -335,7 +409,9 @@ A backend can filter only versions it knows a release date for:
 | Filter the tool's own versions                   | Backends that report release dates, such as `aqua:`, `cargo:`, `github:`, `gitlab:`, `go:`, `npm:`, `pypi:` and most core tools |
 | Filter dependencies resolved during installation | `npm:` and `pypi:` (`pipx:` is an alias)                                                                                        |
 
-Versions without a release date are not filtered. Other backends can hold back
+Versions without a release date are not filtered. When mise installs one it
+warns that the cutoff could not be checked, so you know that version was not held
+back; switch to a backend that reports dates, or exclude the tool to silence it. Other backends can hold back
 the tool's own version, but not the dependencies its installer or compiler
 fetches. See the [npm](/dev-tools/backends/npm.html) and
 [PyPI](/dev-tools/backends/pypi.html) backend pages for how they pass the cutoff
@@ -379,6 +455,11 @@ minimum_release_age = "1d" # security scanner updates are time-sensitive
 The `--minimum-release-age` flag on commands such as `mise install`, `mise use`,
 `mise upgrade` and `mise lock` overrides both. The order is: the flag, then the
 tool option, then the setting or the built-in default.
+
+To take one newer release before it passes the cutoff, run the command with
+`0s` for just that tool, for example `mise upgrade --minimum-release-age 0s gh`.
+The flag applies to that command only. A version you install this way is not
+downgraded by a later `mise upgrade` that resolves to an older release.
 
 To exempt tools from the setting and the default, list them in
 [`minimum_release_age_excludes`](/configuration/settings.html#minimum_release_age_excludes):

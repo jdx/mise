@@ -98,6 +98,14 @@ enter = { task = "setup" }
 mise runs the task with `mise run` in a subprocess, so dependencies, the task's
 environment and file tasks work as usual. Task hooks work with every event.
 
+Unlike a `mise run` you type, this one does not
+[trust](/security.html#implicit-trust) the config it loads: an untrusted config,
+or an untrusted task the hook's task would run or depend on, makes the hook fail
+with a warning. A task hook in the global config runs in the active project only
+once you have trusted that project's config and task directories, so an
+untrusted project cannot replace the task with one of the same name. Until then
+it runs in the global config root.
+
 As a `preinstall` hook, a task runs without installing its missing tools first,
 because the install it prepares has not happened yet. The commands it needs must
 already be available from the system or an earlier installation.
@@ -123,6 +131,13 @@ cd = "echo 'I changed directories'"
 - `cd` runs on every directory change that ends inside the project, including
   the one that enters it.
 
+A project's spawned `enter` and `leave` hooks run with the project root as the
+working directory, even when the shell enters the project through a
+subdirectory or leaves it for another directory, so `enter = "./bin/setup"`
+always runs the project's `bin/setup`. `cd` hooks run in the directory the
+shell changed to. `MISE_ORIGINAL_CWD` holds the shell's directory in every
+hook.
+
 The project is the root of the config file that defines the hook: the
 directory that holds `mise.toml`, or the parent of `.config/mise/` or `.mise/`.
 When one directory change triggers several of these hooks, `leave` runs first,
@@ -131,7 +146,8 @@ the first time without a directory change, for example after you create or
 trust `mise.toml` in the current directory.
 
 Hooks in the global config (`~/.config/mise/config.toml`) have no project, so
-global `enter`, `leave` and `cd` hooks run on every directory change.
+global `enter`, `leave` and `cd` hooks run on every directory change, in the
+directory the shell changed to.
 
 ## Run in the current shell {#shell-hooks}
 
@@ -146,12 +162,14 @@ different thing in each form:
 
 With `script`, `shell` names a shell, such as `bash`, `zsh` or `fish`. mise adds
 the script to the code the activated shell evaluates at the prompt, and skips
-the hook when the active shell is a different one:
+the hook when the active shell is a different one. The script runs in the
+shell's current directory, which may be a subdirectory of the project, so refer
+to project files through `MISE_PROJECT_ROOT`:
 
 ```toml [mise.toml]
 [hooks.enter]
 shell = "bash"
-script = "source completions.sh"
+script = 'source "$MISE_PROJECT_ROOT/completions.sh"'
 ```
 
 `script` takes a string or an array of lines. `scripts` takes only the array
@@ -161,7 +179,7 @@ form:
 [hooks.enter]
 shell = "bash"
 script = [
-  "source completions.sh",
+  'source "$MISE_PROJECT_ROOT/completions.sh"',
   "export PROJECT_READY=1",
 ]
 
@@ -221,7 +239,8 @@ run = "cargo fmt"
 - Patterns are globs relative to the project root. `*` does not match `/`; use
   `**` to cross directories.
 - `run` uses your default inline shell. Add `shell = "bash -c"` to choose
-  another one; `shell` applies only to `run`.
+  another one; `shell` applies only to `run`. The command runs with the project
+  root as the working directory, even when the shell is in a subdirectory.
 - `task = "sync-deps"` runs a mise task instead. Set either `run` or `task`;
   when both are set, mise warns and runs the task.
 - mise reads `[[watch_files]]` from project config only. Entries in the global
@@ -247,8 +266,10 @@ run = '[ -n "$MISE_WATCH_FILES_GIT_REWRITTEN" ] || { IFS=:; hk fix $MISE_WATCH_F
 The variable is unset when any changed file is newer than the last HEAD move,
 so a real edit made alongside a rebase still runs the command. It is also unset
 when the last HEAD move was a commit, since a commit does not rewrite the files
-you edited. `git stash pop` and `git stash apply` do not move HEAD, so they are
-not detected.
+you edited. Moves that leave HEAD on the same commit, as `git checkout -b`,
+`git reset` and `git branch -m` make, are ignored. `git stash pop` and
+`git stash apply` do not move HEAD, and `git reset --hard` without a commit
+leaves it in place, so they are not detected.
 
 ## Environment variables {#hook-execution}
 

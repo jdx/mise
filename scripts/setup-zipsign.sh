@@ -7,9 +7,8 @@ if [ -z "$ZIPSIGN" ]; then
 fi
 
 if ! command -v zipsign >/dev/null 2>&1; then
-	# --locked: every zip release zipsign 0.2.1 can resolve against has been
-	# yanked, so a fresh resolution fails; the published Cargo.lock still resolves.
-	cargo install zipsign --version 0.2.1 --locked
+	# --locked: build against the Cargo.lock zipsign published, not a fresh resolution
+	cargo install zipsign --version 0.2.2 --locked
 fi
 
 mkdir -p ~/.zipsign

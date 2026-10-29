@@ -174,7 +174,20 @@ locking for one tool; its version-only installs also need the index in
 `data-requires-python` metadata on the selected release's wheel links. Keep
 registry credentials in the installer's environment or credential provider: a
 URL containing credentials or a query string cannot be recorded in the
-lockfile.
+lockfile. When `uvx_args` or `pipx_args` do carry credentials in a URL, the
+lockfile records those options with the credentials removed.
+
+When the index authenticates through a keyring, write the URL with a username
+and no password, and set
+[`pypi.keyring_provider`](/dev-tools/backends/pypi.html#pypi.keyring_provider)
+to `subprocess` so mise's own version listing and locking read the password
+from `keyring get` as uv does:
+
+```toml
+[settings.pypi]
+keyring_provider = "subprocess"
+registry_url = "https://VssSessionToken@pkgs.dev.azure.com/org/project/_packaging/feed/pypi/simple/{}/"
+```
 
 ## Minimum release age
 

@@ -1,0 +1,20 @@
+bins = ["tuios"]
+description = "Terminal window manager with tiling panes, workspaces, persistent sessions and an inbox for coding agents"
+test = { cmd = "tuios --version", expected = "tuios version {{version}}" }
+version_order = "semver"
+
+[[backends]]
+full = "aqua:Gaurav-Gosain/tuios"
+
+[[backends]]
+full = "github:Gaurav-Gosain/tuios"
+
+[backends.options]
+# Each release also ships tuios-web, tuios-ghostty, sketch, tml and tplot
+# archives, so only `tuios_*` archives hold the tuios binary.
+matching = "tuios_"
+
+# There is no Windows arm64 build. Without this, autodetection picks the
+# FreeBSD arm64 archive.
+[backends.options.platforms.windows-arm64]
+asset_pattern = "tuios_*_Windows_x86_64.tar.gz"

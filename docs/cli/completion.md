@@ -20,7 +20,7 @@ so it also completes your project's task names and tool versions. See
 ## Arguments
 - **`[SHELL]`** — Shell type to generate completions for (required)
 
-  **Choices:** `bash`, `fish`, `powershell`, `zsh`, `pwsh`
+  **Choices:** `bash`, `fish`, `nu`, `powershell`, `zsh`, `nushell`, `pwsh`
 
 ## Flags
 - **`--install`** — Install the script where this shell looks for it, instead of printing it

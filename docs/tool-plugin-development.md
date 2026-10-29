@@ -201,15 +201,26 @@ message, except where a hook's section below says otherwise.
 Return a list of tables, newest first, ordered by the publisher's release
 policy:
 
-| Field      | Required | Value                                                              |
-| ---------- | -------- | ------------------------------------------------------------------ |
-| `version`  | yes      | The version string, unchanged apart from a documented prefix       |
-| `rolling`  | no       | `true` for a channel whose contents change, such as `nightly`      |
-| `checksum` | no       | For a rolling channel, the SHA-256 of the current platform's asset |
+| Field        | Required | Value                                                              |
+| ------------ | -------- | ------------------------------------------------------------------ |
+| `version`    | yes      | The version string, unchanged apart from a documented prefix       |
+| `rolling`    | no       | `true` for a channel whose contents change, such as `nightly`      |
+| `checksum`   | no       | For a rolling channel, the SHA-256 of the current platform's asset |
+| `created_at` | no       | When the version was released, as an RFC 3339 timestamp            |
 
 mise reverses the list into its own oldest-first order. `BackendListVersions` in
 a backend plugin returns oldest first instead. `Available` receives no tool
 options, so the version list cannot depend on them.
+
+#### Release dates {#release-dates}
+
+Return `created_at` when the publisher's index says when a version was
+released, such as `created_at = "2026-01-31T12:00:00Z"`. mise uses it for
+[`minimum_release_age`](/configuration/settings.html#minimum_release_age) and
+`--before`: a version with no date, or one mise cannot parse as RFC 3339, is
+treated as undated, and an undated version is never hidden by a cutoff. If the
+publisher exposes dates, return them, or the cooldown silently lets new releases
+through.
 
 #### Rolling releases {#rolling-releases}
 
@@ -256,7 +267,8 @@ mise downloads `url`, checks every checksum and attestation you return, and
 extracts the file into the install directory. It extracts `.tar.gz`, `.tgz`,
 `.tar.xz`, `.txz`, `.tar.bz2`, `.tbz2`, `.tbz` and `.zip` archives, and when an
 archive holds a single top-level directory, that directory's contents become
-the install directory. Any other file is moved into the install directory and
+the install directory. An archive with a symlink that leads out of the install
+directory is rejected. Any other file is moved into the install directory and
 marked executable. Without a `url`, mise downloads nothing and `PostInstall`
 does the install, as in a build from source.
 
@@ -321,7 +333,19 @@ return {
 | `github_owner`, `github_repo`, optional `github_signer_workflow`                                                                              | A GitHub artifact attestation. Users need `MISE_GITHUB_TOKEN` or `GITHUB_TOKEN` in the environment; without one the install fails.                    |
 | `cosign_sig_or_bundle_path`, `cosign_public_key_path`                                                                                         | A cosign signature made with a key.                                                                                                                   |
 | `cosign_sig_or_bundle_path`, `cosign_certificate_identity` or `cosign_certificate_identity_regexp`, optional `cosign_certificate_oidc_issuer` | A keyless cosign signature. The identity is required, because any GitHub Actions workflow can get a valid Fulcio certificate.                         |
-| `slsa_provenance_path`, `slsa_signer_identity`, `slsa_signer_issuer`, optional `slsa_min_level`                                               | SLSA provenance. `slsa_signer_identity` is the exact certificate subject URI, including the workflow ref. mise skips SLSA without both signer fields. |
+| `slsa_provenance_path`, `slsa_signer_identity`, `slsa_signer_issuer`, optional `slsa_min_level`, `slsa_source_repository`, `slsa_source_tag`  | SLSA provenance. `slsa_signer_identity` is the exact certificate subject URI, including the workflow ref. mise skips SLSA without both signer fields. |
+
+The workflow run that made SLSA provenance must belong to the repository that
+holds the `slsa_signer_identity` workflow. When the publisher signs with a
+reusable workflow from another repository, such as
+`slsa-framework/slsa-github-generator`, set `slsa_source_repository` to the
+publisher's `owner/repo`: that workflow has the same identity in every
+repository that calls it.
+
+Set `slsa_source_tag` to the git tag this version's release was built from,
+such as `v1.2.3`. mise then rejects provenance built from any other ref, so an
+older release's provenance cannot pass for this one. Without it, mise does not
+check the ref.
 
 ### EnvKeys {#envkeys-hook}
 
@@ -560,7 +584,7 @@ Each entry sets exactly one check:
 - `packages`: the package that provides the dependency, for each package
   manager that has one. Keys are any package manager mise knows, such as
   `brew`, `brew-cask`, `apt`, `dnf`, `zypper`, `pacman`, `aur`, `apk`, `nix`,
-  `flatpak`, `flatpak-user`, `mas`, `scoop`, `snap`, `winget`, or an installed package
+  `choco`, `flatpak`, `flatpak-user`, `mas`, `scoop`, `snap`, `winget`, or an installed package
   manager plugin's name. mise uses the first available manager that has an
   entry. For a list of names, `apt` installs the first one it offers, and the
   other managers use the first entry.

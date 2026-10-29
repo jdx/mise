@@ -293,7 +293,7 @@ Uninstall packages that no config declares
 \fBbootstrap packages status\fR
 Show the state of packages from `[bootstrap.packages]`
 .RS
-\fIAliases: \fRls
+\fIAliases: \fRls, list
 .RE
 .TP
 \fBbootstrap packages upgrade\fR
@@ -413,6 +413,9 @@ Manage config files
 \fIAliases: \fRcfg, toml
 .RE
 .TP
+\fBconfig explain\fR
+Describe each key in a mise TOML file
+.TP
 \fBconfig get\fR
 Print a value from one mise TOML file
 .TP
@@ -523,6 +526,9 @@ List checkpoints, newest first
 .RS
 \fIAliases: \fRlist
 .RE
+.TP
+\fBdotfiles history purge\fR
+Erase a path's saved versions from history
 .TP
 \fBdotfiles history show\fR
 Show a checkpoint: its trigger, changes, and operation journal
@@ -697,6 +703,9 @@ List tool versions available to install
 .RS
 \fIAliases: \fRlist\-all, list\-remote
 .RE
+.TP
+\fBlsp\fR
+Run the language server for mise config files over stdin/stdout
 .TP
 \fBmcp\fR
 Run the Model Context Protocol server over stdin/stdout
@@ -1167,7 +1176,7 @@ Show the version node's lts alias stands for
 .PP
 .RS 4
 mise tool\-alias get node lts
-24
+26
 .RE
 .PP
 Read back an alias you set
@@ -1212,7 +1221,7 @@ List node's version aliases
 .RS 4
 mise tool\-alias ls node
 tool  alias      version
-node  lts        24
+node  lts        26
 node  lts\-jod    22
 node  project    20
 .RE
@@ -1473,6 +1482,11 @@ The replaced versions are saved first, so `mise dot undo` restores them.
 \fB\-\-from\-dir\fR \fI<DIR>\fR
 Directory for the `\-\-from` checkout (default: `$MISE_DATA_DIR/bootstrap\-repo`)
 .TP
+\fB\-\-config\-dir\fR \fI<DIR>\fR
+Link the global config directory to this directory of the `\-\-from` checkout
+
+mise links its config directory, normally ~/.config/mise, to the directory, then bootstraps from it, so its `config.toml`, `config.<env>.toml`, `conf.d/`, and `miserc.toml` are the global config from this run on. The directory must exist in the checkout, and the path to it is relative to the checkout and must stay inside it; `.` is the checkout itself. mise's config directory, where the link goes, must be missing, empty, or already this link. See https://mise.jdx.dev/bootstrap/from\-repository.html#global\-config\-elsewhere.
+.TP
 \fB\-n, \-\-dry\-run\fR
 Show what would change without changing anything
 
@@ -1486,6 +1500,11 @@ Skip configured repositories with local changes instead of failing
 .TP
 \fB\-\-force\-dotfiles\fR
 Overwrite existing files that conflict with whole\-file dotfile entries
+.TP
+\fB\-\-prune\-dotfiles\fR
+Remove files that dotfile groups deployed but no active entry deploys now
+
+The same pruning as `mise dot apply \-\-prune`, run at the end of the dotfiles phase before its post hook: files of a group that is no longer selected or declared, and files a group stopped deploying because of a new `exclude` or a deleted source. Changed copies stay in place, and mise asks before removing anything unless `\-\-yes` is given or there is no terminal. With `\-\-dry\-run`, nothing is removed.
 .TP
 \fB\-\-only\fR \fI<PART>\fR
 Run only these parts
@@ -1559,6 +1578,12 @@ Do the same and also load the project's mise.work.toml
 .PP
 .RS 4
 mise \-E work bootstrap \-\-from git@github.com:example/workstation.git
+.RE
+.PP
+Clone a dotfiles repository and link ~/.config/mise to its .config/mise
+.PP
+.RS 4
+mise bootstrap \-\-from https://github.com/example/dotfiles.git \-\-from\-dir ~/.dotfiles \-\-config\-dir .config/mise
 .RE
 .PP
 Clone global config into ~/.config/mise, then apply it
@@ -2332,6 +2357,11 @@ Show what would be removed without removing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-\-force\fR
+Remove `brew\-cask` casks that mise installed even when it cannot prove they are unchanged, such as self\-updating apps or casks with install scripts
+
+mise removes the files it recorded installing that are still in place, but not what a cask's own install scripts created.
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -3495,6 +3525,63 @@ they use.
 .TP
 \fB\-h, \-\-help\fR
 Print help
+.SH "MISE CONFIG EXPLAIN"
+Describe each key in a mise TOML file
+
+Lists every key the file sets, with its line and what it does, from the same schema
+editors use to check a config. A key mise does not read is marked, with the known key it
+most likely meant, and so is a deprecated one. Reads the highest\-precedence loaded TOML
+file by default; select another with `\-\-file`, `\-\-global`, or `\-\-system`.
+.PP
+\fBUsage:\fR mise config explain [OPTIONS] [<KEY>]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-f, \-\-file, \-\-path\fR \fI<FILE>\fR
+Config file to read, or a directory whose config file to read
+
+Defaults to the highest\-precedence loaded TOML file other than the global override files.
+.TP
+\fB\-g, \-\-global\fR
+Read the global config file
+.TP
+\fB\-\-system\fR
+Read the system config file
+.TP
+\fB\-\-override\fR
+Read the global override file, `config.override.toml`
+.TP
+\fB\-J, \-\-json\fR
+Print the keys as JSON
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<KEY>\fR
+Dotted key path to describe, with the keys under it; omit for the whole file
+
+Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
+\fBExamples:\fR
+.PP
+Describe the keys of the project config
+.PP
+.RS 4
+mise config explain
+~/src/app/mise.toml
+   1  tools                  dev tools to use
+   2  tools.node             a version of the tool, or a table with its version and options
+   4  settings               mise settings
+   5  settings.experimantal  not a key mise reads; did you mean experimental?
+.RE
+.PP
+Describe only the keys under [tasks]
+.PP
+.RS 4
+mise config explain tasks
+.RE
 .SH "MISE CONFIG GET"
 Print a value from one mise TOML file
 
@@ -3510,13 +3597,16 @@ template\-expanded environment; use `mise env` for the resolved environment.
 \fB\-f, \-\-file, \-\-path\fR \fI<FILE>\fR
 Config file to read, or a directory whose config file to read
 
-For a directory, mise reads the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest\-precedence loaded TOML file.
+For a directory, mise reads the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest\-precedence loaded TOML file other than the global override files.
 .TP
 \fB\-g, \-\-global\fR
 Read the global config file
 .TP
 \fB\-\-system\fR
 Read the system config file
+.TP
+\fB\-\-override\fR
+Read the global override file, `config.override.toml`
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -3525,6 +3615,8 @@ Print help
 .TP
 \fB<KEY>\fR
 Dotted key path to print, such as `tools.python`; omit to print the whole file
+
+Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
 \fBExamples:\fR
 .PP
 Print the python request
@@ -3542,7 +3634,9 @@ mise config get
 .SH "MISE CONFIG LS"
 List config files currently in use, from lowest to highest precedence
 
-Later files override earlier ones.
+Later files override earlier ones. Global override files
+(`config.override.toml`) rank above all project config and are labeled
+`override`.
 .PP
 \fBUsage:\fR mise config ls [OPTIONS]
 .PP
@@ -3606,10 +3700,13 @@ or `false` as text, and `\-\-type integer` for a number.
 \fB\-f, \-\-file, \-\-path\fR \fI<FILE>\fR
 Config file to edit, or a directory whose config file to edit
 
-For a directory, mise edits the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest\-precedence loaded TOML file.
+For a directory, mise edits the TOML config file already there, such as `.mise.toml`, or `mise.toml` when there is none. Defaults to the highest\-precedence loaded TOML file other than the global override files.
 .TP
 \fB\-g, \-\-global\fR
 Edit the global config file
+.TP
+\fB\-\-override\fR
+Edit the global override file, `config.override.toml`
 .TP
 \fB\-\-system\fR
 Edit the system config file
@@ -3633,6 +3730,8 @@ Print help
 .TP
 \fB<KEY>\fR
 Dotted key path to set, such as `tools.python`
+
+Quote a key with a dot in its name as TOML does, inside shell quotes: `'tasks."build.sh"'`. Unquoted, `tasks.build.sh` still finds the task `build.sh` when there is no key `build` in the way.
 .TP
 \fB<VALUE>\fR
 The value to set the key to (optional if provided as KEY=VALUE)
@@ -4168,6 +4267,8 @@ Write to this config file or directory
 .TP
 \fB\-s, \-\-source\fR \fI<PATH>\fR
 Source path to use for a single target
+
+A relative path starts from the current directory. The entry records it relative to the config file's directory when it lies inside it, and as an absolute path otherwise.
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
@@ -4668,6 +4769,56 @@ List operations that did not finish
 .PP
 .RS 4
 mise dot history ls \-\-pending
+.RE
+.SH "MISE DOTFILES HISTORY PURGE"
+Erase a path's saved versions from history
+
+Rewrites the history without the path, for a file you tracked by mistake that holds a secret. `untrack`, `rollback`, and `undo` only add checkpoints; they leave the old versions readable.
+
+Checkpoints that changed only this path are removed. The others stay, with their descriptions, dates, and IDs, minus the path. Without `\-\-yes`, the command lists what would change and asks first.
+
+mise never rewrites history that is on the origin: if a saved version of the path was ever published, the command refuses. Rotate the secret, then see https://mise.jdx.dev/dotfiles/encryption.html#remove\-plaintext\-from\-history.
+
+This does not stop tracking the path. If the file is still tracked, the next save records its current contents again, so run `mise dot untrack` first (or encrypt it). Stop the watcher service while this runs.
+.PP
+\fBUsage:\fR mise dotfiles history purge [OPTIONS] <PATH> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show what would change without changing anything
+.TP
+\fB\-y, \-\-yes\fR
+Rewrite without prompting
+.TP
+\fB\-\-backup\fR
+Keep the replaced history in the repository under `refs/mise/purge\-backup/`
+
+The backup still holds the content you are erasing; delete it with `git update\-ref \-d` once you are sure.
+.TP
+\fB\-\-keep\-objects\fR
+Leave the replaced objects on disk instead of deleting them
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PATH>\fR
+Files or directories to erase from history
+\fBExamples:\fR
+.PP
+List the checkpoints that hold the file
+.PP
+.RS 4
+mise dot history purge ~/.aws/credentials \-\-dry\-run
+.RE
+.PP
+Erase every saved version of the file
+.PP
+.RS 4
+mise dot history purge ~/.aws/credentials \-\-yes
 .RE
 .SH "MISE DOTFILES HISTORY SHOW"
 Show a checkpoint: its trigger, changes, and operation journal
@@ -7106,8 +7257,9 @@ List installed and active tool versions
 
 Lists the tools mise knows about: versions that are installed, and versions
 requested by a config file (active) whether or not they are installed. Each row
-shows the tool, the version (marked `(missing)` when it is not installed), the
-config file that requests it, and the request as written.
+shows the tool, the version (marked `(missing)` when it is not installed, or
+`(lazy)` when it is a lazy tool that installs on first use), the config file
+that requests it, and the request as written.
 .PP
 \fBUsage:\fR mise ls [OPTIONS] [<INSTALLED_TOOL>] ...
 .PP
@@ -7146,7 +7298,19 @@ Cannot be combined with \-\-json; use \-\-backend to filter JSON output.
 Output in JSON format
 .TP
 \fB\-l, \-\-local\fR
-Only show versions the local config requests
+Deprecated alias for \-\-no\-global
+
+Removed in mise 2027.7.0.
+.TP
+\fB\-\-no\-global\fR
+Only show versions that non\-global config files request
+
+Includes config files in parent directories and skips the global config, system config, and `MISE_<TOOL>_VERSION` environment variables. See \-\-project for the nearest project's config alone.
+.TP
+\fB\-\-project\fR
+Only show versions the nearest project config requests
+
+The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool\-versions` and idiomatic version files. Configs in parent directories and global or system configs do not, nor do `MISE_<TOOL>_VERSION` environment variables. A version that a later file in that directory overrides is not listed, as with \-\-no\-global; `mise uninstall \-\-project` still removes it.
 .TP
 \fB\-m, \-\-missing\fR
 Only show requested versions that are not installed
@@ -7314,6 +7478,47 @@ Include release dates, as JSON
 .PP
 .RS 4
 mise ls\-remote github:cli/cli \-\-json
+.RE
+.SH "MISE LSP"
+Run the language server for mise config files over stdin/stdout
+
+Editors start this command and exchange Language Server Protocol messages with it.
+
+It serves `mise.toml` and the other config files mise loads (`.mise.toml`, `mise.<env>.toml`, `mise.local.toml`, `mise/config.toml`, and the files of a `conf.d`). It ignores every other file, including files that `[task_config] includes` lists, so it can be attached to the TOML language without touching `Cargo.toml` or `pyproject.toml`.
+
+It offers:
+\- diagnostics: TOML syntax errors, unknown keys with a suggestion, values of the wrong type, deprecated keys, task names no task defines (`unknown\-task`), and dependency cycles (`task\-cycle`)
+\- completion of keys, including inside inline tables, and of values that have a fixed set
+\- hover documentation for keys
+\- for tools: completion of tool names under `[tools]` from the registry, and hover with the tool's description and backends
+\- quick fixes that replace an unknown key or task name with the suggested one, and rewrite a deprecated key to its replacement when the schema names one
+\- formatting, as `mise fmt` does
+\- semantic tokens, which color task, tool and env var names, env directives, deprecated keys and the `{{ }}` and `{% %}` of templates
+\- for tasks: completion of task names in `depends`, `depends_post`, `wait_for` and `run = [{ task = "..." }]` (and of templates in `extends`), hover with the task's description and command, go to definition, find references, and rename together with every reference in the file
+
+Tasks come from the open file, the configs in the directories above it and the TOML files their `[task_config] includes` name.
+
+A client that runs another TOML server beside this one can switch features off with `initializationOptions`: `{"formatting": false, "hover": false, "completion": false, "definition": false, "references": false, "rename": false, "semanticTokens": false}`.
+
+The server only parses a config. It never renders templates or runs anything, so opening an untrusted file is safe.
+
+A mise that predates this command runs a task named `lsp` instead, so a client that needs to know whether the command exists can check that `mise help lsp` prints `Usage: mise lsp`.
+
+See https://mise.jdx.dev/ide\-integration.html for editor configuration.
+.PP
+\fBUsage:\fR mise lsp [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBExamples:\fR
+.PP
+Start the server; an editor's LSP configuration runs this command
+.PP
+.RS 4
+mise lsp
 .RE
 .SH "MISE MCP"
 Run the Model Context Protocol server over stdin/stdout
@@ -7768,6 +7973,11 @@ Only check tools defined in the global config
 Reports the requests in the global and system config (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool: what `mise upgrade \-\-global` would install.
 .TP
 \fB\-\-local\fR
+Deprecated alias for \-\-no\-global
+
+Removed in mise 2027.7.0.
+.TP
+\fB\-\-no\-global\fR
 Only check tools defined in project config files
 
 Skips tools defined in the global config (~/.config/mise/config.toml) and tools set through `MISE_<TOOL>_VERSION` environment variables.
@@ -7828,7 +8038,7 @@ mise outdated \-\-json
 Skip tools that only the global config requests
 .PP
 .RS 4
-mise outdated \-\-local
+mise outdated \-\-no\-global
 .RE
 .PP
 Check the global config's request for claude, even inside a project that sets its own
@@ -9058,6 +9268,11 @@ Write to mise.<ENV>.toml in the current directory, or to .mise.<ENV>.toml if tha
 \fB\-g, \-\-global\fR
 Set the environment variable in the global config file
 .TP
+\fB\-\-override\fR
+Set the environment variable in the global override file, `config.override.toml`
+
+The override file outranks all project config. With `\-\-env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration.html#override\-file
+.TP
 \fB\-\-age\-encrypt\fR
 [experimental] Encrypt the value with age before storing
 .TP
@@ -9238,6 +9453,11 @@ Write to the nearest project config instead of the global config
 
 The nearest project config is the lowest\-precedence TOML file in the nearest directory that has one, or ./mise.toml.
 .TP
+\fB\-\-override\fR
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config, so the setting wins over the same setting in a project's `mise.toml`.
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -9373,6 +9593,11 @@ Write to the nearest project config instead of the global config
 
 The nearest project config is the lowest\-precedence TOML file in the nearest directory that has one, or ./mise.toml.
 .TP
+\fB\-\-override\fR
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config, so the setting wins over the same setting in a project's `mise.toml`.
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -9413,6 +9638,11 @@ Write to the nearest project config instead of the global config
 
 The nearest project config is the lowest\-precedence TOML file in the nearest directory that has one, or ./mise.toml.
 .TP
+\fB\-\-override\fR
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config, so the setting wins over the same setting in a project's `mise.toml`.
+.TP
 \fB\-h, \-\-help\fR
 Print help
 \fBArguments:\fR
@@ -9433,10 +9663,11 @@ Set a tool version for the current shell session
 Installs the version if needed, then sets `MISE_<TOOL>_VERSION`, such as
 `MISE_NODE_VERSION`, to the resolved version in the current shell. That
 overrides config files until you close the shell or run
-`mise shell \-\-unset <TOOL>`. Requires `mise activate`: the shell function it
+`mise shell \-\-unset <TOOL>`, or `mise shell \-\-unset \-\-all` to remove every
+version set this way. Requires `mise activate`: the shell function it
 defines applies the variable that this command prints.
 .PP
-\fBUsage:\fR mise shell [OPTIONS] <TOOL@VERSION> ...
+\fBUsage:\fR mise shell [OPTIONS] [<TOOL@VERSION>] ...
 .PP
 \fBOptions:\fR
 .PP
@@ -9449,6 +9680,11 @@ Number of jobs to run in parallel (default: the `jobs` setting)
 .TP
 \fB\-u, \-\-unset\fR
 Remove a version set earlier with `mise shell`
+.TP
+\fB\-\-all\fR
+With `\-\-unset`, remove every `MISE_<TOOL>_VERSION` in this shell
+
+This includes any you exported yourself, not only those set by `mise shell`.
 .TP
 \fB\-\-raw\fR
 Connect the install commands' stdin, stdout, and stderr to the terminal
@@ -9476,6 +9712,12 @@ Go back to the version the config requests
 .PP
 .RS 4
 mise shell \-\-unset node
+.RE
+.PP
+Drop every version set with `mise shell` or `MISE_<TOOL>_VERSION`
+.PP
+.RS 4
+mise shell \-\-unset \-\-all
 .RE
 .SH "MISE SSH"
 Open an SSH session, optionally borrowing read\-only GitHub access
@@ -9936,12 +10178,17 @@ Only show global tasks
 Output in JSON format
 .TP
 \fB\-l, \-\-local\fR
+Deprecated alias for \-\-no\-global
+
+Removed in mise 2027.7.0.
+.TP
+\fB\-\-no\-global\fR
 Only show non\-global tasks
 .TP
 \fB\-x, \-\-extended\fR
 Show all columns
 .TP
-\fB\-\-all\fR
+\fB\-a, \-\-all\fR
 Include tasks from every project in the monorepo, not only the current directory's hierarchy
 .TP
 \fB\-\-complete\fR
@@ -10254,12 +10501,17 @@ Only show global tasks
 Output in JSON format
 .TP
 \fB\-l, \-\-local\fR
+Deprecated alias for \-\-no\-global
+
+Removed in mise 2027.7.0.
+.TP
+\fB\-\-no\-global\fR
 Only show non\-global tasks
 .TP
 \fB\-x, \-\-extended\fR
 Show all columns
 .TP
-\fB\-\-all\fR
+\fB\-a, \-\-all\fR
 Include tasks from every project in the monorepo, not only the current directory's hierarchy
 .TP
 \fB\-\-complete\fR
@@ -10718,6 +10970,11 @@ Commands that run project code (`mise run`, task shorthand such as
 `mise daemons start|restart|register`) trust their active config
 automatically.
 
+In paranoid mode, `mise trust` with no path also trusts the env files and
+scripts that config reads (`env._.file`, `env._.source` and the `env_file`
+setting), which have trust of their own. Give a file's path to trust only
+that file.
+
 Trusting a config file in a repository's main checkout also trusts the same
 path in its git worktrees. Paranoid mode (https://mise.jdx.dev/paranoid.html)
 turns off automatic and worktree trust and requires trust, tied to the
@@ -10754,7 +11011,7 @@ Print help
 The config file whose trust status to change
 \fBExamples:\fR
 .PP
-Trust the nearest untrusted config in this directory or a parent
+Trust the nearest untrusted config in this directory or a parent, and in paranoid mode the env files it reads
 .PP
 .RS 4
 mise trust
@@ -10778,6 +11035,10 @@ Removes installed versions but does not edit mise.toml. Use `mise unuse` to
 remove a tool from mise.toml and uninstall it. A tool name or version prefix,
 such as `node` or `node@22`, must match exactly one installed version unless
 you pass `\-\-all`.
+
+`\-\-project` removes the installed versions that the project's own config files
+request. Installs are shared by every project, so other projects that use the
+same versions have to install them again.
 .PP
 \fBUsage:\fR mise uninstall [OPTIONS] [<INSTALLED_TOOL@VERSION>] ...
 .PP
@@ -10786,6 +11047,11 @@ you pass `\-\-all`.
 .TP
 \fB\-a, \-\-all\fR
 Remove every installed version of the named tools, or of every tool when none is named
+.TP
+\fB\-\-project\fR
+Remove the installed versions the nearest project config requests
+
+The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool\-versions` and idiomatic version files. Configs in parent directories and global or system configs do not. Every version those files name is removed, including one that a later file overrides. Lists what it will remove and asks for confirmation unless `\-\-yes` or a dry run is given. Tools set to a `path:` or `system` version are never removed.
 .TP
 \fB\-n, \-\-dry\-run\fR
 Show what would change without changing anything
@@ -10821,6 +11087,12 @@ Uninstall every installed version of node
 .RS 4
 mise uninstall \-\-all node
 .RE
+.PP
+Preview the versions this project's config requests
+.PP
+.RS 4
+mise uninstall \-\-project \-\-dry\-run
+.RE
 .SH "MISE UNSET"
 Remove environment variables from mise.toml
 
@@ -10840,6 +11112,11 @@ Can be a file or a directory. For a directory, mise uses the config file in it, 
 .TP
 \fB\-g, \-\-global\fR
 Use the global config file
+.TP
+\fB\-\-override\fR
+Use the global override file, `config.override.toml`
+
+See https://mise.jdx.dev/configuration.html#override\-file
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -10897,9 +11174,11 @@ remove `node = "20"`, use `mise unuse node@20`, not the installed version it
 resolved to. Omit the version to remove every request for that tool from the
 selected file.
 
-Versions are pruned only when no remaining tracked config or tool stub needs
-them. Pass `\-\-no\-prune` to edit the config and keep the installations. To
-remove an installation without editing config, use `mise uninstall`.
+The installed versions the arguments name are pruned only when no remaining
+tracked config or tool stub needs them; mise says which file keeps one. A tool
+named without a version has all of its unused versions pruned. Pass
+`\-\-no\-prune` to edit the config and keep the installations. To remove an
+installation without editing config, use `mise uninstall`.
 .PP
 \fBUsage:\fR mise unuse [OPTIONS] <INSTALLED_TOOL@VERSION> ...
 .PP
@@ -10916,6 +11195,11 @@ Use the global config file (`~/.config/mise/config.toml`) instead of the local o
 .TP
 \fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Edit this config file, or the config file in this directory
+.TP
+\fB\-\-override\fR
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config. With `\-\-env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration.html#override\-file
 .TP
 \fB\-\-no\-prune\fR
 Do not also prune the installed version
@@ -10966,7 +11250,12 @@ Pass `\-\-prune` to remove it now or `\-\-no\-prune` to keep it.
 \fB\-b, \-\-bump\fR
 Upgrade past the configured range to the newest release, and update the config to match
 
-The config keeps its precision: `node = "20"` becomes `node = "22"`, and `node = "20.0.0"` becomes `node = "22.1.0"`. If you name a version on the command line (`node@latest`, `node@3`, or `node@prefix:3`), that request is written instead; `mise upgrade node@latest \-\-bump` writes `latest`. With the `pin` setting on, a version request such as `node@3` is written as the version it resolved to. Requests that do not come from a config file mise can write, such as `MISE_NODE_VERSION`, are upgraded but not written.
+The config keeps its precision: `node = "20"` becomes `node = "22"`, and `node = "20.0.0"` becomes `node = "22.1.0"`. If you name a version on the command line (`node@latest`, `node@3`, or `node@prefix:3`), that request is written instead; `mise upgrade node@latest \-\-bump` writes `latest`. With the `pin` setting on, a version request such as `node@3` is written as the version it resolved to, and a bare `mise upgrade \-\-bump` writes the resolved version for every request that is not exact, such as `latest` or `20`. Requests that do not come from a config file mise can write, such as `MISE_NODE_VERSION`, are upgraded but not written.
+.TP
+\fB\-\-pin\fR
+With \-\-bump, write the resolved version instead of keeping the request's precision
+
+`node = "latest"` and `node = "20"` become `node = "24.14.0"`. A named request such as `node@3` is written as the version it resolved to. Make this the default with the `pin` setting (`MISE_PIN=1`).
 .TP
 \fB\-i, \-\-interactive\fR
 Choose which tools to upgrade from a multiselect menu
@@ -11000,6 +11289,11 @@ Only upgrade tools defined in the global config
 Upgrades the requests in the global and system config (~/.config/mise/config.toml, /etc/mise/config.toml), even where a project config or a `MISE_<TOOL>_VERSION` environment variable sets its own version of the tool. It runs as if from outside any project, so project config, lockfiles, and `[env]` are neither read nor changed. Tools that update themselves, such as coding agents, run this instead of their own updater; see https://mise.jdx.dev/dev\-tools/self\-updating\-tools.html
 .TP
 \fB\-\-local\fR
+Deprecated alias for \-\-no\-global
+
+Removed in mise 2027.7.0.
+.TP
+\fB\-\-no\-global\fR
 Only upgrade tools defined in project config files
 
 Skips tools defined in the global config (~/.config/mise/config.toml) and tools set through `MISE_<TOOL>_VERSION` environment variables.
@@ -11133,6 +11427,11 @@ Write to this config file, or to the config file in this directory
 
 For a directory, mise picks the file by the usual write\-target rules.
 .TP
+\fB\-\-override\fR
+Write to the global override file, `config.override.toml`
+
+The override file outranks all project config. With `\-\-env`, writes `config.<ENV>.override.toml` instead. See https://mise.jdx.dev/configuration.html#override\-file
+.TP
 \fB\-\-dry\-run\-code\fR
 Like \-\-dry\-run, but exit with code 1 if there are changes to make
 
@@ -11179,7 +11478,9 @@ Values use inline tool\-option types; unquoted text is a string. Put these flags
 \fB<TOOL@VERSION>\fR
 Tool to add to the config file, such as node@24, cargo:ripgrep@latest, or npm:prettier@3
 
-Without a version, mise requests `latest`; with \-\-pin it writes the resolved version.
+Without a version, mise requests `latest` but reuses the newest installed version.
+Write `@latest` to install the newest release; in locked mode the lockfile still decides.
+With \-\-pin it writes the resolved version.
 Tool options can also be set inline:
 
     mise use "cargo:ripgrep[features=pcre2]"
@@ -11248,6 +11549,12 @@ See https://mise.jdx.dev/configuration/vars.html#prompt
 \fBOptions:\fR
 .PP
 .TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-json\-extended\fR
+Output in JSON format with sources
+.TP
 \fB\-\-no\-header\fR
 Do not print the table header
 .TP
@@ -11283,12 +11590,19 @@ List every var, with the file it comes from
 Lists the `[vars]` of every config file mise loads here, plus the answers
 saved on this machine (source: `$MISE_STATE_DIR/vars.toml`). Values hidden
 with `redact` show as `[redacted]`. A `required` var that is still unset only
-warns here.
+warns here. `\-\-json` prints an object of names and values, and
+`\-\-json\-extended` adds each var's source.
 .PP
 \fBUsage:\fR mise vars ls [OPTIONS]
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-json\-extended\fR
+Output in JSON format with sources
 .TP
 \fB\-\-no\-header\fR
 Do not print the table header

@@ -4,14 +4,52 @@ use super::*;
 fn select_tuf_config_default_uses_production_url() {
     // No override → canonical Sigstore public-good TUF URL (default behavior).
     assert_eq!(DEFAULT_TUF_URL, SigstoreInstance::PublicGood.tuf_url());
-    assert!(format!("{:?}", select_tuf_config(None)).contains(DEFAULT_TUF_URL));
+    assert!(format!("{:?}", select_tuf_config(None).unwrap()).contains(DEFAULT_TUF_URL));
 }
 
 #[test]
 fn select_tuf_config_override_uses_mirror_url() {
     // Override → the mirror URL, while still pinning the production root.
     let mirror = "https://tuf-mirror.example.com/".to_string();
-    assert!(format!("{:?}", select_tuf_config(Some(mirror.clone()))).contains(&mirror));
+    assert!(format!("{:?}", select_tuf_config(Some(mirror.clone())).unwrap()).contains(&mirror));
+}
+
+#[tokio::test]
+async fn select_tuf_config_sends_mirror_credentials_as_a_header() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buf = [0u8; 1024];
+        let n = stream.read(&mut buf).unwrap();
+        let _ = stream.write_all(b"HTTP/1.1 500 X\r\nContent-Length: 0\r\n\r\n");
+        String::from_utf8_lossy(&buf[..n]).into_owned()
+    });
+
+    // The TUF client names its cache directory after the URL it is given and
+    // repeats it in errors, so it must never see the userinfo.
+    let config = select_tuf_config(Some(format!("http://user:p%40ss@{addr}/tuf"))).unwrap();
+    let debug = format!("{config:?}");
+    assert!(debug.contains(&format!("\"http://{addr}/tuf\"")), "{debug}");
+    assert!(!debug.contains("p%40ss"), "{debug}");
+
+    let error = TrustedRoot::from_tuf(config.without_cache())
+        .await
+        .expect_err("a failing mirror must fail")
+        .to_string();
+    assert!(
+        error.contains(&format!("GET http://{addr}/tuf/")),
+        "{error}"
+    );
+    assert!(!error.contains("p%40ss"), "{error}");
+    let request = server.join().unwrap();
+    // base64("user:p@ss")
+    assert!(
+        request.contains("authorization: Basic dXNlcjpwQHNz\r\n"),
+        "{request}"
+    );
 }
 
 #[test]
@@ -85,6 +123,31 @@ async fn fixture_bundles_verify_against_their_artifact() {
         )
         .await
         .unwrap();
+    }
+}
+
+#[test]
+fn public_good_bundles_cannot_opt_out_of_the_transparency_log() {
+    let digest =
+        Sha256Hash::from_hex("b4058dece685259910d3aba5782445996eea79dbdb3cf952a6eb81aadf0373ff")
+            .unwrap();
+    let root = embedded_sigstore_root();
+    let mut bundle = fixture_bundle(include_str!(
+        "../../tests/fixtures/github_build_provenance_jdx_mise.json"
+    ));
+    verify_bundle(Artifact::from(&digest), &bundle, None, &root).unwrap();
+
+    // No signature covers the log entry, so whoever serves the bundle can
+    // strip the inclusion proof or drop the Rekor entry altogether. Neither
+    // may switch off the tlog check for a public-good certificate.
+    let mut stripped = bundle.clone();
+    stripped.verification_material.tlog_entries[0].inclusion_proof = None;
+    bundle.verification_material.tlog_entries.clear();
+    for tampered in [&stripped, &bundle] {
+        let err = verify_bundle(Artifact::from(&digest), tampered, None, &root)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("inclusion proof"), "{err}");
     }
 }
 

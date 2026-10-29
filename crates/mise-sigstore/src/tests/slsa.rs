@@ -3,6 +3,8 @@ use super::*;
 const GENUINE_SIGNER: SlsaSignerIdentity<'static> = SlsaSignerIdentity {
     identity: "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@refs/tags/v2.0.0",
     issuer: "https://token.actions.githubusercontent.com",
+    source_repository: Some("getsops/sops"),
+    source_tag: None,
 };
 
 fn slsa_statement(subjects: serde_json::Value) -> Vec<u8> {
@@ -118,9 +120,185 @@ fn intoto_envelope_requires_exact_signer_identity_and_issuer() {
     }
 }
 
+#[test]
+fn intoto_envelope_requires_the_tool_repository_for_a_reusable_workflow() {
+    // slsa-github-generator signs with the same identity and issuer for every
+    // repository that calls it, so only the certificate's source repository
+    // says whose release this provenance is for.
+    let root = embedded_sigstore_root();
+    let verify = |source_repository| {
+        verify_intoto_envelope(
+            GENUINE_INTOTO_ENVELOPE.trim(),
+            b"different artifact contents",
+            1,
+            SlsaSignerIdentity {
+                source_repository,
+                ..GENUINE_SIGNER
+            },
+            &root,
+        )
+        .unwrap_err()
+        .to_string()
+    };
+    for accepted in [
+        Some("getsops/sops"),
+        Some("GetSops/SOPS"),
+        Some("github.com/getsops/sops"),
+        Some("https://github.com/getsops/sops"),
+    ] {
+        // The signer passed; the artifact is the only mismatch left.
+        let err = verify(accepted);
+        assert!(
+            err.contains("not found in SLSA statement subjects"),
+            "{err}"
+        );
+    }
+    for rejected in [
+        None,
+        Some("example-org/example-tool"),
+        Some("getsops/sops2"),
+    ] {
+        let err = verify(rejected);
+        assert!(
+            err.contains("SLSA provenance was built in getsops/sops"),
+            "{err}"
+        );
+    }
+}
+
+#[test]
+fn intoto_envelope_rejects_provenance_built_from_another_tag() {
+    // The sops v3.9.0 provenance, offered for v3.9.1: same generator, same
+    // repository, but another release.
+    let err = verify_intoto_envelope(
+        GENUINE_INTOTO_ENVELOPE.trim(),
+        b"different artifact contents",
+        1,
+        SlsaSignerIdentity {
+            source_tag: Some("v3.9.1"),
+            ..GENUINE_SIGNER
+        },
+        &embedded_sigstore_root(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("built from refs/tags/v3.9.0, expected refs/tags/v3.9.1"),
+        "{err}"
+    );
+}
+
+#[test]
+fn intoto_envelope_accepts_provenance_built_from_the_tag() {
+    let err = verify_intoto_envelope(
+        GENUINE_INTOTO_ENVELOPE.trim(),
+        b"different artifact contents",
+        1,
+        SlsaSignerIdentity {
+            source_tag: Some("v3.9.0"),
+            ..GENUINE_SIGNER
+        },
+        &embedded_sigstore_root(),
+    )
+    .unwrap_err()
+    .to_string();
+    // The signer passed; the artifact is the only mismatch left.
+    assert!(
+        err.contains("not found in SLSA statement subjects"),
+        "{err}"
+    );
+}
+
+#[test]
+fn certificate_names_its_source_ref() {
+    use x509_cert::der::Decode;
+    let envelope: serde_json::Value = serde_json::from_str(GENUINE_INTOTO_ENVELOPE.trim()).unwrap();
+    let pem = envelope["signatures"][0]["cert"].as_str().unwrap();
+    let cert = x509_cert::Certificate::from_der(DerCertificate::from_pem(pem).unwrap().as_bytes())
+        .unwrap();
+    assert_eq!(
+        certificate_source_ref(&cert).as_deref(),
+        Some("refs/tags/v3.9.0")
+    );
+}
+
+#[tokio::test]
+async fn unaccepted_source_repositories_name_the_signing_run() {
+    let path = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/sops_v3_9_0.intoto.jsonl"
+    ));
+    let unaccepted = async |signer| {
+        slsa_provenance_unaccepted_source_repositories(path, signer)
+            .await
+            .unwrap()
+    };
+    // Expecting the name the repository had before it moved to getsops.
+    assert_eq!(
+        unaccepted(SlsaSignerIdentity {
+            source_repository: Some("mozilla/sops"),
+            ..GENUINE_SIGNER
+        })
+        .await,
+        ["getsops/sops"]
+    );
+    // Nothing to look up when the source is accepted, or the signer differs.
+    assert!(unaccepted(GENUINE_SIGNER).await.is_empty());
+    assert!(
+        unaccepted(SlsaSignerIdentity {
+            issuer: "https://accounts.google.com",
+            source_repository: Some("mozilla/sops"),
+            ..GENUINE_SIGNER
+        })
+        .await
+        .is_empty()
+    );
+}
+
+#[test]
+fn github_workflow_repository_of_identity() {
+    assert_eq!(
+        github_workflow_repository(
+            "https://github.com/jdx/mise/.github/workflows/release.yml@refs/tags/v2026.9.12"
+        ),
+        Some("jdx/mise")
+    );
+    for identity in [
+        "https://github.com/jdx/.github/workflows/release.yml@refs/tags/v1",
+        "https://gitlab.com/jdx/mise/.github/workflows/release.yml@refs/tags/v1",
+        "https://github.com/jdx/mise",
+        "user@example.com",
+    ] {
+        assert_eq!(github_workflow_repository(identity), None, "{identity}");
+    }
+}
+
+#[test]
+fn normalize_github_repository_forms() {
+    for repository in [
+        "jdx/mise",
+        "github.com/jdx/mise",
+        "https://github.com/jdx/mise",
+        "https://github.com/jdx/mise/",
+        "https://github.com/jdx/mise.git",
+    ] {
+        assert_eq!(
+            normalize_github_repository(repository),
+            Some("jdx/mise"),
+            "{repository}"
+        );
+    }
+    for repository in ["jdx", "https://gitlab.com/jdx/mise", "jdx/mise/extra", ""] {
+        assert_eq!(
+            normalize_github_repository(repository),
+            None,
+            "{repository}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn bundle_requires_exact_signer_identity_and_issuer() {
-    let _tuf_root = TUF_ROOT_LOCK.lock().await;
     let bundle = Bundle::from_json(include_str!(
         "../../tests/fixtures/github_build_provenance_jdx_mise.json"
     ))
@@ -131,8 +309,11 @@ async fn bundle_requires_exact_signer_identity_and_issuer() {
     let signer = SlsaSignerIdentity {
         identity: "https://github.com/jdx/mise/.github/workflows/release.yml@refs/tags/v2026.9.12",
         issuer: "https://token.actions.githubusercontent.com",
+        source_repository: None,
+        source_tag: None,
     };
-    let mut roots = TrustRoots::default();
+    // The embedded root, not a TUF fetch: a unit test must not wait on the network.
+    let mut roots = TrustRoots::with_sigstore_root(embedded_sigstore_root());
     verify_bundle_with_slsa_signer(Artifact::from(&digest), &bundle, signer, &mut roots)
         .await
         .unwrap();

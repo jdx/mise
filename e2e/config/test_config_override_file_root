@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+# A global override file is global config, so its config_root is the global
+# config root (the home directory), also when MISE_CONFIG_DIR is elsewhere.
+
+export MISE_CONFIG_DIR="$HOME/dotfiles/mise"
+mkdir -p "$MISE_CONFIG_DIR"
+cat <<'TOML' >"$MISE_CONFIG_DIR/config.override.toml"
+[env]
+OVERRIDE_ROOT = "{{ config_root }}"
+TOML
+
+assert "mise env --json | jq -r .OVERRIDE_ROOT" "$HOME"

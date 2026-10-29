@@ -68,7 +68,9 @@ double-quoted string, so write a Windows path as a literal string
 `"C:\tools\node"` is not rejected: TOML reads `\t` as a tab, so the path
 silently changes. On Windows, mise rejects a path that contains a `cmd.exe`
 metacharacter (`& | < > ^ %`), because the path is passed to plugins that build
-shell commands with it.
+shell commands with it. The directory is used without an install, so a project
+config that names one [needs trust](/security.html#what-needs-trust), and
+[safe mode](/security.html#safe-mode) ignores it.
 
 `sub-<PARTIAL>:<REQUEST>` resolves `REQUEST`, subtracts `PARTIAL` from the
 matching components of the result, and resolves what remains as a prefix.
@@ -212,6 +214,17 @@ mise settings add idiomatic_version_file_enable_tools node
 
 They accept the same aliases as the tool, so an `.nvmrc` that contains
 `lts/hydrogen` works in both mise and nvm.
+
+A `.tool-versions` or idiomatic version file may be a symlink to a version file
+of the same name elsewhere, such as one shared across a monorepo. mise does not
+read one that links to a file of another name and warns
+`not reading <path>: it is a symlink to a file of another name`: a project could
+otherwise point it at a file such as `~/.netrc` and have its text shown as tool
+names and versions. Your own files are exempt: global config such as
+`~/.tool-versions`, and version files directly in your home directory, may link
+to a file of any name. The target is still read under its own name: with
+`.nvmrc` linked to the `.node-version` beside it, mise skips `.nvmrc` without a
+warning and reads `.node-version`.
 
 ### Enable idiomatic version files {#enabling-idiomatic-version-files}
 

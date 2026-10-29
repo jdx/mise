@@ -33,6 +33,8 @@ pub struct AvailableVersion {
     pub rolling: bool,
     /// Checksum of the release asset, used to detect changes in rolling releases
     pub checksum: Option<String>,
+    /// RFC 3339 release date, used by `minimum_release_age` and `--before`
+    pub created_at: Option<String>,
 }
 
 impl FromLua for AvailableVersion {
@@ -41,11 +43,13 @@ impl FromLua for AvailableVersion {
             Value::Table(table) => {
                 let rolling = table.get::<Option<bool>>("rolling")?.unwrap_or(false);
                 let checksum = table.get::<Option<String>>("checksum")?;
+                let created_at = table.get::<Option<String>>("created_at")?;
                 Ok(AvailableVersion {
                     version: table.get::<String>("version")?,
                     note: table.get::<Option<String>>("note")?,
                     rolling,
                     checksum,
+                    created_at,
                 })
             }
             _ => Err(LuaError::FromLuaConversionError {
@@ -73,6 +77,25 @@ mod tests {
         let lua = Lua::new();
         let result = AvailableVersion::from_lua(Value::Boolean(true), &lua);
         assert!(result.is_err(), "a non-table response must not panic");
+    }
+
+    fn eval_available(lua_src: &str) -> AvailableVersion {
+        let lua = Lua::new();
+        let value: Value = lua.load(lua_src).eval().unwrap();
+        AvailableVersion::from_lua(value, &lua).unwrap()
+    }
+
+    #[test]
+    fn test_available_version_created_at() {
+        let v =
+            eval_available(r#"return { version = "1.0.0", created_at = "2026-01-31T12:00:00Z" }"#);
+        assert_eq!(v.created_at.as_deref(), Some("2026-01-31T12:00:00Z"));
+    }
+
+    #[test]
+    fn test_available_version_created_at_is_optional() {
+        let v = eval_available(r#"return { version = "1.0.0" }"#);
+        assert_eq!(v.created_at, None);
     }
 
     #[test]

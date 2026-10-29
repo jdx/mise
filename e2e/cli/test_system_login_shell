@@ -47,11 +47,12 @@ cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
 [bootstrap.user]
 login_shell = "/tmp/global-shell"
 EOF
+# schema: invalid
 cat <<EOF >mise.toml
 [bootstrap.user]
-login_shell = "relative-shell"
+login_shell = "bin/relative-shell"
 EOF
-assert_contains "mise bootstrap user status --json 2>&1" "shell must be an absolute path"
+assert_contains "mise bootstrap user status --json 2>&1" "shell must be an absolute path or a bare shell name"
 assert_contains "mise bootstrap user status --json | jq -r '.login_shell.shell'" "/tmp/global-shell"
 rm "$MISE_CONFIG_DIR/config.toml"
 
@@ -109,12 +110,13 @@ assert_contains "cat '$MISE_TEST_SHELLS_FILE'" "/tmp/mise-test-shell"
 assert "cat '$CHSH_LOG'" "-s /tmp/mise-test-shell"
 
 # Invalid values warn and are skipped like other malformed [bootstrap.user] entries.
+# schema: invalid
 cat <<EOF >mise.toml
 [bootstrap.user]
-login_shell = "relative-shell"
+login_shell = "bin/relative-shell"
 EOF
 assert_succeed "mise bootstrap user status"
-assert_contains "mise bootstrap user status 2>&1" "shell must be an absolute path"
+assert_contains "mise bootstrap user status 2>&1" "shell must be an absolute path or a bare shell name"
 
 # login_shell is a template, so it can use [vars].
 cat <<EOF2 >mise.toml
@@ -125,3 +127,24 @@ login_shell = "{{ vars.shell_dir }}/zsh"
 shell_dir = "/tmp/templated"
 EOF2
 assert_contains "mise bootstrap user status --json" '"/tmp/templated/zsh"'
+
+# A bare name resolves to the installed executable after packages are installed.
+mkdir -p "$HOME/pkgbin"
+export PATH="$HOME/pkgbin:$PATH"
+cat <<EOF >mise.toml
+[bootstrap.user]
+login_shell = "mise-test-fish"
+EOF
+assert_contains "mise bootstrap user status --json | jq -r '.login_shell.state'" "not installed"
+assert_fail "mise bootstrap user status --missing"
+assert_contains "mise bootstrap user apply --dry-run --yes" "resolved after installation"
+assert_fail "mise bootstrap user apply --yes"
+assert_fail "grep -q mise-test-fish '$MISE_TEST_SHELLS_FILE'"
+printf '#!/bin/sh\n' >"$HOME/pkgbin/mise-test-fish"
+chmod +x "$HOME/pkgbin/mise-test-fish"
+assert_contains "mise bootstrap user status --json | jq -r '.login_shell.resolved'" "$HOME/pkgbin/mise-test-fish"
+assert_contains "mise bootstrap user apply --dry-run --yes" "chsh -s $HOME/pkgbin/mise-test-fish"
+rm -f "$CHSH_LOG"
+assert_succeed "mise bootstrap user apply --yes"
+assert "cat '$CHSH_LOG'" "-s $HOME/pkgbin/mise-test-fish"
+assert_contains "cat '$MISE_TEST_SHELLS_FILE'" "$HOME/pkgbin/mise-test-fish"

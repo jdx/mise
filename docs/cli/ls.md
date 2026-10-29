@@ -14,8 +14,9 @@ List installed and active tool versions
 
 Lists the tools mise knows about: versions that are installed, and versions
 requested by a config file (active) whether or not they are installed. Each row
-shows the tool, the version (marked `(missing)` when it is not installed), the
-config file that requests it, and the request as written.
+shows the tool, the version (marked `(missing)` when it is not installed, or
+`(lazy)` when it is a lazy tool that installs on first use), the config file
+that requests it, and the request as written.
 
 ## Arguments
 - **`[INSTALLED_TOOL]…`** — Only show these tools
@@ -37,7 +38,15 @@ config file that requests it, and the request as written.
 
   Cannot be combined with --json; use --backend to filter JSON output.
 - **`-J --json`** — Output in JSON format
-- **`-l --local`** — Only show versions the local config requests
+- **`-l --local`** — Deprecated alias for --no-global
+
+  Removed in mise 2027.7.0.
+- **`--no-global`** — Only show versions that non-global config files request
+
+  Includes config files in parent directories and skips the global config, system config, and `MISE_<TOOL>_VERSION` environment variables. See --project for the nearest project's config alone.
+- **`--project`** — Only show versions the nearest project config requests
+
+  The project is the nearest directory, starting at the current one and moving up, that has a mise config file. Every config file in that directory counts, such as `mise.toml`, `mise.local.toml`, `conf.d` fragments, `.tool-versions` and idiomatic version files. Configs in parent directories and global or system configs do not, nor do `MISE_<TOOL>_VERSION` environment variables. A version that a later file in that directory overrides is not listed, as with --no-global; `mise uninstall --project` still removes it.
 - **`-m --missing`** — Only show requested versions that are not installed
 - **`--all-sources`** — Show requests from every config file mise has seen, not only loaded ones
 
@@ -103,6 +112,11 @@ List tools in a separate section for each backend
 ```
 mise ls --grouped
 ```
+
+Deprecation:
+
+The `-l` and `--local` flags are deprecated in favor of `--no-global`. mise warns about
+them from 2027.1.0 and removes them in 2027.7.0.
 
 <!-- generated reference navigation -->
 

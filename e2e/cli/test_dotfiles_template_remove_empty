@@ -126,6 +126,7 @@ fi
 assert_fail "test -e $target"
 
 # remove_empty is only valid on template entries
+# schema: invalid
 cat <<'EOF' >mise.toml
 [dotfiles]
 "~/.copied" = { source = "dotfiles/blank.tera", mode = "copy", remove_empty = true }

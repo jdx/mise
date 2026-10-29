@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+# Linux starts no program while one environment variable is 128 KiB or longer,
+# including the `mise hook-env` that would replace it, so hook-env must not
+# export such a variable. __MISE_SESSION lists every loaded config file, and
+# empty conf.d fragments load without trust.
+
+mkdir -p project/.config/mise/conf.d
+# random names, so that compression does not shrink the list
+head -c 90000 /dev/urandom | base64 | tr -d '\n' | tr '+/' 'ab' | fold -w 240 |
+  while read -r name; do : >"project/.config/mise/conf.d/$name.toml"; done
+
+assert_fail "cd project && mise hook-env -s bash" "__MISE_SESSION would be"
+# Nothing reaches the shell, not even the commands that undo the previous
+# directory's environment, so it is left as it was rather than half updated.
+assert_empty "cd project && mise hook-env -s bash 2>/dev/null || true"
+assert_succeed "mise hook-env -s bash --force"

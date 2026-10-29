@@ -358,7 +358,9 @@ because mise stops at the first token it finds.
 Tokens are looked up by host. `api.github.com` and `raw.githubusercontent.com`
 use the token for `github.com`, so key token files and CLI logins by
 `github.com`. GitLab and Forgejo tokens go only to the origin of the tool's
-`api_url`.
+`api_url`. A GitHub Enterprise Server gets the GitHub token on its `/api/v3`
+URLs at the origin of the tool's `api_url`, or on any host you list in
+[`github.enterprise_hosts`](#enterprise-hosts).
 
 ## GitHub Enterprise and self-managed hosts {#github-enterprise}
 
@@ -375,7 +377,9 @@ Point the tool at the instance's API with the
 mise looks up tokens for the host of `api_url`, here `github.mycompany.com`,
 `gitlab.mycompany.com` and `forgejo.mycompany.com`. The Forgejo backend uses
 Codeberg when `api_url` is not set. For GitHub Enterprise Cloud with data
-residency (`api.<name>.ghe.com`), key tokens by `<name>.ghe.com`.
+residency (`api.<name>.ghe.com`), key tokens by `<name>.ghe.com`. A GitHub
+`api_url` gets the token over `https` only, or on a loopback address such as a
+local proxy.
 
 `MISE_GITHUB_TOKEN` and the other general variables also reach Enterprise hosts.
 To use a different token for github.com and an Enterprise host, set
@@ -387,6 +391,24 @@ file, the CLI logins, a credential command or Git credential helpers instead:
 gh auth login --hostname github.mycompany.com
 gh auth login --hostname github.other-company.com
 ```
+
+### Enterprise URLs outside the github backend {#enterprise-hosts}
+
+Any server can answer on an `/api/v3` path, so mise does not send your GitHub
+token to an Enterprise URL just because of its path. It sends it to the origin
+of a `github:` tool's `api_url`. An Enterprise `/api/v3` URL that reaches mise
+any other way, such as an `http:` tool's `url`, an aqua package or a remote task
+`file`, gets no token unless you list its host in your global config:
+
+```toml [~/.config/mise/config.toml]
+[settings.github]
+enterprise_hosts = ["github.mycompany.com"]
+```
+
+or set `MISE_GITHUB_ENTERPRISE_HOSTS=github.mycompany.com`. Listed hosts get the
+token over `https` only, on paths under `/api/v3`. mise ignores
+[`github.enterprise_hosts`](/configuration/settings.html#github.enterprise_hosts)
+in project config, so a repository cannot add a host of its choosing.
 
 For native OAuth with an Enterprise instance that supports device flow, also
 set [`github.oauth_auth_url`](/configuration/settings.html#github.oauth_auth_url)

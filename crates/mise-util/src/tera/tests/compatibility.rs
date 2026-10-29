@@ -40,6 +40,8 @@ fn test_tera_v1_engine_renders_v1_macro() {
 
 #[test]
 fn test_tera_v1_context_preserves_common_nested_roots() {
+    // a test that turns on safe mode would empty `env`
+    let _lock = crate::testing::lock_ignoring_poison(&crate::testing::SETTINGS_LOCK);
     let mut tera_ctx = Context::new();
     tera_ctx.insert("env", &json!({ "FOO": "bar" }));
     tera_ctx.insert("vars", &json!({ "nested": { "name": "baz" } }));

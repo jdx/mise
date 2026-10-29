@@ -10,6 +10,7 @@ use eyre::{Result, bail, eyre};
 use xx::file;
 
 use crate::args::BackendArg;
+use crate::backend::backend_type::BackendType;
 use crate::backend::platform_target::PlatformTarget;
 use crate::config::config_file::config_root;
 use crate::dirs;
@@ -279,6 +280,14 @@ impl ToolRequest {
         }
     }
 
+    /// The source whose lockfile this request reads: the one it borrows, else its own.
+    pub fn lockfile_owner_source(&self) -> &ToolSource {
+        match self.lockfile_scope() {
+            LockfileScope::Source(source) => source,
+            _ => self.source(),
+        }
+    }
+
     pub fn set_lockfile_scope(&mut self, scope: LockfileScope) {
         match self {
             Self::Version { lockfile_scope, .. }
@@ -328,6 +337,11 @@ impl ToolRequest {
         self
     }
 
+    /// The effective options, to rewrite a value without changing where it came from.
+    pub(crate) fn options_mut(&mut self) -> &mut ToolVersionOptions {
+        self.resolved_options_mut().effective_mut()
+    }
+
     fn resolved_options_mut(&mut self) -> &mut ResolvedToolOptions {
         match self {
             Self::Version { options: o, .. }
@@ -337,6 +351,14 @@ impl ToolRequest {
             | Self::Path { options: o, .. }
             | Self::System { options: o, .. } => o,
         }
+    }
+    /// Whether the version this request resolves to names its install directory as written
+    /// (`Ref`, `Path` and `System` derive the name from the request instead).
+    pub(crate) fn uses_resolved_version_as_pathname(&self) -> bool {
+        matches!(
+            self,
+            Self::Version { .. } | Self::Prefix { .. } | Self::Sub { .. }
+        )
     }
     pub fn version(&self) -> String {
         match self {
@@ -357,13 +379,39 @@ impl ToolRequest {
         self.resolved_options().effective().clone()
     }
 
+    /// Whether this request's `lazy = true` may claim command names: bootstrap shims, the
+    /// shim farms on PATH, and an install when one of those commands runs. Like `[wrappers]`,
+    /// that hands commands such as `git` to whatever the config names, so safe mode honours it
+    /// only in an entry of global or system config (or a CLI argument), and only when that
+    /// entry sets the options itself rather than a project's tool alias or the project entry
+    /// a runtime argument inherits. The tool stays out of automatic installs either way.
+    pub(crate) fn provides_lazy_bins(&self) -> bool {
+        if self.resolved_options().effective().lazy != Some(true) {
+            return false;
+        }
+        if !Settings::safe_mode() {
+            return true;
+        }
+        let set_by_entry = |key| {
+            matches!(
+                self.option_source(key),
+                None | Some(ToolOptionSource::Request | ToolOptionSource::InlineBackendArg)
+            )
+        };
+        self.source()
+            .path()
+            .is_none_or(crate::config::is_global_config)
+            && set_by_entry("lazy")
+            && set_by_entry("lazy_bins")
+    }
+
     /// Command names that should receive bootstrap shims before a lazy tool is installed.
     /// Registry metadata is authoritative when the config does not provide an explicit list.
-    pub(crate) fn lazy_bins(&self) -> Result<Option<Vec<String>>> {
-        let options = self.resolved_options().effective();
-        if options.lazy != Some(true) {
+    pub fn lazy_bins(&self) -> Result<Option<Vec<String>>> {
+        if !self.provides_lazy_bins() {
             return Ok(None);
         }
+        let options = self.resolved_options().effective();
         if !options.lazy_bins.is_empty() {
             return Ok(Some(options.lazy_bins.clone()));
         }
@@ -378,6 +426,13 @@ impl ToolRequest {
             "lazy tool {} has no registry bin metadata; set lazy_bins explicitly",
             self.ba().short
         )
+    }
+
+    /// Whether running one of this lazy request's commands installs it: the
+    /// declaration provides commands, and `shims.exclude` leaves at least one of
+    /// them a bootstrap shim.
+    pub fn installs_on_first_use(&self) -> bool {
+        matches!(self.lazy_bins(), Ok(Some(bins)) if crate::shims::lazy_bins_keep_a_shim(&bins))
     }
 
     /// Whether the registry options this request carries were supplied by a
@@ -465,6 +520,35 @@ impl ToolRequest {
         self.resolved_options().source_for_key(key)
     }
 
+    /// Whether safe mode ignores this request. A `path:` version needs no install, so one
+    /// from project config would put a directory the project names on PATH, which is why
+    /// safe mode ignores the project's `_.path` too. Global config is the operator's, and a
+    /// tool stub or CLI argument is run by the user.
+    pub(crate) fn ignored_in_safe_mode(&self) -> bool {
+        matches!(self, Self::Path { .. })
+            && Settings::safe_mode()
+            && match self.source() {
+                ToolSource::MiseToml(path)
+                | ToolSource::MiseTomlDaemon(path)
+                | ToolSource::ToolVersions(path)
+                | ToolSource::IdiomaticVersionFile(path) => !crate::config::is_global_config(path),
+                _ => false,
+            }
+    }
+
+    /// In safe mode, records the hosts this request's options name; see
+    /// [`record_safe_mode_credential_hosts`].
+    pub(crate) fn record_safe_mode_credential_hosts(&self) {
+        if !Settings::safe_mode() {
+            return;
+        }
+        let Some(path) = self.source().path() else {
+            return;
+        };
+        let project = !crate::config::is_global_config(path);
+        record_safe_mode_credential_hosts(&self.options().opts, project);
+    }
+
     /// Rejects install options that can execute configuration-provided code in safe mode.
     pub(crate) fn ensure_safe_install_options(&self) -> Result<()> {
         if !Settings::safe_mode() {
@@ -480,6 +564,15 @@ impl ToolRequest {
         if !options.core.install_env.is_empty() {
             Settings::ensure_not_safe(&format!(
                 "using tool-level install_env for {}",
+                self.ba().short
+            ))?;
+        }
+        // spm runs this shell command in place of `swift build`.
+        if self.ba().backend_type() == BackendType::Spm
+            && options.opts.contains_key("install_command")
+        {
+            Settings::ensure_not_safe(&format!(
+                "running tool-level install_command for {}",
                 self.ba().short
             ))?;
         }
@@ -552,6 +645,11 @@ impl ToolRequest {
             Self::Version {
                 backend, version, ..
             } => {
+                // Joined as written, so only a relative path that stays below the installs dir
+                // (`1.2.3`, `lts/hydrogen`) names an install; `/` would name the filesystem root.
+                if !crate::file::is_safe_relative_path(version) {
+                    return None;
+                }
                 let path = backend.installs_path().join(version);
                 Some(env::find_in_shared_installs(
                     path,
@@ -671,7 +769,7 @@ impl ToolRequest {
         let (request_options, legacy_options_fallback) = if let Some(backend) = &backend {
             let target = PlatformTarget::from_current();
             (
-                backend.resolve_lockfile_options(self, &target)?,
+                backend.lockfile_options(self, &target)?,
                 backend.lockfile_options_are_host_specific(),
             )
         } else {
@@ -724,6 +822,16 @@ impl ToolRequest {
         Ok(opts)
     }
 
+    /// Whether the tool's `os` option allows `platform`, for platforms other
+    /// than the current one (such as `mise lock` targets).
+    pub fn is_os_supported_on(&self, platform: &crate::platform::Platform) -> bool {
+        self.os().as_ref().is_none_or(|os_list| {
+            os_list.iter().any(|entry| {
+                crate::platform::os_selector_matches_target(entry, &platform.os, &platform.arch)
+            })
+        })
+    }
+
     pub fn is_os_supported(&self) -> bool {
         if let Some(os_list) = self.os() {
             let matched = os_list
@@ -759,10 +867,51 @@ fn validate_version_string(s: &str) -> Result<()> {
     if s.starts_with('-') {
         bail!("invalid tool version {s:?}: must not start with '-'");
     }
-    if s.contains("..") {
+    // `ToolRequest::install_path` joins the version onto the installs dir, where an absolute one
+    // would replace it.
+    if s.starts_with('/') {
+        bail!("invalid tool version {s:?}: must not start with '/'");
+    }
+    if contains_dot_dot(s) {
         bail!("invalid tool version {s:?}: contains path-traversal sequence");
     }
     if let Some(c) = s.chars().find(|c| is_forbidden_version_char(*c)) {
+        bail!("invalid tool version {s:?}: contains forbidden character {c:?}");
+    }
+    Ok(())
+}
+
+/// Whether `s` holds `..`, spelled out or percent-encoded. Versions and refs are formatted into
+/// download URLs, and URL parsing resolves `%2e%2e` (in any case, or mixed with a plain `.`) like a
+/// `..` segment.
+fn contains_dot_dot(s: &str) -> bool {
+    s.contains("..") || s.to_ascii_lowercase().replace("%2e", ".").contains("..")
+}
+
+/// Validate the version a `Version`, `Prefix` or `Sub` request resolved to.
+///
+/// [`ToolRequest::new`] only sees what was requested; the concrete version can come from a remote
+/// version list, a release tag or `mise.lock`, and it names the install, download and cache
+/// directories as written. So on top of the request rules it may not be empty or `.`, both of
+/// which name the directory that holds every version of the tool.
+pub(crate) fn validate_resolved_version(s: &str) -> Result<()> {
+    if s.is_empty() || s == "." {
+        bail!("invalid tool version {s:?}: not usable as a directory name");
+    }
+    validate_version_string(s)
+}
+
+/// Validate a concrete version that is about to be installed.
+///
+/// A request has to allow whitespace and `; & | < > ( )` because it may be a range
+/// (`>=20 <21 || >=22`). A version that gets installed never holds them, nor URL syntax
+/// (`% # ?`), and plugin hooks put the install path into shell commands and the version into
+/// download URLs. A range that never resolved fails here instead of inside a plugin.
+pub(crate) fn validate_installable_version(s: &str) -> Result<()> {
+    validate_resolved_version(s)?;
+    if let Some(c) = s.chars().find(|c| {
+        c.is_whitespace() || matches!(c, ';' | '&' | '|' | '<' | '>' | '(' | ')' | '%' | '#' | '?')
+    }) {
         bail!("invalid tool version {s:?}: contains forbidden character {c:?}");
     }
     Ok(())
@@ -780,7 +929,7 @@ fn validate_ref_string(s: &str) -> Result<()> {
     if s.starts_with('-') {
         bail!("invalid tool ref {s:?}: must not start with '-'");
     }
-    if s.contains("..") {
+    if contains_dot_dot(s) {
         bail!("invalid tool ref {s:?}: contains path-traversal sequence");
     }
     if let Some(c) = s.chars().find(|c| is_forbidden_version_char(*c)) {
@@ -886,6 +1035,91 @@ fn is_forbidden_cmd_char(_c: char) -> bool {
     false
 }
 
+/// Calls `f` with each string value under one of `keys` in tool options. Backends read options
+/// per platform, from a platform table (`platforms.linux-x64.url`) or a flat key
+/// (`platforms_linux_x64_url`), so both count.
+fn visit_option_strings(
+    opts: &indexmap::IndexMap<String, toml::Value>,
+    keys: &[&str],
+    f: &mut dyn FnMut(&str, &str),
+) {
+    fn matches(key: &str, keys: &[&str]) -> bool {
+        keys.contains(&key)
+            || (key.starts_with("platforms_") || key.starts_with("platform_"))
+                && keys.iter().any(|k| key.ends_with(&format!("_{k}")))
+    }
+    fn visit(key: &str, value: &toml::Value, keys: &[&str], f: &mut dyn FnMut(&str, &str)) {
+        match value {
+            toml::Value::String(s) if matches(key, keys) => f(key, s),
+            toml::Value::Table(table) => {
+                for (key, value) in table {
+                    visit(key, value, keys, f);
+                }
+            }
+            _ => {}
+        }
+    }
+    for (key, value) in opts {
+        visit(key, value, keys, f);
+    }
+}
+
+/// The tool options that name a host a tool sends requests to: where it downloads from,
+/// lists versions from, or (for a forge, which falls back to netrc without a token) its API.
+const NETRC_SCOPED_URL_OPTIONS: [&str; 5] = [
+    "url",
+    "checksum_url",
+    "version_list_url",
+    "version_date_url",
+    "api_url",
+];
+
+/// Records, in safe mode, the hosts that tool options from one config file send requests to.
+/// `project` is false for global and system config. A project `api_url` gets no forge token
+/// (unless global config names the same host), and no host a project URL option names gets
+/// netrc credentials outside [`with_safe_mode_tool_scope`]. See
+/// [`ToolRequest::record_safe_mode_credential_hosts`].
+pub(crate) fn record_safe_mode_credential_hosts(
+    opts: &indexmap::IndexMap<String, toml::Value>,
+    project: bool,
+) {
+    visit_option_strings(opts, &NETRC_SCOPED_URL_OPTIONS, &mut |key, url| {
+        let api_url = key == "api_url" || key.ends_with("_api_url");
+        match (project, api_url) {
+            (true, true) => {
+                mise_util::untrusted_hosts::deny_forge_token_for_url(url);
+                mise_util::untrusted_hosts::deny_netrc_for_url(url);
+            }
+            (true, false) => mise_util::untrusted_hosts::deny_netrc_for_url(url),
+            (false, true) => mise_util::untrusted_hosts::allow_forge_token_for_url(url),
+            (false, false) => {}
+        }
+    });
+}
+
+/// Runs `future`, work done for the tool `ba`. In safe mode, netrc credentials are withheld
+/// from every host a project tool's URL options name, whichever code path makes the request;
+/// a tool that global or system config declares runs here in a trusted scope, so its requests
+/// keep their credentials on such a host, and the templates its backend renders from that
+/// config's options (a global `[tool_alias]` `url`, say) keep `env`. A path that does not come
+/// through here loses credentials rather than leaking them.
+pub(crate) async fn with_safe_mode_tool_scope<T>(
+    ba: &BackendArg,
+    future: impl std::future::Future<Output = T>,
+) -> T {
+    // Boxed: this wraps resolving, installing and listing, whose futures are large,
+    // and holding one inline here (twice over, in the scopes) overflows the stack
+    // of a debug build.
+    let future = Box::pin(future);
+    if !Settings::safe_mode() {
+        return future.await;
+    }
+    // Set either way: a project tool reached from a global tool's work (a dependency, say)
+    // must not run in that tool's trusted scope.
+    let trusted = !crate::config::is_safe_mode_project_tool(ba);
+    mise_util::untrusted_hosts::with_tool_scope(trusted, future).await
+}
+
 /// Resolve a `path:` tool version request value against the config file's directory.
 ///
 /// - `~/` is expanded to `$HOME`
@@ -979,13 +1213,44 @@ impl Display for ToolRequest {
 #[cfg(test)]
 mod tests {
     use super::{
-        LockfileScope, ToolRequest, validate_ref_string, validate_version_string, version_sub,
+        LockfileScope, ToolRequest, validate_installable_version, validate_ref_string,
+        validate_resolved_version, validate_version_string, version_sub,
     };
     use crate::args::{BackendArg, BackendResolution};
     use crate::toolset::{ToolSource, ToolVersionOptions};
     use pretty_assertions::assert_str_eq;
     use std::sync::Arc;
     use test_log::test;
+
+    #[test]
+    fn netrc_scope_reads_platform_url_options() {
+        let opts = crate::toolset::parse_tool_options(
+            r#"url="https://top.example/t",platforms_linux_x64_url="https://flat.example/t",platform_macos_arm64_api_url="https://flat-api.example",bin="t""#,
+        );
+        let mut opts = opts.opts.into_map();
+        opts.insert(
+            "platforms".into(),
+            toml::from_str::<toml::Value>(
+                r#"linux-arm64 = { url = "https://nested.example/t", checksum_url = "https://nested-sum.example/s" }"#,
+            )
+            .unwrap(),
+        );
+        let mut urls = vec![];
+        super::visit_option_strings(&opts, &super::NETRC_SCOPED_URL_OPTIONS, &mut |_, url| {
+            urls.push(url.to_string());
+        });
+        urls.sort();
+        assert_eq!(
+            urls,
+            [
+                "https://flat-api.example",
+                "https://flat.example/t",
+                "https://nested-sum.example/s",
+                "https://nested.example/t",
+                "https://top.example/t",
+            ]
+        );
+    }
 
     fn test_ba() -> Arc<BackendArg> {
         let short = "lockfile-query-test";
@@ -1025,6 +1290,26 @@ mod tests {
                 assert_eq!(converted.lockfile_scope(), &LockfileScope::Default);
             }
         }
+    }
+
+    #[tokio::test]
+    async fn install_path_never_leaves_the_installs_dir() {
+        use super::*;
+        let config = Config::get().await.unwrap();
+        let backend = Arc::new(BackendArg::from("dummy"));
+        // Built without validation, as struct literals elsewhere are.
+        for version in ["/", "/usr", "../x", ""] {
+            let request =
+                ToolRequest::new_version_for_test(backend.clone(), version, ToolSource::Argument);
+            assert_eq!(request.install_path(&config), None, "{version:?}");
+        }
+        let request =
+            ToolRequest::new_version_for_test(backend.clone(), "1.0.0", ToolSource::Argument);
+        assert!(
+            request
+                .install_path(&config)
+                .is_some_and(|p| p.ends_with("1.0.0"))
+        );
     }
 
     #[tokio::test]
@@ -1144,9 +1429,82 @@ mod tests {
             // path traversal
             "../etc/passwd",
             "1.0/../etc",
+            // percent-encoded traversal, which URL parsing resolves like `..`
+            "1.3.0/%2e%2e/%2e%2e/evil/payload",
+            "1/%2E%2e/x",
+            "1/.%2e/x",
+            "1/%2e./x",
+            // absolute, which would replace the installs dir it is joined onto
+            "/",
+            "/usr/local",
         ] {
             assert!(
                 validate_version_string(v).is_err(),
+                "expected {v:?} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_resolved_version_rejects_directory_names() {
+        for v in [
+            "1.2.3",
+            "lts/hydrogen",
+            "temurin-21.0.1+12",
+            "3.12.0a1",
+            ">=20 <21",
+        ] {
+            assert!(
+                validate_resolved_version(v).is_ok(),
+                "expected {v:?} to be accepted"
+            );
+        }
+        // `installs/<tool>/..` is the directory that holds every tool; `.` and the empty string
+        // are the one that holds every version of this tool
+        for v in [
+            "..",
+            ".",
+            "",
+            "/",
+            "v1/%2e%2e",
+            "1.0$(id)",
+            "4.0.0\"; cd; \"",
+        ] {
+            assert!(
+                validate_resolved_version(v).is_err(),
+                "expected {v:?} to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn test_validate_installable_version_rejects_shell_and_url_syntax() {
+        for v in [
+            "1.2.3",
+            "lts/hydrogen",
+            "1.2.3+build",
+            "1.2.3~rc1",
+            "2024.01.15",
+        ] {
+            assert!(
+                validate_installable_version(v).is_ok(),
+                "expected {v:?} to be accepted"
+            );
+        }
+        for v in [
+            "2.0.0; cd; touch f #",
+            "2.0.0 || cd | touch f ||",
+            ">=20 <21",
+            "1.0&x",
+            "1.0(x)",
+            "1.0#x",
+            "1.0?x",
+            "1.0%41",
+            "..",
+            "",
+        ] {
+            assert!(
+                validate_installable_version(v).is_err(),
                 "expected {v:?} to be rejected"
             );
         }
@@ -1170,6 +1528,7 @@ mod tests {
             "a\\b",
             "--version",
             "-v",
+            "1/%2e%2e/x",
         ] {
             assert!(
                 validate_ref_string(v).is_err(),

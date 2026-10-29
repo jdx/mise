@@ -10,7 +10,7 @@ dummy = { version = "1.0.0", postinstall = "false" }
 tiny = { version = "1.0.0", postinstall = "mv mise.toml saved.toml; mkdir mise.toml" }
 TOML
 
-# One install fails, another succeeds, and saving its updated config fails too.
+# One install fails, another succeeds, and updating its config fails too.
 if output=$(MISE_FORCE_PROGRESS=1 mise upgrade --bump 2>&1); then
   fail "upgrade should report installation and config-save errors: $output"
 fi
@@ -20,4 +20,4 @@ assert_contains 'cat output.log' 'tiny 1.0.0 → 3.1.0'
 # Check the final error after the summary, not the earlier progress diagnostics.
 python3 -c 'from pathlib import Path; print(Path("output.log").read_text().split("Upgraded 1 tool:", 1)[1])' >final-error.log
 assert_contains 'cat final-error.log' 'Failed to install asdf:dummy@2.0.0'
-assert_contains 'cat final-error.log' 'Failed to save config'
+assert_contains 'cat final-error.log' 'Failed to update config for tiny'

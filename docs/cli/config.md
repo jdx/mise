@@ -28,6 +28,7 @@ With no subcommand, lists the config files mise loads, from lowest to highest pr
 
 ## Subcommands
 
+- [`mise config explain [FLAGS] [KEY]`](/cli/config/explain.html)
 - [`mise config get [FLAGS] [KEY]`](/cli/config/get.html)
 - [`mise config ls [FLAGS]`](/cli/config/ls.html)
 - [`mise config set [FLAGS] <KEY> [VALUE]`](/cli/config/set.html)

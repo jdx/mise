@@ -95,6 +95,8 @@ installation to make room.
 Each installation directory holds a `.mise-install.toml` receipt that records
 what the installation answers to. This one is trimmed:
 
+<!-- schema: skip -->
+
 ```toml
 digest = "hlencrstldyjkqnpak2zyr453avqxfjf6so4vopt7au5nsxvzska"
 dir = "age-hlencrst"

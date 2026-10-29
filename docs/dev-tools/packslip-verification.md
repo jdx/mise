@@ -51,6 +51,14 @@ branch at `.well-known/packslip.json`, or `.well-known/packslip/<tool>.json` for
 a monorepo tool. The list can withdraw a version, supply a bundle URL and
 digest, or add a version that the release API does not show.
 
+mise asks mise-versions for the list first, because most repositories have none
+and `raw.githubusercontent.com` rate-limits shared CI runners. It reads the file
+from GitHub itself when mise-versions is unavailable or does not serve the
+repository, as for a private one, or when
+[`use_versions_host`](/configuration/settings.html#use_versions_host) is off. A
+list or its absence reaches mise within about ten minutes of a change on the
+default branch; the list is verified either way.
+
 Versions the list omits can still come from GitHub releases; omission does not
 withdraw them. For a domain project, the signed list is the entire release
 index. A vendor withdrawal excludes a version even if a trusted stamper approved
@@ -153,13 +161,22 @@ name. So if your configuration already uses the new name, or this machine never
 saw the rename, the old name's pin still applies: the release must match its
 signer, provenance, and attestor. After mise accepts the release, it moves the
 pin and its release-list state to the new name, so each repository keeps one
-pin. Errors name the pin as it is recorded; pass that name to
-`mise packslip forget`.
+pin. The pin remembers the name it left, so a different repository that takes
+that name later is still refused. Errors name the pin as it is recorded; pass
+that name to `mise packslip forget`.
 
 With no pin yet and a release signed under another name, mise asks the forge
 which repository the requested name now belongs to. If it cannot ask, for
 example offline or when rate-limited, it compares names only and refuses the
 release.
+
+A pin or a `mise.lock` entry without a repository ID holds by name and never
+follows a rename. The `identity`, `identity_prefix`, and `pubkey` options leave
+such records. The forge's answer says which repository has the name today, not which one was
+pinned, so a release signed under another name is a different signer and is
+refused. For a machine pin, run `mise packslip forget <tool>` and install
+again; for a lockfile entry, remove it and run `mise lock` again. The next
+release accepted under the pinned name with a forge check adds the ID.
 
 This is still trust on first use. The first install on a machine with no pin and
 no lockfile entry accepts whichever repository owns the name at that moment, so
@@ -186,7 +203,8 @@ applies to packslip tools as to other backends; see
 itself. Discovery timestamps filter candidates first. Before downloading an
 artifact, mise checks the verified transparency-log timestamp against the
 cutoff; only an explicitly allowed unlogged bundle uses the signed publication
-timestamp instead.
+timestamp instead. A logged bundle whose entry carries no verified time is
+treated as too new rather than dated by the manifest's own word.
 
 The cutoff decides which release a version request may pick, so it does not
 apply to a release that is already chosen. An exact pin such as
@@ -273,7 +291,11 @@ musl fallback above they never select another build.
 
 Command checks prefer active mise tools over the ambient `PATH`. mise looks for
 a path the OS can execute: on Windows, `git.exe` or `node.cmd` counts, but a
-shebang-only script does not.
+shebang-only script does not. Only an install checks commands; resolving a
+version does not start them. mise reads a minimum version from
+`<command> --version`, run in the command's own directory rather than your
+project, so a version manager's shim on the ambient `PATH` reports the version
+it selects there.
 
 Library detection depends on the platform. For example, a macOS library that is
 absent from disk can still exist in the dyld shared cache, so mise reports that

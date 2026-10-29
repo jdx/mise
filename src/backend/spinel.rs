@@ -57,6 +57,10 @@ impl<'a> SpinelOptions<'a> {
 
 #[async_trait]
 impl Backend for SpinelBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_spinel_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Spinel
     }
@@ -85,12 +89,7 @@ impl Backend for SpinelBackend {
         timeout::run_with_timeout_async(
             async || {
                 // git ls-remote rather than the GitHub API: no token, no rate limit.
-                let output = crate::cmd::cmd_read_async_inherited_env(
-                    "git",
-                    &["ls-remote", "--tags", "--refs", &remote],
-                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
-                )
-                .await?;
+                let output = crate::git::ls_remote(&["--tags", "--refs"], &remote, &[]).await?;
                 Ok(versions_from_ls_remote(&output, &prefix))
             },
             Settings::get().fetch_remote_versions_timeout(),

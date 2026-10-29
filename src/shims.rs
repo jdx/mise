@@ -13,6 +13,7 @@ use crate::toolset::{ToolVersion, Toolset};
 use crate::{backend, dirs, env, fake_asdf, file};
 use color_eyre::eyre::{Result, bail, eyre};
 use eyre::WrapErr;
+use heck::ToKebabCase;
 use indexmap::IndexMap;
 #[cfg(windows)]
 use indoc::formatdoc;
@@ -22,14 +23,67 @@ use tokio::task::JoinSet;
 
 #[cfg(any(windows, test))]
 const NATIVE_SHIM_MARKER: &[u8] = include_bytes!("assets/native-shim-marker");
+/// Opens the `mise-shim-version:<release>\n` tag `crates/mise-shim/build.rs` embeds, shared with it
+/// so the scan in `native_shim_version` cannot drift from what the shim carries.
+#[cfg(any(windows, test))]
+const NATIVE_SHIM_VERSION_PREFIX: &str = include_str!("assets/native-shim-version-prefix");
 const GENERATED_SHELL_SHIM_HEADER: &str = "#!/bin/sh\n# mise generated shim\n";
 #[cfg(any(windows, test))]
 const GENERATED_WINDOWS_CMD_SHIM_HEADER: &str = "@echo off\r\nrem mise generated shim\r\n";
 #[cfg(any(windows, test))]
 const GENERATED_WINDOWS_BASH_SHIM_HEADER: &str = "#!/bin/bash\n# mise generated shim\n";
 const SHIM_SCRIPT_INSPECTION_LIMIT: u64 = 16 * 1024;
+const WRAPPER_STAGING_PREFIX: &str = ".mise-wrappers-stage-";
 
 pub const TASK_TOOL_ARGS_ENV: &str = "__MISE_TASK_TOOL_ARGS";
+
+/// A JSON array of the command wrappers whose commands are running, inherited by their
+/// descendants. A wrapper shim named in it runs the real command instead of the wrapper again,
+/// so `mbx` finds the real `cargo` while a wrapped command's other wrappers still apply.
+pub const ACTIVE_WRAPPERS_ENV: &str = "__MISE_ACTIVE_WRAPPERS";
+
+/// Whether two command names find the same shim. Windows file names are case-insensitive, so a
+/// shim can be invoked as `Cargo` for `[wrappers.cargo]`.
+pub fn same_command_name(a: &str, b: &str) -> bool {
+    if cfg!(windows) {
+        a.eq_ignore_ascii_case(b)
+    } else {
+        command_names_eq(a, b)
+    }
+}
+
+fn parse_active_wrappers(value: &str) -> Vec<String> {
+    serde_json::from_str(value).unwrap_or_default()
+}
+
+/// Whether the command wrapper for `name` is already running in this process tree.
+pub fn is_active_command_wrapper(name: &str) -> bool {
+    env::var(ACTIVE_WRAPPERS_ENV).is_ok_and(|value| {
+        parse_active_wrappers(&value)
+            .iter()
+            .any(|active| same_command_name(active, name))
+    })
+}
+
+/// `wrapper_env` plus `name` in the active wrappers, for the command the wrapper runs. The value
+/// is sorted and holds no PID, so it is the same for every run of a wrapped command.
+pub fn with_active_command_wrapper(
+    name: &str,
+    mut wrapper_env: BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    let mut active = env::var(ACTIVE_WRAPPERS_ENV)
+        .map(|value| parse_active_wrappers(&value))
+        .unwrap_or_default();
+    if !active.iter().any(|active| same_command_name(active, name)) {
+        active.push(name.to_string());
+    }
+    active.sort();
+    wrapper_env.insert(
+        ACTIVE_WRAPPERS_ENV.to_string(),
+        serde_json::to_string(&active).unwrap_or_default(),
+    );
+    wrapper_env
+}
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct TaskToolArg {
@@ -265,21 +319,34 @@ pub async fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
     }
 }
 
+/// The lock every writer of `shims_dir` takes. The wrapper directory is shared
+/// by every mise process using this data directory, whatever its cache
+/// directory, so its lock sits beside it rather than in the cache, and outside
+/// it because a reshim removes the directory once no wrapper is wanted.
+fn shim_dir_lock(shims_dir: &Path) -> LockFile {
+    let wrappers_dir = &*dirs::COMMAND_WRAPPERS;
+    match wrappers_dir.parent() {
+        Some(parent) if shims_dir == wrappers_dir => LockFile::at(&parent.join("bin.lock")),
+        _ => LockFile::new(shims_dir),
+    }
+}
+
 fn write_bootstrap_shims(
     mise_bin: &Path,
     shims_dir: &Path,
     shims: &BTreeSet<String>,
     _prune_stale_windows_variants: bool,
 ) -> Result<Option<eyre::Report>> {
+    // Lock failures come from outside the target farm and must remain visible
+    // to the user. The lock is taken first because a reshim may remove an
+    // emptied wrapper directory while it holds it.
+    let _lock = shim_dir_lock(shims_dir).lock()?;
     if let Err(err) = file::create_dir_all(shims_dir) {
         if is_permission_denied(&err) {
             return Ok(Some(err));
         }
         return Err(err);
     }
-    // Lock failures come from the cache rather than the target farm and must
-    // remain visible to the user.
-    let _lock = LockFile::new(shims_dir).lock()?;
 
     #[cfg(windows)]
     if _prune_stale_windows_variants {
@@ -393,6 +460,15 @@ pub async fn reshim_for(
     let shim_mode = effective_shim_mode(&mise_bin);
     #[cfg(not(windows))]
     let shim_mode = String::new();
+    // "exe" shims are copies of the template, so say why rebuilding them changes nothing when the
+    // template is the problem (`mise doctor` reports the same). A stale template still works for
+    // most tools, so this is a warning, not a failed reshim.
+    #[cfg(windows)]
+    if shim_mode == "exe"
+        && let Some(stale) = stale_native_shim_template(&mise_bin)
+    {
+        warn_once!("{}", stale.message());
+    }
     let shim_mode_changed = cfg!(windows) && {
         let mode_file = shims_dir.join(".mode");
         mode_file
@@ -532,7 +608,10 @@ async fn add_plugin_shims(shims_dir: &Path, scope: ShimScope) -> Result<()> {
         let shims_dir = shims_dir.to_path_buf();
         let excluded = excluded.clone();
         jset.spawn(async move {
-            if let Ok(files) = dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {
+            let Some(plugin_shims) = plugin_shims_dir(&dirs::PLUGINS, plugin.id()) else {
+                return Ok(());
+            };
+            if let Ok(files) = plugin_shims.read_dir() {
                 for bin in files {
                     let bin = bin?;
                     let bin_name = bin.file_name().into_string().unwrap();
@@ -553,6 +632,17 @@ async fn add_plugin_shims(shims_dir: &Path, scope: ShimScope) -> Result<()> {
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
     Ok(())
+}
+
+/// The `shims/` directory an asdf plugin ships for the tool `id`.
+///
+/// `id` is the tool name as a config file spells it, which may be path-shaped (`/abs/dir`,
+/// `../x`); joined raw, an absolute one would replace the plugins directory. It gets the same
+/// encoding as the plugin's own directory (see `AsdfBackend::from_arg`), and a name that encodes
+/// to nothing has no plugin directory at all.
+fn plugin_shims_dir(plugins_dir: &Path, id: &str) -> Option<PathBuf> {
+    let name = id.to_kebab_case();
+    file::is_plain_file_name(&name).then(|| plugins_dir.join(name).join("shims"))
 }
 
 fn publish_staged_shim_farm(
@@ -987,44 +1077,130 @@ async fn sync_command_wrapper_shims(
         }
         wrappers.insert(name, wrapper);
     }
-    if wrappers.is_empty() {
-        if cfg!(windows) {
-            remove_shims_individually(&dirs::COMMAND_WRAPPERS)?;
-        } else {
-            file::remove_all(&*dirs::COMMAND_WRAPPERS)?;
-        }
+    // Every mise process on the machine execs wrappers from this one
+    // directory, so it is never removed or emptied while a wrapper is still
+    // wanted: writers take its lock, a forced rebuild replaces each wanted
+    // shim with a rename, and only unwanted shims are deleted.
+    let wrappers_dir = &*dirs::COMMAND_WRAPPERS;
+    if wrappers.is_empty() && !wrappers_dir.is_dir() {
         return Ok(());
     }
-    if force {
-        if cfg!(windows) {
-            remove_shims_individually(&dirs::COMMAND_WRAPPERS)?;
-        } else {
-            file::remove_all(&*dirs::COMMAND_WRAPPERS)?;
-        }
-    }
-    file::create_dir_all(&*dirs::COMMAND_WRAPPERS)?;
+    let _lock = shim_dir_lock(wrappers_dir).lock()?;
+    file::create_dir_all(wrappers_dir)?;
+    remove_stale_wrapper_staging(wrappers_dir);
 
     let mut desired = HashSet::new();
     for name in wrappers.keys() {
         desired.extend(platform_shim_names(mise_bin, name));
     }
-    let actual = list_shims_in(&dirs::COMMAND_WRAPPERS)?;
-    for shim in desired.difference(&actual) {
-        let path = dirs::COMMAND_WRAPPERS.join(shim);
-        if cfg!(windows) && path.exists() {
-            remove_shim_with_rename_fallback(&path)?;
+    let actual = list_shims_in(wrappers_dir)?;
+    let to_publish: BTreeSet<&String> = if force {
+        desired.iter().collect()
+    } else {
+        desired.difference(&actual).collect()
+    };
+    if !to_publish.is_empty() {
+        let staging = tempfile::Builder::new()
+            .prefix(WRAPPER_STAGING_PREFIX)
+            .tempdir_in(wrappers_dir)
+            .wrap_err_with(|| {
+                format!(
+                    "failed to create wrapper staging directory in {}",
+                    display_path(wrappers_dir)
+                )
+            })?;
+        for shim in to_publish {
+            let source = staging.path().join(shim);
+            add_shim(mise_bin, &source, shim)?;
+            let destination = wrappers_dir.join(shim);
+            // Rename replaces a same-named wrapper atomically, so a concurrent
+            // exec finds either the old wrapper or the new one. Windows refuses
+            // to replace a wrapper that is running; only then is it moved
+            // aside first.
+            let publish = || fs::rename(&source, &destination);
+            let mut published = publish();
+            if published.is_err() && cfg!(windows) && destination.exists() {
+                remove_shim_with_rename_fallback(&destination)?;
+                published = publish();
+            }
+            published.wrap_err_with(|| {
+                format!(
+                    "failed to publish wrapper {} to {}",
+                    display_path(&source),
+                    display_path(&destination)
+                )
+            })?;
         }
-        add_shim(mise_bin, &path, shim)?;
+        if let Err(err) = staging.close() {
+            warn!("failed to remove wrapper staging directory: {err}");
+        }
     }
     for shim in actual.difference(&desired) {
-        let path = dirs::COMMAND_WRAPPERS.join(shim);
+        let path = wrappers_dir.join(shim);
         if cfg!(windows) {
             remove_shim_with_rename_fallback(&path)?;
         } else {
             file::remove_all(&path)?;
         }
     }
+    // With no wrapper wanted, drop the directory so activation stops putting it
+    // on PATH. Writers create it under the same lock, so none is mid-write. On
+    // Unix it goes whole, with any hidden wrapper the listing skips; on Windows
+    // a running wrapper's `.old` copy cannot be deleted and keeps it.
+    if !desired.is_empty() {
+        return Ok(());
+    }
+    if !cfg!(windows) {
+        return file::remove_all(wrappers_dir);
+    }
+    // The shim listing skips `.old` copies, so drop them here; one whose
+    // wrapper is still running stays locked and is left.
+    if let Ok(entries) = wrappers_dir.read_dir() {
+        for entry in entries.flatten() {
+            if entry.path().extension().is_some_and(|ext| ext == "old") {
+                let _ = fs::remove_file(entry.path()); // best-effort
+            }
+        }
+    }
+    if let Err(err) = fs::remove_dir(wrappers_dir)
+        && !matches!(
+            err.kind(),
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
+        )
+    {
+        return Err(err).wrap_err_with(|| {
+            format!(
+                "failed to remove wrapper directory: {}",
+                display_path(wrappers_dir)
+            )
+        });
+    }
     Ok(())
+}
+
+/// Only a reshim holding the wrapper directory's lock stages wrappers, so a
+/// staging directory found under that lock was left by a reshim that died
+/// mid-publish. Left alone it would also keep the directory from ever being
+/// removed once no wrapper is wanted.
+fn remove_stale_wrapper_staging(wrappers_dir: &Path) {
+    let Ok(entries) = fs::read_dir(wrappers_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        // A wrapper may itself be named with the prefix; only a directory is
+        // staging.
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(WRAPPER_STAGING_PREFIX)
+            || !entry.file_type().is_ok_and(|kind| kind.is_dir())
+        {
+            continue;
+        }
+        if let Err(err) = file::remove_all(entry.path()) {
+            warn!("failed to remove stale wrapper staging directory: {err:#}");
+        }
+    }
 }
 
 pub fn command_names_eq(a: &str, b: &str) -> bool {
@@ -1118,36 +1294,6 @@ fn snap_mise_bin(mise_bin: &Path, snap: &Path) -> Option<PathBuf> {
     Some(snap_mount.join("current").join(relative))
 }
 
-/// Remove all shim files from a directory individually, skipping dotfiles like
-/// `.mode`. Uses [`remove_shim_with_rename_fallback`] for each entry so locked
-/// `.exe` files on Windows are renamed out of the way instead of causing a
-/// hard error.
-fn remove_shims_individually(shims_dir: &Path) -> Result<()> {
-    let entries = match shims_dir.read_dir() {
-        Ok(entries) => entries,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => {
-            return Err(e).wrap_err_with(|| {
-                format!(
-                    "failed to read shims directory: {}",
-                    display_path(shims_dir)
-                )
-            });
-        }
-    };
-    for entry in entries {
-        let entry = entry?;
-        let name = entry.file_name();
-        // skip dotfiles (e.g. .mode) — these are metadata, not shims
-        if is_hidden_shim_name(&name) {
-            continue;
-        }
-        let path = entry.path();
-        remove_shim_with_rename_fallback(&path)?;
-    }
-    Ok(())
-}
-
 /// Remove a single shim file. On Windows, if deletion fails (e.g. because the
 /// `.exe` is locked by another process), rename it to `<name>.old` so the path
 /// is freed for a new shim. The `.old` file will be cleaned up on the next
@@ -1208,6 +1354,91 @@ pub fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
     // Note: file::which on Windows checks extension only, not file existence,
     // so we must verify the file actually exists.
     file::which("mise-shim.exe").filter(|p| p.is_file())
+}
+
+/// A `mise-shim.exe` template older than the mise that copies "exe" shims from it.
+///
+/// Package managers replace `mise.exe` without always refreshing the `mise-shim.exe` beside it, and
+/// `mise reshim --force` copies whatever template it finds, so every rebuilt shim keeps the old
+/// launcher and its bugs (one older than 2026.7.8 has no recursion guard and loops forever through
+/// a command wrapper, discussion #14494). Nothing else reports this: the `.version` marker in the
+/// shims dir tracks the mise that ran reshim, not the template.
+#[cfg(any(windows, test))]
+pub struct StaleNativeShimTemplate {
+    pub path: PathBuf,
+    /// The mise release the template shipped with; `None` for a build older than the tag itself.
+    pub version: Option<String>,
+}
+
+#[cfg(any(windows, test))]
+impl StaleNativeShimTemplate {
+    pub fn message(&self) -> String {
+        let mise_version = env!("CARGO_PKG_VERSION");
+        let age = match &self.version {
+            Some(version) => format!("it is from mise {version}"),
+            None => "it has no version tag, so it predates this check".to_string(),
+        };
+        format!(
+            "mise-shim.exe at {} is older than mise {mise_version}: {age}\n\
+             shims copied from it keep the old launcher, however often `mise reshim --force` runs\n\
+             update mise with the package manager that installed it (or `mise self-update`) so mise-shim.exe is replaced too, then run `mise reshim --force`",
+            display_path(&self.path)
+        )
+    }
+}
+
+/// The mise release embedded in a `mise-shim.exe`, or `None` for a shim built before mise tagged it.
+#[cfg(any(windows, test))]
+fn native_shim_version(contents: &[u8]) -> Option<String> {
+    let prefix = NATIVE_SHIM_VERSION_PREFIX.trim().as_bytes();
+    let is_release = |version: &str| {
+        !version.is_empty()
+            && version
+                .split('.')
+                .all(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
+    };
+    contents
+        .windows(prefix.len())
+        .enumerate()
+        .filter(|(_, window)| *window == prefix)
+        .find_map(|(start, _)| {
+            let rest = &contents[start + prefix.len()..];
+            let end = rest.iter().take(64).position(|b| *b == b'\n')?;
+            std::str::from_utf8(&rest[..end])
+                .ok()
+                .filter(|version| is_release(version))
+                .map(str::to_string)
+        })
+}
+
+/// Whether the template at `path`, with these `contents`, is older than `mise_version`.
+#[cfg(any(windows, test))]
+fn stale_native_shim_template_from(
+    path: &Path,
+    contents: &[u8],
+    mise_version: &str,
+) -> Option<StaleNativeShimTemplate> {
+    let version = native_shim_version(contents);
+    let stale = version
+        .as_deref()
+        .is_none_or(|version| crate::version::version_lt(version, mise_version));
+    stale.then(|| StaleNativeShimTemplate {
+        path: path.to_path_buf(),
+        version,
+    })
+}
+
+/// The `mise-shim.exe` that "exe" shims for `mise_bin` are copied from, when it is older than this
+/// mise. `None` outside "exe" mode, without a template (`effective_shim_mode` reports that), or when
+/// the template is current.
+#[cfg(windows)]
+pub fn stale_native_shim_template(mise_bin: &Path) -> Option<StaleNativeShimTemplate> {
+    if Settings::get().windows_shim_mode != "exe" {
+        return None;
+    }
+    let path = find_mise_shim_bin(mise_bin)?;
+    let contents = fs::read(&path).ok()?;
+    stale_native_shim_template_from(&path, &contents, env!("CARGO_PKG_VERSION"))
 }
 
 /// Resolve the effective Windows shim mode, falling back to "file" if "exe" is
@@ -1732,6 +1963,25 @@ fn shim_name_key(name: &str) -> String {
     }
 }
 
+/// Whether `shims.exclude` leaves a bootstrap shim for at least one of a lazy tool's
+/// `bins`. Matched on the names the shims are written under, as `ensure_lazy_shims`
+/// does: on Windows those can differ from the command names.
+pub(crate) fn lazy_bins_keep_a_shim(bins: &[String]) -> bool {
+    let excluded = &Settings::get().shims.exclude;
+    if excluded.is_empty() {
+        return !bins.is_empty();
+    }
+    // Locating the mise binary walks PATH; only Windows reads it, for its shim mode.
+    let mise_bin = if cfg!(windows) {
+        mise_bin_for_shims()
+    } else {
+        PathBuf::new()
+    };
+    bins.iter()
+        .flat_map(|bin| platform_shim_names(&mise_bin, bin))
+        .any(|name| !shim_name_excluded(excluded, &name))
+}
+
 /// Whether `shims.exclude` covers this shim name.
 pub(crate) fn shim_name_excluded(excluded: &BTreeSet<String>, name: &str) -> bool {
     let key = shim_name_key(name);
@@ -1781,16 +2031,25 @@ async fn list_tool_bins(
         .collect())
 }
 
+/// The `sh` script that runs a plugin's own shim through `mise x`. The target is quoted: it is a
+/// path, and a directory name may hold shell syntax. Like the Windows shims, it names itself in
+/// `__MISE_SHIM_PATH`, so `mise x` knows the user did not type `mise x` and does not trust the
+/// active config on their behalf.
+fn plugin_shim_contents(data_dir: &Path, fake_asdf_dir: &Path, target: &Path) -> String {
+    format!(
+        "{GENERATED_SHELL_SHIM_HEADER}export ASDF_DATA_DIR={data_dir}\nexport PATH=\"{fake_asdf_dir}:$PATH\"\nexport {shim_env}=\"$0\"\nmise x -- {target} \"$@\"\n",
+        shim_env = env::MISE_SHIM_PATH_ENV,
+        data_dir = data_dir.display(),
+        fake_asdf_dir = fake_asdf_dir.display(),
+        target = shell_escape::unix::escape(target.to_string_lossy()),
+    )
+}
+
 async fn make_shim(target: &Path, shim: &Path) -> Result<()> {
     file::remove_file_async_if_exists(shim).await?;
     file::write_async(
         shim,
-        format!(
-            "{GENERATED_SHELL_SHIM_HEADER}export ASDF_DATA_DIR={data_dir}\nexport PATH=\"{fake_asdf_dir}:$PATH\"\nmise x -- {target} \"$@\"\n",
-        data_dir = dirs::DATA.display(),
-        fake_asdf_dir = fake_asdf::setup()?.display(),
-        target = target.display()
-        ),
+        plugin_shim_contents(&dirs::DATA, &fake_asdf::setup()?, target),
     )
     .await?;
     file::make_executable_async(shim).await?;
@@ -1996,6 +2255,51 @@ mod tests {
     use super::*;
     use crate::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+
+    #[test]
+    fn active_wrappers_ignore_a_value_that_is_not_a_name_list() {
+        assert_eq!(parse_active_wrappers(r#"["a","b"]"#), ["a", "b"]);
+        for value in ["", "cargo", "{}", "[1]"] {
+            assert!(parse_active_wrappers(value).is_empty(), "{value:?}");
+        }
+    }
+
+    #[test]
+    fn plugin_shims_stay_inside_the_plugins_dir() {
+        let plugins = Path::new("/data/plugins");
+        assert_eq!(
+            plugin_shims_dir(plugins, "node"),
+            Some(PathBuf::from("/data/plugins/node/shims"))
+        );
+        // A path-shaped tool key from a config file must not pick the directory.
+        for id in ["/proc/self/cwd/;id>x;#", "/abs/dir", "../x", "..", ""] {
+            let dir = plugin_shims_dir(plugins, id);
+            assert!(
+                dir.as_ref()
+                    .is_none_or(|d| d.parent().and_then(Path::parent) == Some(plugins)),
+                "{id:?} resolved to {dir:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn plugin_shim_quotes_its_target() {
+        let contents = plugin_shim_contents(
+            Path::new("/data"),
+            Path::new("/data/.fake-asdf"),
+            Path::new("/data/plugins/a;id>x;#/shims/ls"),
+        );
+        assert!(
+            contents.contains("mise x -- '/data/plugins/a;id>x;#/shims/ls' \"$@\"\n"),
+            "{contents}"
+        );
+        // names itself, so `mise x` does not take the dispatch for a typed command
+        assert!(
+            contents.contains("export __MISE_SHIM_PATH=\"$0\"\n"),
+            "{contents}"
+        );
+        assert!(is_generated_shell_shim(contents.as_bytes()));
+    }
 
     #[cfg(windows)]
     #[test]
@@ -2837,6 +3141,52 @@ mod tests {
 
         fs::write(&shim, "#!/bin/sh\necho user-script\n").unwrap();
         assert!(!is_mise_shim(&shim, &mise_bin).unwrap());
+    }
+
+    #[test]
+    fn native_shim_version_reads_the_embedded_tag() {
+        let tagged = |version: &str| {
+            format!(
+                "\0junk{}{version}\n\0more",
+                NATIVE_SHIM_VERSION_PREFIX.trim()
+            )
+            .into_bytes()
+        };
+        assert_eq!(
+            native_shim_version(&tagged("2026.10.13")).as_deref(),
+            Some("2026.10.13")
+        );
+        // The prefix alone, as mise's own binary carries it, is not a version.
+        assert_eq!(native_shim_version(&tagged("")), None);
+        assert_eq!(native_shim_version(&tagged("latest")), None);
+        assert_eq!(native_shim_version(NATIVE_SHIM_MARKER), None);
+        assert_eq!(
+            native_shim_version(b"mise-shim: failed to execute mise"),
+            None
+        );
+        // An unterminated tag is not trusted: the bytes after it could be anything.
+        let unterminated = format!("{}2026.10.13", NATIVE_SHIM_VERSION_PREFIX.trim());
+        assert_eq!(native_shim_version(unterminated.as_bytes()), None);
+    }
+
+    #[test]
+    fn stale_native_shim_template_compares_the_tag_with_mise() {
+        let path = Path::new("C:\\mise\\bin\\mise-shim.exe");
+        let tagged = |version: &str| {
+            format!("{}{version}\n", NATIVE_SHIM_VERSION_PREFIX.trim()).into_bytes()
+        };
+        let stale = |contents: &[u8]| stale_native_shim_template_from(path, contents, "2026.10.13");
+
+        assert!(stale(&tagged("2026.10.13")).is_none());
+        assert!(stale(&tagged("2026.11.0")).is_none());
+        let older = stale(&tagged("2026.7.0")).expect("an older tag is stale");
+        assert_eq!(older.version.as_deref(), Some("2026.7.0"));
+        assert_eq!(older.path, path);
+        assert!(older.message().contains("it is from mise 2026.7.0"));
+        let untagged = stale(NATIVE_SHIM_MARKER).expect("a build without the tag is stale");
+        assert_eq!(untagged.version, None);
+        assert!(untagged.message().contains("no version tag"));
+        assert!(untagged.message().contains("mise reshim --force"));
     }
 
     #[test]

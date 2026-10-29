@@ -28,7 +28,6 @@ use crate::{dirs, env, file};
 use async_trait::async_trait;
 use color_eyre::eyre::{Result, WrapErr, bail, eyre};
 use console::style;
-use heck::ToKebabCase;
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
 pub(crate) struct AsdfBackend {
@@ -48,7 +47,7 @@ pub(crate) struct AsdfBackend {
 impl AsdfBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
         let name = ba.tool_name.clone();
-        let plugin_path = dirs::PLUGINS.join(ba.short.to_kebab_case());
+        let plugin_path = dirs::PLUGINS.join(crate::backend::tool_directory_name(&ba.short));
         let plugin = AsdfPlugin::new(name.clone(), plugin_path.clone());
         let toml_path = plugin_path.join("mise.plugin.toml");
         let toml = MisePluginToml::from_file(&toml_path).unwrap();
@@ -514,6 +513,12 @@ impl Backend for AsdfBackend {
             // the second is to prevent infinite loops
             return Ok(BTreeMap::new());
         }
+        // exec-env is sourced by EnvDiff::from_bash_script, which spawns bash
+        // itself and so passes none of ScriptManager's own safe mode checks.
+        // Its environment also carries the request's install_env (BASH_ENV).
+        // Checked before the cache, whose key is the version alone: a result
+        // computed with another config's install_env must not be served either.
+        Settings::ensure_not_safe("executing asdf plugin scripts")?;
         let res = self
             .cache
             .exec_env(config, self, tv, async || {

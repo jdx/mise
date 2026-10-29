@@ -39,8 +39,13 @@ To check your work, preview with `mise dot apply --dry-run` (add `--verbose`
 to see content diffs) or [`mise dot diff`](/cli/dotfiles/diff.html), apply with
 `mise dot apply`, and confirm with
 [`mise dot status`](/cli/dotfiles/status.html). Apply skips targets that
-already match. The [reference](/dotfiles/reference.html#entry-keys) lists
-every entry key.
+already match. `mise dot diff` reads the entries declared in your config, not
+only those you created with `mise dot add`. It prints the difference for each
+target that would change. When none would, it reports `files: all files are
+applied` for whole-file entries and `edits: all edits are applied` for
+[edits](/dotfiles/edits.html); `track` entries are skipped, because
+[`mise dot history diff`](/cli/dotfiles/history/diff.html) covers them. The
+[reference](/dotfiles/reference.html#entry-keys) lists every entry key.
 
 ## Modes {#modes}
 
@@ -57,8 +62,9 @@ uses `dotfiles.default_mode`, which is `symlink` unless you change it.
 
 `mode = "track"` and `mode = "track-local"` are not deployment modes: they
 save the history of a file where it is, without a source. See [Dotfiles history](/dotfiles/history.html).
-On Windows, `symlink` can fall back to copying and `symlink-each` always
-copies; see [Windows](#windows).
+On Windows, `symlink` can fall back to copying and `symlink-each` copies
+unless [`dotfiles.windows_symlinks`](/configuration/settings.html#dotfiles.windows_symlinks)
+is on; see [Windows](#windows).
 
 To link a directory as a whole:
 
@@ -85,6 +91,38 @@ Applying a `copy` entry overwrites changes made directly to the target. Save
 them to the source first with `mise dot add`; see
 [Adopt files and capture edits](#capturing-changes).
 :::
+
+## Create a file only if it is missing {#create-if-missing}
+
+`copy`, `template`, and inline `content` entries overwrite the target on every
+apply. To seed a file that you then edit on the machine, such as a template for
+local API tokens, set `create_if_missing = true`:
+
+```toml
+[dotfiles]
+"~/.config/mise/conf.d/private.local.toml" = { source = "templates/private.toml", mode = "copy", permissions = "0600", create_if_missing = true }
+```
+
+- If nothing exists at the target, apply writes it and sets `permissions`.
+- If anything but a directory exists there, including a symlink, apply leaves it
+  as it is, content and permissions included. `status` reports it as applied and
+  `diff` shows nothing, so edits you make are never drift.
+- If you delete the target, the next apply creates it again.
+
+The source is not read, and a template is not rendered, while its target
+exists, so deleting the source does not make `apply` or `status` fail. A
+directory at the target is still a [conflict](#conflicts). `create_if_missing`
+takes a file source, so it cannot be combined with a directory source,
+`symlink`, `symlink-each`, `absent`, `track`, or a permissions-only entry.
+
+If an application rewrites the file and you only own some of its keys, a
+[`merge`](/dotfiles/edits.html#merge) entry fits better: it sets the keys you
+ship and leaves the rest alone.
+
+Because mise did not write what you have since edited, `mise dot unapply`
+leaves the file in place unless you pass `--force`; see [Unapply](#unapplying).
+If the target lives in a repository, ignore it there so a token you add is not
+committed.
 
 ## Templates {#templates}
 
@@ -194,7 +232,7 @@ sets others:
 ```
 
 `content` takes the place of `source` and `mode`. It can be combined with
-`permissions`, but not with `source`, `mode`, `exclude`, `manifest`,
+`permissions` and [`create_if_missing`](#create-if-missing), but not with `source`, `mode`, `exclude`, `manifest`,
 `encrypt = true`, `remove_empty`, `dot_prefix`, `relative = true`, target
 `variants`, the track-only keys `include` and `allow_plaintext`, or the edit
 options `block`, `line`, `template`, and `comment`. The
@@ -271,8 +309,8 @@ when an earlier entry wrote this target: once the file is gone and the
 directory is empty, it goes too, as [for templates](#remove-empty).
 
 An `absent` entry takes no `source`, `content`, `exclude`, `manifest`,
-`permissions`, `encrypt = true`, `remove_empty`, `relative = true`,
-`dot_prefix`, or block and line edit keys; mise warns and ignores an entry
+`permissions`, `encrypt = true`, `remove_empty`, `create_if_missing`,
+`relative = true`, `dot_prefix`, or block and line edit keys; mise warns and ignores an entry
 that sets one. No other entry can place a file beneath an `absent` target, and
 an edit entry cannot change the file it removes. The target names exactly one
 path, so it cannot contain `*`, `?`, or `[`. To remove a file whose name
@@ -335,6 +373,11 @@ on the next apply, as deleting the source would. A directory `copy` is
 additive: exclusions prevent future copies but leave existing target files in
 place. To leave files out of a [tracked directory](/dotfiles/history.html#exclude-files-from-one-directory),
 use the tracked entry's own `exclude` list.
+
+`exclude` is a field of the entry, so set it by editing the entry in your
+config. [`mise dot exclude`](/cli/dotfiles/exclude.html) is a different,
+global rule: it adds a glob to `[history] exclude` and applies to every
+tracked path.
 
 ### Deploy only files committed to Git {#git-tracked-directories}
 
@@ -415,6 +458,30 @@ A variant's `target` overrides the table key. When every variant supplies a
 an absolute or home-relative target path. Every target must be absolute or
 start with `~/`.
 
+A variant's `target` is a template, so a destination can follow a machine's
+configuration, such as an `XDG_CONFIG_HOME` that is not `~/.config`:
+
+```toml
+[dotfiles.examplectl]
+source = "dotfiles/examplectl"
+mode = "symlink"
+variants = [{ default = true, target = "{{ xdg_config_home }}/examplectl" }]
+```
+
+To link into the directory mise reads its config from, even when `MISE_CONFIG_DIR`
+moves it, use `{{ mise_config_dir }}`:
+
+```toml
+[dotfiles."git-tools"]
+source = "git"
+mode = "symlink"
+variants = [{ default = true, target = "{{ mise_config_dir }}/conf.d/git-tools" }]
+```
+
+The template has the context every config file gets (`env`, `xdg_config_home`,
+`config_root`, ...), but not `exec()` or `vars`. It must render to an absolute
+or `~/` path. The entry key is not rendered.
+
 When every variant supplies a `target`, you can omit `source`, and mise reads
 the source from the entry key as a path under `dotfiles.root`:
 
@@ -492,9 +559,17 @@ file. When the source is on another filesystem, mise copies the file, keeping
 symlinks and permissions, instead of moving it.
 
 - `--mode copy` keeps a regular file at the target; `--mode` takes any mode.
-- `--source <path>` uses that source instead of one under `dotfiles.root`.
+- `--source <path>` uses that source instead of one under `dotfiles.root`. A
+  relative path starts from the current directory; the entry records it
+  relative to the config file's directory when it lies inside it, and as an
+  absolute path otherwise.
 - `--no-apply` copies the file to its source and writes the entry without
-  changing the original file, so you can review both first.
+  changing the original file, so you can review both first. It still writes
+  the source: when the source already exists with different contents, `add`
+  overwrites it with the live file, and asks first only in a terminal (`--force`
+  or `--yes` skip the prompt). `--dry-run` prints a `cp` line for every target
+  that exists, whether or not its contents already match the source, so compare
+  an existing source with the live file yourself before you add.
 - `--dry-run` prints the source and config changes without making them.
 
 The entry goes to your global config, or to the file named by
@@ -511,6 +586,10 @@ the change back to its source:
 $EDITOR ~/.config/starship.toml
 mise dot add ~/.config/starship.toml
 ```
+
+`mise dot add` refuses to capture a `template` target, because the rendered file
+would replace the template code in the source, and any `exec()` output with it;
+edit the source instead. `--force` overwrites the source anyway.
 
 `mise dot add --changed` updates the sources of every changed regular file
 managed in `copy` mode, including the files a copy-mode
@@ -543,6 +622,8 @@ A `copy`, `template`, or inline `content` entry overwrites the target's
 content without `--force`, and replaces a symlink at the target with a file.
 A directory where a copied, templated, or inline file should go, or a file
 where a directory copy should go, is still a conflict and needs `--force`.
+When `apply` is about to overwrite a `template` target that you edited since mise
+last wrote it, it warns first, so you can move the edit into the source.
 Check `mise dot diff` before you change which source a target uses.
 
 [Edit entries](/dotfiles/edits.html#conflicts) apply without `--force`.
@@ -627,3 +708,13 @@ otherwise. A directory link is a junction. `symlink-each` always copies each
 file, so edit the source rather than the target and run `mise dot apply`.
 `mise dot status` accepts either form on disk. `relative` and `permissions`
 are ignored on Windows.
+
+Set [`dotfiles.windows_symlinks`](/configuration/settings.html#dotfiles.windows_symlinks)
+to `true` to get real file links from both modes. `symlink-each` then links
+each file, and a file that cannot be linked fails the apply instead of
+becoming a copy, so Developer Mode or an elevated shell is required. Files
+earlier applies copied are regular files in the way, so replacing them with
+links needs `--force`. Turning the setting off again changes only what new
+files get: links already in place stay links, and `mise dot unapply` of a
+`symlink-each` entry that holds links needs `--force` unless the setting is
+on.

@@ -55,8 +55,13 @@ mise keeps two shim directories:
 
 When you install a tool, mise adds a shim to the shim directory for every
 executable the tool provides. On Unix each shim is a symlink to the `mise`
-binary; on Windows it is a small executable by default (see
-[`windows_shim_mode`](/configuration/settings.html#windows_shim_mode)).
+binary; on Windows it is a copy of the `mise-shim.exe` that ships beside
+`mise.exe` by default (see
+[`windows_shim_mode`](/configuration/settings.html#windows_shim_mode)). If an
+update replaces `mise.exe` but leaves an older `mise-shim.exe` behind,
+`mise doctor` and `mise reshim` report it, since every rebuilt shim would keep
+the old launcher. Update mise with the package manager that installed it, or
+run `mise self-update`, so both files are replaced, then `mise reshim --force`.
 
 ```sh
 mise use node@24 npm:prettier@3
@@ -466,6 +471,10 @@ tool the first time it runs one of its commands. `mise run` does not install
 lazy tools ahead of time. `mise use` rebuilds shims when it changes a lazy
 declaration; run `mise reshim` after editing one by hand.
 
+In [safe mode](/security.html#safe-mode), lazy tools in project config get no
+bootstrap shims and do not install on first use. Neither does a lazy option
+that a project's `[tool_alias]` adds to a tool in global config.
+
 ## Command wrappers {#command-wrappers}
 
 A command wrapper keeps a command's name but runs another program. For example,
@@ -510,8 +519,10 @@ env = { MBX_CARGO_SHIM_MODE = "1" }
 ```
 
 `command`, `args` and `env` values are [templates](/templates.html), so a wrapper
-can use `vars`, `env` and functions such as `join_path`. `command` sees only `vars` and
-the process environment, because it may be what installs the project's tools:
+can use `vars`, `env`, `config_root` and functions such as `join_path`. Relative paths
+in functions such as `read_file` resolve from the directory of the file that declares
+the wrapper. `command` sees only `vars`, `config_root`, `config_source` and the process
+environment, because it may be what installs the project's tools:
 
 ```toml [mise.toml]
 [wrappers.foo]
@@ -529,8 +540,13 @@ command = "podman"
 args = ["ps", "--format", "{% raw %}{{.Names}}{% endraw %}"]
 ```
 
-When a wrapper runs its command, mise removes the shim and wrapper directories
-from `PATH`, so `mbx` finds the real Cargo: mise-managed Rust when configured,
-otherwise rustup or the system installation. For mise-managed Rust, the
-[Rust guide](/lang/rust.html#share-cargo-builds-with-mr-boxington) sets this up
-with the `mr_boxington` tool option and the `mr-boxington` tool.
+While a wrapper's command runs, that wrapper is skipped for the command and
+everything it starts, so `mbx` finds the real Cargo: mise-managed Rust when
+configured, otherwise rustup or the system installation. For mise-managed Rust,
+the [Rust guide](/lang/rust.html#share-cargo-builds-with-mr-boxington) sets this
+up with the `mr_boxington` tool option and the `mr-boxington` tool.
+
+Other wrappers still apply. If `pnpm` and `node` are both wrapped, a script that
+`pnpm` runs gets the `node` wrapper, with its `args` and `env`, while `pnpm`'s own
+lookups of `pnpm` reach the real tool. mise records the running wrappers in the
+`__MISE_ACTIVE_WRAPPERS` environment variable.

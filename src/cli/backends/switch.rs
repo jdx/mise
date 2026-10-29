@@ -349,7 +349,8 @@ impl BackendsSwitch {
     fn selected(&self, short: &str, version: &str, locked: &str) -> bool {
         self.tool.is_empty()
             || self.tool.iter().any(|t| {
-                (t.ba.short == short || t.ba.short == locked)
+                let configured = crate::toolset::install_state::state_short(&t.ba.short);
+                (configured == short || configured == locked)
                     && t.version.as_ref().is_none_or(|v| v == version)
             })
     }
@@ -519,8 +520,16 @@ struct Snapshot {
     lockfile: PathBuf,
     content: Option<String>,
     sidecars: PathBuf,
-    /// A copy of `sidecars`, or `None` when the directory did not exist.
-    sidecar_copy: Option<tempfile::TempDir>,
+    sidecar_snapshot: SidecarSnapshot,
+}
+
+enum SidecarSnapshot {
+    /// There was no sidecar directory, so remove anything the failed relock created.
+    Missing,
+    /// A linked root is external to this project and must remain untouched.
+    Linked,
+    /// Preserve an existing ordinary sidecar directory for rollback.
+    Present(tempfile::TempDir),
 }
 
 impl Snapshot {
@@ -533,18 +542,26 @@ impl Snapshot {
             lockfile.to_path_buf()
         };
         let sidecars = lockfile::sidecar_root(&target);
-        let sidecar_copy = if sidecars.is_dir() {
-            let copy = tempfile::tempdir()?;
-            crate::file::copy_dir_all_preserve_symlinks(&sidecars, &copy.path().join("sidecars"))?;
-            Some(copy)
-        } else {
-            None
-        };
+        let sidecar_snapshot =
+            if lockfile::symlink_below(target.parent().unwrap_or(Path::new(".")), &sidecars)
+                .is_some()
+            {
+                SidecarSnapshot::Linked
+            } else if sidecars.is_dir() {
+                let copy = tempfile::tempdir()?;
+                crate::file::copy_dir_all_preserve_symlinks(
+                    &sidecars,
+                    &copy.path().join("sidecars"),
+                )?;
+                SidecarSnapshot::Present(copy)
+            } else {
+                SidecarSnapshot::Missing
+            };
         Ok(Self {
             lockfile: lockfile.to_path_buf(),
             content,
             sidecars,
-            sidecar_copy,
+            sidecar_snapshot,
         })
     }
 
@@ -556,29 +573,38 @@ impl Snapshot {
             None => Ok(()),
         };
         let sidecars_restored = (|| -> Result<()> {
-            if self.sidecars.exists() {
-                crate::file::remove_all(&self.sidecars)?;
+            match &self.sidecar_snapshot {
+                SidecarSnapshot::Linked => Ok(()),
+                SidecarSnapshot::Missing => self.remove_sidecars_if_present(),
+                SidecarSnapshot::Present(copy) => {
+                    self.remove_sidecars_if_present()?;
+                    crate::file::copy_dir_all_preserve_symlinks(
+                        &copy.path().join("sidecars"),
+                        &self.sidecars,
+                    )
+                }
             }
-            if let Some(copy) = &self.sidecar_copy {
-                crate::file::copy_dir_all_preserve_symlinks(
-                    &copy.path().join("sidecars"),
-                    &self.sidecars,
-                )?;
-            }
-            Ok(())
         })();
         let err = match (lockfile_restored, sidecars_restored) {
             (Ok(()), Ok(())) => return Ok(()),
             (Err(err), Ok(())) | (Ok(()), Err(err)) => err,
             (Err(lockfile), Err(sidecars)) => lockfile.wrap_err(format!("{sidecars:#}")),
         };
-        match self.sidecar_copy {
+        match self.sidecar_snapshot {
             // Keep the backup instead of letting the temp dir delete it.
-            Some(copy) => Err(err.wrap_err(format!(
+            SidecarSnapshot::Present(copy) => Err(err.wrap_err(format!(
                 "the previous sidecars are kept in {}",
                 display_path(copy.keep().join("sidecars"))
             ))),
-            None => Err(err),
+            SidecarSnapshot::Missing | SidecarSnapshot::Linked => Err(err),
+        }
+    }
+
+    fn remove_sidecars_if_present(&self) -> Result<()> {
+        match std::fs::symlink_metadata(&self.sidecars) {
+            Ok(_) => crate::file::remove_all(&self.sidecars),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(err.into()),
         }
     }
 }
@@ -610,4 +636,107 @@ fn has_version_path(tool_dir: &Path, tv: &ToolVersion) -> bool {
                 && entry.path().exists()
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_restore_removes_sidecars_when_none_existed() {
+        let temp = tempfile::tempdir().unwrap();
+        let lockfile = temp.path().join("project/mise.lock");
+        std::fs::create_dir_all(lockfile.parent().unwrap()).unwrap();
+        let sidecars = lockfile::sidecar_root(&lockfile);
+        let snapshot = Snapshot::take(&lockfile, None).unwrap();
+        assert!(!sidecars.exists());
+
+        std::fs::create_dir_all(&sidecars).unwrap();
+        std::fs::write(sidecars.join("partial"), "new sidecar").unwrap();
+        snapshot.restore().unwrap();
+
+        assert!(!sidecars.exists());
+    }
+
+    #[test]
+    fn snapshot_restore_preserves_an_empty_sidecar_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let lockfile = temp.path().join("project/mise.lock");
+        std::fs::create_dir_all(lockfile.parent().unwrap()).unwrap();
+        let sidecars = lockfile::sidecar_root(&lockfile);
+        std::fs::create_dir_all(&sidecars).unwrap();
+        let snapshot = Snapshot::take(&lockfile, None).unwrap();
+
+        std::fs::write(sidecars.join("partial"), "new sidecar").unwrap();
+        snapshot.restore().unwrap();
+
+        assert!(sidecars.is_dir());
+        assert_eq!(std::fs::read_dir(&sidecars).unwrap().count(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_restore_leaves_a_linked_sidecar_root_untouched() {
+        for link_sidecars_root in [true, false] {
+            let temp = tempfile::tempdir().unwrap();
+            let lockfile = temp.path().join("project/mise.lock");
+            std::fs::create_dir_all(lockfile.parent().unwrap()).unwrap();
+            let sidecars = lockfile::sidecar_root(&lockfile);
+            let external = temp.path().join("external");
+            let linked_path = if link_sidecars_root {
+                &sidecars
+            } else {
+                sidecars.parent().unwrap()
+            };
+            let external_sidecars = if link_sidecars_root {
+                external.clone()
+            } else {
+                external.join("locks")
+            };
+            std::fs::create_dir_all(&external_sidecars).unwrap();
+            std::fs::write(external_sidecars.join("keep"), "external data").unwrap();
+            std::fs::create_dir_all(linked_path.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(&external, linked_path).unwrap();
+            let snapshot = Snapshot::take(&lockfile, None).unwrap();
+
+            snapshot.restore().unwrap();
+
+            assert!(
+                std::fs::symlink_metadata(linked_path)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink()
+            );
+            assert_eq!(std::fs::read_link(linked_path).unwrap(), external);
+            assert_eq!(
+                std::fs::read_to_string(external_sidecars.join("keep")).unwrap(),
+                "external data"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_restore_leaves_a_dangling_sidecar_link_untouched() {
+        let temp = tempfile::tempdir().unwrap();
+        let lockfile = temp.path().join("project/mise.lock");
+        std::fs::create_dir_all(lockfile.parent().unwrap()).unwrap();
+        let sidecars = lockfile::sidecar_root(&lockfile);
+        std::fs::create_dir_all(sidecars.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(temp.path().join("missing"), &sidecars).unwrap();
+        let snapshot = Snapshot::take(&lockfile, None).unwrap();
+
+        snapshot.restore().unwrap();
+
+        assert!(
+            std::fs::symlink_metadata(&sidecars)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            std::fs::read_link(&sidecars).unwrap(),
+            temp.path().join("missing")
+        );
+    }
 }

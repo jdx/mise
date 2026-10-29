@@ -14,6 +14,9 @@ use eyre::eyre;
 
 pub(crate) const EXPERIMENTAL: bool = false;
 
+/// The `dotnet.registry_url` default: nuget.org.
+const DEFAULT_NUGET_REGISTRY_URL: &str = "https://api.nuget.org/v3/index.json";
+
 #[derive(Debug)]
 pub(crate) struct DotnetBackend {
     ba: Arc<BackendArg>,
@@ -56,6 +59,15 @@ impl Backend for DotnetBackend {
 
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         true
+    }
+
+    /// A NuGet service index other than nuget.org lists its own packages.
+    async fn remote_version_cache_context(
+        &self,
+        _config: &Arc<Config>,
+    ) -> eyre::Result<Option<String>> {
+        let registry_url = Settings::get().dotnet.registry_url.clone();
+        Ok((registry_url != DEFAULT_NUGET_REGISTRY_URL).then_some(registry_url))
     }
 
     async fn _list_remote_versions(&self, _config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {

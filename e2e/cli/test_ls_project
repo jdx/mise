@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+export CLICOLOR=0
+
+mise i dummy@{1.0.0,2.0.0}
+
+# --project is its own scope, so it refuses flags that would silently win over it
+printf '[tools]\ndummy = "1.0.0"\n' >mise.toml
+assert_fail_contains "mise ls --project --monorepo 2>&1" "cannot be used with"
+assert_fail_contains "mise ls --project --prunable 2>&1" "cannot be used with"
+
+# a version that a later file overrides is not listed, as with --no-global
+mkdir -p layered
+printf '[tools]\ndummy = "1.0.0"\n' >layered/mise.toml
+printf '[tools]\ndummy = "2.0.0"\n' >layered/mise.local.toml
+assert "cd layered && mise ls --project dummy --json | jq -r '.[] | select(.version==\"2.0.0\") | .active'" "true"
+assert "cd layered && mise ls --project dummy --json | jq -r 'length'" "1"
+
+# from inside a conf.d fragment folder, the project that owns it is found
+mkdir -p frag/.mise/conf.d/team
+printf '[tools]\ndummy = "2.0.0"\n' >frag/.mise/conf.d/team/mise.toml
+assert "cd frag/.mise/conf.d/team && mise ls --project dummy --json | jq -r '.[] | select(.active) | .version'" "2.0.0"

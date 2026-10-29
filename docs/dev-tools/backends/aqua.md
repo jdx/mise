@@ -118,6 +118,13 @@ also have a global setting, such as
 [`github_attestations`](/configuration/settings.html#github_attestations) or
 [`slsa`](/configuration/settings.html#slsa).
 
+A recipe's GitHub artifact attestations are checked when the release has them.
+A release with none is installed on its other checks, unless the mise registry
+sets [`attestations_since`](/contributing/registry.html#required-attestations)
+on the tool's `aqua:` backend: from that version on, a missing attestation fails
+`mise install` and `mise lock` as a possible downgrade. Earlier versions, and
+versions that are not semantic versions, are unaffected.
+
 The SLSA signer fields are the exact Fulcio certificate URI subject and OIDC
 issuer. Packages whose recipe has no signer skip SLSA and may use another check.
 To supply one, see
@@ -243,6 +250,18 @@ any signer in the recipe. The <span v-pre>`{{.Version}}`</span> template is
 available in both values. Copy the signer from the project's release provenance,
 not from an unreviewed source. These options only supply the signer: they do not
 turn on SLSA for a package whose recipe has no `slsa_provenance`.
+
+A reusable workflow like the one above has the same identity in every repository
+that calls it, so mise also requires the workflow run to belong to the package's
+repository: the recipe's `slsa_provenance.source_uri`, or else the repository
+the provenance is published in. Provenance built before that repository was
+renamed or transferred passes when api.github.com, not a
+[`url_replacements`](/url-replacements.html) mirror, confirms the two names
+are the same repository.
+
+The workflow run must also have built the release's tag: the recipe's
+`slsa_provenance.source_tag`, or else the version's tag. A `source_tag` of `-`
+turns this check off for packages built from a branch.
 
 ## Settings
 

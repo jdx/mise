@@ -108,6 +108,31 @@ fn test_semver_constraint_without_an_operator_is_not_satisfied() {
 }
 
 #[test]
+fn test_version_constraint_with_a_non_bool_result_is_not_satisfied() {
+    assert!(!constraint_holds("Version", "1.0.0"));
+    assert!(!constraint_holds("1", "1.0.0"));
+    assert!(!constraint_holds("nil", "1.0.0"));
+
+    let pkg = AquaPackage {
+        version_constraint: "Version".to_string(),
+        ..Default::default()
+    };
+    assert!(!pkg.version_constraint_ok(&["1.0.0"]));
+}
+
+#[test]
+fn test_semver_with_a_non_string_argument_is_an_error() {
+    assert!(!constraint_holds("semver(1)", "1.0.0"));
+
+    let mut pkg = AquaPackage {
+        version_filter: Some("semver(1)".to_string()),
+        ..Default::default()
+    };
+    pkg.setup_version_filter().unwrap();
+    assert!(pkg.version_filter_ok("1.0.0").is_err());
+}
+
+#[test]
 fn test_version_override_matches_version_prefix() {
     let pkg = AquaPackage {
         version_constraint: "false".to_string(),
@@ -178,4 +203,28 @@ fn test_unconditional_package_ignores_version_prefix() {
     let resolved = pkg.version_override(&["1.8.1"]).unwrap();
     assert_eq!(resolved.version_prefix.as_deref(), Some("jq-"));
     assert_eq!(resolved.asset, "jq-{{.OS}}-{{.Arch}}");
+}
+
+#[test]
+fn test_split_version_prefix() {
+    assert_eq!(split_version_prefix("latest"), ("".into(), "latest".into()));
+    assert_eq!(split_version_prefix("v1.2.3"), ("v".into(), "1.2.3".into()));
+    assert_eq!(
+        split_version_prefix("cli/1.2.3"),
+        ("cli/".into(), "1.2.3".into())
+    );
+    assert_eq!(
+        split_version_prefix("\u{5de5}\u{5177}-v1.2.3"),
+        ("\u{5de5}\u{5177}-v".into(), "1.2.3".into())
+    );
+    assert_eq!(
+        split_version_prefix("\u{5de5}1"),
+        ("".into(), "\u{5de5}1".into())
+    );
+}
+
+#[test]
+fn test_version_override_multibyte_version() {
+    assert!(!constraint_holds("semver(\">= 1.0.0\")", "\u{5de5}1"));
+    assert!(constraint_holds("semver(\">= 1.0.0\")", "\u{5de5}-v1.2.3"));
 }

@@ -56,7 +56,8 @@ impl Plugin {
         let ctx = self.context(Some(version.to_string()), options)?;
         let target_os = os.to_string();
         let target_arch = arch.to_string();
-        let target_runtime = Runtime::with_platform(self.dir.clone(), os, arch);
+        let target_runtime =
+            Runtime::with_platform(self.dir.clone(), self.usable_cache_dir_path(), os, arch);
         let pre_install = self
             .eval_async(chunk! {
                 require "hooks/pre_install"
@@ -128,6 +129,12 @@ pub struct PreInstallAttestation {
     pub slsa_min_level: Option<u8>,
     pub slsa_signer_identity: Option<String>,
     pub slsa_signer_issuer: Option<String>,
+    /// `owner/repo` whose workflow run made the provenance, when the signer
+    /// is a reusable workflow from another repository (slsa-github-generator).
+    pub slsa_source_repository: Option<String>,
+    /// The git tag this version's release was built from. Without it, mise
+    /// can't tell this release's provenance from another release's.
+    pub slsa_source_tag: Option<String>,
 }
 
 impl FromLua for PreInstallAttestation {
@@ -157,6 +164,9 @@ impl FromLua for PreInstallAttestation {
                     slsa_min_level: table.get::<Option<u8>>("slsa_min_level")?,
                     slsa_signer_identity: table.get::<Option<String>>("slsa_signer_identity")?,
                     slsa_signer_issuer: table.get::<Option<String>>("slsa_signer_issuer")?,
+                    slsa_source_repository: table
+                        .get::<Option<String>>("slsa_source_repository")?,
+                    slsa_source_tag: table.get::<Option<String>>("slsa_source_tag")?,
                 })
             }
             _ => Err(LuaError::FromLuaConversionError {
@@ -411,7 +421,7 @@ mod tests {
             .unwrap();
         assert_eq!(host_env_type, Some("gnu".to_string()));
 
-        let target_runtime = Runtime::with_platform(plugin.dir.clone(), "linux", "amd64");
+        let target_runtime = Runtime::with_platform(plugin.dir.clone(), None, "linux", "amd64");
         let target_os = "linux".to_string();
         let target_arch = "amd64".to_string();
         let target_env_type: Option<String> = plugin
@@ -433,6 +443,31 @@ mod tests {
         assert_eq!(target_env_type, None);
 
         Runtime::reset();
+    }
+
+    #[test]
+    async fn test_runtime_cache_dir_path() {
+        let plugin = Plugin::test("dummy");
+        let host: Option<String> = plugin
+            .eval_async(chunk! {
+                return RUNTIME.cacheDirPath
+            })
+            .await
+            .unwrap();
+        assert_eq!(host, None);
+
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("plugins").join("dummy");
+        let mut plugin = Plugin::test("dummy");
+        plugin.cache_dir_path = Some(cache.clone());
+        let seen: Option<String> = plugin
+            .eval_async(chunk! {
+                return RUNTIME.cacheDirPath
+            })
+            .await
+            .unwrap();
+        assert_eq!(seen, Some(cache.to_string_lossy().to_string()));
+        assert!(cache.is_dir());
     }
 
     #[test]
@@ -643,10 +678,15 @@ mod tests {
                 "https://token.actions.githubusercontent.com",
             )
             .unwrap();
+        table.set("slsa_source_repository", "owner/tool").unwrap();
         let attestation = PreInstallAttestation::from_lua(mlua::Value::Table(table), &lua).unwrap();
         assert_eq!(
             attestation.slsa_signer_issuer.as_deref(),
             Some("https://token.actions.githubusercontent.com")
+        );
+        assert_eq!(
+            attestation.slsa_source_repository.as_deref(),
+            Some("owner/tool")
         );
     }
 

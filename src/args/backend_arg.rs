@@ -6,19 +6,78 @@ use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
 use crate::toolset::{
-    ResolvedToolOptions, ToolOptionSource, ToolVersionOptions, install_state, parse_tool_options,
-    try_parse_tool_options,
+    ResolvedToolOptions, ToolOptionSource, ToolSource, ToolVersionOptions, install_state,
+    parse_tool_options, try_parse_tool_options,
 };
-use crate::{backend, config, dirs, lockfile, registry};
+use crate::{backend, config, dirs, file, lockfile, registry};
 use contracts::requires;
 use eyre::{Result, bail};
 use heck::ToShoutySnakeCase;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::{LazyLock as Lazy, Mutex};
+
+/// Longest tool name searched for "did you mean" candidates. No registry name
+/// comes near it, so a longer name cannot be a typo of one.
+const SUGGEST_MAX_NAME_LEN: usize = 100;
+/// Distinct unknown names searched per process; later ones get no suggestions.
+const SUGGEST_MAX_SEARCHES: usize = 20;
+
+/// "Did you mean?" candidates for a tool name that is in no registry.
+///
+/// Each search scores the name against every mise and aqua registry entry. The
+/// name can come from a config file that loads without trust, and
+/// `BackendArg::backend()` runs many times per tool for callers that drop the
+/// error, so each name is searched once per process, and both its length and
+/// the number of names searched are bounded.
+fn similar_tool_names(short: &str) -> Vec<String> {
+    static SEARCHED: Lazy<Mutex<HashMap<String, Vec<String>>>> = Lazy::new(Default::default);
+    let mut searched = SEARCHED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    bounded_suggestions(&mut searched, short, search_similar_tool_names)
+}
+
+fn bounded_suggestions(
+    searched: &mut HashMap<String, Vec<String>>,
+    short: &str,
+    search: impl FnOnce(&str) -> Vec<String>,
+) -> Vec<String> {
+    if short.len() > SUGGEST_MAX_NAME_LEN {
+        return vec![];
+    }
+    if let Some(suggestions) = searched.get(short) {
+        return suggestions.clone();
+    }
+    if searched.len() >= SUGGEST_MAX_SEARCHES {
+        return vec![];
+    }
+    let suggestions = search(short);
+    searched.insert(short.to_string(), suggestions.clone());
+    suggestions
+}
+
+fn search_similar_tool_names(short: &str) -> Vec<String> {
+    let registry_shorts: Vec<&str> = REGISTRY.keys().collect();
+    let mut suggestions: Vec<String> =
+        xx::suggest::similar_n_with_threshold(short, &registry_shorts, 3, 0.8)
+            .into_iter()
+            .filter(|s| *s != short)
+            .map(|s| s.to_string())
+            .collect();
+
+    let mise_names: HashSet<String> = suggestions.iter().cloned().collect();
+    for aqua in crate::aqua::aqua_registry_wrapper::aqua_suggest(short) {
+        if !mise_names.contains(&aqua.name) {
+            suggestions.push(aqua.backend);
+        }
+    }
+    suggestions
+}
 
 /// Metadata about how a backend was resolved.
 /// This struct is designed for extensibility - additional fields can be added
@@ -29,11 +88,27 @@ pub struct BackendResolution {
     /// Also true when restored from install state for backward compatibility with existing installations,
     /// and for plugin-based tools initialized from the plugin registry.
     pub explicit: bool,
+    /// The backend was chosen by mise for this request, not by the user, so it
+    /// is not recorded in the install manifest as the tool's backend.
+    forced: bool,
 }
 
 impl BackendResolution {
     pub(crate) fn new(explicit: bool) -> Self {
-        Self { explicit }
+        Self {
+            explicit,
+            forced: false,
+        }
+    }
+
+    /// A backend that mise requires for one request, such as the one that
+    /// publishes the artifact a `packageManager` checksum was computed for.
+    /// It is pinned like an explicit backend while the request lasts.
+    pub(crate) fn forced() -> Self {
+        Self {
+            explicit: true,
+            forced: true,
+        }
     }
 }
 
@@ -80,8 +155,25 @@ impl<A: AsRef<str>> From<A> for BackendArg {
     }
 }
 
+// An earlier mise recorded the backend a `packageManager` checksum forces as the
+// tool's explicit backend, which pinned every later request for it to npm. Until
+// such manifests have aged out, they are read as the registry's choice again.
+crate::remove_by!("2027.10.0", "forced-checksum-backend-records");
+
+fn recorded_by_checksum_backend(short: &str, full: Option<&String>) -> bool {
+    matches!(
+        (short, full.map(String::as_str)),
+        ("bun", Some("npm:bun"))
+            | ("npm", Some("npm:npm"))
+            | ("pnpm", Some("npm:pnpm"))
+            | ("yarn", Some("npm:yarn" | "http:yarn"))
+    )
+}
+
 impl From<InstallStateTool> for BackendArg {
     fn from(ist: InstallStateTool) -> Self {
+        let explicit =
+            ist.explicit_backend && !recorded_by_checksum_backend(&ist.short, ist.full.as_ref());
         let (short, tool_name, mut opts) = parse_backend_components(&ist.short, ist.full.as_ref());
 
         // Merge manifest opts into the parsed opts (manifest opts provide defaults)
@@ -98,7 +190,7 @@ impl From<InstallStateTool> for BackendArg {
             ist.full,
             tool_name,
             None,
-            BackendResolution::new(ist.explicit_backend),
+            BackendResolution::new(explicit),
         );
         tool.opts = opts;
         tool.opts_source = opts_source;
@@ -217,6 +309,11 @@ fn parse_backend_components_fallible(
 
 fn plugin_backend_type(identifier: &str) -> Option<BackendType> {
     let (plugin_name, _tool_name) = identifier.split_once(':')?;
+    // A backend plugin is the directory `plugins/<plugin_name>`, and the name comes from a config
+    // key; anything but a plain file name would point somewhere else (`/app:tool` is `/app`).
+    if !file::is_plain_file_name(plugin_name) {
+        return None;
+    }
     if config::is_loaded() {
         let config = Config::get_();
         if let Some(plugin_type) = config.get_configured_plugin_type(plugin_name) {
@@ -331,6 +428,17 @@ impl BackendArg {
             .to_string()
     }
 
+    /// The install directory name a mise reading `standalone_key` would use,
+    /// so files can be packaged where that mise looks for them.
+    pub(crate) fn standalone_dir_name(&self) -> String {
+        let key = self.standalone_key();
+        if key == self.short {
+            self.tool_dir_name()
+        } else {
+            backend::tool_directory_name(&unalias_backend(&key))
+        }
+    }
+
     pub fn backend(&self) -> Result<ABackend> {
         // TODO: see above about hash key
         // let backend = self.backend.get_or_try_init(|| {
@@ -391,21 +499,7 @@ impl BackendArg {
                 );
             }
 
-            let registry_shorts: Vec<&str> = REGISTRY.keys().collect();
-            let mut suggestions: Vec<String> =
-                xx::suggest::similar_n_with_threshold(&self.short, &registry_shorts, 3, 0.8)
-                    .into_iter()
-                    .filter(|s| *s != self.short)
-                    .map(|s| s.to_string())
-                    .collect();
-
-            let mise_names: HashSet<String> = suggestions.iter().cloned().collect();
-            for aqua in crate::aqua::aqua_registry_wrapper::aqua_suggest(&self.short) {
-                if !mise_names.contains(&aqua.name) {
-                    suggestions.push(aqua.backend);
-                }
-            }
-
+            let suggestions = similar_tool_names(&self.short);
             let mut msg = format!("{self} not found in mise tool registry");
             if !suggestions.is_empty() {
                 msg.push_str("\n\nDid you mean?");
@@ -530,6 +624,25 @@ impl BackendArg {
         self.resolution.explicit && self.short.contains(':')
     }
 
+    /// The key to write for this tool in a config that must stand on its own.
+    ///
+    /// A `[tool_alias]` only exists in the config that defines it, so a short
+    /// that an alias supplies the backend for is written as the resolved
+    /// backend. Anything else keeps the short the user typed, which resolves
+    /// the same way wherever it is read.
+    pub fn standalone_key(&self) -> String {
+        let aliased = config::is_loaded()
+            && Config::get_()
+                .all_aliases
+                .get(unalias_backend(&self.short).as_ref())
+                .is_some_and(|a| a.backend.is_some());
+        if aliased {
+            self.full()
+        } else {
+            self.short.clone()
+        }
+    }
+
     pub fn full(&self) -> String {
         let short = unalias_backend(&self.short);
         let short = short.as_ref();
@@ -590,7 +703,7 @@ impl BackendArg {
                 self.registry_version.as_deref(),
             ) && self.locked_backend_serves_registry_version(&backend)
             {
-                return backend;
+                return install_state::with_request_credentials(short, backend);
             }
         }
 
@@ -749,13 +862,17 @@ impl BackendArg {
     }
 
     /// Warn that the lockfile keeps this tool on a backend the registry has
-    /// replaced, and how to adopt the new one.
-    pub fn warn_if_locked_backend_superseded(&self, version: &str) {
+    /// replaced, and how to adopt the new one. `source` is where the tool is
+    /// configured: `mise backends switch` only reads the global config's
+    /// lockfile with `--global`.
+    pub fn warn_if_locked_backend_superseded(&self, version: &str, source: &ToolSource) {
         if let Some((locked, registry)) = self.superseded_locked_backend(version) {
+            let global = source.path().is_some_and(config::is_global_config);
             warn_once!(
                 "{short} is locked to {locked}, but the registry now installs it from {registry}. \
-                 Run `mise backends switch {short}` to switch.",
+                 Run `mise backends switch{flag} {short}` to switch.",
                 short = self.short,
+                flag = if global { " --global" } else { "" },
             );
         }
     }
@@ -897,12 +1014,25 @@ impl BackendArg {
         self.resolution.explicit
     }
 
+    /// Whether the install manifest should record this backend as the tool's
+    /// explicit choice. A backend forced for one request is not: later requests
+    /// for the same tool name follow the registry again.
+    pub(crate) fn records_explicit_backend(&self) -> bool {
+        self.resolution.explicit && !self.resolution.forced
+    }
+
     /// Returns the stored backend identifier, preferring the explicitly stored value
     /// over dynamic registry resolution. For non-explicit tools, uses `full()` which
     /// respects registry updates, allowing automatic backend migration when registry/
     /// is updated. Used for lockfiles to preserve the actual installed backend when possible.
-    /// Options are stripped since lockfiles have a separate options field.
+    /// Options are stripped since lockfiles have a separate options field, and so
+    /// are the credentials of a URL in it: a lockfile is committed. A request's
+    /// own spelling, credentials included, is what installs use.
     pub fn stored_full(&self) -> String {
+        install_state::state_short(&self.stored_full_with_credentials()).into_owned()
+    }
+
+    fn stored_full_with_credentials(&self) -> String {
         // For non-explicit tools, use full() which respects registry updates.
         // This allows tools to automatically switch backends when the registry changes.
         if !self.resolution.explicit {
@@ -1055,6 +1185,30 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use pretty_assertions::{assert_eq, assert_str_eq};
+
+    /// Tool names from a config that loads without trust reach the registry
+    /// search, so a long name is not searched, each name is searched once,
+    /// and only a bounded number of names are searched at all.
+    #[test]
+    fn suggestion_search_is_bounded() {
+        let mut searched = HashMap::new();
+        let searches = std::cell::Cell::new(0);
+        let mut suggest = |short: &str| {
+            bounded_suggestions(&mut searched, short, |s| {
+                searches.set(searches.get() + 1);
+                vec![format!("{s}-hint")]
+            })
+        };
+
+        assert!(suggest(&"x".repeat(SUGGEST_MAX_NAME_LEN + 1)).is_empty());
+        assert_eq!(searches.get(), 0);
+        for i in 0..SUGGEST_MAX_SEARCHES {
+            assert_eq!(suggest(&format!("nod{i}")), vec![format!("nod{i}-hint")]);
+        }
+        assert_eq!(suggest("nod0"), vec!["nod0-hint".to_string()]);
+        assert!(suggest("pythn").is_empty());
+        assert_eq!(searches.get(), SUGGEST_MAX_SEARCHES);
+    }
 
     #[tokio::test]
     async fn registry_min_version_keeps_backend_instances_separate() {
@@ -1334,6 +1488,25 @@ mod tests {
         assert_eq!(opts.get("alias_only"), Some("alias"));
         assert_eq!(opts.get("config_only"), Some("config"));
         assert_eq!(opts.get("foo"), Some("inline"));
+    }
+
+    #[test]
+    fn test_manifest_record_of_a_checksum_backend_follows_the_registry() {
+        let record = |short: &str, full: &str| InstallStateTool {
+            short: short.to_string(),
+            full: Some(full.to_string()),
+            versions: vec![],
+            explicit_backend: true,
+            opts: Default::default(),
+            installs_path: None,
+        };
+        // Written by a mise that recorded the forced backend as explicit.
+        let stale = BackendArg::from(record("pnpm", "npm:pnpm"));
+        assert!(!stale.has_explicit_backend());
+        assert_eq!(stale.full(), "aqua:pnpm/pnpm");
+        // An explicit backend the user picked stays.
+        assert!(BackendArg::from(record("pnpm", "aqua:pnpm/pnpm")).has_explicit_backend());
+        assert!(BackendArg::from(record("npm:pnpm", "npm:pnpm")).has_explicit_backend());
     }
 
     #[test]

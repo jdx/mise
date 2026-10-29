@@ -1,7 +1,0 @@
-{
-  "name": "mise-npm-install",
-  "private": true,
-  "dependencies": {
-    "markdownlint-cli": "0.49.1"
-  }
-}

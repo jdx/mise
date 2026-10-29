@@ -335,9 +335,139 @@ fn basic_tool(version: &str, backend: &str) -> LockfileTool {
 }
 
 #[test]
+fn untrusted_lockfile_may_confirm_a_backend_but_not_choose_one() {
+    // the registry's backend for a shorthand, or the backend the tool key names
+    assert!(!locked_backend_needs_trust("shfmt", "aqua:mvdan/sh"));
+    assert!(!locked_backend_needs_trust("node", "core:node"));
+    assert!(!locked_backend_needs_trust(
+        "github:acme/tool",
+        "github:acme/tool"
+    ));
+    // inline options need trust in a tool key, so they do in a lock entry
+    assert!(locked_backend_needs_trust(
+        "github:acme/tool",
+        "github:acme/tool[api_url=http://example.com/api/v3]"
+    ));
+    assert!(locked_backend_needs_trust(
+        "shfmt",
+        "http:shfmt[url=http://example.com/shfmt.tar.gz,postinstall=id]"
+    ));
+    // a backend the registry never installs the tool from
+    assert!(locked_backend_needs_trust(
+        "shellcheck",
+        "cargo:https://example.com/shellcheck.git"
+    ));
+    assert!(locked_backend_needs_trust(
+        "gron",
+        "ubi:http://example.com/gron.tar.gz"
+    ));
+    assert!(locked_backend_needs_trust(
+        "github:acme/tool",
+        "github:acme/other"
+    ));
+    // names that designate no tool
+    assert!(locked_backend_needs_trust("shfmt", ""));
+    assert!(locked_backend_needs_trust("shfmt", "asdf:"));
+    assert!(locked_backend_needs_trust("", "core:node"));
+}
+
+#[test]
+fn entries_whose_backend_names_no_tool_are_ignored() {
+    for full in ["", "asdf:", ":", "[=]", "asdf:[=]", "-"] {
+        assert!(backend_names_no_tool(full), "{full:?}");
+    }
+    for full in [
+        "core:node",
+        "aqua:mvdan/sh",
+        "aqua:mvdan/sh[a=b]",
+        "asdf:tiny",
+    ] {
+        assert!(!backend_names_no_tool(full), "{full:?}");
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    file::write(
+        &path,
+        r#"[[tools.shfmt]]
+version = "3.10.0"
+backend = ""
+
+[[tools.shfmt]]
+version = "3.11.0"
+backend = "aqua:mvdan/sh"
+
+[[tools.tiny]]
+version = "1.0.0"
+backend = "asdf:"
+"#,
+    )
+    .unwrap();
+    let lockfile = Lockfile::read(&path).unwrap();
+    assert_eq!(lockfile.tools.keys().collect::<Vec<_>>(), vec!["shfmt"]);
+    assert_eq!(lockfile.tools["shfmt"].len(), 1);
+    assert_eq!(lockfile.tools["shfmt"][0].version, "3.11.0");
+}
+
+#[test]
+fn untrusted_lockfile_keeps_pins_but_not_download_locations() {
+    let mut pinned = basic_tool("3.10.0", "aqua:mvdan/sh");
+    pinned.platforms.insert(
+        "linux-x64".to_string(),
+        PlatformInfo {
+            checksum: Some("sha256:abc".to_string()),
+            url: Some("http://example.com/shfmt".to_string()),
+            url_api: Some("http://example.com/api/v3/assets/1".to_string()),
+            additional_artifacts: vec![ArtifactInfo {
+                checksum: Some("sha256:def".to_string()),
+                url: "http://example.com/shfmt-extra.tar.gz".to_string(),
+                url_api: Some("http://example.com/api/v3/assets/2".to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    );
+    pinned.uv = Some(GraphRef::Sidecar {
+        dir: PathBuf::from("graphs/shfmt"),
+        base: PathBuf::new(),
+        digest: format!("sha256:{}", "0".repeat(64)),
+        cell: Default::default(),
+    });
+    let mut lockfile = Lockfile::default();
+    lockfile.tools.insert(
+        "shfmt".to_string(),
+        vec![
+            pinned,
+            basic_tool("3.11.0", "http:shfmt[url=http://example.com/shfmt.tar.gz]"),
+        ],
+    );
+    lockfile
+        .tools
+        .insert("pipx".to_string(), vec![basic_tool("1.0", "pipx:a")]);
+    lockfile.drop_what_needs_trust(Path::new("mise.lock"));
+
+    assert_eq!(lockfile.tools.keys().collect::<Vec<_>>(), vec!["shfmt"]);
+    let [entry] = lockfile.tools["shfmt"].as_slice() else {
+        panic!("expected one entry: {:?}", lockfile.tools["shfmt"]);
+    };
+    assert_eq!(entry.version, "3.10.0");
+    assert!(entry.uv.is_none());
+    let info = &entry.platforms["linux-x64"];
+    assert_eq!(info.checksum.as_deref(), Some("sha256:abc"));
+    assert!(info.url.is_none());
+    assert!(info.url_api.is_none());
+    let [extra] = info.additional_artifacts.as_slice() else {
+        panic!("expected one additional artifact");
+    };
+    assert_eq!(extra.checksum.as_deref(), Some("sha256:def"));
+    assert!(extra.url.is_empty());
+    assert!(extra.url_api.is_none());
+}
+
+#[test]
 fn tool_stub_finds_nearest_base_config_lockfile_from_where_it_lives() {
     let temp = tempfile::tempdir().unwrap();
-    let project = fs::canonicalize(temp.path()).unwrap().join("project");
+    // Stub paths are canonicalized without the Windows verbatim (`\\?\`) prefix.
+    let project = dunce::canonicalize(temp.path()).unwrap().join("project");
     fs::create_dir_all(project.join("bin")).unwrap();
     fs::create_dir_all(project.join("elsewhere")).unwrap();
     // The test harness overrides the config filenames.
@@ -354,6 +484,41 @@ fn tool_stub_finds_nearest_base_config_lockfile_from_where_it_lives() {
         std::os::unix::fs::symlink(&stub, &link).unwrap();
         assert_eq!(lockfile_path_for_tool_stub(&link), Some(expected));
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn tool_stub_references_through_a_symlinked_directory_are_dropped() {
+    // `tool-stubs` references come with the checkout. One that passes through
+    // a linked directory names a file elsewhere, which must not be read.
+    let temp = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(temp.path()).unwrap();
+    let outside = root.join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    file::write(outside.join("tool"), "version = \"1\"\n").unwrap();
+
+    let project = root.join("project");
+    fs::create_dir_all(project.join("bin")).unwrap();
+    file::write(project.join(".test.mise.toml"), "").unwrap();
+    file::write(project.join("bin/tool"), "version = \"1\"\n").unwrap();
+    std::os::unix::fs::symlink(&outside, project.join("dir")).unwrap();
+    std::os::unix::fs::symlink(outside.join("tool"), project.join("file")).unwrap();
+    let path = project.join("mise.lock");
+    // A stub behind a symlinked directory lives where the link leads.
+    assert_ne!(
+        lockfile_path_for_tool_stub(&project.join("dir/tool")),
+        Some((path.clone(), false))
+    );
+
+    let mut lockfile = Lockfile {
+        tool_stubs: ["bin/tool", "dir/tool", "file"].map(String::from).into(),
+        ..Default::default()
+    };
+    assert!(lockfile.retain_live_tool_stubs(&path));
+    assert_eq!(
+        lockfile.tool_stubs(),
+        &BTreeSet::from(["bin/tool".to_string()])
+    );
 }
 
 #[test]
@@ -1405,6 +1570,82 @@ fn test_preserve_absent_tool_entries_for_monorepo_upsert() {
     assert_eq!(versions.len(), 2);
     assert!(versions.contains(&"20.0.0"));
     assert!(versions.contains(&"22.0.0"));
+}
+
+#[test]
+fn test_preserve_selected_python_entries_keeps_only_unlocked_selections() {
+    let python = |version: &str, specifier: &str| {
+        let mut tool = basic_tool(version, "core:python");
+        tool.specifiers = BTreeSet::from([specifier.to_string()]);
+        tool
+    };
+    let existing = vec![
+        python("3.15.0", "latest"),
+        {
+            let mut tool = python("3.14.8", "3.14");
+            tool.specifiers.insert("3.14.8".to_string());
+            tool
+        },
+        python("3.13.5", "3.13"),
+    ];
+    let mut merged = vec![python("3.15.1", "latest"), python("3.13.6", "3.13")];
+
+    preserve_selected_python_entries(
+        &mut merged,
+        Some(&existing),
+        &HashSet::from([
+            ("3.14".to_string(), BTreeMap::new()),
+            ("3.13".to_string(), BTreeMap::new()),
+        ]),
+    );
+
+    assert_eq!(
+        merged
+            .iter()
+            .map(|tool| tool.version.as_str())
+            .collect_vec(),
+        vec!["3.15.1", "3.13.6", "3.14.8"]
+    );
+    assert_eq!(merged[2].specifiers, BTreeSet::from(["3.14".to_string()]));
+}
+
+#[test]
+fn test_preserve_selected_python_entries_ignores_entries_with_other_options() {
+    let mut project = basic_tool("3.12.9", "core:python");
+    project.specifiers = BTreeSet::from(["3.12".to_string()]);
+    project
+        .options
+        .insert("patch_sysconfig".to_string(), "false".to_string());
+    let mut private = basic_tool("3.12.9", "core:python");
+    private.specifiers = BTreeSet::from(["3.12".to_string()]);
+    let existing = vec![project.clone(), private.clone()];
+    let mut merged = vec![project];
+
+    preserve_selected_python_entries(
+        &mut merged,
+        Some(&existing),
+        &HashSet::from([("3.12".to_string(), BTreeMap::new())]),
+    );
+
+    assert_eq!(merged.len(), 2);
+    assert!(merged.iter().any(|tool| tool.options.is_empty()));
+}
+
+#[test]
+fn test_preserve_selected_python_entries_matches_settings_derived_options() {
+    let options = BTreeMap::from([("precompiled_arch".to_string(), "x86_64".to_string())]);
+    let mut private = basic_tool("3.12.9", "core:python");
+    private.specifiers = BTreeSet::from(["3.12".to_string()]);
+    private.options = options.clone();
+    let mut merged = Vec::new();
+
+    preserve_selected_python_entries(
+        &mut merged,
+        Some(&vec![private]),
+        &HashSet::from([("3.12".to_string(), options)]),
+    );
+
+    assert_eq!(merged.len(), 1);
 }
 
 #[test]
@@ -2581,7 +2822,7 @@ fn test_read_lockfile_at_only_promotes_when_primary_exists() {
         .insert("node".to_string(), vec![basic_tool("20.0.0", "core:node")]);
     legacy.save(&legacy_path).unwrap();
 
-    let legacy_only = read_lockfile_at(primary_path.clone(), Some(legacy_path.clone()));
+    let legacy_only = read_lockfile_at(primary_path.clone(), Some(legacy_path.clone()), true);
     assert_eq!(legacy_only.lockfile_version(), 0);
 
     let mut primary = Lockfile::default();
@@ -2600,7 +2841,7 @@ fn test_read_lockfile_at_only_promotes_when_primary_exists() {
     primary.save(&primary_path).unwrap();
     invalidate_caches();
 
-    let mixed = read_lockfile_at(primary_path, Some(legacy_path));
+    let mixed = read_lockfile_at(primary_path, Some(legacy_path), true);
     assert_eq!(mixed.lockfile_version(), CURRENT_LOCKFILE_VERSION);
     assert!(mixed.uses_request_bindings());
     assert!(
@@ -4058,4 +4299,727 @@ backend = "core:python"
     assert!(saved.contains("tools.\"pipx:black\""));
     assert!(saved.contains("backend = \"pipx:black\""));
     assert!(!saved.contains("pypi:black"));
+}
+
+#[test]
+fn test_nearest_lockfile_decision_prefers_the_nearest_lockfile() {
+    let locked = |version: &str| {
+        let mut lockfile = Lockfile::default();
+        let toml = format!("[[tools.aube]]\nversion = \"{version}\"\nbackend = \"aqua:aube\"\n");
+        let table: toml::Table = toml::from_str(&toml).unwrap();
+        let tool = table["tools"]["aube"].as_array().unwrap()[0].clone();
+        lockfile
+            .tools
+            .insert("aube".into(), vec![LockfileTool::try_from(tool).unwrap()]);
+        lockfile
+    };
+    let version_of = |lockfile: &Lockfile| -> Result<Option<String>> {
+        Ok(lockfile
+            .tools_for("aube")
+            .and_then(|tools| tools.first())
+            .map(|tool| tool.version.clone()))
+    };
+    // Nearest first: the child pins 2.8.1, the parent 2.7.0.
+    let by_precedence = [locked("2.8.1"), locked("2.7.0")];
+    assert_eq!(
+        nearest_lockfile_decision(&by_precedence, version_of).unwrap(),
+        Some("2.8.1".to_string())
+    );
+    // A nearer lockfile that does not lock the tool falls through to the parent.
+    let by_precedence = [Lockfile::default(), locked("2.7.0")];
+    assert_eq!(
+        nearest_lockfile_decision(&by_precedence, version_of).unwrap(),
+        Some("2.7.0".to_string())
+    );
+    assert_eq!(
+        nearest_lockfile_decision(&[Lockfile::default()], version_of).unwrap(),
+        None
+    );
+
+    // A nearer lockfile that is ambiguous on its own does not block a clear pin.
+    let ambiguous = |_: &Lockfile| -> Result<Option<String>> {
+        Err(eyre!(AmbiguousRequestBinding("ambiguous".into())))
+    };
+    let mut calls = 0;
+    let found = nearest_lockfile_decision(&[locked("2.8.1"), locked("2.7.0")], |lockfile| {
+        calls += 1;
+        if calls == 1 {
+            ambiguous(lockfile)
+        } else {
+            version_of(lockfile)
+        }
+    })
+    .unwrap();
+    assert_eq!(found, Some("2.7.0".to_string()));
+}
+
+#[test]
+fn tool_stub_reference_climbs_out_of_the_lockfile_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let lock_dir = dir.path().join(".config");
+    let stub_dir = dir.path().join("apps/foo/bin");
+    fs::create_dir_all(&lock_dir).unwrap();
+    fs::create_dir_all(&stub_dir).unwrap();
+    let stub = stub_dir.join("tool");
+    fs::write(&stub, "").unwrap();
+    let path = lock_dir.join("mise.lock");
+
+    let reference = tool_stub_reference(&path, &stub).unwrap();
+    assert_eq!(reference, "../apps/foo/bin/tool");
+    assert_eq!(
+        fs::canonicalize(tool_stub_path(&path, &reference)).unwrap(),
+        fs::canonicalize(&stub).unwrap()
+    );
+}
+
+/// Relock a single github entry and return the outcome; a refused relock must
+/// leave the locked entry as it was.
+fn relock_replaced_artifact(locked: PlatformInfo, resolved: PlatformInfo) -> Result<bool> {
+    let mut lockfile = Lockfile::default();
+    lockfile.set_platform_info(
+        "tool",
+        "1.0.0",
+        Some("github:owner/tool"),
+        &BTreeMap::new(),
+        "linux-x64",
+        locked.clone(),
+    );
+    let result = (
+        "tool".to_string(),
+        "1.0.0".to_string(),
+        "github:owner/tool".to_string(),
+        Platform::parse("linux-x64").unwrap(),
+        Ok(resolved),
+        BTreeMap::new(),
+        BTreeMap::new(),
+        crate::lockfile::LockResolutionStatus::Optional,
+    );
+    let applied = apply_lock_result(&mut lockfile, result);
+    if applied.is_err() {
+        assert_eq!(lockfile.tools["tool"][0].platforms["linux-x64"], locked);
+    }
+    applied
+}
+
+#[test]
+fn replaced_artifact_must_not_lose_locked_provenance() {
+    let at = |url: &str, checksum: &str, provenance: Option<ProvenanceType>| PlatformInfo {
+        checksum: Some(checksum.to_string()),
+        url: Some(url.to_string()),
+        provenance,
+        ..Default::default()
+    };
+    let info =
+        |checksum: &str, provenance| at("https://example.com/tool.tar.gz", checksum, provenance);
+    let extra = |checksum: &str, provenance: Option<ProvenanceType>| PlatformInfo {
+        additional_artifacts: vec![ArtifactInfo {
+            checksum: Some(checksum.to_string()),
+            url: "https://example.com/extra.tar.gz".to_string(),
+            provenance,
+            ..Default::default()
+        }],
+        ..info("sha256:tool", None)
+    };
+    let attested = || Some(ProvenanceType::GithubAttestations);
+    let cosign = || Some(ProvenanceType::Cosign);
+
+    // Other bytes under the same URL without the locked provenance are refused.
+    let err = relock_replaced_artifact(info("sha256:old", attested()), info("sha256:new", None))
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("no github-attestations provenance like the locked one"),
+        "{err}"
+    );
+    assert!(
+        relock_replaced_artifact(info("sha256:old", attested()), info("sha256:new", cosign()))
+            .is_err()
+    );
+    assert!(
+        relock_replaced_artifact(extra("sha256:old", attested()), extra("sha256:new", None))
+            .is_err()
+    );
+    // So is a replacement uploaded under another name the asset selection still matches.
+    assert!(
+        relock_replaced_artifact(
+            info("sha256:old", attested()),
+            at("https://example.com/tool2.tar.gz", "sha256:new", None)
+        )
+        .is_err()
+    );
+
+    // Same provenance, same bytes, an incomparable digest, or no locked
+    // provenance are not downgrades.
+    assert!(
+        relock_replaced_artifact(
+            info("sha256:old", attested()),
+            info("sha256:new", attested())
+        )
+        .is_ok()
+    );
+    assert!(
+        relock_replaced_artifact(info("sha256:old", attested()), info("sha256:old", None)).is_ok()
+    );
+    assert!(
+        relock_replaced_artifact(info("blake3:old", attested()), info("sha256:new", None)).is_ok()
+    );
+    assert!(relock_replaced_artifact(info("sha256:old", None), info("sha256:new", None)).is_ok());
+}
+
+#[test]
+fn test_provenance_merge_does_not_follow_changed_checksum() {
+    let info = |checksum: &str, provenance: Option<ProvenanceType>| PlatformInfo {
+        checksum: Some(checksum.to_string()),
+        url: Some("https://example.com/tool.tar.gz".to_string()),
+        provenance: provenance.clone(),
+        additional_artifacts: vec![ArtifactInfo {
+            checksum: Some(checksum.to_string()),
+            url: "https://example.com/extra.tar.gz".to_string(),
+            provenance,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let attested = Some(ProvenanceType::GithubAttestations);
+
+    // Other bytes under the same URL do not inherit the provenance of the old ones.
+    let merged = info("sha256:new", None).merge_with(&info("sha256:old", attested.clone()));
+    assert_eq!(merged.checksum.as_deref(), Some("sha256:new"));
+    assert_eq!(merged.provenance, None);
+    assert_eq!(merged.additional_artifacts[0].provenance, None);
+
+    // Same bytes, or digests that cannot be compared, merge as before.
+    let merged = info("sha256:old", None).merge_with(&info("sha256:OLD", attested.clone()));
+    assert_eq!(merged.provenance, attested);
+    assert_eq!(merged.additional_artifacts[0].provenance, attested);
+    let merged = info("blake3:new", None).merge_with(&info("sha256:old", attested.clone()));
+    assert_eq!(merged.checksum.as_deref(), Some("sha256:old"));
+    assert_eq!(merged.provenance, attested);
+}
+
+#[test]
+fn test_set_platform_info_does_not_carry_provenance_to_changed_checksum() {
+    let relock = |locked: &str, resolved: &str, provenance: Option<ProvenanceType>| {
+        let mut lockfile = Lockfile::default();
+        for (checksum, provenance) in [
+            (locked, Some(ProvenanceType::GithubAttestations)),
+            (resolved, provenance),
+        ] {
+            lockfile.set_platform_info(
+                "tool",
+                "1.0.0",
+                Some("github:owner/tool"),
+                &BTreeMap::new(),
+                "linux-x64",
+                PlatformInfo {
+                    checksum: Some(checksum.to_string()),
+                    url: Some("https://example.com/tool.tar.gz".to_string()),
+                    provenance,
+                    ..Default::default()
+                },
+            );
+        }
+        let info = &lockfile.tools["tool"][0].platforms["linux-x64"];
+        (info.checksum.clone().unwrap(), info.provenance.clone())
+    };
+
+    let attested = Some(ProvenanceType::GithubAttestations);
+    let cosign = Some(ProvenanceType::Cosign);
+
+    // Other bytes under the same URL do not inherit the provenance of the old ones.
+    assert_eq!(
+        relock("sha256:old", "sha256:new", None),
+        ("sha256:new".to_string(), None)
+    );
+    assert_eq!(
+        relock("sha256:old", "sha256:new", cosign.clone()),
+        ("sha256:new".to_string(), cosign)
+    );
+    // Same bytes, or digests that cannot be compared, keep the recorded provenance.
+    assert_eq!(relock("sha256:old", "sha256:OLD", None).1, attested);
+    assert_eq!(relock("blake3:old", "sha256:new", None).1, attested);
+}
+
+#[test]
+fn mise_versions_checksum_is_kept_but_never_a_download_pin() {
+    let value: toml::Value = toml::from_str(
+        r#"
+checksum = "sha256:aaaa"
+checksum_source = "mise-versions"
+url = "https://github.com/acme/b/releases/download/v1/b.tar.gz"
+"#,
+    )
+    .unwrap();
+    let marked = PlatformInfo::try_from(value).unwrap();
+    assert_eq!(marked.checksum.as_deref(), Some("sha256:aaaa"));
+    assert_eq!(marked.checksum_source, Some(ChecksumSource::VersionsHost));
+    // Compared after the download, but it names no kept file to reuse.
+    assert_eq!(marked.pin_checksum(), None);
+
+    // Written back as it was read.
+    let written = toml::Value::from(marked.clone());
+    assert_eq!(
+        written.get("checksum_source").and_then(|v| v.as_str()),
+        Some("mise-versions")
+    );
+
+    // The mark follows its checksum through a merge, and a checksum confirmed
+    // by a download is a pin again.
+    let confirmed = PlatformInfo {
+        checksum: Some("sha256:aaaa".to_string()),
+        url: marked.url.clone(),
+        ..Default::default()
+    };
+    assert_eq!(
+        confirmed.pin_checksum().map(String::as_str),
+        Some("sha256:aaaa")
+    );
+    assert_eq!(confirmed.merge_with(&marked).checksum_source, None);
+    // The same checksum, confirmed on either side, stays a pin.
+    let merged = marked.merge_with(&confirmed);
+    assert_eq!(merged.checksum_source, None);
+    assert_eq!(
+        merged.pin_checksum().map(String::as_str),
+        Some("sha256:aaaa")
+    );
+    let artifact = |source| ArtifactInfo {
+        checksum: Some("sha256:bbbb".to_string()),
+        checksum_source: source,
+        url: "https://github.com/acme/b/releases/download/v1/extra.tar.gz".to_string(),
+        ..Default::default()
+    };
+    let merged = PlatformInfo {
+        additional_artifacts: vec![artifact(Some(ChecksumSource::VersionsHost))],
+        ..marked.clone()
+    }
+    .merge_with(&PlatformInfo {
+        additional_artifacts: vec![artifact(None)],
+        ..confirmed.clone()
+    });
+    assert_eq!(merged.additional_artifacts[0].checksum_source, None);
+    let mut relocked = Lockfile::default();
+    relocked.set_platform_info(
+        "tool",
+        "1",
+        None,
+        &Default::default(),
+        "linux-x64",
+        confirmed.clone(),
+    );
+    relocked.set_platform_info(
+        "tool",
+        "1",
+        None,
+        &Default::default(),
+        "linux-x64",
+        marked.clone(),
+    );
+    assert_eq!(
+        relocked.tools["tool"][0].platforms["linux-x64"].checksum_source,
+        None
+    );
+    let unset = PlatformInfo {
+        url: marked.url.clone(),
+        ..Default::default()
+    };
+    assert_eq!(
+        unset.merge_with(&marked).checksum_source,
+        Some(ChecksumSource::VersionsHost)
+    );
+
+    let mut lockfile = Lockfile::default();
+    lockfile.set_platform_info(
+        "tool",
+        "1",
+        None,
+        &Default::default(),
+        "linux-x64",
+        marked.clone(),
+    );
+    lockfile.set_platform_info("tool", "1", None, &Default::default(), "linux-x64", unset);
+    let tool = &lockfile.tools["tool"][0];
+    assert_eq!(
+        tool.platforms["linux-x64"].checksum_source,
+        Some(ChecksumSource::VersionsHost)
+    );
+}
+
+#[test]
+fn locked_github_asset_ids_are_confirmed_before_use() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("mise.lock");
+    file::write(
+        &path,
+        r#"
+[[tools."github:acme/locked"]]
+version = "1.0.0"
+backend = "github:acme/locked"
+[tools."github:acme/locked"."platforms.linux-x64"]
+url = "https://github.com/acme/locked/releases/download/v1.0.0/tool.tar.gz"
+url_api = "https://api.github.com/repos/acme/locked/releases/assets/1"
+[[tools."github:acme/locked"."platforms.linux-x64".additional_artifacts]]
+url = "https://github.com/acme/locked/releases/download/v1.0.0/extra.tar.gz"
+url_api = "https://api.github.com/repos/acme/locked/releases/assets/2"
+"#,
+    )
+    .unwrap();
+
+    Lockfile::read(&path).unwrap();
+    for id in [1, 2] {
+        let url_api = format!("https://api.github.com/repos/acme/locked/releases/assets/{id}");
+        assert!(
+            crate::versions_host::is_mirrored_asset_api_url(&url_api),
+            "{url_api}"
+        );
+    }
+}
+
+#[test]
+fn test_credential_query_params_are_found_by_name() {
+    for (text, param) in [
+        (
+            "https://dl.example.com/t.tgz?private_token=x",
+            "private_token",
+        ),
+        ("https://dl.example.com/t.tgz?v=1&token=x", "token"),
+        (
+            "https://b.s3.example.com/t?X-Amz-Signature=x",
+            "X-Amz-Signature",
+        ),
+        ("https://blob.example.com/t?sv=1&sig=x", "sig"),
+        (
+            "--index-url https://h.example/simple?api_key=x --x",
+            "api_key",
+        ),
+        ("https://h.example/t?password", "password"),
+        ("https://h.example/t?api%5Fkey=x", "api_key"),
+    ] {
+        assert_eq!(
+            credential_query_param(text).as_deref(),
+            Some(param),
+            "{text}"
+        );
+    }
+    for text in [
+        "https://dl.example.com/t.tgz",
+        "https://dl.example.com/t.tgz?raw=true&page=2",
+        "https://h.example/t?monkey=1&keys=2",
+        "token=x not a url",
+    ] {
+        assert_eq!(credential_query_param(text), None, "{text}");
+    }
+}
+
+/// A lockfile keys a URL-named tool, and records its backend, without the
+/// URL's credentials. One that holds them is read without them, a credentialed
+/// request still finds the entry, and the file is written back clean.
+#[test]
+fn test_lockfile_keys_and_backends_have_no_credentials() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("mise.lock");
+    fs::write(
+        &path,
+        r#"
+[[tools."cargo:https://ci:t0ken@host/acme/tool.git"]]
+version = "tag:1.0.0"
+backend = "cargo:https://ci:t0ken@host/acme/tool.git"
+"#,
+    )
+    .unwrap();
+    let mut lockfile = Lockfile::read(&path).unwrap();
+    assert_eq!(
+        lockfile.tools.keys().collect::<Vec<_>>(),
+        vec!["cargo:https://host/acme/tool.git"]
+    );
+    for short in [
+        "cargo:https://ci:t0ken@host/acme/tool.git",
+        "cargo:https://host/acme/tool.git",
+    ] {
+        let entries = lockfile.tools_for(short).unwrap();
+        assert_eq!(
+            entries[0].backend.as_deref(),
+            Some("cargo:https://host/acme/tool.git")
+        );
+    }
+    lockfile.set_platform_info(
+        "cargo:https://ci:t0ken@host/acme/tool.git",
+        "tag:2.0.0",
+        Some("cargo:https://host/acme/tool.git"),
+        &BTreeMap::new(),
+        "linux-x64",
+        PlatformInfo::default(),
+    );
+    assert_eq!(lockfile.tools.len(), 1);
+    lockfile.write(&path).unwrap();
+    let written = fs::read_to_string(&path).unwrap();
+    assert!(!written.contains("t0ken"), "{written}");
+}
+
+/// Pruning compares configured tools in the form the lockfile keys them in,
+/// so a tool configured with URL credentials keeps its clean entry.
+#[test]
+fn test_pruning_keeps_a_tool_configured_with_url_credentials() {
+    let mut lockfile = Lockfile::default();
+    lockfile.set_platform_info(
+        "cargo:https://host/acme/tool.git",
+        "tag:1.0.0",
+        Some("cargo:https://host/acme/tool.git"),
+        &BTreeMap::new(),
+        "linux-x64",
+        PlatformInfo {
+            checksum: Some("sha256:abc".to_string()),
+            ..Default::default()
+        },
+    );
+    let configured = "cargo:https://ci:t0ken@host/acme/tool.git";
+    let shorts = BTreeSet::from([configured.to_string()]);
+    let backends = BTreeSet::from([configured.to_string()]);
+    assert!(lockfile.stale_tool_shorts(&shorts, &backends).is_empty());
+    lockfile.retain_tools_by_short_or_backend(&shorts, &backends);
+    assert!(lockfile.tools_for(configured).is_some());
+    // A pypi tool is kept by its short alone.
+    lockfile.set_platform_info(
+        "pypi:git+https://host/acme/py.git",
+        "1.0.0",
+        None,
+        &BTreeMap::new(),
+        "linux-x64",
+        PlatformInfo::default(),
+    );
+    let shorts = BTreeSet::from(["pypi:git+https://u:t0ken@host/acme/py.git".to_string()]);
+    assert!(
+        lockfile
+            .stale_tool_shorts(&shorts, &BTreeSet::new())
+            .contains("cargo:https://host/acme/tool.git")
+    );
+    assert!(
+        !lockfile
+            .stale_tool_shorts(&shorts, &BTreeSet::new())
+            .contains("pypi:git+https://host/acme/py.git")
+    );
+}
+
+#[test]
+fn test_lockfile_write_refuses_credential_queries() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("mise.lock");
+    let mut lockfile = Lockfile::default();
+    let mut tool = LockfileTool {
+        version: "1.0.0".to_string(),
+        backend: Some("http:tool".to_string()),
+        specifiers: Default::default(),
+        options: Default::default(),
+        platforms: BTreeMap::from([(
+            "linux-x64".to_string(),
+            PlatformInfo {
+                url: Some("https://dl.example.com/t.tgz?token=s3cret".to_string()),
+                ..Default::default()
+            },
+        )]),
+        aube: None,
+        uv: None,
+    };
+    lockfile
+        .tools
+        .insert("http:tool".to_string(), vec![tool.clone()]);
+    let err = lockfile.write(&path).unwrap_err().to_string();
+    assert!(err.contains("`token`"), "{err}");
+    assert!(!err.contains("s3cret"), "{err}");
+    assert!(!path.exists());
+
+    tool.platforms.get_mut("linux-x64").unwrap().url =
+        Some("https://dl.example.com/t.tgz".to_string());
+    tool.options.insert(
+        "api_url".to_string(),
+        "https://h.example/api?access_token=s3cret".to_string(),
+    );
+    lockfile
+        .tools
+        .insert("http:tool".to_string(), vec![tool.clone()]);
+    let err = lockfile.write(&path).unwrap_err().to_string();
+    assert!(err.contains("options.api_url"), "{err}");
+
+    // Every URL the entry is written with is checked: additional artifacts
+    // and shared conda packages too.
+    tool.options.clear();
+    tool.platforms
+        .get_mut("linux-x64")
+        .unwrap()
+        .additional_artifacts = vec![ArtifactInfo {
+        checksum: None,
+        size: None,
+        url: "https://dl.example.com/sig.tgz?sig=s3cret".to_string(),
+        url_api: None,
+        provenance: None,
+        provenance_verified: None,
+        checksum_source: None,
+    }];
+    lockfile
+        .tools
+        .insert("http:tool".to_string(), vec![tool.clone()]);
+    let err = lockfile.write(&path).unwrap_err().to_string();
+    assert!(err.contains("`sig`"), "{err}");
+
+    tool.platforms
+        .get_mut("linux-x64")
+        .unwrap()
+        .additional_artifacts = vec![];
+    lockfile.tools.insert("http:tool".to_string(), vec![tool]);
+    lockfile.conda_packages.insert(
+        "linux-x64".to_string(),
+        BTreeMap::from([(
+            "pkg-1.0-0".to_string(),
+            CondaPackageInfo {
+                url: "https://conda.example.com/pkg.conda?token=s3cret".to_string(),
+                checksum: None,
+            },
+        )]),
+    );
+    let err = lockfile.write(&path).unwrap_err().to_string();
+    assert!(err.contains("conda package pkg-1.0-0"), "{err}");
+    assert!(!path.exists());
+}
+
+/// A lockfile is committed, so a token templated into a lock option from the
+/// environment must not reach it, and an entry that already holds one must
+/// still match the request.
+#[test]
+fn test_lock_options_drop_credentials() {
+    let options = BTreeMap::from([
+        (
+            "pipx_args".to_string(),
+            "--pip-args='--index-url https://deploy:tok3n@packages.example.com/simple'"
+                .to_string(),
+        ),
+        (
+            "npm_args".to_string(),
+            "--//npm.example.com/:_authToken=tok3n --_auth=tok3n --registry=https://ci:tok3n@npm.example.com/ --_password=\"tok3n second\""
+                .to_string(),
+        ),
+        (
+            "pnpm_args".to_string(),
+            "--//npm.example.com/:_authToken=\"npm_\"tok3nSuffix --_auth tok3n --save-exact"
+                .to_string(),
+        ),
+        (
+            "api_url".to_string(),
+            "https://ci:my tok3n@ghe.example.com/api/v3".to_string(),
+        ),
+    ]);
+    let stripped = strip_lock_options_credentials(options);
+    assert!(
+        stripped
+            .values()
+            .all(|v| !v.contains("tok3n") && !v.contains("second") && !v.contains("npm_\"")),
+        "{stripped:?}"
+    );
+    assert_eq!(
+        stripped["pipx_args"],
+        "--pip-args='--index-url https://packages.example.com/simple'"
+    );
+    // Each credential is masked as the shell word npm reads, whole.
+    let words = |v: &str| shell_words::split(v).unwrap();
+    assert_eq!(
+        words(&stripped["npm_args"]),
+        [
+            "--//npm.example.com/:_authToken=[redacted]",
+            "--_auth=[redacted]",
+            "--registry=https://npm.example.com/",
+            "--_password=[redacted]",
+        ]
+    );
+    assert_eq!(
+        words(&stripped["pnpm_args"]),
+        [
+            "--//npm.example.com/:_authToken=[redacted]",
+            "--_auth",
+            "[redacted]",
+            "--save-exact",
+        ]
+    );
+    assert_eq!(stripped["api_url"], "https://ghe.example.com/api/v3");
+    // Stripping twice changes nothing, so read and computed options agree.
+    assert_eq!(strip_lock_options_credentials(stripped.clone()), stripped);
+}
+
+/// An option that isn't valid shell words has no word boundaries to trust, so
+/// everything from the first credential setting on is masked, and masking again
+/// changes nothing.
+#[test]
+fn test_lock_options_mask_unparseable_credentials_to_the_end() {
+    for value in [
+        "--save-exact --_authToken=\"tok3n second",
+        "--save-exact --//npm.example.com/:_authToken tok3n 'second",
+        "'--save-exact --_password=tok3n second",
+    ] {
+        let options = BTreeMap::from([("npm_args".to_string(), value.to_string())]);
+        let stripped = strip_lock_options_credentials(options);
+        let masked = &stripped["npm_args"];
+        assert!(
+            !masked.contains("tok3n") && !masked.contains("second"),
+            "{value:?} -> {masked:?}"
+        );
+        assert!(masked.contains("[redacted]"), "{value:?} -> {masked:?}");
+        assert_eq!(
+            strip_lock_options_credentials(stripped.clone()),
+            stripped,
+            "{value:?}"
+        );
+    }
+}
+
+/// Only a regular file is read as a lockfile: a pipe or a link to a device
+/// under that name would be read without end.
+#[test]
+fn test_read_ignores_a_lockfile_that_is_not_a_regular_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("mise.lock");
+    std::fs::create_dir(&path).unwrap();
+    let lockfile = Lockfile::read(&path).unwrap();
+    assert!(lockfile.tools.is_empty());
+}
+
+/// A pipe at the lockfile's path must not hang the write that compares the
+/// new content with what is there.
+#[cfg(unix)]
+#[test]
+fn test_prepare_write_does_not_block_on_a_pipe() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("mise.lock");
+    nix::unistd::mkfifo(
+        &path,
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(
+            Lockfile::default()
+                .prepare_write(&path)
+                .map(|w| w.is_some()),
+        );
+    });
+    let prepared = rx
+        .recv_timeout(std::time::Duration::from_millis(500))
+        .expect("preparing the lockfile write blocked on a pipe");
+    assert!(
+        prepared.unwrap(),
+        "a pipe was taken for an up-to-date lockfile"
+    );
+}
+
+#[test]
+fn same_persisted_data_ignores_download_headers() {
+    let stored = PlatformInfo {
+        url: Some("https://example.com/a.zip".into()),
+        checksum: Some("sha256:ab".into()),
+        ..Default::default()
+    };
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("authorization", "Bearer secret".parse().unwrap());
+    let resolved = PlatformInfo {
+        download_headers: Some(headers),
+        ..stored.clone()
+    };
+    assert!(stored.same_persisted_data(&resolved));
 }

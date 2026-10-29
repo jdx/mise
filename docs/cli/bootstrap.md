@@ -52,12 +52,18 @@ resource-level changes.
 
   The replaced versions are saved first, so `mise dot undo` restores them.
 - **`--from-dir <DIR>`** — Directory for the `--from` checkout (default: `$MISE_DATA_DIR/bootstrap-repo`)
+- **`--config-dir <DIR>`** — Link the global config directory to this directory of the `--from` checkout
+
+  mise links its config directory, normally ~/.config/mise, to the directory, then bootstraps from it, so its `config.toml`, `config.<env>.toml`, `conf.d/`, and `miserc.toml` are the global config from this run on. The directory must exist in the checkout, and the path to it is relative to the checkout and must stay inside it; `.` is the checkout itself. mise's config directory, where the link goes, must be missing, empty, or already this link. See <https://mise.jdx.dev/bootstrap/from-repository.html#global-config-elsewhere>.
 - **`-n --dry-run`** — Show what would change without changing anything
 
   Hooks and the `bootstrap` task are printed instead of run.
 - **`-y --yes`** — Skip confirmation prompts
 - **`--skip-dirty`** — Skip configured repositories with local changes instead of failing
 - **`--force-dotfiles`** — Overwrite existing files that conflict with whole-file dotfile entries
+- **`--prune-dotfiles`** — Remove files that dotfile groups deployed but no active entry deploys now
+
+  The same pruning as `mise dot apply --prune`, run at the end of the dotfiles phase before its post hook: files of a group that is no longer selected or declared, and files a group stopped deploying because of a new `exclude` or a deleted source. Changed copies stay in place, and mise asks before removing anything unless `--yes` is given or there is no terminal. With `--dry-run`, nothing is removed.
 - **`--only <PART>`** — Run only these parts
 
   Repeat the flag or separate parts with commas. Cannot be combined with `--skip`.
@@ -122,6 +128,12 @@ Do the same and also load the project's mise.work.toml
 
 ```
 mise -E work bootstrap --from git@github.com:example/workstation.git
+```
+
+Clone a dotfiles repository and link ~/.config/mise to its .config/mise
+
+```
+mise bootstrap --from https://github.com/example/dotfiles.git --from-dir ~/.dotfiles --config-dir .config/mise
 ```
 
 Clone global config into ~/.config/mise, then apply it

@@ -4,6 +4,9 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use mise_util::redactions::{redact_json, redact_output};
+
+use crate::config::config_file::trust_check;
 use crate::config::{Config, ConfigMap, SettingsExt};
 use crate::file::display_path;
 use crate::install_before::resolve_cli_minimum_release_age;
@@ -79,6 +82,36 @@ fn lock_tool_matches(a: &LockTool, b: &LockTool) -> bool {
         && a.1.request.source() == b.1.request.source()
 }
 
+fn selected_python_requests<'a>(
+    tools: impl IntoIterator<Item = &'a LockTool>,
+) -> Result<Vec<ToolRequest>> {
+    tools
+        .into_iter()
+        .filter_map(|(_, tv)| {
+            crate::backend::pipx::selected_python_dependency(&tv.request).transpose()
+        })
+        .collect()
+}
+
+/// Resolves a request for the lockfile. Generating a lockfile is how a tool gets
+/// its entry, so `tool_config.locked` must not reject one that has none yet.
+async fn resolve_for_lock(
+    config: &Arc<Config>,
+    request: &ToolRequest,
+    resolve_options: &mut ResolveOptions,
+) -> Result<ToolVersion> {
+    let resolved = request.resolve(config, resolve_options).await;
+    if resolved
+        .as_ref()
+        .err()
+        .is_some_and(crate::errors::Error::is_not_in_lockfile)
+    {
+        resolve_options.use_locked_version = false;
+        return request.resolve(config, resolve_options).await;
+    }
+    resolved
+}
+
 fn push_unique_lock_tool(tools: &mut Vec<LockTool>, mut tool: LockTool) {
     // Installed-version resolution can yield an install directory name such
     // as `3.9.6~aube~<digest>`; lock the npm/PyPI version it stands for.
@@ -93,9 +126,16 @@ fn push_unique_lock_tool(tools: &mut Vec<LockTool>, mut tool: LockTool) {
 
 /// Tool stubs listed in a lockfile that still find it from where they live,
 /// each paired with its parsed stub or the error parsing it.
+///
+/// A stub sets tool options, which a config file may only do once it is
+/// trusted. Running a stub stands in for that, but nobody ran these: the
+/// lockfile names them. So `config_paths`, the configs the lockfile belongs
+/// to, have to be trusted before any of them is read, and in paranoid mode,
+/// where trust is bound to each file's content, each stub as well.
 fn live_tool_stubs(
     lockfile_path: &Path,
-) -> Vec<(PathBuf, Result<crate::cli::tool_stub::ToolStubFile>)> {
+    config_paths: &[PathBuf],
+) -> Result<Vec<(PathBuf, Result<crate::cli::tool_stub::ToolStubFile>)>> {
     let mut lockfile = match Lockfile::read(lockfile_path) {
         Ok(lockfile) => lockfile,
         Err(err) => {
@@ -103,17 +143,25 @@ fn live_tool_stubs(
                 "skipping tool stubs of {}: {err}",
                 display_path(lockfile_path)
             );
-            return vec![];
+            return Ok(vec![]);
         }
     };
     lockfile.retain_live_tool_stubs(lockfile_path);
+    if !lockfile.tool_stubs().is_empty() {
+        for path in config_paths {
+            trust_check(path)?;
+        }
+    }
     lockfile
         .tool_stubs()
         .iter()
         .map(|reference| {
             let path = lockfile::tool_stub_path(lockfile_path, reference);
+            if Settings::get().paranoid.config() {
+                trust_check(&path)?;
+            }
             let stub = crate::cli::tool_stub::ToolStubFile::from_file(&path);
-            (path, stub)
+            Ok((path, stub))
         })
         .collect()
 }
@@ -548,6 +596,12 @@ impl SkipWarnings {
     }
 }
 
+fn with_platform(platforms: Vec<Platform>, platform: Platform) -> Vec<Platform> {
+    let mut platforms: BTreeSet<Platform> = platforms.into_iter().collect();
+    platforms.insert(platform);
+    platforms.into_iter().collect()
+}
+
 impl Lock {
     pub(crate) async fn run(self) -> Result<()> {
         self.run_with_installed(None, Config::get().await?).await
@@ -691,6 +745,8 @@ impl Lock {
         }
 
         if self.json && installed.is_none() {
+            // Tool names and backends can spell URL credentials.
+            let changes = redact_json(serde_json::to_value(&changes)?);
             miseprintln!("{}", serde_json::to_string_pretty(&changes)?);
         }
 
@@ -825,7 +881,10 @@ impl Lock {
                 .collect();
             reject_unverified_versions(&tools, &cli_versions)?;
             for (_, tv) in &tools {
-                tv.ba().warn_if_locked_backend_superseded(&tv.version);
+                tv.ba().warn_if_locked_backend_superseded(
+                    &tv.version,
+                    tv.request.lockfile_owner_source(),
+                );
             }
             let configured_selectors = self.configured_tool_selectors_for_target(
                 config,
@@ -896,7 +955,12 @@ impl Lock {
         }
         outcome.has_lock_targets = true;
 
-        let target_platforms = self.determine_target_platforms(&target.lockfile_path)?;
+        let mut target_platforms = self.determine_target_platforms(&target.lockfile_path)?;
+        // An install records its own artifact, so a lockfile written elsewhere
+        // still gains an entry for this platform.
+        if run.setup.installed.is_some() && self.platform.is_empty() {
+            target_platforms = with_platform(target_platforms, Platform::current());
+        }
         self.announce_target(&target, &target_platforms)?;
 
         if self.dry_run {
@@ -1017,7 +1081,7 @@ impl Lock {
             target
                 .tools
                 .iter()
-                .map(|(ba, tv)| format!("{}@{}", ba.short, tv.version))
+                .map(|(ba, tv)| format!("{}@{}", redact_output(&ba.short), tv.version))
                 .collect::<Vec<_>>()
                 .join(", ")
         );
@@ -1197,18 +1261,20 @@ impl Lock {
         } else {
             self.bind_requests(&mut lockfile, tools, target_platforms);
         }
+        let graph_tools = lockfile::generate::tools_on_platforms(tools, target_platforms);
         Box::pin(lockfile::generate::populate_uv_locks(
             run.setup.config,
             &mut lockfile,
-            tools,
+            &graph_tools,
             self.bump,
             run.setup.installed.is_some(),
+            !self.tool.is_empty(),
         ))
         .await?;
         if !generate || self.bump || format_changed {
             Box::pin(lockfile::generate::populate_aube_locks(
                 &mut lockfile,
-                tools,
+                &graph_tools,
                 None,
                 self.bump,
             ))
@@ -1315,7 +1381,7 @@ impl Lock {
                     for bump in &bumps {
                         miseprintln!(
                             "Would update {} from {} to {} in {}",
-                            bump.tool_name,
+                            redact_output(&bump.tool_name),
                             bump.old_version,
                             bump.new_version,
                             display_path(&bump.config_path)
@@ -1502,8 +1568,8 @@ impl Lock {
             indexmap::IndexMap::new();
         for (ba, tv) in tools {
             let entry = new_versions
-                .entry(ba.short.clone())
-                .or_insert_with(|| (Some(ba.full()), Vec::new()));
+                .entry(crate::toolset::install_state::state_short(&ba.short).into_owned())
+                .or_insert_with(|| (Some(ba.stored_full()), Vec::new()));
             if !entry.1.contains(&tv.version) {
                 entry.1.push(tv.version.clone());
             }
@@ -1694,8 +1760,11 @@ impl Lock {
                 continue;
             };
             for platform in platforms {
+                if !tv.request.is_os_supported_on(platform) {
+                    continue;
+                }
                 for variant in backend.platform_variants_for(tv, platform) {
-                    let Ok(options) = backend.resolve_lockfile_options(
+                    let Ok(options) = backend.lockfile_options(
                         &tv.request,
                         &crate::backend::platform_target::PlatformTarget::new(variant),
                     ) else {
@@ -1753,7 +1822,13 @@ impl Lock {
             // option change).
             let resolved = tools
                 .iter()
-                .map(|(ba, tv)| (ba.short.clone(), ba.stored_full(), tv.version.clone()))
+                .map(|(ba, tv)| {
+                    (
+                        crate::toolset::install_state::state_short(&ba.short).into_owned(),
+                        ba.stored_full(),
+                        tv.version.clone(),
+                    )
+                })
                 .collect::<Vec<_>>();
             lockfile.retain_unsuperseded_unbound_entries(|short, entry| {
                 resolved.iter().any(|(name, backend, version)| {
@@ -1774,10 +1849,10 @@ impl Lock {
                 .iter()
                 .map(|(ba, tv)| {
                     Ok((
-                        ba.short.clone(),
+                        crate::toolset::install_state::state_short(&ba.short).into_owned(),
                         ba.stored_full(),
                         tv.version.clone(),
-                        tv.backend()?.resolve_lockfile_options(
+                        tv.backend()?.lockfile_options(
                             &tv.request,
                             &crate::backend::platform_target::PlatformTarget::from_current(),
                         )?,
@@ -1858,7 +1933,7 @@ impl Lock {
                     return None;
                 }
                 let stale_versions = stale_versions.get(&result.short)?;
-                let locked_tools = lockfile.tools().get(&result.short)?;
+                let locked_tools = lockfile.tools_for(&result.short)?;
                 if locked_tools.iter().any(|tool| {
                     tool.version == result.version
                         && tool.platforms.contains_key(&result.platform)
@@ -1953,13 +2028,13 @@ impl Lock {
         effective_config_files: &ConfigMap,
     ) -> Option<ToolSelectors> {
         let (mut configured_tools, mut configured_backends) = self.configured_tool_selectors(tools);
-        let config_paths: BTreeSet<&PathBuf> = config_paths.iter().collect();
+        let config_path_set: BTreeSet<&PathBuf> = config_paths.iter().collect();
 
         for (path, cf) in effective_config_files {
             let source = cf.source();
             let source_lockfile_matches = lockfile::lockfile_path_for_tool_source(config, &source)
                 .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path);
-            if !(config_paths.contains(path)
+            if !(config_path_set.contains(path)
                 || source.is_idiomatic_version_file() && source_lockfile_matches)
             {
                 continue;
@@ -1984,7 +2059,17 @@ impl Lock {
             }
         }
 
-        for (path, stub) in live_tool_stubs(target_lockfile_path) {
+        let stubs = match live_tool_stubs(target_lockfile_path, config_paths) {
+            Ok(stubs) => stubs,
+            Err(err) => {
+                debug!(
+                    "skipping stale-tool pruning for {} because its tool stubs could not be read: {err}",
+                    display_path(target_lockfile_path)
+                );
+                return None;
+            }
+        };
+        for (path, stub) in stubs {
             let request = stub.and_then(|stub| stub.to_tool_request(&path));
             match request {
                 Ok(request) => {
@@ -2007,9 +2092,14 @@ impl Lock {
 
     fn current_tool_versions(&self, tools: &[LockTool]) -> BTreeMap<String, BTreeSet<String>> {
         let mut current_versions: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for (ba, tv) in tools {
+        // A filtered run prunes only the tools it names: `mise lock pipx:x` also
+        // locks the Python x selects, but must keep the project's own python.
+        let named = |ba: &crate::args::BackendArg| {
+            self.tool.is_empty() || self.tool.iter().any(|t| t.ba.short == ba.short)
+        };
+        for (ba, tv) in tools.iter().filter(|(ba, _)| named(ba)) {
             current_versions
-                .entry(ba.short.clone())
+                .entry(crate::toolset::install_state::state_short(&ba.short).into_owned())
                 .or_default()
                 .insert(tv.version.clone());
         }
@@ -2352,7 +2442,8 @@ impl Lock {
                                 if resolve_options.before_date.is_some() {
                                     resolve_options.latest_versions = true;
                                 }
-                                match request.resolve(config, &resolve_options).await {
+                                match resolve_for_lock(config, request, &mut resolve_options).await
+                                {
                                     Ok(tv) => {
                                         push_unique_lock_tool(
                                             &mut all_tools,
@@ -2380,11 +2471,39 @@ impl Lock {
 
         // Third pass: tool stubs that read their entries from this lockfile.
         // They are not part of any config, so nothing above sees them.
-        for (path, stub) in live_tool_stubs(target_lockfile_path) {
-            let request = match stub.and_then(|stub| stub.to_tool_request(&path)) {
+        let python_named = self.tool.iter().any(|t| t.ba.short == "python");
+        let mut stub_python_requests = Vec::new();
+        for (path, stub) in live_tool_stubs(target_lockfile_path, config_paths)? {
+            // The error of a file that does not parse quotes its content, and the
+            // file is one the lockfile names, so only the debug log carries it.
+            let skip = |err: eyre::Report| {
+                warn!(
+                    "skipping tool stub {}: not a valid tool stub",
+                    display_path(&path)
+                );
+                debug!("tool stub {}: {err:#}", display_path(&path));
+            };
+            let stub = match stub {
+                Ok(stub) => stub,
+                Err(err) => {
+                    skip(err);
+                    continue;
+                }
+            };
+            // Safe mode keeps project config inert, and a stub's options (an http
+            // `url`, a github `api_url`, `install_env`, ...) are the project's
+            // tool options. Its lock entries stay as they are.
+            if Settings::safe_mode() && stub.has_tool_options() {
+                warn!(
+                    "skipping tool stub {} in safe mode: its tool options apply only outside safe mode",
+                    display_path(&path)
+                );
+                continue;
+            }
+            let request = match stub.to_tool_request(&path) {
                 Ok(request) => request,
                 Err(err) => {
-                    warn!("skipping tool stub {}: {err:#}", display_path(&path));
+                    skip(err);
                     continue;
                 }
             };
@@ -2395,11 +2514,18 @@ impl Lock {
                     .iter()
                     .any(|tool| tool.ba.as_ref() == request.ba().as_ref())
             {
+                if python_named {
+                    match crate::backend::pipx::selected_python_dependency(&request) {
+                        Ok(dependency) => stub_python_requests.extend(dependency),
+                        Err(err) => {
+                            debug!("skipping selected python of {}: {err:#}", request.ba())
+                        }
+                    }
+                }
                 continue;
             }
-            let resolve_options = request.resolve_options(context.resolve_options)?;
-            let tv = request
-                .resolve(config, &resolve_options)
+            let mut resolve_options = request.resolve_options(context.resolve_options)?;
+            let tv = resolve_for_lock(config, &request, &mut resolve_options)
                 .await
                 .wrap_err_with(|| {
                     format!(
@@ -2411,19 +2537,27 @@ impl Lock {
             push_unique_lock_tool(&mut all_tools, (tv.ba().clone(), tv));
         }
 
-        self.add_task_tools_to_lock(
-            config,
-            context.tasks,
-            target_lockfile_path,
-            config_paths,
-            context,
-            &mut all_tools,
-        )
-        .await?;
+        let task_python_requests = self
+            .add_task_tools_to_lock(
+                config,
+                context.tasks,
+                target_lockfile_path,
+                config_paths,
+                context,
+                &mut all_tools,
+            )
+            .await?;
 
         if self.tool.is_empty() {
-            self.add_selected_python_locks(config, context, target_lockfile_path, &mut all_tools)
-                .await?;
+            let requests = selected_python_requests(&all_tools)?;
+            self.add_selected_python_locks(
+                config,
+                context,
+                target_lockfile_path,
+                requests,
+                &mut all_tools,
+            )
+            .await?;
             Ok(all_tools)
         } else {
             // Build map of tool args with explicit versions
@@ -2432,6 +2566,28 @@ impl Lock {
                 .iter()
                 .map(|t| (t.ba.full(), t.tvr.clone()))
                 .collect();
+            // `mise lock python` also locks the Pythons that pipx tools and
+            // stubs select, so pruning python keeps them.
+            let mut python_requests =
+                selected_python_requests(all_tools.iter().filter(|(ba, _)| {
+                    python_named || specified_versions.contains_key(&ba.full())
+                }))?;
+            python_requests.extend(stub_python_requests);
+            python_requests.extend(task_python_requests);
+            // Generate rebuilds every tool in the returned set from scratch, so a
+            // pipx tool's Python would replace the project's own Python entries.
+            let project_python: Vec<LockTool> =
+                if !python_requests.is_empty() && Settings::get().generate_lockfiles() {
+                    all_tools
+                        .iter()
+                        .filter(|(ba, _)| {
+                            ba.short == "python" && !specified_versions.contains_key(&ba.full())
+                        })
+                        .cloned()
+                        .collect()
+                } else {
+                    Vec::new()
+                };
             // For `tool@latest`, we want upgrade semantics: resolve "latest" to an
             // installed concrete version and lock that. Writing the literal "latest"
             // string to the lockfile would be a bug. Use the backend's own resolver so
@@ -2522,10 +2678,14 @@ impl Lock {
             for tool in tools {
                 push_unique_lock_tool(&mut unique_tools, tool);
             }
+            for tool in project_python {
+                push_unique_lock_tool(&mut unique_tools, tool);
+            }
             self.add_selected_python_locks(
                 config,
                 context,
                 target_lockfile_path,
+                python_requests,
                 &mut unique_tools,
             )
             .await?;
@@ -2538,14 +2698,9 @@ impl Lock {
         config: &Arc<Config>,
         context: &LockCollectionContext<'_>,
         target_lockfile_path: &Path,
+        requests: Vec<ToolRequest>,
         tools: &mut Vec<LockTool>,
     ) -> Result<()> {
-        let requests = tools
-            .iter()
-            .filter_map(|(_, tv)| {
-                crate::backend::pipx::selected_python_dependency(&tv.request).transpose()
-            })
-            .collect::<Result<Vec<_>>>()?;
         for request in requests {
             let opts = request.resolve_options(context.resolve_options)?;
             let tv = request.resolve(config, &opts).await.wrap_err_with(|| {
@@ -2567,7 +2722,9 @@ impl Lock {
         config_paths: &[PathBuf],
         context: &LockCollectionContext<'_>,
         all_tools: &mut Vec<LockTool>,
-    ) -> Result<()> {
+    ) -> Result<Vec<ToolRequest>> {
+        let mut unnamed_python_requests = Vec::new();
+        let python_named = self.tool.iter().any(|t| t.ba.short == "python");
         for task in tasks.values() {
             let Some(config_path) =
                 self.task_config_path(task, config, config_paths, context.config_files)
@@ -2585,14 +2742,38 @@ impl Lock {
             for tool in task.tool_args().map_err(|err| {
                 err.wrap_err(format!("failed to parse tools for task `{}`", task.name))
             })? {
-                if !self.tool.is_empty()
-                    && !self.tool.iter().any(|requested| requested.ba == tool.ba)
-                {
+                let named = self.tool.is_empty()
+                    || self.tool.iter().any(|requested| requested.ba == tool.ba);
+                if !named {
+                    // `mise lock python` keeps the Pythons that task tools select.
+                    if python_named && let Some(request) = &tool.tvr {
+                        // Read the task's own lockfile, as the named branch does.
+                        let request = ToolRequest::new_with_options(
+                            tool.ba.clone(),
+                            &request.version(),
+                            request.options(),
+                            ToolSource::MiseToml(config_path.clone()),
+                        )?;
+                        match crate::backend::pipx::selected_python_dependency(&request) {
+                            Ok(dependency) => unnamed_python_requests.extend(dependency),
+                            Err(err) => debug!(
+                                "skipping selected python of task tool {}: {err:#}",
+                                tool.ba.short
+                            ),
+                        }
+                    }
                     continue;
                 }
                 let Some(request) = tool.tvr else {
                     continue;
                 };
+                // A task loads without trust because it is inert until it
+                // runs, but its tools are resolved here. Their options need
+                // the trust they need on a `[tools]` entry of the config the
+                // task is locked for.
+                if tool.ba.explicit_opts().is_some_and(|opts| !opts.is_empty()) {
+                    trust_check(&config_path)?;
+                }
                 let request = ToolRequest::new_with_options(
                     tool.ba.clone(),
                     &request.version(),
@@ -2617,8 +2798,7 @@ impl Lock {
                     resolve_options.use_locked_version = false;
                     resolve_options.latest_versions = true;
                 }
-                let tv = request
-                    .resolve(config, &resolve_options)
+                let tv = resolve_for_lock(config, &request, &mut resolve_options)
                     .await
                     .map_err(|err| {
                         err.wrap_err(format!(
@@ -2629,7 +2809,7 @@ impl Lock {
                 push_unique_lock_tool(all_tools, (tool.ba.as_ref().clone(), tv));
             }
         }
-        Ok(())
+        Ok(unnamed_python_requests)
     }
 
     fn task_config_path(
@@ -2680,6 +2860,9 @@ impl Lock {
         for (ba, tv) in tools {
             let backend = crate::backend::get(ba);
             for platform in platforms {
+                if !tv.request.is_os_supported_on(platform) {
+                    continue;
+                }
                 // Expand platform variants just like process_tools does
                 let variants = if let Some(ref backend) = backend {
                     backend.platform_variants_for(tv, platform)
@@ -2690,7 +2873,7 @@ impl Lock {
                     miseprintln!(
                         "  {} {}@{} for {}",
                         style("✓").green(),
-                        style(&ba.short).bold(),
+                        style(redact_output(&ba.short)).bold(),
                         tv.version,
                         style(variant.to_key()).blue()
                     );
@@ -2741,6 +2924,9 @@ impl Lock {
         for (ba, tv) in tools {
             let backend = crate::backend::get(ba);
             for platform in platforms {
+                if !tv.request.is_os_supported_on(platform) {
+                    continue;
+                }
                 // Get all variants for this platform from the backend
                 let variants = if let Some(ref backend) = backend {
                     backend.platform_variants_for(tv, platform)
@@ -2783,7 +2969,9 @@ impl Lock {
             completed += 1;
             match result {
                 Ok(resolution) => {
-                    let short = resolution.0.clone();
+                    // Named the way the lockfile keys the tool.
+                    let short =
+                        crate::toolset::install_state::state_short(&resolution.0).into_owned();
                     let version = resolution.1.clone();
                     let platform_key = resolution.3.to_key();
                     let resolution_error = resolution.4.as_ref().err().cloned();
@@ -2852,10 +3040,24 @@ impl Lock {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn with_platform_adds_a_platform_the_lockfile_lacks() {
+        let linux = Platform::parse("linux-x64").unwrap();
+        let macos = Platform::parse("macos-arm64").unwrap();
+        assert_eq!(
+            with_platform(vec![linux.clone()], macos.clone()),
+            vec![linux.clone(), macos.clone()]
+        );
+        assert_eq!(
+            with_platform(vec![linux.clone(), macos.clone()], macos.clone()),
+            vec![linux, macos]
+        );
+    }
+
     use super::{
         Lock, LockTaskResult, LockTaskStatus, LockfileSnapshot, SkipWarnings, classify_lock_result,
         distinct_lockfile_targets, prepare_lockfile_rollback, push_unique_lock_tool,
-        restore_lockfile_snapshots,
+        restore_lockfile_snapshots, with_platform,
     };
     use crate::args::{BackendArg, ToolArg};
     use crate::lockfile::{Lockfile, PlatformInfo, apply_lock_result};

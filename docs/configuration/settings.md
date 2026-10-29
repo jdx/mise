@@ -92,6 +92,11 @@ project config, mise ignores them and prints a warning:
 mise WARN  yes in non-global config /home/me/app/mise.toml is ignored for security reasons
 ```
 
+The [`write_targets`](/configuration/settings.html#write_targets) settings
+matter only to commands that write global config, so for them the warning
+waits until such a command would have used the ignored value, and names the
+file it writes instead.
+
 `mise settings --local` and `mise settings add --local` refuse these
 settings. Drop `--local` to write them to the global config, or use the
 environment variable.

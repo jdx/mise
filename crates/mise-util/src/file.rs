@@ -27,7 +27,6 @@ use zip::ZipArchive;
 
 use crate::progress::SingleReport;
 use crate::{dirs, env};
-#[cfg(windows)]
 use mise_settings::Settings;
 
 pub fn open<P: AsRef<Path>>(path: P) -> Result<File> {
@@ -167,7 +166,7 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
             trace!("rm -rf {}", display_path(path));
             // `map_err` rather than `wrap_err_with`: the hint depends on the error, and
             // `wrap_err_with`'s closure is not given it.
-            fs::remove_dir_all(path).map_err(|e| {
+            remove_dir_all_restoring_owner_access(path).map_err(|e| {
                 let msg = with_io_hint(
                     // Not "rm -rf": mise calls `remove_dir_all`, and on Windows it is naming a
                     // command the reader does not have.
@@ -180,6 +179,77 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
         }
         _ => {}
     };
+    Ok(())
+}
+
+/// [`fs::remove_dir_all`], retried once after the owner regains full access to every
+/// directory in the tree. An archive can install directories without the owner's write bit (a
+/// sealed `0555` runtime, or Go's read-only module cache), and nothing can be unlinked from such
+/// a directory, so `mise uninstall` failed with "Permission denied" on what mise had installed.
+fn remove_dir_all_restoring_owner_access(path: &Path) -> std::io::Result<()> {
+    let result = fs::remove_dir_all(path);
+    #[cfg(unix)]
+    if let Err(err) = &result
+        && err.kind() == std::io::ErrorKind::PermissionDenied
+        && restore_owner_access(path).is_ok()
+    {
+        return fs::remove_dir_all(path);
+    }
+    result
+}
+
+#[cfg(unix)]
+fn restore_owner_access(path: &Path) -> Result<()> {
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    let Some(name) = path.file_name() else {
+        bail!("no directory name in {}", display_path(path));
+    };
+    restore_owner_access_at(File::open(parent)?, name)
+}
+
+/// Give the owner read, write and search access to the directory `name` under `parent` and to
+/// every directory below it. Each directory is opened relative to the descriptor of the one
+/// holding it with `O_NOFOLLOW` and changed through its own descriptor, as [`remove_all_at`]
+/// walks a tree, so neither a link in the tree nor one swapped in mid-walk can redirect the
+/// change to a directory outside it. A directory the owner cannot open stops the walk.
+#[cfg(unix)]
+fn restore_owner_access_at<Fd: std::os::fd::AsFd>(
+    parent: Fd,
+    name: &std::ffi::OsStr,
+) -> Result<()> {
+    let fd = nix::fcntl::openat(
+        &parent,
+        name,
+        nix::fcntl::OFlag::O_RDONLY
+            | nix::fcntl::OFlag::O_DIRECTORY
+            | nix::fcntl::OFlag::O_NOFOLLOW
+            | nix::fcntl::OFlag::O_CLOEXEC,
+        nix::sys::stat::Mode::empty(),
+    )?;
+    let mode = nix::sys::stat::fstat(&fd)?.st_mode;
+    if mode & 0o700 != 0o700 {
+        nix::sys::stat::fchmod(&fd, nix::sys::stat::Mode::from_bits_truncate(mode | 0o700))?;
+    }
+    let mut directory = nix::dir::Dir::from_fd(fd)?;
+    let entries = directory
+        .iter()
+        .map(|entry| entry.map(|entry| entry.file_name().to_owned()))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for entry in entries {
+        let entry = std::ffi::OsStr::from_bytes(entry.to_bytes());
+        if entry == "." || entry == ".." {
+            continue;
+        }
+        let stat =
+            nix::sys::stat::fstatat(&directory, entry, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)?;
+        let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode & nix::libc::S_IFMT);
+        if kind == nix::sys::stat::SFlag::S_IFDIR {
+            restore_owner_access_at(&directory, entry)?;
+        }
+    }
     Ok(())
 }
 
@@ -373,7 +443,10 @@ pub fn try_rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> std::io::Re
 
 #[cfg(windows)]
 fn do_rename(from: &Path, to: &Path) -> std::io::Result<()> {
-    const MAX_ATTEMPTS: u32 = 5;
+    // Renaming a freshly extracted directory fails while antivirus is still scanning the files
+    // inside it, which takes tens of seconds for a multi-gigabyte archive such as flutter's.
+    const MAX_ATTEMPTS: u32 = 20;
+    const MAX_DELAY_MS: u64 = 5000;
     let mut last_err = None;
     for attempt in 0..MAX_ATTEMPTS {
         match fs::rename(from, to) {
@@ -381,10 +454,11 @@ fn do_rename(from: &Path, to: &Path) -> std::io::Result<()> {
             Err(e) if matches!(e.raw_os_error(), Some(5) | Some(32)) => {
                 // ERROR_ACCESS_DENIED (5) or ERROR_SHARING_VIOLATION (32):
                 // likely a transient lock from antivirus or the OS.
-                // Exponential backoff: 50ms, 100ms, 200ms, 400ms, 800ms
+                // Exponential backoff from 50ms, capped at 5s (about a minute in total).
                 last_err = Some(e);
                 if attempt + 1 < MAX_ATTEMPTS {
-                    std::thread::sleep(std::time::Duration::from_millis(50 * (1 << attempt)));
+                    let delay = (50u64 << attempt).min(MAX_DELAY_MS);
+                    std::thread::sleep(std::time::Duration::from_millis(delay));
                 }
             }
             Err(e) => return Err(e),
@@ -482,7 +556,9 @@ fn copy_dir_all_preserve_symlinks_skipping(
     skip_top_level: &[&str],
 ) -> Result<()> {
     trace!("cp -a {} {}", from.display(), to.display());
-    let mut directory_permissions = vec![(to.to_path_buf(), fs::metadata(from)?.permissions())];
+    let permissions = fs::metadata(from)?.permissions();
+    create_dir_all(to)?;
+    let mut directory_permissions = vec![(to.to_path_buf(), permissions)];
     let entries = WalkDir::new(from)
         .follow_links(false)
         .min_depth(1)
@@ -707,6 +783,74 @@ pub fn read_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
     trace!("cat {}", path.display_user());
     fs::read_to_string(path)
         .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))
+}
+
+/// Largest config file mise reads: `mise.toml`, `.tool-versions`, idiomatic
+/// version files, `mise.lock`, `.miserc.toml` and task TOML. These are found in
+/// whatever directory mise runs in, before anything is trusted, and are read
+/// whole, so without a limit a checkout could make every prompt allocate as much
+/// as the file holds. Real files are kilobytes: mise's own lockfile, covering
+/// dozens of tools on every platform, is about 70 KiB, and a config file a
+/// person writes is a few KiB. 16 MiB leaves more than two hundred times that
+/// while keeping the cost of a hostile file small.
+pub const CONFIG_FILE_LIMIT: u64 = 16 * 1024 * 1024;
+
+fn config_file_too_large(path: &Path) -> eyre::Report {
+    eyre::eyre!(
+        "not reading {}: it is larger than {} MiB, the most mise reads from a config file",
+        path.display_user(),
+        CONFIG_FILE_LIMIT / 1024 / 1024
+    )
+}
+
+/// Opens `path` only if it is a regular file, judged from the opened handle so
+/// that nothing swapped in after an earlier check is read instead. On unix the
+/// open does not block, so a pipe put in the file's place cannot hang it.
+pub fn open_regular_file<P: AsRef<Path>>(path: P) -> std::io::Result<File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, nix::libc::O_NONBLOCK);
+    let file = options.open(path.as_ref())?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::other("not a regular file"));
+    }
+    Ok(file)
+}
+
+/// [`read_to_string`] for a config file, refusing one that is not a regular
+/// file or is larger than [`CONFIG_FILE_LIMIT`].
+pub fn read_config_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref();
+    trace!("cat {}", path.display_user());
+    let mut body = String::new();
+    open_regular_file(path)
+        .and_then(|file| file.take(CONFIG_FILE_LIMIT + 1).read_to_string(&mut body))
+        .wrap_err_with(|| format!("failed read_to_string: {}", path.display_user()))?;
+    if body.len() as u64 > CONFIG_FILE_LIMIT {
+        return Err(config_file_too_large(path));
+    }
+    Ok(body)
+}
+
+/// Fails when `path` is a config file larger than [`CONFIG_FILE_LIMIT`], for
+/// readers that open the file themselves. A file that cannot be inspected is
+/// left to the reader to report.
+pub fn ensure_config_file_size<P: AsRef<Path>>(path: P) -> Result<()> {
+    let path = path.as_ref();
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.len() > CONFIG_FILE_LIMIT => Err(config_file_too_large(path)),
+        _ => Ok(()),
+    }
+}
+
+/// [`read_config_to_string`] on the blocking pool, for async callers: the same
+/// regular-file check and size limit, judged on the opened handle.
+pub async fn read_config_to_string_async<P: AsRef<Path>>(path: P) -> Result<String> {
+    let path = path.as_ref().to_path_buf();
+    tokio::task::spawn_blocking(move || read_config_to_string(&path))
+        .await
+        .wrap_err("config file read was cancelled")?
 }
 
 /// The bytes of a UTF-8 byte-order mark, as [`decode_text`] matches them below.
@@ -1876,6 +2020,13 @@ pub fn which_spawnable(name: &str) -> Option<PathBuf> {
     _which_spawnable(name, &env::PATH)
 }
 
+/// Like [`which_spawnable`], but searching `paths` rather than PATH.
+/// For directories that PATH may not list yet, such as one a package manager
+/// has just installed into.
+pub fn which_spawnable_in(name: &str, paths: &[PathBuf]) -> Option<PathBuf> {
+    _which_spawnable(name, paths)
+}
+
 fn _which_spawnable(name: &str, paths: &[PathBuf]) -> Option<PathBuf> {
     let names = executable_names(name);
     paths.iter().find_map(|dir| {
@@ -1984,11 +2135,22 @@ pub fn strip_shims_from_path(path_val: &str) -> String {
         .into_owned()
 }
 
-/// Strip every mise dispatch directory from PATH before a command wrapper
-/// delegates. This lets the wrapped command resolve a tool managed by mise or
-/// fall through to rustup/the system without invoking the wrapper again.
+/// Strip every mise dispatch directory (shims and command wrappers) from PATH.
+/// This lets the command resolve a tool managed by mise or fall through to
+/// rustup/the system without going through a shim or a wrapper.
 pub fn strip_dispatch_dirs_from_path(path_val: &str) -> String {
     let filtered = env::split_paths(path_val).filter(|p| !is_mise_dispatch_dir(p));
+    std::env::join_paths(filtered)
+        .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// Strip only the shims directory from PATH, keeping the command wrapper directory. A command
+/// wrapper's children use this so a wrapper they run still applies; the wrapper that started
+/// them is skipped by name instead (`__MISE_ACTIVE_WRAPPERS`).
+pub fn strip_shims_dir_from_path(path_val: &str) -> String {
+    let filtered = env::split_paths(path_val).filter(|p| !is_mise_shims_dir(p));
     std::env::join_paths(filtered)
         .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
         .to_string_lossy()
@@ -2051,10 +2213,71 @@ pub fn executable_names(bin: &str) -> Vec<String> {
     names
 }
 
+/// Unpacking may always produce this much, whatever `extract_max_ratio` allows:
+/// a small download that compresses well is no threat to the disk. Lower in
+/// tests, which have to unpack more than this to reach the limit.
+const EXTRACT_MIN_LIMIT: u64 = if cfg!(test) {
+    256 * 1024
+} else {
+    256 * 1024 * 1024
+};
+
+/// The most bytes unpacking `input` may produce: `extract_max_ratio` times its
+/// size, and at least [`EXTRACT_MIN_LIMIT`]. Release archives rarely unpack to
+/// more than 10 times their size, while 1 GiB of zeroes is under 1 KiB of
+/// bzip2, so without a bound a small download could fill the disk.
+fn extract_limit(input: &Path) -> Result<u64> {
+    let ratio = Settings::get().extract_max_ratio;
+    if ratio <= 0 {
+        return Ok(u64::MAX);
+    }
+    let size = input.metadata()?.len();
+    Ok(size.saturating_mul(ratio as u64).max(EXTRACT_MIN_LIMIT))
+}
+
+fn extract_limit_error(limit: u64) -> std::io::Error {
+    std::io::Error::other(format!(
+        "unpacked size exceeds {limit} bytes, the limit set by the extract_max_ratio setting"
+    ))
+}
+
+/// Fails once more than `remaining` bytes have been read from `inner`.
+struct LimitedReader<R> {
+    inner: R,
+    limit: u64,
+    remaining: u64,
+}
+
+impl<R: Read> LimitedReader<R> {
+    fn new(inner: R, limit: u64) -> Self {
+        Self {
+            inner,
+            limit,
+            remaining: limit,
+        }
+    }
+
+    /// Bounds what `decoder` may produce from the compressed file `input`.
+    fn for_input(input: &Path, decoder: R) -> Result<Self> {
+        Ok(Self::new(decoder, extract_limit(input)?))
+    }
+}
+
+impl<R: Read> Read for LimitedReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.remaining = self
+            .remaining
+            .checked_sub(n as u64)
+            .ok_or_else(|| extract_limit_error(self.limit))?;
+        Ok(n)
+    }
+}
+
 pub fn un_gz(input: &Path, dest: &Path) -> Result<()> {
     debug!("gunzip {} > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = GzDecoder::new(f);
+    let mut dec = LimitedReader::for_input(input, GzDecoder::new(f))?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-gzip: {}", display_path(input)))?;
@@ -2064,7 +2287,7 @@ pub fn un_gz(input: &Path, dest: &Path) -> Result<()> {
 pub fn un_xz(input: &Path, dest: &Path) -> Result<()> {
     debug!("xz -d {} -c > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = xz2::read::XzDecoder::new(f);
+    let mut dec = LimitedReader::for_input(input, xz2::read::XzDecoder::new(f))?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-xz: {}", display_path(input)))?;
@@ -2088,7 +2311,7 @@ fn zstd_decoder<R: Read>(reader: R) -> Result<zstd::Decoder<'static, BufReader<R
 pub fn un_zst(input: &Path, dest: &Path) -> Result<()> {
     debug!("zstd -d {} -c > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = zstd_decoder(f)?;
+    let mut dec = LimitedReader::for_input(input, zstd_decoder(f)?)?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-zst: {}", display_path(input)))?;
@@ -2098,7 +2321,7 @@ pub fn un_zst(input: &Path, dest: &Path) -> Result<()> {
 pub fn un_bz2(input: &Path, dest: &Path) -> Result<()> {
     debug!("bzip2 -d {} -c > {}", input.display(), dest.display());
     let f = File::open(input)?;
-    let mut dec = BzDecoder::new(f);
+    let mut dec = LimitedReader::for_input(input, BzDecoder::new(f))?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut dec, &mut output)
         .wrap_err_with(|| format!("failed to un-bz2: {}", display_path(input)))?;
@@ -2377,9 +2600,12 @@ pub fn untar(
     })
 }
 
+/// The decoded tar stream of `archive`, bounded by [`extract_limit`]. Sparse
+/// members are the exception: jdx-tar makes up their holes itself, and writes
+/// them as holes, so they never pass through this reader.
 fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io::Read>> {
     let f = File::open(archive)?;
-    Ok(match format {
+    let tar: Box<dyn std::io::Read> = match format {
         // TODO: we probably shouldn't assume raw is tar.gz, but this was to retain existing behavior
         ExtractionFormat::TarGz | ExtractionFormat::Raw => Box::new(GzDecoder::new(f)),
         ExtractionFormat::TarXz => Box::new(xz2::read::XzDecoder::new(f)),
@@ -2401,7 +2627,8 @@ fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io:
         ExtractionFormat::Zip => bail!("zip format not supported"),
         ExtractionFormat::SevenZip => bail!("7z format not supported"),
         ExtractionFormat::Rar => bail!("rar format not supported"),
-    })
+    };
+    Ok(Box::new(LimitedReader::for_input(archive, tar)?))
 }
 
 fn reset_dir_mtime_to_now(dir: &Path) -> Result<()> {
@@ -2409,10 +2636,30 @@ fn reset_dir_mtime_to_now(dir: &Path) -> Result<()> {
     for entry in WalkDir::new(dir) {
         let entry = entry?;
         if entry.file_type().is_file() {
-            set_file_times(entry.path(), now, now)?;
+            set_times_through_readonly(entry.path(), now)?;
         }
     }
     Ok(())
+}
+
+/// Sets a file's times, even when it is read-only. `set_file_times` opens a write handle on
+/// Windows, which a read-only file (git's `.git/objects` files in a zipped checkout, for one)
+/// refuses with "Access is denied". Setting times only needs the right to write attributes.
+#[cfg(windows)]
+fn set_times_through_readonly(path: &Path, time: FileTime) -> Result<()> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_WRITE_ATTRIBUTES: u32 = 0x100;
+    let time = std::time::SystemTime::from(time);
+    let file = fs::OpenOptions::new()
+        .access_mode(FILE_WRITE_ATTRIBUTES)
+        .open(path)?;
+    file.set_times(fs::FileTimes::new().set_accessed(time).set_modified(time))?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn set_times_through_readonly(path: &Path, time: FileTime) -> Result<()> {
+    Ok(set_file_times(path, time, time)?)
 }
 
 fn strip_archive_path_components(dir: &Path, strip_depth: usize) -> Result<()> {
@@ -2461,12 +2708,21 @@ pub fn unzip(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<(
         ));
     }
     run_blocking(|| {
-        ZipArchive::new(File::open(archive)?)
-            .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?
-            .extract(dest)
-            .wrap_err_with(|| {
-                format!("failed to extract zip archive: {}", display_path(archive))
-            })?;
+        let mut zip = ZipArchive::new(File::open(archive)?)
+            .wrap_err_with(|| format!("failed to open zip archive: {}", display_path(archive)))?;
+        let err = || format!("failed to extract zip archive: {}", display_path(archive));
+        // The zip crate fails an entry that unpacks to more than the size its
+        // central directory record declares, so those sizes bound what
+        // `extract` writes, even when several records share one member.
+        let limit = extract_limit(archive)?;
+        let mut declared = 0u64;
+        for i in 0..zip.len() {
+            declared = declared.saturating_add(zip.by_index_raw(i).wrap_err_with(err)?.size());
+            if declared > limit {
+                return Err(eyre::Report::new(extract_limit_error(limit)).wrap_err(err()));
+            }
+        }
+        zip.extract(dest).wrap_err_with(err)?;
 
         if !opts.preserve_mtime {
             reset_dir_mtime_to_now(dest)?;
@@ -2613,13 +2869,39 @@ pub fn un7z(archive: &Path, dest: &Path, opts: &ExtractOptions<'_>) -> Result<()
             archive.file_name().unwrap().to_string_lossy()
         ));
     }
+    // sevenz-rust2 rejects any `..` in an entry's destination path, but `dest`
+    // can legitimately contain one (e.g. a localized mise under `tools/../.mise`).
+    let resolved_dest;
+    let dest = if dest
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        // canonicalize follows symlinks, so `..` means what the caller's path means
+        create_dir_all(dest)?;
+        resolved_dest = dest
+            .canonicalize()
+            .wrap_err_with(|| format!("failed to resolve {}", display_path(dest)))?;
+        &resolved_dest
+    } else {
+        dest
+    };
     run_blocking(|| {
+        let limit = extract_limit(archive)?;
+        let mut remaining = limit;
         sevenz_rust2::decompress_file_with_extract_fn(archive, dest, |entry, reader, _| {
             let dest_path = dest.join(
                 sanitize_7z_entry_path(entry.name())
                     .map_err(|err| sevenz_rust2::Error::Other(format!("{err:#}").into()))?,
             );
-            sevenz_rust2::default_entry_extract_fn(entry, reader, &dest_path)
+            // One budget across entries, not one per entry.
+            let mut reader = LimitedReader {
+                inner: reader,
+                limit,
+                remaining,
+            };
+            let extracted = sevenz_rust2::default_entry_extract_fn(entry, &mut reader, &dest_path);
+            remaining = reader.remaining;
+            extracted
         })
         .wrap_err_with(|| format!("failed to extract 7z archive: {}", display_path(archive)))?;
 
@@ -2671,6 +2953,180 @@ pub fn is_safe_relative_path(path: &str) -> bool {
     let mut components = Path::new(&normalized).components();
     matches!(components.next(), Some(std::path::Component::Normal(_)))
         && components.all(|component| matches!(component, std::path::Component::Normal(_)))
+}
+
+/// Fails if a symlink under `root` points outside of it.
+///
+/// Archive extraction keeps symlink entries whatever their target, and the steps
+/// that run after it (renaming or chmodding the binary, creating `.mise-bins`,
+/// writing state files) open paths below the install directory by name, which
+/// follows those links. Call this on an extracted tree before any such step.
+///
+/// Each target is resolved component by component, following every link on the
+/// way, so chains and links through linked directories are checked; components
+/// that do not exist are taken as written.
+pub fn ensure_symlinks_stay_within(root: &Path) -> Result<()> {
+    if fs::symlink_metadata(root)?.file_type().is_symlink() {
+        bail!("{} is a symlink", display_path(root));
+    }
+    let real_root = root.canonicalize()?;
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in fs::read_dir(&dir)? {
+            let path = entry?.path();
+            let kind = fs::symlink_metadata(&path)?.file_type();
+            if kind.is_dir() {
+                dirs.push(path);
+            } else if kind.is_symlink() {
+                let target = fs::read_link(&path)?;
+                let base = path.parent().unwrap_or(root).canonicalize()?;
+                if !link_target_stays_within(&real_root, root, &base, &target) {
+                    bail!(
+                        "symlink {} points outside of {}: {}",
+                        display_path(&path),
+                        display_path(root),
+                        target.display()
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Rewrites absolute symlinks in a guest root filesystem to relative links.
+///
+/// A guest root filesystem is later mounted as `/`, so `/bin/tool` in it
+/// means `<root>/bin/tool`, not the host's `/bin/tool`. Rebase those links
+/// before checking the enclosing archive with [`ensure_symlinks_stay_within`]
+/// so the installed tree never contains a link that resolves outside it.
+#[cfg(unix)]
+pub fn rebase_guest_rootfs_absolute_symlinks(root: &Path) -> Result<()> {
+    if fs::symlink_metadata(root)?.file_type().is_symlink() {
+        bail!("{} is a symlink", display_path(root));
+    }
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in fs::read_dir(&dir)? {
+            let path = entry?.path();
+            let kind = fs::symlink_metadata(&path)?.file_type();
+            if kind.is_dir() {
+                dirs.push(path);
+            } else if kind.is_symlink() {
+                let target = fs::read_link(&path)?;
+                if target.is_absolute() {
+                    let replacement = if target == Path::new("/") {
+                        relative_path(path.parent().unwrap(), root)
+                    } else {
+                        let target = target.strip_prefix(Path::new("/")).unwrap();
+                        let target = target.to_str().ok_or_else(|| {
+                            eyre::eyre!(
+                                "absolute symlink target is not valid UTF-8: {}",
+                                path.display()
+                            )
+                        })?;
+                        if !is_safe_relative_path(target) {
+                            bail!(
+                                "absolute symlink target escapes guest rootfs: {} -> /{}",
+                                display_path(&path),
+                                target
+                            );
+                        }
+                        relative_path(path.parent().unwrap(), &root.join(target))
+                    };
+                    make_symlink(&replacement, &path)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn relative_path(from: &Path, to: &Path) -> PathBuf {
+    use std::path::Component;
+
+    let from = from.components().collect::<Vec<_>>();
+    let to = to.components().collect::<Vec<_>>();
+    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    let mut relative = PathBuf::new();
+    for component in &from[common..] {
+        if matches!(component, Component::Normal(_)) {
+            relative.push("..");
+        }
+    }
+    for component in &to[common..] {
+        relative.push(component.as_os_str());
+    }
+    if relative.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        relative
+    }
+}
+
+/// Resolves `target` as seen from the directory `base` (already real), following
+/// every link on the way, and reports whether each step stays under `root` (the
+/// real path of the tree, which is `given_root` as the caller spelled it).
+/// Components that do not exist are taken as written. A chain of links that loops
+/// without leaving `root` is harmless, so the walk stops after `MAX_LINKS` links
+/// and accepts it.
+fn link_target_stays_within(root: &Path, given_root: &Path, base: &Path, target: &Path) -> bool {
+    use std::collections::VecDeque;
+    use std::path::Component;
+    const MAX_LINKS: usize = 40;
+    let parts = |path: &Path| -> VecDeque<PathBuf> {
+        path.components()
+            .map(|part| PathBuf::from(part.as_os_str()))
+            .collect()
+    };
+    let mut current = base.to_path_buf();
+    let mut pending = parts(target);
+    let mut followed = 0;
+    while let Some(part) = pending.pop_front() {
+        let Some(component) = part.components().next() else {
+            continue;
+        };
+        match component {
+            Component::Prefix(_) | Component::RootDir => {
+                // An absolute path stays inside only if it names the tree's
+                // root, by either spelling; walk the rest from the root rather
+                // than through the root's ancestors.
+                let absolute: PathBuf = std::iter::once(part).chain(pending.drain(..)).collect();
+                let Some(rest) = [root, given_root]
+                    .into_iter()
+                    .find_map(|root| absolute.strip_prefix(root).ok())
+                else {
+                    return false;
+                };
+                pending = parts(rest);
+                current = root.to_path_buf();
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                current.pop();
+            }
+            Component::Normal(name) => {
+                let candidate = current.join(name);
+                match fs::read_link(&candidate) {
+                    Ok(link) => {
+                        followed += 1;
+                        if followed > MAX_LINKS {
+                            return true;
+                        }
+                        for part in link.components().rev() {
+                            pending.push_front(PathBuf::from(part.as_os_str()));
+                        }
+                    }
+                    Err(_) => current = candidate,
+                }
+            }
+        }
+        if !current.starts_with(root) {
+            return false;
+        }
+    }
+    true
 }
 
 fn sanitize_7z_entry_path(path: &str) -> Result<PathBuf> {
@@ -2830,7 +3286,6 @@ pub fn clone_dir(from: &PathBuf, to: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Inspects the top-level contents of a tar archive without extracting it
 /// Skips leading CurDir (".") components from a path's components iterator.
 /// Archives often have paths like "./foo/bar" where the leading "." should be ignored.
 fn skip_curdir_components(path: &Path) -> impl Iterator<Item = std::path::Component<'_>> {
@@ -2838,6 +3293,12 @@ fn skip_curdir_components(path: &Path) -> impl Iterator<Item = std::path::Compon
         .skip_while(|c| matches!(c, std::path::Component::CurDir))
 }
 
+/// Inspects the top-level contents of a tar archive without extracting it.
+///
+/// Stops at the second distinct top-level entry, which already settles
+/// [`should_strip_components`]. A tar entry name can be up to 1 MiB and
+/// compresses to a few bytes, so collecting every name would let a tiny
+/// archive hold gigabytes of memory.
 pub fn inspect_tar_contents(
     archive: &Path,
     format: ExtractionFormat,
@@ -2863,15 +3324,20 @@ pub fn inspect_tar_contents(
 
             // Update the component's directory status
             // A component is a directory if ANY entry indicates it's a directory
-            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            let existing = top_level_components.entry(name).or_insert(false);
             *existing = *existing || is_directory;
+            if top_level_components.len() > 1 {
+                break;
+            }
         }
     }
 
     Ok(top_level_components.into_iter().collect())
 }
 
-/// Inspects the top-level contents of a zip archive without extracting it
+/// Inspects the top-level contents of a zip archive without extracting it.
+///
+/// Like [`inspect_tar_contents`], stops at the second distinct top-level entry.
 pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     let f = File::open(archive)?;
     let mut archive = ZipArchive::new(f)
@@ -2891,8 +3357,11 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
                 // It's a directory if the entry type is dir OR if there are more components after the first
                 let is_directory = file.is_dir() || components.next().is_some();
 
-                let existing = top_level_components.entry(name.clone()).or_insert(false);
+                let existing = top_level_components.entry(name).or_insert(false);
                 *existing = *existing || is_directory;
+                if top_level_components.len() > 1 {
+                    break;
+                }
             }
         }
     }
@@ -2900,7 +3369,8 @@ pub fn inspect_zip_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     Ok(top_level_components.into_iter().collect())
 }
 
-/// Adapted from inspect_tar_contents for 7z archives
+/// Adapted from inspect_tar_contents for 7z archives, and like it stops at the
+/// second distinct top-level entry.
 pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
     let sevenz = sevenz_rust2::Archive::open(archive)?;
     let mut top_level_components = std::collections::HashMap::new();
@@ -2916,8 +3386,11 @@ pub fn inspect_7z_contents(archive: &Path) -> Result<Vec<(String, bool)>> {
             // It's a directory if the entry type is dir OR if there are more components after the first
             let is_directory = file.is_directory() || components.next().is_some();
 
-            let existing = top_level_components.entry(name.clone()).or_insert(false);
+            let existing = top_level_components.entry(name).or_insert(false);
             *existing = *existing || is_directory;
+            if top_level_components.len() > 1 {
+                break;
+            }
         }
     }
 
@@ -2947,6 +3420,17 @@ pub struct ArchiveContent {
     pub sha256: String,
 }
 
+/// How many bytes [`archive_content_files`] hashes per byte of archive before it
+/// gives up.
+///
+/// Nothing has vouched for the archive yet, and hashing writes nothing, so no
+/// full disk ends it. Zip entries that share one member, sparse tar members and
+/// plain decompression bombs would otherwise turn a few kilobytes of download
+/// into hours of hashing, or no end at all.
+const ARCHIVE_CONTENT_MAX_RATIO: u64 = 100;
+/// An archive may always unpack to this much, whatever its ratio.
+const ARCHIVE_CONTENT_MIN_BUDGET: u64 = 256 * 1024 * 1024;
+
 /// Return the regular files in an archive after applying strip-components.
 ///
 /// This is intentionally stricter than extraction: content-level provenance is
@@ -2961,6 +3445,10 @@ pub fn archive_content_files(
     if strip_components > 1 {
         bail!("content-level SLSA verification only supports strip_components values of 0 or 1");
     }
+    let budget = fs::metadata(archive_path)?
+        .len()
+        .saturating_mul(ARCHIVE_CONTENT_MAX_RATIO)
+        .max(ARCHIVE_CONTENT_MIN_BUDGET);
 
     match format {
         ExtractionFormat::TarGz
@@ -2971,9 +3459,9 @@ pub fn archive_content_files(
         | ExtractionFormat::TarBr
         | ExtractionFormat::TarLz4
         | ExtractionFormat::TarSz => {
-            archive_content_files_tar(archive_path, format, strip_components)
+            archive_content_files_tar(archive_path, format, strip_components, budget)
         }
-        ExtractionFormat::Zip => archive_content_files_zip(archive_path, strip_components),
+        ExtractionFormat::Zip => archive_content_files_zip(archive_path, strip_components, budget),
         ExtractionFormat::SevenZip => {
             bail!("content-level SLSA verification does not support 7z archives")
         }
@@ -2995,6 +3483,7 @@ fn archive_content_files_tar(
     archive_path: &Path,
     format: ExtractionFormat,
     strip_components: usize,
+    mut budget: u64,
 ) -> Result<Vec<ArchiveContent>> {
     let tar = open_tar(format, archive_path)?;
     let mut archive = Archive::new(tar);
@@ -3014,7 +3503,10 @@ fn archive_content_files_tar(
             );
         }
         let name = normalize_archive_content_path(&path, strip_components)?;
-        let sha256 = sha256_reader(&mut entry)?;
+        // For a sparse member this is the size including its holes, which
+        // jdx-tar reads back as zeroes.
+        let size = entry.size();
+        let sha256 = sha256_reader(&mut entry, size, &mut budget)?;
         files.push(ArchiveContent { name, sha256 });
     }
 
@@ -3024,6 +3516,7 @@ fn archive_content_files_tar(
 fn archive_content_files_zip(
     archive_path: &Path,
     strip_components: usize,
+    mut budget: u64,
 ) -> Result<Vec<ArchiveContent>> {
     let f = File::open(archive_path)?;
     let mut archive = ZipArchive::new(f)
@@ -3032,30 +3525,47 @@ fn archive_content_files_zip(
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
-        if file.is_dir() {
-            continue;
-        }
+        // `is_dir` only looks at the name and `is_symlink` only at the mode, so one
+        // entry can be both. `ZipArchive::extract` creates such an entry as a symlink,
+        // so ask in the same order.
         if file.is_symlink() {
             bail!(
                 "content-level SLSA verification does not support symlink archive entry: {}",
-                file.name()
+                file.name().as_deref().unwrap_or("<unreadable name>")
             );
+        }
+        if file.is_dir() {
+            continue;
         }
         let enclosed_name = file.enclosed_name().ok_or_else(|| {
             eyre::eyre!(
                 "content-level SLSA verification rejected unsafe zip path: {}",
-                file.name()
+                file.name().as_deref().unwrap_or("<unreadable name>")
             )
         })?;
         let name = normalize_archive_content_path(&enclosed_name, strip_components)?;
-        let sha256 = sha256_reader(&mut file)?;
+        let size = file.size();
+        let sha256 = sha256_reader(&mut file, size, &mut budget)?;
         files.push(ArchiveContent { name, sha256 });
     }
 
     validate_archive_content_files(files)
 }
 
-fn sha256_reader(reader: &mut impl Read) -> Result<String> {
+/// Hash an archive entry and deduct what was read from `budget`.
+///
+/// The declared `size` refuses an oversized entry before any work is done. What
+/// is deducted is what was read, because a zip entry can inflate to more than it
+/// declares.
+fn sha256_reader(reader: &mut impl Read, size: u64, budget: &mut u64) -> Result<String> {
+    let over_budget = || {
+        eyre::eyre!(
+            "content-level SLSA verification rejected an archive that unpacks to more than {ARCHIVE_CONTENT_MAX_RATIO} times its size"
+        )
+    };
+    if size > *budget {
+        return Err(over_budget());
+    }
     let mut hasher = Sha256::new();
     let mut buf = [0; 8192];
     loop {
@@ -3063,6 +3573,7 @@ fn sha256_reader(reader: &mut impl Read) -> Result<String> {
         if n == 0 {
             break;
         }
+        *budget = budget.checked_sub(n as u64).ok_or_else(over_budget)?;
         hasher.update(&buf[..n]);
     }
     Ok(hex::encode(hasher.finalize()))

@@ -245,11 +245,18 @@ specifiers = ["24"]
 `tool-stubs` lists the stubs whose entries the lockfile holds, relative to the
 lockfile. No config declares those tools, so the list is how `mise lock` knows
 to keep their entries and refresh them with the rest of the lockfile. When a
-listed stub is deleted, `mise lock` removes it from the list and prunes its
-entry.
+listed stub is deleted, or a reference now leads out of the project through a
+symlinked directory, `mise lock` removes it from the list and prunes its entry.
+
+A stub sets tool options, so `mise lock` reads the listed stubs only when the
+project's config is [trusted](/security.html#configuration-trust). In
+[safe mode](/security.html#safe-mode) it skips a listed stub that sets tool
+options (such as `url` or `install_env`) and leaves its entries as they are.
+References stay inside the git checkout that holds the lockfile.
 
 A stub finds its lockfile from where the stub file lives, not from the
-directory it runs in, and a symlinked stub is followed to its real location.
+directory it runs in, and a symlinked stub, or one in a symlinked directory, is
+followed to its real location.
 `./bin/node` and a `~/.local/bin/node` symlink to it both use the project's
 `mise.lock` from any working directory. Local and environment configs
 (`mise.local.toml`, `mise.{env}.toml`) are not used, so a committed stub locks

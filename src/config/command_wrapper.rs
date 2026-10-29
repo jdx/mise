@@ -1,48 +1,7 @@
 use crate::config::SettingsExt;
 use indexmap::IndexMap;
-use serde::Deserialize;
 
-/// A command that intercepts a binary name before delegating to the toolset.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(untagged)]
-pub enum CommandWrapper {
-    Command(String),
-    Detailed(CommandWrapperOptions),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct CommandWrapperOptions {
-    pub command: String,
-    #[serde(default)]
-    pub args: Vec<String>,
-    #[serde(default)]
-    pub env: IndexMap<String, String>,
-}
-
-impl CommandWrapper {
-    pub fn command(&self) -> &str {
-        match self {
-            Self::Command(command) => command,
-            Self::Detailed(options) => &options.command,
-        }
-    }
-
-    pub fn args(&self) -> &[String] {
-        match self {
-            Self::Command(_) => &[],
-            Self::Detailed(options) => &options.args,
-        }
-    }
-
-    pub fn env(&self) -> &IndexMap<String, String> {
-        static EMPTY: std::sync::LazyLock<IndexMap<String, String>> =
-            std::sync::LazyLock::new(IndexMap::new);
-        match self {
-            Self::Command(_) => &EMPTY,
-            Self::Detailed(options) => &options.env,
-        }
-    }
-}
+pub use mise_config::wrappers::{CommandWrapper, CommandWrapperOptions};
 
 /// Rust's opt-in wrapper shares the same dispatch path as explicit wrappers.
 /// Inspect effective requests so project, platform, and runtime selection apply.
@@ -52,6 +11,7 @@ pub(crate) fn add_rust_wrapper<'a>(
 ) -> eyre::Result<()> {
     use crate::args::BackendArg;
     use crate::backend::options::BackendOptions;
+    use crate::toolset::ToolOptionSource;
 
     if wrappers
         .keys()
@@ -68,11 +28,18 @@ pub(crate) fn add_rust_wrapper<'a>(
         .find(|tool| tool.ba().full() == "core:rust")
         .is_some_and(|rust| {
             // Match explicit wrappers: safe mode cannot activate project commands.
+            // The source only says who picked the version. Options are also layered
+            // on from elsewhere (a project's tool alias, the project entry a runtime
+            // argument inherits), so the entry itself has to set this one.
             let safe = !crate::config::Settings::safe_mode()
-                || rust
+                || (rust
                     .source()
                     .path()
-                    .is_none_or(crate::config::is_global_config);
+                    .is_none_or(crate::config::is_global_config)
+                    && matches!(
+                        rust.option_source("mr_boxington"),
+                        Some(ToolOptionSource::Request | ToolOptionSource::InlineBackendArg)
+                    ));
             safe && BackendOptions::new(&rust.options()).bool("mr_boxington")
         });
     if !enabled {

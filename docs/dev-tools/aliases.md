@@ -88,7 +88,7 @@ mise tool-alias ls node
 ```
 
 ```text
-node  lts          24
+node  lts          26
 node  lts-argon    4
 node  lts-boron    6
 ...

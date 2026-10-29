@@ -1,3 +1,4 @@
+use crate::redactions::strip_url_credentials_in_arg;
 use crate::tokens;
 use crate::yaml::{self, Value};
 use eyre::Result;
@@ -20,8 +21,30 @@ use crate::{dirs, env};
 pub struct GitlabRelease {
     pub tag_name: String,
     pub description: Option<String>,
+    /// When GitLab stored the release. A release list an older mise cached
+    /// has none.
+    #[serde(default)]
+    pub created_at: Option<String>,
     pub released_at: Option<String>,
     pub assets: GitlabAssets,
+}
+
+impl GitlabRelease {
+    /// The time this release became public. GitLab's `released_at` is a date
+    /// the publisher may set to anything, older than the release itself for
+    /// a "historical release"; `created_at` is when GitLab stored it. The
+    /// later of the two is used, so a backdated release is still as new as
+    /// it is and an upcoming one (a future `released_at`) stays hidden until
+    /// its date.
+    pub fn published_at(&self) -> Option<&str> {
+        let timestamp = |s: &str| s.parse::<jiff::Timestamp>().ok();
+        match (self.created_at.as_deref(), self.released_at.as_deref()) {
+            (Some(created), Some(released)) if timestamp(created) > timestamp(released) => {
+                Some(created)
+            }
+            (created, released) => released.or(created),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,6 +147,18 @@ pub async fn project_identity(path: &str) -> Result<ProjectIdentity> {
 
 pub static API_URL: &str = "https://gitlab.com/api/v4";
 
+/// Key of a persisted release, release-list or tag-list entry. Kebab-casing
+/// alone is lossy (`group/a-b` and `group-a/b` come out the same), so the exact
+/// parts are hashed in too, or one project's cached data would answer for
+/// another's.
+fn cache_key(parts: &[&str]) -> String {
+    format!(
+        "{}-{}",
+        parts.join("-").to_kebab_case(),
+        crate::hash::hash_to_str(&parts)
+    )
+}
+
 pub static API_PATH: &str = "/api/v4";
 
 async fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>>> {
@@ -167,7 +202,7 @@ async fn get_release_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<GitlabRe
 
 #[allow(dead_code)]
 pub async fn list_releases(repo: &str) -> Result<Vec<GitlabRelease>> {
-    let key = repo.to_kebab_case();
+    let key = cache_key(&[repo]);
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -179,7 +214,8 @@ pub async fn list_releases(repo: &str) -> Result<Vec<GitlabRelease>> {
 }
 
 pub async fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<GitlabRelease>> {
-    let key = format!("{api_url}-{repo}").to_kebab_case();
+    let key_api_url = strip_url_credentials_in_arg(api_url);
+    let key = cache_key(&[&key_api_url, repo]);
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -226,7 +262,7 @@ async fn list_releases_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec
 
 #[allow(dead_code)]
 pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
-    let key = repo.to_kebab_case();
+    let key = cache_key(&[repo]);
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -238,7 +274,8 @@ pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
 }
 
 pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
-    let key = format!("{api_url}-{repo}").to_kebab_case();
+    let key_api_url = strip_url_credentials_in_arg(api_url);
+    let key = cache_key(&[&key_api_url, repo]);
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -279,7 +316,7 @@ async fn list_tags_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<Str
 
 #[allow(dead_code)]
 pub async fn get_release(repo: &str, tag: &str) -> Result<GitlabRelease> {
-    let key = format!("{repo}-{tag}").to_kebab_case();
+    let key = cache_key(&[repo, tag]);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -289,7 +326,8 @@ pub async fn get_release(repo: &str, tag: &str) -> Result<GitlabRelease> {
 }
 
 pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRelease> {
-    let key = format!("{api_url}-{repo}-{tag}").to_kebab_case();
+    let key_api_url = strip_url_credentials_in_arg(api_url);
+    let key = cache_key(&[&key_api_url, repo, tag]);
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
     Ok(cache
@@ -403,6 +441,10 @@ pub mod test_support {
 /// 5. glab CLI token (from `config.yml`)
 /// 6. `git credential fill` (if enabled)
 pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
+    // A host that project config named in safe mode; see `untrusted_hosts`.
+    if crate::untrusted_hosts::forge_token_denied(host) {
+        return None;
+    }
     if crate::testing::in_tests()
         && let Some(token) = test_support::lookup_tokens_file_override(host)
     {
@@ -521,14 +563,27 @@ fn read_glab_hosts() -> Option<HashMap<String, String>> {
             return None;
         }
     };
-    warn_glab_expired_tokens(&contents);
-    match tokens::yaml_hosts_to_tokens(&contents) {
-        Some(tokens) => Some(tokens),
-        None => {
-            debug!("failed to parse glab config.yml at {}", path.display());
-            None
+    let hosts = glab_usable_tokens(&contents);
+    if hosts.is_none() {
+        debug!("failed to parse glab config.yml at {}", path.display());
+    }
+    hosts
+}
+
+/// Parse glab's config into host tokens, warning about and dropping expired OAuth2 tokens.
+fn glab_usable_tokens(contents: &str) -> Option<HashMap<String, String>> {
+    let expired = warn_glab_expired_tokens(contents);
+    let mut tokens = tokens::yaml_hosts_to_tokens(contents)?;
+    // An expired OAuth2 token only earns a 401, so fall through to an
+    // unauthenticated request rather than send it.
+    // Only drop the host when the selected token is the expired one; a valid
+    // token for the same host from another config section must survive.
+    for (host, expired_token) in expired {
+        if tokens.get(&host) == Some(&expired_token) {
+            tokens.remove(&host);
         }
     }
+    Some(tokens)
 }
 
 /// Warn if any glab OAuth2 tokens are expired.
@@ -538,16 +593,21 @@ fn read_glab_hosts() -> Option<HashMap<String, String>> {
 /// that is the correct format going forward--old tokens will simply not trigger the
 /// warning. mise cannot refresh OAuth2 tokens itself, so we warn the user to run a
 /// glab command (e.g. `glab api user`) which will trigger a silent token refresh.
-fn warn_glab_expired_tokens(contents: &str) {
-    for (host, expiry_str) in find_expired_glab_tokens(contents) {
-        warn!(
-            "glab OAuth2 token for {host} expired at {expiry_str}. Run a glab command (e.g. `glab api user`) to refresh it."
-        );
-    }
+/// Returns the `(host, token)` pairs that expired so the caller can stop using them.
+fn warn_glab_expired_tokens(contents: &str) -> Vec<(String, String)> {
+    find_expired_glab_tokens(contents)
+        .into_iter()
+        .map(|(host, expiry_str, token)| {
+            warn!(
+                "glab OAuth2 token for {host} expired at {expiry_str}, ignoring it. Run a glab command (e.g. `glab api user`) to refresh it."
+            );
+            (host, token)
+        })
+        .collect()
 }
 
-/// Returns `(host, expiry_str)` pairs for every glab host whose OAuth2 token is expired.
-fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String)> {
+/// Returns `(host, expiry_str, token)` for every glab host whose OAuth2 token is expired.
+fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String, String)> {
     let Ok(doc) = yaml::from_str::<Value>(contents) else {
         return vec![];
     };
@@ -562,6 +622,12 @@ fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String)> {
         if entry.get("oauth2_refresh_token").is_none() {
             continue;
         }
+        let Some(entry_map) = entry.as_mapping() else {
+            continue;
+        };
+        let Some(token) = tokens::token_from_entry(entry_map) else {
+            continue;
+        };
         let Some(expiry_str) = entry.get("oauth2_expiry_date").and_then(Value::as_str) else {
             continue;
         };
@@ -569,7 +635,7 @@ fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String)> {
             continue;
         };
         if expiry_date < now {
-            expired.push((host.to_string(), expiry_str.to_string()));
+            expired.push((host.to_string(), expiry_str.to_string(), token));
         }
     }
     expired
@@ -578,6 +644,29 @@ fn find_expired_glab_tokens(contents: &str) -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cache_key_separates_names_kebab_case_collapses() {
+        let key = cache_key(&[API_URL, "group/graphql-engine", "v2.40.0"]);
+        assert_ne!(
+            key,
+            cache_key(&[API_URL, "group-graphql/engine", "v2.40.0"])
+        );
+        assert_ne!(key, cache_key(&[API_URL, "group/graphqlEngine", "v2.40.0"]));
+        // the repo/tag boundary moved
+        assert_ne!(
+            cache_key(&[API_URL, "group/tool", "v1-0"]),
+            cache_key(&[API_URL, "group/tool-v1", "0"])
+        );
+        assert_ne!(
+            cache_key(&[API_URL, "group/a-b"]),
+            cache_key(&[API_URL, "group-a/b"])
+        );
+        assert_eq!(
+            key,
+            cache_key(&[API_URL, "group/graphql-engine", "v2.40.0"])
+        );
+    }
 
     #[test]
     fn test_parse_gitlab_tokens() {
@@ -628,6 +717,23 @@ hosts:
         assert_eq!(expired.len(), 1);
         assert_eq!(expired[0].0, "gitlab.com");
         assert_eq!(expired[0].1, "2023-03-13T15:47:00Z");
+        assert_eq!(expired[0].2, "gloas-abc123");
+    }
+
+    #[test]
+    fn test_glab_usable_tokens_keeps_valid_login_over_expired_host_token() {
+        let yaml = r#"
+hosts:
+  gitlab.com:
+    oauth_token: gloas-expired
+    oauth2_refresh_token: refresh
+    oauth2_expiry_date: "2023-03-13T15:47:00Z"
+logins:
+  - name: gitlab.com
+    token: glpat-valid
+"#;
+        let tokens = glab_usable_tokens(yaml).unwrap();
+        assert_eq!(tokens.get("gitlab.com").unwrap(), "glpat-valid");
     }
 
     #[test]
@@ -756,6 +862,48 @@ hosts:
             "released_at": null,
             "assets": { "sources": [], "links": [] },
         })
+    }
+
+    #[test]
+    fn published_at_is_the_later_of_created_at_and_released_at() {
+        let published_at = |created_at: Option<&str>, released_at: Option<&str>| {
+            let mut json = release_json("v1.0.0");
+            json["created_at"] = created_at.into();
+            json["released_at"] = released_at.into();
+            let release: GitlabRelease = serde_json::from_value(json).unwrap();
+            release.published_at().map(str::to_string)
+        };
+        let created = "2026-01-02T00:00:00.000Z";
+
+        // A historical release: the publisher backdated `released_at`.
+        assert_eq!(
+            published_at(Some(created), Some("2020-01-01T00:00:00.000Z")).as_deref(),
+            Some(created)
+        );
+        // An upcoming release.
+        assert_eq!(
+            published_at(Some(created), Some("2026-02-01T00:00:00.000Z")).as_deref(),
+            Some("2026-02-01T00:00:00.000Z")
+        );
+        // Instants are compared, not strings: this is 2026-01-01T23:30Z.
+        assert_eq!(
+            published_at(Some(created), Some("2026-01-02T01:30:00.000+02:00")).as_deref(),
+            Some(created)
+        );
+        assert_eq!(
+            published_at(Some(created), Some("garbage")).as_deref(),
+            Some(created)
+        );
+        assert_eq!(published_at(Some(created), None).as_deref(), Some(created));
+        assert_eq!(published_at(None, Some(created)).as_deref(), Some(created));
+        assert_eq!(published_at(None, None), None);
+    }
+
+    #[test]
+    fn a_release_cached_without_created_at_still_reads() {
+        let release: GitlabRelease = serde_json::from_value(release_json("v1.0.0")).unwrap();
+        assert_eq!(release.created_at, None);
+        assert_eq!(release.published_at(), None);
     }
 
     #[test]

@@ -340,8 +340,74 @@ fn alive_process_trees_procfs(pids: &HashSet<u32>) -> Option<HashSet<u32>> {
     Some(alive)
 }
 
+/// Commands running in a job object, by the PID of their first process.
+///
+/// A job holds everything the command starts, however the process tree reports
+/// its parents: a Cygwin or MSYS2 `fork` can leave a descendant that `taskkill
+/// /T` cannot reach through the parent chain, and that keeps the output pipe
+/// open. Ending the job ends it. Closing a job does not end the processes in
+/// it, so a command that finishes leaves whatever it started running.
+#[cfg(windows)]
+static RUNNING_JOBS: Lazy<Mutex<std::collections::HashMap<u32, crate::windows_job::Job>>> =
+    Lazy::new(Default::default);
+
+/// Start `cmd` suspended, so [`join_job`] can put it in a job before it can
+/// start a process the job would miss. `leader` is whether `cmd` is a Ctrl+C
+/// group leader, which already has its own creation flag.
+#[cfg(windows)]
+fn suspend_for_job(cmd: &mut std::process::Command, leader: bool) {
+    use std::os::windows::process::CommandExt;
+    use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED};
+    let flags = if leader { CREATE_NEW_PROCESS_GROUP } else { 0 };
+    cmd.creation_flags(flags | CREATE_SUSPENDED);
+}
+
+/// Put a command started by [`suspend_for_job`] in a job, then let it run. A
+/// command that cannot join one (it may already be in a job that forbids it)
+/// runs outside, and is ended by `taskkill` as before.
+///
+/// # Safety
+///
+/// `process` must be the handle of the command with ID `pid`, open for the call.
+#[cfg(windows)]
+unsafe fn join_job(pid: u32, process: std::os::windows::io::RawHandle) -> std::io::Result<()> {
+    use crate::windows_job::{Job, resume};
+    // SAFETY: the caller vouches for `process`.
+    match Job::tracking().and_then(|job| unsafe { job.assign(process) }.map(|()| job)) {
+        Ok(job) => {
+            RUNNING_JOBS.lock().unwrap().insert(pid, job);
+        }
+        Err(err) => debug!("not tracking {pid} in a job: {err}"),
+    }
+    resume(pid).map_err(|err| {
+        // The caller kills the command and never registers it, so nothing else frees the job.
+        forget_job(pid);
+        std::io::Error::other(err)
+    })
+}
+
+#[cfg(windows)]
+fn forget_job(pid: u32) {
+    RUNNING_JOBS.lock().unwrap().remove(&pid);
+}
+
+/// End the job a command runs in, returning whether it had one.
+#[cfg(windows)]
+fn kill_job(pid: u32) -> bool {
+    match RUNNING_JOBS.lock().unwrap().get(&pid) {
+        Some(job) => {
+            job.kill();
+            true
+        }
+        None => false,
+    }
+}
+
 #[cfg(windows)]
 fn kill_process_tree(pid: u32) {
+    if kill_job(pid) {
+        return;
+    }
     let _ = std::process::Command::new("taskkill")
         .args(["/F", "/T", "/PID", &pid.to_string()])
         .stdout(Stdio::null())
@@ -509,6 +575,13 @@ fn kill_pids_immediately(pids: &HashSet<u32>) {
 #[cfg(all(panic = "abort", windows))]
 fn kill_pids_immediately(pids: &HashSet<u32>) {
     for pid in pids {
+        // Not blocking on the registry, for the reason `kill_all_on_panic` gives.
+        if let Ok(jobs) = RUNNING_JOBS.try_lock()
+            && let Some(job) = jobs.get(pid)
+        {
+            job.kill();
+            continue;
+        }
         let _ = std::process::Command::new("taskkill")
             .args(["/F", "/T", "/PID", &pid.to_string()])
             .stdout(Stdio::null())
@@ -533,6 +606,13 @@ pub fn kill_all_on_panic() {
     kill_pids_immediately(&pids);
 }
 
+/// Stop tracking a command that has finished.
+fn unregister_running_pid(pid: u32) {
+    RUNNING_PIDS.lock().unwrap().remove(&pid);
+    #[cfg(windows)]
+    forget_job(pid);
+}
+
 pub struct RunningPidGuard(Option<u32>);
 
 impl RunningPidGuard {
@@ -547,7 +627,7 @@ impl RunningPidGuard {
 impl Drop for RunningPidGuard {
     fn drop(&mut self) {
         if let Some(pid) = self.0 {
-            RUNNING_PIDS.lock().unwrap().remove(&pid);
+            unregister_running_pid(pid);
         }
     }
 }
@@ -868,6 +948,7 @@ impl<'a> CmdLineRunner<'a> {
         let killers: Vec<_> = {
             let pids = RUNNING_PIDS.lock().unwrap();
             pids.iter()
+                .filter(|pid| !kill_job(**pid))
                 .filter_map(|pid| {
                     std::process::Command::new("taskkill")
                         .arg("/F")
@@ -1196,6 +1277,7 @@ impl<'a> CmdLineRunner<'a> {
         self.interrupt_on_timeout();
         let mut cp = self
             .spawn_with_etxtbsy_retry()
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id();
         register_running_pid(id);
@@ -1350,7 +1432,7 @@ impl<'a> CmdLineRunner<'a> {
         }
         // Removed after rx loop drains (not inside ExitStatus arm) so kill_all
         // can still reach this PID while output is being processed.
-        RUNNING_PIDS.lock().unwrap().remove(&id);
+        unregister_running_pid(id);
         if let Some(g) = &timeout_guard {
             g.cancel();
         }
@@ -1397,6 +1479,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id().unwrap_or_default();
         register_running_pid(id);
@@ -1590,7 +1673,7 @@ impl<'a> CmdLineRunner<'a> {
                 ChildProcessOutput::Signal(_) => {}
             }
         }
-        RUNNING_PIDS.lock().unwrap().remove(&id);
+        unregister_running_pid(id);
         if let Some(g) = &timeout_guard {
             g.cancel();
         }
@@ -1653,6 +1736,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id().unwrap_or_default();
         let _running_pid = RunningPidGuard::new(cp.id());
@@ -1832,6 +1916,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id();
         let _running_pid = RunningPidGuard::new(id);
@@ -1889,6 +1974,7 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
+            .map_err(|err| self.name_missing_program(err))
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id().unwrap_or_default();
         let _running_pid = RunningPidGuard::new(cp.id());
@@ -1947,11 +2033,15 @@ impl<'a> CmdLineRunner<'a> {
         self.stdio.stdout = Some(Stdio::inherit());
         self.stdio.stderr = Some(Stdio::inherit());
         self.interrupt_on_timeout();
-        let mut cp = self.spawn_with_etxtbsy_retry()?;
+        let mut cp = self
+            .spawn_with_etxtbsy_retry()
+            .map_err(|err| self.name_missing_program(err))?;
         let timeout_guard = self
             .timeout
             .map(|t| TimeoutGuard::new(t, cp.id(), self.interruptible()));
         let status = cp.wait()?;
+        #[cfg(windows)]
+        forget_job(cp.id());
         let timed_out_by_exit = timed_out_at_exit(timeout_guard.as_ref());
         if let Some(g) = &timeout_guard {
             g.cancel();
@@ -1975,7 +2065,10 @@ impl<'a> CmdLineRunner<'a> {
         self.stdio.stdout = Some(Stdio::inherit());
         self.stdio.stderr = Some(Stdio::inherit());
         self.interrupt_on_timeout();
-        let mut cp = self.spawn_async_with_etxtbsy_retry().await?;
+        let mut cp = self
+            .spawn_async_with_etxtbsy_retry()
+            .await
+            .map_err(|err| self.name_missing_program(err))?;
         let id = cp.id().unwrap_or_default();
         if is_cancelled() {
             #[cfg(unix)]
@@ -1987,6 +2080,8 @@ impl<'a> CmdLineRunner<'a> {
             .timeout
             .map(|t| TimeoutGuard::new(t, id, self.interruptible()));
         let status = cp.wait().await?;
+        #[cfg(windows)]
+        forget_job(id);
         let timed_out_by_exit = timed_out_at_exit(timeout_guard.as_ref());
         if let Some(g) = &timeout_guard {
             g.cancel();
@@ -2045,10 +2140,29 @@ impl<'a> CmdLineRunner<'a> {
     /// as the file descriptor may not be fully closed yet.
     fn spawn_with_etxtbsy_retry(&mut self) -> std::io::Result<std::process::Child> {
         let mut leader = self.prepare_spawn();
+        #[cfg(windows)]
+        {
+            let is_leader = leader.is_some();
+            suspend_for_job(
+                leader.as_mut().unwrap_or(&mut self.cmd).as_std_mut(),
+                is_leader,
+            );
+        }
         let mut attempt = 0;
         loop {
             let cmd = leader.as_mut().unwrap_or(&mut self.cmd);
             match cmd.as_std_mut().spawn() {
+                #[cfg(windows)]
+                Ok(mut child) => {
+                    use std::os::windows::io::AsRawHandle;
+                    // SAFETY: `child` owns the handle, and is the process with this ID.
+                    if let Err(err) = unsafe { join_job(child.id(), child.as_raw_handle()) } {
+                        let _ = child.kill();
+                        return Err(err);
+                    }
+                    return Ok(child);
+                }
+                #[cfg(not(windows))]
                 Ok(child) => return Ok(child),
                 Err(err) if Self::is_etxtbsy(&err) && attempt < 3 => {
                     attempt += 1;
@@ -2063,10 +2177,30 @@ impl<'a> CmdLineRunner<'a> {
 
     async fn spawn_async_with_etxtbsy_retry(&mut self) -> std::io::Result<tokio::process::Child> {
         let mut leader = self.prepare_spawn();
+        #[cfg(windows)]
+        {
+            let is_leader = leader.is_some();
+            suspend_for_job(
+                leader.as_mut().unwrap_or(&mut self.cmd).as_std_mut(),
+                is_leader,
+            );
+        }
         let mut attempt = 0;
         loop {
             let cmd = leader.as_mut().unwrap_or(&mut self.cmd);
             match cmd.spawn() {
+                #[cfg(windows)]
+                Ok(mut child) => {
+                    // SAFETY: `child` owns the handle, and is the process with this ID.
+                    if let (Some(pid), Some(handle)) = (child.id(), child.raw_handle())
+                        && let Err(err) = unsafe { join_job(pid, handle) }
+                    {
+                        let _ = child.start_kill();
+                        return Err(err);
+                    }
+                    return Ok(child);
+                }
+                #[cfg(not(windows))]
                 Ok(child) => return Ok(child),
                 Err(err) if Self::is_etxtbsy(&err) && attempt < 3 => {
                     attempt += 1;
@@ -2124,6 +2258,15 @@ impl<'a> CmdLineRunner<'a> {
             if sandbox.effective_deny_read() || sandbox.effective_deny_write() {
                 sandbox.warn_missing_allow_paths();
             }
+            // Likewise a kernel that cannot enforce the rules: an error from
+            // pre_exec reaches the parent as a bare errno, so refuse it here
+            // where the message survives.
+            crate::sandbox::landlock_check(&sandbox)?;
+            // The child gets a filtered environment, but this process keeps the
+            // full one; do not let the child read it back through /proc.
+            if sandbox.effective_deny_env() {
+                crate::sandbox::hide_environment_from_children()?;
+            }
             // Use pre_exec to apply Landlock/seccomp in the child process
             // before it execs the target program. This avoids restricting the mise process.
             let sandbox = sandbox.clone();
@@ -2163,7 +2306,7 @@ impl<'a> CmdLineRunner<'a> {
             let profile =
                 crate::sandbox::macos_generate_profile(&sandbox, std::path::Path::new(&program));
 
-            let mut new_cmd = Command::new("sandbox-exec");
+            let mut new_cmd = Command::new(crate::sandbox::SANDBOX_EXEC);
             new_cmd.arg("-p").arg(&profile).arg("--").arg(&program);
             for arg in &args {
                 new_cmd.arg(arg);
@@ -2325,6 +2468,39 @@ impl<'a> CmdLineRunner<'a> {
         display_path(PathBuf::from(self.cmd.as_std().get_program()))
     }
 
+    /// Spawning reports a missing program as a bare "No such file or directory
+    /// (os error 2)", which reads like a missing file the command touched. Say
+    /// which program was not found. The same error also means a missing working
+    /// directory, or a script whose interpreter is missing, so the program is
+    /// only named once a lookup on the child's PATH confirms it is absent.
+    fn name_missing_program(&self, err: std::io::Error) -> std::io::Error {
+        if err.kind() != std::io::ErrorKind::NotFound || !self.program_is_missing() {
+            return err;
+        }
+        let program = self.get_program();
+        std::io::Error::new(err.kind(), format!("`{program}` not found: {err}"))
+    }
+
+    fn program_is_missing(&self) -> bool {
+        let cmd = self.cmd.as_std();
+        let cwd = cmd.get_current_dir().map(Path::to_path_buf);
+        if cwd.as_deref().is_some_and(|dir| !dir.exists()) {
+            return false;
+        }
+        let Some(cwd) = cwd.or_else(|| std::env::current_dir().ok()) else {
+            return false;
+        };
+        // Spawn looks the program up on the child's PATH when the command sets one.
+        let path = cmd
+            .get_envs()
+            .find(|(key, _)| *key == &**crate::env::PATH_KEY)
+            .map_or_else(
+                || std::env::var_os(&*crate::env::PATH_KEY),
+                |(_, v)| v.map(Into::into),
+            );
+        which::which_in(cmd.get_program(), path, cwd).is_err()
+    }
+
     fn get_args(&self) -> Vec<String> {
         self.cmd
             .as_std()
@@ -2423,7 +2599,7 @@ pub fn raw_write_lock_blocking() -> tokio::sync::RwLockWriteGuard<'static, ()> {
 ///
 /// This rendering is not only for logs. `execute` debug-logs it, but it is also
 /// formatted into `failed to execute command: {self}`, and that error is
-/// printed by the top-level handler, which applies no redaction of its own. An
+/// printed by the top-level handler, outside the logger. An
 /// argument can legitimately carry a credential (a gem `source` authenticates
 /// as basic-auth userinfo on the URL), so redacting where the string is built
 /// covers every consumer instead of asking each one to remember.
@@ -2558,12 +2734,23 @@ where
     K: AsRef<OsStr>,
     V: AsRef<OsStr>,
 {
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.envs(extra_env);
+    cmd_read_async_command(cmd, program, args).await
+}
+
+/// [`cmd_read_async_inherited_env`] for a `program` command the caller has
+/// already given its environment and working directory.
+pub(crate) async fn cmd_read_async_command(
+    mut cmd: tokio::process::Command,
+    program: &str,
+    args: &[&str],
+) -> Result<String> {
     let display_args = args.join(" ");
     debug!("$ {program} {display_args}");
 
-    let output = tokio::process::Command::new(program)
+    let output = cmd
         .args(args)
-        .envs(extra_env)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

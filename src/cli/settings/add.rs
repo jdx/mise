@@ -27,19 +27,26 @@ pub(super) struct SettingsAdd {
     /// nearest directory that has one, or ./mise.toml.
     #[usage(long, short)]
     pub local: bool,
+
+    /// Write to the global override file, `config.override.toml`
+    ///
+    /// The override file outranks all project config, so the setting wins over
+    /// the same setting in a project's `mise.toml`.
+    #[usage(long = "override", conflicts = "local")]
+    pub override_file: bool,
 }
 
 impl SettingsAdd {
     pub(super) fn run(self) -> Result<()> {
         match self.value {
-            Some(value) => set(&self.setting, &value, true, self.local),
+            Some(value) => set(&self.setting, &value, true, self.local, self.override_file),
             None => {
                 let (key, value) = self.setting.split_once('=').ok_or_else(|| {
                     eyre!(
                         "Usage: mise settings add <KEY>=<VALUE> or mise settings add <KEY> <VALUE>"
                     )
                 })?;
-                set(key, value, true, self.local)
+                set(key, value, true, self.local, self.override_file)
             }
         }
     }

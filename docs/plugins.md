@@ -135,8 +135,9 @@ mise plugins install vfox:my-plugin 'packslip:your-org/my-plugin#1.0.0'
 A packslip source always installs a vfox plugin, so the `vfox:` prefix is
 optional, on the command line and in `[plugins]`, where
 `my-plugin = "packslip:your-org/my-plugin#1.0.0"` works as well as
-`"vfox:my-plugin" = ...`. On the command line, another type prefix such as
-`asdf:` is rejected. A plugin that is already installed keeps the type it was
+`"vfox:my-plugin" = ...`. A [backend plugin](/backend-plugin-development.html)
+installs the same way with the `vfox-backend:` prefix, in both places. Another
+type prefix such as `asdf:` is rejected. A plugin that is already installed keeps the type it was
 installed with. Omit `#1.0.0` to use
 the latest eligible release. mise verifies the archive's signature, digest and
 signer, and `mise plugins update` keeps an explicit version pin. Only GitHub

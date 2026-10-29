@@ -52,6 +52,10 @@ impl<'a> GoOptions<'a> {
 
 #[async_trait]
 impl Backend for GoBackend {
+    fn option_spec(&self) -> Option<crate::backend::OptionSpec> {
+        Some(crate::backend::OptionSpec::new(&["tool_go_options"]))
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Go
     }
@@ -74,7 +78,7 @@ impl Backend for GoBackend {
 
     async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
         let env = self.dependency_env(config).await?;
-        Ok(Some(go_routing_cache_context(&env)))
+        Ok(go_routing_cache_context(&env))
     }
 
     /// List Go module versions through the configured proxy or Go's module command.
@@ -413,10 +417,12 @@ impl GoBackend {
         for (idx, path) in candidates.iter().enumerate() {
             let encoded = encode_module_path(path);
             let proxies = proxies.clone();
-            join_set.spawn(async move {
-                let result = query_proxy_list(&proxies, &encoded).await;
-                (idx, result)
-            });
+            join_set.spawn(mise_util::untrusted_hosts::inherit_trusted_scope(
+                async move {
+                    let result = query_proxy_list(&proxies, &encoded).await;
+                    (idx, result)
+                },
+            ));
         }
 
         let mut list_results: Vec<(usize, ProxyListResult)> = Vec::new();
@@ -834,8 +840,9 @@ fn go_native_resolution_enabled(env: &BTreeMap<String, String>) -> bool {
         .any(|key| env.get(*key).is_some_and(|value| !value.is_empty()))
 }
 
-/// Digest the effective Go module-routing settings for version-cache isolation.
-fn go_routing_cache_context(env: &BTreeMap<String, String>) -> String {
+/// Digest the effective Go module-routing settings for version-cache isolation,
+/// or `None` for the default routing, which the shared versions host lists.
+fn go_routing_cache_context(env: &BTreeMap<String, String>) -> Option<String> {
     let goproxy = env
         .get("GOPROXY")
         .filter(|value| !value.is_empty())
@@ -848,7 +855,10 @@ fn go_routing_cache_context(env: &BTreeMap<String, String>) -> String {
         .filter(|value| !value.is_empty())
         .map(String::as_str)
         .unwrap_or(goprivate);
-    hash_to_str(&(goproxy, goprivate, gonoproxy))
+    if goproxy == DEFAULT_GOPROXY && goprivate.is_empty() && gonoproxy.is_empty() {
+        return None;
+    }
+    Some(hash_to_str(&(goproxy, goprivate, gonoproxy)))
 }
 
 /// Parse GOPROXY value per https://go.dev/ref/mod#goproxy-protocol:
@@ -949,12 +959,14 @@ async fn fetch_proxy_version_infos(
         let encoded = encoded.clone();
         let sem = sem.clone();
         let version = version.clone();
-        join_set.spawn(async move {
-            let _permit = sem.acquire_owned().await.expect("semaphore closed");
-            let endpoint = format!("{encoded}/@v/{version}.info");
-            let info = query_proxy_version_metadata(proxies.as_slice(), &endpoint).await;
-            (version, info)
-        });
+        join_set.spawn(mise_util::untrusted_hosts::inherit_trusted_scope(
+            async move {
+                let _permit = sem.acquire_owned().await.expect("semaphore closed");
+                let endpoint = format!("{encoded}/@v/{version}.info");
+                let info = query_proxy_version_metadata(proxies.as_slice(), &endpoint).await;
+                (version, info)
+            },
+        ));
     }
 
     let mut times = BTreeMap::new();
@@ -1256,6 +1268,10 @@ mod tests {
             ("GOPRIVATE".to_string(), String::new()),
             ("GONOPROXY".to_string(), String::new()),
         ]));
+        assert_eq!(
+            default, None,
+            "default routing is served by the versions host"
+        );
         assert_eq!(default, explicit_default);
 
         for (key, value) in [
@@ -1269,6 +1285,7 @@ mod tests {
             let context =
                 go_routing_cache_context(&BTreeMap::from([(key.to_string(), value.to_string())]));
             assert_ne!(default, context, "{key} must partition the cache");
+            let context = context.expect("non-default routing has a context");
             assert!(!context.contains(value));
             assert!(!context.contains("secret"));
         }

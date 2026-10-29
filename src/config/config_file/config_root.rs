@@ -5,7 +5,7 @@ use std::sync::{LazyLock as Lazy, Mutex};
 use path_absolutize::Absolutize;
 use xx::regex;
 
-use crate::config::{is_conf_d_folder_file, is_global_config};
+use crate::config::{discovered_global_config, is_conf_d_folder_file, is_global_config};
 use crate::env;
 
 static CONFIG_ROOT_CACHE: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> =
@@ -60,14 +60,19 @@ pub fn config_root(path: &Path) -> PathBuf {
     if let Some(cached) = CONFIG_ROOT_CACHE.lock().unwrap().get(&path).cloned() {
         return cached;
     }
+    // Global config is trusted for what `path` resolves to, so where it was
+    // discovered decides its root: a project's symlink to it must not make the
+    // project's directory the root.
+    let global = discovered_global_config(&path);
     // A folder fragment is its own root even in global config, so relative
     // paths and `{{ config_root }}` keep pointing inside the folder.
-    if is_conf_d_folder_file(&path) {
-        let root = path.parent().unwrap().to_path_buf();
+    let fragment = global.as_ref().unwrap_or(&path);
+    if is_conf_d_folder_file(fragment) {
+        let root = fragment.parent().unwrap().to_path_buf();
         CONFIG_ROOT_CACHE.lock().unwrap().insert(path, root.clone());
         return root;
     }
-    if is_global_config(&path) {
+    if global.is_some() {
         let root = env::MISE_GLOBAL_CONFIG_ROOT.to_path_buf();
         CONFIG_ROOT_CACHE.lock().unwrap().insert(path, root.clone());
         return root;
@@ -126,6 +131,51 @@ pub fn config_root(path: &Path) -> PathBuf {
     };
     CONFIG_ROOT_CACHE.lock().unwrap().insert(path, out.clone());
     out
+}
+
+/// The git checkout a config file belongs to when that checkout lies below
+/// the directory the file configures.
+///
+/// `<dir>/mise/config.toml`, `<dir>/mise/conf.d/*.toml` and their `.mise/` and
+/// `.config/` forms are config of `<dir>`, so a repository cloned into `<dir>`
+/// under one of those names looks like a config folder by name alone. A
+/// checkout of its own is a project of its own: it is not `<dir>`'s config, and
+/// trust in `<dir>` does not extend to it. A submodule belongs to the checkout
+/// that holds it, so a project's `.mise/` submodule stays part of the project.
+pub fn nested_checkout(path: &Path) -> Option<PathBuf> {
+    if is_global_config(path) {
+        return None;
+    }
+    let path = path.absolutize().ok()?;
+    let dir = path.parent()?;
+    // A folder fragment is its own config root, but it configures the
+    // directory its `conf.d` belongs to.
+    let configured = if is_conf_d_folder_file(&path) {
+        config_root(dir)
+    } else {
+        config_root(&path)
+    };
+    checkout_between(&configured, dir)
+}
+
+/// The git checkout holding `dir` when it lies strictly below `configured`,
+/// for a directory reached from `configured` by a fixed relative path such as
+/// `mise/tasks`. See [`nested_checkout`].
+pub(crate) fn checkout_between(configured: &Path, dir: &Path) -> Option<PathBuf> {
+    // Only a `.git` between the two can make a checkout of its own, so most
+    // configs need no walk at all.
+    let first = dir
+        .ancestors()
+        .take_while(|a| *a != configured && a.starts_with(configured))
+        .find(|a| a.join(".git").symlink_metadata().is_ok())?;
+    let checkout = crate::git::checkout_of(first);
+    checkout
+        .worktree
+        .or(checkout.repository)
+        .filter(|c| c != configured && c.starts_with(configured))
+        // A git-managed `~/.config` or mise config directory holds the user's
+        // own dotfiles, and no clone can land on one that already exists.
+        .filter(|c| *c != crate::dirs::HOME.join(".config") && !crate::dirs::CONFIG.starts_with(c))
 }
 
 #[cfg(test)]
@@ -251,6 +301,20 @@ mod tests {
         )));
     }
 
+    /// Global config is trusted through any path that resolves to it, so a
+    /// project's link to it must not move its root into the project.
+    #[test]
+    fn test_config_root_conf_d_folder_link_to_global_config() {
+        let temp = tempfile::tempdir().unwrap();
+        let folder = temp.path().join("mise").join("conf.d").join("git");
+        std::fs::create_dir_all(&folder).unwrap();
+        let link = folder.join("mise.toml");
+        std::os::unix::fs::symlink(crate::config::global_config_path(), &link).unwrap();
+
+        assert!(is_conf_d_folder_file(&link));
+        assert_eq!(config_root(&link), *env::MISE_GLOBAL_CONFIG_ROOT);
+    }
+
     #[test]
     fn test_config_root_mise_dir() {
         for p in &[
@@ -288,5 +352,63 @@ mod tests {
             println!("{p}");
             assert_eq!(config_root(Path::new(p)), PathBuf::from("/foo/mise"));
         }
+    }
+
+    /// A repository cloned into `projects` under the name `mise`, `.mise` or
+    /// `.config` is a project of its own, not the config folder of `projects`.
+    #[test]
+    fn test_nested_checkout() {
+        let temp = tempfile::tempdir().unwrap();
+        let projects = temp.path().join("projects");
+        for (name, files, tasks) in [
+            (
+                "mise",
+                &[
+                    "config.toml",
+                    "config.local.toml",
+                    "conf.d/foo.toml",
+                    "conf.d/sub/mise.toml",
+                ][..],
+                "tasks",
+            ),
+            (".mise", &["config.toml"][..], "tasks"),
+            (
+                ".config",
+                &["mise.toml", "mise/config.toml"][..],
+                "mise/tasks",
+            ),
+        ] {
+            let clone = projects.join(name);
+            std::fs::create_dir_all(clone.join(".git")).unwrap();
+            for p in files {
+                let p = clone.join(p);
+                std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+                assert_eq!(nested_checkout(&p), Some(clone.clone()), "{}", p.display());
+            }
+            // nor are its tasks the tasks of `projects`
+            assert_eq!(
+                checkout_between(&projects, &clone.join(tasks)),
+                Some(clone.clone())
+            );
+        }
+        // the checkout's own config, and the directory it was cloned into
+        assert_eq!(nested_checkout(&projects.join("mise/mise.toml")), None);
+        assert_eq!(nested_checkout(&projects.join("mise.toml")), None);
+
+        // a project's own `.mise/` inside its checkout belongs to the project
+        let app = temp.path().join("app");
+        std::fs::create_dir_all(app.join(".git")).unwrap();
+        std::fs::create_dir_all(app.join(".mise/tasks")).unwrap();
+        assert_eq!(nested_checkout(&app.join(".mise/config.toml")), None);
+        assert_eq!(
+            nested_checkout(&app.join(".config/mise/conf.d/foo.toml")),
+            None
+        );
+        assert_eq!(checkout_between(&app, &app.join(".mise/tasks")), None);
+        // and so does a submodule there
+        std::fs::create_dir_all(app.join(".git/modules/mise")).unwrap();
+        std::fs::write(app.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::write(app.join(".mise/.git"), "gitdir: ../.git/modules/mise\n").unwrap();
+        assert_eq!(nested_checkout(&app.join(".mise/config.toml")), None);
     }
 }

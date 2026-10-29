@@ -441,6 +441,22 @@ fn map_windows_path_list(mapper: &PathMapper, value: &str) -> String {
         .join(":")
 }
 
+fn map_windows_manpath(mapper: &PathMapper, value: &str) -> String {
+    // Unlike PATH, an empty MANPATH entry is meaningful: it asks `man` to keep
+    // its platform defaults, so it survives the conversion.
+    windows_path_entries(value)
+        .iter()
+        .map(|entry| {
+            if entry.is_empty() {
+                String::new()
+            } else {
+                mapper.windows_to_posix(entry)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
 fn map_posix_path_list(mapper: &PathMapper, value: &str) -> String {
     // Activation stores native Windows PATH as an opaque value. Older sessions
     // can supply either a POSIX list or an MSYS-converted native list.
@@ -481,6 +497,15 @@ static ACTIVE_MAPPER: LazyLock<Option<PathMapper>> = LazyLock::new(detect_active
 pub fn windows_path_list_for_shell(value: &str) -> Cow<'_, str> {
     match ACTIVE_MAPPER.as_ref() {
         Some(mapper) => Cow::Owned(map_windows_path_list(mapper, value)),
+        _ => Cow::Borrowed(value),
+    }
+}
+
+/// MANPATH counterpart of [`windows_path_list_for_shell`]: the native Windows
+/// list becomes the colon-separated POSIX list `man` reads inside MSYS2/Cygwin.
+pub fn windows_manpath_for_shell(value: &str) -> Cow<'_, str> {
+    match ACTIVE_MAPPER.as_ref() {
+        Some(mapper) => Cow::Owned(map_windows_manpath(mapper, value)),
         _ => Cow::Borrowed(value),
     }
 }
@@ -652,6 +677,14 @@ mod tests {
                     .eq_ignore_ascii_case(&normalize_windows(windows))
             );
         }
+    }
+
+    #[test]
+    fn maps_manpath_and_keeps_empty_entries() {
+        assert_eq!(
+            map_windows_manpath(&msys(), r"C:\Program Files\Git\usr\share\man;;D:\tools\man"),
+            "/usr/share/man::/d/tools/man"
+        );
     }
 
     #[test]

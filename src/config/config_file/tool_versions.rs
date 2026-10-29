@@ -11,10 +11,10 @@ use itertools::Itertools;
 use tera::Context;
 
 use crate::args::BackendArg;
-use crate::config::config_file::{ConfigFile, trust_check};
+use crate::config::config_file::{ConfigFile, ensure_versions_are_not_templates, trust_check};
 use crate::file;
 use crate::file::display_path;
-use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
+use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_config_str};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 // python 3.11.0 3.10.0
@@ -29,6 +29,8 @@ pub(crate) struct ToolVersions {
     pre: String,
     plugins: Mutex<IndexMap<BackendArg, ToolVersionPlugin>>,
     tools: Mutex<ToolRequestSet>,
+    /// Skipped because it links to a file of another name; never written back.
+    unread: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -41,7 +43,7 @@ struct ToolVersionPlugin {
 impl ToolVersions {
     pub(crate) fn init(filename: &Path) -> ToolVersions {
         let mut context = BASE_CONTEXT.clone();
-        context.insert("config_root", filename.parent().unwrap().to_str().unwrap());
+        context.insert("config_root", &filename.parent().unwrap().to_string_lossy());
         context.insert(
             "config_source",
             &crate::config::config_file::config_root::config_source(filename),
@@ -56,14 +58,26 @@ impl ToolVersions {
 
     pub(crate) fn from_file(path: &Path) -> Result<Self> {
         trace!("parsing tool-versions: {}", path.display());
-        let body = file::read_to_string(path)?;
+        if super::diagnostic::links_to_another_name(path) {
+            super::diagnostic::warn_linked_version_file(path, |target| {
+                matches!(
+                    super::detect_config_file_type_by_filename(target),
+                    Some(super::ConfigFileType::ToolVersions)
+                )
+            });
+            return Ok(Self {
+                unread: true,
+                ..Self::init(path)
+            });
+        }
+        let body = file::read_config_to_string(path)?;
         // The first whitespace-separated token on a line is the tool name, so a leading
         // byte-order mark becomes part of it and the entry silently resolves to nothing.
         Self::parse_str(file::strip_utf8_bom(&body), path.to_path_buf())
     }
 
     pub(crate) fn path_requires_trust(path: &Path) -> bool {
-        match file::read_to_string(path) {
+        match file::read_config_to_string(path) {
             Ok(body) => body_requires_trust(file::strip_utf8_bom(&body)),
             Err(_) => true,
         }
@@ -77,7 +91,7 @@ impl ToolVersions {
         }
         let s = if contains_template_syntax(s) {
             let mut tera = get_tera(dir);
-            render_str(&mut tera, s, &cf.context)?
+            render_config_str(&mut tera, s, &cf.context, &path)?
         } else {
             s.to_string()
         };
@@ -178,6 +192,7 @@ impl ConfigFile for ToolVersions {
     }
 
     fn replace_versions(&self, fa: &BackendArg, versions: Vec<ToolRequest>) -> eyre::Result<()> {
+        ensure_versions_are_not_templates(&self.path, fa, &versions)?;
         let mut plugins = self.plugins.lock().unwrap();
         get_or_create_plugin(&mut plugins, fa).versions.clear();
         for tr in versions {
@@ -190,6 +205,12 @@ impl ConfigFile for ToolVersions {
     }
 
     fn save(&self) -> Result<()> {
+        if self.unread {
+            eyre::bail!(
+                "not writing {}: it is a symlink to a file of another name, which mise did not read",
+                display_path(&self.path)
+            );
+        }
         let s = self.dump()?;
         file::write_atomic(&self.path, s)
     }
@@ -247,6 +268,7 @@ impl Clone for ToolVersions {
             pre: self.pre.clone(),
             plugins: Mutex::new(self.plugins.lock().unwrap().clone()),
             tools: Mutex::new(self.tools.lock().unwrap().clone()),
+            unread: self.unread,
         }
     }
 }
@@ -264,7 +286,7 @@ fn body_requires_trust(body: &str) -> bool {
         || body.lines().any(|line| {
             let line = line.split_once('#').map_or(line, |(line, _)| line);
             let mut tokens = line.split_whitespace();
-            tokens.next().is_some_and(|tool| tool.contains('['))
+            tokens.next().is_some_and(super::tool_key_requires_trust)
                 || tokens.any(super::version_requires_trust)
         })
 }
@@ -283,9 +305,31 @@ mod tests {
             "github:sharkdp/fd[api_url=http://attacker.example/api/v3] latest\n"
         ));
         assert!(body_requires_trust("node 20\n  node[postinstall=id] 20\n"));
+        assert!(body_requires_trust(
+            "spm:https://evil.example/o/r.git latest\n"
+        ));
+        assert!(!body_requires_trust(
+            "spm:https://github.com/o/r.git latest\n"
+        ));
         assert!(body_requires_trust("node path:./local\n"));
         assert!(body_requires_trust("node 20 path:./local # x\n"));
         assert!(!body_requires_trust("node 20 # path:./local\n"));
+    }
+
+    /// The whole file is rendered as a template when it is loaded, so a version
+    /// from a version list must not be written into it as one.
+    #[test]
+    fn replace_versions_rejects_template_syntax() {
+        let tv = ToolVersions::init(Path::new("/tmp/.tool-versions"));
+        let ba: Arc<BackendArg> = Arc::new("node".into());
+        let tr = ToolRequest::new_version_for_test(
+            ba.clone(),
+            "20-{{env.GITHUB_TOKEN}}",
+            ToolSource::Unknown,
+        );
+        let err = tv.replace_versions(&ba, vec![tr]).unwrap_err();
+        assert!(err.to_string().contains("template syntax"), "{err}");
+        assert!(!tv.dump().unwrap().contains("{{"));
     }
 
     /// `dump` relies on `post` to terminate each line, and `trim_end` only ever

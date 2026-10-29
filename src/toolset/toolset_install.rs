@@ -538,9 +538,45 @@ impl Toolset {
             // `self` was re-resolved after the config reload above and still
             // contains explicitly requested and task-only tools that are not
             // present in the reloaded project config.
+            //
+            // Runtime symlinks for fuzzy requests (`latest`, `1`) are only rebuilt
+            // after the hook, so lock the just-installed versions in a copy of the
+            // toolset: the hook's PATH then resolves to them rather than to the
+            // version being replaced (#14842).
+            let mut hook_ts = self.clone();
+            hook_ts.tera_ctx = Default::default();
+            for tvl in hook_ts.versions.values_mut() {
+                let sole_entry = tvl.versions.len() == 1;
+                for tv in tvl.versions.iter_mut() {
+                    // Take the completed install itself rather than the re-resolved
+                    // entry: a lockfile pinning the old version re-resolves `self`
+                    // back to it even though the upgrade installed a newer one.
+                    let same_slot = |d: &&ToolVersion| {
+                        d.install_satisfied != Some(true)
+                            && !private_dependency_keys.contains(&graph_key(&d.request))
+                            && d.ba().installs_path() == tv.ba().installs_path()
+                            && d.request.source() == tv.request.source()
+                            && d.request.lockfile_scope() == tv.request.lockfile_scope()
+                    };
+                    // `upgrade --bump` installs a new selector while the config still
+                    // holds the old one, so fall back to the only install of a tool
+                    // that is configured once.
+                    let done = installed
+                        .iter()
+                        .filter(same_slot)
+                        .find(|d| d.request.version() == tv.request.version())
+                        .or_else(|| {
+                            let mut slot = installed.iter().filter(same_slot);
+                            slot.next().filter(|_| sole_entry && slot.next().is_none())
+                        });
+                    if let Some(done) = done {
+                        *tv = done.clone().with_locked();
+                    }
+                }
+            }
             hooks::run_one_hook_with_context(
                 config,
-                self,
+                &hook_ts,
                 Hooks::Postinstall,
                 None,
                 Some(&installed_tools),
@@ -879,7 +915,8 @@ impl Toolset {
             &tv,
             &backend.get_platform_key_for(&tv),
         )?;
-        tv.ba().warn_if_locked_backend_superseded(&tv.version);
+        tv.ba()
+            .warn_if_locked_backend_superseded(&tv.version, tv.request.lockfile_owner_source());
         let install_dir = opts.install_dir.clone().or_else(|| {
             opts.scoped_install_dirs
                 .then(|| scope_installs_dir(tr))
@@ -891,6 +928,12 @@ impl Toolset {
             tv.install_path_is_explicit = true;
         }
         let before_date = transitive_dependency_before_date(tr, &tv);
+        // Silent unless resolution picked this version under a cutoff without a
+        // date, so it needs no cutoff check of its own: an upgrade installs what
+        // it picked as an exact pin, which has no `before_date` here.
+        if !opts.dry_run {
+            crate::backend::warn_if_release_date_unchecked(tv.ba(), &tv.version);
+        }
 
         let ctx = InstallContext {
             config: config.clone(),
@@ -915,14 +958,23 @@ impl Toolset {
             && Settings::get().lockfile_enabled()
             && !ctx.locked
             && !opts.dry_run;
-        if !generate {
-            return backend.install_version(ctx, tv).await;
+        let installed = if generate {
+            let concurrent = crate::jobs::resolve(Settings::get().jobs, opts.jobs) > 1
+                && !opts.raw
+                && !Settings::get().raw;
+            preparations.start(config.clone(), tv.clone(), concurrent)?;
+            backend.install_version(ctx, tv).await
+        } else {
+            backend.install_version(ctx, tv).await
+        };
+        // After the install has released its lock and cleared its incomplete
+        // marker, a copy under a credential-named directory can go.
+        if let Ok(tv) = &installed
+            && !opts.dry_run
+        {
+            crate::toolset::install_state::remove_credential_named_installs(&tv.ba().short);
         }
-        let concurrent = crate::jobs::resolve(Settings::get().jobs, opts.jobs) > 1
-            && !opts.raw
-            && !Settings::get().raw;
-        preparations.start(config.clone(), tv.clone(), concurrent)?;
-        backend.install_version(ctx, tv).await
+        installed
     }
 
     /// The versions in `missing` that provide `bin_name`. A missing version has no bins to list,
@@ -1105,9 +1157,11 @@ impl Toolset {
             if !plugin.is_installed() {
                 // An unprefixed packslip entry already resolved to vfox, so
                 // only an explicit non-vfox prefix can reach this.
-                if url.starts_with("packslip:") && plugin_type != PluginType::Vfox {
+                if url.starts_with("packslip:")
+                    && !matches!(plugin_type, PluginType::Vfox | PluginType::VfoxBackend)
+                {
                     eyre::bail!(
-                        "plugin {plugin_key}: packslip plugin sources require the vfox plugin type"
+                        "plugin {plugin_key}: packslip plugin sources require the vfox or vfox-backend plugin type"
                     );
                 }
                 plugin

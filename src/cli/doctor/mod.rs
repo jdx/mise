@@ -2,6 +2,7 @@ mod path;
 mod project;
 
 use crate::plugins::PluginEnum;
+use mise_util::redactions::{redact_json, redact_output};
 use std::collections::HashSet;
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -288,6 +289,8 @@ impl Doctor {
             .extend(crate::secrets::doctor_warnings(&config).await);
         let ts = config.get_toolset().await?;
         let desired_shims = self.analyze_shims(&config, ts).await;
+        #[cfg(windows)]
+        self.analyze_native_shim_template();
         self.analyze_plugins();
         self.analyze_env_modules(&config);
         self.analyze_plugin_drift(&config);
@@ -351,9 +354,14 @@ impl Doctor {
                         false => {
                             tool.insert("version".into(), tv.version.to_string().into());
                             tool.insert("missing".into(), true.into());
-                            self.errors.push(format!(
-                                "tool {tv} is not installed, install with `mise install`"
-                            ));
+                            if tv.request.options().lazy == Some(true) {
+                                tool.insert("lazy".into(), true.into());
+                                self.errors.extend(lazy_config_error(tv));
+                            } else {
+                                self.errors.push(format!(
+                                    "tool {tv} is not installed, install with `mise install`"
+                                ));
+                            }
                         }
                     }
                     serde_json::Value::from(tool)
@@ -388,6 +396,11 @@ impl Doctor {
             );
         }
 
+        // Printed to stdout, outside the logger, and meant to be shared.
+        let data: BTreeMap<String, serde_json::Value> = data
+            .into_iter()
+            .map(|(k, v)| (redact_output(&k), redact_json(v)))
+            .collect();
         let out = serde_json::to_string_pretty(&data)?;
         let written = miseprint!("{out}\n");
 
@@ -464,6 +477,7 @@ impl Doctor {
             miseprintln!("{}\n", style(warning_summary).yellow().bold());
             for (i, check) in self.warnings.iter().enumerate() {
                 let num = style::nyellow(format!("{}.", i + 1));
+                let check = redact_output(check);
                 miseprintln!("{num} {}\n", info::indent_by(check, "   ").trim_start());
             }
         }
@@ -476,6 +490,7 @@ impl Doctor {
             miseprintln!("{}\n", style(error_summary).red().bold());
             for (i, check) in self.errors.iter().enumerate() {
                 let num = style::nred(format!("{}.", i + 1));
+                let check = redact_output(check);
                 miseprintln!("{num} {}\n", info::indent_by(check, "   ").trim_start());
             }
             return Err(crate::request_exit(1));
@@ -653,6 +668,8 @@ impl Doctor {
         match ToolsetBuilder::new().build(config).await {
             Ok(ts) => {
                 let desired_shims = self.analyze_shims(config, &ts).await;
+                #[cfg(windows)]
+                self.analyze_native_shim_template();
                 self.analyze_toolset(&ts).await?;
                 self.analyze_paths(&ts).await?;
                 self.check_path_ordering(&ts, config).await;
@@ -1244,6 +1261,11 @@ impl Doctor {
                     (tv.to_string(), style::ndim("(empty)"))
                 }
                 true => (tv.to_string(), style::nstyle("")),
+                // lazy tools are installed on first use, so not being installed yet is expected
+                false if tv.request.options().lazy == Some(true) => {
+                    self.errors.extend(lazy_config_error(&tv));
+                    (tv.to_string(), style::ndim("(lazy)"))
+                }
                 false => {
                     self.errors.push(format!(
                         "tool {tv} is not installed, install with `mise install`"
@@ -1305,6 +1327,15 @@ impl Doctor {
         HashSet::new()
     }
 
+    /// "exe" shims are copies of the `mise-shim.exe` beside mise, which a package manager can leave
+    /// behind when it replaces `mise.exe`; `mise reshim` then rebuilds the old launcher forever.
+    #[cfg(windows)]
+    fn analyze_native_shim_template(&mut self) {
+        if let Some(stale) = shims::stale_native_shim_template(&shims::mise_bin_for_shims()) {
+            self.errors.push(stale.message());
+        }
+    }
+
     fn analyze_plugins(&mut self) {
         for plugin in backend::list() {
             let is_core = CORE_PLUGINS.contains_key(plugin.id());
@@ -1358,21 +1389,19 @@ impl Doctor {
             // one the registry has moved. Strip options for comparison
             // (e.g., "github:repo[exe=bin]" -> "github:repo").
             let stored_stripped = stored_full.split('[').next().unwrap_or(stored_full);
-            let recommended: Vec<&str> = if ist.versions.is_empty() {
-                rt.backends().into_iter().take(1).collect()
+            let per_version: Vec<Vec<&str>> = if ist.versions.is_empty() {
+                vec![rt.backends()]
             } else {
                 ist.versions
                     .iter()
-                    .filter_map(|v| rt.backends_for_version(Some(v)).into_iter().next())
+                    .map(|v| rt.backends_for_version(Some(v)))
                     .collect()
             };
-            // The install state records one backend per tool, so versions installed
-            // on either side of a cutover cannot all match it. Only warn when none do.
-            // Only a change of backend kind counts; a repo or org rename within one does not.
-            if recommended.iter().any(|full| {
-                let stripped = full.split('[').next().unwrap_or(full);
-                crate::args::same_backend_kind(stripped, stored_stripped)
-            }) {
+            let recommended: Vec<&str> = per_version
+                .iter()
+                .filter_map(|backends| backends.first().copied())
+                .collect();
+            if backend_matches_registry(&per_version, stored_stripped, ist.explicit_backend) {
                 continue;
             }
             let Some(registry_full) = recommended.first() else {
@@ -1581,19 +1610,15 @@ fn mise_dirs() -> Vec<(String, PathBuf)> {
 }
 
 fn mise_env_vars() -> Vec<(String, String)> {
-    const REDACT_KEYS: &[&str] = &[
-        "MISE_GITHUB_TOKEN",
-        "MISE_GITLAB_TOKEN",
-        "MISE_GITHUB_ENTERPRISE_TOKEN",
-        "MISE_GITLAB_ENTERPRISE_TOKEN",
-    ];
     env::vars_safe()
         .filter(|(k, _)| k.starts_with("MISE_"))
         .map(|(k, v)| {
-            let v = if REDACT_KEYS.contains(&k.as_str()) {
+            // By the shape of the name, so a credential variable added later
+            // (`MISE_SOPS_AGE_KEY`, `MISE_FORGEJO_TOKEN`, ...) is hidden too.
+            let v = if mise_settings::is_secret_name(&k) {
                 style::ndim("REDACTED").to_string()
             } else {
-                v
+                mise_util::redactions::redact_output(&v)
             };
             (k, v)
         })
@@ -1605,7 +1630,17 @@ fn render_config_files(config: &Config) -> String {
         .config_files
         .keys()
         .rev()
-        .map(display_path)
+        .map(|path| {
+            let display = display_path(path);
+            if crate::config::is_override_config(path) {
+                format!(
+                    "{display} {}",
+                    style::ndim("(override: outranks project config)")
+                )
+            } else {
+                display.to_string()
+            }
+        })
         .join("\n")
 }
 
@@ -1782,6 +1817,12 @@ fn install_is_empty(tv: &ToolVersion) -> bool {
 }
 
 /// One wording for an empty install, so the text and JSON paths cannot drift.
+/// A lazy tool that is not installed yet is expected, but one that cannot name the
+/// commands that trigger its install is a configuration error.
+fn lazy_config_error(tv: &ToolVersion) -> Option<String> {
+    tv.request.lazy_bins().err().map(|err| err.to_string())
+}
+
 fn empty_install_error(tv: &ToolVersion) -> String {
     format!(
         "tool {tv} is installed but its directory is empty, reinstall with \
@@ -1803,9 +1844,48 @@ fn install_dir_is_empty(path: &Path) -> bool {
     }
 }
 
+/// Whether the stored backend agrees with the registry for the installed versions.
+///
+/// `per_version` holds, for each installed version, the registry backends in
+/// priority order. The install state records one backend per tool, so versions
+/// installed on either side of a cutover cannot all match it: only warn when none
+/// do. Only a change of backend kind counts; a repo or org rename within one does
+/// not. An explicit backend is a deliberate choice, so any backend the registry
+/// lists for the tool is acceptable; otherwise it must be the recommended one.
+fn backend_matches_registry(
+    per_version: &[Vec<&str>],
+    stored_stripped: &str,
+    explicit: bool,
+) -> bool {
+    per_version.iter().any(|backends| {
+        let candidates = if explicit { backends.len() } else { 1 };
+        backends.iter().take(candidates).any(|full| {
+            let stripped = full.split('[').next().unwrap_or(full);
+            crate::args::same_backend_kind(stripped, stored_stripped)
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{install_dir_is_empty, sync_failure_duration};
+    use super::{backend_matches_registry, install_dir_is_empty, sync_failure_duration};
+
+    #[test]
+    fn explicit_backend_may_be_any_registry_backend() {
+        let neovim = vec![vec!["vfox:jdx/vfox-neovim", "aqua:neovim/neovim"]];
+        assert!(backend_matches_registry(
+            &neovim,
+            "aqua:neovim/neovim",
+            true
+        ));
+        assert!(!backend_matches_registry(
+            &neovim,
+            "aqua:neovim/neovim",
+            false
+        ));
+        assert!(!backend_matches_registry(&neovim, "cargo:neovim", true));
+    }
+
     use crate::system::history::sync::run::SyncStatus;
 
     fn ago(now: chrono::DateTime<chrono::Utc>, secs: i64) -> Option<String> {

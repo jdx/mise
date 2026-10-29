@@ -28,7 +28,7 @@ Show the version node's lts alias stands for
 
 ```
 mise tool-alias get node lts
-24
+26
 ```
 
 Read back an alias you set

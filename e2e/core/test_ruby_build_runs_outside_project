@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+# ruby-build takes its first argument as a build definition and sources it when
+# it names a file, so mise must neither start it in the project's directory nor
+# pass it a version that is a path.
+RUBY_BUILD_REPO="$HOME/ruby-build-repo"
+RUBY_BUILD_LOG="$HOME/ruby-build-log"
+
+mkdir -p "$RUBY_BUILD_REPO/bin"
+
+cat >"$RUBY_BUILD_REPO/install.sh" <<'SH'
+#!/bin/sh
+set -eu
+mkdir -p "$PREFIX/bin"
+cp bin/ruby-build "$PREFIX/bin/ruby-build"
+chmod +x "$PREFIX/bin/ruby-build"
+SH
+
+# Like upstream: a definition that names an existing file is sourced.
+cat >"$RUBY_BUILD_REPO/bin/ruby-build" <<'SH'
+#!/bin/sh
+set -eu
+
+case "${1:-}" in
+--version)
+  echo "ruby-build 99999999"
+  exit 0
+  ;;
+--definitions)
+  echo "3.3.0"
+  exit 0
+  ;;
+esac
+
+echo "pwd=$PWD def=$1" >>"$RUBY_BUILD_LOG"
+if [ -f "$1" ]; then
+  . "./$1"
+  exit 1
+fi
+mkdir -p "$2/bin"
+printf '#!/bin/sh\necho "ruby %s"\n' "$1" >"$2/bin/ruby"
+chmod +x "$2/bin/ruby"
+SH
+
+git -C "$RUBY_BUILD_REPO" init -q
+git -C "$RUBY_BUILD_REPO" add .
+git -C "$RUBY_BUILD_REPO" -c user.name=mise -c user.email=mise@example.com commit -qm init
+
+export MISE_RUBY_COMPILE=1
+export MISE_RUBY_BUILD_REPO="file://$RUBY_BUILD_REPO"
+export RUBY_BUILD_LOG
+
+# A project file named like a ruby-build definition.
+cat >jruby-9.4.5.0 <<EOF
+echo ran >"$HOME/project-file-sourced"
+EOF
+mkdir -p .ci
+cp jruby-9.4.5.0 .ci/ruby-3.3.0
+
+mise install ruby@jruby-9.4.5.0
+assert_fail "test -e '$HOME/project-file-sourced'"
+assert_not_contains "cat '$RUBY_BUILD_LOG'" "pwd=$PWD "
+assert_contains "cat '$RUBY_BUILD_LOG'" "def=jruby-9.4.5.0"
+
+# A version that is a path never reaches ruby-build. Relative paths pass the
+# generic version rules, so the ruby backend's own check refuses them.
+assert_fail "mise install ruby@.ci/ruby-3.3.0" "a build definition name cannot be a path"
+assert_fail "mise install ruby@./jruby-9.4.5.0" "a build definition name cannot be a path"
+# An absolute path is refused when the version is parsed; either layer may report it.
+assert_fail_matches "mise install ruby@$PWD/.ci/ruby-3.3.0" "must not start with '/'|a build definition name cannot be a path"
+assert_fail "test -e '$HOME/project-file-sourced'"
+assert_not_contains "cat '$RUBY_BUILD_LOG'" "ruby-3.3.0"
+assert_not_contains "cat '$RUBY_BUILD_LOG'" "def=./jruby-9.4.5.0"
