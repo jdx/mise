@@ -68,7 +68,10 @@ your shell, editor, and CI:
 [tools]
 node = "24"
 python = "3.14"
-"github:BurntSushi/ripgrep" = "15"
+rust = "stable"
+"cargo:ripgrep" = "15"
+"github:cli/cli" = "2"
+"npm:prettier" = "3"
 
 [env]
 NODE_ENV = "development"
