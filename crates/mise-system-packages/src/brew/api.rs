@@ -25,6 +25,9 @@ pub(super) async fn formula(name: &str) -> Result<Formula> {
 }
 
 async fn formula_from(base: &str, aliases: &AliasIndex, name: &str) -> Result<Formula> {
+    if let Some(formula) = bulk_formula(base, name, true).await {
+        return Ok(formula);
+    }
     let err = match formula_exact_from(base, name).await {
         Ok(formula) => return Ok(formula),
         Err(err) => err,
@@ -90,11 +93,35 @@ pub(super) async fn formula_exact(name: &str) -> Result<Formula> {
 }
 
 async fn formula_exact_from(base: &str, name: &str) -> Result<Formula> {
+    if let Some(formula) = bulk_formula(base, name, false).await {
+        return Ok(formula);
+    }
     let url = format!("{base}/formula/{name}.json");
     HTTP_FETCH
         .json_cached::<Formula, _>(url)
         .await
         .wrap_err_with(|| FormulaFetchFailed(name.to_string()))
+}
+
+/// A homebrew/core formula from the bulk `formula.json`, or `None` to ask the
+/// per-formula endpoint. One cached document answers every formula in a
+/// dependency closure, where the per-formula endpoint costs a round trip each.
+/// Only for the real API: a `base` pointing anywhere else (a test server) is a
+/// different document than the one the bulk index caches.
+async fn bulk_formula(base: &str, name: &str, follow_aliases: bool) -> Option<Formula> {
+    if base != API_BASE {
+        return None;
+    }
+    let body = super::bulk::entry(&super::bulk::FORMULAE, name, follow_aliases).await?;
+    match serde_json::from_slice(&body) {
+        Ok(formula) => Some(formula),
+        Err(err) => {
+            debug!(
+                "brew: bulk index entry for '{name}' did not parse ({err:#}); falling back to per-formula metadata"
+            );
+            None
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
