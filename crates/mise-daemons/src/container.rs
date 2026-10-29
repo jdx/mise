@@ -589,6 +589,12 @@ fn resolve_volume(
     Ok(format!("{}:{rest}", path.to_string_lossy()))
 }
 
+/// The index of the script in `[<shell>, "-c", <script>, ...]`, which a shell evaluates.
+fn shell_script_index(args: &[&str]) -> Option<usize> {
+    let program = Path::new(args.first()?).file_name()?.to_str()?;
+    (matches!(program, "sh" | "bash" | "zsh" | "dash") && args.get(1) == Some(&"-c")).then_some(2)
+}
+
 static RUNTIME_VARIABLE: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"\{\{\s*runtime\s*\}\}").unwrap());
 
@@ -607,17 +613,21 @@ pub fn render_probes(
             command => command,
         };
         let Some(command) = command else { continue };
-        // `runtime` is a shell expression. As the program of an argv probe, which
-        // runs without a shell, nothing would evaluate it; inside `sh -c "..."` it works.
-        if let toml::Value::Array(argv) = command
-            && argv
-                .first()
-                .and_then(toml::Value::as_str)
-                .is_some_and(|program| RUNTIME_VARIABLE.is_match(program))
-        {
-            bail!(
-                "[daemons.{name}].{key}: {{{{ runtime }}}} is a shell expression, so it cannot be the program of an argument array; use the string form, for example \"{{{{ runtime }}}} exec {{{{ container }}}} ...\", or [\"sh\", \"-c\", \"...\"]"
-            );
+        // `runtime` is a shell expression, and an argv probe runs without a shell:
+        // only the script of `sh -c "..."` evaluates it, anywhere else it would reach
+        // a program as a literal name.
+        if let toml::Value::Array(argv) = command {
+            let args: Vec<&str> = argv.iter().filter_map(toml::Value::as_str).collect();
+            let script = shell_script_index(&args);
+            if args
+                .iter()
+                .enumerate()
+                .any(|(i, arg)| Some(i) != script && RUNTIME_VARIABLE.is_match(arg))
+            {
+                bail!(
+                    "[daemons.{name}].{key}: {{{{ runtime }}}} is a shell expression, so it works in the string form of the command, for example \"{{{{ runtime }}}} exec {{{{ container }}}} ...\", or as the script of [\"sh\", \"-c\", \"...\"], not as another argument"
+                );
+            }
         }
         substitute(command, vars);
     }
@@ -965,7 +975,12 @@ mod tests {
         let err = render_probes("db", &mut argv, &built.probe_vars)
             .unwrap_err()
             .to_string();
-        assert!(err.contains("cannot be the program"), "{err}");
+        assert!(err.contains("shell expression"), "{err}");
+        // Nor as an argument of another program, which gets it as a literal name.
+        let mut timeout: toml::Table =
+            toml::from_str("ready_cmd = [\"timeout\", \"5\", \"{{ runtime }}\", \"exec\"]")
+                .unwrap();
+        assert!(render_probes("db", &mut timeout, &built.probe_vars).is_err());
         // Inside a shell it is evaluated, so that form is fine.
         let mut shell: toml::Table =
             toml::from_str("ready_cmd = [\"sh\", \"-c\", \"{{ runtime }} exec {{ container }}\"]")
