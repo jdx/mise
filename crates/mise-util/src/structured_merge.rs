@@ -537,7 +537,25 @@ fn jsonc_options() -> ParseOptions {
 
 /// Deserializes a JSONC document: JSON plus comments and trailing commas.
 pub fn from_jsonc_str<T: serde::de::DeserializeOwned>(text: &str) -> Result<T> {
-    let value = parse_jsonc(text)?.to_serde_value().unwrap_or(Value::Null);
+    from_str_with(text, &jsonc_options())
+}
+
+/// Deserializes JSON that allows comments but, unlike JSONC, not trailing
+/// commas, as the .NET host reads `global.json`.
+pub fn from_json_with_comments_str<T: serde::de::DeserializeOwned>(text: &str) -> Result<T> {
+    from_str_with(
+        text,
+        &ParseOptions {
+            allow_trailing_commas: false,
+            ..jsonc_options()
+        },
+    )
+}
+
+fn from_str_with<T: serde::de::DeserializeOwned>(text: &str, options: &ParseOptions) -> Result<T> {
+    let value = CstRootNode::parse(text, options)?
+        .to_serde_value()
+        .unwrap_or(Value::Null);
     Ok(serde_json::from_value(value)?)
 }
 
