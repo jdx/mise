@@ -1205,16 +1205,26 @@ impl SystemPackageManager for BrewCaskManager {
         pkgs: &[PackageRequest],
         manager_options: &ManagerPackageOptions,
     ) -> Result<Vec<PackageStatus>> {
-        let mut statuses = Vec::with_capacity(pkgs.len());
-        for req in pkgs {
+        use futures_util::{StreamExt, TryStreamExt};
+
+        // Concurrently, in order. Official casks resolve from the bulk index
+        // without a request, but a third-party tap cask is a chain of GitHub
+        // requests and a Ruby evaluation, about 1.3s each; one after another,
+        // three of them were half of a `bootstrap packages upgrade` that had
+        // nothing to do. `buffered` keeps `pkgs` order and still stops at the
+        // first error in that order, as the loop it replaces did.
+        let jobs = mise_util::jobs::normalize(mise_settings::Settings::get().jobs);
+        futures_util::stream::iter(pkgs.iter().map(|req| async move {
             let cask = self.resolve_cask(req, manager_options, false).await?;
-            statuses.push(PackageStatus {
+            Ok(PackageStatus {
                 request: req.clone(),
                 state: package_state(req, &cask)?,
                 display_name: None,
-            });
-        }
-        Ok(statuses)
+            })
+        }))
+        .buffered(jobs)
+        .try_collect()
+        .await
     }
 
     async fn reconcile_installed(
