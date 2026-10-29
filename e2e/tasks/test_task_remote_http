@@ -89,3 +89,25 @@ EOF2
 assert_fail "mise run deploy" "env-task FOO=1"
 assert_contains "mise tasks deps deploy" "remote_cleanup (post)"
 assert_contains "mise run deploy 2>&1 | grep -E '^deploying|env-task FOO=1' | tr '\n' ' '" "deploying env-task FOO=1"
+
+# The same remote task depended on with different env is two occurrences, and each one
+# keeps its own dependencies
+cat <<EOF2 >mise.toml
+[tasks.prepare]
+run = "echo prepared"
+
+[tasks.remote_dep]
+file = "http://localhost:${HTTP_PORT}/test/env-task"
+depends = ["prepare"]
+
+[tasks.parent]
+depends = [{ task = "remote_dep", env = { FOO = "one" } }, { task = "remote_dep", env = { FOO = "two" } }]
+EOF2
+
+assert "mise tasks deps parent" "parent
+├── remote_dep
+│   └── prepare
+└── remote_dep
+    └── prepare"
+assert_contains "mise run parent" "env-task FOO=one"
+assert_contains "mise run parent" "env-task FOO=two"

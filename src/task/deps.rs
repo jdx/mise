@@ -183,7 +183,7 @@ impl Deps {
         let mut graph = DiGraph::new();
         let mut indexes = HashMap::new();
         let mut stack = vec![];
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::<TaskKey>::new();
         let mut direct_post_parents: HashMap<TaskKey, HashSet<TaskKey>> = HashMap::new();
         let mut dep_edges: HashMap<TaskKey, HashSet<TaskKey>> = HashMap::new();
         let mut wait_edges = Vec::new();
@@ -210,7 +210,9 @@ impl Deps {
         }
         let all_tasks_to_run = resolve_depends(config, tasks).await?;
         while let Some(mut a) = stack.pop() {
-            if seen.contains(&a) {
+            // Keyed like the graph, not by `Task` equality, which leaves out the overlay env a
+            // fetched remote task holds its dependency env in.
+            if !seen.insert(task_key(&a)) {
                 // prevent infinite loop
                 continue;
             }
@@ -256,7 +258,6 @@ impl Deps {
                     .insert(task_key(&a));
                 stack.push(b.clone());
             }
-            seen.insert(a);
         }
 
         // A post task's regular dependencies are part of the same cleanup
