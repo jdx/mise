@@ -272,6 +272,10 @@ class Pathname
   end
 
   def make_relative_symlink(target, link)
+    # Checked before anything is unlinked: `bin.install_symlink "tool"` with an
+    # existing bin/tool would otherwise replace the file with a link to itself.
+    raise "cannot symlink #{link} to itself" if target.expand_path == link.expand_path
+
     link.dirname.mkpath
     link.unlink if link.symlink? || link.file?
     link.make_symlink(target.relative_path_from(link.dirname))
