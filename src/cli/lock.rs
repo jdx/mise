@@ -677,7 +677,17 @@ impl Lock {
             .map(|monorepo_union| &monorepo_union.config_files)
             .unwrap_or(&config.config_files);
         let task_load_context = crate::task::TaskLoadContext::all();
-        let tasks = config.tasks_with_context(Some(&task_load_context)).await?;
+        let tasks = match config.tasks_with_context(Some(&task_load_context)).await {
+            Ok(tasks) => tasks,
+            // Installing must not fail because a task include (say a private
+            // git repository) is unreachable. Locking without the tasks would
+            // prune the tools they declare, so leave the lockfiles as they are.
+            Err(err) if installed.is_some() => {
+                warn!("skipping lockfile update: failed to load tasks: {err:#}");
+                return Ok(());
+            }
+            Err(err) => return Err(err),
+        };
 
         let setup = LockSetup {
             installed,

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+
+# An unreachable git task include must not fail `mise install` when the
+# lockfile is generated afterwards (#15163).
+
+export MISE_LOCKFILE=1
+export MISE_LOCKFILE_MODE=generate
+export MISE_EXPERIMENTAL=1
+export GIT_TERMINAL_PROMPT=0
+
+cat <<EOF >mise.toml
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+
+[task_config]
+includes = ["git::https://127.0.0.1:1/does-not-exist.git//tasks?ref=v1"]
+EOF
+
+assert_contains "mise install 2>&1" "skipping lockfile update: failed to load tasks"
+assert 'mise install >/dev/null 2>&1; echo $?' "0"
+
+# an explicit `mise lock` still reports the broken include
+assert_fail "mise lock"
