@@ -170,6 +170,7 @@ impl Install {
         if let Some(cutoff) = self.get_before_date()? {
             set_cli_minimum_release_age_cutoff(cutoff);
         }
+        super::lock::skip_lockfile_updates_when_tasks_fail();
         let config = Config::get().await?;
         if !self.is_dry_run() && !Settings::get().generate_lockfiles() {
             crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;

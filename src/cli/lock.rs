@@ -3,6 +3,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use mise_util::redactions::{redact_json, redact_output};
 
@@ -602,6 +603,16 @@ fn with_platform(platforms: Vec<Platform>, platform: Platform) -> Vec<Platform> 
     platforms.into_iter().collect()
 }
 
+static SKIP_LOCKFILES_WITHOUT_TASKS: AtomicBool = AtomicBool::new(false);
+
+/// `mise install` does not change the configuration, so a task include it
+/// cannot load must not fail it. Commands that edit the configuration
+/// (`mise use`, `mise unuse`) still report it, since the lockfile has to
+/// follow their edit.
+pub(crate) fn skip_lockfile_updates_when_tasks_fail() {
+    SKIP_LOCKFILES_WITHOUT_TASKS.store(true, Ordering::Relaxed);
+}
+
 impl Lock {
     pub(crate) async fn run(self) -> Result<()> {
         self.run_with_installed(None, Config::get().await?).await
@@ -677,7 +688,19 @@ impl Lock {
             .map(|monorepo_union| &monorepo_union.config_files)
             .unwrap_or(&config.config_files);
         let task_load_context = crate::task::TaskLoadContext::all();
-        let tasks = config.tasks_with_context(Some(&task_load_context)).await?;
+        let tasks = match config.tasks_with_context(Some(&task_load_context)).await {
+            Ok(tasks) => tasks,
+            // Installing must not fail because a task include (say a private
+            // git repository) is unreachable. Locking without the tasks would
+            // prune the tools they declare, so leave the lockfiles as they are.
+            Err(err)
+                if installed.is_some() && SKIP_LOCKFILES_WITHOUT_TASKS.load(Ordering::Relaxed) =>
+            {
+                warn!("skipping lockfile update: failed to load tasks: {err:#}");
+                return Ok(());
+            }
+            Err(err) => return Err(err),
+        };
 
         let setup = LockSetup {
             installed,
