@@ -7709,6 +7709,57 @@ fn points_a_link_reached_through_a_directory_link_at_its_caskroom_file() -> Resu
 
 #[cfg(unix)]
 #[test]
+fn rebases_links_inside_a_payload_directory_missing_from_the_caskroom() -> Result<()> {
+    // `caskroom/pkg` exists but `pkg/bin` does not, so `bin` is copied into
+    // it. An absolute link inside has to point into the caskroom, or it
+    // dangles once the stage is gone. A directory link stays a link, so a
+    // link back to its own directory does not recurse.
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = tempfile::tempdir()?;
+    let stage = tmp.path().join("stage");
+    file::create_dir_all(stage.join("pkg/bin"))?;
+    file::create_dir_all(stage.join("pkg/lib"))?;
+    mise_util::file::write(stage.join("pkg/lib/tool"), "launcher")?;
+    std::os::unix::fs::symlink(stage.join("pkg/lib/tool"), stage.join("pkg/bin/launcher"))?;
+    std::os::unix::fs::symlink(".", stage.join("pkg/bin/current"))?;
+    std::fs::set_permissions(
+        stage.join("pkg/bin"),
+        std::fs::Permissions::from_mode(0o555),
+    )?;
+    let caskroom = tmp.path().join("caskroom");
+    file::create_dir_all(caskroom.join("pkg"))?;
+
+    durabilize_stage_payload(&stage, &caskroom, &[])?;
+    std::fs::set_permissions(
+        stage.join("pkg/bin"),
+        std::fs::Permissions::from_mode(0o755),
+    )?;
+    file::remove_all(&stage)?;
+
+    let launcher = caskroom.join("pkg/bin/launcher");
+    assert_eq!(
+        std::fs::read_link(&launcher)?,
+        caskroom.join("pkg/lib/tool")
+    );
+    assert_eq!(mise_util::file::read_to_string(&launcher)?, "launcher");
+    assert_eq!(
+        std::fs::read_link(caskroom.join("pkg/bin/current"))?,
+        Path::new(".")
+    );
+    let mode = std::fs::metadata(caskroom.join("pkg/bin"))?
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o555);
+    std::fs::set_permissions(
+        caskroom.join("pkg/bin"),
+        std::fs::Permissions::from_mode(0o755),
+    )?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
 fn retargets_a_payload_binary_link_when_the_caskroom_is_renamed() -> Result<()> {
     // The payload link is absolute and points into the temporary caskroom,
     // which only exists until activation renames it. `symlinks_under` takes a

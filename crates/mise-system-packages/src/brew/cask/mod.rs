@@ -4210,6 +4210,10 @@ fn durabilize_stage_payload(stage: &Path, caskroom: &Path, apps: &[AppArtifact])
         .filter_map(|app| find_app(stage, &app.source))
         .map(|source| file::desymlink_path(&source))
         .collect();
+    // Directories are copied entry by entry so every link below them is
+    // rebased from its own installed location. Their permissions are applied
+    // last, so a read-only source directory can still be filled.
+    let mut directory_permissions = vec![];
     let mut directories = vec![stage.to_path_buf()];
     while let Some(directory) = directories.pop() {
         for entry in std::fs::read_dir(directory)? {
@@ -4245,18 +4249,17 @@ fn durabilize_stage_payload(stage: &Path, caskroom: &Path, apps: &[AppArtifact])
             if let Some(parent) = target.parent() {
                 file::create_dir_all(parent)?;
             }
-            if source.is_dir() {
-                file::copy_dir_all_preserve_symlinks(&source, &target)?;
-            } else if entry.file_type()?.is_symlink()
+            let is_link = entry.file_type()?.is_symlink();
+            if is_link
                 && !app_sources.iter().any(|app| resolved.starts_with(app))
                 && let Some(resolved_relative) = staged_relative_path(stage, &resolved)
             {
-                // Keep a link between payload files a link, so a binary sees
+                // Keep a link between payload entries a link, so a binary sees
                 // postflight edits to the file it points at. A relative link
                 // is kept when it reaches the same payload path from the
                 // caskroom; one that does not, such as a link reached through
                 // a followed directory link, or an absolute one, points at
-                // its resolved file in the caskroom instead. A link into a
+                // its resolved entry in the caskroom instead. A link into a
                 // skipped app bundle is copied, since nothing would be left
                 // for it to point at.
                 let link = std::fs::read_link(&source)?;
@@ -4280,10 +4283,19 @@ fn durabilize_stage_payload(stage: &Path, caskroom: &Path, apps: &[AppArtifact])
                     caskroom.join(resolved_relative)
                 };
                 file::make_symlink(&link, &target)?;
+            } else if source.is_dir() && !is_link {
+                file::create_dir_all(&target)?;
+                directory_permissions.push((target, entry.metadata()?.permissions()));
+                directories.push(source);
+            } else if source.is_dir() {
+                file::copy_dir_all_preserve_symlinks(&source, &target)?;
             } else {
                 file::copy(&source, &target)?;
             }
         }
+    }
+    for (directory, permissions) in directory_permissions.into_iter().rev() {
+        std::fs::set_permissions(directory, permissions)?;
     }
     Ok(())
 }
