@@ -482,8 +482,16 @@ impl PIPXBackend {
         // one rather than whichever Python uv finds first on PATH. Without it, a
         // selected or configured Python that mise installed but did not put on PATH
         // is invisible to uv, and the graph is skipped.
+        // A selected Python is part of the graph's identity, so never let a PATH
+        // interpreter stand in for one that is not installed yet.
         let python = match &tv.uv_python {
             Some((python, _)) if !python.as_os_str().is_empty() => Some(python.clone()),
+            _ if PipxOptions::new(&tv.request.options())
+                .selected_python()?
+                .is_some() =>
+            {
+                bail!("the selected Python is not installed; install it before locking")
+            }
             _ => self.spawnable_dependency(config, None, "python").await,
         };
         let mut cmd = self
