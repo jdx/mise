@@ -115,14 +115,16 @@ class Handler(BaseHTTPRequestHandler):
         elif path.startswith('/simple/') or path.startswith('/private/simple/'):
             package = path.strip('/').split('/')[-1].replace('-', '_')
             # A registry that hosts only its own package and 404s for the rest.
-            if path.startswith('/private/') and package != 'mise_lock_cli':
+            private = path.startswith('/private/')
+            hosted = ['mise_lock_cli'] + (['mise_lock_dep'] if (root / 'private-dep').exists() else [])
+            if private and package not in hosted:
                 self.send_error(404)
                 return
             requires_python = python_requirements.get(package, '>=3.10').replace('<', '&lt;').replace('>', '&gt;')
             body = ''.join(
                 f'<a href="/files/{name}#sha256={hashlib.sha256(data).hexdigest()}" data-requires-python="{requires_python}">{name}</a>\n'
                 for name, data in wheels.items()
-                if name.startswith(package + '-') and ('-2.0.0-' not in name or (root / 'publish').exists())
+                if name.startswith(package + '-') and ('-2.0.0-' not in name or ((root / 'publish').exists() and not private))
             ).encode()
             content_type = 'text/html'
         elif path.startswith('/files/') and path.split('/')[-1] in wheels:

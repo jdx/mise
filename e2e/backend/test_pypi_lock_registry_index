@@ -49,3 +49,13 @@ assert_fail 'mise lock' 'registry_index must be default or priority'
 rm -rf mise.lock .mise
 write_config ', registry_index = "default"'
 assert_contains 'mise lock 2>&1' 'keeping a version-only lock entry'
+
+# `install_env` cannot loosen the strategy: with `unsafe-best-match` uv would take the
+# newest dependency from either index, but the registry hosts the dependency (at 1.0.0
+# only), so it has to stay the one the registry has even though PyPI has 2.0.0.
+touch index/publish index/private-dep
+rm -rf mise.lock .mise
+write_config ', registry_index = "priority", install_env = { UV_INDEX_STRATEGY = "unsafe-best-match" }'
+mise lock
+assert_contains "grep -A3 '^name = \"mise-lock-dep\"' $graph" 'version = "1.0.0"'
+assert_contains "grep -A3 '^name = \"mise-lock-dep\"' $graph" "registry = \"http://127.0.0.1:$port/private/simple/\""
