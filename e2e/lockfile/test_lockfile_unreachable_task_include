@@ -34,3 +34,6 @@ assert "diff mise.lock mise.lock.before" ""
 
 # an explicit `mise lock` still reports the broken include
 assert_fail "mise lock"
+
+# `mise use` edits the configuration, so the lockfile must follow it
+assert_fail "mise use aqua:jqlang/jq@1.7.1"
