@@ -8,6 +8,7 @@ expression: cf.env_entries().unwrap()
         "production",
         EnvDirectiveOptions {
             tools: false,
+            position: Prepend,
             redact: None,
             required: False,
             expand: false,
