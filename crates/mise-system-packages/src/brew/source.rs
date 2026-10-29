@@ -549,11 +549,12 @@ end
 
     /// A tap formula's `post_install` can rewrite install names through
     /// Homebrew's vendored ruby-macho. mise has no equivalent, but it does not
-    /// relocate source-built kegs either, so the step is skipped with a
-    /// warning. The same call from `install` must still fail the build.
+    /// relocate source-built kegs either, so each call is skipped with a
+    /// warning and the rest of `post_install` still runs. The same calls from
+    /// `install` must still fail the build.
     #[tokio::test]
     #[cfg(unix)]
-    async fn shim_skips_macho_post_install() -> Result<()> {
+    async fn shim_skips_macho_calls_in_post_install() -> Result<()> {
         let Some(ruby) = super::super::tap::test_ruby().await? else {
             return Ok(());
         };
@@ -581,33 +582,39 @@ end
                 .env("MISE_BREW_CACHE", tmp.path().join("cache"))
                 .output()?)
         };
-        let macho_calls = r#"
-    MachO.open(prefix/"lib/libfoo.dylib").linked_dylibs.each do |dep|
-      MachO::Tools.change_install_name(prefix/"lib/libfoo.dylib", dep, "@loader_path/foo")
-    end
-    MachO.codesign!(prefix/"lib/libfoo.dylib")"#;
+        let calls = [
+            (
+                "MachO.open",
+                r#"MachO.open("lib.dylib").linked_dylibs.each { |dep| raise "unreachable" }"#,
+            ),
+            (
+                "MachO::Tools.change_install_name",
+                r#"MachO::Tools.change_install_name("lib.dylib", "a", "@loader_path/a")"#,
+            ),
+            ("MachO.codesign!", r#"MachO.codesign!("lib.dylib")"#),
+        ];
 
-        let output = run(&format!(
-            "  def install\n    (prefix/\"lib\").mkpath\n    (prefix/\"lib/libfoo.dylib\").write(\"x\")\n  end\n  def post_install{macho_calls}\n  end"
-        ))?;
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains("skipping post_install"),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        for (feature, call) in calls {
+            let output = run(&format!(
+                "  def install\n    (prefix/\"bin\").mkpath\n  end\n  def post_install\n    {call}\n    (prefix/\"bin/after\").write(\"ran\")\n  end"
+            ))?;
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(output.status.success(), "{feature}: {stderr}");
+            assert!(
+                stderr.contains(&format!("skipping {feature}")),
+                "{feature}: {stderr}"
+            );
+            assert_eq!(
+                mise_util::file::read_to_string(tmp.path().join("Cellar/example/1.0.0/bin/after"))?,
+                "ran",
+                "{feature}: rest of post_install did not run"
+            );
 
-        let output = run(&format!("  def install{macho_calls}\n  end"))?;
-        assert!(!output.status.success());
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains("MachO.open"),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+            let output = run(&format!("  def install\n    {call}\n  end"))?;
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(!output.status.success(), "{feature}: {stderr}");
+            assert!(stderr.contains(feature), "{feature}: {stderr}");
+        }
         Ok(())
     }
 

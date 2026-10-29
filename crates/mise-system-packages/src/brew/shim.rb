@@ -58,15 +58,9 @@ def odie(message)
 end
 
 class ShimUnsupportedError < StandardError; end
-class ShimMachOUnsupportedError < ShimUnsupportedError; end
 
 def shim_unsupported!(feature)
   raise ShimUnsupportedError,
-        "formula uses `#{feature}`, which mise's source-build shim does not support"
-end
-
-def shim_macho_unsupported!(feature)
-  raise ShimMachOUnsupportedError,
         "formula uses `#{feature}`, which mise's source-build shim does not support"
 end
 
@@ -583,18 +577,38 @@ end
 # `Language` mixins it is a constant reference, so it must exist for the
 # formula to even reach the call. mise does not vendor ruby-macho, and it does
 # not relocate source-built kegs either, so a `post_install` that edits dylibs
-# is normally undoing Homebrew's own relocation. Any use raises
-# ShimMachOUnsupportedError, which `main` turns into a skipped post_install
-# with a warning when it comes from there; from `install` it still fails.
+# is normally undoing Homebrew's own relocation. While `post_install` runs,
+# each call warns and returns an inert value (no dylibs, no change) so the rest
+# of the method still runs; anywhere else, such as `install`, it fails the
+# build.
+$shim_in_post_install = false
+
+def shim_macho_call!(feature, result = nil)
+  shim_unsupported!(feature) unless $shim_in_post_install
+  opoo "skipping #{feature}: mise's source-build shim has no Mach-O support"
+  result
+end
+
+class MachOFileStub
+  LIST_READERS = %i[linked_dylibs rpaths dylib_id_and_rpaths].freeze
+
+  def method_missing(name, *)
+    shim_macho_call!("MachO file #{name}", LIST_READERS.include?(name) ? [] : nil)
+  end
+
+  def respond_to_missing?(*) = true
+end
+
 module MachO
   class << self
-    def method_missing(name, *) = shim_macho_unsupported!("MachO.#{name}")
+    def open(*) = shim_macho_call!("MachO.open", MachOFileStub.new)
+    def method_missing(name, *) = shim_macho_call!("MachO.#{name}")
     def respond_to_missing?(*) = true
   end
 
   module Tools
     class << self
-      def method_missing(name, *) = shim_macho_unsupported!("MachO::Tools.#{name}")
+      def method_missing(name, *) = shim_macho_call!("MachO::Tools.#{name}")
       def respond_to_missing?(*) = true
     end
   end
@@ -989,13 +1003,9 @@ def main
   ohai "#{MISE_BREW_NAME}: running install"
   formula.prefix.mkpath
   formula.install
-  begin
-    formula.post_install
-  rescue ShimMachOUnsupportedError => e
-    # mise does not relocate source-built kegs, so there is nothing for a
-    # Mach-O rewriting post_install to undo
-    opoo "skipping post_install: #{e.message}"
-  end
+  $shim_in_post_install = true
+  formula.post_install
+  $shim_in_post_install = false
 
   if formula.prefix.children.empty?
     odie "install completed but the keg at #{formula.prefix} is empty"
