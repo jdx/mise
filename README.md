@@ -213,20 +213,21 @@ For PowerShell, Nushell, Elvish, Xonsh, and IDE or CI shims, see
 
 ## Everyday commands
 
-| Command                          | Action                                                            |
-| -------------------------------- | ----------------------------------------------------------------- |
-| `mise use node@24`               | Install a tool and record it in the current project's `mise.toml` |
-| `mise use --global node@24`      | Install a tool and set it as your global default                  |
-| `mise install`                   | Install all tools declared in the active config files             |
-| `mise exec -- <command>`         | Run a command with the project's tools and environment            |
-| `mise run <task>`                | Run a project task with its dependencies, tools, and environment  |
-| `mise set KEY=value`             | Set an environment variable in `mise.toml`                        |
-| `mise env`                       | Print the resolved environment variables and `PATH` changes       |
-| `mise ls --current`              | List the tool versions active in the current directory            |
-| `mise outdated` / `mise upgrade` | Check for newer tool releases and install upgrades                |
-| `mise lock`                      | Write exact tool versions and checksums to `mise.lock`            |
-| `mise config ls`                 | Show the config files loaded for the current directory            |
-| `mise doctor`                    | Check your mise installation, shell activation, and configuration |
+| Command                     | Action                                                            |
+| --------------------------- | ----------------------------------------------------------------- |
+| `mise use node@24`          | Install a tool and record it in the current project's `mise.toml` |
+| `mise use --global node@24` | Install a tool and set it as your global default                  |
+| `mise install`              | Install all tools declared in the active config files             |
+| `mise exec -- <command>`    | Run a command with the project's tools and environment            |
+| `mise run <task>`           | Run a project task with its dependencies, tools, and environment  |
+| `mise set KEY=value`        | Set an environment variable in `mise.toml`                        |
+| `mise env`                  | Print the resolved environment variables and `PATH` changes       |
+| `mise ls --current`         | List the tool versions active in the current directory            |
+| `mise outdated`             | List tools with newer releases than the installed version         |
+| `mise upgrade`              | Install those newer releases                                      |
+| `mise lock`                 | Write exact tool versions and checksums to `mise.lock`            |
+| `mise config ls`            | Show the config files loaded for the current directory            |
+| `mise doctor`               | Check your mise installation, shell activation, and configuration |
 
 ## Set up a machine with mise bootstrap
 
