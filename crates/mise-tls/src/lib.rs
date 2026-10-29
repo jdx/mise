@@ -56,9 +56,12 @@ static EXTRA_CA_CERTS: Mutex<Option<ExtraCaCerts>> = Mutex::new(None);
 /// `path` is `None`. Clients that already exist keep the roots they were built
 /// with.
 ///
-/// A bundle that cannot be read or holds no certificates leaves clients with
-/// their usual roots, and the first client built afterwards logs a warning
-/// saying so. Setting the bundle already set does not read it again.
+/// A bundle that is not an absolute path, cannot be read or holds no
+/// certificates leaves clients with their usual roots, and the first client
+/// built afterwards logs a warning saying so. A relative path is refused
+/// because it would resolve against the working directory, which may be a
+/// repository that should not choose which CAs mise trusts. Setting the bundle
+/// already set does not read it again.
 pub fn set_extra_ca_certs(path: Option<&Path>) {
     let mut extra = EXTRA_CA_CERTS.lock().unwrap_or_else(|e| e.into_inner());
     if extra
@@ -71,10 +74,13 @@ pub fn set_extra_ca_certs(path: Option<&Path>) {
         path: path.map(Path::to_path_buf),
         ..Default::default()
     };
-    if let Some(path) = path
-        && let Err(err) = load_extra_ca_certs(&mut next, path)
-    {
-        next.error = Some(err);
+    if let Some(path) = path {
+        let loaded = if path.is_absolute() {
+            load_extra_ca_certs(&mut next, path)
+        } else {
+            Err("it is not an absolute path".to_string())
+        };
+        next.error = loaded.err();
     }
     *extra = Some(next);
 }
@@ -422,6 +428,13 @@ mod extra_ca_certs_tests {
         assert!(build_client(Client::builder).is_ok());
         set_extra_ca_certs(Some(missing));
         assert!(extra_ca_certs_error().is_some());
+        assert!(build_client(Client::builder).is_ok());
+        // Refused before it is opened, whatever the working directory holds.
+        set_extra_ca_certs(Some(Path::new("certs/proxy.pem")));
+        assert_eq!(
+            extra_ca_certs_error().as_deref(),
+            Some("it is not an absolute path")
+        );
         assert!(build_client(Client::builder).is_ok());
         set_extra_ca_certs(None);
         assert!(extra_ca_certs_error().is_none());

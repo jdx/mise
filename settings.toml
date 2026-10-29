@@ -946,8 +946,9 @@ the GitHub relay. The package manager embedded in the `npm:` backend reads
 `NODE_EXTRA_CA_CERTS` instead, and programs mise runs, such as `git`, `uv` or a
 tool's installer, read their own certificate settings.
 
-If the file cannot be read or holds no certificates, mise warns and trusts the
-system store alone. This setting is only read from the environment and the
+The path must be absolute or start with `~/`: a relative path would resolve
+against the current directory, so mise ignores it. If the file cannot be read or
+holds no certificates, mise warns and trusts the system store alone. This setting is only read from the environment and the
 global config, so a project's `mise.toml` cannot add a trusted CA. See
 [TLS certificates](/faq.html#tls-certificates).
 """

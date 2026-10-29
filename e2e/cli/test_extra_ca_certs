@@ -11,6 +11,11 @@ echo "not a certificate" >"$HOME/empty.pem"
 assert_contains "MISE_EXTRA_CA_CERTS='$HOME/empty.pem' $ls_remote" "ignoring extra_ca_certs $HOME/empty.pem: it holds no PEM certificates"
 assert_not_contains "$ls_remote" "ignoring extra_ca_certs"
 
+# A relative path would resolve against the working directory, which may be a
+# repository, so it is refused even when the file is there.
+cp "$HOME/empty.pem" proxy.pem
+assert_contains "MISE_EXTRA_CA_CERTS=proxy.pem $ls_remote" "ignoring extra_ca_certs proxy.pem: it is not an absolute path"
+
 # A project config cannot add a trusted CA.
 cat >mise.toml <<'TOML'
 [settings]
