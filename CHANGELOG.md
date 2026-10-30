@@ -1,5 +1,56 @@
 # Changelog
 
+## [2026.10.24](https://github.com/jdx/mise/releases/tag/v2026.10.24) - 2026-10-30
+
+### 🚀 Features
+
+- **(daemons)** allocate preset named ports per worktree with their own base by @jdx in [#15181](https://github.com/jdx/mise/pull/15181)
+- **(daemons)** run container images as daemons with Docker or Podman by @jdx in [#15182](https://github.com/jdx/mise/pull/15182)
+- **(dotfiles)** resolve secret() only for the keys a merge = "missing" entry adds by @jdx in [#15168](https://github.com/jdx/mise/pull/15168)
+- **(env)** add position = "append" to env._.path by @jdx in [#15158](https://github.com/jdx/mise/pull/15158)
+- **(http)** add extra_ca_certs and stop reporting unchecked tools as up to date by @jdx in [#15171](https://github.com/jdx/mise/pull/15171)
+- **(pypi)** add registry_index to search a tool registry ahead of PyPI when locking by @jdx in [#15157](https://github.com/jdx/mise/pull/15157)
+
+### 🐛 Bug Fixes
+
+- **(brew)** skip MachO post_install steps in source builds by @jdx in [#15152](https://github.com/jdx/mise/pull/15152)
+- **(brew)** resolve relative install_symlink sources like Homebrew by @waynehoover in [#15173](https://github.com/jdx/mise/pull/15173)
+- **(brew-cask)** stage binary payloads before postflight by @azohra in [#14837](https://github.com/jdx/mise/pull/14837)
+- **(gem)** skip RubyGems prereleases when resolving latest by @dennmart in [#15143](https://github.com/jdx/mise/pull/15143)
+- **(install)** don't fail install when a task include can't be loaded by @jdx in [#15166](https://github.com/jdx/mise/pull/15166)
+- **(lock)** upgrade every lock entry of a tool declared in several config files by @jdx in [#15164](https://github.com/jdx/mise/pull/15164)
+- **(lock)** hash file:// artifacts in place when generating lockfiles by @jdx in [#15180](https://github.com/jdx/mise/pull/15180)
+- **(nix)** add ps to macOS test dependencies by @nurazon59 in [#15167](https://github.com/jdx/mise/pull/15167)
+- **(pipx)** share one install between tools locked with the same dependencies on different days by @jdx in [#15179](https://github.com/jdx/mise/pull/15179)
+- **(prune)** keep versions of tools declared in included task files by @jdx in [#15156](https://github.com/jdx/mise/pull/15156)
+- **(pypi)** lock the dependency graph against the selected Python by @jdx in [#15153](https://github.com/jdx/mise/pull/15153)
+- **(pypi)** lock tools whose index publishes no upload times by @jdx in [#15159](https://github.com/jdx/mise/pull/15159)
+- **(shim)** name the active version when it lacks the executable by @jdx in [#15165](https://github.com/jdx/mise/pull/15165)
+- **(task)** allow comments in turbo.json and global.json by @jdx in [#15141](https://github.com/jdx/mise/pull/15141)
+- **(task)** run the downloaded file of a remote task with env as a sub-task or dependency by @jdx in [#15178](https://github.com/jdx/mise/pull/15178)
+
+### 📚 Documentation
+
+- **(dotfiles)** show profile variants gating an entry on several active envs by @jdx in [#15154](https://github.com/jdx/mise/pull/15154)
+
+### ⚡ Performance
+
+- **(brew)** resolve formulae from the bulk index and stop re-walking taps every run by @waynehoover in [#15183](https://github.com/jdx/mise/pull/15183)
+
+### 📦 Registry
+
+- install Danger Swift libraries alongside its executable by @Mostafa-Ashraf97 in [#15120](https://github.com/jdx/mise/pull/15120)
+
+### Chore
+
+- **(config)** deprecate lockfile_mode=merge, warning from 2027.4.0 by @jdx in [#15184](https://github.com/jdx/mise/pull/15184)
+
+### New Contributors
+
+- @nurazon59 made their first contribution in [#15167](https://github.com/jdx/mise/pull/15167)
+- @Mostafa-Ashraf97 made their first contribution in [#15120](https://github.com/jdx/mise/pull/15120)
+- @dennmart made their first contribution in [#15143](https://github.com/jdx/mise/pull/15143)
+
 ## [2026.10.23](https://github.com/jdx/mise/releases/tag/v2026.10.23) - 2026-10-29
 
 ### 🚀 Features
