@@ -892,7 +892,9 @@ impl Lock {
                                     config,
                                     actual.request.source(),
                                 )
-                                .is_some_and(|(path, _)| path == *lockfile_path))
+                                .is_some_and(|(path, _)| {
+                                    lockfile::same_file_path(&path, lockfile_path)
+                                }))
                     }) {
                         // A tool declared in several files that write this
                         // lockfile has one entry per file but only the winning
@@ -2069,7 +2071,9 @@ impl Lock {
         for (path, cf) in effective_config_files {
             let source = cf.source();
             let source_lockfile_matches = lockfile::lockfile_path_for_tool_source(config, &source)
-                .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path);
+                .is_some_and(|(source_lockfile, _)| {
+                    lockfile::same_file_path(&source_lockfile, target_lockfile_path)
+                });
             if !(config_path_set.contains(path)
                 || source.is_idiomatic_version_file() && source_lockfile_matches)
             {
@@ -2298,14 +2302,23 @@ impl Lock {
             if self.local && !is_local {
                 continue;
             }
-            if self
-                .lockfiles
-                .as_ref()
-                .is_some_and(|only| !only.contains(&lockfile_path))
-            {
+            if self.lockfiles.as_ref().is_some_and(|only| {
+                !only
+                    .iter()
+                    .any(|lockfile| lockfile::same_file_path(lockfile, &lockfile_path))
+            }) {
                 continue;
             }
-            targets.entry(lockfile_path).or_default().push(path.clone());
+            // One lockfile can be reached through two spellings, such as a
+            // ~/.config/mise symlinked into a dotfiles checkout whose
+            // config.toml is also found by walking up from inside it. Two
+            // targets for one file would each rewrite it from their own tools.
+            let key = targets
+                .keys()
+                .find(|existing| lockfile::same_file_path(existing, &lockfile_path))
+                .cloned()
+                .unwrap_or(lockfile_path);
+            targets.entry(key).or_default().push(path.clone());
         }
         targets
     }
@@ -2333,8 +2346,11 @@ impl Lock {
 
         let mut all_tools: Vec<LockTool> = Vec::new();
         let locks_here = |source: &ToolSource| {
-            lockfile::lockfile_path_for_tool_source(config, source)
-                .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path)
+            lockfile::lockfile_path_for_tool_source(config, source).is_some_and(
+                |(source_lockfile, _)| {
+                    lockfile::same_file_path(&source_lockfile, target_lockfile_path)
+                },
+            )
         };
 
         // First pass: tools from the resolved toolset whose source maps to this lockfile
@@ -2342,7 +2358,7 @@ impl Lock {
             if let Some((source_lockfile, _)) =
                 lockfile::lockfile_path_for_tool_source(config, tv.request.source())
             {
-                if source_lockfile != target_lockfile_path {
+                if !lockfile::same_file_path(&source_lockfile, target_lockfile_path) {
                     continue;
                 }
             } else if tv.request.source().path().is_some() {
@@ -2383,7 +2399,9 @@ impl Lock {
         for (path, cf) in context.config_files.iter() {
             let source = cf.source();
             let source_lockfile_matches = lockfile::lockfile_path_for_tool_source(config, &source)
-                .is_some_and(|(source_lockfile, _)| source_lockfile == target_lockfile_path);
+                .is_some_and(|(source_lockfile, _)| {
+                    lockfile::same_file_path(&source_lockfile, target_lockfile_path)
+                });
             if !(config_paths_set.contains(path)
                 || source.is_idiomatic_version_file() && source_lockfile_matches)
             {
@@ -2771,7 +2789,7 @@ impl Lock {
                 &config_path,
                 config.monorepo_lockfile_root().as_deref(),
             );
-            if task_lockfile_path != target_lockfile_path {
+            if !lockfile::same_file_path(&task_lockfile_path, target_lockfile_path) {
                 continue;
             }
 
