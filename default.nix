@@ -19,7 +19,7 @@ rustPlatform.buildRustPackage {
   ];
   nativeCheckInputs = with pkgs; [
     git
-  ];
+  ] ++ lib.optionals stdenv.hostPlatform.isDarwin [ darwin.ps ];
   buildInputs = with pkgs; [
     bash
     coreutils
