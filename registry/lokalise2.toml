@@ -1,0 +1,6 @@
+backends = ["github:lokalise/lokalise-cli-2-go"]
+bins = ["lokalise2"]
+description = "Lokalise CLI v2"
+os = ["linux", "macos", "windows"]
+test = { cmd = "lokalise2 --version", expected = "lokalise2 version {{version}}" }
+version_order = "semver"
