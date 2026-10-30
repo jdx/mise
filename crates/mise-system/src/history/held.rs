@@ -461,6 +461,41 @@ mod tests {
             &stream
         )?);
 
+        // a merge that dropped the loose file deleted it too
+        let blob = |content: &[u8]| repo.hash_blob(content);
+        let tree_of = |files: &[(&str, &[u8])]| -> Result<String> {
+            let overlays = files
+                .iter()
+                .map(|(name, content)| {
+                    Ok(Overlay {
+                        path: parent.tree_path(&skills.join(name))?,
+                        object: Some(("100644".into(), blob(content)?)),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            repo.compose(&repo.empty_object("tree")?, &overlays)
+        };
+        let base = repo.commit_tree(&tree_of(&[("loose.md", b"loose")])?, vec![], "base")?;
+        let ours = repo.commit_tree(
+            &tree_of(&[("loose.md", b"loose"), ("ours.md", b"ours")])?,
+            vec![&base],
+            "ours",
+        )?;
+        let theirs = repo.commit_tree(
+            &tree_of(&[("loose.md", b"loose"), ("theirs.md", b"theirs")])?,
+            vec![&base],
+            "theirs",
+        )?;
+        let merged = repo.commit_tree(
+            &tree_of(&[("ours.md", b"ours"), ("theirs.md", b"theirs")])?,
+            vec![&ours, &theirs],
+            "merge",
+        )?;
+        assert!(
+            repo.deleted_paths_under(&merged, &stream)?
+                .contains(&parent.tree_path(&skills.join("loose.md"))?)
+        );
+
         // another machine deleted the loose file the history once saved
         let deleted = save(
             "deleted",

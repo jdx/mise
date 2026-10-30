@@ -2122,6 +2122,8 @@ impl HistoryRepo {
             "--diff-filter=D",
             "--no-renames",
             "--full-history",
+            // a merge that drops a file deletes it against each parent
+            "-m",
             head,
             "--",
             &literal,
