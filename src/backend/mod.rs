@@ -3020,6 +3020,42 @@ mod tests {
         assert!(hidden_versions(&backend, "99").await.is_empty());
     }
 
+    /// A check that takes no lock reads an install directory without an incomplete
+    /// marker as complete, so the marker has to be there before the directory is.
+    #[test]
+    fn create_install_dirs_marks_incomplete_before_creating_the_install_dir() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let short = format!(
+            "install-dirs-marker-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut ba = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short.clone(),
+            None,
+            BackendResolution::new(false),
+        );
+        ba.set_installs_path(temp_dir.path().join("installs").join(&short));
+        // A file where the downloads dir would go makes the step after the install dir fail.
+        let blocker = temp_dir.path().join("downloads");
+        fs::write(&blocker, "")?;
+        ba.set_downloads_path(blocker.join(&short));
+
+        let backend = TestBackend { ba: Arc::new(ba) };
+        let request = ToolRequest::new(backend.ba.clone(), "1.0.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".into());
+
+        assert!(backend.create_install_dirs(&tv).is_err());
+        assert!(tv.install_path().exists());
+        assert!(install_state::is_incomplete(tv.ba(), &tv.state_key()));
+        install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
+        Ok(())
+    }
+
     #[derive(Debug)]
     struct TestBackend {
         ba: Arc<BackendArg>,
@@ -5820,6 +5856,13 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn create_install_dirs(&self, tv: &ToolVersion) -> eyre::Result<()> {
+        // Mark first: a check that takes no lock (the work list `mise install` builds, which
+        // drops what it finds installed) reads a directory without a marker as complete, and
+        // would otherwise see one while it is being removed, created or filled in below.
+        // `create_dir_all` can return Ok without having created anything for a version Windows
+        // refuses as a path; the marker sits in a directory named for the same version, so its
+        // write is what reports it, naming the path.
+        install_state::mark_incomplete(tv.ba(), &tv.state_key())?;
         let _ = remove_all_with_warning(tv.install_path());
         if !Settings::get().always_keep_download {
             let download_path = tv.download_path();
@@ -5835,10 +5878,7 @@ pub trait Backend: Debug + Send + Sync {
         file::create_dir_all(tv.install_path())?;
         file::create_dir_all(tv.download_path())?;
         file::create_dir_all(tv.cache_path())?;
-        // The three calls above can return Ok without having created anything for a version
-        // Windows refuses as a path; the marker sits in a directory named for the same version,
-        // so its write is what reports it, naming the path.
-        install_state::mark_incomplete(tv.ba(), &tv.state_key())
+        Ok(())
     }
     fn cleanup_install_dirs_on_error(&self, tv: &ToolVersion) {
         if !Settings::get().always_keep_install {
