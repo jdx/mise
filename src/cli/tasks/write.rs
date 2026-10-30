@@ -515,10 +515,12 @@ pub(super) async fn find_definitions(name: &str) -> Result<Vec<Definition>> {
 }
 
 /// The scripts in the task directories of config root `root` that define task `name`.
+/// Applies the filters task discovery does, so a file mise would not load as a task is never one.
 async fn scripts_in_root(config: &Arc<Config>, root: &Path, name: &str) -> Result<Vec<PathBuf>> {
+    let excludes = config::task_excludes_for_dir(root, &config.config_files)?;
     let mut scripts = vec![];
     for include in config::task_includes_for_dir(root, &config.config_files)? {
-        if !include.is_dir() {
+        if !include.is_dir() || config::is_task_path_excluded(&include, &excludes) {
             continue;
         }
         let base = include.join(name.replace(':', MAIN_SEPARATOR_STR));
@@ -533,7 +535,18 @@ async fn scripts_in_root(config: &Arc<Config>, root: &Path, name: &str) -> Resul
             );
         }
         for path in candidates.into_iter().unique() {
+            // Discovery takes executable files that are not TOML task files, outside any
+            // hidden directory, and not excluded by `task_config.excludes` or `task.disable_paths`.
+            let hidden = path.strip_prefix(&include).is_ok_and(|relative| {
+                relative
+                    .components()
+                    .any(|part| part.as_os_str().to_string_lossy().starts_with('.'))
+            });
             if path.is_file()
+                && file::is_executable(&path)
+                && !is_toml(&path)
+                && !hidden
+                && !config::is_task_path_excluded(&path, &excludes)
                 && Task::from_path(config, &path, &include, root)
                     .await
                     .is_ok_and(|task| task.name == name)

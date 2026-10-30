@@ -6938,7 +6938,8 @@ struct LoadTaskIncludesOptions<'a> {
     excludes: &'a [PathBuf],
 }
 
-pub(crate) fn is_task_path_excluded(path: &Path, excludes: &[PathBuf]) -> bool {
+/// Whether task discovery skips `path`: it is under `excludes` or the `task.disable_paths` setting.
+pub fn is_task_path_excluded(path: &Path, excludes: &[PathBuf]) -> bool {
     Settings::get()
         .task
         .disable_paths

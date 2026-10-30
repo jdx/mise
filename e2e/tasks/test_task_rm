@@ -87,3 +87,30 @@ mise tasks rm --path mise.toml shadowed
 assert_not_contains "cat mise.toml" "shadowed"
 mise tasks rm shadowed
 assert_fail "test -e mise-tasks/shadowed"
+
+echo "=== files task discovery skips are not definitions ==="
+mkdir -p mise-tasks/skipped
+printf '#!/usr/bin/env bash\necho plain\n' >mise-tasks/plain
+printf '#!/usr/bin/env bash\necho excluded\n' >mise-tasks/skipped/excluded
+printf '#!/usr/bin/env bash\necho disabled\n' >mise-tasks/disabled
+chmod +x mise-tasks/skipped/excluded mise-tasks/disabled
+mise tasks add plain -- echo toml
+mise tasks add skipped:excluded -- echo toml
+mise tasks add disabled -- echo toml
+cat <<'EOF' >>mise.toml
+
+[task_config]
+excludes = ["mise-tasks/skipped"]
+EOF
+export MISE_TASK_DISABLE_PATHS="$PWD/mise-tasks/disabled"
+assert_fail_contains "mise tasks rm --path mise-tasks/plain plain" "is neither a TOML config file nor the script of task plain"
+assert_fail_contains "mise tasks rm --path mise-tasks/disabled disabled" "is neither a TOML config file nor the script of task disabled"
+mise tasks rm plain skipped:excluded disabled
+assert_not_contains "cat mise.toml" "echo toml"
+assert "cat mise-tasks/plain mise-tasks/skipped/excluded mise-tasks/disabled" '#!/usr/bin/env bash
+echo plain
+#!/usr/bin/env bash
+echo excluded
+#!/usr/bin/env bash
+echo disabled'
+unset MISE_TASK_DISABLE_PATHS
