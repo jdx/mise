@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# A file another machine deleted from a profile directory stays deleted: this
+# machine still has the file live while the profile is inactive, but a save
+# once the profile is selected again does not bring it back.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/deletion-origin.git"
+git init -q --bare -b main "$origin"
+mkdir -p ~/.wdir
+echo a-v1 >~/.wdir/a
+echo b-v1 >~/.wdir/b
+echo base >~/.shared
+assert_succeed "mise dot track ~/.shared --yes"
+assert_succeed "mise dot track ~/.wdir --profile work --yes"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+assert_succeed "mise -E work dot save"
+assert_succeed "mise dot sync"
+assert "git --git-dir=$origin show main:home@work/.wdir/b" "b-v1"
+
+machine() {
+  local dir="$1"
+  shift
+  (
+    cd "$dir" || exit
+    env HOME="$dir" XDG_CONFIG_HOME="$dir/.config" MISE_CONFIG_DIR="$dir/.config/mise" \
+      MISE_STATE_DIR="$dir/.local/state/mise" MISE_DATA_DIR="$dir/.local/share/mise" \
+      MISE_CACHE_DIR="$dir/.cache/mise" MISE_TRUSTED_CONFIG_PATHS="$dir" mise "$@"
+  )
+}
+export -f machine
+second="$(dirname "$HOME")/second"
+mkdir -p "$second"
+export second
+b() { machine "$second" "$@"; }
+export -f b
+
+# the second machine holds the profile, then goes without it
+assert_succeed "b bootstrap --adopt file://$origin --yes"
+assert_succeed "b -E work dot pull --yes"
+assert "cat $second/.wdir/b" "b-v1"
+assert_succeed "b -E work dot save"
+assert_succeed "b dot save"
+
+# the first machine deletes a file and shares it
+rm ~/.wdir/b
+assert_succeed "mise -E work dot save"
+assert_succeed "mise dot sync"
+assert_fail "git --git-dir=$origin cat-file -e main:home@work/.wdir/b"
+
+# the deletion is pulled while the profile is inactive, so it is not applied
+# yet; selecting the profile here saves nothing that brings the file back
+assert_succeed "b dot sync"
+assert_succeed "b dot pull --yes"
+assert "cat $second/.wdir/b" "b-v1"
+assert_succeed "b -E work dot save"
+assert_succeed "b -E work dot sync"
+assert_fail "git --git-dir=$origin cat-file -e main:home@work/.wdir/b"
+assert "git --git-dir=$origin show main:home@work/.wdir/a" "a-v1"
