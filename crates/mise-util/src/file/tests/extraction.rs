@@ -454,15 +454,12 @@ fn macos_tar_with_xattr(dir: &Path) -> PathBuf {
         .status()
         .unwrap();
     assert!(status.success());
-    let listing = Command::new("/usr/bin/tar")
-        .arg("-tf")
-        .arg(&archive_path)
-        .output()
-        .unwrap();
-    assert!(
-        String::from_utf8_lossy(&listing.stdout).contains("._data.pak"),
-        "tar did not write an AppleDouble entry"
-    );
+    // Not `tar -tf`: macOS tar folds AppleDouble entries into their files when listing.
+    let has_sidecar = jdx_tar::Archive::new(File::open(&archive_path).unwrap())
+        .entries()
+        .unwrap()
+        .any(|entry| entry.unwrap().path().unwrap().ends_with("pkg/._data.pak"));
+    assert!(has_sidecar, "tar did not write an AppleDouble entry");
     archive_path
 }
 
