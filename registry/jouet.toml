@@ -1,0 +1,8 @@
+backends = [
+  { full = "packslip:github.com/jdx/jouet", options = { workflow = "release.yml@refs/heads/main" } },
+  { full = "github:jdx/jouet", attestations_since = "0.0.1" },
+]
+bins = ["jouet"]
+description = "A toolkit CLI for coding agents"
+test = { cmd = "jouet --version", expected = "jouet {{version}}" }
+version_order = "semver"
