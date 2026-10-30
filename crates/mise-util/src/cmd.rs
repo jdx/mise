@@ -775,6 +775,24 @@ pub fn prepare_noninteractive_child(_cmd: &mut std::process::Command) {
     }
 }
 
+/// Put a child that runs mise tasks in the process tree managed by mise, isolated the way mise
+/// isolates its own task commands: in a process group of its own unless its stdin is a terminal.
+///
+/// A nested mise then keeps its tasks, raw ones included, in that group, so
+/// [`signal_child_tree`] reaches all of them. Callers must retain a [`RunningPidGuard`] after
+/// spawning the command.
+pub fn prepare_task_child(_cmd: &mut std::process::Command) {
+    #[cfg(unix)]
+    prepare_execute_child(_cmd);
+}
+
+/// Send `signal` to a child prepared with [`prepare_task_child`] and everything in its process
+/// group, or to the child alone when it was left in mise's own group.
+#[cfg(unix)]
+pub fn signal_child_tree(pid: u32, signal: nix::sys::signal::Signal) {
+    signal_process_tree(pid, signal);
+}
+
 /// Grace period after a child's ExitStatus arrives during which we keep
 /// reading its stdout/stderr pipes. If a grandchild inherited the pipes
 /// and survived (e.g. a nested mise that escaped our pgroup, or an

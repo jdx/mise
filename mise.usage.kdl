@@ -8196,6 +8196,15 @@ To keep a server or database running alongside your tasks, with readiness checks
         arg <GLOB>
     }
     flag --skip-deps help="Run and watch only the named tasks, not the tasks they depend on"
+    flag --once help="Wait for a change, run the tasks once, and exit with their status" {
+        long_help #"""
+Wait for a change, run the tasks once, and exit with their status
+
+Nothing runs at start: mise waits until one of the watched sources changes, runs the tasks once, and exits with the status of that run. So `--postpone` is implied, and passing it as well changes nothing. To run the tasks now and then once more after a change, use `mise run build && mise watch build --once`.
+
+Use it in scripts and agents that need to block until a file changes. mise exits with 1 if watchexec stops before a change, and with 130 on Ctrl-C. With `--once` mise runs the tasks itself, so the flags that set how watchexec runs them, such as `--restart` and `--clear`, are refused.
+"""#
+    }
     flag "-w --watch" help="Watch a file or directory" var=#true help_heading=Filtering {
         long_help #"""
 Watch a file or directory
@@ -8298,6 +8307,13 @@ One save can produce several events, and a file can be written in pieces, so wat
         arg <TIMEOUT>
     }
     flag --stdin-quit help="Exit when stdin closes"
+    flag --exit-on-error help="Stop watching when a run fails, and exit with its status" {
+        long_help #"""
+Stop watching when a run fails, and exit with its status
+
+By default watchexec keeps watching whatever the tasks exit with. With this flag the first failed run ends `mise watch`, which then exits with that run's status. `--once` always exits after its run, so this changes nothing there. Needs watchexec 2.5.0 or later.
+"""#
+    }
     flag --no-vcs-ignore help="Do not apply Git and other version control ignore files" help_heading=Filtering {
         long_help #"""
 Do not apply Git and other version control ignore files
@@ -8747,6 +8763,7 @@ This shows the manual page for Watchexec, if the output is a terminal and the 'm
     example "mise watch build --clear" help="Clear the screen before each run"
     example "mise watch serve --watch src --exts rs --restart" help="Start an API server and restart it when Rust files in ./src change"
     example "mise watch test -- --verbose" help="Pass arguments after -- to the task"
+    example "mise watch test --once" help="Wait for a source to change, run test once, and exit with its status"
     complete path type=path
     complete directory type=dir
 }
