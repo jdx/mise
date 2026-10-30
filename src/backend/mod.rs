@@ -3020,6 +3020,72 @@ mod tests {
         assert!(hidden_versions(&backend, "99").await.is_empty());
     }
 
+    /// A check that takes no lock reads an install directory without an incomplete
+    /// marker as complete, so the marker has to be there before the directory is.
+    #[test]
+    fn create_install_dirs_marks_incomplete_before_creating_the_install_dir() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let short = format!(
+            "install-dirs-marker-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut ba = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short.clone(),
+            None,
+            BackendResolution::new(false),
+        );
+        ba.set_installs_path(temp_dir.path().join("installs").join(&short));
+        // A NUL in the downloads path makes the step after the install dir fail on every
+        // platform.
+        ba.set_downloads_path(temp_dir.path().join("downloads\0"));
+
+        let backend = TestBackend { ba: Arc::new(ba) };
+        let request = ToolRequest::new(backend.ba.clone(), "1.0.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".into());
+
+        assert!(backend.create_install_dirs(&tv).is_err());
+        assert!(tv.install_path().exists());
+        assert!(install_state::is_incomplete(tv.ba(), &tv.state_key()));
+        install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
+        Ok(())
+    }
+
+    /// A destination that cannot be created leaves no directory behind, so the marker the
+    /// attempt wrote must not make an install elsewhere of the same version look unfinished.
+    #[test]
+    fn create_install_dirs_failing_without_a_directory_leaves_no_marker() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let short = format!(
+            "install-dirs-no-dir-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut ba = BackendArg::new_raw(
+            short.clone(),
+            None,
+            short.clone(),
+            None,
+            BackendResolution::new(false),
+        );
+        ba.set_installs_path(temp_dir.path().join("installs").join(&short));
+        let backend = TestBackend { ba: Arc::new(ba) };
+        let request = ToolRequest::new(backend.ba.clone(), "1.0.0", ToolSource::Argument).unwrap();
+        let mut tv = ToolVersion::new(request, "1.0.0".into());
+        tv.install_path = Some(temp_dir.path().join("dest\0"));
+
+        assert!(backend.create_install_dirs(&tv).is_err());
+        assert!(!tv.install_path().exists());
+        assert!(!install_state::is_incomplete(tv.ba(), &tv.state_key()));
+        Ok(())
+    }
+
     #[derive(Debug)]
     struct TestBackend {
         ba: Arc<BackendArg>,
@@ -3054,6 +3120,25 @@ mod tests {
             Ok(tv)
         }
     }
+}
+
+fn make_install_dirs(tv: &ToolVersion) -> eyre::Result<()> {
+    let _ = remove_all_with_warning(tv.install_path());
+    if !Settings::get().always_keep_download {
+        let download_path = tv.download_path();
+        if let Err(err) = crate::http::cleanup_download_dir(&download_path) {
+            debug!(
+                "failed to clean download directory {}: {err:#}",
+                display_path(&download_path)
+            );
+        }
+    }
+    let _ = remove_all_with_warning(tv.cache_path());
+    let _ = file::remove_file(tv.install_path()); // removes if it is a symlink
+    file::create_dir_all(tv.install_path())?;
+    file::create_dir_all(tv.download_path())?;
+    file::create_dir_all(tv.cache_path())?;
+    Ok(())
 }
 
 #[async_trait]
@@ -5718,12 +5803,20 @@ pub trait Backend: Debug + Send + Sync {
         if !dryrun {
             crate::install_layout::resolver::guard_removal(&install_path)?;
         }
+        if !dryrun {
+            // A removal in progress leaves a directory that is not the install it was, which a
+            // check that takes no lock must not read as complete; the marker is cleared below.
+            install_state::mark_incomplete(tv.ba(), &tv.state_key())?;
+        }
         rmdir(&install_path)?;
         if !dryrun {
             // Version links into the removed installation, from every tool that
             // linked it. The catalog record stays, so a reinstall lands on the
             // same path.
             crate::install_layout::resolver::unlink_installation(&install_path);
+            // The install is gone. The marker is shared by every install of this version, so
+            // it must not outlive the removal if the download or cache cleanup below fails.
+            install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
         }
         if !Settings::get().always_keep_download {
             rmdir(&tv.download_path())?;
@@ -5734,8 +5827,6 @@ pub trait Backend: Debug + Send + Sync {
                 pr.set_message(format!("remove {}", would_remove.join(", ")));
             }
         } else {
-            // The marker is outside the cache dir removed above.
-            install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
             self.cleanup_empty_installs_dir();
         }
         Ok(())
@@ -5820,25 +5911,22 @@ pub trait Backend: Debug + Send + Sync {
     }
 
     fn create_install_dirs(&self, tv: &ToolVersion) -> eyre::Result<()> {
-        let _ = remove_all_with_warning(tv.install_path());
-        if !Settings::get().always_keep_download {
-            let download_path = tv.download_path();
-            if let Err(err) = crate::http::cleanup_download_dir(&download_path) {
-                debug!(
-                    "failed to clean download directory {}: {err:#}",
-                    display_path(&download_path)
-                );
-            }
+        // Mark first: a check that takes no lock (the work list `mise install` builds, which
+        // drops what it finds installed) reads a directory without a marker as complete, and
+        // would otherwise see one while it is being removed, created or filled in below.
+        // `create_dir_all` can return Ok without having created anything for a version Windows
+        // refuses as a path; the marker sits in a directory named for the same version, so its
+        // write is what reports it, naming the path.
+        let was_incomplete = install_state::is_incomplete(tv.ba(), &tv.state_key());
+        install_state::mark_incomplete(tv.ba(), &tv.state_key())?;
+        let made = make_install_dirs(tv);
+        // The marker is shared by every install of this tool version, so a setup that failed
+        // without leaving a directory (an explicit destination that cannot be created) must not
+        // leave behind a marker that makes a working install elsewhere look unfinished.
+        if made.is_err() && !was_incomplete && !tv.install_path().exists() {
+            install_state::clear_incomplete_marker_best_effort(tv.ba(), &tv.state_key());
         }
-        let _ = remove_all_with_warning(tv.cache_path());
-        let _ = file::remove_file(tv.install_path()); // removes if it is a symlink
-        file::create_dir_all(tv.install_path())?;
-        file::create_dir_all(tv.download_path())?;
-        file::create_dir_all(tv.cache_path())?;
-        // The three calls above can return Ok without having created anything for a version
-        // Windows refuses as a path; the marker sits in a directory named for the same version,
-        // so its write is what reports it, naming the path.
-        install_state::mark_incomplete(tv.ba(), &tv.state_key())
+        made
     }
     fn cleanup_install_dirs_on_error(&self, tv: &ToolVersion) {
         if !Settings::get().always_keep_install {
