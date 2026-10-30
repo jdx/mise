@@ -101,6 +101,21 @@ impl Held {
         record.selected.contains(stream) || record.frozen.get(stream) == Some(&Some(saved.clone()))
     }
 
+    /// Whether a stream this machine selected or held covers `path`, a
+    /// tree path: a file it saved there once was not first seen now.
+    pub(crate) fn covers(&self, path: &str) -> bool {
+        self.record.as_ref().is_some_and(|record| {
+            record
+                .selected
+                .iter()
+                .chain(record.frozen.keys())
+                .any(|stream| {
+                    path.strip_prefix(stream.as_str())
+                        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+                })
+        })
+    }
+
     /// The saved version a stream had when it stopped being selected here:
     /// the version this machine still has live, unless it changed it since.
     pub(crate) fn frozen(&self, stream: &str) -> Option<&Object> {
@@ -186,7 +201,7 @@ pub(crate) fn streams(
             .flatten();
         if held.holds(&stream, saved.as_ref())
             || held.kept(&stream)
-            || live_matches_saved(repo, parent, walk, index, &stream)?
+            || live_matches_saved(repo, held, parent, walk, index, &stream)?
         {
             streams.held.insert(stream);
         } else {
@@ -199,12 +214,14 @@ pub(crate) fn streams(
 /// Whether every file an entry saved is live and unchanged, compared as
 /// plaintext so an encrypted file matches its saved ciphertext.
 ///
-/// A live file with no saved version is an addition, such as a file the
-/// entry now covers because it replaced narrower ones: capturing it
-/// publishes neither a deletion nor a revert, so it does not make the
-/// saved version someone else's.
+/// A live file with no saved version is an addition when no stream held
+/// here ever covered it, such as a file the entry now reaches because it
+/// replaced narrower ones: capturing it publishes neither a deletion nor a
+/// revert. One a held stream covered was saved there and has since been
+/// deleted by another machine, and capturing it would undo that deletion.
 fn live_matches_saved(
     repo: &HistoryRepo,
+    held: &Held,
     parent: Option<&str>,
     walk: &super::tracked::Walk,
     index: usize,
@@ -231,6 +248,7 @@ fn live_matches_saved(
             .collect(),
         Some(_) => vec![stream.to_string()],
     };
+    let mut compared = BTreeSet::new();
     for path in paths {
         let Some(local) = roots.locate(&path).path().map(Path::to_path_buf) else {
             return Ok(false);
@@ -242,11 +260,18 @@ fn live_matches_saved(
         if !live.contains(&local) {
             return Ok(false);
         }
+        compared.insert(local.clone());
         let Ok(object) = super::sync::apply::live_object(repo, &local) else {
             return Ok(false);
         };
         // a version this machine cannot decrypt is not one it holds
         if repo.restored_object_at(head, &path).ok().flatten() != object {
+            return Ok(false);
+        }
+    }
+    let entry = &walk.entries[index];
+    for local in live.difference(&compared.iter().collect()) {
+        if held.covers(&entry.tree_path(local)?) {
             return Ok(false);
         }
     }
@@ -333,7 +358,7 @@ mod tests {
     /// this machine saved, so the saved version stays this machine's.
     #[cfg(unix)]
     #[test]
-    fn live_files_the_saved_version_lacks_do_not_unhold_a_widened_entry() -> Result<()> {
+    fn live_files_no_held_stream_covered_do_not_unhold_a_widened_entry() -> Result<()> {
         use crate::files::{FileMode, FilePolicy};
         use crate::history::shadow::Overlay;
         use crate::history::sync::layout::Roots;
@@ -376,21 +401,20 @@ mod tests {
             }
             walk
         };
+        // the narrower entry was held; nothing ever covered the loose file
+        let narrower = Held {
+            record: Some(Record {
+                selected: streams(&[&nested.tree_path(&child)?]),
+                ..Default::default()
+            }),
+            upstream: true,
+        };
+        let matches = |held: &Held, saved: &str, loose: bool| {
+            live_matches_saved(&repo, held, Some(saved), &walk(loose), 0, &stream)
+        };
         // the nested entry's file is its own to compare; the loose one is new
-        assert!(live_matches_saved(
-            &repo,
-            Some(&saved),
-            &walk(true),
-            0,
-            &stream
-        )?);
-        assert!(live_matches_saved(
-            &repo,
-            Some(&saved),
-            &walk(false),
-            0,
-            &stream
-        )?);
+        assert!(matches(&narrower, &saved, true)?);
+        assert!(matches(&narrower, &saved, false)?);
 
         // a saved file the entry owns that changed or went missing is not held
         let owned = repo.compose(
@@ -400,28 +424,25 @@ mod tests {
                 object: Some(("100644".into(), repo.hash_blob(b"loose")?)),
             }],
         )?;
-        assert!(live_matches_saved(
-            &repo,
-            Some(&owned),
-            &walk(true),
-            0,
-            &stream
-        )?);
-        assert!(!live_matches_saved(
-            &repo,
-            Some(&owned),
-            &walk(false),
-            0,
-            &stream
-        )?);
+        assert!(matches(&narrower, &owned, true)?);
+        assert!(!matches(&narrower, &owned, false)?);
         std::fs::write(skills.join("loose.md"), "edited elsewhere")?;
-        assert!(!live_matches_saved(
-            &repo,
-            Some(&owned),
-            &walk(true),
-            0,
-            &stream
-        )?);
+        assert!(!matches(&narrower, &owned, true)?);
+        std::fs::write(skills.join("loose.md"), "loose")?;
+
+        // a stream held here covered the loose file, so a saved version
+        // without it is another machine's deletion, not an addition
+        let covered = Held {
+            record: Some(Record {
+                selected: streams(&[&nested.tree_path(&child)?]),
+                frozen: BTreeMap::from([(stream.clone(), None)]),
+                ..Default::default()
+            }),
+            upstream: true,
+        };
+        assert!(!matches(&covered, &saved, true)?);
+        assert!(covered.covers(&parent.tree_path(&skills.join("loose.md"))?));
+        assert!(!narrower.covers(&parent.tree_path(&skills.join("loose.md"))?));
         Ok(())
     }
 
