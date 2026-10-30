@@ -2109,6 +2109,19 @@ impl HistoryRepo {
         Ok(out.lines().map(str::to_string).collect())
     }
 
+    /// Whether any commit reachable from `head` changed `path`: it was saved
+    /// at some point, whether or not it still is.
+    pub(crate) fn path_ever_saved(&self, head: &str, path: &str) -> Result<bool> {
+        let out = self.output_str(PlumbingCall::new([
+            "rev-list",
+            "--max-count=1",
+            head,
+            "--",
+            path,
+        ]))?;
+        Ok(!out.trim().is_empty())
+    }
+
     pub(crate) fn rev_list_after(&self, head: &str, verified: &str) -> Result<Vec<String>> {
         let exclude = format!("^{verified}");
         let out = self.output_str(PlumbingCall::new([

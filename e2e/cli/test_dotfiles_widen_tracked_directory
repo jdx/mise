@@ -20,8 +20,10 @@ assert_succeed "mise dot origin set file://$origin --sync manual --yes"
 assert_succeed "mise dot sync"
 assert "git --git-dir=$origin show main:home/.agents/skills/alpha/SKILL.md" "alpha-v1"
 
-# widen to the parent, which also covers a file the narrower entries did not
+# widen to the parent, which also covers files the narrower entries did not:
+# a new file beside them, and one added inside a tracked child
 echo loose-v1 >~/.agents/skills/loose.md
+echo new-v1 >~/.agents/skills/alpha/new.md
 cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
 [dotfiles]
 "~/.agents/skills" = { mode = "track" }
@@ -29,6 +31,7 @@ TOML
 assert_not_contains "mise dot status 2>&1" "not applied here"
 assert_not_contains "mise dot save 2>&1" "saved by another machine"
 assert "git --git-dir=$repository show main:home/.agents/skills/loose.md" "loose-v1"
+assert "git --git-dir=$repository show main:home/.agents/skills/alpha/new.md" "new-v1"
 
 # edits under the parent keep producing checkpoints and sharing
 echo alpha-v2 >~/.agents/skills/alpha/SKILL.md

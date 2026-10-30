@@ -101,21 +101,6 @@ impl Held {
         record.selected.contains(stream) || record.frozen.get(stream) == Some(&Some(saved.clone()))
     }
 
-    /// Whether a stream this machine selected or held covers `path`, a
-    /// tree path: a file it saved there once was not first seen now.
-    pub(crate) fn covers(&self, path: &str) -> bool {
-        self.record.as_ref().is_some_and(|record| {
-            record
-                .selected
-                .iter()
-                .chain(record.frozen.keys())
-                .any(|stream| {
-                    path.strip_prefix(stream.as_str())
-                        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
-                })
-        })
-    }
-
     /// The saved version a stream had when it stopped being selected here:
     /// the version this machine still has live, unless it changed it since.
     pub(crate) fn frozen(&self, stream: &str) -> Option<&Object> {
@@ -201,7 +186,7 @@ pub(crate) fn streams(
             .flatten();
         if held.holds(&stream, saved.as_ref())
             || held.kept(&stream)
-            || live_matches_saved(repo, held, parent, walk, index, &stream)?
+            || live_matches_saved(repo, parent, walk, index, &stream)?
         {
             streams.held.insert(stream);
         } else {
@@ -214,14 +199,13 @@ pub(crate) fn streams(
 /// Whether every file an entry saved is live and unchanged, compared as
 /// plaintext so an encrypted file matches its saved ciphertext.
 ///
-/// A live file with no saved version is an addition when no stream held
-/// here ever covered it, such as a file the entry now reaches because it
-/// replaced narrower ones: capturing it publishes neither a deletion nor a
-/// revert. One a held stream covered was saved there and has since been
-/// deleted by another machine, and capturing it would undo that deletion.
+/// A live file with no saved version is an addition when the history never
+/// saved it, such as a file the entry now reaches because it replaced
+/// narrower ones: capturing it publishes neither a deletion nor a revert.
+/// One the history saved and no longer has was deleted by another machine,
+/// and capturing it would undo that deletion.
 fn live_matches_saved(
     repo: &HistoryRepo,
-    held: &Held,
     parent: Option<&str>,
     walk: &super::tracked::Walk,
     index: usize,
@@ -271,7 +255,7 @@ fn live_matches_saved(
     }
     let entry = &walk.entries[index];
     for local in live.difference(&compared.iter().collect()) {
-        if held.covers(&entry.tree_path(local)?) {
+        if repo.path_ever_saved(head, &entry.tree_path(local)?)? {
             return Ok(false);
         }
     }
@@ -355,11 +339,13 @@ mod tests {
 
     /// A directory enrolled in place of narrower entries covers files the
     /// narrower ones did not: those are additions, not a revert of what
-    /// this machine saved, so the saved version stays this machine's.
+    /// this machine saved, so the saved version stays this machine's. A
+    /// file the history saved and another machine deleted is not one.
     #[cfg(unix)]
     #[test]
-    fn live_files_no_held_stream_covered_do_not_unhold_a_widened_entry() -> Result<()> {
+    fn live_files_never_saved_do_not_unhold_a_widened_entry() -> Result<()> {
         use crate::files::{FileMode, FilePolicy};
+        use crate::history::checkpoint::test_checkpoint;
         use crate::history::shadow::Overlay;
         use crate::history::sync::layout::Roots;
         use crate::history::tracked::{TrackedEntry, Walk, normalize};
@@ -376,19 +362,27 @@ mod tests {
         let child = skills.join("child");
         std::fs::create_dir_all(&child)?;
         std::fs::write(child.join("SKILL.md"), "child")?;
+        std::fs::write(child.join("new.md"), "new")?;
         std::fs::write(skills.join("loose.md"), "loose")?;
 
         let policy = FilePolicy::for_mode(FileMode::Track);
         let parent = TrackedEntry::new(skills.clone(), "track", policy);
         let nested = TrackedEntry::new(child.clone(), "track", policy);
         let stream = parent.tree_path(&skills)?;
+        let overlay = |entry: &TrackedEntry, path: &Path, content: &[u8]| -> Result<Overlay> {
+            Ok(Overlay {
+                path: entry.tree_path(path)?,
+                object: Some(("100644".into(), repo.hash_blob(content)?)),
+            })
+        };
+        let save = |name: &str, overlays: &[Overlay]| -> Result<String> {
+            let tree = repo.compose(&repo.empty_object("tree")?, overlays)?;
+            repo.write_checkpoint(Some(&tree), &test_checkpoint(name, Some(&tree)))
+        };
         // saved under the narrower entry: only the child's file
-        let saved = repo.compose(
-            &repo.empty_object("tree")?,
-            &[Overlay {
-                path: nested.tree_path(&child.join("SKILL.md"))?,
-                object: Some(("100644".into(), repo.hash_blob(b"child")?)),
-            }],
+        let narrow = save(
+            "narrow",
+            &[overlay(&nested, &child.join("SKILL.md"), b"child")?],
         )?;
         let walk = |loose: bool| {
             let mut walk = Walk {
@@ -396,53 +390,60 @@ mod tests {
                 ..Default::default()
             };
             walk.files.insert(child.join("SKILL.md"), (1, policy));
+            walk.files.insert(child.join("new.md"), (1, policy));
             if loose {
                 walk.files.insert(skills.join("loose.md"), (0, policy));
             }
             walk
         };
-        // the narrower entry was held; nothing ever covered the loose file
-        let narrower = Held {
-            record: Some(Record {
-                selected: streams(&[&nested.tree_path(&child)?]),
+        let matches = |saved: &str, loose: bool| {
+            live_matches_saved(&repo, Some(saved), &walk(loose), 0, &stream)
+        };
+        // the nested entry's files are its own to compare; the loose one is
+        // new, though a stream covering its directory was saved before
+        assert!(matches(&narrow, true)?);
+        assert!(matches(&narrow, false)?);
+
+        // the child entry itself replaced by the parent, with a file added
+        // inside the old child's directory
+        let replaced = || {
+            let mut walk = Walk {
+                entries: vec![parent.clone()],
                 ..Default::default()
-            }),
-            upstream: true,
+            };
+            for name in ["SKILL.md", "new.md"] {
+                walk.files.insert(child.join(name), (0, policy));
+            }
+            walk
         };
-        let matches = |held: &Held, saved: &str, loose: bool| {
-            live_matches_saved(&repo, held, Some(saved), &walk(loose), 0, &stream)
-        };
-        // the nested entry's file is its own to compare; the loose one is new
-        assert!(matches(&narrower, &saved, true)?);
-        assert!(matches(&narrower, &saved, false)?);
+        assert!(live_matches_saved(
+            &repo,
+            Some(&narrow),
+            &replaced(),
+            0,
+            &stream
+        )?);
 
         // a saved file the entry owns that changed or went missing is not held
-        let owned = repo.compose(
-            &saved,
-            &[Overlay {
-                path: parent.tree_path(&skills.join("loose.md"))?,
-                object: Some(("100644".into(), repo.hash_blob(b"loose")?)),
-            }],
+        let owned = save(
+            "owned",
+            &[
+                overlay(&nested, &child.join("SKILL.md"), b"child")?,
+                overlay(&parent, &skills.join("loose.md"), b"loose")?,
+            ],
         )?;
-        assert!(matches(&narrower, &owned, true)?);
-        assert!(!matches(&narrower, &owned, false)?);
+        assert!(matches(&owned, true)?);
+        assert!(!matches(&owned, false)?);
         std::fs::write(skills.join("loose.md"), "edited elsewhere")?;
-        assert!(!matches(&narrower, &owned, true)?);
+        assert!(!matches(&owned, true)?);
         std::fs::write(skills.join("loose.md"), "loose")?;
 
-        // a stream held here covered the loose file, so a saved version
-        // without it is another machine's deletion, not an addition
-        let covered = Held {
-            record: Some(Record {
-                selected: streams(&[&nested.tree_path(&child)?]),
-                frozen: BTreeMap::from([(stream.clone(), None)]),
-                ..Default::default()
-            }),
-            upstream: true,
-        };
-        assert!(!matches(&covered, &saved, true)?);
-        assert!(covered.covers(&parent.tree_path(&skills.join("loose.md"))?));
-        assert!(!narrower.covers(&parent.tree_path(&skills.join("loose.md"))?));
+        // another machine deleted the loose file the history once saved
+        let deleted = save(
+            "deleted",
+            &[overlay(&nested, &child.join("SKILL.md"), b"child")?],
+        )?;
+        assert!(!matches(&deleted, true)?);
         Ok(())
     }
 
