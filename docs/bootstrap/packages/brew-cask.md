@@ -189,6 +189,12 @@ If Homebrew installed a cask, mise counts it as installed and leaves it alone:
 it. If Homebrew's records for the cask show no version or several, mise stops
 with an error that tells you how to repair them in Homebrew.
 
+`status --json` tells these casks apart from the ones mise manages. Each
+installed cask has a `managed_by` field: `"homebrew"` for a cask mise leaves to
+Homebrew, `"mise"` for one it installs and upgrades, or `"unknown"` when it
+cannot tell. The field says nothing about [self-updating
+apps](#self-updating-apps), which `auto_updates` reports separately.
+
 ## Casks mise installed
 
 mise records these casks in its own receipt in the Caskroom and does not write

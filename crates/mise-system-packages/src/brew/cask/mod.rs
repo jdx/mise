@@ -17,7 +17,10 @@ use walkdir::WalkDir;
 
 use super::prefix;
 use crate::options::ManagerPackageOptions;
-use crate::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
+use crate::{
+    InstallOpts, PackageManagement, PackageRequest, PackageState, PackageStatus,
+    SystemPackageManager,
+};
 use eyre::Result;
 use mise_ui::multi_progress_report::MultiProgressReport;
 use mise_ui::progress_report::{ProgressIcon, SingleReport};
@@ -1217,6 +1220,23 @@ impl SystemPackageManager for BrewCaskManager {
         Ok(statuses)
     }
 
+    async fn management(
+        &self,
+        status: &PackageStatus,
+        manager_options: &ManagerPackageOptions,
+    ) -> Option<PackageManagement> {
+        if matches!(status.state, PackageState::Missing) || status.state.is_unavailable() {
+            return None;
+        }
+        let Ok(cask) = self
+            .resolve_cask(&status.request, manager_options, false)
+            .await
+        else {
+            return Some(PackageManagement::Unknown);
+        };
+        Some(cask_management(&cask))
+    }
+
     async fn reconcile_installed(
         &self,
         statuses: &[PackageStatus],
@@ -1317,6 +1337,21 @@ impl SystemPackageManager for BrewCaskManager {
     ) -> Result<()> {
         self.install_with_manager_options(pkgs, opts, manager_options, InstallMode::Upgrade)
             .await
+    }
+}
+
+/// Whether install and upgrade would leave an installed cask to Homebrew.
+///
+/// Only the Homebrew-backed manager shares the Caskroom, so only it can find a
+/// token that Homebrew itself owns.
+fn cask_management(cask: &Cask) -> PackageManagement {
+    if !cask.manager.uses_homebrew_caskroom() {
+        return PackageManagement::Mise;
+    }
+    match homebrew_metadata_present(&cask.token) {
+        Ok(true) => PackageManagement::Homebrew,
+        Ok(false) => PackageManagement::Mise,
+        Err(_) => PackageManagement::Unknown,
     }
 }
 
