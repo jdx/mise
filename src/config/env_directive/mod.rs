@@ -776,7 +776,15 @@ impl EnvResults {
         // A redacted value is a secret by the user's or the directive's own account
         // (age values are redacted by default), and the env cache would write it to disk.
         // `env_cache_redacted` opts in; decrypted values were marked above regardless.
-        if !r.redactions.is_empty() && !Settings::get().env_cache_redacted {
+        // A redacted var can change without the config file changing, and a `default` or
+        // `required` depends on the caller's environment, which the cache key does not see.
+        let caller_dependent = r
+            .redactions
+            .iter()
+            .any(|k| r.caller_env_keys.contains(k) || r.rendered_defaults.contains(k));
+        if !r.redactions.is_empty()
+            && (!Settings::get().env_cache_redacted || resolve_opts.vars || caller_dependent)
+        {
             r.has_uncacheable = true;
         }
 

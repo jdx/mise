@@ -45,3 +45,27 @@ unset MISE_ENV_CACHE_REDACTED
 rm -f runs.log
 assert_contains "mise env -s bash" "export SOURCED_SECRET=hunter2-sourced"
 assert "wc -l <runs.log | tr -d ' '" "1"
+
+# Redacted [vars] and redacted default/required directives stay uncached even when it is on
+export MISE_ENV_CACHE_REDACTED=1
+cat >mise.toml <<'TOML'
+[vars]
+secret = { value = "hunter2-var", redact = true }
+
+[env]
+FROM_VAR = "{{ vars.secret }}"
+TOML
+rm -rf "$MISE_STATE_DIR/env-cache"
+assert_contains "mise env -s bash" "export FROM_VAR=hunter2-var"
+assert_contains "mise env -s bash" "export FROM_VAR=hunter2-var"
+assert "$CACHE_FILES" "0"
+
+cat >mise.toml <<'TOML'
+[env]
+WITH_DEFAULT = { default = "hunter2-default", redact = true }
+TOML
+rm -rf "$MISE_STATE_DIR/env-cache"
+assert_contains "mise env -s bash" "export WITH_DEFAULT=hunter2-default"
+assert_contains "mise env -s bash" "export WITH_DEFAULT=hunter2-default"
+assert "$CACHE_FILES" "0"
+assert "WITH_DEFAULT=caller mise x -- sh -c 'echo \$WITH_DEFAULT'" "caller"

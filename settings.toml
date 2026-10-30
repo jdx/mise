@@ -804,11 +804,15 @@ By default a config with a `redact = true` directive is never written to the
 slow when such a directive sources a slow script. With this on, mise caches the
 environment and keeps masking the redacted keys on a cache hit.
 
-The cache file is encrypted with a key that lives only in the shell
-`mise activate` set up, but it does hold the secret values on disk until
-[`env_cache_ttl`](#env_cache_ttl) expires. `age` and sops values and plugin
-results with `cacheable = false` are still never cached. See
-[Environment cache](/cache-behavior.html#environment-caching).
+The cache file holds the secret values on disk, encrypted with a key that
+`mise activate` puts in its shell's environment. Every process started from
+that shell inherits the key and can decrypt the file. After
+[`env_cache_ttl`](#env_cache_ttl) mise stops using an entry, but the file stays
+until mise loads it again or you run `mise cache clear`.
+
+`age` and sops values, plugin results with `cacheable = false`, redacted
+`[vars]`, and redacted `default` and `required` directives are still never
+cached. See [Environment cache](/cache-behavior.html#environment-caching).
 """
 env = "MISE_ENV_CACHE_REDACTED"
 type = "Bool"
