@@ -2,7 +2,7 @@
 //! config file, the flags that set task fields, finding the files that define a task, and the
 //! report each prints.
 
-use std::path::{MAIN_SEPARATOR_STR, Path, PathBuf};
+use std::path::{Component, MAIN_SEPARATOR_STR, Path, PathBuf};
 use std::sync::Arc;
 
 use eyre::{Result, bail};
@@ -486,7 +486,7 @@ pub(super) async fn find_definitions(name: &str) -> Result<Vec<Definition>> {
         .unique()
         .collect::<Vec<_>>();
     for root in roots {
-        for script in scripts_in_root(&config, &root, name).await? {
+        for script in scripts_in_root(&config, &root, name)? {
             if !definitions.iter().any(|def| def.path() == script) {
                 definitions.push(Definition::File(script));
             }
@@ -494,7 +494,7 @@ pub(super) async fn find_definitions(name: &str) -> Result<Vec<Definition>> {
     }
     for task in config.tasks_with_shadowed().await? {
         let source = &task.config_source;
-        if task.name != name
+        if !task.answers_to(name)
             || config.config_files.contains_key(source)
             || definitions.iter().any(|def| def.path() == source)
         {
@@ -507,7 +507,11 @@ pub(super) async fn find_definitions(name: &str) -> Result<Vec<Definition>> {
         });
     }
     if definitions.is_empty()
-        && let Some(task) = config.tasks().await?.get(name)
+        && let Some(task) = config
+            .tasks()
+            .await?
+            .values()
+            .find(|task| task.answers_to(name))
     {
         definitions.push(Definition::Other(task.config_source.clone()));
     }
@@ -516,7 +520,7 @@ pub(super) async fn find_definitions(name: &str) -> Result<Vec<Definition>> {
 
 /// The scripts in the task directories of config root `root` that define task `name`.
 /// Applies the filters task discovery does, so a file mise would not load as a task is never one.
-async fn scripts_in_root(config: &Arc<Config>, root: &Path, name: &str) -> Result<Vec<PathBuf>> {
+fn scripts_in_root(config: &Arc<Config>, root: &Path, name: &str) -> Result<Vec<PathBuf>> {
     let excludes = config::task_excludes_for_dir(root, &config.config_files)?;
     let mut scripts = vec![];
     for include in config::task_includes_for_dir(root, &config.config_files)? {
@@ -537,19 +541,24 @@ async fn scripts_in_root(config: &Arc<Config>, root: &Path, name: &str) -> Resul
         for path in candidates.into_iter().unique() {
             // Discovery takes executable files that are not TOML task files, outside any
             // hidden directory, and not excluded by `task_config.excludes` or `task.disable_paths`.
-            let hidden = path.strip_prefix(&include).is_ok_and(|relative| {
-                relative
-                    .components()
-                    .any(|part| part.as_os_str().to_string_lossy().starts_with('.'))
+            // Checking the path itself rather than where it resolves keeps a name with `..` or a
+            // leading `/` inside the task directory while still allowing symlinked scripts,
+            // which discovery follows.
+            let in_include = path.strip_prefix(&include).is_ok_and(|relative| {
+                relative.components().all(|part| match part {
+                    Component::Normal(part) => !part.to_string_lossy().starts_with('.'),
+                    _ => false,
+                })
             });
-            if path.is_file()
+            if in_include
+                && path.is_file()
                 && file::is_executable(&path)
                 && !is_toml(&path)
-                && !hidden
                 && !config::is_task_path_excluded(&path, &excludes)
-                && Task::from_path(config, &path, &include, root)
-                    .await
-                    .is_ok_and(|task| task.name == name)
+                // Unrendered: the name comes from the path, and rendering a header could run its
+                // templates before anyone trusted the file.
+                && Task::from_path_unrendered_with_cf(&path, &include, root, None)
+                    .is_ok_and(|task| task.answers_to(name))
             {
                 scripts.push(path);
             }

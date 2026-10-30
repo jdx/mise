@@ -114,3 +114,27 @@ echo excluded
 #!/usr/bin/env bash
 echo disabled'
 unset MISE_TASK_DISABLE_PATHS
+
+echo "=== a script is named without its extension ==="
+printf '#!/usr/bin/env bash\necho sh\n' >mise-tasks/withext.sh
+chmod +x mise-tasks/withext.sh
+assert_contains "mise tasks ls" "withext"
+mise tasks add withext -- echo toml
+assert_fail_contains "mise tasks rm withext" "mise-tasks/withext.sh"
+mise tasks rm --path mise.toml withext
+mise tasks rm withext
+assert_fail "test -e mise-tasks/withext.sh"
+
+echo "=== a name cannot reach outside the task directory ==="
+printf '#!/usr/bin/env bash\necho victim\n' >victim
+chmod +x victim
+cat <<'EOF' >>mise.toml
+
+[tasks."..:victim"]
+run = "echo toml"
+EOF
+mise tasks rm '..:victim'
+assert_not_contains "cat mise.toml" "victim"
+assert "cat victim" '#!/usr/bin/env bash
+echo victim'
+assert_fail_contains "mise tasks rm --path victim '..:victim'" "is neither a TOML config file nor the script of task"

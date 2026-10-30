@@ -39,3 +39,22 @@ run = "make test"'
 # an edit made outside mise loses the trust, which is what the commands above renew
 echo '# edited' >>mise.toml
 assert_fail_contains "mise env -s bash 2>&1" "not trusted"
+
+echo "=== looking for a shadowed script does not render it before it is trusted ==="
+cat <<'EOF' >mise.toml
+[tasks.rendered]
+run = "echo toml"
+EOF
+mise trust mise.toml
+marker="$PWD/rendered-marker"
+mkdir -p mise-tasks
+cat <<EOF >mise-tasks/rendered
+#!/usr/bin/env bash
+#MISE description="{{ exec(command='touch $marker') }}"
+echo rendered
+EOF
+chmod +x mise-tasks/rendered
+MISE_YES=1 mise tasks rm --dry-run rendered >/dev/null 2>&1 || true
+assert_fail "test -e $marker"
+MISE_YES=1 mise tasks set --dry-run --path mise.toml rendered --hide >/dev/null 2>&1 || true
+assert_fail "test -e $marker"
