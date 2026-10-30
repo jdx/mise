@@ -2673,7 +2673,9 @@ fn merge_appledouble_files(dir: &Path) -> Result<()> {
             );
             continue;
         }
-        remove_file(&sidecar)?;
+        if let Err(e) = remove_file(&sidecar) {
+            warn!("failed to remove {}: {e:#}", display_path(&sidecar));
+        }
     }
     Ok(())
 }
