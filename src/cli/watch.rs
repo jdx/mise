@@ -507,6 +507,8 @@ impl TrackedRun {
         }
     }
 
+    /// For [`ForwardSignals`], which only exists on Unix.
+    #[cfg(unix)]
     fn id(&self) -> Option<u32> {
         self.child.as_ref().and_then(|child| child.id())
     }
