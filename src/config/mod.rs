@@ -1779,6 +1779,12 @@ impl Config {
             &env_results.redaction_exclusions,
         );
         env_results.has_uncacheable |= vars_uncacheable;
+        if cache_enabled && env_results.has_uncacheable {
+            debug!(
+                "env_cache: not caching the non-tool env: it has decrypted or redacted values \
+                 (see env_cache_redacted) or a directive that is not cacheable"
+            );
+        }
         if cache_enabled
             && !env_results.has_uncacheable
             && let Some(cache_key) = cache_key

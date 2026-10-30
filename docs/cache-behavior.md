@@ -108,6 +108,15 @@ sops-encrypted `_.file`, a directive with `redact = true`, or an env plugin that
 returns `redact = true` is never written to the environment cache; mise
 recomputes that environment every time.
 
+If that is too slow, for example because a `redact = true` directive sources a
+slow script, set [`env_cache_redacted`](/configuration/settings.html#env_cache_redacted)
+(`MISE_ENV_CACHE_REDACTED=1`). mise then caches `redact = true` values and
+keeps masking them on a cache hit. The cache file is encrypted with a key that
+lives only in the shell `mise activate` set up, but it holds the values on disk
+until [`env_cache_ttl`](/configuration/settings.html#env_cache_ttl) expires.
+`age` and sops values and plugin results with `cacheable = false` stay
+uncached.
+
 Environment directives cannot opt out of caching one at a time, so a value such
 as a timestamp template stays the same until the cache expires. Set
 `MISE_ENV_CACHE=0` for a command that needs fresh values:

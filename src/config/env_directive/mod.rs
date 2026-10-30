@@ -62,7 +62,8 @@ pub struct EnvResults {
     /// Files to watch for cache invalidation (from modules and _.source directives)
     pub watch_files: Vec<PathBuf>,
     /// True if any directive declared cacheable=false, is a dynamic module, or produced a
-    /// redacted or decrypted (age, sops) value, none of which may be written to the env cache
+    /// decrypted (age, sops) value, or a redacted one unless `env_cache_redacted` is on,
+    /// none of which may be written to the env cache
     pub has_uncacheable: bool,
 }
 
@@ -774,7 +775,8 @@ impl EnvResults {
 
         // A redacted value is a secret by the user's or the directive's own account
         // (age values are redacted by default), and the env cache would write it to disk.
-        if !r.redactions.is_empty() {
+        // `env_cache_redacted` opts in; decrypted values were marked above regardless.
+        if !r.redactions.is_empty() && !Settings::get().env_cache_redacted {
             r.has_uncacheable = true;
         }
 

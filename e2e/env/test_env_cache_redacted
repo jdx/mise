@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+# A redact = true directive keeps the env out of the cache unless env_cache_redacted is on.
+# With it on, a cache hit skips the sourced script and still masks the value.
+export MISE_ENV_CACHE=1
+export __MISE_ENV_CACHE_KEY="dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdGtleXRlc3Q="
+
+cat >env.sh <<'SCRIPT'
+echo run >>runs.log
+export SOURCED_SECRET=hunter2-sourced
+SCRIPT
+cat >mise.toml <<'TOML'
+[env]
+PLAIN_SECRET = { value = "hunter2-plain", redact = true }
+_.source = { path = "env.sh", redact = true, tools = true }
+
+[tasks.show]
+run = "echo $PLAIN_SECRET $SOURCED_SECRET"
+TOML
+
+CACHE_FILES="find '$MISE_STATE_DIR/env-cache' -type f 2>/dev/null | wc -l | tr -d ' '"
+
+# Off by default: nothing is written, the script runs every time
+rm -rf "$MISE_STATE_DIR/env-cache" runs.log
+assert_contains "mise env -s bash" "export SOURCED_SECRET=hunter2-sourced"
+assert_contains "mise env -s bash" "export SOURCED_SECRET=hunter2-sourced"
+assert "$CACHE_FILES" "0"
+assert "wc -l <runs.log | tr -d ' '" "2"
+
+# On: the first run writes the cache, the second one reads it
+export MISE_ENV_CACHE_REDACTED=1
+rm -rf "$MISE_STATE_DIR/env-cache" runs.log
+assert_contains "mise env -s bash" "export SOURCED_SECRET=hunter2-sourced"
+assert_contains "mise env -s bash" "export SOURCED_SECRET=hunter2-sourced"
+assert_contains "mise env -s bash" "export PLAIN_SECRET=hunter2-plain"
+assert "wc -l <runs.log | tr -d ' '" "1"
+assert_not "$CACHE_FILES" "0"
+
+# A cache hit still masks both values in task output
+assert_not_contains "mise run show 2>&1" "hunter2"
+assert_contains "mise run show 2>&1" "[redacted]"
+
+# A cache file built with the setting on is not reused with it off
+unset MISE_ENV_CACHE_REDACTED
+rm -f runs.log
+assert_contains "mise env -s bash" "export SOURCED_SECRET=hunter2-sourced"
+assert "wc -l <runs.log | tr -d ' '" "1"
