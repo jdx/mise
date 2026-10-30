@@ -7170,6 +7170,35 @@ fn cask_prune_force_removes_a_receipt_without_prune_metadata() -> Result<()> {
 }
 
 #[test]
+fn cask_management_reports_who_owns_an_installed_cask() -> Result<()> {
+    let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+
+    let owned = test_cask("owned", "1.0.0");
+    write_test_app_receipt(&owned, "Owned.app")?;
+    assert_eq!(cask_management(&owned), PackageManagement::Mise);
+
+    let homebrew = test_cask("homebrew", "1.0.0");
+    file::create_dir_all(caskroom_token_dir(CaskManager::BrewCask, "homebrew").join(".metadata"))?;
+    assert_eq!(cask_management(&homebrew), PackageManagement::Homebrew);
+
+    // Homebrew's records can't be inspected when a Caskroom path component is a file.
+    let unreadable = test_cask("unreadable", "1.0.0");
+    file::write(
+        caskroom_token_dir(CaskManager::BrewCask, "unreadable"),
+        "not a directory",
+    )?;
+    assert_eq!(cask_management(&unreadable), PackageManagement::Unknown);
+
+    // A same-named Homebrew cask is a different install for macos-app.
+    let mut app = test_cask("homebrew", "1.0.0");
+    app.manager = CaskManager::MacosApp;
+    assert_eq!(cask_management(&app), PackageManagement::Mise);
+    Ok(())
+}
+
+#[test]
 fn cask_prune_force_still_refuses_casks_it_cannot_attribute() -> Result<()> {
     let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;

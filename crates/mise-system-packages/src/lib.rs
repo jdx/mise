@@ -140,6 +140,32 @@ impl PackageState {
     }
 }
 
+/// Who maintains an installed package, as `status --json` reports it.
+///
+/// This is the decision `apply` and `upgrade` make for the package, not a
+/// promise about every updater: an app that updates itself is still
+/// [`Self::Mise`] here, and says so separately with `auto_updates`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PackageManagement {
+    /// mise installs, upgrades and prunes it.
+    Mise,
+    /// Homebrew installed it, so mise counts it as installed and leaves it alone.
+    Homebrew,
+    /// The decision could not be determined, such as when Homebrew's records
+    /// for the package could not be read.
+    Unknown,
+}
+
+impl PackageManagement {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Mise => "mise",
+            Self::Homebrew => "homebrew",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PackageStatus {
     pub request: PackageRequest,
@@ -264,6 +290,17 @@ pub trait SystemPackageManager: Send + Sync {
         _manager_options: &ManagerPackageOptions,
     ) -> Result<Vec<PackageStatus>> {
         self.installed(pkgs).await
+    }
+
+    /// Who maintains an installed package, for managers where mise can leave a
+    /// package it finds installed to another tool. `None` means the manager
+    /// has no such distinction, or the package is not installed.
+    async fn management(
+        &self,
+        _status: &PackageStatus,
+        _manager_options: &ManagerPackageOptions,
+    ) -> Option<PackageManagement> {
+        None
     }
 
     /// Upgrade with manager-specific declarative options, for the same reason

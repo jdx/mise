@@ -4722,6 +4722,11 @@ impl BootstrapStatus {
                 if auto_updates {
                     package["auto_updates"] = json!(true);
                 }
+                if self.json
+                    && let Some(management) = mp.manager.management(&s, &mp.options).await
+                {
+                    package["managed_by"] = json!(management.as_str());
+                }
                 json_pkgs.push(package);
             }
             json_out.insert(
