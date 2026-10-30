@@ -5814,6 +5814,9 @@ pub trait Backend: Debug + Send + Sync {
             // linked it. The catalog record stays, so a reinstall lands on the
             // same path.
             crate::install_layout::resolver::unlink_installation(&install_path);
+            // The install is gone. The marker is shared by every install of this version, so
+            // it must not outlive the removal if the download or cache cleanup below fails.
+            install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
         }
         if !Settings::get().always_keep_download {
             rmdir(&tv.download_path())?;
@@ -5824,8 +5827,6 @@ pub trait Backend: Debug + Send + Sync {
                 pr.set_message(format!("remove {}", would_remove.join(", ")));
             }
         } else {
-            // The marker is outside the cache dir removed above.
-            install_state::clear_incomplete_marker(tv.ba(), &tv.state_key())?;
             self.cleanup_empty_installs_dir();
         }
         Ok(())
