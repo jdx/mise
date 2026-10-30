@@ -188,6 +188,7 @@ pub enum DaemonDecl {
     Command(Box<DaemonCommandDecl>),
     Task(Box<DaemonTaskDecl>),
     Preset(Box<DaemonPresetDecl>),
+    Container(Box<DaemonContainerDecl>),
     Project(DaemonProjectDecl),
     Provider(DaemonProviderRefDecl),
 }
@@ -201,6 +202,7 @@ pub enum DaemonDecl {
         {"required": ["project"]},
         {"required": ["task"]},
         {"required": ["args"]},
+        {"required": ["image"]},
         {"required": ["provider"]},
         {"required": ["resource"]}
     ]}
@@ -232,6 +234,7 @@ pub struct DaemonCommandDecl {
         {"required": ["run"]},
         {"required": ["preset"]},
         {"required": ["project"]},
+        {"required": ["image"]},
         {"required": ["provider"]},
         {"required": ["resource"]}
     ]}
@@ -262,6 +265,7 @@ pub struct DaemonTaskDecl {
         {"required": ["project"]},
         {"required": ["task"]},
         {"required": ["args"]},
+        {"required": ["image"]},
         {"required": ["provider"]},
         {"required": ["resource"]}
     ]}
@@ -289,6 +293,110 @@ pub struct DaemonPresetDecl {
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_init")]
     pub init: Option<DaemonInit>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_proxy")]
+    pub proxy: Option<DaemonProxy>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_proxy_tls")]
+    pub proxy_tls: Option<DaemonProxyTls>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_proxy_idle_timeout")]
+    pub proxy_idle_timeout: Option<DaemonProxyIdleTimeout>,
+}
+
+/// The container runtime that runs a daemon's image.
+#[derive(Debug, Clone, Copy, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum DaemonContainerRuntime {
+    Auto,
+    Docker,
+    Podman,
+}
+
+/// The command and arguments the container runs in place of the image's default: shell text, or an argument array.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
+pub enum DaemonContainerCommand {
+    Line(String),
+    Argv(Vec<String>),
+}
+
+/// A port the container listens on, published on 127.0.0.1 only. An integer publishes the same port number on the host; a table sets the container port and either a fixed host port or a per-worktree one.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
+pub enum DaemonContainerPort {
+    Same(#[schemars(range(min = 1, max = 65535))] u16),
+    Table(DaemonContainerPortTable),
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DaemonContainerPortTable {
+    /// Port the container listens on.
+    #[schemars(range(min = 1, max = 65535))]
+    pub container: u16,
+    /// Fixed host port. Defaults to the container port.
+    #[schemars(range(min = 1, max = 65535))]
+    pub host: Option<u16>,
+    /// Enable per-worktree port allocation, instead of a fixed host port.
+    #[serde(default)]
+    #[schemars(schema_with = "always_true")]
+    pub auto: Option<bool>,
+    /// Host port used by the primary checkout. Defaults to the container port.
+    #[schemars(range(min = 1, max = 65535))]
+    pub base: Option<u16>,
+    /// Distance between consecutive worktree slots. Defaults to 1.
+    #[schemars(range(min = 1, max = 65535))]
+    pub stride: Option<u16>,
+}
+
+// Extra keys, such as `env` and the readiness checks, are forwarded to pitchfork, so the table is
+// open.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[schemars(extend(
+    "additionalProperties" = true,
+    "not" = {"anyOf": [
+        {"required": ["run"]},
+        {"required": ["preset"]},
+        {"required": ["project"]},
+        {"required": ["task"]},
+        {"required": ["args"]},
+        {"required": ["provider"]},
+        {"required": ["resource"]}
+    ]}
+))]
+pub struct DaemonContainerDecl {
+    /// Container image the daemon runs with Docker or Podman, for example `postgres:18`. mise runs it in the foreground, so its output is the daemon's log, and stops it when the daemon stops.
+    #[schemars(length(min = 1))]
+    pub image: String,
+    /// Docker or Podman. `auto` uses Docker when it is on PATH, otherwise Podman. The MISE_CONTAINER_RUNTIME environment variable overrides this with any docker-compatible CLI.
+    pub runtime: Option<DaemonContainerRuntime>,
+    pub command: Option<DaemonContainerCommand>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_port")]
+    pub port: Option<DaemonPort>,
+    /// Port the container listens on for `port`. Defaults to the port's `base`, or to the port itself when it is fixed.
+    #[schemars(range(min = 1, max = 65535))]
+    pub container_port: Option<u16>,
+    /// More published ports by name, each exported as <NAME>_<PORT>_PORT.
+    pub ports: Option<std::collections::BTreeMap<String, DaemonContainerPort>>,
+    /// Volumes as `source:target[:options]`. A source starting with `.`, `/` or `~` is a path, relative to the project root, and is created when missing; anything else is a named volume.
+    pub volumes: Option<Vec<String>>,
+    /// Path inside the container where a host data directory is mounted. The directory is data_dir, or per-checkout mise state storage by default.
+    #[schemars(regex(pattern = r"^/"))]
+    pub data_mount: Option<String>,
+    /// Host directory mounted at data_mount, relative to the declaring project root or absolute. Defaults to mise state storage.
+    #[schemars(length(min = 1))]
+    pub data_dir: Option<String>,
+    /// Extra arguments for `<runtime> run`, such as `--shm-size=1g`, placed before the image.
+    pub runtime_args: Option<Vec<String>>,
+    #[serde(default)]
+    #[schemars(schema_with = "refs::daemon_init")]
+    pub init: Option<DaemonInit>,
+    /// false runs setup commands and readiness checks without the project's tool environment.
+    pub mise: Option<bool>,
     #[serde(default)]
     #[schemars(schema_with = "refs::daemon_proxy")]
     pub proxy: Option<DaemonProxy>,

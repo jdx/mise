@@ -1,0 +1,192 @@
+#!/usr/bin/env bash
+
+# Container daemons run against a fake `docker`/`podman` that records its calls
+# and keeps a "container" alive until it is stopped. No real runtime is needed.
+
+# Set MISE_TEST_PITCHFORK to test a local build instead of the released version.
+if [[ -z ${MISE_TEST_PITCHFORK:-} ]]; then
+  # Exercise this exact release even during the default release-age delay.
+  mise install pitchfork@2.25.0 --minimum-release-age 0s
+  MISE_TEST_PITCHFORK="$(mise which pitchfork --tool pitchfork@2.25.0)"
+fi
+# Unix socket paths are short, so keep the supervisor's directories directly under
+# $TMPDIR, which the harness removes, rather than nesting them deeper.
+export PITCHFORK_STATE_DIR="$TMPDIR/pf"
+export PITCHFORK_CONFIG_DIR="$TMPDIR/pfc"
+export PITCHFORK_PROXY_ENABLE=false
+export PITCHFORK_INTERVAL=100ms
+cp "$MISE_TEST_PITCHFORK" ~/bin/pitchfork
+export PATH="$HOME/bin:$PATH"
+
+FAKE="$TMPDIR/fake"
+mkdir -p "$FAKE/state" "$FAKE/docker" "$FAKE/podman"
+export FAKE_RUNTIME_DIR="$FAKE/state"
+cat >"$FAKE/docker/docker" <<'SH'
+#!/usr/bin/env bash
+# A stand-in container runtime. `run` stays in the foreground until its marker is
+# removed by `stop` or `rm -f`; a second `run` of a live name conflicts, as it does
+# with the real thing.
+state="$FAKE_RUNTIME_DIR"
+mkdir -p "$state/running"
+echo "$(basename "$0") $*" >>"$state/calls"
+case "$1" in
+run)
+  name=""
+  args=("$@")
+  for ((i = 0; i < ${#args[@]}; i++)); do
+    [[ ${args[i]} == --name ]] && name="${args[i + 1]}"
+  done
+  if [[ -e $state/running/$name ]]; then
+    echo "docker: Conflict. The container name \"$name\" is already in use." >&2
+    exit 125
+  fi
+  {
+    echo "$(basename "$0") $*"
+    echo "password=${DB_PASSWORD:-unset}"
+  } >"$state/run.$name"
+  touch "$state/running/$name"
+  echo "fake container $name started"
+  while [[ -e $state/running/$name ]]; do sleep 0.1; done
+  echo "fake container $name stopped"
+  exit 143
+  ;;
+stop | rm)
+  rm -f "$state/running/${@: -1}"
+  ;;
+exec)
+  # `exec <container> ...` succeeds while the container is running.
+  [[ -e $state/running/$2 ]]
+  ;;
+esac
+SH
+chmod +x "$FAKE/docker/docker"
+cp "$FAKE/docker/docker" "$FAKE/podman/podman"
+trap 'pitchfork supervisor stop >/dev/null 2>&1 || true' EXIT
+
+# Runtimes are looked up when the daemon starts, so the supervisor has to be
+# restarted to see a different PATH or MISE_CONTAINER_RUNTIME.
+restart_supervisor() {
+  pitchfork supervisor stop >/dev/null 2>&1 || true
+}
+
+mkdir project
+cd project
+git init -q
+cat >mise.toml <<'TOML'
+[tools]
+pitchfork = "system"
+[daemons.db]
+image = "example/db:1"
+command = ["serve", "--flag"]
+port = { auto = true, base = 35432 }
+container_port = 5432
+ports.admin = { container = 9000, auto = true, base = 39000 }
+env = { DB_PASSWORD = "hunter2" }
+data_mount = "/data"
+ready_cmd = "{{ runtime }} exec {{ container }} ready {{ name }}"
+ready_delay = 0
+TOML
+git add mise.toml
+git -c user.name=test -c user.email=test@example.invalid commit -qm fixture
+git worktree add -qb other ../other
+
+export PATH="$FAKE/docker:$PATH"
+assert_contains "mise env --json" '"DB_PORT": "35432"'
+assert_contains "mise env --json" '"DB_ADMIN_PORT": "39000"'
+
+mise daemons start db
+assert_contains "mise daemons ls --json" '"status": "running"'
+name=$(basename "$(ls "$FAKE"/state/run.mise-*)")
+name="${name#run.}"
+# The name carries the project checkout and the daemon.
+assert_contains_text "$name" "mise-project-"
+assert_contains_text "$name" "-db-"
+run=$(cat "$FAKE/state/run.$name")
+assert_contains_text "$run" "docker run --rm --name $name"
+# Published on loopback only, on the slot-0 ports, with the container's own ports.
+assert_contains_text "$run" "-p 127.0.0.1:35432:5432"
+assert_contains_text "$run" "-p 127.0.0.1:39000:9000"
+assert_not_contains_text "$run" " -p 35432"
+assert_contains_text "$run" "-v $HOME"
+assert_contains_text "$run" ":/data"
+assert_contains_text "$run" "example/db:1 serve --flag"
+assert_contains_text "$run" "--label dev.mise.daemon="
+# The value reaches the container by name, never on the command line.
+assert_contains_text "$run" " -e DB_PASSWORD "
+assert_contains_text "$run" "password=hunter2"
+assert_not_contains_text "$(grep -F 'docker run' "$FAKE/state/calls")" hunter2
+# Output flows through the normal daemon log.
+assert_contains "mise daemons logs db" "fake container $name started"
+
+# Stopping the daemon stops the container.
+mise daemons stop db
+assert "test ! -e '$FAKE/state/running/$name'"
+assert_contains "cat '$FAKE/state/calls'" "docker stop -t 10 $name"
+assert_contains "mise daemons ls --json" '"status": "stopped"'
+
+# A container left behind by a killed run is removed before the next start.
+touch "$FAKE/state/running/$name"
+: >"$FAKE/state/calls"
+mise daemons start db
+assert_contains "mise daemons ls --json" '"status": "running"'
+calls=$(cat "$FAKE/state/calls")
+rm_line=$(grep -n -F "docker rm -f $name" <<<"$calls" | head -1 | cut -d: -f1)
+run_line=$(grep -n -F "docker run" <<<"$calls" | head -1 | cut -d: -f1)
+assert "test -n '$rm_line' && test '$rm_line' -lt '$run_line'"
+
+# A second worktree gets its own ports and its own container, side by side.
+second_port=$(cd ../other && mise env --json | jq -r .DB_PORT)
+second_admin=$(cd ../other && mise env --json | jq -r .DB_ADMIN_PORT)
+assert "test '$second_port' != 35432 && test $((second_port - 35432)) -eq $((second_admin - 39000))"
+(
+  cd ../other
+  mise daemons start db
+  assert_contains "mise daemons ls --json" '"status": "running"'
+  other_runs=("$FAKE"/state/run.mise-*other*)
+  other_name="${other_runs[0]}"
+  assert "test -e '$other_name'"
+  other_name="${other_name##*/run.}"
+  assert "test '$other_name' != '$name'"
+  assert_contains "cat '$FAKE/state/run.$other_name'" "-p 127.0.0.1:$second_port:5432"
+  assert_contains "cat '$FAKE/state/run.$other_name'" "-p 127.0.0.1:$second_admin:9000"
+  # Stopping one worktree leaves the other's container alone.
+  mise daemons stop db
+  assert "test ! -e '$FAKE/state/running/$other_name'"
+  assert "test -e '$FAKE/state/running/$name'"
+)
+mise daemons stop db
+assert "test ! -e '$FAKE/state/running/$name'"
+
+# runtime = "podman" picks Podman, and MISE_CONTAINER_RUNTIME overrides the
+# declaration.
+restart_supervisor
+export PATH="$FAKE/podman:$PATH"
+cat >mise.local.toml <<'TOML'
+[daemons.cache]
+image = "example/cache:1"
+runtime = "podman"
+port = 36379
+ready_cmd = "{{ runtime }} exec {{ container }} ready"
+ready_delay = 0
+TOML
+mise daemons start cache
+assert_contains "cat '$FAKE'/state/run.mise-*-cache-*" "podman run --rm --name"
+mise daemons stop cache
+
+# A missing runtime fails with a message that says what to do.
+restart_supervisor
+export MISE_CONTAINER_RUNTIME=no-such-container-runtime
+output=$(mise daemons start cache 2>&1) && fail "start unexpectedly succeeded: $output"
+assert_contains_text "$output" "needs a container runtime"
+assert_contains_text "$output" "no-such-container-runtime was not found on PATH"
+unset MISE_CONTAINER_RUNTIME
+restart_supervisor
+
+# Keys that only a container understands are rejected without an image.
+cat >mise.local.toml <<'TOML'
+[daemons.bad]
+run = "exec sleep 600"
+volumes = ["a:/b"]
+TOML
+output=$(mise daemons ls 2>&1) && fail "ls unexpectedly succeeded: $output"
+assert_contains_text "$output" "volumes requires image"

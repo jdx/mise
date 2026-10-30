@@ -10599,6 +10599,9 @@
                   "required": ["args"]
                 },
                 {
+                  "required": ["image"]
+                },
+                {
                   "required": ["provider"]
                 },
                 {
@@ -10646,6 +10649,9 @@
                 },
                 {
                   "required": ["project"]
+                },
+                {
+                  "required": ["image"]
                 },
                 {
                   "required": ["provider"]
@@ -10739,6 +10745,163 @@
             "additionalProperties": true,
             "not": {
               "anyOf": [
+                {
+                  "required": ["project"]
+                },
+                {
+                  "required": ["task"]
+                },
+                {
+                  "required": ["args"]
+                },
+                {
+                  "required": ["image"]
+                },
+                {
+                  "required": ["provider"]
+                },
+                {
+                  "required": ["resource"]
+                }
+              ]
+            }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "image": {
+                "type": "string",
+                "description": "Container image the daemon runs with Docker or Podman, for example `postgres:18`. mise runs it in the foreground, so its output is the daemon's log, and stops it when the daemon stops.",
+                "minLength": 1
+              },
+              "runtime": {
+                "type": "string",
+                "description": "Docker or Podman. `auto` uses Docker when it is on PATH, otherwise Podman. The MISE_CONTAINER_RUNTIME environment variable overrides this with any docker-compatible CLI.",
+                "enum": ["auto", "docker", "podman"]
+              },
+              "command": {
+                "description": "The command and arguments the container runs in place of the image's default: shell text, or an argument array.",
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "port": {
+                "$ref": "#/$defs/daemon_port"
+              },
+              "container_port": {
+                "type": "integer",
+                "description": "Port the container listens on for `port`. Defaults to the port's `base`, or to the port itself when it is fixed.",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "ports": {
+                "type": "object",
+                "description": "More published ports by name, each exported as <NAME>_<PORT>_PORT.",
+                "additionalProperties": {
+                  "description": "A port the container listens on, published on 127.0.0.1 only. An integer publishes the same port number on the host; a table sets the container port and either a fixed host port or a per-worktree one.",
+                  "oneOf": [
+                    {
+                      "type": "integer",
+                      "maximum": 65535,
+                      "minimum": 1
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "container": {
+                          "type": "integer",
+                          "description": "Port the container listens on.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        },
+                        "host": {
+                          "type": "integer",
+                          "description": "Fixed host port. Defaults to the container port.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        },
+                        "auto": {
+                          "description": "Enable per-worktree port allocation, instead of a fixed host port.",
+                          "const": true
+                        },
+                        "base": {
+                          "type": "integer",
+                          "description": "Host port used by the primary checkout. Defaults to the container port.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        },
+                        "stride": {
+                          "type": "integer",
+                          "description": "Distance between consecutive worktree slots. Defaults to 1.",
+                          "minimum": 1,
+                          "maximum": 65535
+                        }
+                      },
+                      "required": ["container"]
+                    }
+                  ]
+                }
+              },
+              "volumes": {
+                "type": "array",
+                "description": "Volumes as `source:target[:options]`. A source starting with `.`, `/` or `~` is a path, relative to the project root, and is created when missing; anything else is a named volume.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "data_mount": {
+                "type": "string",
+                "description": "Path inside the container where a host data directory is mounted. The directory is data_dir, or per-checkout mise state storage by default.",
+                "pattern": "^/"
+              },
+              "data_dir": {
+                "type": "string",
+                "description": "Host directory mounted at data_mount, relative to the declaring project root or absolute. Defaults to mise state storage.",
+                "minLength": 1
+              },
+              "runtime_args": {
+                "type": "array",
+                "description": "Extra arguments for `<runtime> run`, such as `--shm-size=1g`, placed before the image.",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "init": {
+                "$ref": "#/$defs/daemon_init"
+              },
+              "mise": {
+                "type": "boolean",
+                "description": "false runs setup commands and readiness checks without the project's tool environment."
+              },
+              "proxy": {
+                "$ref": "#/$defs/daemon_proxy"
+              },
+              "proxy_tls": {
+                "$ref": "#/$defs/daemon_proxy_tls"
+              },
+              "proxy_idle_timeout": {
+                "$ref": "#/$defs/daemon_proxy_idle_timeout"
+              }
+            },
+            "required": ["image"],
+            "additionalProperties": true,
+            "not": {
+              "anyOf": [
+                {
+                  "required": ["run"]
+                },
+                {
+                  "required": ["preset"]
+                },
                 {
                   "required": ["project"]
                 },

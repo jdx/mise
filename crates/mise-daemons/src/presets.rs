@@ -584,7 +584,7 @@ fn init_values(
     map
 }
 
-fn render_value(
+pub(crate) fn render_value(
     renderer: &mut mise_util::tera::TeraEngine,
     value: &mut toml::Value,
     ctx: &tera::Context,
@@ -890,7 +890,7 @@ pub fn expand(
 /// The variable a named port is exported as: the daemon's stem, then the port's
 /// name, always ending in `_PORT` (`http_port` on `cockroach` is
 /// `COCKROACH_HTTP_PORT`).
-fn named_port_var(base: &str, key: &str) -> String {
+pub(crate) fn named_port_var(base: &str, key: &str) -> String {
     let key = key.to_ascii_uppercase().replace('-', "_");
     if key.ends_with("_PORT") {
         format!("{base}_{key}")
