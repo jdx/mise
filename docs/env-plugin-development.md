@@ -256,8 +256,9 @@ config file changes, the plugin changes, or a file in `watch_files` changes.
 
 mise cannot see changes in a remote service, so return `cacheable = true` only
 when a result up to one TTL old is acceptable. A directive whose values are
-redacted is never cached, whatever `cacheable` says. Users who need fresh values
-can set `MISE_ENV_CACHE=0`. See
+redacted is never cached, whatever `cacheable` says, unless the user turns on
+[`env_cache_redacted`](/configuration/settings.html#env_cache_redacted). Users
+who need fresh values can set `MISE_ENV_CACHE=0`. See
 [environment cache](/cache-behavior.html#environment-caching).
 
 ## Redaction {#redaction}

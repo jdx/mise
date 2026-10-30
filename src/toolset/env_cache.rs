@@ -96,6 +96,12 @@ pub struct CachedEnv {
     pub user_paths: Vec<PathBuf>,
     /// Tool paths from installations
     pub tool_paths: Vec<PathBuf>,
+    /// Keys of the tool-aware env (`tools = true`) to mask on a cache hit. Names only.
+    #[serde(default)]
+    pub redactions: Vec<String>,
+    /// Keys excluded from `redactions`
+    #[serde(default)]
+    pub redaction_exclusions: BTreeSet<String>,
     /// Time when the cache was created
     pub created_at: u64,
     /// Files to watch for changes (from modules and _.source directives)
@@ -493,6 +499,9 @@ pub(crate) fn compute_settings_hash() -> String {
     // entry built without it must not be reused with it. The selected categories are hashed,
     // so differing selections never share an entry.
     hasher.update(settings.paranoid.fingerprint().as_bytes());
+    // Redacted values are cached only on request, so an entry built with it on must not be
+    // reused with it off.
+    hasher.update(settings.env_cache_redacted.to_string().as_bytes());
 
     // Where tools are installed: the install layout decides which directory a
     // tool's env (JAVA_HOME, PATH entries) names.
