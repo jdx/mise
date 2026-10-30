@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# A global config dir linked into a dotfiles checkout reaches one lockfile by
+# two spellings when the command runs inside the checkout: config.toml is found
+# by walking up, under its real path, while config.override.toml keeps the
+# linked path. The lockfile must be written as one target, or the override's
+# empty target prunes what config.toml's target just wrote.
+export MISE_LOCKFILE=1 MISE_LOCKFILE_MODE=generate
+unset MISE_GLOBAL_CONFIG_FILE
+
+repo="$PWD/dotfiles/.config/mise"
+mkdir -p "$repo" "$(dirname "$MISE_CONFIG_DIR")"
+rmdir "$MISE_CONFIG_DIR" 2>/dev/null || true
+ln -s "$repo" "$MISE_CONFIG_DIR"
+cat >"$repo/config.toml" <<'TOML'
+[tools]
+tiny = "1"
+TOML
+touch "$repo/config.override.toml" "$repo/mise.lock"
+
+for _ in 1 2 3 4; do
+  mise -C "$PWD/dotfiles" install >/dev/null 2>&1
+  assert_contains "cat $repo/mise.lock" 'version = "1.1.0"'
+done

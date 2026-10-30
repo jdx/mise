@@ -2762,7 +2762,7 @@ pub fn tool_stub_path(lockfile_path: &Path, reference: &str) -> PathBuf {
 }
 
 /// Compare lockfile paths that may differ only by symlinked directories.
-pub(crate) fn same_file_path(a: &Path, b: &Path) -> bool {
+pub fn same_file_path(a: &Path, b: &Path) -> bool {
     if a == b {
         return true;
     }
