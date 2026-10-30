@@ -77,3 +77,13 @@ assert "cat notes.txt" "keep me"
 echo "=== nothing changes when one task cannot be removed ==="
 assert_fail_contains "mise tasks rm lint nope" "no task named nope"
 assert_contains "cat mise.toml" "[tasks.lint]"
+
+echo "=== a script a TOML task shadows is still a definition ==="
+mise tasks add --file shadowed -- echo script
+mise tasks add shadowed -- echo toml
+assert_fail_contains "mise tasks rm shadowed" "task shadowed is defined in several files"
+assert_fail_contains "mise tasks rm shadowed" "mise-tasks/shadowed"
+mise tasks rm --path mise.toml shadowed
+assert_not_contains "cat mise.toml" "shadowed"
+mise tasks rm shadowed
+assert_fail "test -e mise-tasks/shadowed"

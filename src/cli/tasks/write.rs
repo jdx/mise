@@ -2,9 +2,12 @@
 //! config file, the flags that set task fields, finding the files that define a task, and the
 //! report each prints.
 
-use std::path::{Path, PathBuf};
+use std::path::{MAIN_SEPARATOR_STR, Path, PathBuf};
+use std::sync::Arc;
 
 use eyre::{Result, bail};
+use indexmap::IndexMap;
+use itertools::Itertools;
 use serde::Serialize;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, TableLike, Value};
 use toml_writer::{ToTomlKey, ToTomlValue, TomlKeyBuilder, TomlString, TomlStringBuilder};
@@ -15,7 +18,7 @@ use crate::config::{
     self, Config, ConfigPathOptions, Settings, SettingsExt, resolve_target_config_path,
 };
 use crate::file::{self, display_path};
-use crate::task::TaskDecl;
+use crate::task::{Task, TaskDecl};
 
 /// The flags that choose the config file a task command uses, as `mise use` has them
 #[derive(Debug, Default, usage_rs::Args)]
@@ -284,24 +287,38 @@ impl TaskFields {
     }
 
     fn env_pairs(&self) -> Result<Vec<(&str, &str)>> {
-        self.env_var
+        let pairs = self
+            .env_var
             .iter()
             .map(|arg| match arg.split_once('=') {
                 Some((key, value)) if !key.is_empty() => Ok((key, value)),
                 _ => bail!("--env-var takes KEY=VALUE, got {arg:?}"),
             })
-            .collect()
+            .collect::<Result<Vec<_>>>()?;
+        Ok(last_wins(pairs))
     }
 
     fn tool_pairs(&self) -> Result<Vec<(&str, &str)>> {
-        self.tools
+        let pairs = self
+            .tools
             .iter()
             .map(|arg| match split_tool_version(arg) {
                 ("", _) => bail!("--tools takes TOOL@VERSION, got {arg:?}"),
                 (tool, version) => Ok((tool, version.unwrap_or("latest"))),
             })
-            .collect()
+            .collect::<Result<Vec<_>>>()?;
+        Ok(last_wins(pairs))
     }
+}
+
+/// One pair per key, with the value given last, in the order the keys first appeared. A table
+/// cannot repeat a key, and a `#MISE` header that did would not parse.
+fn last_wins<'a>(pairs: Vec<(&'a str, &'a str)>) -> Vec<(&'a str, &'a str)> {
+    let mut unique: IndexMap<&str, &str> = IndexMap::new();
+    for (key, value) in pairs {
+        unique.insert(key, value);
+    }
+    unique.into_iter().collect()
 }
 
 fn inline_table(pairs: &[(&str, &str)]) -> InlineTable {
@@ -448,8 +465,10 @@ impl Definition {
     }
 }
 
-/// Every loaded config file that has a `[tasks.<name>]` table, highest precedence first, and the
-/// file task or included file that defines `name` when it is not one of those.
+/// Every loaded config file that has a `[tasks.<name>]` table, highest precedence first, then
+/// every file task script named `name`, including one that a TOML task shadows. A task defined
+/// some other way, such as in a file a `task_config.includes` entry names or inferred from a
+/// `package.json`, is reported as [`Definition::Other`], which these commands refuse to edit.
 pub(super) async fn find_definitions(name: &str) -> Result<Vec<Definition>> {
     let config = Config::get().await?;
     let mut definitions = vec![];
@@ -458,17 +477,72 @@ pub(super) async fn find_definitions(name: &str) -> Result<Vec<Definition>> {
             definitions.push(Definition::Toml(path.clone()));
         }
     }
-    if let Some(task) = config.tasks().await?.get(name) {
-        let source = &task.config_source;
-        if !config.config_files.contains_key(source) {
-            definitions.push(if is_toml(source) {
-                Definition::Other(source.clone())
-            } else {
-                Definition::File(source.clone())
-            });
+    // In one config root a TOML task with a command takes the place of a same-named script,
+    // so the loaded tasks never show that script. Look for it in the root's task directories.
+    let roots = definitions
+        .iter()
+        .filter_map(|def| config.config_files.get(def.path()))
+        .map(|cf| cf.config_root())
+        .unique()
+        .collect::<Vec<_>>();
+    for root in roots {
+        for script in scripts_in_root(&config, &root, name).await? {
+            if !definitions.iter().any(|def| def.path() == script) {
+                definitions.push(Definition::File(script));
+            }
         }
     }
+    for task in config.tasks_with_shadowed().await? {
+        let source = &task.config_source;
+        if task.name != name
+            || config.config_files.contains_key(source)
+            || definitions.iter().any(|def| def.path() == source)
+        {
+            continue;
+        }
+        definitions.push(if task.is_file_task() {
+            Definition::File(source.clone())
+        } else {
+            Definition::Other(source.clone())
+        });
+    }
+    if definitions.is_empty()
+        && let Some(task) = config.tasks().await?.get(name)
+    {
+        definitions.push(Definition::Other(task.config_source.clone()));
+    }
     Ok(definitions)
+}
+
+/// The scripts in the task directories of config root `root` that define task `name`.
+async fn scripts_in_root(config: &Arc<Config>, root: &Path, name: &str) -> Result<Vec<PathBuf>> {
+    let mut scripts = vec![];
+    for include in config::task_includes_for_dir(root, &config.config_files)? {
+        if !include.is_dir() {
+            continue;
+        }
+        let base = include.join(name.replace(':', MAIN_SEPARATOR_STR));
+        // `build` is `build`, `build.sh` or `build/_default`, and the script's own name decides.
+        let mut candidates = vec![base.clone(), base.join("_default")];
+        if let (Some(parent), Some(stem)) = (base.parent(), base.file_name()) {
+            candidates.extend(
+                file::ls(parent)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|path| path.file_stem() == Some(stem)),
+            );
+        }
+        for path in candidates.into_iter().unique() {
+            if path.is_file()
+                && Task::from_path(config, &path, &include, root)
+                    .await
+                    .is_ok_and(|task| task.name == name)
+            {
+                scripts.push(path);
+            }
+        }
+    }
+    Ok(scripts)
 }
 
 /// The one definition of `name` that `mise tasks set` or `mise tasks rm` should change: the

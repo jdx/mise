@@ -1185,6 +1185,12 @@ impl Task {
         }
     }
 
+    /// Whether the task is a script found in a task directory, rather than a TOML task or one
+    /// inferred from a manifest such as `package.json`.
+    pub fn is_file_task(&self) -> bool {
+        self.file_from_discovery
+    }
+
     pub fn config_sources(&self) -> Vec<&Path> {
         once(self.config_source.as_path())
             .chain(self.additional_config_sources.iter().map(PathBuf::as_path))

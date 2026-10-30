@@ -37,6 +37,16 @@ usage = 'arg \"<target>\"'
 run = \"./deploy.sh 'two words'\""
 assert "mise tasks info deploy --json | jq -c '[.env, .tools, .usage_spec.cmd.usage]'" '[["STAGE=prod","GREETING=hello world"],{"node":"24","npm:@scope/pkg":"1","jq":"latest"},"<target>"]'
 assert_fail_contains "mise tasks add bad --env-var NOEQUALS -- true" "--env-var takes KEY=VALUE"
+# a repeated key keeps its first position and its last value
+mise tasks add twice --env-var A=1 --env-var B=2 --env-var A=3 --tools jq@1.6 --tools jq@1.7 -- true
+assert_contains "cat mise.toml" '[tasks.twice]
+env = { A = "3", B = "2" }
+tools = { jq = "1.7" }'
+mise tasks add --file twice --env-var A=1 --env-var A=3 --tools jq@1.6 --tools jq@1.7 -- true
+assert_contains "cat mise-tasks/twice" '#MISE env={ "A" = "3" }
+#MISE tools={ "jq" = "1.7" }'
+mise tasks rm --path mise.toml twice
+assert "mise tasks info twice --json | jq -c '[.env, .tools]'" '[["A=3"],{"jq":"1.7"}]'
 assert_not_contains "cat mise.toml" "[tasks.bad]"
 
 mise tasks add --file deploy --confirm "Deploy now?" --env-var 'QUOTE=a"b' --tools node@24 --usage $'arg "<target>"\nflag "-v --verbose"' -- ./deploy.sh

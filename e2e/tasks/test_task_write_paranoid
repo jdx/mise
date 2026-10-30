@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# With the paranoid `config` category alone, trust is bound to a config's content. The task
+# commands renew the record of a file they edit, so a trusted project stays trusted.
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_PARANOID=config
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+cat <<'EOF' >mise.toml
+[env]
+PARANOID_MARKER = "loaded"
+
+[tasks.build]
+run = "make"
+
+[tasks.lint]
+run = "make lint"
+EOF
+mise trust mise.toml
+assert_contains "mise env -s bash" "PARANOID_MARKER"
+
+mise tasks add test -- make test
+assert_contains "mise env -s bash" "PARANOID_MARKER"
+mise tasks set build --description "Build"
+assert_contains "mise env -s bash" "PARANOID_MARKER"
+MISE_YES=1 mise tasks rm lint
+assert_contains "mise env -s bash" "PARANOID_MARKER"
+assert "cat mise.toml" '[env]
+PARANOID_MARKER = "loaded"
+
+[tasks.build]
+run = "make"
+description = "Build"
+
+[tasks.test]
+run = "make test"'
+
+# an edit made outside mise loses the trust, which is what the commands above renew
+echo '# edited' >>mise.toml
+assert_fail_contains "mise env -s bash 2>&1" "not trusted"

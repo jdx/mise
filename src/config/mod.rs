@@ -1221,6 +1221,25 @@ impl Config {
         self.tasks_with_context(ctx).await
     }
 
+    /// Every task the config scopes define, highest precedence first, including the ones a
+    /// task of the same name shadows in [`Config::tasks`]. Inferred workspace tasks are not
+    /// included, since they are derived rather than defined.
+    pub async fn tasks_with_shadowed(&self) -> Result<Vec<Task>> {
+        let config = Config::get().await?;
+        let workspace_graph = config
+            .monorepo_root()
+            .is_some()
+            .then(|| config.workspace_project_graph_for_task_loading());
+        let task_definitions = collect_task_definitions(
+            &config.config_files,
+            workspace_graph
+                .as_ref()
+                .and_then(|graph| graph.as_ref().ok())
+                .map(Arc::as_ref),
+        );
+        load_scoped_tasks(&config, None, &task_definitions).await
+    }
+
     /// Tasks keyed by both their name and their aliases. A task's own name
     /// always wins over another task's alias, so a `tests` task aliased to
     /// `test` in a parent config cannot shadow a `test` task defined closer to
@@ -1306,20 +1325,10 @@ impl Config {
                 .map(Arc::as_ref),
         );
 
-        let mut local_tasks =
-            load_local_tasks_with_context(&config, ctx, &task_definitions).await?;
-        let global_tasks = load_global_tasks(&config, &task_definitions).await?;
-        let override_tasks = load_override_tasks(&config, &task_definitions).await?;
-        local_tasks.retain(|local| {
-            !global_tasks
-                .iter()
-                .any(|global| tasks_have_same_source(local, global))
-        });
         // Highest precedence first; the reversed collect lets the last insert win.
-        let mut tasks: BTreeMap<String, Task> = override_tasks
+        let mut tasks: BTreeMap<String, Task> = load_scoped_tasks(&config, ctx, &task_definitions)
+            .await?
             .into_iter()
-            .chain(local_tasks)
-            .chain(global_tasks)
             .rev()
             .inspect(|t| {
                 trace!(
@@ -6293,6 +6302,28 @@ fn discover_monorepo_subdirs(
     }
 
     Ok(subdirs)
+}
+
+/// The tasks of the override, local and global scopes, in that order, which is highest
+/// precedence first. A global task that local loading also found is kept only once, as global.
+async fn load_scoped_tasks(
+    config: &Arc<Config>,
+    ctx: Option<&crate::task::TaskLoadContext>,
+    task_definitions: &TaskDefinitions,
+) -> Result<Vec<Task>> {
+    let mut local_tasks = load_local_tasks_with_context(config, ctx, task_definitions).await?;
+    let global_tasks = load_global_tasks(config, task_definitions).await?;
+    let override_tasks = load_override_tasks(config, task_definitions).await?;
+    local_tasks.retain(|local| {
+        !global_tasks
+            .iter()
+            .any(|global| tasks_have_same_source(local, global))
+    });
+    Ok(override_tasks
+        .into_iter()
+        .chain(local_tasks)
+        .chain(global_tasks)
+        .collect())
 }
 
 async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) -> Result<Vec<Task>> {
