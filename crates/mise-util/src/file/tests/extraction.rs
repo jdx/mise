@@ -407,6 +407,64 @@ fn test_extract_archive_7z() {
     assert!(!absolute_target_path.exists());
 }
 
+fn appledouble_tar(sidecar: &[u8]) -> Vec<u8> {
+    let mut builder = jdx_tar::Builder::new(Vec::new());
+    for (name, contents) in [("pkg/data.pak", &b"data"[..]), ("pkg/._data.pak", sidecar)] {
+        let mut header = jdx_tar::Header::new_gnu(EntryType::File);
+        header.set_size(contents.len() as u64);
+        header.set_mode(0o644);
+        builder.append_data(&mut header, name, contents).unwrap();
+    }
+    builder.into_inner().unwrap()
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn test_extract_archive_folds_appledouble_sidecars_into_their_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let archive_path = dir.path().join("bundle.tar");
+    let dest_dir = dir.path().join("out");
+    // A valid AppleDouble header with no entries.
+    let mut sidecar = vec![0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00];
+    sidecar.extend_from_slice(&[0; 26]);
+    std::fs::write(&archive_path, appledouble_tar(&sidecar)).unwrap();
+
+    extract_archive(
+        &archive_path,
+        &dest_dir,
+        ExtractionFormat::Tar,
+        &ExtractOptions::default(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        std::fs::read(dest_dir.join("pkg/data.pak")).unwrap(),
+        b"data"
+    );
+    assert!(!dest_dir.join("pkg/._data.pak").exists());
+}
+
+#[test]
+fn test_extract_archive_keeps_files_that_are_not_appledouble() {
+    let dir = tempfile::tempdir().unwrap();
+    let archive_path = dir.path().join("bundle.tar");
+    let dest_dir = dir.path().join("out");
+    std::fs::write(&archive_path, appledouble_tar(b"not appledouble")).unwrap();
+
+    extract_archive(
+        &archive_path,
+        &dest_dir,
+        ExtractionFormat::Tar,
+        &ExtractOptions::default(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        std::fs::read(dest_dir.join("pkg/._data.pak")).unwrap(),
+        b"not appledouble"
+    );
+}
+
 #[test]
 fn test_extract_archive_ignores_malformed_non_sparse_pax_metadata() {
     use tempfile::tempdir;

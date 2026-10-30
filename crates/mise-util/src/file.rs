@@ -1,4 +1,5 @@
 use crate::path::{Path, PathBuf, PathExt};
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
 use std::fs;
@@ -8,6 +9,7 @@ use std::io::{BufReader, Read, Write};
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
 use std::os::unix::prelude::*;
+use std::rc::Rc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -2584,8 +2586,15 @@ pub fn untar(
         create_dir_all(dest).wrap_err_with(err)?;
         let mut unpack_opts = UnpackOptions::default();
         unpack_opts.preserve_mtime = opts.preserve_mtime;
-        unpack_opts.on_entry = Some(Box::new(|entry| {
-            trace!("extracting {}", entry.path.display());
+        let saw_appledouble = Rc::new(Cell::new(false));
+        unpack_opts.on_entry = Some(Box::new({
+            let saw_appledouble = saw_appledouble.clone();
+            move |entry| {
+                trace!("extracting {}", entry.path.display());
+                if is_appledouble_name(&entry.path) {
+                    saw_appledouble.set(true);
+                }
+            }
         }));
         let summary = Archive::new(tar)
             .unpack(dest, &mut unpack_opts)
@@ -2596,8 +2605,75 @@ pub fn untar(
                 "failed to strip path components from tar archive: {}",
                 display_path(archive)
             )
-        })
+        })?;
+        #[cfg(target_os = "macos")]
+        if saw_appledouble.get() {
+            merge_appledouble_files(dest).wrap_err_with(err)?;
+        }
+        Ok(())
     })
+}
+
+/// Whether `path` names an AppleDouble sidecar (`._<name>`), which bsdtar on macOS writes to
+/// carry a file's xattrs, such as the code signatures of a signed `.app` bundle.
+fn is_appledouble_name(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.len() > 2 && name.starts_with("._"))
+}
+
+/// Folds each AppleDouble sidecar under `dir` into the file it describes and removes it, as
+/// macOS `tar` does. Left as plain files, the sidecars are extra files inside a signed bundle,
+/// which invalidates its seal so that macOS kills the binary on launch. A sidecar that is not
+/// valid AppleDouble, or that has no file to describe, is left alone.
+#[cfg(target_os = "macos")]
+fn merge_appledouble_files(dir: &Path) -> Result<()> {
+    use std::ffi::CString;
+
+    // AppleDouble magic number, big endian.
+    const MAGIC: [u8; 4] = [0x00, 0x05, 0x16, 0x07];
+    let mut sidecars = vec![];
+    for entry in WalkDir::new(dir) {
+        let entry = entry?;
+        if entry.file_type().is_file() && is_appledouble_name(entry.path()) {
+            sidecars.push(entry.into_path());
+        }
+    }
+    for sidecar in sidecars {
+        let name = sidecar.file_name().unwrap().to_string_lossy();
+        let target = sidecar.with_file_name(&name[2..]);
+        if target.symlink_metadata().is_err() {
+            continue;
+        }
+        let mut magic = [0u8; 4];
+        if File::open(&sidecar)
+            .and_then(|mut f| f.read_exact(&mut magic))
+            .is_err()
+            || magic != MAGIC
+        {
+            continue;
+        }
+        let from = CString::new(sidecar.as_os_str().as_bytes())?;
+        let to = CString::new(target.as_os_str().as_bytes())?;
+        let flags = nix::libc::COPYFILE_UNPACK
+            | nix::libc::COPYFILE_NOFOLLOW
+            | nix::libc::COPYFILE_ACL
+            | nix::libc::COPYFILE_XATTR;
+        // SAFETY: both paths are NUL-terminated and outlive the call, and a null state is allowed.
+        let rc =
+            unsafe { nix::libc::copyfile(from.as_ptr(), to.as_ptr(), std::ptr::null_mut(), flags) };
+        if rc != 0 {
+            warn!(
+                "failed to apply {} to {}: {}",
+                display_path(&sidecar),
+                display_path(&target),
+                std::io::Error::last_os_error()
+            );
+            continue;
+        }
+        remove_file(&sidecar)?;
+    }
+    Ok(())
 }
 
 /// The decoded tar stream of `archive`, bounded by [`extract_limit`]. Sparse
