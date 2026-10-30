@@ -200,7 +200,7 @@ assert_succeed "mise bootstrap repos apply --yes"
 assert "cat ~/src/tagged/version.txt" "v1"
 
 # annotated tag refs are current once checked out
-git -C "$SRC" -c user.email=test@example.com -c user.name="Test User" tag -a -m "annotated v1" v1-annotated v1
+git -C "$SRC" -c user.email=test@example.com -c user.name="Test User" -c tag.gpgSign=false tag -a -m "annotated v1" v1-annotated v1
 cat <<EOF >mise.toml
 [bootstrap.repos]
 "~/src/annotated" = { url = "$SRC_URL", ref = "v1-annotated" }

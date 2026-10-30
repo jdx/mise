@@ -1620,7 +1620,14 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/tags/release^{}
             .unwrap();
         fs::write(work.join("version.txt"), "v1").unwrap();
         test_git(&work, &["add", "."]);
-        let identity = ["-c", "user.email=test@example.com", "-c", "user.name=Test"];
+        let identity = [
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "tag.gpgSign=false",
+        ];
         let git_with_identity = |args: &[&str]| {
             let args: Vec<&str> = identity.iter().chain(args).copied().collect();
             test_git(&work, &args);
