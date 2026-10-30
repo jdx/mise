@@ -1021,19 +1021,19 @@ async fn tracked_command_wrappers(
     let is_mbx = |tool: &crate::toolset::ToolRequest| {
         tool.ba().short == mbx.short || tool.ba().full() == mbx.full()
     };
-    // Filter once: doing it per set is quadratic in the number of tracked configs.
-    let mbx_requests: Vec<&crate::toolset::ToolRequest> = current_requests
+    // `add_rust_wrapper` only needs to know that some supported provider exists, so find one
+    // once; passing every provider request to every set is quadratic in tracked configs.
+    let mbx_request = current_requests
         .into_iter()
         .chain(
             request_sets
                 .iter()
                 .flat_map(|set| set.tools.values().flatten()),
         )
-        .filter(|tool| is_mbx(tool))
-        .collect();
+        .find(|tool| is_mbx(tool) && tool.is_os_supported());
     for set in &request_sets {
         let own: Vec<&crate::toolset::ToolRequest> = set.tools.values().flatten().collect();
-        let requests = own.iter().copied().chain(mbx_requests.iter().copied());
+        let requests = own.iter().copied().chain(mbx_request);
         if let Err(err) = crate::config::command_wrapper::add_rust_wrapper(&mut out, requests) {
             debug!("skipping tracked rust wrapper: {err:#}");
         }
