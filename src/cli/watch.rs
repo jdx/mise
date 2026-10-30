@@ -421,15 +421,10 @@ impl Watch {
         // Isolated like a task command, so the nested mise keeps every task it starts, raw ones
         // included, in one group that a forwarded signal or Ctrl-C's `kill_all` reaches whole.
         cmd::prepare_task_child(run.as_std_mut());
-        let mut run = run.spawn().wrap_err("failed to run the tasks")?;
-        // Tracked until the run is reaped. Ctrl-C drops this future while the run may still be
-        // going, a task that ignores SIGINT for one, so the pid then stays registered and the
-        // SIGTERM mise sends its running commands on the way out still reaches the group.
-        let running = std::mem::ManuallyDrop::new(cmd::RunningPidGuard::new(run.id()));
+        let mut run = TrackedRun::new(run.spawn().wrap_err("failed to run the tasks")?);
         #[cfg(unix)]
         forward.set_pid(run.id());
         let status = run.wait().await?;
-        drop(std::mem::ManuallyDrop::into_inner(running));
         match exit_code(&status) {
             0 => Ok(()),
             code => Err(request_exit(code)),
@@ -489,6 +484,57 @@ fn interrupted_exit_code(status: &std::process::ExitStatus) -> Option<i32> {
         }
     }
     None
+}
+
+/// The nested `mise run` of `--once`, kept in mise's list of running commands until it is reaped.
+///
+/// Ctrl-C drops the future that waits for it while it may still be running, a task that ignores
+/// SIGINT for one. Unregistering it then would keep the SIGTERM mise sends its running commands on
+/// the way out from reaching the group; leaving it registered for good could signal a reused pid
+/// once it is reaped. So a run dropped before it is reaped is handed to a task that waits for it
+/// and only then unregisters it.
+struct TrackedRun {
+    child: Option<tokio::process::Child>,
+    guard: Option<cmd::RunningPidGuard>,
+}
+
+impl TrackedRun {
+    fn new(child: tokio::process::Child) -> Self {
+        let guard = cmd::RunningPidGuard::new(child.id());
+        Self {
+            child: Some(child),
+            guard: Some(guard),
+        }
+    }
+
+    fn id(&self) -> Option<u32> {
+        self.child.as_ref().and_then(|child| child.id())
+    }
+
+    async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        let status = self.child.as_mut().expect("not yet reaped").wait().await?;
+        self.child = None;
+        self.guard = None;
+        Ok(status)
+    }
+}
+
+impl Drop for TrackedRun {
+    fn drop(&mut self) {
+        let (Some(mut child), Some(guard)) = (self.child.take(), self.guard.take()) else {
+            return;
+        };
+        match tokio::runtime::Handle::try_current() {
+            Ok(runtime) => {
+                runtime.spawn(async move {
+                    let _ = child.wait().await;
+                    drop(guard);
+                });
+            }
+            // No runtime left to reap it: stay registered rather than lose the run.
+            Err(_) => std::mem::forget(guard),
+        }
+    }
 }
 
 /// The status mise exits with to report how a command ended: its exit code, or 128 plus the
