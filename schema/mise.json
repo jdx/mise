@@ -1934,6 +1934,11 @@
           "description": "[experimental] Cache computed environments on disk for nested mise commands.",
           "type": "boolean"
         },
+        "env_cache_redacted": {
+          "default": false,
+          "description": "[experimental] Let the environment cache hold values marked `redact = true`.",
+          "type": "boolean"
+        },
         "env_cache_ttl": {
           "default": "1h",
           "description": "How long a cached environment stays valid.",

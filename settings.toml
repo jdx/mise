@@ -787,11 +787,34 @@ Caches environment variables and `PATH` so nested commands such as
 [`env_cache_ttl`](#env_cache_ttl) or when config files, tool versions, settings,
 or files that env plugins watch change. Edits to dotenv files or `_.source`
 scripts may not invalidate an entry; set `MISE_ENV_CACHE=0` for a command that
-must recompute. Configurations with secrets (an `age` value, a sops-encrypted
-file or `redact = true`) are never cached. See
+must recompute. Configurations with secrets (an `age` value or a sops-encrypted
+file) are never cached, and neither are those with `redact = true` unless
+[`env_cache_redacted`](#env_cache_redacted) is on. See
 [Environment cache](/cache-behavior.html#environment-caching).
 """
 env = "MISE_ENV_CACHE"
+type = "Bool"
+
+[env_cache_redacted]
+default = false
+description = "[experimental] Let the environment cache hold values marked `redact = true`."
+docs = """
+By default a config with a `redact = true` directive is never written to the
+[environment cache](#env_cache), so mise recomputes it on every command. That is
+slow when such a directive sources a slow script. With this on, mise caches the
+environment and keeps masking the redacted keys on a cache hit.
+
+The cache file holds the secret values on disk, encrypted with a key that
+`mise activate` puts in its shell's environment. Every process started from
+that shell inherits the key and can decrypt the file. After
+[`env_cache_ttl`](#env_cache_ttl) mise stops using an entry, but the file stays
+until mise loads it again or you run `mise cache clear`.
+
+`age` and sops values, plugin results with `cacheable = false`, redacted
+`[vars]`, and redacted `default` and `required` directives are still never
+cached. See [Environment cache](/cache-behavior.html#environment-caching).
+"""
+env = "MISE_ENV_CACHE_REDACTED"
 type = "Bool"
 
 [env_cache_ttl]
