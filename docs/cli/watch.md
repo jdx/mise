@@ -24,6 +24,11 @@ To keep a server or database running alongside your tasks, with readiness checks
 ## Flags
 - **`-g --glob <GLOB>`** — Globs to watch instead of the tasks' sources
 - **`--skip-deps`** — Run and watch only the named tasks, not the tasks they depend on
+- **`--once`** — Wait for a change, run the tasks once, and exit with their status
+
+  Nothing runs at start: mise waits until one of the watched sources changes, runs the tasks once, and exits with the status of that run. So `--postpone` is implied, and passing it as well changes nothing. To run the tasks now and then once more after a change, use `mise run build && mise watch build --once`.
+
+  Use it in scripts and agents that need to block until a file changes. mise exits with 1 if watchexec stops before a change, and with 130 on Ctrl-C. With `--once` mise runs the tasks itself, so the flags that set how watchexec runs them, such as `--restart` and `--clear`, are refused.
 - **`-o --on-busy-update <MODE>`** — What to do when files change while the tasks are running
 
   `do-nothing` (the default) ignores the change, so files the tasks write do not trigger another run. `queue` runs the tasks again when the current run finishes. `restart` stops the running tasks and starts them again. `signal` sends the `--signal` signal and keeps the tasks running, for programs that reload their configuration on a signal.
@@ -54,6 +59,9 @@ To keep a server or database running alongside your tasks, with readiness checks
 
   **Default:** `50ms`
 - **`--stdin-quit`** — Exit when stdin closes
+- **`--exit-on-error`** — Stop watching when a run fails, and exit with its status
+
+  By default watchexec keeps watching whatever the tasks exit with. With this flag the first failed run ends `mise watch`, which then exits with that run's status. `--once` always exits after its run, so this changes nothing there. Needs watchexec 2.5.0 or later.
 - **`-p --postpone`** — Wait for the first change before running the tasks
 - **`--delay-run <DURATION>`** — Wait this long after a change before running the tasks, e.g. 5s
 - **`--poll [INTERVAL]`** — Poll for changes instead of using native file watching
@@ -407,6 +415,12 @@ Pass arguments after -- to the task
 
 ```
 mise watch test -- --verbose
+```
+
+Wait for a source to change, run test once, and exit with its status
+
+```
+mise watch test --once
 ```
 
 <!-- generated reference navigation -->

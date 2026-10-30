@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+# `mise watch --once` runs nothing at start, waits for a watched source to
+# change, runs the task once, and exits with the task's status.
+#
+# Slow runners can start watchexec late, so the source is touched again every
+# second until mise exits rather than once after a fixed sleep. Repeated
+# touches cannot add runs: mise has stopped watching after the first.
+
+mise use -g watchexec@latest
+mkdir -p src
+cat <<'EOF' >mise.toml
+[tasks.build]
+run = 'echo "ran build FOO=$FOO"; exit 3'
+sources = ["src/**/*.txt"]
+
+[tasks.ok]
+run = 'echo "ran ok"'
+sources = ["src/**/*.txt"]
+EOF
+
+output_file="$HOME/.watch_once_output"
+runs() { tr -d '\0' <"$output_file" | grep -c "^ran $1" || true; }
+
+# Touch the source until mise exits, then leave its status in $status.
+touch_until_exit() {
+  local pid=$1
+  for _ in $(seq 1 60); do
+    kill -0 "$pid" 2>/dev/null || break
+    touch src/changed.txt
+    sleep 1
+  done
+  kill -0 "$pid" 2>/dev/null && fail "mise watch --once did not exit: $(tr -d '\0' <"$output_file")"
+  status=0
+  wait "$pid" || status=$?
+}
+
+# The task's status, 3, is mise's status, and --watchexec-env reaches the task.
+mise watch build --once --debounce 100ms --watchexec-env FOO=bar >"$output_file" 2>&1 &
+pid=$!
+sleep 2
+[ "$(runs build)" = 0 ] || fail "--once ran the task before any change: $(tr -d '\0' <"$output_file")"
+# A file the sources do not match changes nothing.
+touch src/ignored.md
+sleep 2
+kill -0 "$pid" 2>/dev/null || fail "src/ignored.md ended the watch: $(tr -d '\0' <"$output_file")"
+touch_until_exit "$pid"
+assert "echo $status" "3"
+assert "echo $(runs build)" "1"
+assert_contains "cat $output_file" "ran build FOO=bar"
+
+# --postpone is implied, so passing it too behaves the same; a passing task exits 0.
+mise watch ok --once --postpone --debounce 100ms >"$output_file" 2>&1 &
+pid=$!
+sleep 2
+[ "$(runs ok)" = 0 ] || fail "--once --postpone ran the task before any change: $(tr -d '\0' <"$output_file")"
+touch_until_exit "$pid"
+assert "echo $status" "0"
+assert "echo $(runs ok)" "1"
+
+# SIGTERM while waiting ends the watch without running the task.
+mise watch ok --once >"$output_file" 2>&1 &
+pid=$!
+sleep 2
+kill -TERM "$pid"
+status=0
+wait "$pid" || status=$?
+assert "echo $status" "143"
+assert "echo $(runs ok)" "0"
+
+# Flags that set how watchexec runs the command have no use with --once.
+assert_fail_contains "mise watch ok --once --restart --clear" "--once cannot be combined with --clear, --restart"
+
+# --exit-on-error stops a normal watch at the first failed run, here the run at
+# start, and mise exits with its status.
+status=0
+run_with_timeout 60 mise watch build --exit-on-error >"$output_file" 2>&1 || status=$?
+assert "echo $status" "3"
+assert "echo $(runs build)" "1"

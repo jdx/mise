@@ -5,12 +5,13 @@ use crate::cmd;
 use crate::config::Config;
 use crate::dirs;
 use crate::env;
+use crate::env_diff::EnvMap;
 use crate::request_exit;
 use crate::task::task_source_checker::task_cwd;
 use crate::task::{Deps, Task};
 use crate::toolset::ToolsetBuilder;
 use console::style;
-use eyre::bail;
+use eyre::{WrapErr, bail};
 use itertools::Itertools;
 use std::cmp::PartialEq;
 use std::iter::once;
@@ -48,6 +49,10 @@ use std::path::{Path, PathBuf};
         "mise watch test -- --verbose",
         help = "Pass arguments after -- to the task"
     ),
+    example(
+        "mise watch test --once",
+        help = "Wait for a source to change, run test once, and exit with its status"
+    ),
     unknown_flags = "value"
 )]
 pub(crate) struct Watch {
@@ -69,6 +74,21 @@ pub(crate) struct Watch {
     /// Run and watch only the named tasks, not the tasks they depend on
     #[usage(long)]
     pub skip_deps: bool,
+
+    /// Wait for a change, run the tasks once, and exit with their status
+    ///
+    /// Nothing runs at start: mise waits until one of the watched sources
+    /// changes, runs the tasks once, and exits with the status of that run. So
+    /// `--postpone` is implied, and passing it as well changes nothing. To
+    /// run the tasks now and then once more after a change, use
+    /// `mise run build && mise watch build --once`.
+    ///
+    /// Use it in scripts and agents that need to block until a file changes.
+    /// mise exits with 1 if watchexec stops before a change, and with 130 on
+    /// Ctrl-C. With `--once` mise runs the tasks itself, so the flags that set
+    /// how watchexec runs them, such as `--restart` and `--clear`, are refused.
+    #[usage(long)]
+    pub once: bool,
 
     #[usage(flatten)]
     watchexec: WatchexecArgs,
@@ -93,6 +113,16 @@ impl Watch {
         }
         if self.watchexec.workdir.is_some() {
             warn!("--workdir has no effect: mise runs each task from its own dir");
+        }
+        if self.once {
+            let flags = self.watchexec.command_flags();
+            if !flags.is_empty() {
+                bail!(
+                    "--once cannot be combined with {}: they set how watchexec runs the tasks, \
+                     and with --once mise runs them itself",
+                    flags.join(", ")
+                );
+            }
         }
         let config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
@@ -284,15 +314,19 @@ impl Watch {
                 itertools::intersperse(ignores, "--ignore".to_string()).collect::<Vec<_>>(),
             );
         }
+        let mut env = ts.env_with_path(&config).await?;
+        // Propagate profiles selected with -E/--env to the nested `mise run` command.
+        if !env::MISE_ENV.is_empty() {
+            env.insert("MISE_ENV".to_string(), env::MISE_ENV.join(","));
+        }
+        if self.once {
+            return self.run_once(args, env, &tasks).await;
+        }
         args.extend(self.command_args(&tasks));
         debug!("$ watchexec {}", args.join(" "));
         let mut cmd = cmd::cmd("watchexec", &args);
-        for (k, v) in ts.env_with_path(&config).await? {
+        for (k, v) in env {
             cmd = cmd.env(k, v);
-        }
-        // Propagate profiles selected with -E/--env to the nested `mise run` command.
-        if !env::MISE_ENV.is_empty() {
-            cmd = cmd.env("MISE_ENV", env::MISE_ENV.join(","));
         }
 
         // watchexec's --clear=reset resets the controlling terminal, which
@@ -314,10 +348,84 @@ impl Watch {
             // instead of reporting watchexec's SIGINT exit as a failure.
             return Err(request_exit(code));
         }
+        // With --exit-on-error, watchexec exits with the status of the run that failed.
+        if self.watchexec.exit_on_error
+            && let Some(code) = output.status.code()
+            && code != 0
+        {
+            return Err(request_exit(code));
+        }
         if !output.status.success() {
             bail!("command watchexec exited with {}", output.status);
         }
         Ok(())
+    }
+
+    /// `--once`: wait for the first change, run the tasks, and exit with their status.
+    ///
+    /// watchexec's hidden `-1` flag would do this, but it is marked testing only, and it handles
+    /// signals in a way a caller cannot use: a SIGTERM while it waits runs the command and exits
+    /// 0, and one during the run is ignored until the command ends. So watchexec only reports
+    /// events here (`--only-emit-events`), with the same paths and filters as a normal watch, and
+    /// mise stops it at the first one and runs the tasks itself.
+    async fn run_once(&self, mut args: Vec<String>, env: EnvMap, tasks: &[Task]) -> Result<()> {
+        use tokio::io::AsyncBufReadExt;
+
+        args.extend(
+            ["--only-emit-events", "--emit-events-to", "json-stdio"].map(ToString::to_string),
+        );
+        debug!("$ watchexec {}", args.join(" "));
+        #[cfg(unix)]
+        let forward = ForwardSignals::arm();
+        // `kill_on_drop` stops watchexec if this future is dropped, which is what Ctrl-C does.
+        let mut watcher = tokio::process::Command::new("watchexec")
+            .args(&args)
+            .envs(&env)
+            .stdout(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .wrap_err("failed to start watchexec")?;
+        #[cfg(unix)]
+        forward.set_pid(watcher.id());
+        let stdout = watcher.stdout.take().expect("stdout is piped");
+        // watchexec prints one line per event, after the debounce, so the first line means the
+        // sources changed.
+        let changed = tokio::io::BufReader::new(stdout)
+            .lines()
+            .next_line()
+            .await
+            .wrap_err("failed to read events from watchexec")?
+            .is_some();
+        if !changed {
+            let status = watcher.wait().await?;
+            if let Some(code) = interrupted_exit_code(&status) {
+                return Err(request_exit(code));
+            }
+            bail!("watchexec exited with {status} before any watched file changed");
+        }
+        // It may have exited on its own since, so neither result matters.
+        let _ = watcher.start_kill();
+        let _ = watcher.wait().await;
+        #[cfg(unix)]
+        forward.set_pid(None);
+
+        let mut cmd = cmd::cmd(&*env::MISE_BIN, self.run_args(tasks));
+        for (k, v) in env {
+            cmd = cmd.env(k, v);
+        }
+        // watchexec's --env sets variables for the command it runs, which is now this one.
+        for var in &self.watchexec.command_env {
+            let (k, v) = var.split_once('=').unwrap_or((var, ""));
+            cmd = cmd.env(k, v);
+        }
+        let handle = cmd.unchecked().start()?;
+        #[cfg(unix)]
+        forward.set_pid(handle.pids().first().copied());
+        let output = handle.wait()?;
+        match exit_code(&output.status) {
+            0 => Ok(()),
+            code => Err(request_exit(code)),
+        }
     }
 
     /// The command watchexec runs on each change: `-- <mise> run [--skip-deps] <tasks>`.
@@ -331,8 +439,14 @@ impl Watch {
         let mut args = vec![
             "--".to_string(),
             env::MISE_BIN.to_string_lossy().to_string(),
-            "run".to_string(),
         ];
+        args.extend(self.run_args(tasks));
+        args
+    }
+
+    /// The arguments of the `mise run` that runs the tasks: `run [--skip-deps] <tasks>`.
+    fn run_args(&self, tasks: &[Task]) -> Vec<String> {
+        let mut args = vec!["run".to_string()];
         if self.skip_deps {
             args.push("--skip-deps".to_string());
         }
@@ -367,6 +481,22 @@ fn interrupted_exit_code(status: &std::process::ExitStatus) -> Option<i32> {
         }
     }
     None
+}
+
+/// The status mise exits with to report how a command ended: its exit code, or 128 plus the
+/// signal that killed it, as shells report it.
+fn exit_code(status: &std::process::ExitStatus) -> i32 {
+    if let Some(code) = status.code() {
+        return code;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return 128 + signal;
+        }
+    }
+    1
 }
 
 /// Longest path that is a prefix of every input path. Returns `None` for
@@ -718,6 +848,15 @@ pub(crate) struct WatchexecArgs {
     /// Exit when stdin closes
     #[usage(long)]
     pub stdin_quit: bool,
+
+    /// Stop watching when a run fails, and exit with its status
+    ///
+    /// By default watchexec keeps watching whatever the tasks exit with. With
+    /// this flag the first failed run ends `mise watch`, which then exits with
+    /// that run's status. `--once` always exits after its run, so this changes
+    /// nothing there. Needs watchexec 2.5.0 or later.
+    #[usage(long)]
+    pub exit_on_error: bool,
 
     /// Do not apply Git and other version control ignore files
     ///
@@ -1322,6 +1461,9 @@ impl WatchexecArgs {
         if self.stdin_quit {
             args.push("--stdin-quit".to_string());
         }
+        if self.exit_on_error {
+            args.push("--exit-on-error".to_string());
+        }
         if self.no_vcs_ignore || no_vcs_ignore {
             args.push("--no-vcs-ignore".to_string());
         }
@@ -1444,6 +1586,40 @@ impl WatchexecArgs {
             args.push("--no-meta".to_string());
         }
         args
+    }
+}
+
+impl WatchexecArgs {
+    /// The flags given that set how watchexec runs the command, which `--once` has no use for
+    /// because mise runs the tasks itself. `--postpone`, `--exit-on-error` and `--watchexec-quiet`
+    /// are not among them: `--once` already does what they ask, and it passes `--watchexec-env`
+    /// to the tasks.
+    fn command_flags(&self) -> Vec<&'static str> {
+        [
+            (self.screen_clear.is_some(), "--clear"),
+            (
+                self.on_busy_update != OnBusyUpdate::DoNothing,
+                "--on-busy-update",
+            ),
+            (self.restart, "--restart"),
+            (self.signal.is_some(), "--signal"),
+            (self.stop_signal.is_some(), "--stop-signal"),
+            (self.stop_timeout != "10s", "--stop-timeout"),
+            (!self.signal_map.is_empty(), "--map-signal"),
+            (self.delay_run.is_some(), "--delay-run"),
+            (self.stdin_quit, "--stdin-quit"),
+            (self.shell.is_some(), "--shell"),
+            (self.no_shell, "-n"),
+            (self.emit_events_to != EmitEvents::None, "--emit-events-to"),
+            (self.only_emit_events, "--only-emit-events"),
+            (self.wrap_process.is_some(), "--wrap-process"),
+            (self.notify, "--notify"),
+            (self.timings, "--timings"),
+            (self.bell, "--bell"),
+        ]
+        .into_iter()
+        .filter_map(|(given, flag)| given.then_some(flag))
+        .collect()
     }
 }
 
@@ -1652,6 +1828,68 @@ impl TerminalState {
         });
         SignalRestore {
             handle: Some(handle),
+        }
+    }
+}
+
+/// Passes SIGTERM, SIGHUP and SIGQUIT on to the process `--once` is waiting on, watchexec and
+/// then `mise run`, and then lets the signal end mise as it would have.
+///
+/// Without it a SIGTERM, such as a caller's timeout, ends mise where it stands and leaves
+/// watchexec running until the next change, when it panics writing to the closed pipe. SIGINT is
+/// left to `tokio::signal::ctrl_c`, which drops the future and so kills watchexec.
+#[cfg(unix)]
+struct ForwardSignals {
+    handle: Option<signal_hook::iterator::Handle>,
+    pid: std::sync::Arc<std::sync::atomic::AtomicU32>,
+}
+
+#[cfg(unix)]
+impl ForwardSignals {
+    #[must_use = "the guard disarms the signal thread when dropped"]
+    fn arm() -> Self {
+        use signal_hook::consts::{SIGHUP, SIGQUIT, SIGTERM};
+        use std::sync::atomic::Ordering;
+
+        let pid = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let mut signals = match signal_hook::iterator::Signals::new([SIGTERM, SIGHUP, SIGQUIT]) {
+            Ok(signals) => signals,
+            Err(err) => {
+                debug!("could not watch for signals to pass on to the tasks: {err}");
+                return Self { handle: None, pid };
+            }
+        };
+        let handle = signals.handle();
+        let target = pid.clone();
+        std::thread::spawn(move || {
+            let Some(signal) = signals.forever().next() else {
+                return;
+            };
+            let pid = target.load(Ordering::SeqCst);
+            if pid != 0
+                && let Ok(sig) = nix::sys::signal::Signal::try_from(signal)
+            {
+                let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), sig);
+            }
+            let _ = signal_hook::low_level::emulate_default_handler(signal);
+        });
+        Self {
+            handle: Some(handle),
+            pid,
+        }
+    }
+
+    fn set_pid(&self, pid: Option<u32>) {
+        self.pid
+            .store(pid.unwrap_or(0), std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[cfg(unix)]
+impl Drop for ForwardSignals {
+    fn drop(&mut self) {
+        if let Some(handle) = &self.handle {
+            handle.close();
         }
     }
 }
@@ -1923,6 +2161,75 @@ mod tests {
     fn forwards_no_meta() {
         let (_, watch) = parse_watch(&["mise", "watch", "--no-meta", "build"]);
         assert_eq!(watch.watchexec.watchexec_args(false), s(&["--no-meta"]));
+    }
+
+    #[test]
+    fn forwards_exit_on_error() {
+        let (_, watch) = parse_watch(&["mise", "watch", "build", "--exit-on-error"]);
+        assert_eq!(
+            watch.watchexec.watchexec_args(false),
+            s(&["--exit-on-error"])
+        );
+    }
+
+    /// `--once` refuses the flags that only change how watchexec runs the command, and takes
+    /// the ones whose request it already meets.
+    #[test]
+    fn once_refuses_only_the_command_flags() {
+        let (_, watch) = parse_watch(&[
+            "mise",
+            "watch",
+            "build",
+            "--once",
+            "--postpone",
+            "--exit-on-error",
+            "--watchexec-quiet",
+            "--watchexec-env",
+            "FOO=bar",
+            "--debounce",
+            "1s",
+            "--print-events",
+        ]);
+        assert!(watch.once);
+        assert!(watch.watchexec.command_flags().is_empty());
+
+        let (_, watch) = parse_watch(&[
+            "mise",
+            "watch",
+            "build",
+            "--once",
+            "--restart",
+            "--clear",
+            "-n",
+        ]);
+        assert_eq!(
+            watch.watchexec.command_flags(),
+            ["--clear", "--restart", "-n"]
+        );
+    }
+
+    #[test]
+    fn once_runs_the_tasks_with_mise_run() {
+        let (_, watch) = parse_watch(&["mise", "watch", "--skip-deps", "--once", "build"]);
+        assert_eq!(
+            watch.run_args(&[named_task("build"), named_task("lint")]),
+            s(&["run", "--skip-deps", "build", ":::", "lint"])
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exit_code_reports_a_signal_like_a_shell() {
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(
+            super::exit_code(&std::process::ExitStatus::from_raw(3 << 8)),
+            3
+        );
+        // Killed by SIGTERM (15).
+        assert_eq!(
+            super::exit_code(&std::process::ExitStatus::from_raw(15)),
+            143
+        );
     }
 
     /// `run` handles `--manual` on its own, as `watchexec --manual` with no command, because

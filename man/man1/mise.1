@@ -11729,6 +11729,13 @@ Globs to watch instead of the tasks' sources
 \fB\-\-skip\-deps\fR
 Run and watch only the named tasks, not the tasks they depend on
 .TP
+\fB\-\-once\fR
+Wait for a change, run the tasks once, and exit with their status
+
+Nothing runs at start: mise waits until one of the watched sources changes, runs the tasks once, and exits with the status of that run. So `\-\-postpone` is implied, and passing it as well changes nothing. To run the tasks now and then once more after a change, use `mise run build && mise watch build \-\-once`.
+
+Use it in scripts and agents that need to block until a file changes. mise exits with 1 if watchexec stops before a change, and with 130 on Ctrl\-C. With `\-\-once` mise runs the tasks itself, so the flags that set how watchexec runs them, such as `\-\-restart` and `\-\-clear`, are refused.
+.TP
 \fB\-w, \-\-watch\fR \fI<PATH>\fR
 Watch a file or directory
 
@@ -11797,6 +11804,11 @@ One save can produce several events, and a file can be written in pieces, so wat
 .TP
 \fB\-\-stdin\-quit\fR
 Exit when stdin closes
+.TP
+\fB\-\-exit\-on\-error\fR
+Stop watching when a run fails, and exit with its status
+
+By default watchexec keeps watching whatever the tasks exit with. With this flag the first failed run ends `mise watch`, which then exits with that run's status. `\-\-once` always exits after its run, so this changes nothing there. Needs watchexec 2.5.0 or later.
 .TP
 \fB\-\-no\-vcs\-ignore\fR
 Do not apply Git and other version control ignore files
@@ -12199,6 +12211,12 @@ Pass arguments after \-\- to the task
 .PP
 .RS 4
 mise watch test \-\- \-\-verbose
+.RE
+.PP
+Wait for a source to change, run test once, and exit with its status
+.PP
+.RS 4
+mise watch test \-\-once
 .RE
 .SH "MISE WHERE"
 Show the install directory of a tool version

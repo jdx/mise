@@ -241,6 +241,19 @@ as a development server, restart it on each change:
 mise watch --restart dev
 ```
 
+A script or coding agent that needs to block until a file changes can use
+`--once` instead of a sleep and poll loop. mise runs nothing at start. It waits
+until one of the task's sources changes, runs the task once, and exits with the
+task's exit status:
+
+```sh
+mise watch test --once && echo "tests pass after the change"
+```
+
+`--once` implies `--postpone`. If watchexec stops before anything changes, mise
+exits with 1. To keep watching but stop at the first failed run, pass
+`--exit-on-error` without `--once`.
+
 Separate several tasks with `:::`, as with `mise run`. Without a task name,
 `mise watch` runs the `default` task. `mise watch` uses
 [watchexec](https://github.com/watchexec/watchexec); install it with
