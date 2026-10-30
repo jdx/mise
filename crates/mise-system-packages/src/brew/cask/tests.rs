@@ -7183,6 +7183,14 @@ fn cask_management_reports_who_owns_an_installed_cask() -> Result<()> {
     file::create_dir_all(caskroom_token_dir(CaskManager::BrewCask, "homebrew").join(".metadata"))?;
     assert_eq!(cask_management(&homebrew), PackageManagement::Homebrew);
 
+    // Homebrew's records can't be inspected when a Caskroom path component is a file.
+    let unreadable = test_cask("unreadable", "1.0.0");
+    file::write(
+        caskroom_token_dir(CaskManager::BrewCask, "unreadable"),
+        "not a directory",
+    )?;
+    assert_eq!(cask_management(&unreadable), PackageManagement::Unknown);
+
     // A same-named Homebrew cask is a different install for macos-app.
     let mut app = test_cask("homebrew", "1.0.0");
     app.manager = CaskManager::MacosApp;
