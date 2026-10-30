@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+# mise tasks add and mise tasks set trust the config root they write, as mise set does, and say so.
+export MISE_TRUSTED_CONFIG_PATHS=""
+export MISE_YES=0
+unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
+
+echo "=== a new project is trusted, and add says so ==="
+mkdir fresh
+cd fresh || exit 1
+assert_json "mise tasks add --json build -- make" "{
+  \"task\": \"build\",
+  \"action\": \"added\",
+  \"kind\": \"toml\",
+  \"path\": \"$PWD/mise.toml\",
+  \"table\": {\"run\": \"make\"},
+  \"newly_trusted\": true,
+  \"trust_root\": \"$PWD\",
+  \"dry_run\": false
+}"
+assert_contains "mise trust --show" "trusted"
+assert_not_contains "mise trust --show" "untrusted"
+assert_json "mise tasks set --json build --hide" "{
+  \"task\": \"build\",
+  \"action\": \"updated\",
+  \"kind\": \"toml\",
+  \"path\": \"$PWD/mise.toml\",
+  \"table\": {\"run\": \"make\", \"hide\": true},
+  \"newly_trusted\": false,
+  \"dry_run\": false
+}"
+cd .. || exit 1
+
+echo "=== the human output names the trusted root ==="
+mkdir human
+cd human || exit 1
+assert_contains "mise tasks add build -- make 2>&1" "trusted ~/workdir/human so that mise loads ~/workdir/human/mise.toml"
+assert_not_contains "mise tasks add lint -- make lint 2>&1" "trusted"
+cd .. || exit 1
+
+echo "=== safe mode writes without trusting ==="
+mkdir safe
+cd safe || exit 1
+assert_json "MISE_SAFE=1 mise tasks add --json build -- make" "{
+  \"task\": \"build\",
+  \"action\": \"added\",
+  \"kind\": \"toml\",
+  \"path\": \"$PWD/mise.toml\",
+  \"table\": {\"run\": \"make\"},
+  \"newly_trusted\": false,
+  \"dry_run\": false
+}"
+assert_contains "mise trust --show" "untrusted"
+
+echo "=== a dry run trusts nothing ==="
+cd .. || exit 1
+mkdir dry
+cd dry || exit 1
+assert_contains "mise tasks add --json --dry-run build -- make" '"newly_trusted": false'
+assert_fail "test -e mise.toml"

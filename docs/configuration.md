@@ -394,6 +394,9 @@ Other commands choose differently:
   TOML file, which can be `mise.local.toml`. They skip the
   [override files](#override-file) unless you pass `--override`. Use `--file` to choose another
   project file.
+- [`mise tasks set`](/cli/tasks/set.html) and [`mise tasks rm`](/cli/tasks/rm.html)
+  use the one loaded config file that defines the task, and stop when several
+  do. Use `--env`, `--global` or `--path` to choose one.
 - [`mise unuse`](/cli/unuse.html) uses the first loaded config that declares a
   requested tool, other than an [override file](#override-file). A version-qualified argument matches the configured request
   literally: `node@20` matches `node = "20"`, not `node = "20.0.0"`. Use

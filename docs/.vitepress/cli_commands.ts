@@ -931,8 +931,14 @@ export const commands: { [key: string]: Command } = {
       ls: {
         hide: false,
       },
+      rm: {
+        hide: false,
+      },
       run: {
         hide: true,
+      },
+      set: {
+        hide: false,
       },
       validate: {
         hide: false,

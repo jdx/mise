@@ -947,6 +947,15 @@ Show a task's definition
 \fBtasks ls\fR
 List available tasks
 .TP
+\fBtasks rm\fR
+Remove tasks
+.RS
+\fIAliases: \fRremove
+.RE
+.TP
+\fBtasks set\fR
+Change fields of an existing TOML task
+.TP
 \fBtasks validate\fR
 Check task definitions for errors
 .TP
@@ -10240,7 +10249,9 @@ mise tasks \-\-hidden \-\-sort source
 .SH "MISE TASKS ADD"
 Add a task
 
-Writes a `[tasks.<name>]` table to the nearest project config file and marks that file as trusted. See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations for how the file is chosen.
+Writes a `[tasks.<name>]` table to the nearest project config file, or to the file `\-\-env`, `\-\-global` or `\-\-path` chooses, and trusts that file's config root so mise loads it. See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations for how the file is chosen. In safe mode (`MISE_SAFE=1`) it writes without trusting anything.
+
+Pass `\-\-force` to replace a task that already has that name in the file. Replacing one without it is deprecated: mise still replaces the task, warns from 2027.5.0, and refuses from 2028.5.0. Adding exactly the same task again changes nothing. To change some fields of an existing task, use `mise tasks set`.
 
 With `\-\-file`, creates an executable script in the project's task directory (for example `mise\-tasks/`) instead, and does not change any config file.
 .PP
@@ -10248,6 +10259,29 @@ With `\-\-file`, creates an executable script in the project's task directory (f
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-f, \-\-file\fR
+Create a file task instead of a TOML task
+.TP
+\fB\-F, \-\-force\fR
+Replace a task that already has this name in the file
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show what would be written without writing it
+.TP
+\fB\-J, \-\-json\fR
+Print what was written as JSON
+.TP
+\fB\-e, \-\-env\fR \fI<ENV>\fR
+Use mise.<ENV>.toml in the current directory, or .mise.<ENV>.toml if that exists
+
+`\-\-env local` uses mise.local.toml, which is for tasks you keep to yourself. Not the same as the global \-E, which only chooses which config files are loaded.
+.TP
+\fB\-g, \-\-global\fR
+Use the global config file
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Use this config file, or the config file in this directory
 .TP
 \fB\-a, \-\-alias\fR \fI<ALIAS>\fR
 Other names for the task
@@ -10257,9 +10291,6 @@ Tasks to run before this one
 .TP
 \fB\-D, \-\-dir\fR \fI<DIR>\fR
 Run the task in a specific directory
-.TP
-\fB\-f, \-\-file\fR
-Create a file task instead of a TOML task
 .TP
 \fB\-H, \-\-hide\fR
 Hide the task from `mise tasks` and completions
@@ -10276,11 +10307,19 @@ Glob patterns of files this task uses as input
 \fB\-w, \-\-wait\-for\fR \fI<TASK>\fR
 Wait for these tasks to finish if they are also being run
 .TP
+\fB\-\-confirm\fR \fI<MESSAGE>\fR
+Ask this question before the task runs, and run it only if the answer is yes
+.TP
 \fB\-\-depends\-post\fR \fI<TASK>\fR
 Tasks to run after this one
 .TP
 \fB\-\-description\fR \fI<DESCRIPTION>\fR
 Description of the task
+.TP
+\fB\-\-env\-var\fR \fI<KEY=VALUE>\fR
+Set an environment variable for the task; repeat for several
+
+Written to the task's `env` table. `\-\-env` chooses the config file instead.
 .TP
 \fB\-\-outputs\fR \fI<GLOB>\fR
 Glob patterns of files this task creates, used to skip it when they are up to date
@@ -10293,6 +10332,14 @@ Run the task in a specific shell
 .TP
 \fB\-\-silent\fR
 Do not print the command or its output
+.TP
+\fB\-\-tools\fR \fI<TOOL@VERSION>\fR
+Tool the task needs, such as node@24 or npm:prettier@3; repeat for several
+
+Written to the task's `tools` table. Without a version, writes `latest`.
+.TP
+\fB\-\-usage\fR \fI<SPEC>\fR
+Usage spec for the task's arguments and flags: https://usage.jdx.dev/spec/
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -10312,6 +10359,12 @@ Add a TOML task that is skipped while its outputs are up to date
 mise tasks add build \-\-description "Build the app" \-\-sources 'src/**/*.ts' \-\-outputs 'dist/**' \-\- npm run build
 .RE
 .PP
+Add a personal task to mise.local.toml
+.PP
+.RS 4
+mise tasks add \-\-env local lint \-\-tools node@24 \-\- npx eslint .
+.RE
+.PP
 Create an executable lint script in the task directory
 .PP
 .RS 4
@@ -10322,6 +10375,12 @@ Add a task that runs after lint and test
 .PP
 .RS 4
 mise tasks add ci \-\-depends lint \-\-depends test \-\- echo done
+.RE
+.PP
+Print the task that would be written, as JSON, without writing it
+.PP
+.RS 4
+mise tasks add \-\-json \-\-dry\-run deploy \-\-confirm "Deploy to production?" \-\- ./deploy.sh
 .RE
 .SH "MISE TASKS DEPS"
 Show the dependency tree of tasks
@@ -10560,6 +10619,180 @@ Pick a task name interactively
 .PP
 .RS 4
 mise tasks ls \-\-name\-only | fzf
+.RE
+.SH "MISE TASKS RM"
+Remove tasks
+
+Removes a TOML task's `[tasks.<name>]` table from the config file that defines it, and deletes a file task's script. Without `\-\-env`, `\-\-global` or `\-\-path`, mise uses the one file that defines each task and fails when several do; `\-\-path` can also name a file task's script. Asks before removing anything unless `\-\-yes` (`MISE_YES=1`) is set, and fails without a terminal to ask on.
+
+Other tasks that depend on a removed task are left as they are; `mise tasks validate` reports them.
+.PP
+\fBUsage:\fR mise tasks rm [OPTIONS] <TASKS> ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show what would be removed without removing it
+.TP
+\fB\-J, \-\-json\fR
+Print what was removed as JSON
+.TP
+\fB\-e, \-\-env\fR \fI<ENV>\fR
+Use mise.<ENV>.toml in the current directory, or .mise.<ENV>.toml if that exists
+
+`\-\-env local` uses mise.local.toml, which is for tasks you keep to yourself. Not the same as the global \-E, which only chooses which config files are loaded.
+.TP
+\fB\-g, \-\-global\fR
+Use the global config file
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Use this config file, or the config file in this directory
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<TASKS>\fR
+Tasks to remove
+\fBExamples:\fR
+.PP
+Remove the build task
+.PP
+.RS 4
+mise tasks rm build
+.RE
+.PP
+Remove two tasks from mise.local.toml without asking
+.PP
+.RS 4
+mise tasks rm \-\-env local \-\-yes lint fmt
+.RE
+.PP
+Show which file defines build without changing it
+.PP
+.RS 4
+mise tasks rm \-\-dry\-run \-\-json build
+.RE
+.SH "MISE TASKS SET"
+Change fields of an existing TOML task
+
+Updates only the fields given and leaves the rest of the task, and the rest of the file, as they are. A list field such as `\-\-depends` replaces the whole list; `\-\-env\-var` and `\-\-tools` add or replace single entries of the task's `env` and `tools` tables. `\-\-unset` removes a field, which is also how a flag such as `hide` goes back to false. A command given after `\-\-` replaces the task's `run`.
+
+Without `\-\-env`, `\-\-global` or `\-\-path`, edits the one config file that defines the task, and fails when several do. Like `mise tasks add`, it trusts the file's config root so mise loads it, except in safe mode (`MISE_SAFE=1`). File tasks are scripts: use `mise tasks edit` for them.
+.PP
+\fBUsage:\fR mise tasks set [OPTIONS] <TASK> [<RUN>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Show what would be written without writing it
+.TP
+\fB\-J, \-\-json\fR
+Print what was written as JSON
+.TP
+\fB\-u, \-\-unset\fR \fI<FIELD>\fR
+Remove this field from the task; repeat for several
+.TP
+\fB\-e, \-\-env\fR \fI<ENV>\fR
+Use mise.<ENV>.toml in the current directory, or .mise.<ENV>.toml if that exists
+
+`\-\-env local` uses mise.local.toml, which is for tasks you keep to yourself. Not the same as the global \-E, which only chooses which config files are loaded.
+.TP
+\fB\-g, \-\-global\fR
+Use the global config file
+.TP
+\fB\-p, \-\-path\fR \fI<PATH>\fR
+Use this config file, or the config file in this directory
+.TP
+\fB\-a, \-\-alias\fR \fI<ALIAS>\fR
+Other names for the task
+.TP
+\fB\-d, \-\-depends\fR \fI<TASK>\fR
+Tasks to run before this one
+.TP
+\fB\-D, \-\-dir\fR \fI<DIR>\fR
+Run the task in a specific directory
+.TP
+\fB\-H, \-\-hide\fR
+Hide the task from `mise tasks` and completions
+.TP
+\fB\-q, \-\-quiet\fR
+Do not print the command before running
+.TP
+\fB\-r, \-\-raw\fR
+Connect the task directly to the terminal's stdin, stdout, and stderr
+.TP
+\fB\-s, \-\-sources\fR \fI<GLOB>\fR
+Glob patterns of files this task uses as input
+.TP
+\fB\-w, \-\-wait\-for\fR \fI<TASK>\fR
+Wait for these tasks to finish if they are also being run
+.TP
+\fB\-\-confirm\fR \fI<MESSAGE>\fR
+Ask this question before the task runs, and run it only if the answer is yes
+.TP
+\fB\-\-depends\-post\fR \fI<TASK>\fR
+Tasks to run after this one
+.TP
+\fB\-\-description\fR \fI<DESCRIPTION>\fR
+Description of the task
+.TP
+\fB\-\-env\-var\fR \fI<KEY=VALUE>\fR
+Set an environment variable for the task; repeat for several
+
+Written to the task's `env` table. `\-\-env` chooses the config file instead.
+.TP
+\fB\-\-outputs\fR \fI<GLOB>\fR
+Glob patterns of files this task creates, used to skip it when they are up to date
+.TP
+\fB\-\-run\-windows\fR \fI<COMMAND>\fR
+Command to run on Windows (TOML tasks only; ignored with `\-\-file`)
+.TP
+\fB\-\-shell\fR \fI<SHELL>\fR
+Run the task in a specific shell
+.TP
+\fB\-\-silent\fR
+Do not print the command or its output
+.TP
+\fB\-\-tools\fR \fI<TOOL@VERSION>\fR
+Tool the task needs, such as node@24 or npm:prettier@3; repeat for several
+
+Written to the task's `tools` table. Without a version, writes `latest`.
+.TP
+\fB\-\-usage\fR \fI<SPEC>\fR
+Usage spec for the task's arguments and flags: https://usage.jdx.dev/spec/
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<TASK>\fR
+Name of the task to change
+.TP
+\fB<RUN>\fR
+Command to run instead of the current one, given after `\-\-`
+\fBExamples:\fR
+.PP
+Change a task's description
+.PP
+.RS 4
+mise tasks set build \-\-description "Build the app for release"
+.RE
+.PP
+Add an environment variable and remove the quiet flag
+.PP
+.RS 4
+mise tasks set test \-\-env\-var RUST_BACKTRACE=1 \-\-unset quiet
+.RE
+.PP
+Change the command of a task in mise.local.toml
+.PP
+.RS 4
+mise tasks set \-\-env local lint \-\- npx eslint \-\-fix .
 .RE
 .SH "MISE TASKS VALIDATE"
 Check task definitions for errors

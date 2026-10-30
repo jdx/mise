@@ -11,7 +11,9 @@ description: "Add a task"
 
 Add a task
 
-Writes a `[tasks.<name>]` table to the nearest project config file and marks that file as trusted. See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations> for how the file is chosen.
+Writes a `[tasks.<name>]` table to the nearest project config file, or to the file `--env`, `--global` or `--path` chooses, and trusts that file's config root so mise loads it. See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations> for how the file is chosen. In safe mode (`MISE_SAFE=1`) it writes without trusting anything.
+
+Pass `--force` to replace a task that already has that name in the file. Replacing one without it is deprecated: mise still replaces the task, warns from 2027.5.0, and refuses from 2028.5.0. Adding exactly the same task again changes nothing. To change some fields of an existing task, use `mise tasks set`.
 
 With `--file`, creates an executable script in the project's task directory (for example `mise-tasks/`) instead, and does not change any config file.
 
@@ -20,21 +22,37 @@ With `--file`, creates an executable script in the project's task directory (for
 - **`[-- RUN]…`** — Command to run, given after `--`
 
 ## Flags
+- **`-f --file`** — Create a file task instead of a TOML task
+- **`-F --force`** — Replace a task that already has this name in the file
+- **`-n --dry-run`** — Show what would be written without writing it
+- **`-J --json`** — Print what was written as JSON
+- **`-e --env <ENV>`** — Use mise.&lt;ENV>.toml in the current directory, or .mise.&lt;ENV>.toml if that exists
+
+  `--env local` uses mise.local.toml, which is for tasks you keep to yourself. Not the same as the global -E, which only chooses which config files are loaded.
+- **`-g --global`** — Use the global config file
+- **`-p --path <PATH>`** — Use this config file, or the config file in this directory
 - **`-a --alias <ALIAS>`** — Other names for the task
 - **`-d --depends <TASK>`** — Tasks to run before this one
 - **`-D --dir <DIR>`** — Run the task in a specific directory
-- **`-f --file`** — Create a file task instead of a TOML task
 - **`-H --hide`** — Hide the task from `mise tasks` and completions
 - **`-q --quiet`** — Do not print the command before running
 - **`-r --raw`** — Connect the task directly to the terminal's stdin, stdout, and stderr
 - **`-s --sources <GLOB>`** — Glob patterns of files this task uses as input
 - **`-w --wait-for <TASK>`** — Wait for these tasks to finish if they are also being run
+- **`--confirm <MESSAGE>`** — Ask this question before the task runs, and run it only if the answer is yes
 - **`--depends-post <TASK>`** — Tasks to run after this one
 - **`--description <DESCRIPTION>`** — Description of the task
+- **`--env-var <KEY=VALUE>`** — Set an environment variable for the task; repeat for several
+
+  Written to the task's `env` table. `--env` chooses the config file instead.
 - **`--outputs <GLOB>`** — Glob patterns of files this task creates, used to skip it when they are up to date
 - **`--run-windows <COMMAND>`** — Command to run on Windows (TOML tasks only; ignored with `--file`)
 - **`--shell <SHELL>`** — Run the task in a specific shell
 - **`--silent`** — Do not print the command or its output
+- **`--tools <TOOL@VERSION>`** — Tool the task needs, such as node@24 or npm:prettier@3; repeat for several
+
+  Written to the task's `tools` table. Without a version, writes `latest`.
+- **`--usage <SPEC>`** — Usage spec for the task's arguments and flags: <https://usage.jdx.dev/spec/>
 - **`-h --help`** — Print help
 
 ## Examples
@@ -43,6 +61,12 @@ Add a TOML task that is skipped while its outputs are up to date
 
 ```
 mise tasks add build --description "Build the app" --sources 'src/**/*.ts' --outputs 'dist/**' -- npm run build
+```
+
+Add a personal task to mise.local.toml
+
+```
+mise tasks add --env local lint --tools node@24 -- npx eslint .
 ```
 
 Create an executable lint script in the task directory
@@ -55,6 +79,12 @@ Add a task that runs after lint and test
 
 ```
 mise tasks add ci --depends lint --depends test -- echo done
+```
+
+Print the task that would be written, as JSON, without writing it
+
+```
+mise tasks add --json --dry-run deploy --confirm "Deploy to production?" -- ./deploy.sh
 ```
 
 <!-- generated reference navigation -->

@@ -1185,6 +1185,18 @@ impl Task {
         }
     }
 
+    /// Whether `name` names this task: its own name, or that name without a script extension,
+    /// which is how `mise tasks` lists a `build.sh` script.
+    pub fn answers_to(&self, name: &str) -> bool {
+        self.name == name || strip_task_name_extension(&self.name) == name
+    }
+
+    /// Whether the task is a script found in a task directory, rather than a TOML task or one
+    /// inferred from a manifest such as `package.json`.
+    pub fn is_file_task(&self) -> bool {
+        self.file_from_discovery
+    }
+
     pub fn config_sources(&self) -> Vec<&Path> {
         once(self.config_source.as_path())
             .chain(self.additional_config_sources.iter().map(PathBuf::as_path))
@@ -1262,7 +1274,7 @@ impl Task {
         Ok(task)
     }
 
-    pub(crate) fn from_path_unrendered_with_cf(
+    pub fn from_path_unrendered_with_cf(
         path: &Path,
         prefix: &Path,
         config_root: &Path,
