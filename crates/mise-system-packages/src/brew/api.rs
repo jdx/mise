@@ -25,6 +25,9 @@ pub(super) async fn formula(name: &str) -> Result<Formula> {
 }
 
 async fn formula_from(base: &str, aliases: &AliasIndex, name: &str) -> Result<Formula> {
+    if let Some(formula) = bulk_formula(base, name, true).await {
+        return Ok(formula);
+    }
     let err = match formula_exact_from(base, name).await {
         Ok(formula) => return Ok(formula),
         Err(err) => err,
@@ -90,11 +93,64 @@ pub(super) async fn formula_exact(name: &str) -> Result<Formula> {
 }
 
 async fn formula_exact_from(base: &str, name: &str) -> Result<Formula> {
+    if let Some(formula) = bulk_formula(base, name, false).await {
+        return Ok(formula);
+    }
     let url = format!("{base}/formula/{name}.json");
     HTTP_FETCH
         .json_cached::<Formula, _>(url)
         .await
         .wrap_err_with(|| FormulaFetchFailed(name.to_string()))
+}
+
+/// A homebrew/core formula from the bulk `formula.json`, or `None` to ask the
+/// per-formula endpoint. One cached document answers every formula in a
+/// dependency closure, where the per-formula endpoint costs a round trip each.
+/// Only for the real API: a `base` pointing anywhere else (a test server) is a
+/// different document than the one the bulk index caches.
+async fn bulk_formula(base: &str, name: &str, follow_aliases: bool) -> Option<Formula> {
+    if base != API_BASE || !formula_source_matches_index(name) {
+        return None;
+    }
+    let body = super::bulk::entry(&super::bulk::FORMULAE, name, follow_aliases).await?;
+    match serde_json::from_slice::<Formula>(&body) {
+        // An alias resolves to another formula, whose own URL may be rerouted.
+        Ok(formula)
+            if follow_aliases
+                && formula.name != name
+                && !formula_source_matches_index(&formula.name) =>
+        {
+            None
+        }
+        Ok(formula) => Some(formula),
+        Err(err) => {
+            debug!(
+                "brew: bulk index entry for '{name}' did not parse ({err:#}); falling back to per-formula metadata"
+            );
+            None
+        }
+    }
+}
+
+/// The bulk index answers for a formula only when `url_replacements` sends
+/// `formula/<name>.json` to the same place as `formula.json`. A rule that gives
+/// the per-formula URL a source of its own keeps that source, as before.
+fn formula_source_matches_index(name: &str) -> bool {
+    let replaced = |url: String| {
+        let mut url = url::Url::parse(&url).ok()?;
+        mise_util::http::apply_url_replacements(&mut url);
+        Some(url.to_string())
+    };
+    let (Some(formula), Some(index)) = (
+        replaced(format!("{API_BASE}/formula/{name}.json")),
+        replaced(format!("{API_BASE}/formula.json")),
+    ) else {
+        return false;
+    };
+    index
+        .strip_suffix("formula.json")
+        .and_then(|dir| url::Url::parse(&format!("{dir}formula/{name}.json")).ok())
+        .is_some_and(|expected| expected.as_str() == formula)
 }
 
 #[derive(Debug, Deserialize)]

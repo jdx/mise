@@ -30,6 +30,7 @@ use mise_ui::multi_progress_report::MultiProgressReport;
 use mise_ui::progress_report::{ProgressIcon, SingleReport};
 
 mod api;
+mod bulk;
 mod cask;
 mod fetch;
 mod maintenance;

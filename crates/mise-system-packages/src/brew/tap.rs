@@ -6,7 +6,9 @@
 //! installation is the portable fallback and avoids duplicating Homebrew's
 //! bottle URL construction rules.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use eyre::{WrapErr, bail};
@@ -65,6 +67,34 @@ pub(super) async fn formula_from_ruby(
     validate_name(name)?;
     let tap_source = resolve_tap_source(owner, tap, tap_url).await?;
     let (source, source_path) = fetch_formula_source(&tap_source, name).await?;
+    let source_url = ruby_source_url(&tap_source.raw_base, &source_path);
+    let evaluated = evaluate_formula(
+        owner,
+        tap,
+        name,
+        provision_ruby,
+        tap_source,
+        source,
+        source_path,
+    )
+    .await;
+    // A source that does not evaluate is dropped from the cache, so a broken
+    // 200 from a mirror or proxy is fetched again next run instead of for good.
+    if evaluated.is_err() {
+        forget_immutable(&source_url);
+    }
+    evaluated
+}
+
+async fn evaluate_formula(
+    owner: &str,
+    tap: &str,
+    name: &str,
+    provision_ruby: bool,
+    tap_source: TapSource,
+    source: String,
+    source_path: String,
+) -> Result<Formula> {
     let checksum = mise_util::hash::hash_sha256_to_str(&source);
     let ruby = ruby_for_metadata(name, provision_ruby).await?;
     let mut runner = CmdLineRunner::new(&ruby)
@@ -115,7 +145,28 @@ pub(super) async fn formula_from_ruby(
     Ok(formula)
 }
 
+/// Casks already evaluated by this process. `upgrade` resolves each cask once
+/// for the dependency closure and again for the plan, and both want the same
+/// definition, so the second Ruby process would only repeat the first.
+static EVALUATED_CASKS: LazyLock<Mutex<HashMap<String, Cask>>> = LazyLock::new(Default::default);
+
 pub(super) async fn cask_from_ruby(
+    owner: &str,
+    tap: &str,
+    token: &str,
+    tap_url: Option<&str>,
+    provision_ruby: bool,
+) -> Result<Cask> {
+    let key = format!("{owner}/{tap}/{token}\0{}", tap_url.unwrap_or_default());
+    if let Some(cask) = EVALUATED_CASKS.lock().unwrap().get(&key) {
+        return Ok(cask.clone());
+    }
+    let cask = evaluate_cask(owner, tap, token, tap_url, provision_ruby).await?;
+    EVALUATED_CASKS.lock().unwrap().insert(key, cask.clone());
+    Ok(cask)
+}
+
+async fn evaluate_cask(
     owner: &str,
     tap: &str,
     token: &str,
@@ -125,6 +176,24 @@ pub(super) async fn cask_from_ruby(
     validate_name(token)?;
     let tap_source = resolve_tap_source(owner, tap, tap_url).await?;
     let (source, source_path) = fetch_ruby_source(&tap_source.raw_base, "Casks", token).await?;
+    let source_url = format!("{}/{source_path}", tap_source.raw_base);
+    let evaluated =
+        evaluate_cask_source(token, provision_ruby, tap_source, source, source_path).await;
+    // A source that does not evaluate is dropped from the cache, so a broken
+    // 200 from a mirror or proxy is fetched again next run instead of for good.
+    if evaluated.is_err() {
+        forget_immutable(&source_url);
+    }
+    evaluated
+}
+
+async fn evaluate_cask_source(
+    token: &str,
+    provision_ruby: bool,
+    tap_source: TapSource,
+    source: String,
+    source_path: String,
+) -> Result<Cask> {
     let checksum = mise_util::hash::hash_sha256_to_str(&source);
     let ruby = ruby_for_metadata(token, provision_ruby).await?;
     let mut runner = CmdLineRunner::new(&ruby)
@@ -264,26 +333,24 @@ fn github_repository<'a>(
 }
 
 async fn fetch_formula_source(tap_source: &TapSource, name: &str) -> Result<(String, String)> {
-    let root_tree: GithubTree = HTTP_FETCH
-        .json_cached(format!(
-            "{}/git/trees/{}",
-            tap_source.api_base, tap_source.commit
-        ))
-        .await
-        .wrap_err("failed to inspect tap formula directories")?;
+    let root_tree: GithubTree = immutable_json(format!(
+        "{}/git/trees/{}",
+        tap_source.api_base, tap_source.commit
+    ))
+    .await
+    .wrap_err("failed to inspect tap formula directories")?;
     if root_tree.truncated {
         bail!("tap repository tree was truncated");
     }
 
     let (directory, formula_tree) =
         if let Some((directory, sha)) = active_formula_directory(&root_tree) {
-            let tree: GithubTree = HTTP_FETCH
-                .json_cached(format!(
-                    "{}/git/trees/{sha}?recursive=1",
-                    tap_source.api_base
-                ))
-                .await
-                .wrap_err_with(|| format!("failed to inspect tap {directory} directory"))?;
+            let tree: GithubTree = immutable_json(format!(
+                "{}/git/trees/{sha}?recursive=1",
+                tap_source.api_base
+            ))
+            .await
+            .wrap_err_with(|| format!("failed to inspect tap {directory} directory"))?;
             if tree.truncated {
                 bail!("tap {directory} directory tree was truncated");
             }
@@ -300,8 +367,7 @@ async fn fetch_formula_source(tap_source: &TapSource, name: &str) -> Result<(Str
         };
         eyre::eyre!("tap has no formula named '{name}' in {location}")
     })?;
-    let source = HTTP_FETCH
-        .get_text(ruby_source_url(&tap_source.raw_base, &source_path))
+    let source = immutable_text(ruby_source_url(&tap_source.raw_base, &source_path))
         .await
         .wrap_err_with(|| format!("failed to fetch tap formula {source_path}"))?;
     Ok((source, source_path))
@@ -358,14 +424,99 @@ async fn fetch_ruby_source(
         format!("{directory}/{name}.rb"),
         format!("{directory}/{}/{name}.rb", &name[..1]),
     ];
+    // A cached hit on the second spelling must not cost a 404 on the first.
+    for path in &paths {
+        if let Some(source) = cached_immutable(&format!("{raw_base}/{path}")) {
+            return Ok((source, path.clone()));
+        }
+    }
     let mut last_error = None;
     for path in paths {
-        match HTTP_FETCH.get_text(format!("{raw_base}/{path}")).await {
+        match immutable_text(format!("{raw_base}/{path}")).await {
             Ok(source) => return Ok((source, path)),
             Err(err) => last_error = Some(err),
         }
     }
     Err(last_error.unwrap()).wrap_err_with(|| format!("tap has no {directory}/{name}.rb"))
+}
+
+/// Where a sha-addressed response is kept.
+///
+/// Every URL routed here names a commit or tree sha (`git/trees/<sha>`, or a
+/// raw file under `raw_base`, which `resolve_tap_source` pins to the commit),
+/// so its body can never change and needs no revalidation. Caching them on disk
+/// turns an unchanged tap into one `commits/<branch>` request per run instead
+/// of the full walk down to the Ruby file. The branch head itself is still
+/// asked every time, so a new tap commit is seen at once.
+///
+/// Keyed by the URL after `url_replacements`, like the bulk index, so changing
+/// a mirror changes where the next run reads from.
+fn immutable_cache_path(url: &str) -> PathBuf {
+    let source = match url::Url::parse(url) {
+        Ok(mut parsed) => {
+            mise_util::http::apply_url_replacements(&mut parsed);
+            parsed.to_string()
+        }
+        Err(_) => url.to_string(),
+    };
+    mise_util::dirs::CACHE
+        .join("system-brew")
+        .join("taps")
+        .join(mise_util::hash::hash_sha256_to_str(&source))
+}
+
+fn forget_immutable(url: &str) {
+    let _ = std::fs::remove_file(immutable_cache_path(url));
+}
+
+fn cached_immutable(url: &str) -> Option<String> {
+    std::fs::read_to_string(immutable_cache_path(url)).ok()
+}
+
+async fn immutable_text(url: String) -> Result<String> {
+    if let Some(text) = cached_immutable(&url) {
+        return Ok(text);
+    }
+    let text = HTTP_FETCH.get_text_cached(url.as_str()).await?;
+    store_immutable(&url, &text);
+    Ok(text)
+}
+
+/// Parsed before it is stored, and a stored copy that does not parse is fetched
+/// again, so a malformed 200 cannot pin this sha to an error for good.
+async fn immutable_json<T: serde::de::DeserializeOwned>(url: String) -> Result<T> {
+    if let Some(value) = cached_immutable(&url).and_then(|text| serde_json::from_str(&text).ok()) {
+        return Ok(value);
+    }
+    let text = HTTP_FETCH.get_text_cached(url.as_str()).await?;
+    let value = serde_json::from_str(&text)?;
+    store_immutable(&url, &text);
+    Ok(value)
+}
+
+fn store_immutable(url: &str, text: &str) {
+    let path = immutable_cache_path(url);
+    // Best effort: a cache that cannot be written costs the next run a request,
+    // never this one its answer.
+    if let Err(err) = path
+        .parent()
+        .map_or(Ok(()), create_owner_only_dir)
+        .and_then(|()| mise_util::file::write_atomic(&path, text))
+    {
+        debug!("brew: could not cache {url}: {err:#}");
+    }
+}
+
+/// A private tap is fetched with the GitHub token, so its cached sources must
+/// stay unreadable to other local users.
+fn create_owner_only_dir(dir: &Path) -> Result<()> {
+    mise_util::file::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
 }
 
 fn validate_name(name: &str) -> Result<()> {
