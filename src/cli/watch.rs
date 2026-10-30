@@ -409,20 +409,24 @@ impl Watch {
         #[cfg(unix)]
         forward.set_pid(None);
 
-        let mut cmd = cmd::cmd(&*env::MISE_BIN, self.run_args(tasks));
-        for (k, v) in env {
-            cmd = cmd.env(k, v);
-        }
+        let run_args = self.run_args(tasks);
+        debug!("$ {} {}", env::MISE_BIN.display(), run_args.join(" "));
+        let mut run = tokio::process::Command::new(&*env::MISE_BIN);
+        run.args(run_args).envs(&env);
         // watchexec's --env sets variables for the command it runs, which is now this one.
         for var in &self.watchexec.command_env {
             let (k, v) = var.split_once('=').unwrap_or((var, ""));
-            cmd = cmd.env(k, v);
+            run.env(k, v);
         }
-        let handle = cmd.unchecked().start()?;
+        // Isolated like a task command, so the nested mise keeps every task it starts, raw ones
+        // included, in one group that a forwarded signal or Ctrl-C's `kill_all` reaches whole.
+        cmd::prepare_task_child(run.as_std_mut());
+        let mut run = run.spawn().wrap_err("failed to run the tasks")?;
+        let _running = cmd::RunningPidGuard::new(run.id());
         #[cfg(unix)]
-        forward.set_pid(handle.pids().first().copied());
-        let output = handle.wait()?;
-        match exit_code(&output.status) {
+        forward.set_pid(run.id());
+        let status = run.wait().await?;
+        match exit_code(&status) {
             0 => Ok(()),
             code => Err(request_exit(code)),
         }
@@ -1833,7 +1837,8 @@ impl TerminalState {
 }
 
 /// Passes SIGTERM, SIGHUP and SIGQUIT on to the process `--once` is waiting on, watchexec and
-/// then `mise run`, and then lets the signal end mise as it would have.
+/// then the process group of `mise run` and its tasks, and then lets the signal end mise as it
+/// would have.
 ///
 /// Without it a SIGTERM, such as a caller's timeout, ends mise where it stands and leaves
 /// watchexec running until the next change, when it panics writing to the closed pipe. SIGINT is
@@ -1869,7 +1874,7 @@ impl ForwardSignals {
             if pid != 0
                 && let Ok(sig) = nix::sys::signal::Signal::try_from(signal)
             {
-                let _ = nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), sig);
+                cmd::signal_child_tree(pid, sig);
             }
             let _ = signal_hook::low_level::emulate_default_handler(signal);
         });
