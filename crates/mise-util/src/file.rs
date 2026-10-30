@@ -2600,17 +2600,17 @@ pub fn untar(
             .unpack(dest, &mut unpack_opts)
             .wrap_err_with(err)?;
         debug!("tar extraction summary: {summary:?}");
+        // Before stripping, which unwraps a top-level directory away from its `._<dir>` sidecar.
+        #[cfg(target_os = "macos")]
+        if saw_appledouble.get() {
+            merge_appledouble_files(dest).wrap_err_with(err)?;
+        }
         strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
             format!(
                 "failed to strip path components from tar archive: {}",
                 display_path(archive)
             )
-        })?;
-        #[cfg(target_os = "macos")]
-        if saw_appledouble.get() {
-            merge_appledouble_files(dest).wrap_err_with(err)?;
-        }
-        Ok(())
+        })
     })
 }
 
@@ -2619,7 +2619,9 @@ pub fn untar(
 fn is_appledouble_name(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| name.len() > 2 && name.starts_with("._"))
+        .and_then(|name| name.strip_prefix("._"))
+        // `._.` and `._..` would name the directory itself or its parent.
+        .is_some_and(|described| !matches!(described, "" | "." | ".."))
 }
 
 /// Folds each AppleDouble sidecar under `dir` into the file it describes and removes it, as
