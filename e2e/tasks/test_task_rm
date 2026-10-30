@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tools]
+
+[tasks]
+short = "echo short"
+
+[tasks.build]
+run = "cargo build"
+
+[tasks.test]
+run = "cargo test"
+EOF
+mise tasks add --file scripted -- echo hi
+mise tasks add --global everywhere -- echo everywhere
+
+echo "=== asks first ==="
+assert_fail_contains "MISE_YES=0 mise tasks rm build" "mise tasks rm requires confirmation"
+assert_contains "cat mise.toml" "[tasks.build]"
+
+echo "=== TOML and file tasks ==="
+mise tasks rm build scripted
+assert "cat mise.toml" '[tools]
+
+[tasks]
+short = "echo short"
+
+[tasks.test]
+run = "cargo test"'
+assert_fail "test -e mise-tasks/scripted"
+mise tasks remove short
+assert "cat mise.toml" '[tools]
+
+[tasks.test]
+run = "cargo test"'
+mise tasks rm everywhere
+assert "cat $MISE_CONFIG_DIR/config.toml" ''
+
+echo "=== --json and --dry-run ==="
+assert_json "mise tasks rm --json --dry-run test" "[{
+  \"task\": \"test\",
+  \"action\": \"removed\",
+  \"kind\": \"toml\",
+  \"path\": \"$PWD/mise.toml\",
+  \"table\": {\"run\": \"cargo test\"},
+  \"newly_trusted\": false,
+  \"dry_run\": true
+}]"
+assert_contains "cat mise.toml" "[tasks.test]"
+assert_json "mise tasks rm --json test" "[{
+  \"task\": \"test\",
+  \"action\": \"removed\",
+  \"kind\": \"toml\",
+  \"path\": \"$PWD/mise.toml\",
+  \"table\": {\"run\": \"cargo test\"},
+  \"newly_trusted\": false,
+  \"dry_run\": false
+}]"
+assert "cat mise.toml" '[tools]'
+
+echo "=== choosing the file ==="
+mise tasks add lint -- echo shared
+mise tasks add --env local lint -- echo mine
+assert_fail_contains "mise tasks rm lint" "task lint is defined in several files"
+mise tasks rm --env local lint
+assert "cat mise.local.toml" ''
+assert_contains "cat mise.toml" "[tasks.lint]"
+assert_fail_contains "mise tasks rm --env local lint" "no task named lint in"
+mise tasks add --file scripted -- echo hi
+mise tasks rm --path mise-tasks/scripted scripted
+assert_fail "test -e mise-tasks/scripted"
+echo "keep me" >notes.txt
+assert_fail_contains "mise tasks rm --path notes.txt lint" "is neither a TOML config file nor the script of task lint"
+assert "cat notes.txt" "keep me"
+
+echo "=== nothing changes when one task cannot be removed ==="
+assert_fail_contains "mise tasks rm lint nope" "no task named nope"
+assert_contains "cat mise.toml" "[tasks.lint]"

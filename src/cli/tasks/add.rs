@@ -1,17 +1,24 @@
-use crate::config::config_file;
+use crate::file;
+use crate::file::display_path;
 use crate::task::Task;
-use crate::{config, file};
-use eyre::Result;
+use eyre::{Result, bail};
 use std::path::MAIN_SEPARATOR_STR;
-use toml_edit::Item;
-use toml_writer::{ToTomlValue, TomlString, TomlStringBuilder, WriteTomlValue};
+use toml_edit::{Item, Value};
+
+use super::write::{self, Action, Kind, Report, TargetArgs, TaskFields};
 
 /// Add a task
 ///
-/// Writes a `[tasks.<name>]` table to the nearest project config file and marks
-/// that file as trusted. See
+/// Writes a `[tasks.<name>]` table to the nearest project config file, or to
+/// the file `--env`, `--global` or `--path` chooses, and trusts that file's
+/// config root so mise loads it. See
 /// https://mise.jdx.dev/configuration.html#target-file-for-write-operations for
-/// how the file is chosen.
+/// how the file is chosen. In safe mode (`MISE_SAFE=1`) it writes without
+/// trusting anything.
+///
+/// A task that already has that name in the file is replaced only with
+/// `--force`. Adding exactly the same task again changes nothing. To change
+/// some fields of an existing task, use `mise tasks set`.
 ///
 /// With `--file`, creates an executable script in the project's task directory
 /// (for example `mise-tasks/`) instead, and does not change any config file.
@@ -22,12 +29,20 @@ use toml_writer::{ToTomlValue, TomlString, TomlStringBuilder, WriteTomlValue};
         help = "Add a TOML task that is skipped while its outputs are up to date"
     ),
     example(
+        "mise tasks add --env local lint --tools node@24 -- npx eslint .",
+        help = "Add a personal task to mise.local.toml"
+    ),
+    example(
         "mise tasks add --file lint -- eslint .",
         help = "Create an executable lint script in the task directory"
     ),
     example(
         "mise tasks add ci --depends lint --depends test -- echo done",
         help = "Add a task that runs after lint and test"
+    ),
+    example(
+        "mise tasks add --json --dry-run deploy --confirm \"Deploy to production?\" -- ./deploy.sh",
+        help = "Print the task that would be written, as JSON, without writing it"
     )
 )]
 pub(super) struct TasksAdd {
@@ -39,225 +54,149 @@ pub(super) struct TasksAdd {
     #[usage(double_dash = "required")]
     run: Vec<String>,
 
-    /// Other names for the task
-    #[usage(long, short)]
-    alias: Vec<String>,
-    /// Tasks to run before this one
-    #[usage(long, short, value_name = "TASK")]
-    depends: Vec<String>,
-    /// Run the task in a specific directory
-    #[usage(long, short = 'D')]
-    dir: Option<String>,
     /// Create a file task instead of a TOML task
     #[usage(long, short)]
     file: bool,
-    /// Hide the task from `mise tasks` and completions
-    #[usage(long, short = 'H')]
-    hide: bool,
-    /// Do not print the command before running
-    #[usage(long, short)]
-    quiet: bool,
-    /// Connect the task directly to the terminal's stdin, stdout, and stderr
-    #[usage(long, short)]
-    raw: bool,
-    /// Glob patterns of files this task uses as input
-    #[usage(long, short, value_name = "GLOB")]
-    sources: Vec<String>,
-    /// Wait for these tasks to finish if they are also being run
-    #[usage(long, short, value_name = "TASK")]
-    wait_for: Vec<String>,
+    /// Replace a task that already has this name in the file
+    #[usage(long, short = 'F')]
+    force: bool,
+    /// Show what would be written without writing it
+    #[usage(long, short = 'n')]
+    dry_run: bool,
 
-    /// Tasks to run after this one
-    #[usage(long, value_name = "TASK")]
-    depends_post: Vec<String>,
-    /// Description of the task
-    #[usage(long)]
-    description: Option<String>,
-    /// Glob patterns of files this task creates, used to skip it when they are up to date
-    #[usage(long, value_name = "GLOB")]
-    outputs: Vec<String>,
-    /// Command to run on Windows (TOML tasks only; ignored with `--file`)
-    #[usage(long, value_name = "COMMAND")]
-    run_windows: Option<String>,
-    /// Run the task in a specific shell
-    #[usage(long)]
-    shell: Option<String>,
-    /// Do not print the command or its output
-    #[usage(long)]
-    silent: bool,
-    // TODO
-    // env: Vec<String>,
-    // tools: Vec<String>,
+    /// Print what was written as JSON
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    #[usage(flatten)]
+    target: TargetArgs,
+
+    #[usage(flatten)]
+    fields: TaskFields,
 }
 
 impl TasksAdd {
     pub(super) async fn run(self) -> Result<()> {
-        if self.file {
-            let mut path = Task::task_dir()
-                .await?
-                .join(self.task.replace(':', MAIN_SEPARATOR_STR));
-            if path.is_dir() {
-                path = path.join("_default");
+        let mut report = if self.file {
+            if self.target.is_set() {
+                bail!(
+                    "--file writes to the task directory; it cannot be used with --env, --global or --path"
+                );
             }
-            let mut lines = vec![format!(
-                "#!/usr/bin/env {}",
-                self.shell.clone().unwrap_or("bash".into())
-            )];
-            if !self.depends.is_empty() {
-                lines.push(header_line("depends", basic_strings(&self.depends)));
-            }
-            if !self.depends_post.is_empty() {
-                lines.push(header_line(
-                    "depends_post",
-                    basic_strings(&self.depends_post),
-                ));
-            }
-            if !self.wait_for.is_empty() {
-                lines.push(header_line("wait_for", basic_strings(&self.wait_for)));
-            }
-            if !self.alias.is_empty() {
-                lines.push(header_line("alias", basic_strings(&self.alias)));
-            }
-            if let Some(description) = &self.description {
-                lines.push(header_line("description", basic_string(description)));
-            }
-            if let Some(dir) = &self.dir {
-                lines.push(header_line("dir", basic_string(dir)));
-            }
-            if self.hide {
-                lines.push("#MISE hide=true".to_string());
-            }
-            if self.raw {
-                lines.push("#MISE raw=true".to_string());
-            }
-            if !self.sources.is_empty() {
-                lines.push(header_line("sources", basic_strings(&self.sources)));
-            }
-            if !self.outputs.is_empty() {
-                lines.push(header_line("outputs", basic_strings(&self.outputs)));
-            }
-            if self.quiet {
-                lines.push("#MISE quiet=true".to_string());
-            }
-            if self.silent {
-                lines.push("#MISE silent=true".to_string());
-            }
-            lines.push("set -euxo pipefail".into());
-            lines.push("".into());
-            if !self.run.is_empty() {
-                lines.push(self.run.join(" "));
-                lines.push("".into());
-            }
-            file::create_dir_all(path.parent().unwrap())?;
-            file::write(&path, lines.join("\n"))?;
-            file::make_executable(&path)?;
+            self.add_file_task().await?
         } else {
-            let path = config::local_toml_config_path();
-            // The file is edited as text rather than loaded, so nothing has checked it or the
-            // rest of its config root, which the write below trusts.
-            config_file::trust_check_before_write(&path)?;
-            let mut doc: toml_edit::DocumentMut =
-                file::read_to_string(&path).unwrap_or_default().parse()?;
-            let tasks = doc
-                .entry("tasks")
-                .or_insert_with(|| {
-                    let mut table = toml_edit::Table::new();
-                    table.set_implicit(true);
-                    Item::Table(table)
-                })
-                .as_table_mut()
-                .unwrap();
-            let mut task = toml_edit::Table::new();
-            if !self.depends.is_empty() {
-                let mut depends = toml_edit::Array::new();
-                for dep in &self.depends {
-                    depends.push(dep);
-                }
-                task.insert("depends", Item::Value(depends.into()));
-            }
-            if !self.depends_post.is_empty() {
-                let mut depends_post = toml_edit::Array::new();
-                for dep in &self.depends_post {
-                    depends_post.push(dep);
-                }
-                task.insert("depends_post", Item::Value(depends_post.into()));
-            }
-            if !self.wait_for.is_empty() {
-                let mut wait_for = toml_edit::Array::new();
-                for dep in &self.wait_for {
-                    wait_for.push(dep);
-                }
-                task.insert("wait_for", Item::Value(wait_for.into()));
-            }
-            if let Some(description) = &self.description {
-                task.insert("description", description.clone().into());
-            }
-            if !self.alias.is_empty() {
-                let mut alias = toml_edit::Array::new();
-                for a in &self.alias {
-                    alias.push(a);
-                }
-                task.insert("alias", Item::Value(alias.into()));
-            }
-            if let Some(dir) = &self.dir {
-                task.insert("dir", dir.clone().into());
-            }
-            if self.hide {
-                task.insert("hide", true.into());
-            }
-            if self.raw {
-                task.insert("raw", true.into());
-            }
-            if !self.sources.is_empty() {
-                let mut sources = toml_edit::Array::new();
-                for source in &self.sources {
-                    sources.push(source);
-                }
-                task.insert("sources", Item::Value(sources.into()));
-            }
-            if !self.outputs.is_empty() {
-                let mut outputs = toml_edit::Array::new();
-                for output in &self.outputs {
-                    outputs.push(output);
-                }
-                task.insert("outputs", Item::Value(outputs.into()));
-            }
-            if let Some(shell) = &self.shell {
-                task.insert("shell", shell.clone().into());
-            }
-            if self.quiet {
-                task.insert("quiet", true.into());
-            }
-            if self.silent {
-                task.insert("silent", true.into());
-            }
-            if !self.run.is_empty() {
-                task.insert("run", shell_words::join(&self.run).into());
-            }
-            if let Some(run_windows) = &self.run_windows {
-                task.insert("run_windows", run_windows.clone().into());
-            }
-            tasks.insert(&self.task, Item::Table(task));
-            file::write(&path, doc.to_string())?;
-            config_file::trust_after_write(&path)?;
+            self.add_toml_task()?
+        };
+        report.dry_run = self.dry_run;
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&report)?);
+        } else {
+            report.print();
         }
-
         Ok(())
     }
-}
 
-/// A `#MISE key=value` header line, with the value written as TOML so that it is
-/// quoted and escaped the way the header parser expects.
-fn header_line(key: &str, value: impl WriteTomlValue) -> String {
-    format!("#MISE {key}={}", value.to_toml_value())
-}
+    async fn add_file_task(&self) -> Result<Report> {
+        let mut path = Task::task_dir()
+            .await?
+            .join(self.task.replace(':', MAIN_SEPARATOR_STR));
+        if path.is_dir() {
+            path = path.join("_default");
+        }
+        let mut lines = vec![format!(
+            "#!/usr/bin/env {}",
+            self.fields.shell.clone().unwrap_or("bash".into())
+        )];
+        lines.extend(self.fields.header_lines()?);
+        lines.push("set -euxo pipefail".into());
+        lines.push("".into());
+        if !self.run.is_empty() {
+            lines.push(self.run.join(" "));
+            lines.push("".into());
+        }
+        let content = lines.join("\n");
+        let action = if !path.exists() {
+            Action::Added
+        } else if file::read_to_string(&path)? == content {
+            Action::Unchanged
+        } else {
+            self.allow_replace(&path)?;
+            Action::Replaced
+        };
+        if action != Action::Unchanged && !self.dry_run {
+            file::create_dir_all(path.parent().unwrap())?;
+            file::write(&path, content)?;
+            file::make_executable(&path)?;
+        }
+        Ok(Report::new(&self.task, action, Kind::File, &path))
+    }
 
-/// A single-line basic TOML string, so that a newline in the value is escaped
-/// instead of continuing the header on a line without the `#MISE` prefix.
-fn basic_string(value: &str) -> TomlString<'_> {
-    TomlStringBuilder::new(value).as_basic()
-}
+    fn add_toml_task(&self) -> Result<Report> {
+        let path = self.target.config_path()?;
+        write::ensure_toml(&path)?;
+        let before = if path.exists() {
+            file::read_to_string(&path)?
+        } else {
+            String::new()
+        };
+        let mut doc: toml_edit::DocumentMut = before.parse()?;
+        let mut task = toml_edit::Table::new();
+        for (key, value) in self.fields.toml_entries(&self.run)? {
+            task.insert(key, Item::Value(value));
+        }
+        let inline = doc.get("tasks").is_some_and(Item::is_inline_table);
+        let tasks = write::tasks_table(&mut doc, &path, true)?.unwrap();
+        let exists = tasks.contains_key(&self.task);
+        if inline {
+            // An inline `tasks = { ... }` can only hold inline tables.
+            tasks.insert(
+                &self.task,
+                Item::Value(Value::InlineTable(task.into_inline_table())),
+            );
+        } else {
+            tasks.insert(&self.task, Item::Table(task));
+        }
+        let after = doc.to_string();
+        let old = write::task_value(&before, &self.task)?;
+        let new = write::task_value(&after, &self.task)?;
+        let action = if !exists {
+            Action::Added
+        } else if old == new {
+            Action::Unchanged
+        } else {
+            self.allow_replace(&path)?;
+            Action::Replaced
+        };
+        let newly_trusted = if action != Action::Unchanged && !self.dry_run {
+            write::write_config(&path, &after)?
+        } else {
+            false
+        };
+        Ok(Report::new(&self.task, action, Kind::Toml, &path)
+            .with_table(new)?
+            .trusted(newly_trusted))
+    }
 
-fn basic_strings(values: &[String]) -> Vec<TomlString<'_>> {
-    values.iter().map(|value| basic_string(value)).collect()
+    /// Lets the add replace the existing task at `path`, which needs `--force`. Without it the
+    /// replacement still happens for now, with a deprecation warning, since it used to be silent
+    /// and scaffolding scripts rely on it.
+    fn allow_replace(&self, path: &std::path::Path) -> Result<()> {
+        if self.force {
+            return Ok(());
+        }
+        if self.dry_run {
+            // A preview reports `replaced` instead of warning about a write it does not make.
+            return Ok(());
+        }
+        // Once this is removed, replace it with an error that suggests --force and `mise tasks set`.
+        deprecated_at!(
+            "2026.10.0",
+            "2027.10.0",
+            "tasks-add-replace",
+            "mise tasks add replaced task {} in {} without --force. Pass --force to replace a task, or use `mise tasks set` to change some of its fields; replacing one without --force will fail.",
+            self.task,
+            display_path(path)
+        );
+        Ok(())
+    }
 }

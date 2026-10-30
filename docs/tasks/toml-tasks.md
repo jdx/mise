@@ -46,6 +46,36 @@ depends = ["test", "render"]
 run = "echo pre-commit"
 ```
 
+`--env local` writes the task to `mise.local.toml` instead, so it stays out of
+version control; `--global` and `--path` choose other files, as they do for
+[`mise use`](/configuration.html#target-file-for-write-operations). Flags such as
+`--env-var KEY=VALUE`, `--tools node@24`, `--usage` and `--confirm` set the other
+fields:
+
+```sh
+mise tasks add --env local deploy --env-var STAGE=prod --tools node@24 --confirm "Deploy now?" -- ./deploy.sh
+```
+
+```mise-toml [mise.local.toml]
+[tasks.deploy]
+confirm = "Deploy now?"
+env = { STAGE = "prod" }
+tools = { node = "24" }
+run = "./deploy.sh"
+```
+
+[`mise tasks set`](/cli/tasks/set.html) changes some fields of an existing task
+and leaves the rest of the file as it is, and
+[`mise tasks rm`](/cli/tasks/rm.html) removes a task. All three take `--json`
+and `--dry-run`, for scripts that check what changes before writing it.
+
+::: warning Replacing a task without `--force` is deprecated
+`mise tasks add` replaces a task that already has the same name in the file
+only with `--force`. Without it, mise still replaces the task, with a
+deprecation warning, and this will become an error in mise 2027.10.0. Adding
+exactly the same task again is not a replacement and changes nothing.
+:::
+
 ## Common properties
 
 ### Run commands

@@ -9,7 +9,10 @@ mod edit;
 mod graph;
 mod info;
 mod ls;
+mod rm;
+mod set;
 mod validate;
+mod write;
 
 /// Manage tasks
 ///
@@ -52,6 +55,8 @@ enum Commands {
     /// or https://mise.jdx.dev/cli/run.html for the full reference.
     #[usage(hide = true)]
     Run(Box<run::Run>),
+    Rm(rm::TasksRm),
+    Set(Box<set::TasksSet>),
     Validate(validate::TasksValidate),
 }
 
@@ -65,6 +70,8 @@ impl Commands {
             Self::Info(cmd) => cmd.run().await,
             Self::Ls(cmd) => cmd.run().await,
             Self::Run(cmd) => (*cmd).run().await,
+            Self::Rm(cmd) => cmd.run().await,
+            Self::Set(cmd) => (*cmd).run().await,
             Self::Validate(cmd) => cmd.run().await,
         }
     }

@@ -26,3 +26,112 @@ set -euxo pipefail
 
 pwd'
 assert "mise run where" "$PWD/src"
+
+echo "=== env, tools, usage and confirm ==="
+mise tasks add deploy --confirm "Deploy now?" --env-var STAGE=prod --env-var "GREETING=hello world" --tools node@24 --tools npm:@scope/pkg@1 --tools jq --usage 'arg "<target>"' -- ./deploy.sh 'two words'
+assert_contains "cat mise.toml" "[tasks.deploy]
+confirm = \"Deploy now?\"
+env = { STAGE = \"prod\", GREETING = \"hello world\" }
+tools = { node = \"24\", \"npm:@scope/pkg\" = \"1\", jq = \"latest\" }
+usage = 'arg \"<target>\"'
+run = \"./deploy.sh 'two words'\""
+assert "mise tasks info deploy --json | jq -c '[.env, .tools, .usage_spec.cmd.usage]'" '[["STAGE=prod","GREETING=hello world"],{"node":"24","npm:@scope/pkg":"1","jq":"latest"},"<target>"]'
+assert_fail_contains "mise tasks add bad --env-var NOEQUALS -- true" "--env-var takes KEY=VALUE"
+assert_not_contains "cat mise.toml" "[tasks.bad]"
+
+mise tasks add --file deploy --confirm "Deploy now?" --env-var 'QUOTE=a"b' --tools node@24 --usage $'arg "<target>"\nflag "-v --verbose"' -- ./deploy.sh
+assert "cat mise-tasks/deploy" '#!/usr/bin/env bash
+#MISE confirm="Deploy now?"
+#MISE env={ "QUOTE" = "a\"b" }
+#MISE tools={ "node" = "24" }
+#USAGE arg "<target>"
+#USAGE flag "-v --verbose"
+set -euxo pipefail
+
+./deploy.sh'
+# the TOML deploy task shadows the file task
+rm mise.toml
+assert "mise tasks info deploy --json | jq -c '[.env, .tools, .usage_spec.cmd.usage]'" '[["QUOTE=a\"b"],{"node":"24"},"[-v --verbose] <target>"]'
+
+echo "=== choosing the file ==="
+echo '[tools]' >mise.toml
+mise tasks add shared -- echo shared
+assert "cat mise.toml" '[tools]
+
+[tasks.shared]
+run = "echo shared"'
+mise tasks add --env local mine -- echo mine
+assert "cat mise.local.toml" '[tasks.mine]
+run = "echo mine"'
+mise tasks add -e staging staged -- echo staged
+assert "cat mise.staging.toml" '[tasks.staged]
+run = "echo staged"'
+mise tasks add --global everywhere -- echo everywhere
+assert "cat $MISE_CONFIG_DIR/config.toml" '[tasks.everywhere]
+run = "echo everywhere"'
+mkdir -p sub
+mise tasks add --path sub/tasks.toml explicit -- echo explicit
+assert "cat sub/tasks.toml" '[tasks.explicit]
+run = "echo explicit"'
+mise tasks add -p sub dir-target -- echo dir
+assert "cat sub/mise.toml" '[tasks.dir-target]
+run = "echo dir"'
+assert_fail_contains "mise tasks add -p .tool-versions nope -- true" "is not a TOML config file"
+assert_fail_contains "mise tasks add --file --global nope -- true" "--file"
+assert "cat mise.toml" '[tools]
+
+[tasks.shared]
+run = "echo shared"'
+
+echo "=== replacing a task ==="
+assert_contains "mise tasks add shared -- echo shared 2>&1" "task shared in"
+assert_contains "mise tasks add shared -- echo shared 2>&1" "is unchanged"
+assert_not_contains "mise tasks add shared -- echo shared 2>&1" "deprecated"
+assert_contains "mise tasks add shared -- echo changed 2>&1" "deprecated [tasks-add-replace]"
+assert "cat mise.toml" '[tools]
+
+[tasks.shared]
+run = "echo changed"'
+assert_not_contains "mise tasks add --force shared --hide -- echo forced 2>&1" "deprecated"
+assert "cat mise.toml" '[tools]
+
+[tasks.shared]
+hide = true
+run = "echo forced"'
+assert_contains "mise tasks add --file where -- pwd 2>&1" "deprecated [tasks-add-replace]"
+assert_not_contains "mise tasks add --file --force where -- ls 2>&1" "deprecated"
+assert_contains "cat mise-tasks/where" "ls"
+
+echo "=== --json and --dry-run ==="
+assert_json "mise tasks add --json mine2 --description 'Mine' --depends shared -- echo mine" "{
+  \"task\": \"mine2\",
+  \"action\": \"added\",
+  \"kind\": \"toml\",
+  \"path\": \"$PWD/mise.toml\",
+  \"table\": {\"depends\": [\"shared\"], \"description\": \"Mine\", \"run\": \"echo mine\"},
+  \"newly_trusted\": false,
+  \"dry_run\": false
+}"
+assert_json "mise tasks add --json --dry-run mine2 -- echo other" "{
+  \"task\": \"mine2\",
+  \"action\": \"replaced\",
+  \"kind\": \"toml\",
+  \"path\": \"$PWD/mise.toml\",
+  \"table\": {\"run\": \"echo other\"},
+  \"newly_trusted\": false,
+  \"dry_run\": true
+}"
+assert_contains "cat mise.toml" '[tasks.mine2]
+depends = ["shared"]
+description = "Mine"
+run = "echo mine"'
+assert_json "mise tasks add --json --dry-run --file scripted -- echo hi" "{
+  \"task\": \"scripted\",
+  \"action\": \"added\",
+  \"kind\": \"file\",
+  \"path\": \"$PWD/mise-tasks/scripted\",
+  \"table\": null,
+  \"newly_trusted\": false,
+  \"dry_run\": true
+}"
+assert_fail "test -e mise-tasks/scripted"
