@@ -477,21 +477,11 @@ pub(super) async fn find_definitions(name: &str) -> Result<Vec<Definition>> {
             definitions.push(Definition::Toml(path.clone()));
         }
     }
-    // In one config root a TOML task with a command takes the place of a same-named script,
-    // so the loaded tasks never show that script. Look for it in the root's task directories.
-    let roots = definitions
+    let mut roots = definitions
         .iter()
         .filter_map(|def| config.config_files.get(def.path()))
         .map(|cf| cf.config_root())
-        .unique()
         .collect::<Vec<_>>();
-    for root in roots {
-        for script in scripts_in_root(&config, &root, name)? {
-            if !definitions.iter().any(|def| def.path() == script) {
-                definitions.push(Definition::File(script));
-            }
-        }
-    }
     for task in config.tasks_with_shadowed().await? {
         let source = &task.config_source;
         if !task.answers_to(name)
@@ -500,11 +490,23 @@ pub(super) async fn find_definitions(name: &str) -> Result<Vec<Definition>> {
         {
             continue;
         }
-        definitions.push(if task.is_file_task() {
-            Definition::File(source.clone())
+        if task.is_file_task() {
+            definitions.push(Definition::File(source.clone()));
+            roots.extend(task.config_root.clone());
         } else {
-            Definition::Other(source.clone())
-        });
+            definitions.push(Definition::Other(source.clone()));
+        }
+    }
+    // Within one config root, tasks merge by name before they are loaded: a TOML task with a
+    // command takes the place of a same-named script, and of two same-named scripts (one in
+    // `mise-tasks/`, one in `.mise-tasks/`) only one is kept. Look for the others in the task
+    // directories of every root that defines the task.
+    for root in roots.into_iter().unique() {
+        for script in scripts_in_root(&config, &root, name)? {
+            if !definitions.iter().any(|def| def.path() == script) {
+                definitions.push(Definition::File(script));
+            }
+        }
     }
     if definitions.is_empty()
         && let Some(task) = config
