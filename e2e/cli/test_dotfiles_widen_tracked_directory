@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Tracking a directory in place of the narrower paths inside it keeps saving:
+# the saved versions came from this machine, so widening is not a pause that
+# only a pull from another machine could end.
+require_cmd git
+export MISE_HISTORY_NOTIFY=false
+origin="$PWD/widen-origin.git"
+repository="$MISE_STATE_DIR/history/repo.git"
+git init -q --bare -b main "$origin"
+mkdir -p ~/.agents/skills/alpha ~/.agents/skills/beta
+echo alpha-v1 >~/.agents/skills/alpha/SKILL.md
+echo beta-v1 >~/.agents/skills/beta/SKILL.md
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.agents/skills/alpha" = { mode = "track" }
+"~/.agents/skills/beta" = { mode = "track" }
+TOML
+assert_succeed "mise dot save"
+assert_succeed "mise dot origin set file://$origin --sync manual --yes"
+assert_succeed "mise dot sync"
+assert "git --git-dir=$origin show main:home/.agents/skills/alpha/SKILL.md" "alpha-v1"
+
+# widen to the parent, which also covers a file the narrower entries did not
+echo loose-v1 >~/.agents/skills/loose.md
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[dotfiles]
+"~/.agents/skills" = { mode = "track" }
+TOML
+assert_not_contains "mise dot status 2>&1" "not applied here"
+assert_not_contains "mise dot save 2>&1" "saved by another machine"
+assert "git --git-dir=$repository show main:home/.agents/skills/loose.md" "loose-v1"
+
+# edits under the parent keep producing checkpoints and sharing
+echo alpha-v2 >~/.agents/skills/alpha/SKILL.md
+assert_contains "mise dot status 2>&1" "unsaved"
+assert_succeed "mise dot save"
+assert "git --git-dir=$repository show main:home/.agents/skills/alpha/SKILL.md" "alpha-v2"
+assert_succeed "mise dot sync"
+assert "git --git-dir=$origin show main:home/.agents/skills/alpha/SKILL.md" "alpha-v2"
+assert "git --git-dir=$origin show main:home/.agents/skills/loose.md" "loose-v1"

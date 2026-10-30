@@ -196,8 +196,13 @@ pub(crate) fn streams(
     Ok(streams)
 }
 
-/// Whether an entry's live files are exactly its saved ones, compared as
+/// Whether every file an entry saved is live and unchanged, compared as
 /// plaintext so an encrypted file matches its saved ciphertext.
+///
+/// A live file with no saved version is an addition, such as a file the
+/// entry now covers because it replaced narrower ones: capturing it
+/// publishes neither a deletion nor a revert, so it does not make the
+/// saved version someone else's.
 fn live_matches_saved(
     repo: &HistoryRepo,
     parent: Option<&str>,
@@ -226,7 +231,6 @@ fn live_matches_saved(
             .collect(),
         Some(_) => vec![stream.to_string()],
     };
-    let mut saved = 0;
     for path in paths {
         let Some(local) = roots.locate(&path).path().map(Path::to_path_buf) else {
             return Ok(false);
@@ -235,7 +239,6 @@ fn live_matches_saved(
         if super::tracked::owning_entry_index(&walk.entries, &local) != Some(index) {
             continue;
         }
-        saved += 1;
         if !live.contains(&local) {
             return Ok(false);
         }
@@ -247,7 +250,7 @@ fn live_matches_saved(
             return Ok(false);
         }
     }
-    Ok(saved == live.len())
+    Ok(true)
 }
 
 /// The selected entries a save would carry rather than capture, against
@@ -322,6 +325,103 @@ mod tests {
         held.observe(streams(&["home@work/.f"]), |_| Ok(None))?;
         assert!(!held.kept("home@work/.f"));
         assert!(held.holds("home@work/.f", Some(&obj("b"))));
+        Ok(())
+    }
+
+    /// A directory enrolled in place of narrower entries covers files the
+    /// narrower ones did not: those are additions, not a revert of what
+    /// this machine saved, so the saved version stays this machine's.
+    #[cfg(unix)]
+    #[test]
+    fn live_files_the_saved_version_lacks_do_not_unhold_a_widened_entry() -> Result<()> {
+        use crate::files::{FileMode, FilePolicy};
+        use crate::history::shadow::Overlay;
+        use crate::history::sync::layout::Roots;
+        use crate::history::tracked::{TrackedEntry, Walk, normalize};
+
+        let state = tempfile::tempdir()?;
+        let Some(repo) = HistoryRepo::open_or_init_in(state.path())? else {
+            return Ok(());
+        };
+        let roots = Roots::current();
+        let scratch = tempfile::Builder::new()
+            .prefix(".history-held-widened-")
+            .tempdir_in(&roots.home)?;
+        let skills = normalize(scratch.path()).join("skills");
+        let child = skills.join("child");
+        std::fs::create_dir_all(&child)?;
+        std::fs::write(child.join("SKILL.md"), "child")?;
+        std::fs::write(skills.join("loose.md"), "loose")?;
+
+        let policy = FilePolicy::for_mode(FileMode::Track);
+        let parent = TrackedEntry::new(skills.clone(), "track", policy);
+        let nested = TrackedEntry::new(child.clone(), "track", policy);
+        let stream = parent.tree_path(&skills)?;
+        // saved under the narrower entry: only the child's file
+        let saved = repo.compose(
+            &repo.empty_object("tree")?,
+            &[Overlay {
+                path: nested.tree_path(&child.join("SKILL.md"))?,
+                object: Some(("100644".into(), repo.hash_blob(b"child")?)),
+            }],
+        )?;
+        let walk = |loose: bool| {
+            let mut walk = Walk {
+                entries: vec![parent.clone(), nested.clone()],
+                ..Default::default()
+            };
+            walk.files.insert(child.join("SKILL.md"), (1, policy));
+            if loose {
+                walk.files.insert(skills.join("loose.md"), (0, policy));
+            }
+            walk
+        };
+        // the nested entry's file is its own to compare; the loose one is new
+        assert!(live_matches_saved(
+            &repo,
+            Some(&saved),
+            &walk(true),
+            0,
+            &stream
+        )?);
+        assert!(live_matches_saved(
+            &repo,
+            Some(&saved),
+            &walk(false),
+            0,
+            &stream
+        )?);
+
+        // a saved file the entry owns that changed or went missing is not held
+        let owned = repo.compose(
+            &saved,
+            &[Overlay {
+                path: parent.tree_path(&skills.join("loose.md"))?,
+                object: Some(("100644".into(), repo.hash_blob(b"loose")?)),
+            }],
+        )?;
+        assert!(live_matches_saved(
+            &repo,
+            Some(&owned),
+            &walk(true),
+            0,
+            &stream
+        )?);
+        assert!(!live_matches_saved(
+            &repo,
+            Some(&owned),
+            &walk(false),
+            0,
+            &stream
+        )?);
+        std::fs::write(skills.join("loose.md"), "edited elsewhere")?;
+        assert!(!live_matches_saved(
+            &repo,
+            Some(&owned),
+            &walk(true),
+            0,
+            &stream
+        )?);
         Ok(())
     }
 
