@@ -71,6 +71,8 @@
     $mirror = $env:MISE_INSTALL_GITHUB_MIRROR
     if (-not $mirror) { return 'https://github.com' }
     if ($mirror -notmatch '://') { $mirror = "https://$mirror" }
+    # Credentials in the URL would show up in download and error messages.
+    if ($mirror -match '^[^:/?#]*://[^/?#]*@') { Stop-Install 'MISE_INSTALL_GITHUB_MIRROR must not contain credentials' }
     if ($mirror -notmatch '^https://') { Stop-Install "MISE_INSTALL_GITHUB_MIRROR must use https: $mirror" }
     return $mirror.TrimEnd('/')
   }

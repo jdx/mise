@@ -437,6 +437,23 @@ class DownloadSourceTests(unittest.TestCase):
                 self.assert_refused(result, installed, "MISE_INSTALL_GITHUB_MIRROR must use https")
                 self.assertEqual(urls, [])
 
+    def test_github_mirror_rejects_credentials(self):
+        for value in [
+            "https://user:s3cret@gh.example.invalid/github",
+            "user:s3cret@gh.example.invalid",
+            "http://user:s3cret@gh.example.invalid",
+        ]:
+            with self.subTest(value=value):
+                result, urls, installed = self.install(MISE_INSTALL_GITHUB_MIRROR=value)
+                self.assert_refused(result, installed, "MISE_INSTALL_GITHUB_MIRROR must not contain credentials")
+                self.assertNotIn("s3cret", result.stderr)
+                self.assertEqual(urls, [])
+
+        result, urls, installed = self.install(
+            fail_urls=[MIRROR + "/v{v}/{a}"], MISE_INSTALL_GITHUB_MIRROR="https://gh.example.invalid/a@b"
+        )
+        self.assert_installed(result, installed)
+
     def test_builtin_version_uses_static_checksum_and_falls_back(self):
         result, urls, installed = self.install(version="2026.10.0")
         self.assert_installed(result, installed)
