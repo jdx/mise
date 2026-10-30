@@ -2302,11 +2302,11 @@ impl Lock {
             if self.local && !is_local {
                 continue;
             }
-            if self
-                .lockfiles
-                .as_ref()
-                .is_some_and(|only| !only.contains(&lockfile_path))
-            {
+            if self.lockfiles.as_ref().is_some_and(|only| {
+                !only
+                    .iter()
+                    .any(|lockfile| lockfile::same_file_path(lockfile, &lockfile_path))
+            }) {
                 continue;
             }
             // One lockfile can be reached through two spellings, such as a
@@ -2789,7 +2789,7 @@ impl Lock {
                 &config_path,
                 config.monorepo_lockfile_root().as_deref(),
             );
-            if task_lockfile_path != target_lockfile_path {
+            if !lockfile::same_file_path(&task_lockfile_path, target_lockfile_path) {
                 continue;
             }
 

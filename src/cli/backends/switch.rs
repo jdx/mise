@@ -373,9 +373,11 @@ impl BackendsSwitch {
             for (_, tv) in ts.list_current_versions() {
                 if let Some((lockfile, _)) =
                     lockfile::lockfile_path_for_tool_source(config, tv.request.source())
-                    && targets.contains(&lockfile)
+                    && let Some(target) = targets
+                        .iter()
+                        .find(|target| lockfile::same_file_path(target, &lockfile))
                 {
-                    versions.push((lockfile, tv));
+                    versions.push((target.clone(), tv));
                 }
             }
         }
