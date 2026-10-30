@@ -127,6 +127,11 @@ shasum_bin() {
 # that reach GitHub Releases only through a mirror. A bare host means https.
 github_base_url() {
   github_mirror="${MISE_INSTALL_GITHUB_MIRROR:-}"
+  # Credentials in the URL would show up in download and error messages.
+  github_mirror_host="${github_mirror#*://}"
+  case "${github_mirror_host%%[/?#]*}" in
+  *@*) error "MISE_INSTALL_GITHUB_MIRROR must not contain credentials" ;;
+  esac
   case "$github_mirror" in
   "") echo "https://github.com" ;;
   https://*) echo "${github_mirror%/}" ;;
