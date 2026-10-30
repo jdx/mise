@@ -22,7 +22,46 @@ sources = ["src/**/*.txt"]
 run = 'sleep 120 & echo $! >"$HOME/slow.pid"; echo "ran slow"; wait'
 raw = true
 sources = ["src/**/*.txt"]
+
+[tasks.stubborn]
+run = 'trap "" INT; echo $$ >"$HOME/stubborn.pid"; exec sleep 120'
+raw = true
+sources = ["src/**/*.txt"]
 EOF
+
+# A killed task is reparented, and a zombie still answers `kill -0` until
+# something reaps it; containers often run an init that never does.
+process_running() {
+  local stat
+  stat="$(ps -o stat= -p "$1" 2>/dev/null)" || return 1
+  [[ $stat != Z* ]]
+}
+
+# Start the task, touching its source until it writes its pid file.
+start_task() {
+  local task=$1
+  rm -f "$HOME/$task.pid"
+  mise watch "$task" --once >"$output_file" 2>&1 &
+  pid=$!
+  for _ in $(seq 1 60); do
+    [ -s "$HOME/$task.pid" ] && return
+    touch src/changed.txt
+    sleep 1
+  done
+  fail "the $task task did not start: $(tr -d '\0' <"$output_file")"
+}
+
+# Fail if the task's process outlives the watch.
+assert_task_stopped() {
+  local task_pid
+  task_pid=$(cat "$HOME/$1.pid")
+  for _ in $(seq 1 20); do
+    process_running "$task_pid" || return 0
+    sleep 0.5
+  done
+  kill -KILL "$task_pid"
+  fail "the $1 task kept running after $2"
+}
 
 output_file="$HOME/.watch_once_output"
 runs() { tr -d '\0' <"$output_file" | grep -c "^ran $1" || true; }
@@ -75,27 +114,21 @@ assert "echo $(runs ok)" "0"
 
 # SIGTERM during the run reaches the task's whole process tree, also for a raw
 # task, which the nested `mise run` does not pass signals on to itself.
-mise watch slow --once >"$output_file" 2>&1 &
-pid=$!
-for _ in $(seq 1 60); do
-  [ -s "$HOME/slow.pid" ] && break
-  touch src/changed.txt
-  sleep 1
-done
-[ -s "$HOME/slow.pid" ] || fail "the slow task did not start: $(tr -d '\0' <"$output_file")"
+start_task slow
 kill -TERM "$pid"
 status=0
 wait "$pid" || status=$?
 assert "echo $status" "143"
-slow_pid=$(cat "$HOME/slow.pid")
-for _ in $(seq 1 20); do
-  kill -0 "$slow_pid" 2>/dev/null || break
-  sleep 0.5
-done
-if kill -0 "$slow_pid" 2>/dev/null; then
-  kill "$slow_pid"
-  fail "the raw task kept running after SIGTERM"
-fi
+assert_task_stopped slow SIGTERM
+
+# A SIGINT that the task ignores ends the watch with 130, and mise still stops
+# the task on the way out.
+start_task stubborn
+kill -INT "$pid"
+status=0
+wait "$pid" || status=$?
+assert "echo $status" "130"
+assert_task_stopped stubborn SIGINT
 
 # Flags that set how watchexec runs the command have no use with --once.
 assert_fail_contains "mise watch ok --once --restart --clear" "--once cannot be combined with --clear, --restart"

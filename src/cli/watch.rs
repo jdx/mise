@@ -422,10 +422,14 @@ impl Watch {
         // included, in one group that a forwarded signal or Ctrl-C's `kill_all` reaches whole.
         cmd::prepare_task_child(run.as_std_mut());
         let mut run = run.spawn().wrap_err("failed to run the tasks")?;
-        let _running = cmd::RunningPidGuard::new(run.id());
+        // Tracked until the run is reaped. Ctrl-C drops this future while the run may still be
+        // going, a task that ignores SIGINT for one, so the pid then stays registered and the
+        // SIGTERM mise sends its running commands on the way out still reaches the group.
+        let running = std::mem::ManuallyDrop::new(cmd::RunningPidGuard::new(run.id()));
         #[cfg(unix)]
         forward.set_pid(run.id());
         let status = run.wait().await?;
+        drop(std::mem::ManuallyDrop::into_inner(running));
         match exit_code(&status) {
             0 => Ok(()),
             code => Err(request_exit(code)),
