@@ -723,7 +723,9 @@ fn remote_ref_sha(path: &Path, git_ref: &str) -> Result<Option<String>> {
 }
 
 fn remote_exact_ref_sha(path: &Path, git_ref: &str) -> Result<Option<String>> {
-    let out = git_output(path, &["ls-remote", "origin", git_ref])?;
+    // An exact pattern omits the peeled `^{}` line of an annotated tag, so ask for it too.
+    let deref_ref = format!("{git_ref}^{{}}");
+    let out = git_output(path, &["ls-remote", "origin", git_ref, &deref_ref])?;
     Ok(parse_remote_exact_ref_sha(&out, git_ref))
 }
 
@@ -1598,6 +1600,41 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/tags/release^{}
             Some("main"),
             Some("abc123")
         ));
+    }
+
+    #[test]
+    fn annotated_tag_is_current_at_the_tagged_commit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let origin = tmp.path().join("origin.git");
+        let work = tmp.path().join("work");
+
+        Command::new("git")
+            .args(["init", "-q", "--bare"])
+            .arg(&origin)
+            .status()
+            .unwrap();
+        Command::new("git")
+            .args(["init", "-q", "-b", "main"])
+            .arg(&work)
+            .status()
+            .unwrap();
+        fs::write(work.join("version.txt"), "v1").unwrap();
+        test_git(&work, &["add", "."]);
+        let identity = ["-c", "user.email=test@example.com", "-c", "user.name=Test"];
+        let git_with_identity = |args: &[&str]| {
+            let args: Vec<&str> = identity.iter().chain(args).copied().collect();
+            test_git(&work, &args);
+        };
+        git_with_identity(&["commit", "-q", "-m", "v1"]);
+        git_with_identity(&["tag", "-a", "-m", "annotated", "v1"]);
+        test_git(
+            &work,
+            &["remote", "add", "origin", origin.to_str().unwrap()],
+        );
+        test_git(&work, &["push", "-q", "origin", "main", "v1"]);
+
+        let sha = current_sha(&work).unwrap();
+        assert!(ref_is_current(&work, "v1", Some("main"), Some(&sha)));
     }
 
     #[test]
