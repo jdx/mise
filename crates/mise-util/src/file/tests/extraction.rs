@@ -407,6 +407,142 @@ fn test_extract_archive_7z() {
     assert!(!absolute_target_path.exists());
 }
 
+fn appledouble_tar(sidecar: &[u8]) -> Vec<u8> {
+    let mut builder = jdx_tar::Builder::new(Vec::new());
+    for (name, contents) in [("pkg/data.pak", &b"data"[..]), ("pkg/._data.pak", sidecar)] {
+        let mut header = jdx_tar::Header::new_gnu(EntryType::File);
+        header.set_size(contents.len() as u64);
+        header.set_mode(0o644);
+        builder.append_data(&mut header, name, contents).unwrap();
+    }
+    builder.into_inner().unwrap()
+}
+
+#[test]
+fn test_is_appledouble_name() {
+    for name in ["._a", "dir/._a.pak", "._.hidden", "._a b"] {
+        assert!(is_appledouble_name(Path::new(name)), "{name}");
+    }
+    // `._.` and `._..` would make the merge target the directory itself or its parent.
+    for name in ["a", ".a", "_a", "._", "._.", "dir/._..", "dir/._"] {
+        assert!(!is_appledouble_name(Path::new(name)), "{name}");
+    }
+}
+
+/// Archives `pkg/` with the system `tar`, which stores a file's xattrs as `._*` entries.
+#[cfg(target_os = "macos")]
+fn macos_tar_with_xattr(dir: &Path) -> PathBuf {
+    use std::process::Command;
+
+    let pkg = dir.join("src/pkg");
+    std::fs::create_dir_all(&pkg).unwrap();
+    std::fs::write(pkg.join("data.pak"), b"data").unwrap();
+    let status = Command::new("/usr/bin/xattr")
+        .args(["-w", "com.example.sig", "sealed"])
+        .arg(pkg.join("data.pak"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let archive_path = dir.join("bundle.tar");
+    let status = Command::new("/usr/bin/tar")
+        .env_remove("COPYFILE_DISABLE")
+        .arg("-cf")
+        .arg(&archive_path)
+        .arg("-C")
+        .arg(dir.join("src"))
+        .arg("pkg")
+        .status()
+        .unwrap();
+    assert!(status.success());
+    // Not `tar -tf`: macOS tar folds AppleDouble entries into their files when listing.
+    let has_sidecar = jdx_tar::Archive::new(File::open(&archive_path).unwrap())
+        .entries()
+        .unwrap()
+        .any(|entry| entry.unwrap().path().unwrap().ends_with("pkg/._data.pak"));
+    assert!(has_sidecar, "tar did not write an AppleDouble entry");
+    archive_path
+}
+
+#[cfg(target_os = "macos")]
+fn xattr_of(path: &Path, name: &str) -> String {
+    let out = std::process::Command::new("/usr/bin/xattr")
+        .args(["-p", name])
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{name} is missing on {}",
+        path.display()
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn test_extract_archive_folds_appledouble_sidecars_into_their_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let archive_path = macos_tar_with_xattr(dir.path());
+    let dest_dir = dir.path().join("out");
+
+    extract_archive(
+        &archive_path,
+        &dest_dir,
+        ExtractionFormat::Tar,
+        &ExtractOptions::default(),
+    )
+    .unwrap();
+
+    let data = dest_dir.join("pkg/data.pak");
+    assert_eq!(std::fs::read(&data).unwrap(), b"data");
+    assert_eq!(xattr_of(&data, "com.example.sig"), "sealed");
+    assert!(!dest_dir.join("pkg/._data.pak").exists());
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn test_extract_archive_folds_appledouble_sidecars_when_stripping() {
+    let dir = tempfile::tempdir().unwrap();
+    let archive_path = macos_tar_with_xattr(dir.path());
+    let dest_dir = dir.path().join("out");
+
+    extract_archive(
+        &archive_path,
+        &dest_dir,
+        ExtractionFormat::Tar,
+        &ExtractOptions {
+            strip_components: 1,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let data = dest_dir.join("data.pak");
+    assert_eq!(xattr_of(&data, "com.example.sig"), "sealed");
+    assert!(!dest_dir.join("._data.pak").exists());
+}
+
+#[test]
+fn test_extract_archive_keeps_files_that_are_not_appledouble() {
+    let dir = tempfile::tempdir().unwrap();
+    let archive_path = dir.path().join("bundle.tar");
+    let dest_dir = dir.path().join("out");
+    std::fs::write(&archive_path, appledouble_tar(b"not appledouble")).unwrap();
+
+    extract_archive(
+        &archive_path,
+        &dest_dir,
+        ExtractionFormat::Tar,
+        &ExtractOptions::default(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        std::fs::read(dest_dir.join("pkg/._data.pak")).unwrap(),
+        b"not appledouble"
+    );
+}
+
 #[test]
 fn test_extract_archive_ignores_malformed_non_sparse_pax_metadata() {
     use tempfile::tempdir;
