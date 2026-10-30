@@ -87,7 +87,8 @@ echo "=== replacing a task ==="
 assert_contains "mise tasks add shared -- echo shared 2>&1" "task shared in"
 assert_contains "mise tasks add shared -- echo shared 2>&1" "is unchanged"
 assert_not_contains "mise tasks add shared -- echo shared 2>&1" "deprecated"
-assert_contains "mise tasks add shared -- echo changed 2>&1" "deprecated [tasks-add-replace]"
+# replacing without --force still works; its deprecation warning starts in 2027.5.0
+assert_contains "mise tasks add shared -- echo changed 2>&1" "task shared replaced in"
 assert "cat mise.toml" '[tools]
 
 [tasks.shared]
@@ -98,7 +99,7 @@ assert "cat mise.toml" '[tools]
 [tasks.shared]
 hide = true
 run = "echo forced"'
-assert_contains "mise tasks add --file where -- pwd 2>&1" "deprecated [tasks-add-replace]"
+assert_contains "mise tasks add --file where -- pwd 2>&1" "task where replaced in"
 assert_not_contains "mise tasks add --file --force where -- ls 2>&1" "deprecated"
 assert_contains "cat mise-tasks/where" "ls"
 

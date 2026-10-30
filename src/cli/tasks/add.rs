@@ -16,9 +16,11 @@ use super::write::{self, Action, Kind, Report, TargetArgs, TaskFields};
 /// how the file is chosen. In safe mode (`MISE_SAFE=1`) it writes without
 /// trusting anything.
 ///
-/// A task that already has that name in the file is replaced only with
-/// `--force`. Adding exactly the same task again changes nothing. To change
-/// some fields of an existing task, use `mise tasks set`.
+/// Pass `--force` to replace a task that already has that name in the file.
+/// Replacing one without it is deprecated: mise still replaces the task, warns
+/// from 2027.5.0, and refuses from 2028.5.0. Adding exactly the same task again
+/// changes nothing. To change some fields of an existing task, use
+/// `mise tasks set`.
 ///
 /// With `--file`, creates an executable script in the project's task directory
 /// (for example `mise-tasks/`) instead, and does not change any config file.
@@ -178,8 +180,9 @@ impl TasksAdd {
     }
 
     /// Lets the add replace the existing task at `path`, which needs `--force`. Without it the
-    /// replacement still happens for now, with a deprecation warning, since it used to be silent
-    /// and scaffolding scripts rely on it.
+    /// replacement still happens for now, since it used to be silent and scaffolding scripts rely
+    /// on it. The warning waits six months because older mise rejects `--force`, so a script
+    /// shared with machines on those versions has no way to avoid it until they age out.
     fn allow_replace(&self, path: &std::path::Path) -> Result<()> {
         if self.force {
             return Ok(());
@@ -190,8 +193,8 @@ impl TasksAdd {
         }
         // Once this is removed, replace it with an error that suggests --force and `mise tasks set`.
         deprecated_at!(
-            "2026.10.0",
-            "2027.10.0",
+            "2027.5.0",
+            "2028.5.0",
             "tasks-add-replace",
             "mise tasks add replaced task {} in {} without --force. Pass --force to replace a task, or use `mise tasks set` to change some of its fields; replacing one without --force will fail.",
             self.task,

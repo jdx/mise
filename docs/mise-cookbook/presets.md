@@ -79,9 +79,8 @@ add `.venv/` to `.gitignore`.
 
 In a project that already has a `mise.toml`, the task adds to it, and running
 it again changes nothing. `mise use` replaces the existing `python` and `uv`
-versions. A project that already defines a different `sync` or `test` task keeps
-it only until a scaffold replaces it: `mise tasks add` replaces a task with the
-same name only with `--force`, and without it replaces the task with a
-deprecation warning, which will become an error in mise 2027.10.0. Run
-`mise tasks ls` first to check whether the project already defines `sync` or
-`test`.
+versions. A project that already defines a different `sync` or `test` task loses
+it: `mise tasks add` replaces a task with the same name. Replacing one without
+`--force` is deprecated; mise warns about it from 2027.5.0 and refuses it from
+2028.5.0. Run `mise tasks ls` first to check whether the project already
+defines `sync` or `test`.

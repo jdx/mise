@@ -6857,7 +6857,7 @@ Add a task
 
 Writes a `[tasks.<name>]` table to the nearest project config file, or to the file `--env`, `--global` or `--path` chooses, and trusts that file's config root so mise loads it. See https://mise.jdx.dev/configuration.html#target-file-for-write-operations for how the file is chosen. In safe mode (`MISE_SAFE=1`) it writes without trusting anything.
 
-A task that already has that name in the file is replaced only with `--force`. Adding exactly the same task again changes nothing. To change some fields of an existing task, use `mise tasks set`.
+Pass `--force` to replace a task that already has that name in the file. Replacing one without it is deprecated: mise still replaces the task, warns from 2027.5.0, and refuses from 2028.5.0. Adding exactly the same task again changes nothing. To change some fields of an existing task, use `mise tasks set`.
 
 With `--file`, creates an executable script in the project's task directory (for example `mise-tasks/`) instead, and does not change any config file.
 """#

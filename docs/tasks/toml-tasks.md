@@ -70,10 +70,12 @@ and leaves the rest of the file as it is, and
 and `--dry-run`, for scripts that check what changes before writing it.
 
 ::: warning Replacing a task without `--force` is deprecated
-`mise tasks add` replaces a task that already has the same name in the file
-only with `--force`. Without it, mise still replaces the task, with a
-deprecation warning, and this will become an error in mise 2027.10.0. Adding
-exactly the same task again is not a replacement and changes nothing.
+Pass `--force` to `mise tasks add` to replace a task that already has the same
+name in the file. Without it, mise still replaces the task. mise starts warning
+about this in 2027.5.0 and refuses it from 2028.5.0. The warning waits because
+mise versions before `--force` existed reject the flag, so a script shared with
+machines on those versions could not avoid the warning yet. Adding exactly the
+same task again is not a replacement: it changes nothing and never warns.
 :::
 
 ## Common properties
