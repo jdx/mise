@@ -2109,17 +2109,28 @@ impl HistoryRepo {
         Ok(out.lines().map(str::to_string).collect())
     }
 
-    /// Whether any commit reachable from `head` changed `path`: it was saved
-    /// at some point, whether or not it still is.
-    pub(crate) fn path_ever_saved(&self, head: &str, path: &str) -> Result<bool> {
+    /// The paths under `stream` that some commit reachable from `head`
+    /// deleted: files that were saved and no longer are, whether or not a
+    /// later commit saved them again.
+    pub(crate) fn deleted_paths_under(&self, head: &str, stream: &str) -> Result<BTreeSet<String>> {
+        let literal = format!(":(literal){stream}");
         let out = self.output_str(PlumbingCall::new([
-            "rev-list",
-            "--max-count=1",
+            "log",
+            "-z",
+            "--format=",
+            "--name-only",
+            "--diff-filter=D",
+            "--no-renames",
+            "--full-history",
             head,
             "--",
-            path,
+            &literal,
         ]))?;
-        Ok(!out.trim().is_empty())
+        Ok(out
+            .split('\0')
+            .filter(|path| !path.is_empty())
+            .map(str::to_string)
+            .collect())
     }
 
     pub(crate) fn rev_list_after(&self, head: &str, verified: &str) -> Result<Vec<String>> {

@@ -254,12 +254,16 @@ fn live_matches_saved(
         }
     }
     let entry = &walk.entries[index];
-    for local in live.difference(&compared.iter().collect()) {
-        if repo.path_ever_saved(head, &entry.tree_path(local)?)? {
-            return Ok(false);
-        }
+    let added = live
+        .difference(&compared.iter().collect())
+        .map(|local| entry.tree_path(local))
+        .collect::<Result<Vec<_>>>()?;
+    if added.is_empty() {
+        return Ok(true);
     }
-    Ok(true)
+    // one history search for the whole stream, not one per added file
+    let deleted = repo.deleted_paths_under(head, stream)?;
+    Ok(!added.iter().any(|path| deleted.contains(path)))
 }
 
 /// The selected entries a save would carry rather than capture, against
@@ -437,6 +441,25 @@ mod tests {
         std::fs::write(skills.join("loose.md"), "edited elsewhere")?;
         assert!(!matches(&owned, true)?);
         std::fs::write(skills.join("loose.md"), "loose")?;
+
+        // a file named like a glob over a saved one is a different file
+        std::fs::write(skills.join("a.md"), "a")?;
+        std::fs::write(skills.join("[ab].md"), "glob")?;
+        let globbed = save("globbed", &[overlay(&parent, &skills.join("a.md"), b"a")?])?;
+        let mut walk = Walk {
+            entries: vec![parent.clone()],
+            ..Default::default()
+        };
+        for name in ["a.md", "[ab].md"] {
+            walk.files.insert(skills.join(name), (0, policy));
+        }
+        assert!(live_matches_saved(
+            &repo,
+            Some(&globbed),
+            &walk,
+            0,
+            &stream
+        )?);
 
         // another machine deleted the loose file the history once saved
         let deleted = save(
