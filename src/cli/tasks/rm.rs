@@ -60,6 +60,12 @@ impl TasksRm {
                 ),
                 definition => definition,
             };
+            // `build` and `build.sh` both name a `build.sh` script, which is removed once.
+            if matches!(definition, Definition::File(_))
+                && definitions.iter().any(|(_, def)| def == &definition)
+            {
+                continue;
+            }
             definitions.push((task.as_str(), definition));
         }
         if !self.dry_run && !Settings::get().yes {

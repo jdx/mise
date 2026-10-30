@@ -149,3 +149,11 @@ mise tasks rm --path .mise-tasks/twin twin
 assert_fail "test -e .mise-tasks/twin"
 mise tasks rm twin
 assert_fail "test -e mise-tasks/twin"
+
+echo "=== a script two names select is removed once ==="
+printf '#!/usr/bin/env bash\necho sh\n' >mise-tasks/both.sh
+chmod +x mise-tasks/both.sh
+mise tasks add other -- echo other
+assert_json "mise tasks rm --json both both.sh other | jq -c '[.[] | [.task, .kind]]'" '[["both","file"],["other","toml"]]'
+assert_fail "test -e mise-tasks/both.sh"
+assert_not_contains "cat mise.toml" "[tasks.other]"
