@@ -155,10 +155,9 @@ mise trust --ignore            # never load this config
 
 In normal mode, trust belongs to a config root, usually the directory that holds
 `mise.toml`, so it covers every config file there, such as `mise.local.toml` or
-`.mise/config.toml`. A `mise/`, `.mise/` or `.config/` directory that is a git
-checkout of its own, such as a repository cloned there, is a separate project:
-its config and tasks are not loaded as the directory's, and it is trusted on its
-own. `mise trust --all` walks subdirectories, skipping hidden and gitignored ones and
+`.mise/config.toml`. That includes a `mise/`, `.mise/` or `.config/` directory
+that is a git repository of its own, such as a tracked `~/code/.config`.
+`mise trust --all` walks subdirectories, skipping hidden and gitignored ones and
 `node_modules`, `vendor`, `target`, `dist` and `build`. Trust records are kept in
 the [state directory](/directories.html). See [`mise trust`](/cli/trust.html)
 for every flag.

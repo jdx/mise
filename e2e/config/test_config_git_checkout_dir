@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# A config folder that is a git repository of its own, such as a tracked
+# `.config`, is still the config of the directory around it.
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+mkdir -p projects/sibling
+cd projects || exit 1
+
+mkdir -p .config mise/tasks
+cat <<EOF2 >.config/mise.toml
+[env]
+CONFIG_ENV = "1"
+EOF2
+cat <<EOF2 >mise/config.toml
+[env]
+MISE_DIR_ENV = "1"
+EOF2
+cat <<EOF2 >mise/tasks/clonetask
+#!/usr/bin/env bash
+echo clonetask
+EOF2
+chmod +x mise/tasks/clonetask
+git init -q .config
+git init -q mise
+mise trust
+
+assert_contains "mise env -s bash" "CONFIG_ENV"
+assert_contains "mise env -s bash" "MISE_DIR_ENV"
+assert_contains "mise tasks ls" "clonetask"
+
+cd sibling || exit 1
+assert_contains "mise env -s bash" "CONFIG_ENV"
+assert_contains "mise env -s bash" "MISE_DIR_ENV"
+assert_contains "mise tasks ls" "clonetask"
