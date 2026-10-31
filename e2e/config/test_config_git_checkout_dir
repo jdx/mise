@@ -54,3 +54,10 @@ assert_contains "mise env -s bash" "MISE_DIR_ENV"
 mise trust ../.config/mise.toml
 assert_contains "mise env -s bash" "CONFIG_ENV"
 assert_contains "mise tasks ls" "foldertask"
+
+# A plain `mise trust` clears it as well.
+mise untrust ../.config/mise.toml
+ln -s "$(cd .. && pwd -P)/.config" "$MISE_STATE_DIR/ignored-configs/legacy-config"
+assert_fail "MISE_YES=0 mise env -s bash"
+mise trust
+assert_contains "mise env -s bash" "CONFIG_ENV"

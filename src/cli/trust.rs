@@ -369,6 +369,7 @@ impl Trust {
             return Ok(false);
         };
         config_file::trust(&path)?;
+        config_file::rm_legacy_folder_ignores(&path)?;
         info!("trusted {}", display_path(&path.canonicalize()?));
         Ok(true)
     }
