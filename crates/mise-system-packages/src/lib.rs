@@ -621,8 +621,15 @@ mod test_harness {
     mise_util::run_before_main!(init);
 
     fn init() {
-        // Under the crate, not `/tmp`: the cask tests need ancestors that are not world-writable.
-        let home = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test");
+        // The cask tests need ancestors that are not world-writable, so not
+        // `/tmp`: under the crate, or, for a checkout under `/tmp`, under the
+        // real home.
+        let crate_home = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test");
+        let home = std::env::var_os("HOME")
+            .map(|h| std::path::PathBuf::from(h).join(".cache/mise-system-packages-tests"))
+            .filter(|_| !trusted_ancestors(&crate_home))
+            .filter(|h| trusted_ancestors(h))
+            .unwrap_or(crate_home);
         std::fs::create_dir_all(&home).unwrap();
         mise_util::env::set_var("HOME", &home);
         mise_util::testing::enable(home);
@@ -642,6 +649,23 @@ mod test_harness {
             package_plugin_names: Vec::new,
             load_package_plugin: |name| eyre::bail!("no package plugin {name} in these tests"),
         });
+    }
+
+    /// Whether no directory above `path` that exists is world-writable, as
+    /// the cask code's trusted walk requires.
+    fn trusted_ancestors(path: &std::path::Path) -> bool {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            path.ancestors()
+                .filter_map(|dir| std::fs::metadata(dir).ok())
+                .all(|meta| meta.permissions().mode() & 0o002 == 0)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = path;
+            true
+        }
     }
 
     /// Ruby-backed tests skip without a usable Ruby, so offer one only if it can run the shims.
