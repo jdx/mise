@@ -44,6 +44,7 @@ def main(argv):
             'cwd': os.getcwd(),
             'stdin_tty': sys.stdin.isatty(),
             'env_keys': sorted(os.environ),
+            'env_values': {k: os.environ[k] for k in ('API_PORT',) if k in os.environ},
             'path': os.environ.get('PATH', ''),
             'leaked': sorted(k for k, v in os.environ.items() if 's3cr3t' in v),
         }) + '\n')
