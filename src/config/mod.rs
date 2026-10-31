@@ -5346,7 +5346,8 @@ fn without_ignored_folders(dir: &Path, includes: Vec<String>) -> Vec<String> {
                 folder.file_name().and_then(|name| name.to_str()),
                 Some(".config" | "mise" | ".mise")
             ) && folder.is_dir()
-                && config_file::is_persisted_ignored(&folder))
+                && config_file::is_persisted_ignored(&folder)
+                && !config_file::is_trusted_via_config_paths(&folder))
         })
         .collect()
 }
