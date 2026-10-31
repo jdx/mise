@@ -1,5 +1,12 @@
 # Changelog
 
+## [2026.10.26](https://github.com/jdx/mise/releases/tag/v2026.10.26) - 2026-10-31
+
+### 🐛 Bug Fixes
+
+- **(deb)** stop apt repository metadata from being cached for a day by @jdx in [#15219](https://github.com/jdx/mise/pull/15219)
+- **(task)** export daemon variables to monorepo tasks run from the root by @jdx in [#15217](https://github.com/jdx/mise/pull/15217)
+
 ## [2026.10.25](https://github.com/jdx/mise/releases/tag/v2026.10.25) - 2026-10-31
 
 ### 🚀 Features
