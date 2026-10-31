@@ -7,7 +7,7 @@ export MISE_TRUSTED_CONFIG_PATHS=""
 mkdir -p projects/sibling
 cd projects || exit 1
 
-mkdir -p .config mise/tasks
+mkdir -p .config/mise/tasks mise/tasks
 cat <<EOF2 >.config/mise.toml
 [env]
 CONFIG_ENV = "1"
@@ -20,7 +20,11 @@ cat <<EOF2 >mise/tasks/clonetask
 #!/usr/bin/env bash
 echo clonetask
 EOF2
-chmod +x mise/tasks/clonetask
+cat <<EOF2 >.config/mise/tasks/foldertask
+#!/usr/bin/env bash
+echo foldertask
+EOF2
+chmod +x mise/tasks/clonetask .config/mise/tasks/foldertask
 git init -q .config
 git init -q mise
 mise trust
@@ -28,19 +32,23 @@ mise trust
 assert_contains "mise env -s bash" "CONFIG_ENV"
 assert_contains "mise env -s bash" "MISE_DIR_ENV"
 assert_contains "mise tasks ls" "clonetask"
+assert_contains "mise tasks ls" "foldertask"
 
 cd sibling || exit 1
 assert_contains "mise env -s bash" "CONFIG_ENV"
 assert_contains "mise env -s bash" "MISE_DIR_ENV"
 assert_contains "mise tasks ls" "clonetask"
+assert_contains "mise tasks ls" "foldertask"
 
 # An ignore recorded for the folder itself, from before it shared its parent's
-# trust root, still refuses the config.
+# trust root, still refuses the config and its tasks.
 mkdir -p "$MISE_STATE_DIR/ignored-configs"
 ln -s "$(cd .. && pwd -P)/.config" "$MISE_STATE_DIR/ignored-configs/legacy-config"
 assert_not_contains "mise env -s bash 2>&1" "CONFIG_ENV"
+assert_not_contains "mise tasks ls 2>&1" "foldertask"
 assert_contains "mise env -s bash" "MISE_DIR_ENV"
 
 # Trusting the config clears that ignore again.
 mise trust ../.config/mise.toml
 assert_contains "mise env -s bash" "CONFIG_ENV"
+assert_contains "mise tasks ls" "foldertask"

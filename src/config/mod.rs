@@ -5334,6 +5334,23 @@ fn default_task_includes() -> Vec<String> {
     ]
 }
 
+/// `includes` without a task directory inside a `.config`, `mise` or `.mise`
+/// folder of `dir` that has a saved ignore, so a refused folder's tasks stay
+/// unloaded when the config around it is trusted.
+fn without_ignored_folders(dir: &Path, includes: Vec<String>) -> Vec<String> {
+    includes
+        .into_iter()
+        .filter(|include| {
+            let folder = dir.join(include.split('/').next().unwrap_or_default());
+            !(matches!(
+                folder.file_name().and_then(|name| name.to_str()),
+                Some(".config" | "mise" | ".mise")
+            ) && folder.is_dir()
+                && config_file::is_persisted_ignored(&folder))
+        })
+        .collect()
+}
+
 /// The default task directories of the user-global scope.
 ///
 /// With a global config file, these are the default task directories at
@@ -7299,7 +7316,11 @@ fn task_include_patterns_for_dir(
         })
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
-            (default_task_includes(), dir.to_path_buf(), true)
+            (
+                without_ignored_folders(dir, default_task_includes()),
+                dir.to_path_buf(),
+                true,
+            )
         }))
 }
 
@@ -7850,7 +7871,10 @@ async fn load_task_sources_from_configs(
         })
         .unwrap_or_else(|| {
             (
-                default_includes.unwrap_or_else(default_task_includes),
+                without_ignored_folders(
+                    dir,
+                    default_includes.unwrap_or_else(default_task_includes),
+                ),
                 dir.to_path_buf(),
                 configs.len(),
             )
