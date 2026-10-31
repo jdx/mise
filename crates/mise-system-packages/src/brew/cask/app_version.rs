@@ -84,11 +84,14 @@ pub(super) fn read_app_version(app: &Path) -> Result<AppVersion> {
 ///
 /// Returns true when usable metadata establishes that an upgrade is available.
 /// Returns false when the available metadata cannot establish that an upgrade is
-/// available, or when the cask version is `latest`.
+/// available, or when the cask version is `latest`. `recorded` is the version
+/// the install record holds; a short version still equal to it means the app
+/// has not updated itself, even when it cannot be compared with `current`.
 pub(super) fn app_version_outdated(
     current: &str,
     short: Option<&str>,
     build: Option<&str>,
+    recorded: Option<&str>,
 ) -> bool {
     if current == "latest" {
         return false;
@@ -136,6 +139,9 @@ pub(super) fn app_version_outdated(
         Some(Less) => return true,
         Some(Greater) => return false,
         _ => {}
+    }
+    if candidates.len() == 1 && short.is_some() && short == recorded {
+        return true;
     }
     let comparisons: Vec<_> = candidates
         .iter()

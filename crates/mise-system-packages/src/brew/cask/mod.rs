@@ -171,7 +171,12 @@ fn installed_skip_reason(
     let Ok(live) = read_app_version(&live_path) else {
         return Ok(Some("skipped: installed app version is unreadable"));
     };
-    if !app_version_outdated(&cask.version, live.short.as_deref(), live.build.as_deref()) {
+    if !app_version_outdated(
+        &cask.version,
+        live.short.as_deref(),
+        live.build.as_deref(),
+        Some(&receipt.version),
+    ) {
         return Ok(Some(
             "skipped: installed app is current, newer, or incomparable",
         ));
@@ -200,7 +205,7 @@ fn pkg_upgrade_skip_reason(cask_version: &str, versions: &[String]) -> Option<&'
     let cask_short = cask_version.split(',').next().unwrap_or(cask_version);
     let mut outdated = false;
     for version in versions {
-        if app_version_outdated(cask_version, Some(version), None) {
+        if app_version_outdated(cask_version, Some(version), None, None) {
             outdated = true;
         } else if matches!(
             compare_app_versions(version, cask_short),

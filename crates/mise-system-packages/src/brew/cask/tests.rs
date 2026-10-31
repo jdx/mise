@@ -9694,9 +9694,33 @@ fn auto_updates_matches_homebrew_short_build_decisions() {
         ("latest", Some("1"), Some("1"), false),
     ] {
         assert_eq!(
-            app_version_outdated(current, short, build),
+            app_version_outdated(current, short, build, None),
             expected,
             "current={current}, short={short:?}, build={build:?}"
+        );
+    }
+}
+
+/// A short version still equal to the install record means the app has not
+/// updated itself, so it is outdated even when its component count differs
+/// from the cask version (Firefox 158.0.1 against 159.0).
+#[test]
+fn auto_updates_treats_an_unchanged_recorded_version_as_outdated() {
+    for (current, short, recorded, expected) in [
+        ("159.0", "158.0.1", Some("158.0.1"), true),
+        ("4.2.4", "4.2", Some("4.2"), true),
+        ("159.0", "158.0.1", None, false),
+        // The app updated itself past the record to an incomparable version.
+        ("159.0", "158.0.2", Some("158.0.1"), false),
+        // A comparable newer app still wins over a stale record.
+        ("2.0", "2.1", Some("2.1"), false),
+        // Several version candidates fall through to the build comparison.
+        ("2.61,3000", "2.60.1", Some("2.60.1"), false),
+    ] {
+        assert_eq!(
+            app_version_outdated(current, Some(short), None, recorded),
+            expected,
+            "current={current}, short={short}, recorded={recorded:?}"
         );
     }
 }
