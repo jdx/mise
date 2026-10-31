@@ -48,6 +48,10 @@ assert_not_contains "mise env -s bash 2>&1" "CONFIG_ENV"
 assert_not_contains "mise tasks ls 2>&1" "foldertask"
 # a trusted_config_paths entry for the directory overrides the saved ignore
 assert_contains "MISE_TRUSTED_CONFIG_PATHS=$(cd .. && pwd -P) mise tasks ls" "foldertask"
+# a narrower trusted_config_paths entry covering the task directory does too
+assert_contains "MISE_TRUSTED_CONFIG_PATHS=$(cd .. && pwd -P)/.config/mise mise tasks ls" "foldertask"
+# and the tasks stay out when mise runs from inside the ignored folder
+(cd ../.config && assert_not_contains "mise tasks ls 2>&1" "foldertask")
 assert_contains "mise env -s bash" "MISE_DIR_ENV"
 
 # Trusting the config clears that ignore again.

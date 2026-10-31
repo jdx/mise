@@ -5339,19 +5339,30 @@ fn default_task_includes() -> Vec<String> {
 crate::remove_by!("2027.11.0", "git-backed-config-folder-ignores");
 
 /// `includes` without a task directory inside a `.config`, `mise` or `.mise`
-/// folder of `dir` that has a saved ignore, so a refused folder's tasks stay
-/// unloaded when the config around it is trusted.
+/// folder that has a saved ignore, so a refused folder's tasks stay unloaded
+/// when the config around it is trusted. The folder is one of `dir`'s, or `dir`
+/// itself when the search runs from inside it. A `trusted_config_paths` entry
+/// that covers the folder or the task directory overrides the ignore.
 fn without_ignored_folders(dir: &Path, includes: Vec<String>) -> Vec<String> {
+    let is_legacy_folder = |path: &Path| {
+        matches!(
+            path.file_name().and_then(|name| name.to_str()),
+            Some(".config" | "mise" | ".mise")
+        )
+    };
     includes
         .into_iter()
         .filter(|include| {
-            let folder = dir.join(include.split('/').next().unwrap_or_default());
-            !(matches!(
-                folder.file_name().and_then(|name| name.to_str()),
-                Some(".config" | "mise" | ".mise")
-            ) && folder.is_dir()
-                && config_file::is_persisted_ignored(&folder)
-                && !config_file::is_trusted_via_config_paths(&folder))
+            let task_dir = dir.join(include);
+            let first = dir.join(include.split('/').next().unwrap_or_default());
+            let refused = [first.as_path(), dir].into_iter().any(|folder| {
+                is_legacy_folder(folder)
+                    && folder.is_dir()
+                    && config_file::is_persisted_ignored(folder)
+            });
+            !(refused
+                && !config_file::is_trusted_via_config_paths(&task_dir)
+                && !config_file::is_trusted_via_config_paths(dir))
         })
         .collect()
 }
