@@ -1,5 +1,33 @@
 # Changelog
 
+## [2026.10.25](https://github.com/jdx/mise/releases/tag/v2026.10.25) - 2026-10-31
+
+### 🚀 Features
+
+- **(bootstrap)** report which tool manages each installed cask in status --json by @jdx in [#15198](https://github.com/jdx/mise/pull/15198)
+- **(env)** add env_cache_redacted to cache environments with redacted values by @jdx in [#15200](https://github.com/jdx/mise/pull/15200)
+- **(tasks)** add tasks set and rm, choose the file, and report changes as JSON by @jdx in [#15213](https://github.com/jdx/mise/pull/15213)
+- **(watch)** add --once to wait for a change, run the tasks, and exit by @jdx in [#15212](https://github.com/jdx/mise/pull/15212)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** report an annotated tag ref as current once checked out by @jdx in [#15199](https://github.com/jdx/mise/pull/15199)
+- **(core)** fold AppleDouble sidecars into their files when extracting tars on macOS by @jdx in [#15211](https://github.com/jdx/mise/pull/15211)
+- **(dotfiles)** keep saving a directory tracked in place of narrower paths by @jdx in [#15187](https://github.com/jdx/mise/pull/15187)
+- **(dotfiles)** don't drop earlier tracking when a later untrack path fails by @jdx in [#15208](https://github.com/jdx/mise/pull/15208)
+- **(install)** stop concurrent installs from reading a half-created install as complete by @jdx in [#15196](https://github.com/jdx/mise/pull/15196)
+- **(lock)** write a symlinked config dir's lockfile as one target by @jdx in [#15197](https://github.com/jdx/mise/pull/15197)
+- **(shim)** stop reshim from scaling quadratically with tracked configs by @jdx in [#15203](https://github.com/jdx/mise/pull/15203)
+
+### 📦️ Dependency Updates
+
+- update jdx crates to v7.1.4 by @renovate[bot] in [#15194](https://github.com/jdx/mise/pull/15194)
+- update rust crate aube-registry to v2.8.5 by @renovate[bot] in [#15205](https://github.com/jdx/mise/pull/15205)
+
+### 📦 Registry
+
+- add jouet by @jdx in [#15201](https://github.com/jdx/mise/pull/15201)
+
 ## [2026.10.24](https://github.com/jdx/mise/releases/tag/v2026.10.24) - 2026-10-30
 
 ### 🚀 Features
