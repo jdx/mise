@@ -347,6 +347,7 @@ impl Trust {
             },
         };
         config_file::trust(&path)?;
+        config_file::rm_legacy_folder_ignores(&path)?;
         // With only `env_files` on, a file named like a config may be an env file. Its content
         // hash is checked on its own, so approve it as well as its directory.
         if let Some(file) = self.config_file()?

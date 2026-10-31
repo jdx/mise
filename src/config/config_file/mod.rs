@@ -1205,16 +1205,22 @@ pub(crate) fn is_ignored(path: &Path) -> bool {
     is_ignored_via_setting(path) || is_persisted_ignored(path)
 }
 
-pub fn trust(path: &Path) -> Result<()> {
-    rm_ignored(path.to_path_buf())?;
-    // Before a git-backed config folder shared its parent's trust root, ignoring
-    // it recorded the folder itself. Trusting the root has to clear that too.
+/// Clears an ignore recorded for the `.config`, `mise` or `.mise` folder under a
+/// trust root. Before a git-backed config folder shared its parent's trust root,
+/// ignoring it recorded the folder itself. Only an explicit `mise trust` calls
+/// this: automatic trust must not undo a saved refusal.
+pub fn rm_legacy_folder_ignores(root: &Path) -> Result<()> {
     for folder in [".config", "mise", ".mise"] {
-        let folder = path.join(folder);
+        let folder = root.join(folder);
         if folder.is_dir() {
             rm_ignored(folder)?;
         }
     }
+    Ok(())
+}
+
+pub fn trust(path: &Path) -> Result<()> {
+    rm_ignored(path.to_path_buf())?;
     let hashed_path = trust_path(path);
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;
