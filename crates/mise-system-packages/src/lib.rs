@@ -629,9 +629,11 @@ mod test_harness {
             .map(|h| std::path::PathBuf::from(h).join(".cache/mise-system-packages-tests"))
             .filter(|_| !trusted_ancestors(&crate_home))
             // A home that cannot be written to falls back to the crate.
-            .filter(|h| trusted_ancestors(h) && std::fs::create_dir_all(h).is_ok())
+            .filter(|h| {
+                trusted_ancestors(h) && create_private_dir(h).is_ok() && trusted_ancestors(h)
+            })
             .unwrap_or(crate_home);
-        std::fs::create_dir_all(&home).unwrap();
+        create_private_dir(&home).unwrap();
         mise_util::env::set_var("HOME", &home);
         mise_util::testing::enable(home);
         mise_settings::set_loader(mise_settings::load_defaults);
@@ -652,19 +654,37 @@ mod test_harness {
         });
     }
 
-    /// Whether no directory above `path` that exists is world-writable, as
-    /// the cask code's trusted walk requires.
+    /// `path` and any parents it lacks, readable only by this user, so the
+    /// umask cannot leave them open to others.
+    fn create_private_dir(path: &std::path::Path) -> std::io::Result<()> {
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        builder.create(path)
+    }
+
+    /// Whether every directory above `path` that exists passes the cask
+    /// code's trusted walk: owned by root or this user, not world-writable,
+    /// and writable by its group only when that is this user's group.
     fn trusted_ancestors(path: &std::path::Path) -> bool {
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt as _;
+            use std::os::unix::fs::MetadataExt as _;
+            let uid = nix::unistd::geteuid().as_raw();
+            let gid = nix::unistd::getegid().as_raw();
             // With symlinks resolved, as the trusted walk sees the path: its
             // deepest part that exists, whose ancestors all exist.
             let Some(existing) = path.ancestors().find_map(|dir| dir.canonicalize().ok()) else {
                 return false;
             };
             existing.ancestors().all(|dir| {
-                std::fs::metadata(dir).is_ok_and(|meta| meta.permissions().mode() & 0o002 == 0)
+                std::fs::metadata(dir).is_ok_and(|meta| {
+                    let mode = meta.mode();
+                    (meta.uid() == 0 || meta.uid() == uid)
+                        && mode & 0o002 == 0
+                        && (mode & 0o020 == 0 || meta.gid() == gid)
+                })
             })
         }
         #[cfg(not(unix))]
