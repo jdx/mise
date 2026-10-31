@@ -205,6 +205,28 @@ impl TaskContextBuilder {
         }
     }
 
+    /// The env directives of a monorepo task's own config hierarchy, lowest precedence first:
+    /// the variables its daemons export (`<NAME>_PORT`, ...), then each file's `[env]`, as
+    /// `Config::load_env` orders them for the current project.
+    fn hierarchy_env_entries(
+        files: &crate::config::ConfigMap,
+    ) -> Result<Vec<(EnvDirective, PathBuf)>> {
+        use crate::daemons::glue::DaemonSetExt;
+        let mut entries = crate::daemons::glue::load(files)?.env_entries();
+        entries.extend(
+            files
+                .iter()
+                .rev()
+                .filter_map(|(source, cf)| {
+                    cf.env_entries()
+                        .ok()
+                        .map(|entries| entries.into_iter().map(move |e| (e, source.clone())))
+                })
+                .flatten(),
+        );
+        Ok(entries)
+    }
+
     /// The config hierarchy of a monorepo task's own directory, or `None` when the task runs
     /// in the current project. This is what task `[env]` is resolved from, and where the
     /// task's secrets source is selected.
@@ -266,15 +288,8 @@ impl TaskContextBuilder {
                     | EnvDirective::PythonVenv { .. }
             )
         };
-        let entries: Vec<(EnvDirective, PathBuf)> = files
-            .iter()
-            .rev()
-            .filter_map(|(source, cf)| {
-                cf.env_entries()
-                    .ok()
-                    .map(|entries| entries.into_iter().map(move |e| (e, source.clone())))
-            })
-            .flatten()
+        let entries: Vec<(EnvDirective, PathBuf)> = Self::hierarchy_env_entries(&files)?
+            .into_iter()
             // A static preflight must not run `_.source` scripts or modules: the keys they
             // could set are then simply unknown, and the spawn-time check decides.
             .filter(|(d, _)| !skip_scripts || !is_script(d))
@@ -355,16 +370,7 @@ impl TaskContextBuilder {
         let all_config_env_entries: Vec<(EnvDirective, PathBuf)> =
             if let Some(ref task_config_files) = task_config_files {
                 // Extract env entries from all config files in the task's hierarchy
-                task_config_files
-                    .iter()
-                    .rev()
-                    .filter_map(|(source, cf)| {
-                        cf.env_entries()
-                            .ok()
-                            .map(|entries| entries.into_iter().map(move |e| (e, source.clone())))
-                    })
-                    .flatten()
-                    .collect()
+                Self::hierarchy_env_entries(task_config_files)?
             } else {
                 // For regular tasks OR monorepo tasks that run in cwd:
                 // Use ALL config files from the current project (including MISE_ENV-specific ones)
