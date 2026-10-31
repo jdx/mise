@@ -628,7 +628,8 @@ mod test_harness {
         let home = std::env::var_os("HOME")
             .map(|h| std::path::PathBuf::from(h).join(".cache/mise-system-packages-tests"))
             .filter(|_| !trusted_ancestors(&crate_home))
-            .filter(|h| trusted_ancestors(h))
+            // A home that cannot be written to falls back to the crate.
+            .filter(|h| trusted_ancestors(h) && std::fs::create_dir_all(h).is_ok())
             .unwrap_or(crate_home);
         std::fs::create_dir_all(&home).unwrap();
         mise_util::env::set_var("HOME", &home);
@@ -657,9 +658,14 @@ mod test_harness {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
-            path.ancestors()
-                .filter_map(|dir| std::fs::metadata(dir).ok())
-                .all(|meta| meta.permissions().mode() & 0o002 == 0)
+            // With symlinks resolved, as the trusted walk sees the path: its
+            // deepest part that exists, whose ancestors all exist.
+            let Some(existing) = path.ancestors().find_map(|dir| dir.canonicalize().ok()) else {
+                return false;
+            };
+            existing.ancestors().all(|dir| {
+                std::fs::metadata(dir).is_ok_and(|meta| meta.permissions().mode() & 0o002 == 0)
+            })
         }
         #[cfg(not(unix))]
         {
