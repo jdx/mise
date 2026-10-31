@@ -1205,6 +1205,8 @@ pub(crate) fn is_ignored(path: &Path) -> bool {
     is_ignored_via_setting(path) || is_persisted_ignored(path)
 }
 
+crate::remove_by!("2027.11.0", "git-backed-config-folder-ignores");
+
 /// Clears an ignore recorded for the `.config`, `mise` or `.mise` folder under a
 /// trust root. Before a git-backed config folder shared its parent's trust root,
 /// ignoring it recorded the folder itself. Only an explicit `mise trust` calls

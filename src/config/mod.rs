@@ -3651,6 +3651,8 @@ pub(crate) fn config_dir_is_ignored(dir: &Path, include_ignored: bool) -> bool {
     !include_ignored && config_file::is_ignored_via_setting(dir)
 }
 
+crate::remove_by!("2027.11.0", "git-backed-config-folder-ignores");
+
 pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool {
     if is_default_config_dir_override_filtered(path) {
         return true;
@@ -5333,6 +5335,8 @@ fn default_task_includes() -> Vec<String> {
         "mise/tasks".to_string(),
     ]
 }
+
+crate::remove_by!("2027.11.0", "git-backed-config-folder-ignores");
 
 /// `includes` without a task directory inside a `.config`, `mise` or `.mise`
 /// folder of `dir` that has a saved ignore, so a refused folder's tasks stay
