@@ -32,6 +32,9 @@ use mise_ui::progress_report::{ProgressIcon, SingleReport};
 mod api;
 mod bulk;
 mod cask;
+// For the test harness, which checks a test home as the cask walk would.
+#[cfg(all(test, unix))]
+pub(crate) use cask::current_process_groups;
 mod fetch;
 mod maintenance;
 mod post_install;

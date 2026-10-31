@@ -666,13 +666,14 @@ mod test_harness {
 
     /// Whether every directory above `path` that exists passes the cask
     /// code's trusted walk: owned by root or this user, not world-writable,
-    /// and writable by its group only when that is this user's group.
+    /// and writable by its group only when that is one of this user's groups.
     fn trusted_ancestors(path: &std::path::Path) -> bool {
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt as _;
             let uid = nix::unistd::geteuid().as_raw();
             let gid = nix::unistd::getegid().as_raw();
+            let groups = crate::brew::current_process_groups().unwrap_or_default();
             // With symlinks resolved, as the trusted walk sees the path: its
             // deepest part that exists, whose ancestors all exist.
             let Some(existing) = path.ancestors().find_map(|dir| dir.canonicalize().ok()) else {
@@ -683,7 +684,7 @@ mod test_harness {
                     let mode = meta.mode();
                     (meta.uid() == 0 || meta.uid() == uid)
                         && mode & 0o002 == 0
-                        && (mode & 0o020 == 0 || meta.gid() == gid)
+                        && (mode & 0o020 == 0 || meta.gid() == gid || groups.contains(&meta.gid()))
                 })
             })
         }
