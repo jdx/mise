@@ -407,6 +407,53 @@ class DownloadSourceTests(unittest.TestCase):
                     f"{GITHUB}/v2026.1.0/SHASUMS256.txt",
                 ])
 
+    def test_github_mirror_replaces_github(self):
+        gh_mirror = "https://gh.example.invalid/github/jdx/mise/releases/download"
+        for value in ["https://gh.example.invalid/github/", "gh.example.invalid/github"]:
+            with self.subTest(value=value):
+                result, urls, installed = self.install(
+                    fail_urls=[MIRROR + "/v{v}/{a}"], MISE_INSTALL_GITHUB_MIRROR=value
+                )
+                self.assert_installed(result, installed)
+                self.assertEqual(urls, [
+                    f"{MIRROR}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
+                    f"{gh_mirror}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
+                    f"{gh_mirror}/v2026.1.0/SHASUMS256.txt",
+                ])
+
+        result, urls, installed = self.install(
+            MISE_INSTALL_FROM_GITHUB="1", MISE_INSTALL_GITHUB_MIRROR="gh.example.invalid/github"
+        )
+        self.assert_installed(result, installed)
+        self.assertEqual(urls, [
+            f"{gh_mirror}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
+            f"{gh_mirror}/v2026.1.0/SHASUMS256.txt",
+        ])
+
+    def test_github_mirror_requires_https(self):
+        for value in ["http://gh.example.invalid", "ftp://gh.example.invalid"]:
+            with self.subTest(value=value):
+                result, urls, installed = self.install(MISE_INSTALL_GITHUB_MIRROR=value)
+                self.assert_refused(result, installed, "MISE_INSTALL_GITHUB_MIRROR must use https")
+                self.assertEqual(urls, [])
+
+    def test_github_mirror_rejects_credentials(self):
+        for value in [
+            "https://user:s3cret@gh.example.invalid/github",
+            "user:s3cret@gh.example.invalid",
+            "http://user:s3cret@gh.example.invalid",
+        ]:
+            with self.subTest(value=value):
+                result, urls, installed = self.install(MISE_INSTALL_GITHUB_MIRROR=value)
+                self.assert_refused(result, installed, "MISE_INSTALL_GITHUB_MIRROR must not contain credentials")
+                self.assertNotIn("s3cret", result.stderr)
+                self.assertEqual(urls, [])
+
+        result, urls, installed = self.install(
+            fail_urls=[MIRROR + "/v{v}/{a}"], MISE_INSTALL_GITHUB_MIRROR="https://gh.example.invalid/a@b"
+        )
+        self.assert_installed(result, installed)
+
     def test_builtin_version_uses_static_checksum_and_falls_back(self):
         result, urls, installed = self.install(version="2026.10.0")
         self.assert_installed(result, installed)
