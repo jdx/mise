@@ -2925,7 +2925,7 @@ fn trusted_parent_is_writable(parent: &TrustedOperationParent) -> Result<bool> {
 }
 
 #[cfg(unix)]
-fn current_process_groups() -> Result<Vec<nix::libc::gid_t>> {
+pub(crate) fn current_process_groups() -> Result<Vec<nix::libc::gid_t>> {
     // SAFETY: A null buffer with size zero is the documented way to query the
     // number of supplementary groups and does not dereference the pointer.
     let count = unsafe { nix::libc::getgroups(0, std::ptr::null_mut()) };

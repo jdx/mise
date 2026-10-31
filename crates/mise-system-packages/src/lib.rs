@@ -621,9 +621,19 @@ mod test_harness {
     mise_util::run_before_main!(init);
 
     fn init() {
-        // Under the crate, not `/tmp`: the cask tests need ancestors that are not world-writable.
-        let home = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test");
-        std::fs::create_dir_all(&home).unwrap();
+        // The cask tests need ancestors that are not world-writable, so not
+        // `/tmp`: under the crate, or, for a checkout under `/tmp`, under the
+        // real home.
+        let crate_home = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test");
+        let home = std::env::var_os("HOME")
+            .map(|h| std::path::PathBuf::from(h).join(".cache/mise-system-packages-tests"))
+            .filter(|_| !trusted_ancestors(&crate_home))
+            // A home that cannot be written to falls back to the crate.
+            .filter(|h| {
+                trusted_ancestors(h) && create_private_dir(h).is_ok() && trusted_ancestors(h)
+            })
+            .unwrap_or(crate_home);
+        create_private_dir(&home).unwrap();
         mise_util::env::set_var("HOME", &home);
         mise_util::testing::enable(home);
         mise_settings::set_loader(mise_settings::load_defaults);
@@ -642,6 +652,47 @@ mod test_harness {
             package_plugin_names: Vec::new,
             load_package_plugin: |name| eyre::bail!("no package plugin {name} in these tests"),
         });
+    }
+
+    /// `path` and any parents it lacks, readable only by this user, so the
+    /// umask cannot leave them open to others.
+    fn create_private_dir(path: &std::path::Path) -> std::io::Result<()> {
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        builder.create(path)
+    }
+
+    /// Whether every directory above `path` that exists passes the cask
+    /// code's trusted walk: owned by root or this user, not world-writable,
+    /// and writable by its group only when that is one of this user's groups.
+    fn trusted_ancestors(path: &std::path::Path) -> bool {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt as _;
+            let uid = nix::unistd::geteuid().as_raw();
+            let gid = nix::unistd::getegid().as_raw();
+            let groups = crate::brew::current_process_groups().unwrap_or_default();
+            // With symlinks resolved, as the trusted walk sees the path: its
+            // deepest part that exists, whose ancestors all exist.
+            let Some(existing) = path.ancestors().find_map(|dir| dir.canonicalize().ok()) else {
+                return false;
+            };
+            existing.ancestors().all(|dir| {
+                std::fs::metadata(dir).is_ok_and(|meta| {
+                    let mode = meta.mode();
+                    (meta.uid() == 0 || meta.uid() == uid)
+                        && mode & 0o002 == 0
+                        && (mode & 0o020 == 0 || meta.gid() == gid || groups.contains(&meta.gid()))
+                })
+            })
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = path;
+            true
+        }
     }
 
     /// Ruby-backed tests skip without a usable Ruby, so offer one only if it can run the shims.

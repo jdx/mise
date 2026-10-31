@@ -45,6 +45,22 @@ fn trusted_tempdir() -> Result<tempfile::TempDir> {
         .tempdir_in(base)?)
 }
 
+/// A Ruby that runs, as `cask_ruby_bin` picks one, without provisioning:
+/// `ruby` on PATH can be a version manager's shim with no version set, or
+/// one that fails in this environment, and a test given it would fail
+/// instead of skipping.
+fn working_ruby() -> Option<PathBuf> {
+    let ruby = file::which("ruby")?;
+    std::process::Command::new(&ruby)
+        .args(["-e", "exit 0"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+        .then_some(ruby)
+}
+
 fn run_cask_shim(
     ruby: &Path,
     shim: &Path,
@@ -3950,7 +3966,7 @@ fn ensure_cask_shim_creates_parent_dir() -> Result<()> {
 #[test]
 #[cfg(unix)]
 fn cask_shim_supports_language_and_system_conditionals() -> Result<()> {
-    let Some(ruby) = file::which("ruby") else {
+    let Some(ruby) = working_ruby() else {
         return Ok(());
     };
     let tmp = tempfile::tempdir()?;
@@ -3994,7 +4010,7 @@ end
 #[test]
 #[cfg(unix)]
 fn cask_shim_supports_csv_version_array_helpers() -> Result<()> {
-    let Some(ruby) = file::which("ruby") else {
+    let Some(ruby) = working_ruby() else {
         return Ok(());
     };
     let tmp = tempfile::tempdir()?;
@@ -4028,7 +4044,7 @@ end
 #[test]
 #[cfg(unix)]
 fn cask_shim_supports_completion_stanzas_and_system_command() -> Result<()> {
-    let Some(ruby) = file::which("ruby") else {
+    let Some(ruby) = working_ruby() else {
         return Ok(());
     };
     let tmp = tempfile::tempdir()?;
@@ -4097,7 +4113,7 @@ end
 #[test]
 #[cfg(unix)]
 fn cask_shim_system_command_reports_denied_sudo() -> Result<()> {
-    let Some(ruby) = file::which("ruby") else {
+    let Some(ruby) = working_ruby() else {
         return Ok(());
     };
     let tmp = tempfile::tempdir()?;
@@ -4132,7 +4148,7 @@ end
 #[test]
 #[cfg(unix)]
 fn cask_shim_system_command_reports_failed_commands() -> Result<()> {
-    let Some(ruby) = file::which("ruby") else {
+    let Some(ruby) = working_ruby() else {
         return Ok(());
     };
     let tmp = tempfile::tempdir()?;
@@ -4163,7 +4179,7 @@ end
 #[test]
 #[cfg(unix)]
 fn cask_shim_reports_missing_system_conditional() -> Result<()> {
-    let Some(ruby) = file::which("ruby") else {
+    let Some(ruby) = working_ruby() else {
         return Ok(());
     };
     let tmp = tempfile::tempdir()?;
