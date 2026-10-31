@@ -3651,8 +3651,6 @@ pub(crate) fn config_dir_is_ignored(dir: &Path, include_ignored: bool) -> bool {
     !include_ignored && config_file::is_ignored_via_setting(dir)
 }
 
-crate::remove_by!("2027.11.0", "git-backed-config-folder-ignores");
-
 pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool {
     if is_default_config_dir_override_filtered(path) {
         return true;
@@ -3671,16 +3669,7 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
     // Global config shares its trust root, the home directory, with a project
     // config there, so ignoring that project must not drop the global config
     // and the global-only settings it holds.
-    // A directory between the file and its root can hold the record too: before
-    // a git-backed `.config` folder shared its parent's trust root, ignoring it
-    // recorded the folder itself, and that refusal still holds.
-    let ctr_ignored = !is_global_config(path)
-        && path
-            .ancestors()
-            .skip(1)
-            .take_while(|dir| *dir != ctr && dir.starts_with(&ctr))
-            .chain(std::iter::once(ctr.as_path()))
-            .any(config_file::is_persisted_ignored);
+    let ctr_ignored = !is_global_config(path) && config_file::is_persisted_ignored(&ctr);
     if ctr_ignored || config_file::is_persisted_ignored(path) {
         return !config_file::is_trusted_via_config_paths(path);
     }
@@ -5334,37 +5323,6 @@ fn default_task_includes() -> Vec<String> {
         ".config/mise/tasks".to_string(),
         "mise/tasks".to_string(),
     ]
-}
-
-crate::remove_by!("2027.11.0", "git-backed-config-folder-ignores");
-
-/// `includes` without a task directory inside a `.config`, `mise` or `.mise`
-/// folder that has a saved ignore, so a refused folder's tasks stay unloaded
-/// when the config around it is trusted. The folder is one of `dir`'s, or `dir`
-/// itself when the search runs from inside it. A `trusted_config_paths` entry
-/// that covers the folder or the task directory overrides the ignore.
-fn without_ignored_folders(dir: &Path, includes: Vec<String>) -> Vec<String> {
-    let is_legacy_folder = |path: &Path| {
-        matches!(
-            path.file_name().and_then(|name| name.to_str()),
-            Some(".config" | "mise" | ".mise")
-        )
-    };
-    includes
-        .into_iter()
-        .filter(|include| {
-            let task_dir = dir.join(include);
-            let first = dir.join(include.split('/').next().unwrap_or_default());
-            let refused = [first.as_path(), dir].into_iter().any(|folder| {
-                is_legacy_folder(folder)
-                    && folder.is_dir()
-                    && config_file::is_persisted_ignored(folder)
-            });
-            !(refused
-                && !config_file::is_trusted_via_config_paths(&task_dir)
-                && !config_file::is_trusted_via_config_paths(dir))
-        })
-        .collect()
 }
 
 /// The default task directories of the user-global scope.
@@ -7332,11 +7290,7 @@ fn task_include_patterns_for_dir(
         })
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
-            (
-                without_ignored_folders(dir, default_task_includes()),
-                dir.to_path_buf(),
-                true,
-            )
+            (default_task_includes(), dir.to_path_buf(), true)
         }))
 }
 
@@ -7887,10 +7841,7 @@ async fn load_task_sources_from_configs(
         })
         .unwrap_or_else(|| {
             (
-                without_ignored_folders(
-                    dir,
-                    default_includes.unwrap_or_else(default_task_includes),
-                ),
+                default_includes.unwrap_or_else(default_task_includes),
                 dir.to_path_buf(),
                 configs.len(),
             )

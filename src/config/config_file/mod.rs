@@ -990,13 +990,6 @@ pub(crate) fn rm_ignored(path: PathBuf) -> Result<()> {
     if ignore_path.exists() {
         file::remove_file(&ignore_path)?;
     }
-    // Entries are read back by what they point at, not by their name, so any
-    // other entry for this path goes too.
-    for entry in file::ls(&dirs::IGNORED_CONFIGS).unwrap_or_default() {
-        if ignored_entry_path(&entry).is_some_and(|target| target == path) {
-            file::remove_file(&entry)?;
-        }
-    }
     IS_IGNORED.lock().unwrap().remove(&path);
     Ok(())
 }
@@ -1203,22 +1196,6 @@ pub(crate) fn is_persisted_ignored(path: &Path) -> bool {
 /// `trusted_config_paths` override use the finer-grained variants directly.
 pub(crate) fn is_ignored(path: &Path) -> bool {
     is_ignored_via_setting(path) || is_persisted_ignored(path)
-}
-
-crate::remove_by!("2027.11.0", "git-backed-config-folder-ignores");
-
-/// Clears an ignore recorded for the `.config`, `mise` or `.mise` folder under a
-/// trust root. Before a git-backed config folder shared its parent's trust root,
-/// ignoring it recorded the folder itself. Only an explicit `mise trust` calls
-/// this: automatic trust must not undo a saved refusal.
-pub fn rm_legacy_folder_ignores(root: &Path) -> Result<()> {
-    for folder in [".config", "mise", ".mise"] {
-        let folder = root.join(folder);
-        if folder.is_dir() {
-            rm_ignored(folder)?;
-        }
-    }
-    Ok(())
 }
 
 pub fn trust(path: &Path) -> Result<()> {
