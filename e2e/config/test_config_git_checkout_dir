@@ -33,3 +33,10 @@ cd sibling || exit 1
 assert_contains "mise env -s bash" "CONFIG_ENV"
 assert_contains "mise env -s bash" "MISE_DIR_ENV"
 assert_contains "mise tasks ls" "clonetask"
+
+# An ignore recorded for the folder itself, from before it shared its parent's
+# trust root, still refuses the config.
+mkdir -p "$MISE_STATE_DIR/ignored-configs"
+ln -s "$(cd .. && pwd -P)/.config" "$MISE_STATE_DIR/ignored-configs/legacy-config"
+assert_not_contains "mise env -s bash 2>&1" "CONFIG_ENV"
+assert_contains "mise env -s bash" "MISE_DIR_ENV"
