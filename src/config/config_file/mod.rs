@@ -990,6 +990,13 @@ pub(crate) fn rm_ignored(path: PathBuf) -> Result<()> {
     if ignore_path.exists() {
         file::remove_file(&ignore_path)?;
     }
+    // Entries are read back by what they point at, not by their name, so any
+    // other entry for this path goes too.
+    for entry in file::ls(&dirs::IGNORED_CONFIGS).unwrap_or_default() {
+        if ignored_entry_path(&entry).is_some_and(|target| target == path) {
+            file::remove_file(&entry)?;
+        }
+    }
     IS_IGNORED.lock().unwrap().remove(&path);
     Ok(())
 }
@@ -1200,6 +1207,14 @@ pub(crate) fn is_ignored(path: &Path) -> bool {
 
 pub fn trust(path: &Path) -> Result<()> {
     rm_ignored(path.to_path_buf())?;
+    // Before a git-backed config folder shared its parent's trust root, ignoring
+    // it recorded the folder itself. Trusting the root has to clear that too.
+    for folder in [".config", "mise", ".mise"] {
+        let folder = path.join(folder);
+        if folder.is_dir() {
+            rm_ignored(folder)?;
+        }
+    }
     let hashed_path = trust_path(path);
     if !hashed_path.exists() {
         file::create_dir_all(hashed_path.parent().unwrap())?;

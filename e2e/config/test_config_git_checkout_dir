@@ -40,3 +40,7 @@ mkdir -p "$MISE_STATE_DIR/ignored-configs"
 ln -s "$(cd .. && pwd -P)/.config" "$MISE_STATE_DIR/ignored-configs/legacy-config"
 assert_not_contains "mise env -s bash 2>&1" "CONFIG_ENV"
 assert_contains "mise env -s bash" "MISE_DIR_ENV"
+
+# Trusting the config clears that ignore again.
+mise trust ../.config/mise.toml
+assert_contains "mise env -s bash" "CONFIG_ENV"
