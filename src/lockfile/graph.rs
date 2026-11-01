@@ -1285,6 +1285,32 @@ wheels = [
         );
     }
     #[test]
+    fn uv_install_identity_of_a_sidecar_is_saved_to_the_cache() {
+        let temp = tempfile::tempdir().unwrap();
+        // A graph no other test or run has seen, so only this lookup can write its entry.
+        let nonce = temp.path().display();
+        let text = format!(
+            "version = 1\n# {nonce}\n[options]\nexclude-newer = \"2026-10-26T09:00:00Z\"\n"
+        );
+        let dir = temp.path().join("locks/pypi-fixture");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("uv.lock"), &text).unwrap();
+        let sidecar: GraphRef<UvLock> = GraphRef::Sidecar {
+            dir,
+            base: temp.path().to_path_buf(),
+            digest: digest_text(&text),
+            cell: OnceLock::new(),
+        };
+        let identity = sidecar.install_identity();
+        assert_ne!(identity, sidecar.identity());
+        let saved = crate::dirs::CACHE
+            .join("uv-install-identity")
+            .join(env!("CARGO_PKG_VERSION"))
+            .join(digest_text(&text).trim_start_matches("sha256:"));
+        assert_eq!(std::fs::read_to_string(&saved).unwrap(), identity);
+        std::fs::remove_file(saved).unwrap();
+    }
+    #[test]
     fn uv_install_identity_is_the_same_for_a_sidecar_graph() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("mise.lock");
@@ -1316,11 +1342,6 @@ wheels = [
             cell: OnceLock::new(),
         };
         assert_eq!(sidecar.install_identity(), identities[0].1);
-        let saved = crate::dirs::CACHE
-            .join("uv-install-identity")
-            .join(env!("CARGO_PKG_VERSION"))
-            .join(digest_text(&graph.graph_text).trim_start_matches("sha256:"));
-        assert!(saved.is_file(), "{} was not written", saved.display());
         // An edited sidecar is not answered from what was remembered.
         std::fs::write(again.join("uv.lock"), "version = 1\n").unwrap();
         assert_eq!(sidecar.install_identity(), sidecar.identity());
