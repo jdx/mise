@@ -170,6 +170,19 @@ impl Store {
         store::list_in(&self.state_dir)
     }
 
+    /// The id and uuid of the newest checkpoint holding a content snapshot:
+    /// the one an unchanged capture compares against.
+    pub(crate) fn latest_snapshot(&self) -> Result<Option<(u64, String)>> {
+        let index = store::load_index_in(&self.state_dir)?;
+        Ok(index.entries.iter().rev().find_map(|entry| {
+            store::read_meta_cache_in(&self.state_dir, &entry.uuid)
+                .ok()
+                .flatten()
+                .is_some_and(|checkpoint| checkpoint.tree.snapshot.is_some())
+                .then(|| (entry.id, entry.uuid.clone()))
+        }))
+    }
+
     /// Reserves the next checkpoint id.
     pub(crate) fn reserve_id(&self) -> Result<u64> {
         let mut index = store::load_index_in(&self.state_dir)?;
