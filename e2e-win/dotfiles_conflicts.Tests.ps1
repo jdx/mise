@@ -90,14 +90,15 @@ Describe 'dotfiles-conflicts-symlink-each-copies' {
         # Deliberate, and what the Windows docs describe: mise cannot tell its stale copy from
         # one somebody edited, so it treats it like any file in the way of a link.
         'source-A' | Out-File -FilePath $script:Source -Encoding ascii -NoNewline
-        mise dot apply 2>&1 | Out-String | Out-Null
+        # scoped to this entry, so a dotfile in the runner's own config is never applied
+        mise dot apply $script:Target 2>&1 | Out-String | Out-Null
         $LASTEXITCODE | Should -Be 0
         $copy = Join-Path $script:Target 'file.txt'
         (Get-Item -LiteralPath $copy -Force).LinkType | Should -BeNullOrEmpty
         (Get-Content $copy -Raw) | Should -Be 'source-A'
 
         'source-B' | Out-File -FilePath $script:Source -Encoding ascii -NoNewline
-        $out = mise dot apply 2>&1 | Out-String
+        $out = mise dot apply $script:Target 2>&1 | Out-String
         $LASTEXITCODE | Should -Not -Be 0
         $out | Should -BeLike '*refusing to overwrite*'
         (Get-Content $copy -Raw) | Should -Be 'source-A'
