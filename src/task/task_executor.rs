@@ -76,6 +76,9 @@ pub struct TaskRunContext<'a> {
     pub otel_span_cx: Option<opentelemetry::trace::SpanContext>,
     /// A task another task's run entry started. It never receives a command-line grant.
     pub injected: bool,
+    /// Started by a run entry of a task that holds task locks: it runs under that task's
+    /// `--jobs` permit and terminal and never takes either itself.
+    pub covered: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -92,6 +95,8 @@ struct TaskExecContext<'a> {
     /// The values this task was granted. Added to the child's env only inside `exec_program`,
     /// after every render and after `__MISE_DIFF` was computed.
     secrets: Option<&'a SpawnSecrets>,
+    /// Runs under its locked parent's terminal, so it never takes the runtime lock.
+    covered: bool,
 }
 
 struct TaskRunEntriesContext<'a> {
@@ -103,6 +108,9 @@ struct TaskRunEntriesContext<'a> {
     completion_state: &'a TaskCompletionState,
     semaphore: Arc<Semaphore>,
     permit: &'a mut Option<OwnedSemaphorePermit>,
+    /// The task holds task locks, so it keeps its permit and terminal while tasks its run
+    /// entries start run under them.
+    holds_locks: bool,
 }
 
 struct PreparedTaskContext {
@@ -208,6 +216,8 @@ struct TaskInjectionContext<'a> {
     sched_tx: &'a Arc<mpsc::UnboundedSender<SchedMsg>>,
     completion_state: &'a TaskCompletionState,
     allow_during_interruption: bool,
+    /// The injected tasks run under the parent's permit and terminal.
+    covered: bool,
 }
 
 #[allow(dead_code)] // Guards are held for their Drop impl, not read
@@ -644,6 +654,7 @@ impl TaskExecutor {
             allow_during_interruption,
             otel_span_cx,
             injected,
+            covered,
         } = ctx;
         // Every task reaches this point before it runs, whether it was named, a dependency, or
         // the rendered name of a `run` entry, so this is where a run that must not execute
@@ -736,7 +747,7 @@ impl TaskExecutor {
 
         // Confirmation must happen before a cache restore because restoring
         // outputs mutates the working tree just like executing the task.
-        let mut confirm_guard = if task.interactive {
+        let mut confirm_guard = if task.interactive && !covered {
             Some(acquire_runtime_lock(task.interactive).await)
         } else {
             None
@@ -925,95 +936,6 @@ impl TaskExecutor {
             .as_ref()
             .filter(|_| self.task_cache.writes())
             .map(|_| Arc::new(StdMutex::new(Vec::new())));
-        // Taken once the task has decided to run, so a skipped or restored task never waits,
-        // and held until every run entry ends.
-        let mut task_env = task_env;
-        let lock_keys = task_lock::requested(task);
-        let _task_locks = if lock_keys.is_empty() || (task.run().is_empty() && task_file.is_none())
-        {
-            None
-        } else if self.dry_run {
-            if let Some(locks) = task_lock::describe(task) {
-                self.eprint(
-                    task,
-                    &prefix,
-                    &format!("lock: {locks} (not taken: dry run)"),
-                );
-            }
-            None
-        } else {
-            let inherited = task_lock::inherited(&env);
-            let to_take: Vec<_> = lock_keys
-                .iter()
-                .filter(|key| !inherited.contains(key.id()))
-                .cloned()
-                .collect();
-            task_lock::check_nested_order(task, &inherited, &to_take)?;
-            // A task never waits for one of these while holding another: waiting for a lock it
-            // gives back its `--jobs` permit and an interactive task's terminal, and waiting
-            // for those it gives back its locks. Otherwise a task holding a permit could start
-            // a nested `mise run` that waits for a lock held by a task waiting for that permit.
-            let needs_permit = permit.is_some();
-            // Time spent waiting for another run's locks, across retries.
-            let mut lock_waited = Duration::ZERO;
-            let needs_terminal = confirm_guard.is_some();
-            let held = loop {
-                let mut acquisition = task_lock::LockAcquisition::new(task, to_take.clone())?;
-                if acquisition.try_take()? {
-                    break acquisition.into_held();
-                }
-                *permit = None;
-                confirm_guard = None;
-                let held = acquisition
-                    .wait(
-                        self.lock_timeout,
-                        &mut lock_waited,
-                        |line| self.eprint(task, &prefix, line),
-                        || Self::check_interruption(allow_during_interruption),
-                    )
-                    .await?;
-                let permit_now = if needs_permit {
-                    match semaphore.clone().try_acquire_owned() {
-                        Ok(p) => Some(p),
-                        Err(TryAcquireError::NoPermits) => None,
-                        Err(err) => return Err(err.into()),
-                    }
-                } else {
-                    None
-                };
-                let terminal_now = if needs_terminal {
-                    TASK_RUNTIME_LOCK
-                        .try_write()
-                        .ok()
-                        .map(RuntimeLockGuard::Write)
-                } else {
-                    None
-                };
-                if permit_now.is_some() == needs_permit && terminal_now.is_some() == needs_terminal
-                {
-                    *permit = permit_now;
-                    confirm_guard = terminal_now;
-                    break held;
-                }
-                // Busy: release the locks, wait for the permit and the terminal holding no
-                // lock, then try the locks again.
-                drop(held);
-                drop(terminal_now);
-                *permit = match permit_now {
-                    Some(p) => Some(p),
-                    None if needs_permit => Some(semaphore.clone().acquire_owned().await?),
-                    None => None,
-                };
-                if needs_terminal {
-                    confirm_guard = Some(acquire_runtime_lock(task.interactive).await);
-                }
-            };
-            let locks = task_lock::exported(&inherited, &lock_keys);
-            env.insert(task_lock::LOCKS_ENV.to_string(), locks.clone());
-            // Tasks a run entry injects inherit `task_env`, so they see the locks this task holds.
-            task_env.push((task_lock::LOCKS_ENV.to_string(), locks));
-            Some(held)
-        };
         // Resolved here, after the skip, confirmation and cache checks: a task that does not
         // run never asks fnox. Held until every run entry ends, then dropped, which deletes
         // any secret files.
@@ -1040,7 +962,8 @@ impl TaskExecutor {
                 executor: self,
                 task,
                 prefix: &prefix,
-                holds_write: task.interactive,
+                // A covered task's locked parent already holds the terminal for it.
+                holds_write: task.interactive || covered,
             };
             self.secrets
                 .prepare_spawn(
@@ -1077,6 +1000,107 @@ impl TaskExecutor {
                     err
                 })?
         };
+        // Taken once the task has decided to run and has its secrets, just before its first
+        // command, so a skipped or restored task never waits, and held until every run entry
+        // ends.
+        let mut task_env = task_env;
+        let lock_keys = task_lock::requested(task);
+        let task_locks = if lock_keys.is_empty() || (task.run().is_empty() && task_file.is_none()) {
+            None
+        } else if self.dry_run {
+            if let Some(locks) = task_lock::describe(task) {
+                self.eprint(
+                    task,
+                    &prefix,
+                    &format!("lock: {locks} (not taken: dry run)"),
+                );
+            }
+            None
+        } else {
+            let inherited = task_lock::inherited(&env);
+            let to_take: Vec<_> = lock_keys
+                .iter()
+                .filter(|key| !inherited.contains(key.id()))
+                .cloned()
+                .collect();
+            task_lock::check_nested_order(task, &inherited, &to_take)?;
+            // A task that takes locks takes its `--jobs` permit and its hold on the terminal
+            // (write for an interactive task, read otherwise) with them, all or nothing, and
+            // keeps all of them until it ends; tasks its run entries start run under them. It
+            // never waits for one while holding another: waiting for a lock it gives back the
+            // permit and the terminal, and waiting for those it gives back its locks. Otherwise
+            // a task holding the permit or the terminal could start a nested `mise run` that
+            // waits for one of these locks while this task waits for what that task holds.
+            // A covered task already runs under its locked parent's permit and terminal.
+            let needs_permit = permit.is_some();
+            let needs_terminal = !covered;
+            if needs_terminal && confirm_guard.is_none() {
+                confirm_guard = Some(acquire_runtime_lock(task.interactive).await);
+            }
+            // Time spent waiting for another run's locks, across retries.
+            let mut lock_waited = Duration::ZERO;
+            let held = loop {
+                let mut acquisition = task_lock::LockAcquisition::new(task, to_take.clone())?;
+                if acquisition.try_take()? {
+                    break acquisition.into_held();
+                }
+                *permit = None;
+                confirm_guard = None;
+                let held = acquisition
+                    .wait(
+                        self.lock_timeout,
+                        &mut lock_waited,
+                        |line| self.eprint(task, &prefix, line),
+                        || Self::check_interruption(allow_during_interruption),
+                    )
+                    .await?;
+                let permit_now = if needs_permit {
+                    match semaphore.clone().try_acquire_owned() {
+                        Ok(p) => Some(p),
+                        Err(TryAcquireError::NoPermits) => None,
+                        Err(err) => return Err(err.into()),
+                    }
+                } else {
+                    None
+                };
+                let terminal_now = if !needs_terminal {
+                    None
+                } else if task.interactive {
+                    TASK_RUNTIME_LOCK
+                        .try_write()
+                        .ok()
+                        .map(RuntimeLockGuard::Write)
+                } else {
+                    TASK_RUNTIME_LOCK
+                        .try_read()
+                        .ok()
+                        .map(RuntimeLockGuard::Read)
+                };
+                if permit_now.is_some() == needs_permit && terminal_now.is_some() == needs_terminal
+                {
+                    *permit = permit_now;
+                    confirm_guard = terminal_now;
+                    break held;
+                }
+                // Busy: release the locks, wait for the permit and the terminal holding no
+                // lock, then try the locks again.
+                drop(held);
+                drop(terminal_now);
+                *permit = match permit_now {
+                    Some(p) => Some(p),
+                    None if needs_permit => Some(semaphore.clone().acquire_owned().await?),
+                    None => None,
+                };
+                if needs_terminal {
+                    confirm_guard = Some(acquire_runtime_lock(task.interactive).await);
+                }
+            };
+            let locks = task_lock::exported(&inherited, &lock_keys);
+            env.insert(task_lock::LOCKS_ENV.to_string(), locks.clone());
+            // Tasks a run entry injects inherit `task_env`, so they see the locks this task holds.
+            task_env.push((task_lock::LOCKS_ENV.to_string(), locks));
+            Some(held)
+        };
         let exec_ctx = TaskExecContext {
             task,
             env: &env,
@@ -1086,6 +1110,7 @@ impl TaskExecutor {
             allow_during_interruption,
             otel_span_cx: otel_span_cx.as_ref(),
             secrets: spawn_secrets.as_ref(),
+            covered,
         };
 
         let timer = std::time::Instant::now();
@@ -1127,6 +1152,7 @@ impl TaskExecutor {
                     completion_state: &completion_state,
                     semaphore,
                     permit,
+                    holds_locks: task_locks.as_ref().is_some_and(|held| !held.is_empty()),
                 },
             )
             .await?;
@@ -1232,8 +1258,12 @@ impl TaskExecutor {
             completion_state,
             semaphore,
             permit,
+            holds_locks,
         } = ctx;
         let task = exec.task;
+        // A task that holds locks, or runs under a parent that does, keeps its permit and
+        // terminal across the tasks its run entries start, and those run under them.
+        let covers_children = holds_locks || exec.covered;
         use crate::task::RunEntry;
         let mut script_iter = rendered_scripts.into_iter();
         let mut completion_state = completion_state.clone();
@@ -1258,6 +1288,7 @@ impl TaskExecutor {
         // and temporarily dropped around inject_and_wait to avoid deadlocking.
         let mut guard = match existing_guard {
             Some(g) => Some(g),
+            None if exec.covered => None,
             None => Some(acquire_runtime_lock(task.interactive).await),
         };
         for raw_entry in task.run() {
@@ -1273,7 +1304,7 @@ impl TaskExecutor {
             match entry {
                 RunEntry::Script(_) => {
                     if let Some((script, args)) = script_iter.next() {
-                        if guard.is_none() {
+                        if guard.is_none() && !exec.covered {
                             guard = Some(acquire_runtime_lock(task.interactive).await);
                         }
                         self.exec_script(&script, &args, exec).await?;
@@ -1299,12 +1330,14 @@ impl TaskExecutor {
                     } else {
                         Some(override_env.as_slice())
                     };
-                    guard = None; // drop lock before waiting on sub-tasks
-                    // Release the semaphore permit before waiting on sub-tasks to
-                    // avoid deadlock when MISE_JOBS=1 (the sub-task needs a permit
-                    // but we're holding the only one).
-                    let had_permit = permit.is_some();
-                    *permit = None;
+                    // Release the terminal and the semaphore permit before waiting on
+                    // sub-tasks to avoid deadlock when MISE_JOBS=1 (the sub-task needs a
+                    // permit but we're holding the only one), unless the sub-tasks run
+                    // under them.
+                    let had_permit = !covers_children && permit.take().is_some();
+                    if !covers_children {
+                        guard = None;
+                    }
                     let completed = self
                         .inject_and_wait(
                             &[resolved_spec],
@@ -1317,6 +1350,7 @@ impl TaskExecutor {
                                 sched_tx: &sched_tx,
                                 completion_state: &completion_state,
                                 allow_during_interruption: exec.allow_during_interruption,
+                                covered: covers_children,
                             },
                         )
                         .await?;
@@ -1330,9 +1364,10 @@ impl TaskExecutor {
                         .iter()
                         .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
                         .collect();
-                    guard = None; // drop lock before waiting on sub-tasks
-                    let had_permit = permit.is_some();
-                    *permit = None;
+                    let had_permit = !covers_children && permit.take().is_some();
+                    if !covers_children {
+                        guard = None; // drop lock before waiting on sub-tasks
+                    }
                     let completed = self
                         .inject_and_wait(
                             &resolved_tasks,
@@ -1345,6 +1380,7 @@ impl TaskExecutor {
                                 sched_tx: &sched_tx,
                                 completion_state: &completion_state,
                                 allow_during_interruption: exec.allow_during_interruption,
+                                covered: covers_children,
                             },
                         )
                         .await?;
@@ -1372,6 +1408,7 @@ impl TaskExecutor {
             sched_tx,
             completion_state,
             allow_during_interruption,
+            covered,
         } = ctx;
         trace!("inject start: {}", specs.join(", "));
         let mut to_run: Vec<Task> = vec![];
@@ -1476,6 +1513,7 @@ impl TaskExecutor {
                                 task,
                                 sub_deps_clone.clone(),
                                 allow_during_interruption,
+                                covered,
                             ));
                         }
                         Ok(None) => {
@@ -1510,6 +1548,7 @@ impl TaskExecutor {
                                 task,
                                 sub_deps_clone.clone(),
                                 allow_during_interruption,
+                                covered,
                             ));
                         }
                         None => {
@@ -1885,7 +1924,7 @@ impl TaskExecutor {
             self.eprint(ctx.task, ctx.prefix, &cmd);
         }
 
-        let _guard = if guard.is_some() {
+        let _guard = if guard.is_some() || ctx.covered {
             guard
         } else {
             Some(acquire_runtime_lock(ctx.task.interactive).await)
@@ -1955,6 +1994,7 @@ impl TaskExecutor {
             allow_during_interruption,
             otel_span_cx,
             secrets,
+            covered: _,
         } = ctx;
         #[cfg(not(windows))]
         let _ = cmd_verbatim;

@@ -19,6 +19,10 @@ pub struct SchedMsg {
     /// that tools are installed for it just before it starts, and that it receives no
     /// command-line secrets.
     pub injected: bool,
+    /// Started by a run entry of a task that holds task locks. It runs under that task's
+    /// `--jobs` slot and terminal instead of waiting for its own, since the parent keeps
+    /// them, with its locks, until it ends.
+    pub covered: bool,
 }
 
 impl SchedMsg {
@@ -28,6 +32,7 @@ impl SchedMsg {
             deps,
             allow_during_interruption,
             injected: false,
+            covered: false,
         }
     }
 
@@ -35,9 +40,11 @@ impl SchedMsg {
         task: Task,
         deps: Arc<Mutex<Deps>>,
         allow_during_interruption: bool,
+        covered: bool,
     ) -> Self {
         Self {
             injected: true,
+            covered,
             ..Self::new(task, deps, allow_during_interruption)
         }
     }
@@ -233,7 +240,7 @@ impl Scheduler {
         mut spawn_job: F,
     ) -> Result<()>
     where
-        F: FnMut(Task, Arc<Mutex<Deps>>, bool, bool) -> Fut,
+        F: FnMut(Task, Arc<Mutex<Deps>>, bool, bool, bool) -> Fut,
         Fut: std::future::Future<Output = Result<()>>,
         S: Fn() -> bool,
         I: Fn() -> bool,
@@ -259,6 +266,7 @@ impl Scheduler {
                         deps: deps_for_remove,
                         allow_during_interruption,
                         injected,
+                        covered,
                     }) => {
                         drained_any = true;
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
@@ -279,6 +287,7 @@ impl Scheduler {
                             deps_for_remove,
                             allow_during_interruption,
                             injected,
+                            covered,
                         ));
                     }
                     Err(mpsc::error::TryRecvError::Empty) => break,
@@ -338,6 +347,7 @@ impl Scheduler {
                         deps: deps_for_remove,
                         allow_during_interruption,
                         injected,
+                        covered,
                     }) = m {
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
                         if should_stop() && (!continue_on_error || was_interrupted()) {
@@ -357,6 +367,7 @@ impl Scheduler {
                             deps_for_remove,
                             allow_during_interruption,
                             injected,
+                            covered,
                         ));
                     } else {
                         // channel closed; rely on main_done/in_flight to exit soon

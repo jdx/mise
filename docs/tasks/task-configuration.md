@@ -893,6 +893,13 @@ lock:
 [test] got lock test-db after 3m02s
 ```
 
+A task holds its locks, its `--jobs` slot and its share of the terminal
+together, taking all of them or none, and keeps them until it ends. Tasks that
+its `{ task = ... }` and `{ tasks = [...] }` entries start run under that slot
+and do not take one of their own. This way a run that holds a lock never waits
+for something another task in the same run is holding while it waits for that
+lock.
+
 Two tasks in the same `mise run` that name the same lock also run one after the
 other. A task's [`timeout`](#timeout) starts once it holds its locks. To limit
 the wait, set

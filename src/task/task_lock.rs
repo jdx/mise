@@ -223,6 +223,13 @@ pub(crate) struct HeldLocks {
     locks: Vec<(LockKey, fslock::LockFile)>,
 }
 
+impl HeldLocks {
+    /// Whether this task took no lock of its own, because it inherited every one it names.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.locks.is_empty()
+    }
+}
+
 impl Drop for HeldLocks {
     fn drop(&mut self) {
         // The record goes first, while the lock still keeps the next holder from writing its own.

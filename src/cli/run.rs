@@ -1138,7 +1138,7 @@ impl Run {
                     on_task_dropped: |task: &Task| this.retire_keep_order_slot(task),
                     continue_on_error: this.continue_on_error,
                 },
-                |task, deps_for_remove, allow_during_interruption, injected| {
+                |task, deps_for_remove, allow_during_interruption, injected, covered| {
                     let this = this.clone();
                     let spawn_context = spawn_context.clone();
                     async move {
@@ -1148,6 +1148,7 @@ impl Run {
                             deps_for_remove,
                             allow_during_interruption,
                             injected,
+                            covered,
                             spawn_context,
                         )
                         .await
@@ -1192,6 +1193,7 @@ impl Run {
         deps_for_remove: Arc<Mutex<Deps>>,
         inherited_allow_during_interruption: bool,
         injected: bool,
+        covered: bool,
         ctx: crate::task::task_scheduler::SpawnContext,
     ) -> Result<()> {
         if Self::should_abort_while_stopping(
@@ -1209,9 +1211,10 @@ impl Run {
             );
             return Ok(());
         }
-        let needs_task_permit = task_needs_permit(&task);
+        // A covered task runs under the slot of the locked task that started it.
+        let needs_task_permit = task_needs_permit(&task) && !covered;
         let needs_install = injected && !this.skip_tools;
-        let mut permit_opt = if needs_task_permit || needs_install {
+        let mut permit_opt = if needs_task_permit || (needs_install && !covered) {
             let wait_start = std::time::Instant::now();
             let p = Some(ctx.semaphore.clone().acquire_owned().await?);
             trace!(
@@ -1324,6 +1327,7 @@ impl Run {
                 allow_during_interruption,
                 otel_span_cx,
                 injected,
+                covered,
             }))
             .catch_unwind()
             .await
