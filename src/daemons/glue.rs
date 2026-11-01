@@ -36,7 +36,8 @@ pub async fn toolset_resolved(config: &Arc<Config>) -> Result<Toolset> {
         .get_tool_request_set()
         .await?
         .tools
-        .contains_key(&pitchfork.ba)
+        .keys()
+        .any(|ba| crate::install_context::backend_args_match(&pitchfork.ba, ba))
     {
         vec![pitchfork]
     } else {
