@@ -446,3 +446,20 @@ fn test_cmd_verbatim_args_multiline_blocks_and_carets() {
         sv(&["/s", "/c", r#""echo value^^ & echo next""#])
     );
 }
+
+#[test]
+fn test_cmd_verbatim_args_blank_lines_and_escaped_parens() {
+    let c = || "/c".to_string();
+
+    // Leading/trailing blank lines around one command must not leave a newline for `cmd /c`.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "\necho ready\n", &[]),
+        sv(&["/s", "/c", r#""echo ready""#])
+    );
+
+    // An escaped `(` is text, not a block opener, so the next command stays separate.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo ^(\necho next", &[]),
+        sv(&["/s", "/c", r#""echo ^( & echo next""#])
+    );
+}

@@ -284,7 +284,8 @@ pub fn cmd_verbatim_args(shell_flags: &[String], script: &str, args: &[String]) 
 /// such as `if exist x (` ... `) else (` ... `)` stays valid.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn join_cmd_script_lines(script: &str) -> String {
-    if script.trim().lines().count() <= 1 {
+    let script = script.trim();
+    if !script.contains('\n') {
         return script.to_string();
     }
     let mut out = String::new();
@@ -309,7 +310,10 @@ fn join_cmd_script_lines(script: &str) -> String {
             glue = true;
         } else {
             out.push_str(trimmed);
-            glue = trimmed.ends_with('(');
+            // A `(` is a block opener unless an odd number of carets escape it.
+            glue = trimmed
+                .strip_suffix('(')
+                .is_some_and(|rest| (rest.len() - rest.trim_end_matches('^').len()) % 2 == 0);
         }
     }
     out
