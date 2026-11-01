@@ -120,16 +120,32 @@ pub async fn verify_github_attestation_sources_for_sha512(
     attestations: &[Attestation],
     signer_workflow: Option<&str>,
 ) -> Result<Vec<String>> {
+    verify_github_attestation_sources_for_sha512_with_trust_roots(
+        sha512,
+        attestations,
+        signer_workflow,
+        &mut TrustRoots::default(),
+    )
+    .await
+}
+
+pub(crate) async fn verify_github_attestation_sources_for_sha512_with_trust_roots(
+    sha512: &[u8],
+    attestations: &[Attestation],
+    signer_workflow: Option<&str>,
+    trust_roots: &mut TrustRoots,
+) -> Result<Vec<String>> {
     if attestations.is_empty() {
         return Err(AttestationError::NoAttestations);
     }
 
     let digest = ArtifactDigest::new(HashAlgorithm::Sha2512, sha512)
         .map_err(|e| AttestationError::Verification(e.to_string()))?;
-    verify_github_attestation_sources_for_artifact(
+    verify_github_attestation_sources_with_trust_roots(
         Artifact::from_digest(digest),
         attestations,
         signer_workflow,
+        trust_roots,
     )
     .await
 }
@@ -139,7 +155,21 @@ pub(crate) async fn verify_github_attestation_sources_for_artifact(
     attestations: &[Attestation],
     signer_workflow: Option<&str>,
 ) -> Result<Vec<String>> {
-    let mut trust_roots = TrustRoots::default();
+    verify_github_attestation_sources_with_trust_roots(
+        artifact,
+        attestations,
+        signer_workflow,
+        &mut TrustRoots::default(),
+    )
+    .await
+}
+
+async fn verify_github_attestation_sources_with_trust_roots(
+    artifact: Artifact<'_>,
+    attestations: &[Attestation],
+    signer_workflow: Option<&str>,
+    trust_roots: &mut TrustRoots,
+) -> Result<Vec<String>> {
     let mut sources = Vec::new();
     let mut errors = Vec::new();
     let mut trust_root_failures = 0;
@@ -161,7 +191,7 @@ pub(crate) async fn verify_github_attestation_sources_for_artifact(
             artifact.clone(),
             &bundle,
             signer_workflow,
-            &mut trust_roots,
+            trust_roots,
         )
         .await
         {

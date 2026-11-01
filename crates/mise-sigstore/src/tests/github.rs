@@ -162,28 +162,24 @@ fn npm_bundle_attestations() -> Vec<Attestation> {
 #[tokio::test]
 async fn github_attestation_sources_for_sha512_verifies_npm_provenance() {
     use base64::Engine as _;
-    let _tuf_root = TUF_ROOT_LOCK.lock().await;
+    // The embedded public-good root, so the test never reaches the TUF repository.
+    let verify = async |sha512: &[u8]| {
+        crate::github::verify_github_attestation_sources_for_sha512_with_trust_roots(
+            sha512,
+            &npm_bundle_attestations(),
+            None,
+            &mut TrustRoots::with_sigstore_root(embedded_sigstore_root()),
+        )
+        .await
+    };
     let sha512 = base64::engine::general_purpose::STANDARD
         .decode(NPM_BUNDLE_INTEGRITY)
         .unwrap();
-    let sources = crate::github::verify_github_attestation_sources_for_sha512(
-        &sha512,
-        &npm_bundle_attestations(),
-        None,
-    )
-    .await
-    .unwrap();
-    assert_eq!(sources, ["sigstore/sigstore-js"]);
+    assert_eq!(verify(&sha512).await.unwrap(), ["sigstore/sigstore-js"]);
 
     let mut other = sha512;
     other[0] ^= 1;
-    let error = crate::github::verify_github_attestation_sources_for_sha512(
-        &other,
-        &npm_bundle_attestations(),
-        None,
-    )
-    .await
-    .unwrap_err();
+    let error = verify(&other).await.unwrap_err();
     assert!(matches!(error, AttestationError::Verification(_)));
 }
 
