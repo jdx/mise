@@ -4856,7 +4856,8 @@ pub fn execute_apply(
                 );
             }
             let pending = journal::begin_changes_with(DOTFILES_PART, &item, paths)?;
-            file::remove_file(&link.target)?;
+            // a junction or directory symlink is refused by `remove_file` on Windows
+            file::remove_symlink_or_junction(&link.target)?;
             written.push(link.target.clone());
             journal::commit_changes(pending);
         }
