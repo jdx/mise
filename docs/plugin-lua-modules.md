@@ -175,6 +175,7 @@ receive the options of its `[env]` directive with their TOML types kept; see
 | [`semver`](#semver-module)     | `compare`, `parse`, `sort`, `sort_by`                                         |
 | [`html`](#html-module)         | `parse`                                                                       |
 | [`env`](#environment-module)   | `setenv`                                                                      |
+| [`mise.cache`](#cache-module)  | `watch_files`, `disable`                                                      |
 | [`log`](#log-module)           | `trace`, `debug`, `info`, `warn`, `error`                                     |
 
 ## Errors
@@ -598,6 +599,29 @@ To add directories to the user's `PATH`, return each one as a separate entry,
 built with `file.join_path`, from `MisePath` or as a `PATH` key from `EnvKeys`
 or `BackendExecEnv`. mise joins them with the host's separator, so do not
 build a colon-separated string in a plugin that also runs on Windows.
+
+## `mise.cache` {#cache-module}
+
+mise caches the result of `EnvKeys` and `BackendExecEnv` and runs the hook
+again only when something it depends on changes; see
+[Caching](/tool-plugin-development.html#envkeys-caching). It already follows the
+variables the hook reads with `os.getenv`. Call these functions in the hook to
+name what else the result depends on:
+
+| Function             | Effect                                                                                                                                 |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `watch_files(paths)` | Rerun the hook when one of these files or directories changes, appears or goes away. Relative paths resolve from the current directory |
+| `disable()`          | Don't cache this result; run the hook every time                                                                                       |
+
+In other hooks both do nothing. The module is a mise addition, so load it with
+`pcall` in a plugin that also runs on the vfox CLI or on older mise releases:
+
+```lua
+local ok, cache = pcall(require, "mise.cache")
+if ok then
+    cache.watch_files({ file.join_path(os.getenv("PWD"), "Pipfile.lock") })
+end
+```
 
 ## `log` {#log-module}
 

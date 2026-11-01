@@ -80,3 +80,104 @@ assert_contains "ENVREADER_MODE=a mise env -s bash" "ENVREADER_SEEN=a"
 assert_contains "ENVREADER_MODE=b mise env -s bash" "ENVREADER_SEEN=b"
 assert "ENVREADER_MODE=b exec_env_cache_log 6 envreader" "reading"
 assert_contains "mise env -s bash" "ENVREADER_SEEN=unset"
+
+# A hook can name files its result depends on with mise.cache.watch_files, and
+# a change to one, including it appearing or going away, runs the hook again.
+WATCHED="$PWD/watched.txt"
+WATCHER_DIR="$PWD/watcher"
+mkdir -p "$WATCHER_DIR/hooks" "$MISE_DATA_DIR/installs/watcher/1.0.0"
+cat >"$WATCHER_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "watcher", version = "0.1.0" }
+LUA
+cat >"$WATCHER_DIR/hooks/env_keys.lua" <<LUA
+function PLUGIN:EnvKeys(ctx)
+  local path = "$WATCHED"
+  local ok, cache = pcall(require, "mise.cache")
+  if ok then
+    cache.watch_files({ path })
+  end
+  local value = "missing"
+  local f = io.open(path, "r")
+  if f then
+    value = f:read("*l")
+    f:close()
+  end
+  return { { key = "WATCHED", value = value } }
+end
+LUA
+mise plugins link watcher "$WATCHER_DIR"
+cat >mise.toml <<'TOML'
+[tools]
+watcher = "1.0.0"
+TOML
+assert_contains "mise env -s bash" "WATCHED=missing"
+echo one >"$WATCHED"
+assert_contains "mise env -s bash" "WATCHED=one"
+assert "exec_env_cache_log 7 watcher" "reading"
+echo two >"$WATCHED"
+assert_contains "mise env -s bash" "WATCHED=two"
+rm "$WATCHED"
+assert_contains "mise env -s bash" "WATCHED=missing"
+
+# mise.cache.disable runs the hook every time.
+VOLATILE_DIR="$PWD/volatile"
+mkdir -p "$VOLATILE_DIR/hooks" "$MISE_DATA_DIR/installs/volatile/1.0.0"
+cat >"$VOLATILE_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "volatile", version = "0.1.0" }
+LUA
+cat >"$VOLATILE_DIR/hooks/env_keys.lua" <<LUA
+function PLUGIN:EnvKeys(ctx)
+  require("mise.cache").disable()
+  local f = io.open("$PWD/volatile.txt", "r")
+  local value = f:read("*l")
+  f:close()
+  return { { key = "VOLATILE", value = value } }
+end
+LUA
+mise plugins link volatile "$VOLATILE_DIR"
+cat >mise.toml <<'TOML'
+[tools]
+volatile = "1.0.0"
+TOML
+echo one >volatile.txt
+assert_contains "mise env -s bash" "VOLATILE=one"
+echo two >volatile.txt
+assert_contains "mise env -s bash" "VOLATILE=two"
+
+# A backend plugin can return watch_files from BackendExecEnv.
+BACKEND_DIR="$PWD/watch-backend"
+mkdir -p "$BACKEND_DIR/hooks"
+cat >"$BACKEND_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "watch-backend", version = "0.1.0" }
+LUA
+cat >"$BACKEND_DIR/hooks/backend_list_versions.lua" <<'LUA'
+function PLUGIN:BackendListVersions(ctx)
+  return { versions = { "1.0.0" } }
+end
+LUA
+cat >"$BACKEND_DIR/hooks/backend_install.lua" <<'LUA'
+function PLUGIN:BackendInstall(ctx)
+  return {}
+end
+LUA
+cat >"$BACKEND_DIR/hooks/backend_exec_env.lua" <<LUA
+function PLUGIN:BackendExecEnv(ctx)
+  local path = "$PWD/backend-watched.txt"
+  local value = "missing"
+  local f = io.open(path, "r")
+  if f then
+    value = f:read("*l")
+    f:close()
+  end
+  return { env_vars = { { key = "BACKEND_WATCHED", value = value } }, watch_files = { path } }
+end
+LUA
+mise plugins link watch-backend "$BACKEND_DIR"
+cat >mise.toml <<'TOML'
+[tools]
+"watch-backend:tool" = "1.0.0"
+TOML
+mise install
+assert_contains "mise env -s bash" "BACKEND_WATCHED=missing"
+echo one >backend-watched.txt
+assert_contains "mise env -s bash" "BACKEND_WATCHED=one"

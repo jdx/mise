@@ -10,6 +10,7 @@ extern crate mlua;
 
 pub use error::Result as VfoxResult;
 pub use error::VfoxError;
+pub use hook_dependencies::{HookDependencies, HookDependencyRecorder};
 pub use hooks::backend_list_versions::{BackendListVersionsResponse, BackendVersion};
 pub use hooks::backend_tools::BackendTool;
 pub use hooks::mise_install_satisfied::MiseInstallSatisfiedResult;
@@ -20,7 +21,6 @@ pub use hooks::package::{
 pub use hooks::pre_install::VerifiedAttestation;
 pub use metadata::{Metadata, SystemDependency};
 pub use plugin::Plugin;
-pub use vfox::EnvReads;
 pub use vfox::InstallResult;
 pub use vfox::TerminalLock;
 pub use vfox::Vfox;
@@ -31,6 +31,7 @@ mod config;
 mod context;
 pub mod embedded_plugins;
 mod error;
+mod hook_dependencies;
 mod hooks;
 mod http;
 mod lua_mod;

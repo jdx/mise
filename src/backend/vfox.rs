@@ -41,6 +41,29 @@ struct CachedExecEnv {
     /// The variables the hook read through `os.getenv`, with a hash of the
     /// value it saw: a hook can read a secret, and the cache is a plain file.
     env_reads: BTreeMap<String, Option<String>>,
+    /// The files the hook asked to watch, with their modification time then
+    /// (`None` when missing).
+    watch_files: Vec<(PathBuf, Option<u128>)>,
+    /// False when the hook asked not to be cached. Such an entry holds no
+    /// result; it is kept so an older result is not served instead.
+    cacheable: bool,
+}
+
+impl CachedExecEnv {
+    /// Whether the result can be served without checking the environment.
+    fn still_applies(&self) -> bool {
+        self.cacheable
+            && self
+                .watch_files
+                .iter()
+                .all(|(path, modified)| modified_nanos(path) == *modified)
+    }
+}
+
+fn modified_nanos(path: &Path) -> Option<u128> {
+    let modified = path.metadata().ok()?.modified().ok()?;
+    let since_epoch = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    Some(since_epoch.as_nanos())
 }
 
 fn hash_env_reads(reads: BTreeMap<String, Option<String>>) -> BTreeMap<String, Option<String>> {
@@ -1105,13 +1128,14 @@ impl VfoxBackend {
         cache
             .env
             .get_or_try_init(async || {
-                // The hook's result also depends on the variables it read, so
-                // a cached one is used only while they keep their values.
-                // Working those out costs a little, so only for a hook that
-                // read any.
+                // The hook's result also depends on what it declared and on
+                // the variables it read, so a cached one is used only while
+                // those are unchanged. Working out the variables costs a
+                // little, so only for a hook that read any.
                 let mut cmd_env = None;
                 if cache.file.has_fresh_value() {
                     match cache.file.get_cached() {
+                        Ok(cached) if !cached.still_applies() => {}
                         Ok(cached) => {
                             if cached.env_reads.is_empty() {
                                 return Ok(cached.env);
@@ -1136,8 +1160,8 @@ impl VfoxBackend {
                     Some(cmd_env) => cmd_env,
                     None => self.cmd_env_for_tv(config, tv).await,
                 });
-                let env_reads = vfox::EnvReads::default();
-                vfox.env_reads = Some(env_reads.clone());
+                let recorder = vfox::HookDependencyRecorder::default();
+                vfox.hook_dependencies = Some(recorder.clone());
 
                 // Use backend methods if the plugin supports them
                 let env_keys = if self.is_backend_plugin() {
@@ -1161,27 +1185,47 @@ impl VfoxBackend {
                     .await?
                 };
 
-                let cached = CachedExecEnv {
-                    env: env_keys
-                        .into_iter()
-                        .fold(BTreeMap::new(), |mut acc, env_key| {
-                            let key = &env_key.key;
-                            if let Some(val) = acc.get(key) {
-                                let mut paths = env::split_paths(val).collect::<Vec<PathBuf>>();
-                                paths.push(PathBuf::from(&env_key.value));
-                                acc.insert(
-                                    env_key.key.clone(),
-                                    env::join_paths(paths)
-                                        .unwrap()
-                                        .to_string_lossy()
-                                        .to_string(),
-                                );
-                            } else {
-                                acc.insert(key.clone(), env_key.value.clone());
-                            }
-                            acc
-                        }),
-                    env_reads: hash_env_reads(std::mem::take(&mut *env_reads.lock().unwrap())),
+                let env = env_keys
+                    .into_iter()
+                    .fold(BTreeMap::new(), |mut acc, env_key| {
+                        let key = &env_key.key;
+                        if let Some(val) = acc.get(key) {
+                            let mut paths = env::split_paths(val).collect::<Vec<PathBuf>>();
+                            paths.push(PathBuf::from(&env_key.value));
+                            acc.insert(
+                                env_key.key.clone(),
+                                env::join_paths(paths)
+                                    .unwrap()
+                                    .to_string_lossy()
+                                    .to_string(),
+                            );
+                        } else {
+                            acc.insert(key.clone(), env_key.value.clone());
+                        }
+                        acc
+                    });
+                let deps = std::mem::take(&mut *recorder.lock().unwrap());
+                let cached = if deps.cacheable {
+                    CachedExecEnv {
+                        env: env.clone(),
+                        env_reads: hash_env_reads(deps.env_reads),
+                        watch_files: deps
+                            .watch_files
+                            .into_iter()
+                            .map(|path| {
+                                let modified = modified_nanos(&path);
+                                (path, modified)
+                            })
+                            .collect(),
+                        cacheable: true,
+                    }
+                } else {
+                    CachedExecEnv {
+                        env: EnvMap::new(),
+                        env_reads: BTreeMap::new(),
+                        watch_files: vec![],
+                        cacheable: false,
+                    }
                 };
                 if let Err(err) = cache.file.write(&cached) {
                     warn!(
@@ -1189,7 +1233,7 @@ impl VfoxBackend {
                         cache_file.display()
                     );
                 }
-                Ok(cached.env)
+                Ok(env)
             })
             .await
             .cloned()

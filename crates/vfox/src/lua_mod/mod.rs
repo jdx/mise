@@ -1,4 +1,5 @@
 mod archiver;
+mod cache;
 mod cmd;
 mod env;
 mod file;
@@ -11,7 +12,7 @@ mod semver;
 mod strings;
 
 pub(crate) use archiver::mod_archiver as archiver;
-pub(crate) use cmd::ENV_READ_RECORDER_REGISTRY_KEY;
+pub(crate) use cache::mod_cache as cache;
 pub(crate) use cmd::mod_cmd as cmd;
 pub(crate) use env::mod_env as env;
 pub(crate) use file::mod_file as file;

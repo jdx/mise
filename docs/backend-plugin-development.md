@@ -271,8 +271,27 @@ Return `{ env_vars = { { key = ..., value = ... }, ... } }`. Implement this hook
 even when you have nothing to add, and return `{ env_vars = {} }`. Return each
 `PATH` directory as its own entry; mise joins repeated keys with the platform's
 path separator. If you return no `PATH` entry, mise adds `install_path`'s `bin`.
-mise caches the result for each version and set of options, so keep the hook
-fast.
+
+mise caches the result for each version and set of options, as it does for a
+tool plugin's [`EnvKeys`](/tool-plugin-development.html#envkeys-caching). Two
+more fields control that cache:
+
+| Field         | Value                                                                  |
+| ------------- | ---------------------------------------------------------------------- |
+| `watch_files` | Files whose changes, including appearing or going away, rerun the hook |
+| `cacheable`   | `false` runs the hook every time; defaults to `true`                   |
+
+```lua [hooks/backend_exec_env.lua]
+function PLUGIN:BackendExecEnv(ctx)
+    local file = require("file")
+    local config = file.join_path(os.getenv("HOME"), ".acme", "config.json")
+    local env_vars = { { key = "PATH", value = file.join_path(ctx.install_path, "bin") } }
+    if file.exists(config) then
+        table.insert(env_vars, { key = "ACME_CONFIG", value = config })
+    end
+    return { env_vars = env_vars, watch_files = { config } }
+end
+```
 
 ### BackendUninstall
 

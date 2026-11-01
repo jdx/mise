@@ -10,6 +10,7 @@ use tempfile::TempDir;
 use xx::file;
 
 use crate::error::Result;
+use crate::hook_dependencies::HookDependencyRecorder;
 use crate::hooks::available::AvailableVersion;
 use crate::hooks::backend_exec_env::BackendExecEnvContext;
 use crate::hooks::backend_install::BackendInstallContext;
@@ -67,10 +68,12 @@ pub struct Vfox {
     /// instead of inheriting the process environment. This allows dependency tools'
     /// bin paths to be on PATH during version resolution and installation.
     pub cmd_env: Option<IndexMap<String, String>>,
-    /// When set, hooks run with `cmd_env` record each variable Lua `os.getenv`
-    /// reads here, so a caller that caches their result can tell when it no
-    /// longer applies.
-    pub env_reads: Option<EnvReads>,
+    /// When set, hooks run with `cmd_env` record here what their result
+    /// depends on: the variables Lua `os.getenv` reads, and what they declare
+    /// through `mise.cache` or the `cacheable` and `watch_files` fields of
+    /// their result. A caller that caches the result uses it to tell when the
+    /// result no longer applies.
+    pub hook_dependencies: Option<HookDependencyRecorder>,
     /// Shell command used by Lua `cmd.exec()`.
     pub default_inline_shell: Option<Vec<String>>,
     /// Whether the user asked for child stdio to be connected (mise's `raw`
@@ -117,10 +120,6 @@ pub type TerminalLock = Arc<
 
 pub(crate) type UrlRewriter = Arc<dyn Fn(&mut Url) + Send + Sync>;
 
-/// The variables Lua `os.getenv` has read, each with the value it returned
-/// (`None` for unset). See [`Vfox::env_reads`].
-pub type EnvReads = Arc<std::sync::Mutex<BTreeMap<String, Option<String>>>>;
-
 impl std::fmt::Debug for Vfox {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Vfox")
@@ -131,7 +130,7 @@ impl std::fmt::Debug for Vfox {
             .field("download_dir", &self.download_dir)
             .field("skip_verification", &self.skip_verification)
             .field("cmd_env", &self.cmd_env)
-            .field("env_reads", &self.env_reads)
+            .field("hook_dependencies", &self.hook_dependencies)
             .field("github_token", &self.github_token.as_deref().map(|_| "***"))
             .field(
                 "github_token_resolver",
@@ -284,8 +283,8 @@ impl Vfox {
         if let Some(env) = &self.cmd_env {
             plugin.set_cmd_env(env)?;
         }
-        if let Some(reads) = &self.env_reads {
-            plugin.set_env_reads(reads.clone())?;
+        if let Some(recorder) = &self.hook_dependencies {
+            plugin.set_hook_dependencies(recorder.clone());
         }
         self.set_github_token(&plugin)?;
         Ok(plugin)
@@ -411,7 +410,7 @@ impl Default for Vfox {
             install_dir: home().join(".version-fox/installs"),
             skip_verification: false,
             cmd_env: None,
-            env_reads: None,
+            hook_dependencies: None,
             default_inline_shell: None,
             raw_stdio: false,
             terminal_lock: None,

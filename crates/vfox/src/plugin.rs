@@ -12,11 +12,12 @@ use crate::config::Config;
 use crate::context::Context;
 use crate::embedded_plugins::{self, EmbeddedPlugin};
 use crate::error::Result;
+use crate::hook_dependencies::HookDependencyRecorder;
 use crate::http::HttpHeadersResolver;
 use crate::metadata::Metadata;
 use crate::runtime::Runtime;
 use crate::sdk_info::SdkInfo;
-use crate::vfox::{EnvReads, TerminalLock, UrlRewriter};
+use crate::vfox::{TerminalLock, UrlRewriter};
 use crate::{VfoxError, config, error, lua_mod};
 
 #[derive(Debug)]
@@ -162,18 +163,10 @@ impl Plugin {
         Ok(())
     }
 
-    /// Record each variable Lua `os.getenv` reads, with the value it returned,
-    /// into `reads`.
-    pub(crate) fn set_env_reads(&self, reads: EnvReads) -> Result<()> {
-        let func = self
-            .lua
-            .create_function(move |_, (key, value): (String, Option<String>)| {
-                reads.lock().unwrap().entry(key).or_insert(value);
-                Ok(())
-            })?;
-        self.lua
-            .set_named_registry_value(lua_mod::ENV_READ_RECORDER_REGISTRY_KEY, func)?;
-        Ok(())
+    /// Record what the hooks run on this plugin depend on into `recorder`;
+    /// see [`crate::HookDependencies`].
+    pub(crate) fn set_hook_dependencies(&self, recorder: HookDependencyRecorder) {
+        self.lua.set_app_data(recorder);
     }
 
     /// Store a GitHub token for the Lua http module.
@@ -314,6 +307,7 @@ impl Plugin {
             // Load standard Lua modules (http, json, etc.) FIRST
             // These must be available before loading embedded lib files
             lua_mod::archiver(&self.lua)?;
+            lua_mod::cache(&self.lua)?;
             lua_mod::cmd(&self.lua)?;
             lua_mod::file(&self.lua)?;
             lua_mod::html(&self.lua)?;

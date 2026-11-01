@@ -1,3 +1,4 @@
+use crate::hook_dependencies::HookDependencyRecorder;
 use mlua::Table;
 use mlua::prelude::*;
 use std::io::Read;
@@ -439,13 +440,12 @@ fn os_getenv(lua: &Lua, key: String) -> LuaResult<Option<String>> {
     };
     // Report the read, so a caller caching the hook's result can tell when
     // a variable it depends on has changed.
-    if let Ok(record) = lua.named_registry_value::<mlua::Function>(ENV_READ_RECORDER_REGISTRY_KEY) {
-        record.call::<()>((key, value.clone()))?;
+    if let Some(recorder) = lua.app_data_ref::<HookDependencyRecorder>() {
+        let mut deps = recorder.lock().unwrap();
+        deps.env_reads.entry(key).or_insert_with(|| value.clone());
     }
     Ok(value)
 }
-
-pub(crate) const ENV_READ_RECORDER_REGISTRY_KEY: &str = "mise_env_read_recorder";
 
 fn lookup_env_table(env: &Table, key: &str) -> LuaResult<Option<String>> {
     let exact = env.get::<Option<String>>(key)?;
@@ -651,16 +651,8 @@ mod tests {
         let env = lua.create_table().unwrap();
         env.set("MISE_OS_GETENV_MARKER", "yes").unwrap();
         lua.set_named_registry_value("mise_env", env).unwrap();
-        let reads = lua.create_table().unwrap();
-        let record = {
-            let reads = reads.clone();
-            lua.create_function(move |_, (key, value): (String, Option<String>)| {
-                reads.set(key, value.unwrap_or_else(|| "<unset>".to_string()))
-            })
-            .unwrap()
-        };
-        lua.set_named_registry_value(ENV_READ_RECORDER_REGISTRY_KEY, record)
-            .unwrap();
+        let recorder = HookDependencyRecorder::default();
+        lua.set_app_data(recorder.clone());
         lua.load(
             r#"
             os.getenv("MISE_OS_GETENV_MARKER")
@@ -669,10 +661,13 @@ mod tests {
         )
         .exec()
         .unwrap();
-        assert_eq!(reads.get::<String>("MISE_OS_GETENV_MARKER").unwrap(), "yes");
+        let reads = recorder.lock().unwrap().env_reads.clone();
         assert_eq!(
-            reads.get::<String>("MISE_OS_GETENV_MISSING").unwrap(),
-            "<unset>"
+            reads,
+            std::collections::BTreeMap::from([
+                ("MISE_OS_GETENV_MARKER".to_string(), Some("yes".to_string())),
+                ("MISE_OS_GETENV_MISSING".to_string(), None),
+            ])
         );
     }
 
