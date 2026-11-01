@@ -3525,17 +3525,85 @@ fn reconcile_symlink_each_states(
     }
 }
 
+/// An entry whose apply failed partway returned normally, so what it left on disk is known
+/// and nothing about it needs recovering: the directories it created on the way to the target
+/// are removed again while empty, links a `symlink-each` entry made are recorded as its own, and
+/// the journal records each touched path as it now is. Left unfinished, the journal would make
+/// the next apply stop for `mise dot recover`.
+fn settle_failed_apply(
+    req: &FileRequest,
+    created: &[PathBuf],
+    pending: Vec<journal::PendingChange>,
+) {
+    remove_empty_created_dirs(created);
+    if req.mode == FileMode::SymlinkEach {
+        save_partial_symlink_each_state(req);
+    }
+    journal::commit_changes(pending);
+}
+
+/// Remove the directories in `created` (outermost first, as `missing_ancestors` lists them)
+/// that are still empty, deepest first, stopping at the first that holds anything. Only a real
+/// directory: removing a link to one would not be undoing what an apply did.
+fn remove_empty_created_dirs(created: &[PathBuf]) {
+    for dir in created.iter().rev() {
+        if std::fs::symlink_metadata(dir).is_err() {
+            continue;
+        }
+        if file::is_symlink_or_junction(dir) || !dir.is_dir() || std::fs::remove_dir(dir).is_err() {
+            break;
+        }
+    }
+}
+
+/// Record the links a failed `symlink-each` apply left: what the entry already owned, and each
+/// desired link that is now in place. A link the apply never made is not claimed.
+fn save_partial_symlink_each_state(req: &FileRequest) {
+    if cfg!(windows) && !windows_symlinks() {
+        return;
+    }
+    let state = (|| -> Result<SymlinkEachState> {
+        let mut state = desired_symlink_each_state(req)?;
+        state
+            .links
+            .retain(|link| link_points_to(&link.source, &link.target));
+        if let LoadedSymlinkEachState::Present(prior) = load_symlink_each_state(req) {
+            for link in prior.links {
+                if !state.links.contains(&link) {
+                    state.links.push(link);
+                }
+            }
+        }
+        Ok(state)
+    })();
+    match state {
+        Ok(state) if state.links.is_empty() => {}
+        Ok(state) => write_symlink_each_state(req, &state),
+        Err(err) => warn!(
+            "files: failed to record the links made for {}: {err}",
+            req.target.display_user()
+        ),
+    }
+}
+
 fn save_symlink_each_state(req: &FileRequest) {
     if cfg!(windows) && !windows_symlinks() {
         return;
     }
+    match desired_symlink_each_state(req) {
+        Ok(state) => write_symlink_each_state(req, &state),
+        Err(err) => warn!(
+            "files: failed to write dotfiles state {}: {err}",
+            symlink_each_state_path(req).display_user()
+        ),
+    }
+}
+
+fn write_symlink_each_state(req: &FileRequest, state: &SymlinkEachState) {
     let path = symlink_each_state_path(req);
     let result = (|| -> Result<()> {
         file::create_dir_all(path.parent().expect("dotfiles state parent"))?;
-        file::write(
-            &path,
-            toml::to_string_pretty(&desired_symlink_each_state(req)?)?,
-        )
+        file::write(&path, toml::to_string_pretty(state)?)
     })();
     if let Err(err) = result {
         warn!(
@@ -4887,7 +4955,17 @@ pub fn execute_apply(
             let pending =
                 journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
             let start = written.len();
-            apply_one(req, rendered.as_deref(), written)?;
+            // what is missing now is what a failed apply may have to take away again
+            let mut created = missing_ancestors(&req.target);
+            if matches!(req.mode, FileMode::SymlinkEach | FileMode::Copy)
+                && std::fs::symlink_metadata(&req.target).is_err()
+            {
+                created.push(req.target.clone());
+            }
+            if let Err(err) = apply_one(req, rendered.as_deref(), written) {
+                settle_failed_apply(req, &created, pending);
+                return Err(err);
+            }
             // a target that appeared since planning is left alone and not
             // written, so it is not this group's to prune
             if req.create_if_missing && written[start..].contains(&req.target) {
@@ -6405,6 +6483,10 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
     } else {
         vec![]
     };
+    // before any directory is created, or anything removed: a link Windows then refused would
+    // leave a parent behind, and a `--force` replacement of a blocking file with nothing in
+    // its place
+    ensure_windows_links_possible(req)?;
     if req.mode != FileMode::Permissions
         && let Some(parent) = req.target.parent()
     {
@@ -6412,9 +6494,6 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
     }
     match req.mode {
         FileMode::Symlink => {
-            if let Some(dir) = req.target.parent() {
-                ensure_windows_link_possible(&req.source, dir)?;
-            }
             replace_recorded(&req.target, written, || {
                 link_path(
                     &req.source,
@@ -6440,15 +6519,6 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             }
         }
         FileMode::SymlinkEach => {
-            // before anything is removed or created: Windows may refuse the links, and a
-            // `--force` replacement of a blocking file must not have happened by then
-            if windows_symlinks()
-                && let Some((source, _)) = walk_source_files(req)?
-                    .into_iter()
-                    .find(|(source, _)| source.is_file())
-            {
-                ensure_windows_link_possible(&source, &req.target)?;
-            }
             // `unfold_source_links` has replaced every folded link by now; a
             // link written beneath one that remained would land in the source
             let folded = folded_source_links(req)?;
@@ -6875,6 +6945,29 @@ fn windows_each_copies(files: &[(PathBuf, PathBuf)]) -> usize {
     } else {
         0
     }
+}
+
+/// Prove the links `req` makes can be created, for the entries that may need a Windows file
+/// link (see `ensure_windows_link_possible`).
+fn ensure_windows_links_possible(req: &FileRequest) -> Result<()> {
+    match req.mode {
+        FileMode::Symlink => {
+            if let Some(dir) = req.target.parent() {
+                ensure_windows_link_possible(&req.source, dir)?;
+            }
+        }
+        FileMode::SymlinkEach => {
+            if windows_symlinks()
+                && let Some((source, _)) = walk_source_files(req)?
+                    .into_iter()
+                    .find(|(source, _)| source.is_file())
+            {
+                ensure_windows_link_possible(&source, &req.target)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// With `dotfiles.windows_symlinks` on, prove a file link can be created in `links_in` (the
@@ -10014,6 +10107,33 @@ source = "oldrc""#,
             .map(|(req, (_, dirs))| (req, dirs.clone()))
             .collect::<Vec<_>>();
         prune_created_dirs(&pairs, claimed, home, false);
+        Ok(())
+    }
+
+    #[test]
+    fn a_failed_apply_removes_only_the_empty_dirs_it_created() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("new-parent/mid/target/file");
+        let created = missing_ancestors(&target);
+        std::fs::create_dir_all(target.parent().unwrap())?;
+        remove_empty_created_dirs(&created);
+        assert!(!tmp.path().join("new-parent").exists());
+
+        // a directory something landed in stays, and so does everything above it
+        std::fs::create_dir_all(target.parent().unwrap())?;
+        std::fs::write(tmp.path().join("new-parent/mid/kept"), "")?;
+        remove_empty_created_dirs(&created);
+        assert!(!tmp.path().join("new-parent/mid/target").exists());
+        assert!(tmp.path().join("new-parent/mid/kept").exists());
+
+        // a link where a created directory was is not followed or removed
+        let other = tmp.path().join("other");
+        std::fs::create_dir(&other)?;
+        std::fs::remove_file(tmp.path().join("new-parent/mid/kept"))?;
+        file::make_symlink(&other, &tmp.path().join("new-parent/mid/target"))?;
+        remove_empty_created_dirs(&created);
+        assert!(tmp.path().join("new-parent/mid/target").is_symlink());
+        assert!(other.is_dir());
         Ok(())
     }
 
