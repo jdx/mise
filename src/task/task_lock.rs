@@ -299,15 +299,17 @@ impl<'a> LockAcquisition<'a> {
         format!("lock {}{holder}", key.display)
     }
 
-    /// Waits until every lock is held. `report` prints a line now and every 30 seconds;
-    /// `check_interruption` ends the wait as soon as the run is stopping.
+    /// Waits until every lock is held. `timeout` counts from `start`, when the task first
+    /// started waiting, so a task that gave its locks back and waits again keeps the time it
+    /// has left. `report` prints a line now and every 30 seconds; `check_interruption` ends the
+    /// wait as soon as the run is stopping.
     pub(crate) async fn wait(
         mut self,
         timeout: Option<Duration>,
+        start: Instant,
         report: impl Fn(&str),
         check_interruption: impl Fn() -> Result<()>,
     ) -> Result<HeldLocks> {
-        let start = Instant::now();
         let mut reported_at: Option<Instant> = None;
         let mut poll = FIRST_POLL;
         while !self.try_take()? {
@@ -430,6 +432,31 @@ mod tests {
                 .contains("cannot take lock a while a parent task holds b"),
             "{err}"
         );
+    }
+
+    #[tokio::test]
+    async fn a_retry_keeps_the_time_left_to_wait() {
+        let task = Task {
+            name: "retry".into(),
+            ..Default::default()
+        };
+        let key = LockKey::named(&format!("budget-{}", std::process::id()));
+        std::fs::create_dir_all(locks_dir()).unwrap();
+        let mut holder = fslock::LockFile::open(&key.path("lock")).unwrap();
+        assert!(holder.try_lock().unwrap());
+
+        let mut acquisition = LockAcquisition::new(&task, vec![key]).unwrap();
+        assert!(!acquisition.try_take().unwrap());
+        // Five seconds already spent waiting before the locks were given back.
+        let start = Instant::now() - Duration::from_secs(5);
+        let started = Instant::now();
+        let err = acquisition
+            .wait(Some(Duration::from_secs(1)), start, |_| {}, || Ok(()))
+            .await
+            .err()
+            .expect("the budget was already spent");
+        assert!(err.to_string().contains("timed out after 1.0s"), "{err}");
+        assert!(started.elapsed() < Duration::from_secs(1));
     }
 
     #[test]
