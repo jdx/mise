@@ -3509,14 +3509,20 @@ impl AquaBackend {
                     self.parse_checksum_from_content(&checksum_content, checksum, filename)?;
                 let checksum_val = format!("{}:{}", checksum.algorithm(), checksum_str);
                 let platform_key = self.get_platform_key();
+                let artifact_path = tv.download_path().join(filename);
                 let platform_info = tv.lock_platforms.entry(platform_key).or_default();
-                if let Some(existing_checksum) = &platform_info.checksum
-                    && same_checksum_algorithm(existing_checksum, &checksum_val)
-                    && existing_checksum != &checksum_val
-                {
-                    bail!(
-                        "verified checksum file digest does not match existing checksum for {filename}"
-                    );
+                if let Some(existing_checksum) = &platform_info.checksum {
+                    if same_checksum_algorithm(existing_checksum, &checksum_val) {
+                        if existing_checksum != &checksum_val {
+                            bail!(
+                                "verified checksum file digest does not match existing checksum for {filename}"
+                            );
+                        }
+                    } else if let Some((algorithm, expected)) = existing_checksum.split_once(':') {
+                        // The signed file uses another algorithm, so replacing the
+                        // pin would drop it unchecked.
+                        crate::hash::ensure_checksum(&artifact_path, expected, None, algorithm)?;
+                    }
                 }
                 platform_info.checksum = Some(checksum_val);
             }
