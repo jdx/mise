@@ -116,6 +116,74 @@ async fn github_attestation_sources_succeeds_when_one_method_fails() {
 }
 
 #[tokio::test]
+async fn github_attestation_sources_for_sha512_rejects_bad_input() {
+    let error = crate::github::verify_github_attestation_sources_for_sha512(&[0; 64], &[], None)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, AttestationError::NoAttestations));
+
+    let error = crate::github::verify_github_attestation_sources_for_sha512(
+        &[0; 32],
+        &[invalid_attestation()],
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("64 bytes"), "{error}");
+
+    let error = crate::github::verify_github_attestation_sources_for_sha512(
+        &[0; 64],
+        &[invalid_attestation()],
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, AttestationError::Verification(_)));
+}
+
+/// `@sigstore/bundle@3.1.0` from npm: its `dist.integrity` and the
+/// `/-/npm/v1/attestations/` response, which holds npm's own publish
+/// attestation (no repository) beside the SLSA provenance.
+const NPM_BUNDLE_INTEGRITY: &str =
+    "Mm1E3/CmDDCz3nDhFKTuYdB47EdRFRQMOE/EAbiG1MJW77/w1b3P7Qx7JSrVJs8PfwOLOVcKQCHErIwCTyPbag==";
+
+fn npm_bundle_attestations() -> Vec<Attestation> {
+    #[derive(serde::Deserialize)]
+    struct Response {
+        attestations: Vec<Attestation>,
+    }
+    serde_json::from_str::<Response>(include_str!(
+        "../../tests/fixtures/npm_attestations_sigstore_bundle_3_1_0.json"
+    ))
+    .unwrap()
+    .attestations
+}
+
+#[tokio::test]
+async fn github_attestation_sources_for_sha512_verifies_npm_provenance() {
+    use base64::Engine as _;
+    // The embedded public-good root, so the test never reaches the TUF repository.
+    let verify = async |sha512: &[u8]| {
+        crate::github::verify_github_attestation_sources_for_sha512_with_trust_roots(
+            sha512,
+            &npm_bundle_attestations(),
+            None,
+            &mut TrustRoots::with_sigstore_root(embedded_sigstore_root()),
+        )
+        .await
+    };
+    let sha512 = base64::engine::general_purpose::STANDARD
+        .decode(NPM_BUNDLE_INTEGRITY)
+        .unwrap();
+    assert_eq!(verify(&sha512).await.unwrap(), ["sigstore/sigstore-js"]);
+
+    let mut other = sha512;
+    other[0] ^= 1;
+    let error = verify(&other).await.unwrap_err();
+    assert!(matches!(error, AttestationError::Verification(_)));
+}
+
+#[tokio::test]
 async fn github_attestation_sources_fails_when_all_methods_fail() {
     let capture = capture_logs();
     let digest = fixture_digest();
