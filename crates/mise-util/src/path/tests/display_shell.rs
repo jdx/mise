@@ -415,3 +415,34 @@ fn test_cmd_verbatim_args_joins_multiline_scripts() {
         sv(&["/s", "/c", r#""echo a b & echo c "x y"""#])
     );
 }
+
+#[test]
+fn test_cmd_verbatim_args_multiline_blocks_and_carets() {
+    let c = || "/c".to_string();
+
+    // A parenthesized block keeps valid boundaries: no `&` after `(` or before `)`.
+    assert_eq!(
+        cmd_verbatim_args(
+            &[c()],
+            "if exist foo (\n  echo yes\n  echo more\n) else (\n  echo no\n)\necho after",
+            &[]
+        ),
+        sv(&[
+            "/s",
+            "/c",
+            r#""if exist foo (echo yes & echo more) else (echo no) & echo after""#
+        ])
+    );
+
+    // A single-line script is left exactly as written, including an escaped caret.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo value^^", &[]),
+        sv(&["/s", "/c", r#""echo value^^""#])
+    );
+
+    // `^^` at the end of a line of a multi-line script is an escaped caret, not a continuation.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo value^^\necho next", &[]),
+        sv(&["/s", "/c", r#""echo value^^ & echo next""#])
+    );
+}

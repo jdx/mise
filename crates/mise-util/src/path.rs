@@ -275,13 +275,21 @@ pub fn cmd_verbatim_args(shell_flags: &[String], script: &str, args: &[String]) 
 /// would silently never run. Lines are joined with `&`, which keeps the text a command line (no
 /// batch-file `%%i` loop variables, `call` rules, or code-page re-encoding) and runs each line
 /// whatever the previous one returned. `%VAR%` is expanded once for the whole line, so a variable
-/// set on one line is not visible to `%VAR%` on a later one (unlike a batch file). Blank lines and `rem`/`::` comment lines
-/// are dropped, since a comment would swallow the `&` and the lines after it. A line ending in
-/// `^` continues onto the next, as it would in a batch file.
+/// set on one line is not visible to `%VAR%` on a later one (unlike a batch file).
+///
+/// A script of a single line is returned untouched. Blank lines and `rem`/`::` comment lines are
+/// dropped, since a comment would swallow the `&` and the lines after it. A line ending in an odd
+/// number of `^` continues onto the next, as in a batch file (`^^` is an escaped caret). No `&` is
+/// put after a line ending in `(` or before a line starting with `)`, so a parenthesized block
+/// such as `if exist x (` ... `) else (` ... `)` stays valid.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn join_cmd_script_lines(script: &str) -> String {
+    if script.trim().lines().count() <= 1 {
+        return script.to_string();
+    }
     let mut out = String::new();
-    let mut continued = false;
+    // The previous line asked to be glued to the next one, with no `&` between.
+    let mut glue = false;
     for line in script.lines() {
         let trimmed = line.trim();
         let lower = trimmed.to_ascii_lowercase();
@@ -289,21 +297,19 @@ fn join_cmd_script_lines(script: &str) -> String {
             || lower == "rem"
             || lower.starts_with("rem ")
             || lower.starts_with("rem\t");
-        if !continued && (trimmed.is_empty() || is_comment) {
+        if !glue && (trimmed.is_empty() || is_comment) {
             continue;
         }
-        if !out.is_empty() && !continued {
+        if !out.is_empty() && !glue && !trimmed.starts_with(')') {
             out.push_str(" & ");
         }
-        match trimmed.strip_suffix('^') {
-            Some(rest) => {
-                out.push_str(rest);
-                continued = true;
-            }
-            None => {
-                out.push_str(trimmed);
-                continued = false;
-            }
+        let carets = trimmed.len() - trimmed.trim_end_matches('^').len();
+        if carets % 2 == 1 {
+            out.push_str(&trimmed[..trimmed.len() - 1]);
+            glue = true;
+        } else {
+            out.push_str(trimmed);
+            glue = trimmed.ends_with('(');
         }
     }
     out
