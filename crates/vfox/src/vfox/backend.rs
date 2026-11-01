@@ -123,13 +123,11 @@ impl Vfox {
         };
         let response = plugin.backend_exec_env(ctx).await?;
         if let Some(recorder) = &self.hook_dependencies {
-            let cwd = std::env::current_dir().unwrap_or_default();
             let mut deps = recorder.lock().unwrap();
             if response.cacheable == Some(false) {
                 deps.cacheable = false;
             }
-            deps.watch_files
-                .extend(response.watch_files.iter().map(|path| cwd.join(path)));
+            deps.watch(response.watch_files);
         }
         Ok(response.env_vars)
     }

@@ -15,6 +15,9 @@ pub struct HookDependencies {
     /// False when the hook asked for its result not to be cached, through
     /// `mise.cache.disable` or `cacheable = false` in its result.
     pub cacheable: bool,
+    /// The directory relative `watch_files` resolved from. The result only
+    /// applies there: elsewhere the same relative paths name other files.
+    pub cwd: Option<PathBuf>,
 }
 
 impl Default for HookDependencies {
@@ -23,6 +26,22 @@ impl Default for HookDependencies {
             env_reads: BTreeMap::new(),
             watch_files: vec![],
             cacheable: true,
+            cwd: None,
+        }
+    }
+}
+
+impl HookDependencies {
+    /// Add files to watch, resolving relative paths from the current directory.
+    pub(crate) fn watch(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
+        for path in paths {
+            if path.is_absolute() {
+                self.watch_files.push(path);
+            } else {
+                let cwd = std::env::current_dir().unwrap_or_default();
+                self.watch_files.push(cwd.join(path));
+                self.cwd = Some(cwd);
+            }
         }
     }
 }

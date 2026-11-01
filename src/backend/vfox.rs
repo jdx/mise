@@ -47,12 +47,19 @@ struct CachedExecEnv {
     /// False when the hook asked not to be cached. Such an entry holds no
     /// result; it is kept so an older result is not served instead.
     cacheable: bool,
+    /// Where the hook resolved relative watched files; the result only
+    /// applies in that directory.
+    cwd: Option<PathBuf>,
 }
 
 impl CachedExecEnv {
     /// Whether the result can be served without checking the environment.
     fn still_applies(&self) -> bool {
         self.cacheable
+            && self
+                .cwd
+                .as_ref()
+                .is_none_or(|cwd| std::env::current_dir().is_ok_and(|current| current == *cwd))
             && self
                 .watch_files
                 .iter()
@@ -1218,6 +1225,7 @@ impl VfoxBackend {
                             })
                             .collect(),
                         cacheable: true,
+                        cwd: deps.cwd,
                     }
                 } else {
                     CachedExecEnv {
@@ -1225,6 +1233,7 @@ impl VfoxBackend {
                         env_reads: BTreeMap::new(),
                         watch_files: vec![],
                         cacheable: false,
+                        cwd: None,
                     }
                 };
                 if let Err(err) = cache.file.write(&cached) {

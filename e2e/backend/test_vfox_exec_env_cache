@@ -181,3 +181,29 @@ mise install
 assert_contains "mise env -s bash" "BACKEND_WATCHED=missing"
 echo one >backend-watched.txt
 assert_contains "mise env -s bash" "BACKEND_WATCHED=one"
+
+# A relative watched path names a different file in another directory, so a
+# result that watches one is only used in the directory it came from.
+REL_DIR="$PWD/relwatcher"
+mkdir -p "$REL_DIR/hooks" "$MISE_DATA_DIR/installs/relwatcher/1.0.0" a b
+cat >"$REL_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "relwatcher", version = "0.1.0" }
+LUA
+cat >"$REL_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+  require("mise.cache").watch_files({ "rel.txt" })
+  local f = io.open("rel.txt", "r")
+  local value = f:read("*l")
+  f:close()
+  return { { key = "REL", value = value } }
+end
+LUA
+mise plugins link relwatcher "$REL_DIR"
+cat >mise.toml <<'TOML'
+[tools]
+relwatcher = "1.0.0"
+TOML
+echo in-a >a/rel.txt
+echo in-b >b/rel.txt
+assert_contains "cd a && mise env -s bash" "REL=in-a"
+assert_contains "cd b && mise env -s bash" "REL=in-b"

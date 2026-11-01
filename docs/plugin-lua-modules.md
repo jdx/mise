@@ -608,10 +608,10 @@ again only when something it depends on changes; see
 variables the hook reads with `os.getenv`. Call these functions in the hook to
 name what else the result depends on:
 
-| Function             | Effect                                                                                                                                 |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `watch_files(paths)` | Rerun the hook when one of these files or directories changes, appears or goes away. Relative paths resolve from the current directory |
-| `disable()`          | Don't cache this result; run the hook every time                                                                                       |
+| Function             | Effect                                                                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `watch_files(paths)` | Rerun the hook when one of these files or directories changes, appears or goes away. Relative paths resolve from the current directory, and the result is then used only in that directory |
+| `disable()`          | Don't cache this result; run the hook every time                                                                                                                                           |
 
 In other hooks both do nothing. The module is a mise addition, so load it with
 `pcall` in a plugin that also runs on the vfox CLI or on older mise releases:
