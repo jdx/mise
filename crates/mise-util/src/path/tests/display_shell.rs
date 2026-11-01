@@ -508,3 +508,26 @@ fn test_cmd_verbatim_args_separator_adds_no_whitespace() {
         sv(&["/s", "/c", r#""set TOOL_DIR=C:\tools&echo %TOOL_DIR%""#])
     );
 }
+
+#[test]
+fn test_cmd_verbatim_args_echo_paren_is_not_a_block() {
+    // `echo(` prints a blank line; the next command must stay separate.
+    assert_eq!(
+        cmd_verbatim_args(&["/c".to_string()], "echo(\nexit /b 1", &[]),
+        sv(&["/s", "/c", r#""echo(&exit /b 1""#])
+    );
+
+    // `if`/`for`/`else` and lone `(` lines still open blocks.
+    assert_eq!(
+        cmd_verbatim_args(
+            &["/c".to_string()],
+            "@if 1==1 (\necho a\n)\nfor %i in (a) do (\necho %i\n)",
+            &[]
+        ),
+        sv(&[
+            "/s",
+            "/c",
+            r#""@if 1==1 (echo a)&for %i in (a) do (echo %i)""#
+        ])
+    );
+}

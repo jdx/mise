@@ -325,10 +325,22 @@ fn join_cmd_script_lines(script: &str) -> String {
         } else {
             out.push_str(trimmed);
             caret = false;
-            // A `(` is a block opener unless an odd number of carets escape it.
-            open = trimmed
-                .strip_suffix('(')
-                .is_some_and(|rest| (rest.len() - rest.trim_end_matches('^').len()) % 2 == 0);
+            // A trailing `(` opens a block only on `if`/`for`/`else`, a lone `(`, or a `)` line
+            // (`) else (`), and only when no odd run of carets escapes it. Elsewhere it is text:
+            // `echo(` prints a blank line.
+            let first = trimmed
+                .trim_start_matches('@')
+                .split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            let introduces_block = trimmed == "("
+                || trimmed.starts_with(')')
+                || matches!(first.as_str(), "if" | "for" | "else");
+            open = introduces_block
+                && trimmed
+                    .strip_suffix('(')
+                    .is_some_and(|rest| (rest.len() - rest.trim_end_matches('^').len()) % 2 == 0);
         }
     }
     out
