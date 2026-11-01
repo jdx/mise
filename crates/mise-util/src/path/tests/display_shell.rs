@@ -531,3 +531,20 @@ fn test_cmd_verbatim_args_echo_paren_is_not_a_block() {
         ])
     );
 }
+
+#[test]
+fn test_cmd_verbatim_args_block_after_another_command() {
+    let c = || "/c".to_string();
+
+    // A block that follows another command on the same line still opens a block.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo before & if 1==1 (\necho inside\n)", &[]),
+        sv(&["/s", "/c", r#""echo before & if 1==1 (echo inside)""#])
+    );
+
+    // But a `(` after plain text is text, not a block.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo hello (\nexit /b 1", &[]),
+        sv(&["/s", "/c", r#""echo hello (&exit /b 1""#])
+    );
+}

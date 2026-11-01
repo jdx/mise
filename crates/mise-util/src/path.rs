@@ -325,16 +325,18 @@ fn join_cmd_script_lines(script: &str) -> String {
         } else {
             out.push_str(trimmed);
             caret = false;
-            // A trailing `(` opens a block only on `if`/`for`/`else`, a lone `(`, or a `)` line
-            // (`) else (`), and only when no odd run of carets escapes it. Elsewhere it is text:
-            // `echo(` prints a blank line.
-            let first = trimmed
+            // A trailing `(` opens a block only when the last command on the line (after any
+            // `&`/`|`) is `if`/`for`/`else`, a lone `(`, or the line is a `)` one (`) else (`),
+            // and only when no odd run of carets escapes it. Elsewhere it is text: `echo(` prints
+            // a blank line.
+            let segment = trimmed.rsplit(['&', '|']).next().unwrap_or_default().trim();
+            let first = segment
                 .trim_start_matches('@')
                 .split_whitespace()
                 .next()
                 .unwrap_or_default()
                 .to_ascii_lowercase();
-            let introduces_block = trimmed == "("
+            let introduces_block = segment == "("
                 || trimmed.starts_with(')')
                 || matches!(first.as_str(), "if" | "for" | "else");
             open = introduces_block
