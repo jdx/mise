@@ -162,6 +162,7 @@ fn npm_bundle_attestations() -> Vec<Attestation> {
 #[tokio::test]
 async fn github_attestation_sources_for_sha512_verifies_npm_provenance() {
     use base64::Engine as _;
+    let _tuf_root = TUF_ROOT_LOCK.lock().await;
     let sha512 = base64::engine::general_purpose::STANDARD
         .decode(NPM_BUNDLE_INTEGRITY)
         .unwrap();
