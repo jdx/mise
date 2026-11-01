@@ -4866,7 +4866,8 @@ pub fn execute_apply(
                 );
             }
             let pending = journal::begin_changes_with(DOTFILES_PART, &item, paths)?;
-            file::remove_file(&link.target)?;
+            // a junction or directory symlink is refused by `remove_file` on Windows
+            file::remove_symlink_or_junction(&link.target)?;
             written.push(link.target.clone());
             journal::commit_changes(pending);
         }
@@ -5743,13 +5744,10 @@ fn unapply_one(plan: &UnapplyPlan<'_>) -> Result<()> {
     let mut parents = vec![];
     for path in &plan.paths {
         debug!("files: removing {}", path.display_user());
-        if path.is_symlink() || path.is_file() {
-            file::remove_file(path)?;
-        } else if path.is_dir() {
-            // Only reached for a forced type conflict. The user explicitly
-            // asked to remove the declared whole target.
-            file::remove_all(path)?;
-        }
+        // links first: a Windows directory symlink or junction is refused by `remove_file`.
+        // A real directory is only reached for a forced type conflict, where the user
+        // explicitly asked to remove the declared whole target.
+        remove_existing(path)?;
         if let Some(parent) = path.parent() {
             parents.push(parent.to_path_buf());
         }
@@ -6721,7 +6719,9 @@ fn prune_stale_links(req: &FileRequest, written: &mut Vec<PathBuf>) -> Result<()
     }
     for path in &stale {
         debug!("files: removing stale link {}", path.display_user());
-        file::remove_file(path)?;
+        // a junction or directory symlink (a deleted directory link in the source) is refused
+        // by `remove_file` on Windows
+        file::remove_symlink_or_junction(path)?;
         written.push(path.clone());
     }
     let needed: HashSet<PathBuf> = needed_dirs(req)?.into_iter().collect();
