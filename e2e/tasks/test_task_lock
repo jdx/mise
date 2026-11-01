@@ -75,7 +75,7 @@ run = 'echo "start p2" >>"$LOCK_LOG"; sleep 1; echo "end p2" >>"$LOCK_LOG"'
 
 [tasks.outer]
 lock = "nest"
-run = "mise run inner"
+run = "mise run --lock-timeout 10s inner"
 
 [tasks.injector]
 lock = "nest"
@@ -84,6 +84,19 @@ run = [{ task = "inner" }]
 [tasks.inner]
 lock = "nest"
 run = 'echo "inner sees $MISE_TASK_LOCKS"'
+
+[tasks.sandboxed]
+lock = "nest"
+deny_env = true
+run = "mise run --lock-timeout 10s inner"
+
+[tasks.holds-b]
+lock = "b"
+run = "mise run --lock-timeout 10s needs-a"
+
+[tasks.needs-a]
+lock = "a"
+run = "echo never"
 EOF
 rm "$LOCK_LOG"
 (cd c && timeout 60 mise run --jobs 2 p1 ::: p2)
@@ -93,6 +106,12 @@ assert "awk '{ print \$1 }' '$LOCK_LOG' | tr '\n' ' '" "start end start end "
 # holds its parent's lock instead of waiting on it.
 assert_contains "cd c && timeout 30 mise run outer 2>&1" "inner sees nest"
 assert_contains "cd c && timeout 30 mise run injector 2>&1" "inner sees nest"
+assert_contains "cd c && timeout 30 mise run sandboxed 2>&1" "inner sees nest"
+
+# A nested task may only add locks that sort after the ones it inherits, so two
+# runs can never each hold a lock the other waits for.
+assert_fail_contains "cd c && timeout 30 mise run holds-b" \
+  "cannot take lock a while a parent task holds b"
 
 # A task waiting for a lock gives its --jobs slot back. With two slots, the
 # lock holder waits for `free` to run, which needs the slot the waiter left.

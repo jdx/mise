@@ -901,7 +901,9 @@ the wait, set
 
 The task's commands see the locks it holds in `MISE_TASK_LOCKS`. A task started
 under it, through a nested `mise run` or a `{ task = ... }` entry, already holds
-those locks and does not wait on its parent.
+those locks and does not wait on its parent. It can add locks of its own only if
+they sort after the ones it inherits; otherwise it fails and asks you to add the
+lock to the parent, so two runs can never each hold a lock the other waits for.
 
 Locks are files under `$MISE_STATE_DIR/task-locks` held with an operating-system
 file lock, so a lock is released as soon as the mise process holding it exits,

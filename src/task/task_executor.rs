@@ -943,11 +943,12 @@ impl TaskExecutor {
             None
         } else {
             let inherited = task_lock::inherited(&env);
-            let to_take = lock_keys
+            let to_take: Vec<_> = lock_keys
                 .iter()
                 .filter(|key| !inherited.contains(key.id()))
                 .cloned()
                 .collect();
+            task_lock::check_nested_order(task, &inherited, &to_take)?;
             let mut acquisition = task_lock::LockAcquisition::new(task, to_take)?;
             let held = if acquisition.try_take()? {
                 acquisition.into_held()
@@ -1973,6 +1974,11 @@ impl TaskExecutor {
         let sandbox_env;
         let env = if sandbox.is_active() {
             let mut filtered = sandbox.filter_env(env);
+            // Lock names, not a secret: without them a nested `mise run` waits on its own
+            // parent's lock.
+            if let Some(locks) = env.get(task_lock::LOCKS_ENV) {
+                filtered.insert(task_lock::LOCKS_ENV.to_string(), locks.clone());
+            }
             // filter_env reads allowed names back from mise's own process
             // environment, which still holds inherited secrets. `env_remove`
             // cannot undo this because the runner sets `env` afterwards.

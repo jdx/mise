@@ -716,9 +716,10 @@ fn parse_mise_header_toml(body: &str) -> Result<Vec<toml::Value>> {
 const FILE_TASK_BODY_KEYS: &[&str] = &["run", "run_windows", "file", "usage"];
 
 /// Header keys whose value guards how a task runs. A bad one fails the task instead of being
-/// skipped, so a typo cannot drop a confirmation prompt or a sandbox restriction.
+/// skipped, so a typo cannot drop a confirmation prompt, a sandbox restriction or a lock.
 const FILE_TASK_GUARD_KEYS: &[&str] = &[
     "confirm",
+    "lock",
     "deny_all",
     "deny_read",
     "deny_write",
@@ -6849,7 +6850,11 @@ echo "test"
         let tasks_dir = temp_dir.path().join("tasks");
         fs::create_dir(&tasks_dir).unwrap();
         let config = Config::get().await.unwrap();
-        for (name, header) in [("confirm", "confirm=1"), ("deny-net", "deny_net=\"yes\"")] {
+        for (name, header) in [
+            ("confirm", "confirm=1"),
+            ("deny-net", "deny_net=\"yes\""),
+            ("lock", "lock=1"),
+        ] {
             let task_file = tasks_dir.join(name);
             fs::write(
                 &task_file,

@@ -149,6 +149,30 @@ pub(crate) fn inherited(env: &BTreeMap<String, String>) -> BTreeSet<String> {
         .unwrap_or_default()
 }
 
+/// Every run takes locks in one order, sorted by id, so no two runs can each hold a lock the
+/// other waits for. A task started under a locked task already holds what it inherited, so it
+/// may only add locks that sort after all of them: one parent holding `a` whose child wants `b`
+/// and another holding `b` whose child wants `a` would otherwise wait for each other forever.
+pub(crate) fn check_nested_order(
+    task: &Task,
+    inherited: &BTreeSet<String>,
+    to_take: &[LockKey],
+) -> Result<()> {
+    let (Some(held), Some(first)) = (inherited.last(), to_take.first()) else {
+        return Ok(());
+    };
+    if first.id.as_str() < held.as_str() {
+        bail!(
+            "task {}: cannot take lock {} while a parent task holds {held}: a nested task can only \
+             add locks that sort after the ones it inherits. Add {} to the parent task's `lock`",
+            task.name,
+            first.display,
+            first.display
+        );
+    }
+    Ok(())
+}
+
 /// What `MISE_TASK_LOCKS` says once this task holds `keys` on top of what it inherited.
 pub(crate) fn exported(inherited: &BTreeSet<String>, keys: &[LockKey]) -> String {
     let mut all = inherited.clone();
@@ -388,6 +412,24 @@ mod tests {
         let other = tmp.path().join("other");
         std::fs::create_dir_all(other.join(".git")).unwrap();
         assert_ne!(repository_of(&other), shared);
+    }
+
+    #[test]
+    fn nested_tasks_only_add_locks_after_the_ones_they_inherit() {
+        let task = Task {
+            name: "child".into(),
+            ..Default::default()
+        };
+        let held: BTreeSet<String> = ["b".to_string()].into();
+        assert!(check_nested_order(&task, &held, &[LockKey::named("c")]).is_ok());
+        assert!(check_nested_order(&task, &BTreeSet::new(), &[LockKey::named("a")]).is_ok());
+        assert!(check_nested_order(&task, &held, &[]).is_ok());
+        let err = check_nested_order(&task, &held, &[LockKey::named("a")]).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("cannot take lock a while a parent task holds b"),
+            "{err}"
+        );
     }
 
     #[test]
