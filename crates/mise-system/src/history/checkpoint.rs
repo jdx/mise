@@ -568,7 +568,10 @@ impl Store {
             // a reused checkpoint must also have judged coverage the same
             // way: an omission it never recorded would read as a covered
             // path that is absent
-            && (!draft.skip_unchanged || same_coverage(&previous_checkpoint.tree.coverage, &coverage))
+            && (!draft.skip_unchanged || same_coverage(
+                &previous_checkpoint.tree.coverage,
+                &tracked.shared_coverage(coverage.clone(), &walk)
+            ))
         {
             debug!(
                 "history: nothing changed since checkpoint {}",
