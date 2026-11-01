@@ -3261,6 +3261,16 @@ pub trait Backend: Debug + Send + Sync {
         true
     }
 
+    /// Whether locked mode may resolve the download URL itself when the
+    /// lockfile pins only a checksum (see
+    /// [`PlatformInfo::is_pinned_without_url`](crate::lockfile::PlatformInfo::is_pinned_without_url)).
+    /// Only a backend that checks the download against the kept checksum may
+    /// say so; one that picks a fresh artifact would install what the lock does
+    /// not pin.
+    fn resolves_locked_url_from_checksum(&self) -> bool {
+        false
+    }
+
     /// Whether this backend's artifact-identity options describe the machine
     /// that wrote a lock entry rather than the tool request.
     ///
@@ -5179,11 +5189,10 @@ pub trait Backend: Debug + Send + Sync {
         }
         if ctx.locked && self.supports_lockfile_url() {
             let platform_key = self.get_platform_key_for(&tv);
-            let has_lockfile_url = tv
-                .lock_platforms
-                .get(&platform_key)
-                .and_then(|p| p.url.as_ref())
-                .is_some();
+            let has_lockfile_url = tv.lock_platforms.get(&platform_key).is_some_and(|p| {
+                p.url.is_some()
+                    || (self.resolves_locked_url_from_checksum() && p.is_pinned_without_url())
+            });
             if !has_lockfile_url {
                 bail!(
                     "No lockfile URL found for {} on platform {} (--locked mode)\n\
