@@ -9725,6 +9725,15 @@ fn auto_updates_treats_an_unchanged_recorded_version_as_outdated() {
             "current={current}, short={short}, recorded={recorded:?}"
         );
     }
+    // A recorded build must still match the live one: a new build under the
+    // same short version means the app updated itself.
+    for (build, expected) in [(Some("3000"), true), (Some("3001"), false), (None, true)] {
+        assert_eq!(
+            app_version_outdated("2.61.1", Some("2.61"), build, Some("2.61,3000")),
+            expected,
+            "build={build:?}"
+        );
+    }
 }
 
 #[test]
