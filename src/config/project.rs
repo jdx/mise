@@ -10,7 +10,7 @@ use itertools::Itertools;
 
 use crate::args::BackendArg;
 use crate::config::config_file::ConfigFile;
-use crate::config::config_file::config_root::{config_root, nested_checkout};
+use crate::config::config_file::config_root::config_root;
 use crate::config::{self, Config};
 use crate::dirs;
 use crate::file::display_path;
@@ -49,12 +49,8 @@ pub fn nearest_project_configs(config: &Config) -> Option<(PathBuf, Vec<Arc<dyn 
 
 /// The directory a config file configures. A folder fragment is its own config
 /// root so that relative paths stay inside the folder, but it configures the
-/// project its `conf.d` belongs to. A git checkout of its own inside `.mise` or
-/// `.config` is a project of its own, not part of the directory around it.
+/// project its `conf.d` belongs to.
 fn owning_dir(path: &Path) -> PathBuf {
-    if let Some(checkout) = nested_checkout(path) {
-        return checkout;
-    }
     match path.parent() {
         Some(dir) if config::is_conf_d_folder_file(path) => config_root(dir),
         _ => config_root(path),

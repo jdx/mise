@@ -3655,17 +3655,6 @@ pub(crate) fn config_path_is_ignored(path: &Path, include_ignored: bool) -> bool
     if is_default_config_dir_override_filtered(path) {
         return true;
     }
-    // A `mise/`, `.mise/` or `.config/` directory that is a git checkout of
-    // its own is a project, not the config folder of the directory above it.
-    // Run inside that checkout, its config (such as `.config/mise.toml`, the
-    // `mise.toml` of a checkout named `.config`) still loads, with the
-    // checkout as its trust root, so trust in the directory above never
-    // covers it.
-    if let Some(checkout) = config_file::config_root::nested_checkout(path)
-        && !std::env::current_dir().is_ok_and(|cwd| cwd.starts_with(&checkout))
-    {
-        return true;
-    }
     if include_ignored {
         return false;
     }
@@ -5334,24 +5323,6 @@ fn default_task_includes() -> Vec<String> {
         ".config/mise/tasks".to_string(),
         "mise/tasks".to_string(),
     ]
-}
-
-/// [`default_task_includes`] for `dir`, without a task directory that sits in
-/// a git checkout of its own below `dir`, such as a repository cloned into
-/// `dir` as `mise`: that checkout's `tasks/` are its own, not `dir`'s.
-fn default_task_includes_for(dir: &Path) -> Vec<String> {
-    without_nested_checkouts(dir, default_task_includes())
-}
-
-/// `includes` without a task directory that sits in a git checkout of its own
-/// below `dir`. See [`default_task_includes_for`].
-fn without_nested_checkouts(dir: &Path, includes: Vec<String>) -> Vec<String> {
-    includes
-        .into_iter()
-        .filter(|include| {
-            config_file::config_root::checkout_between(dir, &dir.join(include)).is_none()
-        })
-        .collect()
 }
 
 /// The default task directories of the user-global scope.
@@ -7319,7 +7290,7 @@ fn task_include_patterns_for_dir(
         })
         .unwrap_or_else(|| {
             // Default includes should be resolved relative to the search directory
-            (default_task_includes_for(dir), dir.to_path_buf(), true)
+            (default_task_includes(), dir.to_path_buf(), true)
         }))
 }
 
@@ -7870,11 +7841,7 @@ async fn load_task_sources_from_configs(
         })
         .unwrap_or_else(|| {
             (
-                // The user-global scope supplies its own defaults, which a
-                // checkout cloned into the home directory must not join either.
-                default_includes
-                    .map(|includes| without_nested_checkouts(dir, includes))
-                    .unwrap_or_else(|| default_task_includes_for(dir)),
+                default_includes.unwrap_or_else(default_task_includes),
                 dir.to_path_buf(),
                 configs.len(),
             )
