@@ -144,13 +144,27 @@ fn parse_mas_text(output: &str) -> Vec<InstalledApp> {
 
 /// `mas list` reads Spotlight, so it comes back empty while the index is being
 /// rebuilt. An App Store receipt on disk means that empty list is wrong, and
-/// treating it as "nothing installed" would reinstall every app.
+/// treating it as "nothing installed" would reinstall every app. Apps moved into
+/// a folder (/Applications/Development/Xcode.app) are found one level down.
 fn app_store_receipts_present(dir: &Path) -> bool {
+    receipts_present(dir, 1)
+}
+
+fn receipts_present(dir: &Path, folders_left: u8) -> bool {
     std::fs::read_dir(dir)
         .into_iter()
         .flatten()
         .flatten()
-        .any(|entry| entry.path().join("Contents/_MASReceipt/receipt").is_file())
+        .any(|entry| {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "app") {
+                path.join("Contents/_MASReceipt/receipt").is_file()
+            } else {
+                folders_left > 0
+                    && entry.file_type().is_ok_and(|kind| kind.is_dir())
+                    && receipts_present(&path, folders_left - 1)
+            }
+        })
 }
 
 fn statuses_from_apps(apps: &[InstalledApp], requests: &[PackageRequest]) -> Vec<PackageStatus> {
@@ -352,6 +366,20 @@ mod tests {
         std::fs::create_dir_all(&receipt).unwrap();
         std::fs::write(receipt.join("receipt"), b"").unwrap();
         assert!(app_store_receipts_present(dir.path()));
+
+        // An app moved into a folder still counts; two folders down does not.
+        let nested = tempfile::tempdir().unwrap();
+        let receipt = nested
+            .path()
+            .join("Development/Xcode.app/Contents/_MASReceipt");
+        std::fs::create_dir_all(&receipt).unwrap();
+        std::fs::write(receipt.join("receipt"), b"").unwrap();
+        assert!(app_store_receipts_present(nested.path()));
+        let deep = tempfile::tempdir().unwrap();
+        let receipt = deep.path().join("A/B/Xcode.app/Contents/_MASReceipt");
+        std::fs::create_dir_all(&receipt).unwrap();
+        std::fs::write(receipt.join("receipt"), b"").unwrap();
+        assert!(!app_store_receipts_present(deep.path()));
     }
 
     #[test]
