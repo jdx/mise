@@ -109,7 +109,25 @@ fn same_coverage(previous: &store::Coverage, current: &store::Coverage) -> bool 
             .map(|reason| reason.path.clone())
             .collect()
     };
-    omitted(previous) == omitted(current) && incomplete(previous) == incomplete(current)
+    // the capture state (live, saved, protective) varies with the trigger,
+    // and a checkpoint read back from Git does not keep where it was declared
+    let entries = |coverage: &store::Coverage| -> Vec<store::CoverageEntry> {
+        coverage
+            .entries
+            .iter()
+            .cloned()
+            .map(|mut entry| {
+                entry.state.clear();
+                entry.declared_in = None;
+                entry
+            })
+            .collect()
+    };
+    omitted(previous) == omitted(current)
+        && incomplete(previous) == incomplete(current)
+        && entries(previous) == entries(current)
+        && previous.exclude == current.exclude
+        && previous.matcher == current.matcher
 }
 
 #[derive(Debug)]
