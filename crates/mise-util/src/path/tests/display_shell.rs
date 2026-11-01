@@ -379,3 +379,189 @@ fn test_cmd_verbatim_command() {
     assert!(cmd_verbatim_command("bash", &["-c".to_string()], "echo hi").is_none());
     assert!(cmd_verbatim_command("cmd", &[], "echo hi").is_none());
 }
+
+#[test]
+fn test_cmd_verbatim_args_joins_multiline_scripts() {
+    let c = || "/c".to_string();
+
+    // `cmd /c` only reads up to the first newline, so the lines are joined with `&`.
+    assert_eq!(
+        cmd_verbatim_args(
+            &[c()],
+            "echo one || exit /b 1\necho two || exit /b 1\n",
+            &[]
+        ),
+        sv(&[
+            "/s",
+            "/c",
+            r#""echo one || exit /b 1&echo two || exit /b 1""#
+        ])
+    );
+
+    // Blank lines and comment lines are dropped, indentation is trimmed, CRLF is accepted, and
+    // inline `for` syntax is left as written (`%i`, not the batch file's `%%i`).
+    assert_eq!(
+        cmd_verbatim_args(
+            &[c()],
+            "rem setup\r\n\r\n  :: note\r\nfor %i in (a b) do echo %i\r\n  echo done\r\n",
+            &[]
+        ),
+        sv(&["/s", "/c", r#""for %i in (a b) do echo %i&echo done""#])
+    );
+
+    // A trailing `^` continues the line; forwarded args attach to the last line.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo a ^\nb\necho c", &["x y".to_string()]),
+        sv(&["/s", "/c", r#""echo a b&echo c "x y"""#])
+    );
+}
+
+#[test]
+fn test_cmd_verbatim_args_multiline_blocks_and_carets() {
+    let c = || "/c".to_string();
+
+    // A parenthesized block keeps valid boundaries: no `&` after `(` or before `)`.
+    assert_eq!(
+        cmd_verbatim_args(
+            &[c()],
+            "if exist foo (\n  echo yes\n  echo more\n) else (\n  echo no\n)\necho after",
+            &[]
+        ),
+        sv(&[
+            "/s",
+            "/c",
+            r#""if exist foo (echo yes&echo more) else (echo no)&echo after""#
+        ])
+    );
+
+    // A single-line script is left exactly as written, including an escaped caret.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo value^^", &[]),
+        sv(&["/s", "/c", r#""echo value^^""#])
+    );
+
+    // `^^` at the end of a line of a multi-line script is an escaped caret, not a continuation.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo value^^\necho next", &[]),
+        sv(&["/s", "/c", r#""echo value^^&echo next""#])
+    );
+}
+
+#[test]
+fn test_cmd_verbatim_args_blank_lines_and_escaped_parens() {
+    let c = || "/c".to_string();
+
+    // Leading/trailing blank lines around one command must not leave a newline for `cmd /c`.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "\necho ready\n", &[]),
+        sv(&["/s", "/c", r#""echo ready""#])
+    );
+
+    // An escaped `(` is text, not a block opener, so the next command stays separate.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo ^(\necho next", &[]),
+        sv(&["/s", "/c", r#""echo ^(&echo next""#])
+    );
+}
+
+#[test]
+fn test_cmd_verbatim_args_comments_inside_blocks() {
+    let c = || "/c".to_string();
+
+    // A comment or blank line right after `(` must not be joined in, or it would swallow the rest.
+    assert_eq!(
+        cmd_verbatim_args(
+            &[c()],
+            "if exist foo (\n  rem note\n\n  :: more\n  echo yes\n)",
+            &[]
+        ),
+        sv(&["/s", "/c", r#""if exist foo (echo yes)""#])
+    );
+}
+
+#[test]
+fn test_cmd_verbatim_args_continuations_and_single_line_whitespace() {
+    let c = || "/c".to_string();
+
+    // Text after a continuation caret is command text, even when it looks like a comment.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo ^\nrem hello\nexit /b 3", &[]),
+        sv(&["/s", "/c", r#""echo rem hello&exit /b 3""#])
+    );
+
+    // A script with no line break keeps its whitespace.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo value ", &[]),
+        sv(&["/s", "/c", r#""echo value ""#])
+    );
+}
+
+#[test]
+fn test_cmd_verbatim_args_separator_adds_no_whitespace() {
+    // A space before `&` would become part of `set X=...` and trail `echo` output.
+    assert_eq!(
+        cmd_verbatim_args(
+            &["/c".to_string()],
+            "set TOOL_DIR=C:\\tools\necho %TOOL_DIR%",
+            &[]
+        ),
+        sv(&["/s", "/c", r#""set TOOL_DIR=C:\tools&echo %TOOL_DIR%""#])
+    );
+}
+
+#[test]
+fn test_cmd_verbatim_args_echo_paren_is_not_a_block() {
+    // `echo(` prints a blank line; the next command must stay separate.
+    assert_eq!(
+        cmd_verbatim_args(&["/c".to_string()], "echo(\nexit /b 1", &[]),
+        sv(&["/s", "/c", r#""echo(&exit /b 1""#])
+    );
+
+    // `if`/`for`/`else` and lone `(` lines still open blocks.
+    assert_eq!(
+        cmd_verbatim_args(
+            &["/c".to_string()],
+            "@if 1==1 (\necho a\n)\nfor %i in (a) do (\necho %i\n)",
+            &[]
+        ),
+        sv(&[
+            "/s",
+            "/c",
+            r#""@if 1==1 (echo a)&for %i in (a) do (echo %i)""#
+        ])
+    );
+}
+
+#[test]
+fn test_cmd_verbatim_args_block_after_another_command() {
+    let c = || "/c".to_string();
+
+    // A block that follows another command on the same line still opens a block.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo before & if 1==1 (\necho inside\n)", &[]),
+        sv(&["/s", "/c", r#""echo before & if 1==1 (echo inside)""#])
+    );
+
+    // But a `(` after plain text is text, not a block.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo hello (\nexit /b 1", &[]),
+        sv(&["/s", "/c", r#""echo hello (&exit /b 1""#])
+    );
+}
+
+#[test]
+fn test_cmd_verbatim_args_separator_inside_quotes_or_escaped() {
+    let c = || "/c".to_string();
+
+    // A quoted `&` in an `if` condition is not a command separator.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "if \"a&b\"==\"a&b\" (\necho yes\n)", &[]),
+        sv(&["/s", "/c", r#""if "a&b"=="a&b" (echo yes)""#])
+    );
+
+    // Nor is an escaped one, so `echo a^& if (` stays plain text and the next line separate.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo a^& if (\nexit /b 1", &[]),
+        sv(&["/s", "/c", r#""echo a^& if (&exit /b 1""#])
+    );
+}

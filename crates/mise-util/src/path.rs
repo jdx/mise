@@ -255,7 +255,7 @@ pub fn inject_powershell_no_profile(shell: &mut Vec<String>) {
 /// the spaces-in-forwarded-args fix from #6744 instead of splitting them.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn cmd_verbatim_args(shell_flags: &[String], script: &str, args: &[String]) -> Vec<String> {
-    let mut body = script.to_string();
+    let mut body = join_cmd_script_lines(script);
     for arg in args {
         body.push(' ');
         body.push_str(&quote_arg_for_cmd_body(arg));
@@ -267,6 +267,105 @@ pub fn cmd_verbatim_args(shell_flags: &[String], script: &str, args: &[String]) 
     out.extend(shell_flags.iter().cloned());
     out.push(format!("\"{body}\""));
     out
+}
+
+/// Collapse a multi-line script into the one line `cmd /c` can run.
+///
+/// `cmd /c` stops reading its command text at the first newline, so every line after the first
+/// would silently never run. Lines are joined with `&`, which keeps the text a command line (no
+/// batch-file `%%i` loop variables, `call` rules, or code-page re-encoding) and runs each line
+/// whatever the previous one returned. `%VAR%` is expanded once for the whole line, so a variable
+/// set on one line is not visible to `%VAR%` on a later one (unlike a batch file).
+///
+/// A script of a single line is returned untouched. Blank lines and `rem`/`::` comment lines are
+/// dropped, since a comment would swallow the `&` and the lines after it. A line ending in an odd
+/// number of `^` continues onto the next, as in a batch file (`^^` is an escaped caret). No `&` is
+/// put after a line ending in `(` or before a line starting with `)`, so a parenthesized block
+/// such as `if exist x (` ... `) else (` ... `)` stays valid.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn join_cmd_script_lines(script: &str) -> String {
+    // A script with no line break is already a command line: leave it exactly as written.
+    if !script.contains('\n') {
+        return script.to_string();
+    }
+    // Blank lines around a single command would otherwise leave a newline for `cmd /c`.
+    let script = script.trim();
+    if !script.contains('\n') {
+        return script.to_string();
+    }
+    let mut out = String::new();
+    // The previous line ended in a continuation `^`: this line is more of the same command.
+    let mut caret = false;
+    // A block is open: the previous kept line ended in a `(` that is shell syntax.
+    let mut open = false;
+    for line in script.lines() {
+        let trimmed = line.trim();
+        if caret && trimmed.is_empty() {
+            // A blank line ends a continuation.
+            caret = false;
+            continue;
+        }
+        let lower = trimmed.to_ascii_lowercase();
+        let is_comment = trimmed.starts_with("::")
+            || lower == "rem"
+            || lower.starts_with("rem ")
+            || lower.starts_with("rem\t");
+        // Continued text is command text, not a comment, so only skip outside a continuation.
+        if !caret && (trimmed.is_empty() || is_comment) {
+            continue;
+        }
+        if !out.is_empty() && !caret && !open && !trimmed.starts_with(')') {
+            out.push('&');
+        }
+        let carets = trimmed.len() - trimmed.trim_end_matches('^').len();
+        if carets % 2 == 1 {
+            out.push_str(&trimmed[..trimmed.len() - 1]);
+            caret = true;
+            open = false;
+        } else {
+            out.push_str(trimmed);
+            caret = false;
+            // A trailing `(` opens a block only when the last command on the line (after any
+            // `&`/`|`) is `if`/`for`/`else`, a lone `(`, or the line is a `)` one (`) else (`),
+            // and only when no odd run of carets escapes it. Elsewhere it is text: `echo(` prints
+            // a blank line.
+            let segment = last_cmd_segment(trimmed);
+            let first = segment
+                .trim_start_matches('@')
+                .split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            let introduces_block = segment == "("
+                || trimmed.starts_with(')')
+                || matches!(first.as_str(), "if" | "for" | "else");
+            open = introduces_block
+                && trimmed
+                    .strip_suffix('(')
+                    .is_some_and(|rest| (rest.len() - rest.trim_end_matches('^').len()) % 2 == 0);
+        }
+    }
+    out
+}
+
+/// The last command on a `cmd` line: the text after its final `&` or `|` that is neither inside
+/// double quotes nor escaped with `^`.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn last_cmd_segment(line: &str) -> &str {
+    let mut start = 0;
+    let mut in_quotes = false;
+    let mut chars = line.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '"' => in_quotes = !in_quotes,
+            '^' if !in_quotes => {
+                chars.next();
+            }
+            '&' | '|' if !in_quotes => start = i + 1,
+            _ => {}
+        }
+    }
+    line[start..].trim()
 }
 
 /// MSVCRT/`CommandLineToArgvW`-style quoting for a single argument, matching the
