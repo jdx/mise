@@ -18,7 +18,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::{Config, Settings, SettingsExt};
 use crate::dirs;
 use crate::env_diff::EnvMap;
-use crate::hash::hash_to_str;
+use crate::hash::{hash_sha256_to_str, hash_to_str};
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::plugins::Plugin;
@@ -38,8 +38,16 @@ struct ExecEnvCache {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct CachedExecEnv {
     env: EnvMap,
-    /// The variables the hook read through `os.getenv`, with the values it saw.
+    /// The variables the hook read through `os.getenv`, with a hash of the
+    /// value it saw: a hook can read a secret, and the cache is a plain file.
     env_reads: BTreeMap<String, Option<String>>,
+}
+
+fn hash_env_reads(reads: BTreeMap<String, Option<String>>) -> BTreeMap<String, Option<String>> {
+    reads
+        .into_iter()
+        .map(|(key, value)| (key, value.as_deref().map(hash_sha256_to_str)))
+        .collect()
 }
 
 /// Whether every variable a hook read still has the value it saw, looked up
@@ -58,7 +66,7 @@ fn env_reads_match(
                 None
             }
         });
-        current == seen.as_ref()
+        current.map(|value| hash_sha256_to_str(value)) == *seen
     })
 }
 
@@ -1173,7 +1181,7 @@ impl VfoxBackend {
                             }
                             acc
                         }),
-                    env_reads: std::mem::take(&mut *env_reads.lock().unwrap()),
+                    env_reads: hash_env_reads(std::mem::take(&mut *env_reads.lock().unwrap())),
                 };
                 if let Err(err) = cache.file.write(&cached) {
                     warn!(
@@ -1255,6 +1263,26 @@ mod test {
         assert!(!could_be_alias("system"));
         assert!(!could_be_alias("ref:main"));
         assert!(!could_be_alias(""));
+    }
+
+    #[test]
+    fn test_env_reads_are_stored_hashed() {
+        let reads = hash_env_reads(BTreeMap::from([
+            ("TOKEN".to_string(), Some("s3cret".to_string())),
+            ("UNSET".to_string(), None),
+        ]));
+        assert!(!format!("{reads:?}").contains("s3cret"));
+
+        let env =
+            |token: &str| indexmap::IndexMap::from([("TOKEN".to_string(), token.to_string())]);
+        assert!(env_reads_match(&reads, &env("s3cret")));
+        assert!(!env_reads_match(&reads, &env("other")));
+        assert!(!env_reads_match(&reads, &indexmap::IndexMap::new()));
+        let set = indexmap::IndexMap::from([
+            ("TOKEN".to_string(), "s3cret".to_string()),
+            ("UNSET".to_string(), "now set".to_string()),
+        ]);
+        assert!(!env_reads_match(&reads, &set));
     }
 
     #[test]
