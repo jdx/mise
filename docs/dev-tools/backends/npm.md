@@ -180,6 +180,20 @@ See [investigating trust downgrades](#investigating-trust-downgrades) before you
 add an exception, and aube's
 [trust-policy documentation](https://aube.sh/security#trust-policy).
 
+### Provenance {#provenance}
+
+The trust policy reads the shape of a release's attestation metadata but does
+not verify the signed bundle. With
+[`npm.provenance`](/configuration/settings.html#npm.provenance) on, or the
+`provenance` category of [`paranoid`](/configuration/settings.html#paranoid),
+mise verifies the Sigstore provenance npm publishes for the tool's own package.
+The attestation must name the same sha512 integrity the install locks, which
+aube checks every tarball against before it extracts it.
+
+A package that publishes no provenance, and a private registry that serves none,
+install as they do with the setting off. Dependencies are not checked. Only the
+embedded aube package manager supports this.
+
 ### Low-download and new packages
 
 <span id="allow-low-downloads"></span>

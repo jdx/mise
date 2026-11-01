@@ -74,6 +74,7 @@ pub(crate) mod http;
 pub(crate) mod jq;
 pub mod mise_bins;
 pub(crate) mod npm;
+pub(crate) mod npm_provenance;
 pub(crate) mod npm_registry;
 pub(crate) mod options;
 pub mod packslip;
