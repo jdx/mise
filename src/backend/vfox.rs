@@ -6,7 +6,6 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, mpsc};
 use std::thread;
-use tokio::sync::RwLock;
 use url::Url;
 use walkdir::WalkDir;
 
@@ -28,6 +27,7 @@ use crate::toolset::{ToolOptions, ToolVersion, Toolset, install_state};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 type AliasCaches = HashMap<String, Arc<CacheManager<BTreeMap<String, String>>>>;
+type ExecEnvCaches = HashMap<PathBuf, Arc<CacheManager<EnvMap>>>;
 
 /// Whether `version` can name a plugin alias like `recommended`. Pinned
 /// versions, `latest`, `system` and `ref:`-style requests never do, so they
@@ -44,7 +44,6 @@ pub(crate) struct VfoxBackend {
     ba: Arc<BackendArg>,
     plugin: Arc<VfoxPlugin>,
     plugin_enum: PluginEnum,
-    exec_env_cache: RwLock<HashMap<String, CacheManager<EnvMap>>>,
     pathname: String,
     tool_name: Option<String>,
     metadata_deps: OnceLock<Vec<String>>,
@@ -838,7 +837,6 @@ impl VfoxBackend {
 
         Self {
             metadata_snapshot_cache: OnceLock::new(),
-            exec_env_cache: Default::default(),
             plugin: plugin.clone(),
             plugin_enum: match backend_plugin_name {
                 Some(_) => PluginEnum::VfoxBackend(plugin),
@@ -1028,21 +1026,34 @@ impl VfoxBackend {
             install_path.hash(&mut hasher);
             hasher.finish()
         };
-        let key = format!("{}:{:x}", tv, opts_hash);
-        let cache_file = format!("exec_env_{:x}.msgpack.z", opts_hash);
-        if !self.exec_env_cache.read().await.contains_key(&key) {
-            let mut caches = self.exec_env_cache.write().await;
-            caches.insert(
-                key.clone(),
-                CacheManagerBuilder::new(tv.cache_path().join(&cache_file))
+        let cache_file = tv
+            .cache_path()
+            .join(format!("exec_env_{:x}.msgpack.z", opts_hash));
+        // Inline table options give every backend lookup a new VfoxBackend
+        // (see `backend::get`), so the caches are kept here, keyed by file,
+        // rather than on the backend; otherwise each lookup runs the hook again.
+        static CACHES: OnceLock<std::sync::Mutex<ExecEnvCaches>> = OnceLock::new();
+        let cache = CACHES
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap()
+            .entry(cache_file.clone())
+            .or_insert_with(|| {
+                let mut cm = CacheManagerBuilder::new(&cache_file)
                     .with_fresh_file(dirs::DATA.to_path_buf())
-                    .with_fresh_file(self.plugin.plugin_path.to_path_buf())
-                    .with_fresh_file(install_path.clone())
-                    .build(),
-            );
-        }
-        let exec_env_cache = self.exec_env_cache.read().await;
-        let cache = exec_env_cache.get(&key).unwrap();
+                    .with_fresh_file(install_path.clone());
+                // A fresh file that doesn't exist leaves the cache stale forever,
+                // and an embedded plugin has no directory. Removing an override's
+                // directory still changes the plugins directory.
+                let plugin_path = &self.plugin.plugin_path;
+                if plugin_path.exists() {
+                    cm = cm.with_fresh_file(plugin_path.to_path_buf());
+                } else if dirs::PLUGINS.exists() {
+                    cm = cm.with_fresh_file(dirs::PLUGINS.to_path_buf());
+                }
+                Arc::new(cm.build())
+            })
+            .clone();
         cache
             .get_or_try_init_async(async || {
                 self.ensure_plugin_installed(config).await?;

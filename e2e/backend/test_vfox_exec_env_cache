@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# A vfox plugin's EnvKeys result is cached on disk, so hook-env, which runs on
+# every prompt, doesn't run the plugin each time. An embedded plugin has no
+# directory under plugins/, which must not leave that cache stale forever.
+# (#15225)
+
+# A stand-in for an installed gcloud; its EnvKeys hook only builds paths on Linux.
+mkdir -p "$MISE_DATA_DIR/installs/gcloud/586.0.0/bin"
+assert_fail "test -e '$MISE_DATA_DIR/plugins/gcloud'"
+
+exec_env_cache_log() { # $1 = run number
+  MISE_LOG_LEVEL=trace mise hook-env -s bash 2>"$1.log" >/dev/null
+  grep -E ' (reading|writing) .*/gcloud/586\.0\.0/exec_env_' "$1.log" | sed -E 's/.* (reading|writing) .*/\1/'
+}
+export -f exec_env_cache_log
+
+cat >mise.toml <<'TOML'
+[tools]
+gcloud = "586.0.0"
+TOML
+assert "exec_env_cache_log 1" "writing"
+assert "exec_env_cache_log 2" "reading"
+assert "exec_env_cache_log 3" "reading"
+
+# An inline table gives every backend lookup its own backend, which must share
+# one cache: the first run calls the hook once, not once per lookup.
+rm -rf "$MISE_CACHE_DIR/gcloud"
+cat >mise.toml <<'TOML'
+[tools]
+gcloud = { version = "586.0.0" }
+TOML
+assert "exec_env_cache_log 4" "writing"
+assert "exec_env_cache_log 5" "reading"
+
+# A filesystem override replaces the embedded plugin, and removing it brings
+# the embedded one back; each time the cached result is stale.
+OVERRIDE_DIR="$PWD/gcloud-override"
+mkdir -p "$OVERRIDE_DIR/hooks"
+cat >"$OVERRIDE_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "gcloud", version = "0.1.0" }
+LUA
+cat >"$OVERRIDE_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+  return { { key = "GCLOUD_OVERRIDE", value = "1" } }
+end
+LUA
+mise plugins link gcloud "$OVERRIDE_DIR"
+assert_contains "mise env -s bash" "GCLOUD_OVERRIDE"
+mise plugins uninstall gcloud
+assert_not_contains "mise env -s bash" "GCLOUD_OVERRIDE"
+assert_contains "mise env -s bash" "CLOUDSDK_ROOT_DIR"
