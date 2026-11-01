@@ -207,27 +207,28 @@ fn with_receipt_dependencies(
     keep: &HashSet<String>,
     formulae: &[InstalledFormula],
 ) -> Result<HashSet<String>> {
-    let installed: HashMap<String, &InstalledFormula> = formulae
+    // Receipts name a dependency as `name`, `tap/name` or `homebrew/core/name`
+    // (mise's own receipts always use the bare name), so look it up by its
+    // last segment. `opt/` holds one formula per name, so that is unambiguous.
+    let installed: HashMap<&str, &InstalledFormula> = formulae
         .iter()
-        .map(|formula| (formula.package_name(), formula))
+        .map(|formula| (formula.name.as_str(), formula))
         .collect();
     let mut keep = keep.clone();
-    let mut queue: Vec<String> = keep.iter().cloned().collect();
-    while let Some(name) = queue.pop() {
-        let Some(formula) = installed.get(&name) else {
-            continue;
-        };
+    let mut queue: Vec<&InstalledFormula> = formulae
+        .iter()
+        .filter(|formula| keep.contains(&formula.package_name()))
+        .collect();
+    while let Some(formula) = queue.pop() {
         let keg = file::desymlink_path(&pour::keg_path(&formula.name, &formula.version));
         let Some(receipt) = read_receipt(&keg)? else {
             continue;
         };
         for dep in receipt.runtime_dependencies.unwrap_or_default() {
-            let dep = dep
-                .full_name
-                .strip_prefix("homebrew/core/")
-                .unwrap_or(&dep.full_name)
-                .to_string();
-            if keep.insert(dep.clone()) {
+            let name = dep.full_name.rsplit('/').next().unwrap_or_default();
+            if let Some(dep) = installed.get(name)
+                && keep.insert(dep.package_name())
+            {
                 queue.push(dep);
             }
         }
@@ -653,6 +654,38 @@ mod tests {
                     keg: unused,
                 }],
             }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn prune_plan_keeps_tapped_dependencies_named_bare_in_receipts() -> Result<()> {
+        let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        // receipts mise writes name a tapped dependency by its bare name
+        write_keg(
+            tmp.path(),
+            "app",
+            "1.0.0",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"},"runtime_dependencies":[{"full_name":"widgetlib"}]}"#,
+        )?;
+        write_keg(
+            tmp.path(),
+            "widgetlib",
+            "2.0.0",
+            r#"{"installed_on_request":false,"source":{"tap":"acme/tools"},"runtime_dependencies":[{"full_name":"acme/tools/widgetcore"}]}"#,
+        )?;
+        write_keg(
+            tmp.path(),
+            "widgetcore",
+            "3.0.0",
+            r#"{"installed_on_request":false,"source":{"tap":"acme/tools"}}"#,
+        )?;
+
+        assert_eq!(
+            prune_plan_from_linked_formulae(&HashSet::from(["app".to_string()]))?,
+            PrunePlan { remove: vec![] }
         );
         Ok(())
     }
