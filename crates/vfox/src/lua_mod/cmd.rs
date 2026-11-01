@@ -433,11 +433,19 @@ fn os_execute(lua: &Lua, command: Option<String>) -> LuaResult<i64> {
 /// keeps in-process env reads consistent with shell-outs from env module hooks
 /// when the user's shell has not run `mise activate`. (#10711)
 fn os_getenv(lua: &Lua, key: String) -> LuaResult<Option<String>> {
-    if let Ok(mise_env) = lua.named_registry_value::<Table>("mise_env") {
-        return lookup_env_table(&mise_env, &key);
+    let value = match lua.named_registry_value::<Table>("mise_env") {
+        Ok(mise_env) => lookup_env_table(&mise_env, &key)?,
+        Err(_) => std::env::var(&key).ok(),
+    };
+    // Report the read, so a caller caching the hook's result can tell when
+    // a variable it depends on has changed.
+    if let Ok(record) = lua.named_registry_value::<mlua::Function>(ENV_READ_RECORDER_REGISTRY_KEY) {
+        record.call::<()>((key, value.clone()))?;
     }
-    Ok(std::env::var(key).ok())
+    Ok(value)
 }
+
+pub(crate) const ENV_READ_RECORDER_REGISTRY_KEY: &str = "mise_env_read_recorder";
 
 fn lookup_env_table(env: &Table, key: &str) -> LuaResult<Option<String>> {
     let exact = env.get::<Option<String>>(key)?;
@@ -634,6 +642,38 @@ mod tests {
         )
         .exec()
         .unwrap();
+    }
+
+    #[test]
+    fn test_os_getenv_reports_reads() {
+        let lua = Lua::new();
+        mod_cmd(&lua).unwrap();
+        let env = lua.create_table().unwrap();
+        env.set("MISE_OS_GETENV_MARKER", "yes").unwrap();
+        lua.set_named_registry_value("mise_env", env).unwrap();
+        let reads = lua.create_table().unwrap();
+        let record = {
+            let reads = reads.clone();
+            lua.create_function(move |_, (key, value): (String, Option<String>)| {
+                reads.set(key, value.unwrap_or_else(|| "<unset>".to_string()))
+            })
+            .unwrap()
+        };
+        lua.set_named_registry_value(ENV_READ_RECORDER_REGISTRY_KEY, record)
+            .unwrap();
+        lua.load(
+            r#"
+            os.getenv("MISE_OS_GETENV_MARKER")
+            os.getenv("MISE_OS_GETENV_MISSING")
+        "#,
+        )
+        .exec()
+        .unwrap();
+        assert_eq!(reads.get::<String>("MISE_OS_GETENV_MARKER").unwrap(), "yes");
+        assert_eq!(
+            reads.get::<String>("MISE_OS_GETENV_MISSING").unwrap(),
+            "<unset>"
+        );
     }
 
     #[test]

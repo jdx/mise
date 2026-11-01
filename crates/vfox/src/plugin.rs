@@ -16,7 +16,7 @@ use crate::http::HttpHeadersResolver;
 use crate::metadata::Metadata;
 use crate::runtime::Runtime;
 use crate::sdk_info::SdkInfo;
-use crate::vfox::{TerminalLock, UrlRewriter};
+use crate::vfox::{EnvReads, TerminalLock, UrlRewriter};
 use crate::{VfoxError, config, error, lua_mod};
 
 #[derive(Debug)]
@@ -159,6 +159,20 @@ impl Plugin {
                 })?;
         self.lua
             .set_named_registry_value("mise_terminal_lock", func)?;
+        Ok(())
+    }
+
+    /// Record each variable Lua `os.getenv` reads, with the value it returned,
+    /// into `reads`.
+    pub(crate) fn set_env_reads(&self, reads: EnvReads) -> Result<()> {
+        let func = self
+            .lua
+            .create_function(move |_, (key, value): (String, Option<String>)| {
+                reads.lock().unwrap().entry(key).or_insert(value);
+                Ok(())
+            })?;
+        self.lua
+            .set_named_registry_value(lua_mod::ENV_READ_RECORDER_REGISTRY_KEY, func)?;
         Ok(())
     }
 

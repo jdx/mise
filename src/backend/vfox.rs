@@ -27,7 +27,40 @@ use crate::toolset::{ToolOptions, ToolVersion, Toolset, install_state};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 type AliasCaches = HashMap<String, Arc<CacheManager<BTreeMap<String, String>>>>;
-type ExecEnvCaches = HashMap<PathBuf, Arc<CacheManager<EnvMap>>>;
+type ExecEnvCaches = HashMap<PathBuf, Arc<ExecEnvCache>>;
+
+/// A vfox exec_env result, kept on disk and, once read or fetched, in memory.
+struct ExecEnvCache {
+    file: CacheManager<CachedExecEnv>,
+    env: tokio::sync::OnceCell<EnvMap>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct CachedExecEnv {
+    env: EnvMap,
+    /// The variables the hook read through `os.getenv`, with the values it saw.
+    env_reads: BTreeMap<String, Option<String>>,
+}
+
+/// Whether every variable a hook read still has the value it saw, looked up
+/// the way Lua `os.getenv` looks it up in the hook's environment.
+fn env_reads_match(
+    reads: &BTreeMap<String, Option<String>>,
+    env: &indexmap::IndexMap<String, String>,
+) -> bool {
+    reads.iter().all(|(key, seen)| {
+        let current = env.get(key).or_else(|| {
+            if cfg!(windows) {
+                env.iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(key))
+                    .map(|(_, v)| v)
+            } else {
+                None
+            }
+        });
+        current == seen.as_ref()
+    })
+}
 
 /// Whether `version` can name a plugin alias like `recommended`. Pinned
 /// versions, `latest`, `system` and `ref:`-style requests never do, so they
@@ -1055,14 +1088,48 @@ impl VfoxBackend {
                         cm = cm.with_fresh_file(path);
                     }
                 }
-                Arc::new(cm.build())
+                Arc::new(ExecEnvCache {
+                    file: cm.build(),
+                    env: Default::default(),
+                })
             })
             .clone();
         cache
-            .get_or_try_init_async(async || {
+            .env
+            .get_or_try_init(async || {
+                // The hook's result also depends on the variables it read, so
+                // a cached one is used only while they keep their values.
+                // Working those out costs a little, so only for a hook that
+                // read any.
+                let mut cmd_env = None;
+                if cache.file.has_fresh_value() {
+                    match cache.file.get_cached() {
+                        Ok(cached) => {
+                            if cached.env_reads.is_empty() {
+                                return Ok(cached.env);
+                            }
+                            let current = self.cmd_env_for_tv(config, tv).await;
+                            if env_reads_match(&cached.env_reads, &current) {
+                                return Ok(cached.env);
+                            }
+                            cmd_env = Some(current);
+                        }
+                        Err(err) => {
+                            warn!(
+                                "failed to parse cache file: {} {err:#}",
+                                cache_file.display()
+                            )
+                        }
+                    }
+                }
                 self.ensure_plugin_installed(config).await?;
                 let (mut vfox, _log_rx) = self.plugin.vfox()?;
-                vfox.cmd_env = Some(self.cmd_env_for_tv(config, tv).await);
+                vfox.cmd_env = Some(match cmd_env {
+                    Some(cmd_env) => cmd_env,
+                    None => self.cmd_env_for_tv(config, tv).await,
+                });
+                let env_reads = vfox::EnvReads::default();
+                vfox.env_reads = Some(env_reads.clone());
 
                 // Use backend methods if the plugin supports them
                 let env_keys = if self.is_backend_plugin() {
@@ -1086,25 +1153,35 @@ impl VfoxBackend {
                     .await?
                 };
 
-                Ok(env_keys
-                    .into_iter()
-                    .fold(BTreeMap::new(), |mut acc, env_key| {
-                        let key = &env_key.key;
-                        if let Some(val) = acc.get(key) {
-                            let mut paths = env::split_paths(val).collect::<Vec<PathBuf>>();
-                            paths.push(PathBuf::from(&env_key.value));
-                            acc.insert(
-                                env_key.key.clone(),
-                                env::join_paths(paths)
-                                    .unwrap()
-                                    .to_string_lossy()
-                                    .to_string(),
-                            );
-                        } else {
-                            acc.insert(key.clone(), env_key.value.clone());
-                        }
-                        acc
-                    }))
+                let cached = CachedExecEnv {
+                    env: env_keys
+                        .into_iter()
+                        .fold(BTreeMap::new(), |mut acc, env_key| {
+                            let key = &env_key.key;
+                            if let Some(val) = acc.get(key) {
+                                let mut paths = env::split_paths(val).collect::<Vec<PathBuf>>();
+                                paths.push(PathBuf::from(&env_key.value));
+                                acc.insert(
+                                    env_key.key.clone(),
+                                    env::join_paths(paths)
+                                        .unwrap()
+                                        .to_string_lossy()
+                                        .to_string(),
+                                );
+                            } else {
+                                acc.insert(key.clone(), env_key.value.clone());
+                            }
+                            acc
+                        }),
+                    env_reads: std::mem::take(&mut *env_reads.lock().unwrap()),
+                };
+                if let Err(err) = cache.file.write(&cached) {
+                    warn!(
+                        "failed to write cache file: {} {err:#}",
+                        cache_file.display()
+                    );
+                }
+                Ok(cached.env)
             })
             .await
             .cloned()

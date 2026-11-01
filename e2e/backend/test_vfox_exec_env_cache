@@ -8,9 +8,9 @@
 mkdir -p "$MISE_DATA_DIR/installs/gcloud/586.0.0/bin"
 assert_fail "test -e '$MISE_DATA_DIR/plugins/gcloud'"
 
-exec_env_cache_log() { # $1 = run number
+exec_env_cache_log() { # $1 = run number, $2 = tool (default gcloud)
   MISE_LOG_LEVEL=trace mise hook-env -s bash 2>"$1.log" >/dev/null
-  grep -E ' (reading|writing) .*/gcloud/586\.0\.0/exec_env_' "$1.log" | sed -E 's/.* (reading|writing) .*/\1/'
+  grep -E " (reading|writing) .*/${2:-gcloud}/[^/]+/exec_env_" "$1.log" | sed -E 's/.* (reading|writing) .*/\1/'
 }
 export -f exec_env_cache_log
 
@@ -57,3 +57,26 @@ mise plugins link gcloud "$OVERRIDE_DIR"
 assert_contains "mise env -s bash" "GCLOUD_OVERRIDE"
 mv "$OVERRIDE_DIR" "$OVERRIDE_DIR.moved"
 assert_not_contains "mise env -s bash" "GCLOUD_OVERRIDE"
+
+# A hook's result depends on the variables it reads, so changing one runs the
+# hook again.
+READER_DIR="$PWD/envreader"
+mkdir -p "$READER_DIR/hooks" "$MISE_DATA_DIR/installs/envreader/1.0.0"
+cat >"$READER_DIR/metadata.lua" <<'LUA'
+PLUGIN = { name = "envreader", version = "0.1.0" }
+LUA
+cat >"$READER_DIR/hooks/env_keys.lua" <<'LUA'
+function PLUGIN:EnvKeys(ctx)
+  return { { key = "ENVREADER_SEEN", value = os.getenv("ENVREADER_MODE") or "unset" } }
+end
+LUA
+mise plugins link envreader "$READER_DIR"
+cat >mise.toml <<'TOML'
+[tools]
+envreader = "1.0.0"
+TOML
+assert_contains "mise env -s bash" "ENVREADER_SEEN=unset"
+assert_contains "ENVREADER_MODE=a mise env -s bash" "ENVREADER_SEEN=a"
+assert_contains "ENVREADER_MODE=b mise env -s bash" "ENVREADER_SEEN=b"
+assert "ENVREADER_MODE=b exec_env_cache_log 6 envreader" "reading"
+assert_contains "mise env -s bash" "ENVREADER_SEEN=unset"

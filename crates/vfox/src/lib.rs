@@ -20,6 +20,7 @@ pub use hooks::package::{
 pub use hooks::pre_install::VerifiedAttestation;
 pub use metadata::{Metadata, SystemDependency};
 pub use plugin::Plugin;
+pub use vfox::EnvReads;
 pub use vfox::InstallResult;
 pub use vfox::TerminalLock;
 pub use vfox::Vfox;
