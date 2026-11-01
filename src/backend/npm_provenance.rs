@@ -49,7 +49,30 @@ impl InstallProvenanceVerifier for NpmProvenanceVerifier {
 
 #[derive(serde::Deserialize)]
 struct AttestationsResponse {
-    attestations: Vec<Attestation>,
+    attestations: Vec<NpmAttestation>,
+}
+
+/// One entry of npm's response: the registry's own `predicateType` label beside
+/// the signed bundle.
+#[derive(serde::Deserialize)]
+struct NpmAttestation {
+    #[serde(rename = "predicateType")]
+    predicate_type: Option<String>,
+    #[serde(flatten)]
+    attestation: Attestation,
+}
+
+impl NpmAttestation {
+    /// Whether this entry claims to be SLSA provenance, by the registry's label
+    /// or by the bundle's own payload. Either is enough, so a bundle whose
+    /// payload cannot be read still reaches verification and fails there
+    /// instead of passing as an unrelated attestation.
+    fn is_provenance(&self) -> bool {
+        self.predicate_type
+            .as_deref()
+            .is_some_and(|t| t.starts_with("https://slsa.dev/provenance/"))
+            || self.attestation.matches_predicate_type("provenance")
+    }
 }
 
 async fn verify_subject(subject: &InstallProvenanceSubject) -> eyre::Result<()> {
@@ -75,10 +98,11 @@ async fn verify_subject(subject: &InstallProvenanceSubject) -> eyre::Result<()> 
     };
     // npm also returns its own publish attestation, which names no repository
     // and is not provenance; a package with only that has none to verify.
-    let provenance: Vec<_> = response
+    let provenance: Vec<Attestation> = response
         .attestations
         .into_iter()
-        .filter(|attestation| attestation.matches_predicate_type("provenance"))
+        .filter(NpmAttestation::is_provenance)
+        .map(|entry| entry.attestation)
         .collect();
     if provenance.is_empty() {
         debug!("npm:{name}@{version} publishes no provenance");
@@ -154,9 +178,27 @@ mod tests {
         let provenance = response
             .attestations
             .iter()
-            .filter(|attestation| attestation.matches_predicate_type("provenance"))
+            .filter(|entry| entry.is_provenance())
             .count();
         assert_eq!(provenance, 1);
+    }
+
+    #[test]
+    fn unreadable_provenance_is_not_mistaken_for_a_publish_attestation() {
+        let entry = |predicate_type: &str| -> NpmAttestation {
+            serde_json::from_value(serde_json::json!({
+                "predicateType": predicate_type,
+                "bundle": {"not": "a sigstore bundle"},
+            }))
+            .unwrap()
+        };
+        // npm labels it SLSA provenance, but the payload cannot be read: it
+        // must reach verification, which rejects it.
+        assert!(entry("https://slsa.dev/provenance/v1").is_provenance());
+        assert!(
+            !entry("https://github.com/npm/attestation/tree/main/specs/publish/v0.1")
+                .is_provenance()
+        );
     }
 
     #[test]
