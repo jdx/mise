@@ -2801,30 +2801,30 @@ fn is_global_lockfile(lockfile: &Path) -> bool {
 /// is trusted its lockfile is no more trusted than it is.
 ///
 /// Safe mode keeps project content inert whether or not the project is
-/// trusted (CI and an earlier `mise trust` both count as trust), so only the
-/// global and system lockfiles are trusted there.
+/// trusted (CI and an earlier `mise trust` both count as trust), so there only
+/// a global or system config, and a checkout the user linked into one,
+/// vouches for a lockfile.
 pub(crate) fn lockfile_is_trusted(config: &Config, lockfile: &Path) -> bool {
     if is_global_lockfile(lockfile) {
         return true;
     }
-    if Settings::safe_mode() {
-        return false;
-    }
+    let safe = Settings::safe_mode();
     let monorepo_root = config.monorepo_lockfile_root();
     // A sub-project config that is not loaded, such as `app/mise.toml` from the
     // monorepo root, still owns its lockfile.
-    let owned_by_unloaded_config = lockfile.parent().is_some_and(|dir| {
-        [Some(dir), dir.parent()]
-            .into_iter()
-            .flatten()
-            .flat_map(crate::config::config_paths_in_dir)
-            .any(|path| {
-                path.extension().is_some_and(|ext| ext == "toml")
-                    && !crate::config::is_project_link_to_global_config(&path)
-                    && same_file_path(&lockfile_path_for_config(&path, None).0, lockfile)
-                    && crate::config::config_file::is_path_trusted(&path)
-            })
-    });
+    let owned_by_unloaded_config = !safe
+        && lockfile.parent().is_some_and(|dir| {
+            [Some(dir), dir.parent()]
+                .into_iter()
+                .flatten()
+                .flat_map(crate::config::config_paths_in_dir)
+                .any(|path| {
+                    path.extension().is_some_and(|ext| ext == "toml")
+                        && !crate::config::is_project_link_to_global_config(&path)
+                        && same_file_path(&lockfile_path_for_config(&path, None).0, lockfile)
+                        && crate::config::config_file::is_path_trusted(&path)
+                })
+        });
     owned_by_unloaded_config
         || config.config_files.keys().any(|path| {
             // Global config is trusted without asking, so a project config
@@ -2843,6 +2843,7 @@ pub(crate) fn lockfile_is_trusted(config: &Config, lockfile: &Path) -> bool {
             ]
                 .into_iter()
                 .any(|root| same_file_path(&lockfile_path_for_config(path, root).0, lockfile))
+            && (!safe || crate::config::is_global_config(path))
             && crate::config::config_file::is_path_trusted(path)
         })
 }
@@ -2867,7 +2868,8 @@ fn may_write_through_symlink(link: &Path, target: &Path) -> bool {
     if is_global_lockfile(link) {
         return true;
     }
-    Config::maybe_get().is_some_and(|config| lockfile_is_trusted(&config, link))
+    !Settings::safe_mode()
+        && Config::maybe_get().is_some_and(|config| lockfile_is_trusted(&config, link))
 }
 
 /// Checks if a config path is a "local" config (should go to mise.local.lock)
