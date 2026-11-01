@@ -282,7 +282,7 @@ impl SystemPackageManager for MasManager {
             bail!(
                 "mas list found no apps, but /Applications has App Store apps; \
                  Spotlight is probably still indexing (after a macOS update, say). \
-                 Try again once `mdutil -s /` shows indexing has finished"
+                 Try again once `mas list` shows the installed apps"
             );
         }
         Ok(statuses_from_apps(&apps, pkgs))
