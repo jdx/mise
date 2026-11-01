@@ -404,6 +404,9 @@ fn cached_install_identity(base: &Path, dir: &Path, digest: &str) -> Option<Stri
     } else {
         let path = crate::dirs::CACHE
             .join("uv-install-identity")
+            // The answer depends on how this mise removes the cutoff, so a
+            // new release starts a new set instead of trusting the old one.
+            .join(env!("CARGO_PKG_VERSION"))
             .join(key.trim_start_matches("sha256:"));
         let identity = match std::fs::read_to_string(&path) {
             Ok(identity) if identity == NO_CUTOFF || identity.starts_with("sha256:") => identity,
@@ -411,7 +414,9 @@ fn cached_install_identity(base: &Path, dir: &Path, digest: &str) -> Option<Stri
                 let identity = UvLock::identity_of_text(&text)
                     .ok()?
                     .unwrap_or_else(|| NO_CUTOFF.to_string());
-                if let Err(err) = crate::file::write_atomic_unsynced(&path, &identity) {
+                if let Err(err) = crate::file::create_dir_all(path.parent().unwrap_or(&path))
+                    .and_then(|()| crate::file::write_atomic_unsynced(&path, &identity))
+                {
                     debug!("could not cache uv install identity: {err:#}");
                 }
                 identity
@@ -1311,6 +1316,11 @@ wheels = [
             cell: OnceLock::new(),
         };
         assert_eq!(sidecar.install_identity(), identities[0].1);
+        let saved = crate::dirs::CACHE
+            .join("uv-install-identity")
+            .join(env!("CARGO_PKG_VERSION"))
+            .join(digest_text(&graph.graph_text).trim_start_matches("sha256:"));
+        assert!(saved.is_file(), "{} was not written", saved.display());
         // An edited sidecar is not answered from what was remembered.
         std::fs::write(again.join("uv.lock"), "version = 1\n").unwrap();
         assert_eq!(sidecar.install_identity(), sidecar.identity());
