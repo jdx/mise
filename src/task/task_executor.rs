@@ -1539,6 +1539,15 @@ impl TaskExecutor {
             tokio::fs::write(&file, script.as_bytes()).await?;
             file::make_executable(&file)?;
             self.exec_with_text_file_busy_retry(&file, args, ctx).await
+        } else if self.needs_cmd_batch_file(script, ctx.task)? {
+            // `cmd /c` stops reading its command text at the first newline, so the rest of a
+            // multi-line script would silently never run. Hand cmd a batch file instead.
+            let dir = tempfile::tempdir()?;
+            let file = dir.path().join("script.cmd");
+            let body = script.replace("\r\n", "\n").replace('\n', "\r\n");
+            let body = format!("@echo off\r\n{body}\r\n");
+            tokio::fs::write(&file, body.as_bytes()).await?;
+            self.exec_with_text_file_busy_retry(&file, args, ctx).await
         } else {
             let (program, shell_args, cmd_verbatim) =
                 self.get_cmd_program_and_args(script, ctx.task, args)?;
@@ -1551,6 +1560,25 @@ impl TaskExecutor {
             )
             .await
         }
+    }
+
+    /// Whether `script` spans several lines and its inline shell is `cmd /c`, which only runs
+    /// the first line of its command text.
+    fn needs_cmd_batch_file(&self, script: &str, task: &Task) -> Result<bool> {
+        #[cfg(windows)]
+        {
+            if script.trim_end().contains('\n') {
+                let shell = task.shell()?.unwrap_or(self.clone_default_inline_shell()?);
+                let (program, shell_args) = task_shell_parts(&shell, "inline shell")?;
+                return Ok(matches!(
+                    inline_args_style(program, shell_args),
+                    InlineArgsStyle::CmdCommandText
+                ));
+            }
+        }
+        #[cfg(not(windows))]
+        let _ = (script, task);
+        Ok(false)
     }
 
     /// Build the script text represented by the task command header.
