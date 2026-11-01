@@ -280,6 +280,10 @@ impl Backend for AquaBackend {
         VersionOrder::from_options_or(opts, self.ba.registry_version_order().unwrap_or_default())
     }
 
+    fn resolves_locked_url_from_checksum(&self) -> bool {
+        true
+    }
+
     fn get_type(&self) -> BackendType {
         BackendType::Aqua
     }

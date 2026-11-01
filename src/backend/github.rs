@@ -663,6 +663,10 @@ impl Backend for UnifiedGitBackend {
         ))
     }
 
+    fn resolves_locked_url_from_checksum(&self) -> bool {
+        true
+    }
+
     fn get_type(&self) -> BackendType {
         if self.is_gitlab() {
             BackendType::Gitlab
@@ -1096,7 +1100,9 @@ impl Backend for UnifiedGitBackend {
             tv.lock_platforms.get(&platform_key).is_some_and(|p| {
                 !p.additional_artifacts.is_empty()
                     && p.additional_artifacts.len() == additional_patterns.len()
-                    && p.additional_artifacts.iter().all(|a| a.url.is_empty())
+                    && p.additional_artifacts
+                        .iter()
+                        .all(|a| a.url.is_empty() && a.checksum.is_some())
             });
         let additional_assets = match tv.lock_platforms.get(&platform_key) {
             Some(platform)
