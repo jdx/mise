@@ -30,14 +30,13 @@ pub async fn config_for_root(config: &Arc<Config>, root: &Path) -> Result<Arc<Co
 /// Kept separate from [`toolset`] so callers that must not install can avoid the
 /// install path entirely. That path reaches code which is not `Send`, and a
 /// caller inside a spawned task would not compile if this future contained it.
-pub async fn toolset_resolved(config: &Arc<Config>, include_pitchfork: bool) -> Result<Toolset> {
+pub async fn toolset_resolved(config: &Arc<Config>) -> Result<Toolset> {
     let pitchfork: ToolArg = "pitchfork".parse()?;
-    let args = if include_pitchfork
-        && !config
-            .get_tool_request_set()
-            .await?
-            .tools
-            .contains_key(&pitchfork.ba)
+    let args = if !config
+        .get_tool_request_set()
+        .await?
+        .tools
+        .contains_key(&pitchfork.ba)
     {
         vec![pitchfork]
     } else {
@@ -114,7 +113,7 @@ pub async fn toolset(
     install: Option<&DaemonSet>,
 ) -> Result<(Arc<Config>, Toolset)> {
     let mut config = config.clone();
-    let mut ts = toolset_resolved(&config, install.is_some()).await?;
+    let mut ts = toolset_resolved(&config).await?;
     if let Some(set) = install {
         let wanted = install_scope(&ts, set);
         let mut skip = crate::config::Settings::get()
