@@ -123,8 +123,26 @@ shasum_bin() {
   fi
 }
 
+# MISE_INSTALL_GITHUB_MIRROR stands in for https://github.com, for networks
+# that reach GitHub Releases only through a mirror. A bare host means https.
+github_base_url() {
+  github_mirror="${MISE_INSTALL_GITHUB_MIRROR:-}"
+  # Credentials in the URL would show up in download and error messages.
+  github_mirror_host="${github_mirror#*://}"
+  case "${github_mirror_host%%[/?#]*}" in
+  *@*) error "MISE_INSTALL_GITHUB_MIRROR must not contain credentials" ;;
+  esac
+  case "$github_mirror" in
+  "") echo "https://github.com" ;;
+  https://*) echo "${github_mirror%/}" ;;
+  *://*) error "MISE_INSTALL_GITHUB_MIRROR must use https: $github_mirror" ;;
+  *) echo "https://${github_mirror%/}" ;;
+  esac
+}
+
 github_release_url() {
-  echo "https://github.com/jdx/mise/releases/download/v$1"
+  github_base="$(github_base_url)" || exit 1
+  echo "$github_base/jdx/mise/releases/download/v$1"
 }
 
 mirror_release_url() {
@@ -252,9 +270,9 @@ get_checksum() {
       fi
     fi
   else
-    # Always verify against GitHub Releases, never the host the archive came
-    # from, so a compromised mise.jdx.dev cannot serve a matching archive and
-    # checksum. There is deliberately no fallback to mise.jdx.dev here.
+    # Always verify against GitHub Releases (or MISE_INSTALL_GITHUB_MIRROR),
+    # never mise.jdx.dev, so a compromised mise.jdx.dev cannot serve a matching
+    # archive and checksum. There is deliberately no fallback to mise.jdx.dev here.
     checksum="$(fetch_checksum "$(github_release_url "$version")" "mise-v${version}-${os}-${arch}.${ext}")"
     if [ -z "$checksum" ]; then
       warn "no checksum for mise $version and $os-$arch"
