@@ -142,6 +142,31 @@ fn parse_mas_text(output: &str) -> Vec<InstalledApp> {
         .collect()
 }
 
+/// `mas list` reads Spotlight, so it comes back empty while the index is being
+/// rebuilt. An App Store receipt on disk means that empty list is wrong, and
+/// treating it as "nothing installed" would reinstall every app. Apps moved into
+/// a folder (/Applications/Development/Xcode.app) are found one level down.
+fn app_store_receipts_present(dir: &Path) -> bool {
+    receipts_present(dir, 1)
+}
+
+fn receipts_present(dir: &Path, folders_left: u8) -> bool {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|entry| {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "app") {
+                path.join("Contents/_MASReceipt/receipt").is_file()
+            } else {
+                // is_dir follows symlinks, so a linked folder is searched too;
+                // the depth limit keeps a link loop from recursing.
+                folders_left > 0 && path.is_dir() && receipts_present(&path, folders_left - 1)
+            }
+        })
+}
+
 fn statuses_from_apps(apps: &[InstalledApp], requests: &[PackageRequest]) -> Vec<PackageStatus> {
     let mut installed: HashMap<&str, &InstalledApp> = HashMap::new();
     for app in apps {
@@ -250,6 +275,16 @@ impl SystemPackageManager for MasManager {
 
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
         let apps = mas_list(self.bin().await?).await?;
+        if apps.is_empty()
+            && !pkgs.is_empty()
+            && app_store_receipts_present(Path::new("/Applications"))
+        {
+            bail!(
+                "mas list found no apps, but /Applications has App Store apps; \
+                 Spotlight is probably still indexing (after a macOS update, say). \
+                 Try again once `mas list` shows the installed apps"
+            );
+        }
         Ok(statuses_from_apps(&apps, pkgs))
     }
 
@@ -317,6 +352,45 @@ mod tests {
             version: version.map(str::to_string),
             tap_url: None,
             desired: crate::PackageDesiredState::Present,
+        }
+    }
+
+    #[test]
+    fn app_store_receipts_present_needs_a_receipt_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!app_store_receipts_present(dir.path()));
+        assert!(!app_store_receipts_present(&dir.path().join("missing")));
+        std::fs::create_dir_all(dir.path().join("Plain.app/Contents")).unwrap();
+        assert!(!app_store_receipts_present(dir.path()));
+        let receipt = dir.path().join("Store.app/Contents/_MASReceipt");
+        std::fs::create_dir_all(&receipt).unwrap();
+        std::fs::write(receipt.join("receipt"), b"").unwrap();
+        assert!(app_store_receipts_present(dir.path()));
+
+        // An app moved into a folder still counts; two folders down does not.
+        let nested = tempfile::tempdir().unwrap();
+        let receipt = nested
+            .path()
+            .join("Development/Xcode.app/Contents/_MASReceipt");
+        std::fs::create_dir_all(&receipt).unwrap();
+        std::fs::write(receipt.join("receipt"), b"").unwrap();
+        assert!(app_store_receipts_present(nested.path()));
+        let deep = tempfile::tempdir().unwrap();
+        let receipt = deep.path().join("A/B/Xcode.app/Contents/_MASReceipt");
+        std::fs::create_dir_all(&receipt).unwrap();
+        std::fs::write(receipt.join("receipt"), b"").unwrap();
+        assert!(!app_store_receipts_present(deep.path()));
+
+        // A folder linked into place is searched like a real one.
+        #[cfg(unix)]
+        {
+            let linked = tempfile::tempdir().unwrap();
+            std::os::unix::fs::symlink(
+                nested.path().join("Development"),
+                linked.path().join("Dev"),
+            )
+            .unwrap();
+            assert!(app_store_receipts_present(linked.path()));
         }
     }
 
