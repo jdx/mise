@@ -4133,8 +4133,18 @@ fn link_points_at(link: &Path, dest: &Path, expected: &Path) -> bool {
 /// with generated excludes, which would make an entry's own pre-existing link
 /// (a stow migration) look stale, and every group targeting `~` would pay a
 /// full walk of it.
+///
+/// Windows walks only with `dotfiles.windows_symlinks` on: without it
+/// `symlink-each` copies every file and records no state, so a link in the
+/// target is not one mise made. With it on, a lost state file must still find
+/// the links whose sources are gone, or apply records an empty state and
+/// unapply no longer knows about them.
 fn legacy_stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
-    if cfg!(windows) || req.group.is_some() || !req.target.is_dir() || req.target.is_symlink() {
+    if (cfg!(windows) && !windows_symlinks())
+        || req.group.is_some()
+        || !req.target.is_dir()
+        || req.target.is_symlink()
+    {
         return Ok(vec![]);
     }
     let mut out = vec![];
@@ -6850,10 +6860,14 @@ fn windows_symlinks() -> bool {
 
 /// How many `symlink-each` entries `link_path` copies: on Windows every regular file unless
 /// `dotfiles.windows_symlinks` links them, while a source that is not a file (a directory link)
-/// still gets a junction.
+/// still gets a junction. A link already reaching its source is left in place, not copied: it
+/// is what an apply with the setting on made before it was turned off.
 fn windows_each_copies(files: &[(PathBuf, PathBuf)]) -> usize {
     if cfg!(windows) && !windows_symlinks() {
-        files.iter().filter(|(source, _)| source.is_file()).count()
+        files
+            .iter()
+            .filter(|(source, target)| source.is_file() && !link_points_to(source, target))
+            .count()
     } else {
         0
     }
