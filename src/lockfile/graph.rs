@@ -332,7 +332,12 @@ impl UvLock {
     /// table, so the rest of the graph hashes the bytes it always has: the
     /// result is the [`digest_text`] of the graph uv writes without a cutoff.
     fn identity_without_cutoff(&self) -> Result<Option<String>> {
-        let mut doc = self.graph_text()?.parse::<toml_edit::DocumentMut>()?;
+        Self::identity_of_text(&self.graph_text()?)
+    }
+
+    /// [`Self::identity_without_cutoff`] of a graph given as its text.
+    fn identity_of_text(text: &str) -> Result<Option<String>> {
+        let mut doc = text.parse::<toml_edit::DocumentMut>()?;
         let Some(options) = doc
             .get_mut("options")
             .and_then(toml_edit::Item::as_table_mut)
@@ -358,6 +363,13 @@ impl GraphRef<UvLock> {
     /// A graph without one keeps its [`Self::identity`], so installs made
     /// before this stay where they are.
     pub(crate) fn install_identity(&self) -> String {
+        if let Self::Sidecar {
+            dir, base, digest, ..
+        } = self
+            && let Some(identity) = cached_install_identity(base, dir, digest)
+        {
+            return identity;
+        }
         self.load()
             .and_then(UvLock::identity_without_cutoff)
             .ok()
@@ -365,6 +377,66 @@ impl GraphRef<UvLock> {
             .unwrap_or_else(|| self.identity())
     }
 }
+
+/// The [`GraphRef::install_identity`] of a sidecar, remembered by the digest of
+/// its text. Finding the identity parses the whole graph, which every `hook-env`
+/// process would otherwise repeat; the text behind a digest never changes, so
+/// the answer is kept in the process and in the cache directory.
+///
+/// The sidecar is still read and checked against `digest` first, so an edited
+/// graph is never answered from the cache. `None` when it cannot be read or does
+/// not match, and the caller falls back to parsing it.
+fn cached_install_identity(base: &Path, dir: &Path, digest: &str) -> Option<String> {
+    static MEMO: std::sync::Mutex<Option<std::collections::HashMap<String, String>>> =
+        std::sync::Mutex::new(None);
+    let raw = read_sidecar_file(base, &dir.join(UvLock::GRAPH_FILE)).ok()?;
+    let text = normalize_newlines(&raw);
+    if digest_bytes(text.as_bytes()) != digest && digest_bytes(raw.as_bytes()) != digest {
+        return None;
+    }
+    let key = digest_text(&text);
+    let remembered = MEMO
+        .lock()
+        .ok()
+        .and_then(|memo| memo.as_ref()?.get(&key).cloned());
+    let cutoff_free = if let Some(identity) = remembered {
+        identity
+    } else {
+        let path = crate::dirs::CACHE
+            .join("uv-install-identity")
+            // The answer depends on how this mise removes the cutoff, so a
+            // new release starts a new set instead of trusting the old one.
+            .join(env!("CARGO_PKG_VERSION"))
+            .join(key.trim_start_matches("sha256:"));
+        let identity = match std::fs::read_to_string(&path) {
+            Ok(identity) if identity == NO_CUTOFF || identity.starts_with("sha256:") => identity,
+            _ => {
+                let identity = UvLock::identity_of_text(&text)
+                    .ok()?
+                    .unwrap_or_else(|| NO_CUTOFF.to_string());
+                if let Err(err) = crate::file::create_dir_all(path.parent().unwrap_or(&path))
+                    .and_then(|()| crate::file::write_atomic_unsynced(&path, &identity))
+                {
+                    debug!("could not cache uv install identity: {err:#}");
+                }
+                identity
+            }
+        };
+        if let Ok(mut memo) = MEMO.lock() {
+            memo.get_or_insert_with(Default::default)
+                .insert(key, identity.clone());
+        }
+        identity
+    };
+    // A graph without a cutoff keeps its digest, in whichever form its lockfile records it.
+    Some(if cutoff_free == NO_CUTOFF {
+        digest.to_string()
+    } else {
+        cutoff_free
+    })
+}
+
+const NO_CUTOFF: &str = "no-cutoff";
 
 impl NativeGraph for UvLock {
     const GRAPH_FILE: &'static str = "uv.lock";
@@ -1213,6 +1285,32 @@ wheels = [
         );
     }
     #[test]
+    fn uv_install_identity_of_a_sidecar_is_saved_to_the_cache() {
+        let temp = tempfile::tempdir().unwrap();
+        // A graph no other test or run has seen, so only this lookup can write its entry.
+        let nonce = temp.path().display();
+        let text = format!(
+            "version = 1\n# {nonce}\n[options]\nexclude-newer = \"2026-10-26T09:00:00Z\"\n"
+        );
+        let dir = temp.path().join("locks/pypi-fixture");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("uv.lock"), &text).unwrap();
+        let sidecar: GraphRef<UvLock> = GraphRef::Sidecar {
+            dir,
+            base: temp.path().to_path_buf(),
+            digest: digest_text(&text),
+            cell: OnceLock::new(),
+        };
+        let identity = sidecar.install_identity();
+        assert_ne!(identity, sidecar.identity());
+        let saved = crate::dirs::CACHE
+            .join("uv-install-identity")
+            .join(env!("CARGO_PKG_VERSION"))
+            .join(digest_text(&text).trim_start_matches("sha256:"));
+        assert_eq!(std::fs::read_to_string(&saved).unwrap(), identity);
+        std::fs::remove_file(saved).unwrap();
+    }
+    #[test]
     fn uv_install_identity_is_the_same_for_a_sidecar_graph() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("mise.lock");
@@ -1234,6 +1332,19 @@ wheels = [
         });
         assert_ne!(identities[0].0, identities[1].0);
         assert_eq!(identities[0].1, identities[1].1);
+        // The answer is remembered by the digest, so a second look agrees.
+        let again = sidecar_root(&path).join("pypi-fixture/2026-10-26T09-00-00Z");
+        let graph = uv_with_cutoff(Some("2026-10-26T09:00:00Z"));
+        let sidecar: GraphRef<UvLock> = GraphRef::Sidecar {
+            dir: again.clone(),
+            base: temp.path().to_path_buf(),
+            digest: digest_text(&graph.graph_text),
+            cell: OnceLock::new(),
+        };
+        assert_eq!(sidecar.install_identity(), identities[0].1);
+        // An edited sidecar is not answered from what was remembered.
+        std::fs::write(again.join("uv.lock"), "version = 1\n").unwrap();
+        assert_eq!(sidecar.install_identity(), sidecar.identity());
         assert_eq!(
             identities[0].1,
             GraphRef::from(uv_with_cutoff(Some("2030-01-01T00:00:00Z"))).install_identity()
