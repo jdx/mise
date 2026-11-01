@@ -9716,6 +9716,8 @@ fn auto_updates_treats_an_unchanged_recorded_version_as_outdated() {
         ("2.0", "2.1", Some("2.1"), false),
         // Several version candidates fall through to the build comparison.
         ("2.61,3000", "2.60.1", Some("2.60.1"), false),
+        // A comma-separated record compares by its leading short version.
+        ("4.2.4", "2.61", Some("2.61,3000"), true),
     ] {
         assert_eq!(
             app_version_outdated(current, Some(short), None, recorded),

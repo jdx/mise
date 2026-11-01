@@ -140,7 +140,11 @@ pub(super) fn app_version_outdated(
         Some(Greater) => return false,
         _ => {}
     }
-    if candidates.len() == 1 && short.is_some() && short == recorded {
+    // A comma-separated record (2.61,3000) holds its short version first.
+    if candidates.len() == 1
+        && short.is_some()
+        && recorded.and_then(|recorded| recorded.split(',').next()) == short
+    {
         return true;
     }
     let comparisons: Vec<_> = candidates
