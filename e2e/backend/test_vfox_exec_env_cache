@@ -51,3 +51,9 @@ assert_contains "mise env -s bash" "GCLOUD_OVERRIDE"
 mise plugins uninstall gcloud
 assert_not_contains "mise env -s bash" "GCLOUD_OVERRIDE"
 assert_contains "mise env -s bash" "CLOUDSDK_ROOT_DIR"
+
+# A link whose target is gone leaves the plugins directory as it was.
+mise plugins link gcloud "$OVERRIDE_DIR"
+assert_contains "mise env -s bash" "GCLOUD_OVERRIDE"
+mv "$OVERRIDE_DIR" "$OVERRIDE_DIR.moved"
+assert_not_contains "mise env -s bash" "GCLOUD_OVERRIDE"

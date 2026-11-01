@@ -1024,6 +1024,9 @@ impl VfoxBackend {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             opts.hash(&mut hasher);
             install_path.hash(&mut hasher);
+            // Refs such as `ref:a/b` and `ref:a-b` share an install path, but
+            // a hook can read the raw version.
+            tv.version.hash(&mut hasher);
             hasher.finish()
         };
         let cache_file = tv
@@ -1045,9 +1048,10 @@ impl VfoxBackend {
                 // A fresh file that doesn't exist leaves the cache stale forever,
                 // and an embedded plugin has no directory. Adding or removing an
                 // override, even a link to an older directory, changes the plugins
-                // directory.
+                // directory. A link whose target is gone is kept, so it reads as
+                // changed.
                 for path in [dirs::PLUGINS.to_path_buf(), self.plugin.plugin_path.clone()] {
-                    if path.exists() {
+                    if path.exists() || path.is_symlink() {
                         cm = cm.with_fresh_file(path);
                     }
                 }
