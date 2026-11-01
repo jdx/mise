@@ -2656,6 +2656,11 @@
               "type": "string",
               "enum": ["auto", "npm", "aube", "aube_cli", "bun", "pnpm"]
             },
+            "provenance": {
+              "default": false,
+              "description": "Verify the Sigstore provenance npm publishes for an `npm:` tool's own package.",
+              "type": "boolean"
+            },
             "shell_out": {
               "default": false,
               "description": "Use the npm CLI instead of mise's built-in client for `npm:` version metadata and default installs.",

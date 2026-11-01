@@ -350,11 +350,12 @@ mise tool jq
 | `github:`                   | GitHub artifact attestations when a github.com release publishes them; SLSA provenance when the tool names its signer                        | [`github.github_attestations`](/configuration/settings.html#github.github_attestations), [`github.slsa`](/configuration/settings.html#github.slsa), and the [`github_attestations`](/dev-tools/backends/github.html#github-attestations) and [`slsa_signer_identity`](/dev-tools/backends/github.html#slsa-signer-identity-and-slsa-signer-issuer) tool options |
 | `packslip:`                 | A signed release manifest, artifact digests and a pinned signer; see [verification and policy](/dev-tools/packslip-verification.html)        | [Tool options](/dev-tools/backends/packslip.html#tool-options)                                                                                                                                                                                                                                                                                                  |
 | Node.js                     | Checksums from `SHASUMS256.txt` and its OpenPGP signature, which must be present except on unofficial-builds                                 | [`node.verify`](/configuration/settings.html#node.verify), [`node.gpg_verify`](/configuration/settings.html#node.gpg_verify)                                                                                                                                                                                                                                    |
+| `npm:`                      | Opt-in, embedded aube only: Sigstore provenance of the tool's own package, when it publishes one                                             | [`npm.provenance`](/configuration/settings.html#npm.provenance)                                                                                                                                                                                                                                                                                                 |
 | Swift on Linux              | OpenPGP signatures                                                                                                                           | [`swift.gpg_verify`](/configuration/settings.html#swift.gpg_verify)                                                                                                                                                                                                                                                                                             |
 | Zig                         | Minisign signatures, always                                                                                                                  | None                                                                                                                                                                                                                                                                                                                                                            |
 | Precompiled Ruby and Python | GitHub artifact attestations                                                                                                                 | [`ruby.github_attestations`](/configuration/settings.html#ruby.github_attestations), [`python.github_attestations`](/configuration/settings.html#python.github_attestations)                                                                                                                                                                                    |
 
-These checks are on by default. Setting the global
+These checks are on by default, except the `npm:` one, which is opt-in. Setting the global
 [`github_attestations`](/configuration/settings.html#github_attestations) or
 [`slsa`](/configuration/settings.html#slsa) setting to `false` turns that check
 off for the `aqua:` and `github:` backends. For precompiled Python and Ruby,
@@ -371,7 +372,10 @@ and the provenance mise verified, and later installs reuse that result instead
 of checking again. Set
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
 or turn on [paranoid mode](/paranoid.html) to re-verify on every install.
-Neither re-checks a tool that is already installed.
+Neither re-checks a tool that is already installed. The `npm:` provenance check
+is not recorded in the lockfile, so with
+[`npm.provenance`](/configuration/settings.html#npm.provenance) on, mise
+verifies it on every install of the tool.
 
 mise checks its own releases too: `mise self-update` verifies each release's
 signature before it replaces the binary. See

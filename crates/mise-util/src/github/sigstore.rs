@@ -32,7 +32,10 @@ use std::path::Path;
 use mise_sigstore::sources::github::GitHubSource;
 use mise_sigstore::{ArtifactRef, AttestationClient, AttestationSource, FetchParams, RetryConfig};
 
-pub use mise_sigstore::{AttestationError, CosignIdentity, SlsaArtifact, SlsaSignerIdentity};
+pub use mise_sigstore::{
+    Attestation, AttestationError, CosignIdentity, SlsaArtifact, SlsaSignerIdentity,
+    verify_github_attestation_sources_for_sha512,
+};
 
 /// Result alias that matches `mise_sigstore`'s internal convention.
 type AttestationResult<T> = std::result::Result<T, AttestationError>;

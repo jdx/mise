@@ -409,6 +409,23 @@ ignored = [
   "serde-saphyr", # Used by build.rs to read the aqua registry metadata.
 ]
 
+# TEMPORARY, draft only: aubepkg/aube#1900 (merged, not yet released) adds
+# `InstallProvenanceVerifier`. Drop this block once an aube release has it.
+[patch.crates-io]
+aube = { git = "https://github.com/aubepkg/aube", rev = "537f6689b84978e59fb6a76be7ca17da957931e6" }
+aube-codes = { git = "https://github.com/aubepkg/aube", rev = "537f6689b84978e59fb6a76be7ca17da957931e6" }
+aube-linker = { git = "https://github.com/aubepkg/aube", rev = "537f6689b84978e59fb6a76be7ca17da957931e6" }
+aube-lockfile = { git = "https://github.com/aubepkg/aube", rev = "537f6689b84978e59fb6a76be7ca17da957931e6" }
+aube-manifest = { git = "https://github.com/aubepkg/aube", rev = "537f6689b84978e59fb6a76be7ca17da957931e6" }
+aube-registry = { git = "https://github.com/aubepkg/aube", rev = "537f6689b84978e59fb6a76be7ca17da957931e6" }
+aube-resolver = { git = "https://github.com/aubepkg/aube", rev = "537f6689b84978e59fb6a76be7ca17da957931e6" }
+aube-runtime = { git = "https://github.com/aubepkg/aube", rev = "537f6689b84978e59fb6a76be7ca17da957931e6" }
+aube-scripts = { git = "https://github.com/aubepkg/aube", rev = "537f6689b84978e59fb6a76be7ca17da957931e6" }
+aube-settings = { git = "https://github.com/aubepkg/aube", rev = "537f6689b84978e59fb6a76be7ca17da957931e6" }
+aube-store = { git = "https://github.com/aubepkg/aube", rev = "537f6689b84978e59fb6a76be7ca17da957931e6" }
+aube-util = { git = "https://github.com/aubepkg/aube", rev = "537f6689b84978e59fb6a76be7ca17da957931e6" }
+aube-workspace = { git = "https://github.com/aubepkg/aube", rev = "537f6689b84978e59fb6a76be7ca17da957931e6" }
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = [
   'cfg(coverage,coverage_nightly)',

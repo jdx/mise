@@ -2625,6 +2625,22 @@ env = "MISE_NPM_PACKAGE_MANAGER"
 rust_type = "NpmPackageManager"
 type = "String"
 
+[npm.provenance]
+default = false
+description = "Verify the Sigstore provenance npm publishes for an `npm:` tool's own package."
+docs = """
+When on, `mise install` fetches the attestations the public npm registry holds
+for the tool's package and requires the SLSA provenance among them to verify
+against the integrity hash the install locks. A package that publishes no
+provenance, or a private registry that serves none, installs as it does with
+this off. Provenance built outside GitHub Actions, such as on GitLab CI, is not
+accepted yet, so such a package fails to install while this is on.
+[`paranoid`](/configuration/settings.html#paranoid) turns it on for the
+`provenance` category.
+"""
+env = "MISE_NPM_PROVENANCE"
+type = "Bool"
+
 [npm.shell_out]
 default = false
 description = "Use the npm CLI instead of mise's built-in client for `npm:` version metadata and default installs."
