@@ -1249,6 +1249,15 @@ impl Backend for NPMBackend {
             }
             None => Vec::new(),
         };
+        // Only the embedded aube runs the verifier. Skipping it silently under
+        // another installer would install without the check the user asked for.
+        if Self::provenance_enabled() && !matches!(package_manager, NpmPackageManager::Aube) {
+            eyre::bail!(
+                "npm:{} installs with {package_manager}, which cannot verify provenance; \
+                 set npm.package_manager to aube, or turn off npm.provenance and the paranoid provenance category",
+                self.display_tool_name()
+            );
+        }
         match package_manager {
             NpmPackageManager::Auto => unreachable!("auto package manager should be resolved"),
             NpmPackageManager::Aube => {
@@ -2105,12 +2114,16 @@ impl NPMBackend {
     /// Checks the tool's own package against the Sigstore provenance npm
     /// publishes for it when `npm.provenance`, or the paranoid `provenance`
     /// category, is on. See [`npm_provenance`](crate::backend::npm_provenance).
+    fn provenance_enabled() -> bool {
+        let settings = Settings::get();
+        settings.npm.provenance || settings.paranoid.provenance()
+    }
+
     fn with_provenance_verifier(
         &self,
         control: aube::embed::InstallControl,
     ) -> aube::embed::InstallControl {
-        let settings = Settings::get();
-        if settings.npm.provenance || settings.paranoid.provenance() {
+        if Self::provenance_enabled() {
             control.with_provenance_verifier(
                 crate::backend::npm_provenance::NpmProvenanceVerifier::new(&self.tool_name()),
             )

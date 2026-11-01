@@ -73,8 +73,15 @@ async fn verify_subject(subject: &InstallProvenanceSubject) -> eyre::Result<()> 
             )));
         }
     };
-    if response.attestations.is_empty() {
-        debug!("npm:{name}@{version} publishes no attestations");
+    // npm also returns its own publish attestation, which names no repository
+    // and is not provenance; a package with only that has none to verify.
+    let provenance: Vec<_> = response
+        .attestations
+        .into_iter()
+        .filter(|attestation| attestation.matches_predicate_type("provenance"))
+        .collect();
+    if provenance.is_empty() {
+        debug!("npm:{name}@{version} publishes no provenance");
         return Ok(());
     }
 
@@ -90,10 +97,9 @@ async fn verify_subject(subject: &InstallProvenanceSubject) -> eyre::Result<()> 
         )
     })?;
 
-    let sources =
-        verify_github_attestation_sources_for_sha512(&sha512, &response.attestations, None)
-            .await
-            .map_err(|e| eyre::eyre!("npm provenance for {name}@{version} did not verify: {e}"))?;
+    let sources = verify_github_attestation_sources_for_sha512(&sha512, &provenance, None)
+        .await
+        .map_err(|e| eyre::eyre!("npm provenance for {name}@{version} did not verify: {e}"))?;
     debug!(
         "npm:{name}@{version} provenance verified, built from {}",
         sources.join(", ")
@@ -135,6 +141,22 @@ mod tests {
         assert_eq!(sha512_from_integrity("sha1-abc="), None);
         assert_eq!(sha512_from_integrity("sha512-abc="), None);
         assert_eq!(sha512_from_integrity("sha512-not base64"), None);
+    }
+
+    #[test]
+    fn only_the_slsa_attestation_counts_as_provenance() {
+        // `@sigstore/bundle@3.1.0`: npm's publish attestation beside the SLSA one.
+        let response: AttestationsResponse = serde_json::from_str(include_str!(
+            "../../crates/mise-sigstore/tests/fixtures/npm_attestations_sigstore_bundle_3_1_0.json"
+        ))
+        .unwrap();
+        assert_eq!(response.attestations.len(), 2);
+        let provenance = response
+            .attestations
+            .iter()
+            .filter(|attestation| attestation.matches_predicate_type("provenance"))
+            .count();
+        assert_eq!(provenance, 1);
     }
 
     #[test]
