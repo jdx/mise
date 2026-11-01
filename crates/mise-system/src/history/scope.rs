@@ -666,6 +666,9 @@ impl Writer {
     fn capture_before(&mut self, id: u64, paths: &[PathBuf]) {
         let mut draft = Draft::new(before_trigger(self.kind()));
         draft.protective = true;
+        // A tree equal to the newest checkpoint's is already protected by it:
+        // the operation's `before` points there instead of recording a copy.
+        draft.skip_unchanged = self.kind() == OperationKind::Bootstrap;
         // Restoration must protect the actual selected live files, including
         // unsaved manual entries, without saving unrelated manual edits.
         draft.explicit_paths = paths.to_vec();
@@ -685,7 +688,14 @@ impl Writer {
                 self.operation_mut().before = Some(entry.checkpoint.uuid.clone());
                 self.before = Some((entry.id, entry.checkpoint.uuid));
             }
-            Ok(Outcome::Unchanged) => {}
+            Ok(Outcome::Unchanged) => match self.store.latest_snapshot() {
+                Ok(Some((id, uuid))) => {
+                    self.operation_mut().before = Some(uuid.clone());
+                    self.before = Some((id, uuid));
+                }
+                Ok(None) => {}
+                Err(err) => warn!("history: cannot find the checkpoint to restore to: {err:#}"),
+            },
             Ok(Outcome::Unavailable(reason)) => {
                 warn!("history: no content snapshot before this run: {reason}");
                 self.pending.checkpoint.tree.available = false;
@@ -816,6 +826,11 @@ impl Writer {
         draft.uuid = Some(checkpoint.uuid.clone());
         draft.labels = checkpoint.labels.clone();
         draft.operation = Some(operation.clone());
+        // A bootstrap that succeeded without changing anything leaves no
+        // trace worth a snapshot: the tree matches the checkpoint before it.
+        draft.skip_unchanged = self.kind() == OperationKind::Bootstrap
+            && operation.status == OperationStatus::Completed
+            && operation.journal.is_empty();
         draft.explicit_paths = self.promote.clone();
         // Bootstrap writes are explicit saves of the paths it actually
         // changed, including manual-save destinations. Do not promote
