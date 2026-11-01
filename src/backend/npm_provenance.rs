@@ -59,14 +59,6 @@ async fn verify_subject(subject: &InstallProvenanceSubject) -> eyre::Result<()> 
         debug!("npm:{name}@{version}: {registry} is not the public registry, skipping provenance");
         return Ok(());
     }
-    let integrity = subject.integrity.as_deref().ok_or_else(|| {
-        eyre::eyre!("npm:{name}@{version} has no pinned integrity to verify provenance against")
-    })?;
-    let sha512 = sha512_from_integrity(integrity).ok_or_else(|| {
-        eyre::eyre!(
-            "npm:{name}@{version} is pinned by {integrity}, and provenance needs a sha512 integrity"
-        )
-    })?;
 
     let url = attestations_url(&registry, name, version);
     let response = match HTTP.json::<AttestationsResponse, _>(&url).await {
@@ -85,6 +77,18 @@ async fn verify_subject(subject: &InstallProvenanceSubject) -> eyre::Result<()> 
         debug!("npm:{name}@{version} publishes no attestations");
         return Ok(());
     }
+
+    // Only a package that publishes provenance needs a digest to check it
+    // against; an older release pinned by sha1 and one with no attestations
+    // install as they do with this off.
+    let integrity = subject.integrity.as_deref().ok_or_else(|| {
+        eyre::eyre!("npm:{name}@{version} has no pinned integrity to verify provenance against")
+    })?;
+    let sha512 = sha512_from_integrity(integrity).ok_or_else(|| {
+        eyre::eyre!(
+            "npm:{name}@{version} publishes provenance but is pinned by {integrity}, and verifying it needs a sha512 integrity"
+        )
+    })?;
 
     let sources =
         verify_github_attestation_sources_for_sha512(&sha512, &response.attestations, None)

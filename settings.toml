@@ -2633,7 +2633,10 @@ When on, `mise install` fetches the attestations the public npm registry holds
 for the tool's package and requires the SLSA provenance among them to verify
 against the integrity hash the install locks. A package that publishes no
 provenance, or a private registry that serves none, installs as it does with
-this off. [`paranoid`](#paranoid) turns it on for the `provenance` category.
+this off. Provenance built outside GitHub Actions, such as on GitLab CI, is not
+accepted yet, so such a package fails to install while this is on.
+[`paranoid`](/configuration/settings.html#paranoid) turns it on for the
+`provenance` category.
 """
 env = "MISE_NPM_PROVENANCE"
 type = "Bool"
