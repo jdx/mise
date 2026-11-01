@@ -29,6 +29,24 @@ pub enum TaskAlias {
 #[derive(JsonSchema)]
 pub struct TaskAliasName(pub String);
 
+/// resources this task holds while its commands run, so runs that need the same one wait their turn
+#[derive(JsonSchema)]
+#[serde(untagged)]
+#[schemars(transform = crate::schema::one_of)]
+pub enum TaskLockDecl {
+    /// `true` lets one run of this task at a time across every worktree of its repository; `false` takes no lock
+    Task(bool),
+    /// a lock name shared by every task on this machine that names it
+    One(TaskLockName),
+    /// lock names shared by every task on this machine that names them, taken in sorted order
+    Many(Vec<TaskLockName>),
+}
+
+/// a lock name shared by every task on this machine that names it
+#[derive(JsonSchema)]
+#[schemars(extend("pattern" = "^[^,]*\\S[^,]*$"))]
+pub struct TaskLockName(pub String);
+
 /// prompt to answer before this task's own command runs, after its dependencies
 #[derive(JsonSchema)]
 #[serde(untagged)]

@@ -135,6 +135,9 @@ To create a script task, run `mise tasks add --file hello -- echo hello`, then `
 - **`--timeout <TIMEOUT>`** — Stop the run if it takes longer than this, e.g. 30s or 5m
 
   Overrides the `task.timeout` setting.
+- **`--lock-timeout <LOCK_TIMEOUT>`** — Fail a task that waits longer than this for a lock, e.g. 30s or 5m
+
+  Overrides the `task.lock_timeout` setting.
 
 ## Examples
 

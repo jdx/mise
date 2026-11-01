@@ -19,6 +19,30 @@ pub struct SchedMsg {
     /// that tools are installed for it just before it starts, and that it receives no
     /// command-line secrets.
     pub injected: bool,
+    /// Whether it runs under the `--jobs` slot and terminal of a locked task whose run entry
+    /// started it.
+    pub covered: Cover,
+}
+
+/// Whether a task runs under the `--jobs` slot and terminal of the locked task whose run
+/// entry started it, instead of taking its own. A task that holds task locks keeps its slot
+/// and terminal, with its locks, until it ends, so the tasks it starts use them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Cover {
+    /// It takes its own slot and terminal.
+    #[default]
+    Own,
+    /// The parent shares the terminal with other tasks, so this task may neither prompt nor
+    /// take the terminal for itself.
+    Shared,
+    /// The parent holds the terminal for itself, so this task may use it.
+    Exclusive,
+}
+
+impl Cover {
+    pub fn is_covered(self) -> bool {
+        self != Cover::Own
+    }
 }
 
 impl SchedMsg {
@@ -28,6 +52,7 @@ impl SchedMsg {
             deps,
             allow_during_interruption,
             injected: false,
+            covered: Cover::Own,
         }
     }
 
@@ -35,9 +60,11 @@ impl SchedMsg {
         task: Task,
         deps: Arc<Mutex<Deps>>,
         allow_during_interruption: bool,
+        covered: Cover,
     ) -> Self {
         Self {
             injected: true,
+            covered,
             ..Self::new(task, deps, allow_during_interruption)
         }
     }
@@ -233,7 +260,7 @@ impl Scheduler {
         mut spawn_job: F,
     ) -> Result<()>
     where
-        F: FnMut(Task, Arc<Mutex<Deps>>, bool, bool) -> Fut,
+        F: FnMut(Task, Arc<Mutex<Deps>>, bool, bool, Cover) -> Fut,
         Fut: std::future::Future<Output = Result<()>>,
         S: Fn() -> bool,
         I: Fn() -> bool,
@@ -259,6 +286,7 @@ impl Scheduler {
                         deps: deps_for_remove,
                         allow_during_interruption,
                         injected,
+                        covered,
                     }) => {
                         drained_any = true;
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
@@ -279,6 +307,7 @@ impl Scheduler {
                             deps_for_remove,
                             allow_during_interruption,
                             injected,
+                            covered,
                         ));
                     }
                     Err(mpsc::error::TryRecvError::Empty) => break,
@@ -338,6 +367,7 @@ impl Scheduler {
                         deps: deps_for_remove,
                         allow_during_interruption,
                         injected,
+                        covered,
                     }) = m {
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
                         if should_stop() && (!continue_on_error || was_interrupted()) {
@@ -357,6 +387,7 @@ impl Scheduler {
                             deps_for_remove,
                             allow_during_interruption,
                             injected,
+                            covered,
                         ));
                     } else {
                         // channel closed; rely on main_done/in_flight to exit soon

@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+# `lock` makes runs that need the same resource take turns, across separate
+# `mise run` processes and inside one.
+
+export LOCK_LOG="$PWD/order.log"
+export LOCK_SIGNALS="$PWD/signals"
+mkdir -p "$LOCK_SIGNALS" a b c
+
+cat <<'EOF' >a/mise.toml
+[tasks.hold]
+lock = "shared"
+run = '''
+echo "start a with $MISE_TASK_LOCKS" >>"$LOCK_LOG"
+touch "$LOCK_SIGNALS/held"
+i=0; while [ ! -f "$LOCK_SIGNALS/release" ]; do i=$((i + 1)); [ "$i" -lt 600 ] || exit 1; sleep 0.1; done
+echo "end a" >>"$LOCK_LOG"
+'''
+EOF
+
+cat <<'EOF' >b/mise.toml
+[tasks.wait]
+lock = "shared"
+run = 'echo "start b" >>"$LOCK_LOG"'
+
+[tasks.fresh]
+lock = "shared"
+sources = ["in.txt"]
+outputs = ["out.txt"]
+run = "cp in.txt out.txt"
+
+[tasks.other]
+lock = "unrelated"
+run = "echo other ran"
+EOF
+echo input >b/in.txt
+
+# Fresh before anyone holds the lock, so later it is skipped without waiting.
+(cd b && mise run fresh)
+
+(cd a && mise run hold) >a.log 2>&1 &
+hold_pid=$!
+wait_for_file "$LOCK_SIGNALS/held" "hold" 30 "$hold_pid"
+
+assert_contains "cd b && timeout 30 mise run --dry-run wait 2>&1" "[wait] lock: shared (not taken: dry run)"
+assert_contains "cd b && timeout 30 mise run fresh 2>&1" "sources up-to-date, skipping"
+assert_contains "cd b && timeout 30 mise run other 2>&1" "other ran"
+assert_fail_contains "cd b && timeout 30 mise run --lock-timeout 1s wait" \
+  "timed out after 1.0s waiting for lock shared, held by hold in ~/workdir/a (pid"
+assert_fail_contains "cd b && MISE_TASK_LOCK_TIMEOUT=1s timeout 30 mise run wait" \
+  "waiting for lock shared"
+
+(cd b && mise run wait) >b.log 2>&1 &
+wait_pid=$!
+sleep 2
+assert_not_contains "cat '$LOCK_LOG'" "start b"
+assert_contains "cat b.log" "[wait] waiting for lock shared, held by hold in"
+
+touch "$LOCK_SIGNALS/release"
+wait "$hold_pid"
+wait "$wait_pid"
+assert "cat '$LOCK_LOG'" "start a with shared
+end a
+start b"
+assert_contains "cat b.log" "[wait] got lock shared after"
+
+# Inside one run, tasks that name the same lock run one at a time.
+cat <<'EOF' >c/mise.toml
+[tasks.p1]
+lock = "pair"
+run = 'echo "start p1" >>"$LOCK_LOG"; sleep 1; echo "end p1" >>"$LOCK_LOG"'
+
+[tasks.p2]
+lock = "pair"
+run = 'echo "start p2" >>"$LOCK_LOG"; sleep 1; echo "end p2" >>"$LOCK_LOG"'
+
+[tasks.outer]
+lock = "nest"
+run = "mise run --lock-timeout 10s inner"
+
+[tasks.injector]
+lock = "nest"
+run = [{ task = "inner" }]
+
+[tasks.inner]
+lock = "nest"
+run = 'echo "inner sees $MISE_TASK_LOCKS"'
+
+[tasks.sandboxed]
+lock = "nest"
+deny_env = true
+run = "mise run --lock-timeout 10s inner"
+
+[tasks.holds-b]
+lock = "b"
+run = "mise run --lock-timeout 10s needs-a"
+
+[tasks.needs-a]
+lock = "a"
+run = "echo never"
+EOF
+rm "$LOCK_LOG"
+(cd c && timeout 60 mise run --jobs 2 p1 ::: p2)
+assert "awk '{ print \$1 }' '$LOCK_LOG' | tr '\n' ' '" "start end start end "
+
+# A task a locked task starts, in a nested `mise run` or a run entry, already
+# holds its parent's lock instead of waiting on it.
+assert_contains "cd c && timeout 30 mise run outer 2>&1" "inner sees nest"
+assert_contains "cd c && timeout 30 mise run injector 2>&1" "inner sees nest"
+assert_contains "cd c && timeout 30 mise run sandboxed 2>&1" "inner sees nest"
+
+# A nested task may only add locks that sort after the ones it inherits, so two
+# runs can never each hold a lock the other waits for.
+assert_fail_contains "cd c && timeout 30 mise run holds-b" \
+  "cannot take lock a while a parent task holds b"
+
+# A task waiting for a lock gives its --jobs slot back. With two slots, the
+# lock holder waits for `free` to run, which needs the slot the waiter left.
+mkdir -p d
+cat <<'EOF' >d/mise.toml
+[tasks.w1]
+lock = "slot"
+run = 'i=0; while [ ! -f "$LOCK_SIGNALS/free-ran" ]; do i=$((i + 1)); [ "$i" -lt 300 ] || exit 1; sleep 0.1; done'
+
+[tasks.w2]
+lock = "slot"
+run = 'i=0; while [ ! -f "$LOCK_SIGNALS/free-ran" ]; do i=$((i + 1)); [ "$i" -lt 300 ] || exit 1; sleep 0.1; done'
+
+[tasks.free]
+run = 'sleep 1; touch "$LOCK_SIGNALS/free-ran"'
+EOF
+assert_succeed "cd d && timeout 60 mise run --jobs 2 w1 ::: w2 ::: free"
+
+# A task never waits for a --jobs slot while holding a lock. Here `first` waits
+# for z, which an outside run holds; `second` takes the only slot, frees z, lets
+# `first` take it, and starts a nested run that needs z. If `first` kept z while
+# waiting for the slot, the nested run would wait for z while `second` kept the
+# slot.
+mkdir -p e f
+cat <<'EOF' >e/mise.toml
+[tasks.hold-z]
+lock = "z"
+run = 'i=0; while [ ! -f "$LOCK_SIGNALS/z-release" ]; do i=$((i + 1)); [ "$i" -lt 600 ] || exit 1; sleep 0.1; done'
+EOF
+cat <<'EOF' >f/mise.toml
+[tasks.first]
+lock = "z"
+run = "echo first ran"
+
+[tasks.second]
+run = '''
+touch "$LOCK_SIGNALS/z-release"
+i=0
+until grep -qs '"task":"first"' "$MISE_STATE_DIR"/task-locks/*.json; do
+  i=$((i + 1))
+  [ "$i" -lt 50 ] || break
+  sleep 0.1
+done
+mise run --lock-timeout 20s needs-z
+'''
+
+[tasks.needs-z]
+lock = "z"
+run = "echo needs-z ran"
+EOF
+(cd e && mise run hold-z) >e.log 2>&1 &
+holder_pid=$!
+until grep -q "hold-z" "$MISE_STATE_DIR"/task-locks/*.json 2>/dev/null; do
+  kill -0 "$holder_pid" || fail "hold-z exited before taking z"
+  sleep 0.1
+done
+assert_contains "cd f && timeout 60 mise run --jobs 1 first ::: second 2>&1" "needs-z ran"
+wait "$holder_pid"

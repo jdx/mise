@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# `lock = true` lets one run of a task go at a time across every worktree of
+# its repository, and leaves other repositories alone.
+
+export LOCK_SIGNALS="$PWD/signals"
+mkdir -p "$LOCK_SIGNALS" repo other
+
+cat <<'EOF' >repo/mise.toml
+[tasks.solo]
+lock = true
+run = '''
+touch "$LOCK_SIGNALS/held"
+i=0; while [ ! -f "$LOCK_SIGNALS/release" ]; do i=$((i + 1)); [ "$i" -lt 600 ] || exit 1; sleep 0.1; done
+'''
+EOF
+cp repo/mise.toml other/mise.toml
+
+git -C repo init -q
+git -C repo add mise.toml
+git -C repo -c user.name=mise -c user.email=mise@example.com commit -qm init
+git -C repo worktree add -q ../linked
+git -C other init -q
+
+(cd repo && mise run solo) >repo.log 2>&1 &
+hold_pid=$!
+wait_for_file "$LOCK_SIGNALS/held" "solo" 30 "$hold_pid"
+
+assert_fail_contains "cd linked && timeout 30 mise run --lock-timeout 1s solo" \
+  "waiting for lock solo (this repository), held by solo in"
+
+# A different repository with a task of the same name has its own lock.
+mkdir -p other-signals
+touch other-signals/release
+assert_succeed "cd other && LOCK_SIGNALS=\"$PWD/other-signals\" timeout 30 mise run --lock-timeout 5s solo"
+
+touch "$LOCK_SIGNALS/release"
+wait "$hold_pid"
+assert_succeed "cd linked && timeout 30 mise run --lock-timeout 5s solo"

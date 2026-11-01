@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# A task that holds task locks takes its --jobs slot and the terminal with
+# them and keeps them until it ends; tasks its run entries start run under
+# them. Otherwise another task holding the slot or the terminal could start a
+# nested run that waits for one of the locks, while the locked task waits for
+# that slot or terminal. Each case below hangs (and fails on --lock-timeout)
+# without that rule.
+
+# Waits until the lock record names the task in $HOLDER, so a task can let that
+# task take its lock before starting the nested run that needs it. It expands in
+# the task, not here.
+# shellcheck disable=SC2016
+wait_for_holder='i=0; until grep -qs "\"task\":\"$HOLDER\"" "$MISE_STATE_DIR"/task-locks/*.json; do i=$((i + 1)); [ "$i" -lt 50 ] || break; sleep 0.1; done'
+
+# 1. With one slot, the locked task keeps it while its run entry's task runs.
+mkdir -p slot
+cat <<EOF >slot/mise.toml
+[tasks.locked]
+lock = "r"
+run = [{ task = "child" }, "echo locked done"]
+
+[tasks.child]
+run = "echo child ran"
+
+[tasks.other]
+env.HOLDER = "locked"
+run = '$wait_for_holder; mise run --lock-timeout 15s needs-r'
+
+[tasks.needs-r]
+lock = "r"
+run = "echo needs-r ran"
+EOF
+assert_contains "cd slot && timeout 60 mise run --jobs 1 locked ::: other 2>&1" "needs-r ran"
+
+# 2. The locked task keeps the terminal while its run entry's task runs, so an
+# interactive task cannot take it in between.
+mkdir -p entry
+cat <<EOF >entry/mise.toml
+[tasks.locked]
+lock = "s"
+run = [{ task = "child" }, "echo locked done"]
+
+[tasks.child]
+run = "sleep 1; echo child ran"
+
+[tasks.interactive]
+interactive = true
+env.HOLDER = "locked"
+run = '$wait_for_holder; mise run --lock-timeout 15s needs-s'
+
+[tasks.needs-s]
+lock = "s"
+run = "echo needs-s ran"
+EOF
+assert_contains "cd entry && timeout 60 mise run --jobs 2 locked ::: interactive 2>&1" "needs-s ran"
+
+# 3. A task without `interactive` takes its share of the terminal with its locks,
+# so it never holds a lock while an interactive task's nested run waits for it.
+mkdir -p read
+cat <<EOF >read/mise.toml
+[tasks.locked]
+lock = "q"
+run = "echo locked ran"
+
+[tasks.interactive]
+interactive = true
+env.HOLDER = "locked"
+run = '$wait_for_holder; mise run --lock-timeout 15s needs-q'
+
+[tasks.needs-q]
+lock = "q"
+run = "echo needs-q ran"
+EOF
+assert_contains "cd read && timeout 60 mise run --jobs 2 locked ::: interactive 2>&1" "needs-q ran"
+
+# 4. A locked task whose run entries only start other tasks still owns a slot,
+# so the tasks it starts count against --jobs.
+mkdir -p wrapper
+cat <<'EOF' >wrapper/mise.toml
+[tasks.wrapper]
+lock = "w"
+run = [{ task = "child" }]
+
+[tasks.child]
+run = 'echo "start child" >>../wrapper.log; sleep 1; echo "end child" >>../wrapper.log'
+
+[tasks.other]
+run = 'echo "start other" >>../wrapper.log; sleep 1; echo "end other" >>../wrapper.log'
+EOF
+(cd wrapper && timeout 60 mise run --jobs 1 wrapper ::: other)
+assert "awk '{ print \$1 }' wrapper.log | tr '\n' ' '" "start end start end "
+
+# 5. An interactive task needs the terminal for itself, so it can run from a
+# locked task's run entry only if that task is interactive too.
+mkdir -p shared
+cat <<'EOF' >shared/mise.toml
+[tasks.locked]
+lock = "t"
+run = [{ task = "prompt" }]
+
+[tasks.locked-interactive]
+lock = "t"
+interactive = true
+run = [{ task = "prompt" }]
+
+[tasks.prompt]
+interactive = true
+run = "echo prompt ran"
+EOF
+assert_fail_contains "cd shared && timeout 30 mise run locked" \
+  "entry of a locked task that is not interactive"
+assert_contains "cd shared && timeout 30 mise run locked-interactive 2>&1" "prompt ran"

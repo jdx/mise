@@ -4261,6 +4261,18 @@ pass. Define arguments in the task's
 env = "MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS"
 type = "Bool"
 
+[task.lock_timeout]
+description = "How long a task waits for a lock another run holds before it fails."
+docs = """
+Applies to tasks that set [`lock`](/tasks/task-configuration.html#lock). Unset,
+a task waits until the lock is free. `mise run --lock-timeout` overrides this
+setting. The task's own [`timeout`](/tasks/task-configuration.html#timeout)
+starts only once it holds the lock.
+"""
+env = "MISE_TASK_LOCK_TIMEOUT"
+optional = true
+type = "Duration"
+
 [task.monorepo_depth]
 default = 5
 description = "Maximum directory depth for automatic monorepo discovery, which is deprecated."
