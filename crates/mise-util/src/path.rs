@@ -255,7 +255,7 @@ pub fn inject_powershell_no_profile(shell: &mut Vec<String>) {
 /// the spaces-in-forwarded-args fix from #6744 instead of splitting them.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn cmd_verbatim_args(shell_flags: &[String], script: &str, args: &[String]) -> Vec<String> {
-    let mut body = script.to_string();
+    let mut body = join_cmd_script_lines(script);
     for arg in args {
         body.push(' ');
         body.push_str(&quote_arg_for_cmd_body(arg));
@@ -266,6 +266,45 @@ pub fn cmd_verbatim_args(shell_flags: &[String], script: &str, args: &[String]) 
     }
     out.extend(shell_flags.iter().cloned());
     out.push(format!("\"{body}\""));
+    out
+}
+
+/// Collapse a multi-line script into the one line `cmd /c` can run.
+///
+/// `cmd /c` stops reading its command text at the first newline, so every line after the first
+/// would silently never run. Lines are joined with `&`, which keeps the text a command line (no
+/// batch-file `%%i` loop variables, `call` rules, or code-page re-encoding) and runs each line
+/// whatever the previous one returned, like a script. Blank lines and `rem`/`::` comment lines
+/// are dropped, since a comment would swallow the `&` and the lines after it. A line ending in
+/// `^` continues onto the next, as it would in a batch file.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn join_cmd_script_lines(script: &str) -> String {
+    let mut out = String::new();
+    let mut continued = false;
+    for line in script.lines() {
+        let trimmed = line.trim();
+        let lower = trimmed.to_ascii_lowercase();
+        let is_comment = trimmed.starts_with("::")
+            || lower == "rem"
+            || lower.starts_with("rem ")
+            || lower.starts_with("rem\t");
+        if !continued && (trimmed.is_empty() || is_comment) {
+            continue;
+        }
+        if !out.is_empty() && !continued {
+            out.push_str(" & ");
+        }
+        match trimmed.strip_suffix('^') {
+            Some(rest) => {
+                out.push_str(rest);
+                continued = true;
+            }
+            None => {
+                out.push_str(trimmed);
+                continued = false;
+            }
+        }
+    }
     out
 }
 

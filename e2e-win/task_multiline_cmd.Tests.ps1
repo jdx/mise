@@ -12,6 +12,12 @@ echo alpha
 echo beta
 """
 
+[tasks.loop]
+run = """
+for %i in (alpha beta) do echo loop-%i
+echo after
+"""
+
 [tasks.fails]
 run_windows = """
 echo one || exit /b 3
@@ -31,6 +37,12 @@ echo never
         $out = (mise run probe 2>$null) -join "`n"
         $out | Should -Match 'alpha'
         $out | Should -Match 'beta'
+    }
+
+    It "keeps inline for-loop syntax" {
+        $out = (mise run loop 2>$null) -join "`n"
+        $out | Should -Match "loop-beta"
+        $out | Should -Match "after"
     }
 
     It 'propagates the exit code of a later line' {

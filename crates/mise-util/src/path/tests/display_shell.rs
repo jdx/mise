@@ -379,3 +379,39 @@ fn test_cmd_verbatim_command() {
     assert!(cmd_verbatim_command("bash", &["-c".to_string()], "echo hi").is_none());
     assert!(cmd_verbatim_command("cmd", &[], "echo hi").is_none());
 }
+
+#[test]
+fn test_cmd_verbatim_args_joins_multiline_scripts() {
+    let c = || "/c".to_string();
+
+    // `cmd /c` only reads up to the first newline, so the lines are joined with `&`.
+    assert_eq!(
+        cmd_verbatim_args(
+            &[c()],
+            "echo one || exit /b 1\necho two || exit /b 1\n",
+            &[]
+        ),
+        sv(&[
+            "/s",
+            "/c",
+            r#""echo one || exit /b 1 & echo two || exit /b 1""#
+        ])
+    );
+
+    // Blank lines and comment lines are dropped, indentation is trimmed, CRLF is accepted, and
+    // inline `for` syntax is left as written (`%i`, not the batch file's `%%i`).
+    assert_eq!(
+        cmd_verbatim_args(
+            &[c()],
+            "rem setup\r\n\r\n  :: note\r\nfor %i in (a b) do echo %i\r\n  echo done\r\n",
+            &[]
+        ),
+        sv(&["/s", "/c", r#""for %i in (a b) do echo %i & echo done""#])
+    );
+
+    // A trailing `^` continues the line; forwarded args attach to the last line.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo a ^\nb\necho c", &["x y".to_string()]),
+        sv(&["/s", "/c", r#""echo a b & echo c "x y"""#])
+    );
+}
