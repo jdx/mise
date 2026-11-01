@@ -142,6 +142,17 @@ fn parse_mas_text(output: &str) -> Vec<InstalledApp> {
         .collect()
 }
 
+/// `mas list` reads Spotlight, so it comes back empty while the index is being
+/// rebuilt. An App Store receipt on disk means that empty list is wrong, and
+/// treating it as "nothing installed" would reinstall every app.
+fn app_store_receipts_present(dir: &Path) -> bool {
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|entry| entry.path().join("Contents/_MASReceipt/receipt").is_file())
+}
+
 fn statuses_from_apps(apps: &[InstalledApp], requests: &[PackageRequest]) -> Vec<PackageStatus> {
     let mut installed: HashMap<&str, &InstalledApp> = HashMap::new();
     for app in apps {
@@ -250,6 +261,16 @@ impl SystemPackageManager for MasManager {
 
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
         let apps = mas_list(self.bin().await?).await?;
+        if apps.is_empty()
+            && !pkgs.is_empty()
+            && app_store_receipts_present(Path::new("/Applications"))
+        {
+            bail!(
+                "mas list found no apps, but /Applications has App Store apps; \
+                 Spotlight is probably still indexing (after a macOS update, say). \
+                 Try again once `mdutil -s /` shows indexing has finished"
+            );
+        }
         Ok(statuses_from_apps(&apps, pkgs))
     }
 
@@ -318,6 +339,19 @@ mod tests {
             tap_url: None,
             desired: crate::PackageDesiredState::Present,
         }
+    }
+
+    #[test]
+    fn app_store_receipts_present_needs_a_receipt_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!app_store_receipts_present(dir.path()));
+        assert!(!app_store_receipts_present(&dir.path().join("missing")));
+        std::fs::create_dir_all(dir.path().join("Plain.app/Contents")).unwrap();
+        assert!(!app_store_receipts_present(dir.path()));
+        let receipt = dir.path().join("Store.app/Contents/_MASReceipt");
+        std::fs::create_dir_all(&receipt).unwrap();
+        std::fs::write(receipt.join("receipt"), b"").unwrap();
+        assert!(app_store_receipts_present(dir.path()));
     }
 
     #[test]
