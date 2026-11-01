@@ -898,7 +898,10 @@ together, taking all of them or none, and keeps them until it ends. Tasks that
 its `{ task = ... }` and `{ tasks = [...] }` entries start run under that slot
 and do not take one of their own. This way a run that holds a lock never waits
 for something another task in the same run is holding while it waits for that
-lock.
+lock. A locked task that is not [`interactive`](#interactive) shares the
+terminal with other tasks, so the tasks it starts cannot prompt for
+[secrets](/tasks/task-configuration.html#secrets), and an interactive task
+started from it fails; set `interactive = true` on the locked task instead.
 
 Two tasks in the same `mise run` that name the same lock also run one after the
 other. A task's [`timeout`](#timeout) starts once it holds its locks. To limit

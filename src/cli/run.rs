@@ -1193,7 +1193,7 @@ impl Run {
         deps_for_remove: Arc<Mutex<Deps>>,
         inherited_allow_during_interruption: bool,
         injected: bool,
-        covered: bool,
+        covered: crate::task::task_scheduler::Cover,
         ctx: crate::task::task_scheduler::SpawnContext,
     ) -> Result<()> {
         if Self::should_abort_while_stopping(
@@ -1212,9 +1212,9 @@ impl Run {
             return Ok(());
         }
         // A covered task runs under the slot of the locked task that started it.
-        let needs_task_permit = task_needs_permit(&task) && !covered;
+        let needs_task_permit = task_needs_permit(&task) && !covered.is_covered();
         let needs_install = injected && !this.skip_tools;
-        let mut permit_opt = if needs_task_permit || (needs_install && !covered) {
+        let mut permit_opt = if needs_task_permit || (needs_install && !covered.is_covered()) {
             let wait_start = std::time::Instant::now();
             let p = Some(ctx.semaphore.clone().acquire_owned().await?);
             trace!(

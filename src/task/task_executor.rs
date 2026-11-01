@@ -16,7 +16,7 @@ use crate::task::task_list::split_task_spec;
 use crate::task::task_lock;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
-use crate::task::task_scheduler::SchedMsg;
+use crate::task::task_scheduler::{Cover, SchedMsg};
 use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{
     remove_auto_output, save_checksum, sources_are_fresh, task_cwd,
@@ -78,7 +78,7 @@ pub struct TaskRunContext<'a> {
     pub injected: bool,
     /// Started by a run entry of a task that holds task locks: it runs under that task's
     /// `--jobs` permit and terminal and never takes either itself.
-    pub covered: bool,
+    pub covered: Cover,
 }
 
 #[derive(Clone, Copy)]
@@ -96,7 +96,7 @@ struct TaskExecContext<'a> {
     /// after every render and after `__MISE_DIFF` was computed.
     secrets: Option<&'a SpawnSecrets>,
     /// Runs under its locked parent's terminal, so it never takes the runtime lock.
-    covered: bool,
+    covered: Cover,
 }
 
 struct TaskRunEntriesContext<'a> {
@@ -217,7 +217,7 @@ struct TaskInjectionContext<'a> {
     completion_state: &'a TaskCompletionState,
     allow_during_interruption: bool,
     /// The injected tasks run under the parent's permit and terminal.
-    covered: bool,
+    covered: Cover,
 }
 
 #[allow(dead_code)] // Guards are held for their Drop impl, not read
@@ -747,7 +747,16 @@ impl TaskExecutor {
 
         // Confirmation must happen before a cache restore because restoring
         // outputs mutates the working tree just like executing the task.
-        let mut confirm_guard = if task.interactive && !covered {
+        // A task without `interactive` holds the terminal shared with other tasks, so an
+        // interactive task it covers could only take it by waiting on its own parent.
+        if task.interactive && covered == Cover::Shared {
+            eyre::bail!(
+                "task {}: an interactive task cannot run from a `run` entry of a locked task \
+                 that is not interactive; set `interactive = true` on the task that holds the lock",
+                task.name
+            );
+        }
+        let mut confirm_guard = if task.interactive && !covered.is_covered() {
             Some(acquire_runtime_lock(task.interactive).await)
         } else {
             None
@@ -962,8 +971,8 @@ impl TaskExecutor {
                 executor: self,
                 task,
                 prefix: &prefix,
-                // A covered task's locked parent already holds the terminal for it.
-                holds_write: task.interactive || covered,
+                // A locked parent that holds the terminal for itself holds it for this task.
+                holds_write: task.interactive || covered == Cover::Exclusive,
             };
             self.secrets
                 .prepare_spawn(
@@ -981,7 +990,8 @@ impl TaskExecutor {
                         terminal: &terminal,
                         ctx_builder: &self.context_builder,
                         denied: self.secrets_denied,
-                        interactive: crate::secrets::is_interactive(),
+                        // Under a parent that shares the terminal, nothing may prompt.
+                        interactive: crate::secrets::is_interactive() && covered != Cover::Shared,
                     },
                 )
                 .await
@@ -1032,8 +1042,14 @@ impl TaskExecutor {
             // a task holding the permit or the terminal could start a nested `mise run` that
             // waits for one of these locks while this task waits for what that task holds.
             // A covered task already runs under its locked parent's permit and terminal.
-            let needs_permit = permit.is_some();
-            let needs_terminal = !covered;
+            let needs_permit = !covered.is_covered();
+            let needs_terminal = !covered.is_covered();
+            if needs_permit && permit.is_none() {
+                // A task with only `{ task = ... }` entries took no permit, but the tasks it
+                // starts will run under its permit, so it needs one.
+                confirm_guard = None;
+                *permit = Some(semaphore.clone().acquire_owned().await?);
+            }
             if needs_terminal && confirm_guard.is_none() {
                 confirm_guard = Some(acquire_runtime_lock(task.interactive).await);
             }
@@ -1263,7 +1279,15 @@ impl TaskExecutor {
         let task = exec.task;
         // A task that holds locks, or runs under a parent that does, keeps its permit and
         // terminal across the tasks its run entries start, and those run under them.
-        let covers_children = holds_locks || exec.covered;
+        let covers_children = if exec.covered.is_covered() {
+            exec.covered
+        } else if holds_locks && task.interactive {
+            Cover::Exclusive
+        } else if holds_locks {
+            Cover::Shared
+        } else {
+            Cover::Own
+        };
         use crate::task::RunEntry;
         let mut script_iter = rendered_scripts.into_iter();
         let mut completion_state = completion_state.clone();
@@ -1288,7 +1312,7 @@ impl TaskExecutor {
         // and temporarily dropped around inject_and_wait to avoid deadlocking.
         let mut guard = match existing_guard {
             Some(g) => Some(g),
-            None if exec.covered => None,
+            None if exec.covered.is_covered() => None,
             None => Some(acquire_runtime_lock(task.interactive).await),
         };
         for raw_entry in task.run() {
@@ -1304,7 +1328,7 @@ impl TaskExecutor {
             match entry {
                 RunEntry::Script(_) => {
                     if let Some((script, args)) = script_iter.next() {
-                        if guard.is_none() && !exec.covered {
+                        if guard.is_none() && !exec.covered.is_covered() {
                             guard = Some(acquire_runtime_lock(task.interactive).await);
                         }
                         self.exec_script(&script, &args, exec).await?;
@@ -1334,8 +1358,8 @@ impl TaskExecutor {
                     // sub-tasks to avoid deadlock when MISE_JOBS=1 (the sub-task needs a
                     // permit but we're holding the only one), unless the sub-tasks run
                     // under them.
-                    let had_permit = !covers_children && permit.take().is_some();
-                    if !covers_children {
+                    let had_permit = !covers_children.is_covered() && permit.take().is_some();
+                    if !covers_children.is_covered() {
                         guard = None;
                     }
                     let completed = self
@@ -1364,8 +1388,8 @@ impl TaskExecutor {
                         .iter()
                         .map(|t| crate::task::resolve_task_pattern(t, Some(task)))
                         .collect();
-                    let had_permit = !covers_children && permit.take().is_some();
-                    if !covers_children {
+                    let had_permit = !covers_children.is_covered() && permit.take().is_some();
+                    if !covers_children.is_covered() {
                         guard = None; // drop lock before waiting on sub-tasks
                     }
                     let completed = self
@@ -1924,7 +1948,7 @@ impl TaskExecutor {
             self.eprint(ctx.task, ctx.prefix, &cmd);
         }
 
-        let _guard = if guard.is_some() || ctx.covered {
+        let _guard = if guard.is_some() || ctx.covered.is_covered() {
             guard
         } else {
             Some(acquire_runtime_lock(ctx.task.interactive).await)
