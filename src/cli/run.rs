@@ -368,6 +368,12 @@ pub(crate) struct Run {
     #[usage(long)]
     pub timeout: Option<String>,
 
+    /// Fail a task that waits longer than this for a lock, e.g. 30s or 5m
+    ///
+    /// Overrides the `task.lock_timeout` setting.
+    #[usage(long)]
+    pub lock_timeout: Option<String>,
+
     /// Show the elapsed time after each task completes
     ///
     /// Set `task.timings = true` to show it by default.
@@ -1613,6 +1619,10 @@ impl Run {
             task_cache: self.task_cache,
             task_cache_explain: self.task_cache_explain,
             task_cache_explain_json: self.task_cache_explain_json,
+            lock_timeout: match &self.lock_timeout {
+                Some(value) => Some(duration::parse_duration(value)?),
+                None => Settings::get().task_lock_timeout_duration(),
+            },
             secrets_file_dir: self.tmpdir.join("secrets"),
             secrets_denied: self.secrets_denied,
             cli_secrets: self.cli_secrets.take(),

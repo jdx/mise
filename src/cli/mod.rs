@@ -1312,6 +1312,7 @@ impl Cli {
                         task_cache_explain_json: false,
                         task_cache_stats: false,
                         timeout: None,
+                        lock_timeout: None,
                         skip_deps: false,
                         skip_tools: false,
                         no_deps: false,

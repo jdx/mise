@@ -3389,6 +3389,10 @@
               "description": "Build task usage specs only from the `usage` field, ignoring deprecated `arg()`, `option()` and `flag()` in run scripts.",
               "type": "boolean"
             },
+            "lock_timeout": {
+              "description": "How long a task waits for a lock another run holds before it fails.",
+              "type": "string"
+            },
             "monorepo_depth": {
               "default": 5,
               "description": "Maximum directory depth for automatic monorepo discovery, which is deprecated.",
@@ -4308,6 +4312,29 @@
         "timeout": {
           "type": "string",
           "description": "timeout for this task"
+        },
+        "lock": {
+          "description": "resources this task holds while its commands run, so runs that need the same one wait their turn",
+          "oneOf": [
+            {
+              "type": "boolean",
+              "description": "`true` lets one run of this task at a time across every worktree of its repository; `false` takes no lock"
+            },
+            {
+              "type": "string",
+              "description": "a lock name shared by every task on this machine that names it",
+              "pattern": "^[^,]*\\S[^,]*$"
+            },
+            {
+              "type": "array",
+              "description": "lock names shared by every task on this machine that names them, taken in sorted order",
+              "items": {
+                "type": "string",
+                "description": "a lock name shared by every task on this machine that names it",
+                "pattern": "^[^,]*\\S[^,]*$"
+              }
+            }
+          ]
         },
         "skip_if": {
           "type": "string",

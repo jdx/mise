@@ -1050,6 +1050,8 @@ pub trait SettingsExt: Sized {
 
     fn task_timeout_duration(&self) -> Option<Duration>;
 
+    fn task_lock_timeout_duration(&self) -> Option<Duration>;
+
     fn default_inline_shell(&self) -> Result<Vec<String>>;
 
     /// Explicitly selecting even the default value expresses intent to run a
@@ -1455,6 +1457,13 @@ impl SettingsExt for Settings {
     fn task_timeout_duration(&self) -> Option<Duration> {
         self.task
             .timeout
+            .as_ref()
+            .and_then(|s| duration::parse_duration(s).ok())
+    }
+
+    fn task_lock_timeout_duration(&self) -> Option<Duration> {
+        self.task
+            .lock_timeout
             .as_ref()
             .and_then(|s| duration::parse_duration(s).ok())
     }

@@ -13,6 +13,7 @@ use crate::task::task_cache::{
 use crate::task::task_context_builder::TaskContextBuilder;
 use crate::task::task_helpers::task_gets_keep_order_slot;
 use crate::task::task_list::split_task_spec;
+use crate::task::task_lock;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_scheduler::SchedMsg;
@@ -378,6 +379,8 @@ pub struct TaskExecutorConfig {
     pub task_cache: TaskCacheMode,
     pub task_cache_explain: bool,
     pub task_cache_explain_json: bool,
+    /// `mise run --lock-timeout` or `task.lock_timeout`: how long a task waits for a lock.
+    pub lock_timeout: Option<Duration>,
     /// CLI-level sandbox overrides (merged with task-level sandbox config)
     pub sandbox: crate::sandbox::SandboxConfig,
     /// Where `as_file` secrets are written for this run (0700, removed with the run).
@@ -409,6 +412,7 @@ pub struct TaskExecutor {
     pub task_cache: TaskCacheMode,
     pub task_cache_explain: bool,
     pub task_cache_explain_json: bool,
+    pub lock_timeout: Option<Duration>,
     pub sandbox: crate::sandbox::SandboxConfig,
     secrets: Arc<SecretBroker>,
     secrets_file_dir: PathBuf,
@@ -468,6 +472,7 @@ impl TaskExecutor {
             task_cache: config.task_cache,
             task_cache_explain: config.task_cache_explain,
             task_cache_explain_json: config.task_cache_explain_json,
+            lock_timeout: config.lock_timeout,
             sandbox: config.sandbox,
             secrets: Arc::new(SecretBroker::default()),
             secrets_file_dir: config.secrets_file_dir,
@@ -731,7 +736,7 @@ impl TaskExecutor {
 
         // Confirmation must happen before a cache restore because restoring
         // outputs mutates the working tree just like executing the task.
-        let confirm_guard = if task.interactive {
+        let mut confirm_guard = if task.interactive {
             Some(acquire_runtime_lock(task.interactive).await)
         } else {
             None
@@ -920,6 +925,59 @@ impl TaskExecutor {
             .as_ref()
             .filter(|_| self.task_cache.writes())
             .map(|_| Arc::new(StdMutex::new(Vec::new())));
+        // Taken once the task has decided to run, so a skipped or restored task never waits,
+        // and held until every run entry ends.
+        let mut task_env = task_env;
+        let lock_keys = task_lock::requested(task);
+        let _task_locks = if lock_keys.is_empty() || (task.run().is_empty() && task_file.is_none())
+        {
+            None
+        } else if self.dry_run {
+            if let Some(locks) = task_lock::describe(task) {
+                self.eprint(
+                    task,
+                    &prefix,
+                    &format!("lock: {locks} (not taken: dry run)"),
+                );
+            }
+            None
+        } else {
+            let inherited = task_lock::inherited(&env);
+            let to_take = lock_keys
+                .iter()
+                .filter(|key| !inherited.contains(key.id()))
+                .cloned()
+                .collect();
+            let mut acquisition = task_lock::LockAcquisition::new(task, to_take)?;
+            let held = if acquisition.try_take()? {
+                acquisition.into_held()
+            } else {
+                // A task waiting for a lock holds nothing else, so the rest of the run keeps
+                // going: its `--jobs` permit and an interactive task's terminal are given back
+                // and taken again once it holds the lock.
+                let had_permit = permit.take().is_some();
+                let had_terminal = confirm_guard.take().is_some();
+                let held = acquisition
+                    .wait(
+                        self.lock_timeout,
+                        |line| self.eprint(task, &prefix, line),
+                        || Self::check_interruption(allow_during_interruption),
+                    )
+                    .await?;
+                if had_permit {
+                    *permit = Some(semaphore.clone().acquire_owned().await?);
+                }
+                if had_terminal {
+                    confirm_guard = Some(acquire_runtime_lock(task.interactive).await);
+                }
+                held
+            };
+            let locks = task_lock::exported(&inherited, &lock_keys);
+            env.insert(task_lock::LOCKS_ENV.to_string(), locks.clone());
+            // Tasks a run entry injects inherit `task_env`, so they see the locks this task holds.
+            task_env.push((task_lock::LOCKS_ENV.to_string(), locks));
+            Some(held)
+        };
         // Resolved here, after the skip, confirmation and cache checks: a task that does not
         // run never asks fnox. Held until every run entry ends, then dropped, which deletes
         // any secret files.
