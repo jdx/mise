@@ -18,6 +18,12 @@ for %i in (alpha beta) do echo loop-%i
 echo after
 """
 
+[tasks.echo_paren]
+run = """
+echo(
+exit /b 1
+"""
+
 [tasks.fails]
 run_windows = """
 echo one || exit /b 3
@@ -43,6 +49,11 @@ echo never
         $out = (mise run loop 2>$null) -join "`n"
         $out | Should -Match "loop-beta"
         $out | Should -Match "after"
+    }
+
+    It 'does not treat echo( as a block opener' {
+        mise run echo_paren 2>$null | Out-Null
+        $LASTEXITCODE | Should -Be 1
     }
 
     It 'propagates the exit code of a later line' {
