@@ -315,7 +315,7 @@ fn join_cmd_script_lines(script: &str) -> String {
             continue;
         }
         if !out.is_empty() && !caret && !open && !trimmed.starts_with(')') {
-            out.push_str(" & ");
+            out.push('&');
         }
         let carets = trimmed.len() - trimmed.trim_end_matches('^').len();
         if carets % 2 == 1 {

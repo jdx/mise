@@ -394,7 +394,7 @@ fn test_cmd_verbatim_args_joins_multiline_scripts() {
         sv(&[
             "/s",
             "/c",
-            r#""echo one || exit /b 1 & echo two || exit /b 1""#
+            r#""echo one || exit /b 1&echo two || exit /b 1""#
         ])
     );
 
@@ -406,13 +406,13 @@ fn test_cmd_verbatim_args_joins_multiline_scripts() {
             "rem setup\r\n\r\n  :: note\r\nfor %i in (a b) do echo %i\r\n  echo done\r\n",
             &[]
         ),
-        sv(&["/s", "/c", r#""for %i in (a b) do echo %i & echo done""#])
+        sv(&["/s", "/c", r#""for %i in (a b) do echo %i&echo done""#])
     );
 
     // A trailing `^` continues the line; forwarded args attach to the last line.
     assert_eq!(
         cmd_verbatim_args(&[c()], "echo a ^\nb\necho c", &["x y".to_string()]),
-        sv(&["/s", "/c", r#""echo a b & echo c "x y"""#])
+        sv(&["/s", "/c", r#""echo a b&echo c "x y"""#])
     );
 }
 
@@ -430,7 +430,7 @@ fn test_cmd_verbatim_args_multiline_blocks_and_carets() {
         sv(&[
             "/s",
             "/c",
-            r#""if exist foo (echo yes & echo more) else (echo no) & echo after""#
+            r#""if exist foo (echo yes&echo more) else (echo no)&echo after""#
         ])
     );
 
@@ -443,7 +443,7 @@ fn test_cmd_verbatim_args_multiline_blocks_and_carets() {
     // `^^` at the end of a line of a multi-line script is an escaped caret, not a continuation.
     assert_eq!(
         cmd_verbatim_args(&[c()], "echo value^^\necho next", &[]),
-        sv(&["/s", "/c", r#""echo value^^ & echo next""#])
+        sv(&["/s", "/c", r#""echo value^^&echo next""#])
     );
 }
 
@@ -460,7 +460,7 @@ fn test_cmd_verbatim_args_blank_lines_and_escaped_parens() {
     // An escaped `(` is text, not a block opener, so the next command stays separate.
     assert_eq!(
         cmd_verbatim_args(&[c()], "echo ^(\necho next", &[]),
-        sv(&["/s", "/c", r#""echo ^( & echo next""#])
+        sv(&["/s", "/c", r#""echo ^(&echo next""#])
     );
 }
 
@@ -486,12 +486,25 @@ fn test_cmd_verbatim_args_continuations_and_single_line_whitespace() {
     // Text after a continuation caret is command text, even when it looks like a comment.
     assert_eq!(
         cmd_verbatim_args(&[c()], "echo ^\nrem hello\nexit /b 3", &[]),
-        sv(&["/s", "/c", r#""echo rem hello & exit /b 3""#])
+        sv(&["/s", "/c", r#""echo rem hello&exit /b 3""#])
     );
 
     // A script with no line break keeps its whitespace.
     assert_eq!(
         cmd_verbatim_args(&[c()], "echo value ", &[]),
         sv(&["/s", "/c", r#""echo value ""#])
+    );
+}
+
+#[test]
+fn test_cmd_verbatim_args_separator_adds_no_whitespace() {
+    // A space before `&` would become part of `set X=...` and trail `echo` output.
+    assert_eq!(
+        cmd_verbatim_args(
+            &["/c".to_string()],
+            "set TOOL_DIR=C:\\tools\necho %TOOL_DIR%",
+            &[]
+        ),
+        sv(&["/s", "/c", r#""set TOOL_DIR=C:\tools&echo %TOOL_DIR%""#])
     );
 }
