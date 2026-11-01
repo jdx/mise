@@ -954,7 +954,8 @@ impl TaskExecutor {
             // for those it gives back its locks. Otherwise a task holding a permit could start
             // a nested `mise run` that waits for a lock held by a task waiting for that permit.
             let needs_permit = permit.is_some();
-            let waiting_since = std::time::Instant::now();
+            // Time spent waiting for another run's locks, across retries.
+            let mut lock_waited = Duration::ZERO;
             let needs_terminal = confirm_guard.is_some();
             let held = loop {
                 let mut acquisition = task_lock::LockAcquisition::new(task, to_take.clone())?;
@@ -966,7 +967,7 @@ impl TaskExecutor {
                 let held = acquisition
                     .wait(
                         self.lock_timeout,
-                        waiting_since,
+                        &mut lock_waited,
                         |line| self.eprint(task, &prefix, line),
                         || Self::check_interruption(allow_during_interruption),
                     )

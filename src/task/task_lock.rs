@@ -299,23 +299,25 @@ impl<'a> LockAcquisition<'a> {
         format!("lock {}{holder}", key.display)
     }
 
-    /// Waits until every lock is held. `timeout` counts from `start`, when the task first
-    /// started waiting, so a task that gave its locks back and waits again keeps the time it
-    /// has left. `report` prints a line now and every 30 seconds; `check_interruption` ends the
-    /// wait as soon as the run is stopping.
+    /// Waits until every lock is held. `waited` is the time this task already spent waiting
+    /// for locks, and this wait adds to it: a task that gave its locks back to wait for a
+    /// `--jobs` slot keeps only the `timeout` it has left, and the slot wait does not count.
+    /// `report` prints a line now and every 30 seconds; `check_interruption` ends the wait as
+    /// soon as the run is stopping.
     pub(crate) async fn wait(
         mut self,
         timeout: Option<Duration>,
-        start: Instant,
+        waited: &mut Duration,
         report: impl Fn(&str),
         check_interruption: impl Fn() -> Result<()>,
     ) -> Result<HeldLocks> {
+        let start = Instant::now();
         let mut reported_at: Option<Instant> = None;
         let mut poll = FIRST_POLL;
         while !self.try_take()? {
             check_interruption()?;
             if let Some(timeout) = timeout
-                && start.elapsed() >= timeout
+                && *waited + start.elapsed() >= timeout
             {
                 bail!(
                     "task {}: timed out after {} waiting for {}",
@@ -335,9 +337,10 @@ impl<'a> LockAcquisition<'a> {
             report(&format!(
                 "got {} after {}",
                 self.held_names(),
-                human(start.elapsed())
+                human(*waited + start.elapsed())
             ));
         }
+        *waited += start.elapsed();
         Ok(self.held)
     }
 
@@ -448,15 +451,32 @@ mod tests {
         let mut acquisition = LockAcquisition::new(&task, vec![key]).unwrap();
         assert!(!acquisition.try_take().unwrap());
         // Five seconds already spent waiting before the locks were given back.
-        let start = Instant::now() - Duration::from_secs(5);
+        let mut waited = Duration::from_secs(5);
         let started = Instant::now();
         let err = acquisition
-            .wait(Some(Duration::from_secs(1)), start, |_| {}, || Ok(()))
+            .wait(Some(Duration::from_secs(1)), &mut waited, |_| {}, || Ok(()))
             .await
             .err()
             .expect("the budget was already spent");
         assert!(err.to_string().contains("timed out after 1.0s"), "{err}");
         assert!(started.elapsed() < Duration::from_secs(1));
+
+        // Once the lock is free, the wait adds its own time to what the task spent before.
+        drop(holder);
+        let key = LockKey::named(&format!("budget-{}", std::process::id()));
+        let acquisition = LockAcquisition::new(&task, vec![key]).unwrap();
+        let mut waited = Duration::from_secs(2);
+        let held = acquisition
+            .wait(
+                Some(Duration::from_secs(10)),
+                &mut waited,
+                |_| {},
+                || Ok(()),
+            )
+            .await
+            .unwrap();
+        drop(held);
+        assert!(waited >= Duration::from_secs(2) && waited < Duration::from_secs(3));
     }
 
     #[test]
