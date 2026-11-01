@@ -270,6 +270,9 @@ pub struct TrackedSet {
     /// this machine's own history: never this history's to capture, apply,
     /// or publish (see [`Self::keep_local_out`]).
     pub local: Vec<PathBuf>,
+    /// The exclusions [`Self::keep_local_out`] added to an entry, by entry
+    /// path. An identical pattern the declaration already carried is shared.
+    pub private_exclude: Vec<(PathBuf, String)>,
     /// Portable paths that a `config.<env>.toml` of an environment not
     /// selected here declares as tracked. This machine does not see the
     /// declaration, but it is not an instruction to stop tracking.
@@ -529,6 +532,8 @@ impl TrackedSet {
                 let pattern = local_exclusion(relative);
                 let exclude = entry.exclude.get_or_insert_with(Vec::new);
                 if !exclude.contains(&pattern) {
+                    self.private_exclude
+                        .push((entry.path.clone(), pattern.clone()));
                     exclude.push(pattern);
                 }
             }
@@ -540,12 +545,11 @@ impl TrackedSet {
     /// so they are not part of the saved record.
     pub(crate) fn shared_coverage(&self, mut coverage: Coverage, walk: &Walk) -> Coverage {
         for (record, entry) in coverage.entries.iter_mut().zip(&walk.entries) {
-            let private: Vec<String> = self
-                .local
+            let private: Vec<&String> = self
+                .private_exclude
                 .iter()
-                .filter_map(|path| path.strip_prefix(&entry.path).ok())
-                .filter(|relative| !relative.as_os_str().is_empty())
-                .map(local_exclusion)
+                .filter(|(path, _)| *path == entry.path)
+                .map(|(_, pattern)| pattern)
                 .collect();
             if private.is_empty() {
                 continue;
@@ -553,7 +557,7 @@ impl TrackedSet {
             let Some(exclude) = &mut record.exclude else {
                 continue;
             };
-            exclude.retain(|pattern| !private.contains(pattern));
+            exclude.retain(|pattern| !private.contains(&pattern));
             if exclude.is_empty() {
                 record.exclude = None;
             }
@@ -2754,6 +2758,29 @@ mod tests {
         );
         let shared = set.shared_coverage(coverage, &walk);
         assert!(shared.entries[0].exclude.is_none());
+
+        // a pattern the declaration already carried is shared, not private
+        let mut entry = TrackedEntry::new(
+            "/home/u/.config/app".into(),
+            "track",
+            FilePolicy::for_mode(FileMode::Track),
+        );
+        entry.exclude = Some(vec!["/state.json".into()]);
+        let mut set = TrackedSet {
+            entries: vec![entry],
+            local: vec!["/home/u/.config/app/state.json".into()],
+            ..Default::default()
+        };
+        set.keep_local_out();
+        let walk = Walk {
+            entries: set.entries.clone(),
+            ..Default::default()
+        };
+        let shared = set.shared_coverage(set.coverage(&walk), &walk);
+        assert_eq!(
+            shared.entries[0].exclude.as_deref(),
+            Some(&["/state.json".to_string()][..])
+        );
     }
 
     #[cfg(unix)]
