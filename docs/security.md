@@ -372,7 +372,10 @@ and the provenance mise verified, and later installs reuse that result instead
 of checking again. Set
 [`locked_verify_provenance`](/configuration/settings.html#locked_verify_provenance)
 or turn on [paranoid mode](/paranoid.html) to re-verify on every install.
-Neither re-checks a tool that is already installed.
+Neither re-checks a tool that is already installed. The `npm:` provenance check
+is not recorded in the lockfile, so with
+[`npm.provenance`](/configuration/settings.html#npm.provenance) on, mise
+verifies it on every install of the tool.
 
 mise checks its own releases too: `mise self-update` verifies each release's
 signature before it replaces the binary. See
