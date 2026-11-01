@@ -911,6 +911,15 @@ impl PlatformInfo {
         self.checksum.is_some() && self.provenance.is_some()
     }
 
+    /// True for an entry that pins the artifact by checksum alone, which is
+    /// what a lockfile that is not trusted keeps (see
+    /// [`Lockfile::drop_what_needs_trust`]). Locked mode may resolve its URL
+    /// from the backend, since the download is still checked against the
+    /// checksum.
+    pub(crate) fn is_pinned_without_url(&self) -> bool {
+        self.url.is_none() && self.checksum.is_some()
+    }
+
     /// The checksum when it may serve as a download pin, which reuses a kept
     /// file with no request: not when no download has confirmed it
     /// ([`ChecksumSource`]). It is still compared after the download.
@@ -2790,25 +2799,32 @@ fn is_global_lockfile(lockfile: &Path) -> bool {
 /// A lockfile comes with its project's working tree, and a `mise.toml` that
 /// only lists plain tool versions loads without trust, so until the project
 /// is trusted its lockfile is no more trusted than it is.
+///
+/// Safe mode keeps project content inert whether or not the project is
+/// trusted (CI and an earlier `mise trust` both count as trust), so there only
+/// a global or system config, and a checkout the user linked into one,
+/// vouches for a lockfile.
 pub(crate) fn lockfile_is_trusted(config: &Config, lockfile: &Path) -> bool {
     if is_global_lockfile(lockfile) {
         return true;
     }
+    let safe = Settings::safe_mode();
     let monorepo_root = config.monorepo_lockfile_root();
     // A sub-project config that is not loaded, such as `app/mise.toml` from the
     // monorepo root, still owns its lockfile.
-    let owned_by_unloaded_config = lockfile.parent().is_some_and(|dir| {
-        [Some(dir), dir.parent()]
-            .into_iter()
-            .flatten()
-            .flat_map(crate::config::config_paths_in_dir)
-            .any(|path| {
-                path.extension().is_some_and(|ext| ext == "toml")
-                    && !crate::config::is_project_link_to_global_config(&path)
-                    && same_file_path(&lockfile_path_for_config(&path, None).0, lockfile)
-                    && crate::config::config_file::is_path_trusted(&path)
-            })
-    });
+    let owned_by_unloaded_config = !safe
+        && lockfile.parent().is_some_and(|dir| {
+            [Some(dir), dir.parent()]
+                .into_iter()
+                .flatten()
+                .flat_map(crate::config::config_paths_in_dir)
+                .any(|path| {
+                    path.extension().is_some_and(|ext| ext == "toml")
+                        && !crate::config::is_project_link_to_global_config(&path)
+                        && same_file_path(&lockfile_path_for_config(&path, None).0, lockfile)
+                        && crate::config::config_file::is_path_trusted(&path)
+                })
+        });
     owned_by_unloaded_config
         || config.config_files.keys().any(|path| {
             // Global config is trusted without asking, so a project config
@@ -2827,6 +2843,7 @@ pub(crate) fn lockfile_is_trusted(config: &Config, lockfile: &Path) -> bool {
             ]
                 .into_iter()
                 .any(|root| same_file_path(&lockfile_path_for_config(path, root).0, lockfile))
+            && (!safe || crate::config::is_global_config(path))
             && crate::config::config_file::is_path_trusted(path)
         })
 }
@@ -5454,7 +5471,8 @@ pub(crate) fn read_lockfile_for_tool_source(
     // A stub run from elsewhere reads the lockfile of a config that is not
     // loaded, so that config's trust decides.
     let trusted = lockfile_is_trusted(config, &lockfile_path)
-        || matches!(source, ToolSource::ToolStub(stub)
+        || !Settings::safe_mode()
+            && matches!(source, ToolSource::ToolStub(stub)
             if tool_stub_config(stub)
                 .is_some_and(|(config_path, _)| crate::config::config_file::is_path_trusted(&config_path)));
     Ok(read_lockfile_at(lockfile_path, legacy_path, trusted)
