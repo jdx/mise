@@ -91,10 +91,25 @@ impl Draft {
 }
 
 /// Whether two captures omitted, left incomplete and skipped the same paths.
+/// Reasons are not compared: a checkpoint read back from Git keeps the paths
+/// but not the wording, and records nested repositories among the omitted.
 fn same_coverage(previous: &store::Coverage, current: &store::Coverage) -> bool {
-    previous.omitted == current.omitted
-        && previous.incomplete == current.incomplete
-        && previous.nested == current.nested
+    let omitted = |coverage: &store::Coverage| -> BTreeSet<String> {
+        coverage
+            .omitted
+            .iter()
+            .chain(&coverage.nested)
+            .map(|reason| reason.path.clone())
+            .collect()
+    };
+    let incomplete = |coverage: &store::Coverage| -> BTreeSet<String> {
+        coverage
+            .incomplete
+            .iter()
+            .map(|reason| reason.path.clone())
+            .collect()
+    };
+    omitted(previous) == omitted(current) && incomplete(previous) == incomplete(current)
 }
 
 #[derive(Debug)]
