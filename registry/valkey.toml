@@ -1,4 +1,3 @@
-backends = [{ full = "conda:valkey-server", platforms = ["linux", "macos"] }]
 bins = [
   "valkey-benchmark",
   "valkey-check-aof",
@@ -11,3 +10,7 @@ description = "Flexible distributed key-value database optimized for caching and
 os = ["linux", "macos"]
 test = { cmd = "valkey-server --version", expected = "v={{version}}" }
 version_order = "semver"
+
+[[backends]]
+full = "conda:valkey-server"
+platforms = ["linux-x64", "linux-arm64", "macos-x64", "macos-arm64"]
