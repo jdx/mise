@@ -571,7 +571,12 @@ impl Backend for AquaBackend {
                 tv.version.clone()
             };
             (url, existing_url_api.clone(), v, filename, None)
-        } else if ctx.locked {
+        } else if ctx.locked
+            && !tv
+                .lock_platforms
+                .get(&platform_key)
+                .is_some_and(PlatformInfo::is_pinned_without_url)
+        {
             bail!(
                 "No lockfile URL found for {} on platform {} (--locked mode requires pre-resolved URLs)",
                 self.id,

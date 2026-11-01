@@ -5181,8 +5181,7 @@ pub trait Backend: Debug + Send + Sync {
             let has_lockfile_url = tv
                 .lock_platforms
                 .get(&platform_key)
-                .and_then(|p| p.url.as_ref())
-                .is_some();
+                .is_some_and(|p| p.url.is_some() || p.is_pinned_without_url());
             if !has_lockfile_url {
                 bail!(
                     "No lockfile URL found for {} on platform {} (--locked mode)\n\

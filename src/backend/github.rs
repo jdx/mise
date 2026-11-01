@@ -1088,6 +1088,16 @@ impl Backend for UnifiedGitBackend {
             .lock_platforms
             .get(&platform_key)
             .is_some_and(|platform| !platform.additional_artifacts.is_empty());
+        // A lockfile that is not trusted loses its artifact URLs but keeps the
+        // checksums (see `Lockfile::drop_what_needs_trust`). The main asset is
+        // then resolved from the release, and so are the extra ones, each still
+        // verified against the checksum kept at its position.
+        let locked_additional_urls_dropped =
+            tv.lock_platforms.get(&platform_key).is_some_and(|p| {
+                !p.additional_artifacts.is_empty()
+                    && p.additional_artifacts.len() == additional_patterns.len()
+                    && p.additional_artifacts.iter().all(|a| a.url.is_empty())
+            });
         let additional_assets = match tv.lock_platforms.get(&platform_key) {
             Some(platform)
                 if self.additional_artifacts_match_patterns(
@@ -1110,7 +1120,8 @@ impl Backend for UnifiedGitBackend {
                     .collect()
             }
             _ if ctx.locked
-                && (!additional_patterns.is_empty() || locked_additional_artifacts_present) =>
+                && (!additional_patterns.is_empty() || locked_additional_artifacts_present)
+                && !locked_additional_urls_dropped =>
             {
                 eyre::bail!(
                     "No matching complete lockfile artifact list found for {} on platform {} (--locked mode)",

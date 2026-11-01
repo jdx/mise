@@ -66,3 +66,12 @@ mv mise.toml.primary-only mise.toml
 mise install
 assert_fail "$install_path/fd-8.7.0/bin/fd"
 mise install --locked
+
+# Safe mode ignores the lockfile's artifact URLs, so locked mode resolves the
+# supplemental asset from the release and checks it against the kept checksum.
+cp mise.toml.complete mise.toml
+mise install
+mise uninstall github:jdx/mise-test-fixtures
+MISE_SAFE=1 mise install --locked
+install_path=$(mise where github:jdx/mise-test-fixtures)
+assert_contains "$install_path/fd-8.7.0/bin/fd" "alternative to 'find'"

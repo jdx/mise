@@ -25,3 +25,20 @@ assert_fail "mise install --force"
 # safe mode ignores the locked URL and downloads from where the backend would
 assert_succeed "MISE_SAFE=1 mise install --force"
 assert_contains "MISE_SAFE=1 mise x github:mvdan/sh -- shfmt --version" "3.10.0"
+
+# Locked mode in safe mode resolves the download from the backend, since the
+# lockfile's URLs are ignored, and still checks it against the locked checksum.
+rm mise.lock
+mise lock --platform "$MISE_PLATFORM"
+assert_succeed "MISE_SAFE=1 mise install --force --locked"
+sed -i 's|^checksum = "sha256:.*"|checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"|' mise.lock
+assert_fail "MISE_SAFE=1 mise install --force --locked"
+
+# Same for a registry tool installed by the aqua backend.
+echo '[tools]
+shfmt = "3.10.0"' >mise.toml
+rm mise.lock
+mise lock --platform "$MISE_PLATFORM"
+assert_succeed "MISE_SAFE=1 mise install --force --locked"
+sed -i 's|^checksum = "sha256:.*"|checksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000"|' mise.lock
+assert_fail "MISE_SAFE=1 mise install --force --locked"
