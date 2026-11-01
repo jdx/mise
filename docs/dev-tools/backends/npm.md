@@ -192,7 +192,9 @@ aube checks every tarball against before it extracts it.
 
 A package that publishes no provenance, and a private registry that serves none,
 install as they do with the setting off. Dependencies are not checked. Only the
-embedded aube package manager supports this.
+embedded aube package manager supports this; with any other
+[`npm.package_manager`](/configuration/settings.html#npm.package_manager) the
+install fails instead of skipping the check.
 
 ### Low-download and new packages
 
