@@ -2790,9 +2790,16 @@ fn is_global_lockfile(lockfile: &Path) -> bool {
 /// A lockfile comes with its project's working tree, and a `mise.toml` that
 /// only lists plain tool versions loads without trust, so until the project
 /// is trusted its lockfile is no more trusted than it is.
+///
+/// Safe mode keeps project content inert whether or not the project is
+/// trusted (CI and an earlier `mise trust` both count as trust), so only the
+/// global and system lockfiles are trusted there.
 pub(crate) fn lockfile_is_trusted(config: &Config, lockfile: &Path) -> bool {
     if is_global_lockfile(lockfile) {
         return true;
+    }
+    if Settings::safe_mode() {
+        return false;
     }
     let monorepo_root = config.monorepo_lockfile_root();
     // A sub-project config that is not loaded, such as `app/mise.toml` from the
@@ -2851,8 +2858,7 @@ fn may_write_through_symlink(link: &Path, target: &Path) -> bool {
     if is_global_lockfile(link) {
         return true;
     }
-    !Settings::safe_mode()
-        && Config::maybe_get().is_some_and(|config| lockfile_is_trusted(&config, link))
+    Config::maybe_get().is_some_and(|config| lockfile_is_trusted(&config, link))
 }
 
 /// Checks if a config path is a "local" config (should go to mise.local.lock)
@@ -5454,7 +5460,8 @@ pub(crate) fn read_lockfile_for_tool_source(
     // A stub run from elsewhere reads the lockfile of a config that is not
     // loaded, so that config's trust decides.
     let trusted = lockfile_is_trusted(config, &lockfile_path)
-        || matches!(source, ToolSource::ToolStub(stub)
+        || !Settings::safe_mode()
+            && matches!(source, ToolSource::ToolStub(stub)
             if tool_stub_config(stub)
                 .is_some_and(|(config_path, _)| crate::config::config_file::is_path_trusted(&config_path)));
     Ok(read_lockfile_at(lockfile_path, legacy_path, trusted)
