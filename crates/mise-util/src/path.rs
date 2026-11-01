@@ -274,7 +274,8 @@ pub fn cmd_verbatim_args(shell_flags: &[String], script: &str, args: &[String]) 
 /// `cmd /c` stops reading its command text at the first newline, so every line after the first
 /// would silently never run. Lines are joined with `&`, which keeps the text a command line (no
 /// batch-file `%%i` loop variables, `call` rules, or code-page re-encoding) and runs each line
-/// whatever the previous one returned, like a script. Blank lines and `rem`/`::` comment lines
+/// whatever the previous one returned. `%VAR%` is expanded once for the whole line, so a variable
+/// set on one line is not visible to `%VAR%` on a later one (unlike a batch file). Blank lines and `rem`/`::` comment lines
 /// are dropped, since a comment would swallow the `&` and the lines after it. A line ending in
 /// `^` continues onto the next, as it would in a batch file.
 #[cfg_attr(not(windows), allow(dead_code))]
