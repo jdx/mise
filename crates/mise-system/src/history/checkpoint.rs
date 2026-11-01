@@ -90,6 +90,13 @@ impl Draft {
     }
 }
 
+/// Whether two captures omitted, left incomplete and skipped the same paths.
+fn same_coverage(previous: &store::Coverage, current: &store::Coverage) -> bool {
+    previous.omitted == current.omitted
+        && previous.incomplete == current.incomplete
+        && previous.nested == current.nested
+}
+
 #[derive(Debug)]
 pub enum Outcome {
     Created(Box<Entry>),
@@ -525,6 +532,10 @@ impl Store {
             && let Some((previous_checkpoint, tree)) = &previous_tree
             && snapshot.as_deref() == Some(tree.as_str())
             && (!cfg!(unix) || previous_checkpoint.tree.modes == modes)
+            // a reused checkpoint must also have judged coverage the same
+            // way: an omission it never recorded would read as a covered
+            // path that is absent
+            && (!draft.skip_unchanged || same_coverage(&previous_checkpoint.tree.coverage, &coverage))
         {
             debug!(
                 "history: nothing changed since checkpoint {}",
