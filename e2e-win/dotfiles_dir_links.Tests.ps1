@@ -47,7 +47,12 @@ Describe 'dotfiles-dir-links' {
                 @('MISE_TRUSTED_CONFIG_PATHS', $script:OriginalTrusted),
                 @('MISE_STATE_DIR', $script:OriginalStateDir),
                 @('MISE_DOTFILES_WINDOWS_SYMLINKS', $script:OriginalWindowsSymlinks))) {
-            [Environment]::SetEnvironmentVariable($pair[0], $pair[1], 'Process')
+            # a variable that was unset is removed, not left behind empty
+            if ($null -eq $pair[1]) {
+                Remove-Item "Env:$($pair[0])" -ErrorAction Ignore
+            } else {
+                [Environment]::SetEnvironmentVariable($pair[0], $pair[1], 'Process')
+            }
         }
     }
 
