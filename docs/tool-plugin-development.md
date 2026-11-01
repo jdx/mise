@@ -380,6 +380,42 @@ Return only the variables the tool needs. A variable such as `LD_LIBRARY_PATH`
 affects every program started in the environment. For variables that do not
 belong to a tool version, write an [environment plugin](/env-plugin-development.html).
 
+#### Caching {#envkeys-caching}
+
+mise caches the result of `EnvKeys` for each installed version and set of
+options, because it builds the environment at every shell prompt. It runs the
+hook again when:
+
+- the install directory, the plugin or mise's data directory changes;
+- a variable the hook read with `os.getenv` has a different value;
+- a file the hook named with [`mise.cache.watch_files`](/plugin-lua-modules.html#cache-module)
+  changes, appears or goes away.
+
+mise doesn't see files the hook reads or commands it runs, so name the files
+the result depends on. Call [`mise.cache.disable`](/plugin-lua-modules.html#cache-module)
+if the hook must run every time. This hook activates a virtualenv when the
+current directory has a `Pipfile`, and runs again when `Pipfile.lock` changes:
+
+```lua [hooks/env_keys.lua]
+function PLUGIN:EnvKeys(ctx)
+    local file = require("file")
+    local keys = { { key = "PATH", value = file.join_path(ctx.path, "bin") } }
+    local cwd = os.getenv("PWD")
+    local lock = file.join_path(cwd, "Pipfile.lock")
+    local ok, cache = pcall(require, "mise.cache")
+    if ok then
+        cache.watch_files({ lock })
+    end
+    if file.exists(lock) then
+        table.insert(keys, { key = "VIRTUAL_ENV", value = file.join_path(cwd, ".venv") })
+    end
+    return keys
+end
+```
+
+`mise.cache` is a mise addition, so load it with `pcall` if the plugin also
+runs on the vfox CLI or on older mise releases.
+
 ### PostInstall {#postinstall-hook}
 
 | `ctx` field      | Value                                                                     |
@@ -704,5 +740,7 @@ isolated test setup.
 - `rolling` and `checksum` in `Available`, `attestation` in `PreInstall`,
   `ctx.options`, `MiseInstallSatisfied`, `PLUGIN.depends` and
   `systemDependencies` are mise additions that the vfox CLI ignores.
+- The [`mise.cache`](/plugin-lua-modules.html#cache-module) module is a mise
+  addition that the vfox CLI doesn't have.
 
 To publish the plugin, see [Publishing plugins](/plugin-publishing.html).

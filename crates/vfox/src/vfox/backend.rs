@@ -121,7 +121,15 @@ impl Vfox {
             install_path,
             options,
         };
-        plugin.backend_exec_env(ctx).await.map(|r| r.env_vars)
+        let response = plugin.backend_exec_env(ctx).await?;
+        if let Some(recorder) = &self.hook_dependencies {
+            let mut deps = recorder.lock().unwrap();
+            if response.cacheable == Some(false) {
+                deps.cacheable = false;
+            }
+            deps.watch(response.watch_files);
+        }
+        Ok(response.env_vars)
     }
 
     pub async fn package_installed(

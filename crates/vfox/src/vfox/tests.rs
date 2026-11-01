@@ -32,6 +32,7 @@ impl Vfox {
             install_dir: PathBuf::from("test/installs"),
             skip_verification: false,
             cmd_env: None,
+            hook_dependencies: None,
             default_inline_shell: None,
             raw_stdio: false,
             terminal_lock: None,

@@ -16,6 +16,10 @@ pub struct BackendExecEnvContext {
 #[derive(Debug)]
 pub struct BackendExecEnvResponse {
     pub env_vars: Vec<EnvKey>,
+    /// `false` asks for the result not to be cached; unset leaves it to mise.
+    pub cacheable: Option<bool>,
+    /// Files whose changes make the result stale.
+    pub watch_files: Vec<PathBuf>,
 }
 
 impl Plugin {
@@ -51,6 +55,13 @@ impl FromLua for BackendExecEnvResponse {
         match value {
             Value::Table(table) => Ok(BackendExecEnvResponse {
                 env_vars: table.get::<Vec<crate::hooks::env_keys::EnvKey>>("env_vars")?,
+                cacheable: table.get::<Option<bool>>("cacheable")?,
+                watch_files: table
+                    .get::<Option<Vec<String>>>("watch_files")?
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(PathBuf::from)
+                    .collect(),
             }),
             _ => Err(LuaError::FromLuaConversionError {
                 from: value.type_name(),

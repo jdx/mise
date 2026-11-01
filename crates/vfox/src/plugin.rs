@@ -12,6 +12,7 @@ use crate::config::Config;
 use crate::context::Context;
 use crate::embedded_plugins::{self, EmbeddedPlugin};
 use crate::error::Result;
+use crate::hook_dependencies::HookDependencyRecorder;
 use crate::http::HttpHeadersResolver;
 use crate::metadata::Metadata;
 use crate::runtime::Runtime;
@@ -162,6 +163,12 @@ impl Plugin {
         Ok(())
     }
 
+    /// Record what the hooks run on this plugin depend on into `recorder`;
+    /// see [`crate::HookDependencies`].
+    pub(crate) fn set_hook_dependencies(&self, recorder: HookDependencyRecorder) {
+        self.lua.set_app_data(recorder);
+    }
+
     /// Store a GitHub token for the Lua http module.
     pub fn set_github_token(&self, token: &str) -> Result<()> {
         self.lua.set_named_registry_value("github_token", token)?;
@@ -300,6 +307,7 @@ impl Plugin {
             // Load standard Lua modules (http, json, etc.) FIRST
             // These must be available before loading embedded lib files
             lua_mod::archiver(&self.lua)?;
+            lua_mod::cache(&self.lua)?;
             lua_mod::cmd(&self.lua)?;
             lua_mod::file(&self.lua)?;
             lua_mod::html(&self.lua)?;

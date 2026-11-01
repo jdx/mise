@@ -6,7 +6,6 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, mpsc};
 use std::thread;
-use tokio::sync::RwLock;
 use url::Url;
 use walkdir::WalkDir;
 
@@ -19,7 +18,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::config::{Config, Settings, SettingsExt};
 use crate::dirs;
 use crate::env_diff::EnvMap;
-use crate::hash::hash_to_str;
+use crate::hash::{hash_sha256_to_str, hash_to_str};
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::plugins::Plugin;
@@ -28,6 +27,78 @@ use crate::toolset::{ToolOptions, ToolVersion, Toolset, install_state};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 type AliasCaches = HashMap<String, Arc<CacheManager<BTreeMap<String, String>>>>;
+type ExecEnvCaches = HashMap<PathBuf, Arc<ExecEnvCache>>;
+
+/// A vfox exec_env result, kept on disk and, once read or fetched, in memory.
+struct ExecEnvCache {
+    file: CacheManager<CachedExecEnv>,
+    env: tokio::sync::OnceCell<EnvMap>,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct CachedExecEnv {
+    env: EnvMap,
+    /// The variables the hook read through `os.getenv`, with a hash of the
+    /// value it saw: a hook can read a secret, and the cache is a plain file.
+    env_reads: BTreeMap<String, Option<String>>,
+    /// The files the hook asked to watch, with their modification time then
+    /// (`None` when missing).
+    watch_files: Vec<(PathBuf, Option<u128>)>,
+    /// False when the hook asked not to be cached. Such an entry holds no
+    /// result; it is kept so an older result is not served instead.
+    cacheable: bool,
+    /// Where the hook resolved relative watched files; the result only
+    /// applies in that directory.
+    cwd: Option<PathBuf>,
+}
+
+impl CachedExecEnv {
+    /// Whether the result can be served without checking the environment.
+    fn still_applies(&self) -> bool {
+        self.cacheable
+            && self
+                .cwd
+                .as_ref()
+                .is_none_or(|cwd| std::env::current_dir().is_ok_and(|current| current == *cwd))
+            && self
+                .watch_files
+                .iter()
+                .all(|(path, modified)| modified_nanos(path) == *modified)
+    }
+}
+
+fn modified_nanos(path: &Path) -> Option<u128> {
+    let modified = path.metadata().ok()?.modified().ok()?;
+    let since_epoch = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    Some(since_epoch.as_nanos())
+}
+
+fn hash_env_reads(reads: BTreeMap<String, Option<String>>) -> BTreeMap<String, Option<String>> {
+    reads
+        .into_iter()
+        .map(|(key, value)| (key, value.as_deref().map(hash_sha256_to_str)))
+        .collect()
+}
+
+/// Whether every variable a hook read still has the value it saw, looked up
+/// the way Lua `os.getenv` looks it up in the hook's environment.
+fn env_reads_match(
+    reads: &BTreeMap<String, Option<String>>,
+    env: &indexmap::IndexMap<String, String>,
+) -> bool {
+    reads.iter().all(|(key, seen)| {
+        let current = env.get(key).or_else(|| {
+            if cfg!(windows) {
+                env.iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(key))
+                    .map(|(_, v)| v)
+            } else {
+                None
+            }
+        });
+        current.map(|value| hash_sha256_to_str(value)) == *seen
+    })
+}
 
 /// Whether `version` can name a plugin alias like `recommended`. Pinned
 /// versions, `latest`, `system` and `ref:`-style requests never do, so they
@@ -44,7 +115,6 @@ pub(crate) struct VfoxBackend {
     ba: Arc<BackendArg>,
     plugin: Arc<VfoxPlugin>,
     plugin_enum: PluginEnum,
-    exec_env_cache: RwLock<HashMap<String, CacheManager<EnvMap>>>,
     pathname: String,
     tool_name: Option<String>,
     metadata_deps: OnceLock<Vec<String>>,
@@ -838,7 +908,6 @@ impl VfoxBackend {
 
         Self {
             metadata_snapshot_cache: OnceLock::new(),
-            exec_env_cache: Default::default(),
             plugin: plugin.clone(),
             plugin_enum: match backend_plugin_name {
                 Some(_) => PluginEnum::VfoxBackend(plugin),
@@ -1026,28 +1095,80 @@ impl VfoxBackend {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             opts.hash(&mut hasher);
             install_path.hash(&mut hasher);
+            // Refs such as `ref:a/b` and `ref:a-b` share an install path, but
+            // a hook can read the raw version.
+            tv.version.hash(&mut hasher);
             hasher.finish()
         };
-        let key = format!("{}:{:x}", tv, opts_hash);
-        let cache_file = format!("exec_env_{:x}.msgpack.z", opts_hash);
-        if !self.exec_env_cache.read().await.contains_key(&key) {
-            let mut caches = self.exec_env_cache.write().await;
-            caches.insert(
-                key.clone(),
-                CacheManagerBuilder::new(tv.cache_path().join(&cache_file))
+        let cache_file = tv
+            .cache_path()
+            .join(format!("exec_env_{:x}.msgpack.z", opts_hash));
+        // Inline table options give every backend lookup a new VfoxBackend
+        // (see `backend::get`), so the caches are kept here, keyed by file,
+        // rather than on the backend; otherwise each lookup runs the hook again.
+        static CACHES: OnceLock<std::sync::Mutex<ExecEnvCaches>> = OnceLock::new();
+        let cache = CACHES
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap()
+            .entry(cache_file.clone())
+            .or_insert_with(|| {
+                let mut cm = CacheManagerBuilder::new(&cache_file)
                     .with_fresh_file(dirs::DATA.to_path_buf())
-                    .with_fresh_file(self.plugin.plugin_path.to_path_buf())
-                    .with_fresh_file(install_path.clone())
-                    .build(),
-            );
-        }
-        let exec_env_cache = self.exec_env_cache.read().await;
-        let cache = exec_env_cache.get(&key).unwrap();
+                    .with_fresh_file(install_path.clone());
+                // A fresh file that doesn't exist leaves the cache stale forever,
+                // and an embedded plugin has no directory. Adding or removing an
+                // override, even a link to an older directory, changes the plugins
+                // directory. A link whose target is gone is kept, so it reads as
+                // changed.
+                for path in [dirs::PLUGINS.to_path_buf(), self.plugin.plugin_path.clone()] {
+                    if path.exists() || path.is_symlink() {
+                        cm = cm.with_fresh_file(path);
+                    }
+                }
+                Arc::new(ExecEnvCache {
+                    file: cm.build(),
+                    env: Default::default(),
+                })
+            })
+            .clone();
         cache
-            .get_or_try_init_async(async || {
+            .env
+            .get_or_try_init(async || {
+                // The hook's result also depends on what it declared and on
+                // the variables it read, so a cached one is used only while
+                // those are unchanged. Working out the variables costs a
+                // little, so only for a hook that read any.
+                let mut cmd_env = None;
+                if cache.file.has_fresh_value() {
+                    match cache.file.get_cached() {
+                        Ok(cached) if !cached.still_applies() => {}
+                        Ok(cached) => {
+                            if cached.env_reads.is_empty() {
+                                return Ok(cached.env);
+                            }
+                            let current = self.cmd_env_for_tv(config, tv).await;
+                            if env_reads_match(&cached.env_reads, &current) {
+                                return Ok(cached.env);
+                            }
+                            cmd_env = Some(current);
+                        }
+                        Err(err) => {
+                            warn!(
+                                "failed to parse cache file: {} {err:#}",
+                                cache_file.display()
+                            )
+                        }
+                    }
+                }
                 self.ensure_plugin_installed(config).await?;
                 let (mut vfox, _log_rx) = self.plugin.vfox()?;
-                vfox.cmd_env = Some(self.cmd_env_for_tv(config, tv).await);
+                vfox.cmd_env = Some(match cmd_env {
+                    Some(cmd_env) => cmd_env,
+                    None => self.cmd_env_for_tv(config, tv).await,
+                });
+                let recorder = vfox::HookDependencyRecorder::default();
+                vfox.hook_dependencies = Some(recorder.clone());
 
                 // Use backend methods if the plugin supports them
                 let env_keys = if self.is_backend_plugin() {
@@ -1071,7 +1192,7 @@ impl VfoxBackend {
                     .await?
                 };
 
-                Ok(env_keys
+                let env = env_keys
                     .into_iter()
                     .fold(BTreeMap::new(), |mut acc, env_key| {
                         let key = &env_key.key;
@@ -1089,7 +1210,39 @@ impl VfoxBackend {
                             acc.insert(key.clone(), env_key.value.clone());
                         }
                         acc
-                    }))
+                    });
+                let deps = std::mem::take(&mut *recorder.lock().unwrap());
+                let cached = if deps.cacheable {
+                    CachedExecEnv {
+                        env: env.clone(),
+                        env_reads: hash_env_reads(deps.env_reads),
+                        watch_files: deps
+                            .watch_files
+                            .into_iter()
+                            .map(|path| {
+                                let modified = modified_nanos(&path);
+                                (path, modified)
+                            })
+                            .collect(),
+                        cacheable: true,
+                        cwd: deps.cwd,
+                    }
+                } else {
+                    CachedExecEnv {
+                        env: EnvMap::new(),
+                        env_reads: BTreeMap::new(),
+                        watch_files: vec![],
+                        cacheable: false,
+                        cwd: None,
+                    }
+                };
+                if let Err(err) = cache.file.write(&cached) {
+                    warn!(
+                        "failed to write cache file: {} {err:#}",
+                        cache_file.display()
+                    );
+                }
+                Ok(env)
             })
             .await
             .cloned()
@@ -1163,6 +1316,26 @@ mod test {
         assert!(!could_be_alias("system"));
         assert!(!could_be_alias("ref:main"));
         assert!(!could_be_alias(""));
+    }
+
+    #[test]
+    fn test_env_reads_are_stored_hashed() {
+        let reads = hash_env_reads(BTreeMap::from([
+            ("TOKEN".to_string(), Some("s3cret".to_string())),
+            ("UNSET".to_string(), None),
+        ]));
+        assert!(!format!("{reads:?}").contains("s3cret"));
+
+        let env =
+            |token: &str| indexmap::IndexMap::from([("TOKEN".to_string(), token.to_string())]);
+        assert!(env_reads_match(&reads, &env("s3cret")));
+        assert!(!env_reads_match(&reads, &env("other")));
+        assert!(!env_reads_match(&reads, &indexmap::IndexMap::new()));
+        let set = indexmap::IndexMap::from([
+            ("TOKEN".to_string(), "s3cret".to_string()),
+            ("UNSET".to_string(), "now set".to_string()),
+        ]);
+        assert!(!env_reads_match(&reads, &set));
     }
 
     #[test]
