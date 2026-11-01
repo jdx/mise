@@ -29,11 +29,9 @@ cat >mise.toml <<'TOML'
 [tools]
 gcloud = { version = "586.0.0" }
 TOML
-assert "exec_env_cache_log 4" "writing"
-assert "exec_env_cache_log 5" "reading"
-
 # A filesystem override replaces the embedded plugin, and removing it brings
-# the embedded one back; each time the cached result is stale.
+# the embedded one back; each time the cached result is stale. The override is
+# written before the cache, so a link to it is older than the cache.
 OVERRIDE_DIR="$PWD/gcloud-override"
 mkdir -p "$OVERRIDE_DIR/hooks"
 cat >"$OVERRIDE_DIR/metadata.lua" <<'LUA'
@@ -44,6 +42,10 @@ function PLUGIN:EnvKeys(ctx)
   return { { key = "GCLOUD_OVERRIDE", value = "1" } }
 end
 LUA
+
+assert "exec_env_cache_log 4" "writing"
+assert "exec_env_cache_log 5" "reading"
+
 mise plugins link gcloud "$OVERRIDE_DIR"
 assert_contains "mise env -s bash" "GCLOUD_OVERRIDE"
 mise plugins uninstall gcloud

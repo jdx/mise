@@ -1043,13 +1043,13 @@ impl VfoxBackend {
                     .with_fresh_file(dirs::DATA.to_path_buf())
                     .with_fresh_file(install_path.clone());
                 // A fresh file that doesn't exist leaves the cache stale forever,
-                // and an embedded plugin has no directory. Removing an override's
-                // directory still changes the plugins directory.
-                let plugin_path = &self.plugin.plugin_path;
-                if plugin_path.exists() {
-                    cm = cm.with_fresh_file(plugin_path.to_path_buf());
-                } else if dirs::PLUGINS.exists() {
-                    cm = cm.with_fresh_file(dirs::PLUGINS.to_path_buf());
+                // and an embedded plugin has no directory. Adding or removing an
+                // override, even a link to an older directory, changes the plugins
+                // directory.
+                for path in [dirs::PLUGINS.to_path_buf(), self.plugin.plugin_path.clone()] {
+                    if path.exists() {
+                        cm = cm.with_fresh_file(path);
+                    }
                 }
                 Arc::new(cm.build())
             })
