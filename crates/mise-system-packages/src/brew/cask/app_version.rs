@@ -140,18 +140,10 @@ pub(super) fn app_version_outdated(
         Some(Greater) => return false,
         _ => {}
     }
-    // A comma-separated record (2.61,3000) holds its short version first. When
-    // it also records a build, a different live build means the app updated
-    // itself, so the fallback no longer applies.
-    let mut recorded_parts = recorded.map(|recorded| recorded.split(','));
-    let recorded_short = recorded_parts.as_mut().and_then(Iterator::next);
-    let recorded_build = recorded_parts.as_mut().and_then(Iterator::next);
-    if candidates.len() == 1
-        && short.is_some()
-        && recorded_short == short
-        && recorded_build
-            .is_none_or(|recorded_build| build.is_none_or(|build| build == recorded_build))
-    {
+    // Like Homebrew, the whole record must equal the short version. The second
+    // field of a comma-separated record means different things per cask (a
+    // build, a date, an id), so such a record never takes this fallback.
+    if candidates.len() == 1 && short.is_some() && short == recorded {
         return true;
     }
     let comparisons: Vec<_> = candidates

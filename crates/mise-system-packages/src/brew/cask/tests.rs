@@ -9716,22 +9716,14 @@ fn auto_updates_treats_an_unchanged_recorded_version_as_outdated() {
         ("2.0", "2.1", Some("2.1"), false),
         // Several version candidates fall through to the build comparison.
         ("2.61,3000", "2.60.1", Some("2.60.1"), false),
-        // A comma-separated record compares by its leading short version.
-        ("4.2.4", "2.61", Some("2.61,3000"), true),
+        // A comma-separated record never matches: its second field is not
+        // reliably the app's build, so Homebrew does not use it here either.
+        ("4.2.4", "2.61", Some("2.61,3000"), false),
     ] {
         assert_eq!(
             app_version_outdated(current, Some(short), None, recorded),
             expected,
             "current={current}, short={short}, recorded={recorded:?}"
-        );
-    }
-    // A recorded build must still match the live one: a new build under the
-    // same short version means the app updated itself.
-    for (build, expected) in [(Some("3000"), true), (Some("3001"), false), (None, true)] {
-        assert_eq!(
-            app_version_outdated("2.61.1", Some("2.61"), build, Some("2.61,3000")),
-            expected,
-            "build={build:?}"
         );
     }
 }
