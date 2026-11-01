@@ -298,7 +298,8 @@ fn join_cmd_script_lines(script: &str) -> String {
             || lower == "rem"
             || lower.starts_with("rem ")
             || lower.starts_with("rem\t");
-        if !glue && (trimmed.is_empty() || is_comment) {
+        // Skipped even right after a `(` or `^`: a kept `rem` would swallow the rest of the line.
+        if trimmed.is_empty() || is_comment {
             continue;
         }
         if !out.is_empty() && !glue && !trimmed.starts_with(')') {

@@ -463,3 +463,18 @@ fn test_cmd_verbatim_args_blank_lines_and_escaped_parens() {
         sv(&["/s", "/c", r#""echo ^( & echo next""#])
     );
 }
+
+#[test]
+fn test_cmd_verbatim_args_comments_inside_blocks() {
+    let c = || "/c".to_string();
+
+    // A comment or blank line right after `(` must not be joined in, or it would swallow the rest.
+    assert_eq!(
+        cmd_verbatim_args(
+            &[c()],
+            "if exist foo (\n  rem note\n\n  :: more\n  echo yes\n)",
+            &[]
+        ),
+        sv(&["/s", "/c", r#""if exist foo (echo yes)""#])
+    );
+}
