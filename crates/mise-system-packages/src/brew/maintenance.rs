@@ -1,6 +1,6 @@
 //! Import/prune helpers for declarative Homebrew bootstrap packages.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use eyre::{WrapErr, bail};
@@ -74,6 +74,13 @@ struct InstallReceipt {
     installed_on_request: Option<bool>,
     #[serde(default)]
     source: Option<ReceiptSource>,
+    #[serde(default)]
+    runtime_dependencies: Option<Vec<ReceiptDependency>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReceiptDependency {
+    full_name: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -173,8 +180,10 @@ async fn configured_package_closure(configured: &[PackageRequest]) -> Result<Has
 }
 
 fn prune_plan_from_linked_formulae(keep: &HashSet<String>) -> Result<PrunePlan> {
+    let formulae = linked_formulae(true)?;
+    let keep = with_receipt_dependencies(keep, &formulae)?;
     let mut plan = PrunePlan::default();
-    for formula in linked_formulae(true)? {
+    for formula in formulae {
         if keep.contains(&formula.package_name()) {
             continue;
         }
@@ -188,6 +197,42 @@ fn prune_plan_from_linked_formulae(keep: &HashSet<String>) -> Result<PrunePlan> 
         }
     }
     Ok(plan)
+}
+
+/// Add what the kept kegs were built against. Like `brew autoremove`, this
+/// reads each installed keg's receipt rather than the current formula: an
+/// installed bottle keeps linking against the library it was built with
+/// (say `icu4c@77`) after the formula has moved on to a newer one.
+fn with_receipt_dependencies(
+    keep: &HashSet<String>,
+    formulae: &[InstalledFormula],
+) -> Result<HashSet<String>> {
+    let installed: HashMap<String, &InstalledFormula> = formulae
+        .iter()
+        .map(|formula| (formula.package_name(), formula))
+        .collect();
+    let mut keep = keep.clone();
+    let mut queue: Vec<String> = keep.iter().cloned().collect();
+    while let Some(name) = queue.pop() {
+        let Some(formula) = installed.get(&name) else {
+            continue;
+        };
+        let keg = file::desymlink_path(&pour::keg_path(&formula.name, &formula.version));
+        let Some(receipt) = read_receipt(&keg)? else {
+            continue;
+        };
+        for dep in receipt.runtime_dependencies.unwrap_or_default() {
+            let dep = dep
+                .full_name
+                .strip_prefix("homebrew/core/")
+                .unwrap_or(&dep.full_name)
+                .to_string();
+            if keep.insert(dep.clone()) {
+                queue.push(dep);
+            }
+        }
+    }
+    Ok(keep)
 }
 
 fn formula_package_name(formula: &api::Formula) -> String {
@@ -561,6 +606,52 @@ mod tests {
                         keg: unused,
                     }
                 ],
+            }
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn prune_plan_keeps_what_kept_kegs_were_built_against() -> Result<()> {
+        let _lock = mise_util::testing::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        // php's current formula wants icu4c@78, but the installed bottle was
+        // built against icu4c@77, which in turn was built against zstd
+        write_keg(
+            tmp.path(),
+            "php",
+            "8.4.0",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"},"runtime_dependencies":[{"full_name":"icu4c@77"}]}"#,
+        )?;
+        write_keg(
+            tmp.path(),
+            "icu4c@77",
+            "77.1",
+            r#"{"installed_on_request":false,"source":{"tap":"homebrew/core"},"runtime_dependencies":[{"full_name":"zstd"}]}"#,
+        )?;
+        write_keg(
+            tmp.path(),
+            "zstd",
+            "1.5.7",
+            r#"{"installed_on_request":false,"source":{"tap":"homebrew/core"},"runtime_dependencies":null}"#,
+        )?;
+        let unused = write_keg(
+            tmp.path(),
+            "unused",
+            "1.0.0",
+            r#"{"installed_on_request":false,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+
+        let keep = HashSet::from(["php".to_string(), "icu4c@78".to_string()]);
+        assert_eq!(
+            prune_plan_from_linked_formulae(&keep)?,
+            PrunePlan {
+                remove: vec![PruneCandidate {
+                    name: "unused".to_string(),
+                    version: "1.0.0".to_string(),
+                    keg: unused,
+                }],
             }
         );
         Ok(())
