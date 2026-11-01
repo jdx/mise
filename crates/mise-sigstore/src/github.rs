@@ -111,6 +111,29 @@ pub async fn verify_github_attestation_sources(
     .await
 }
 
+/// [`verify_github_attestation_sources`] for an artifact known only by its
+/// SHA-512 digest (`sha512`, the 64 raw bytes), such as the `integrity` an npm
+/// lockfile records for a tarball. A verified attestation must name exactly
+/// that digest as its subject.
+pub async fn verify_github_attestation_sources_for_sha512(
+    sha512: &[u8],
+    attestations: &[Attestation],
+    signer_workflow: Option<&str>,
+) -> Result<Vec<String>> {
+    if attestations.is_empty() {
+        return Err(AttestationError::NoAttestations);
+    }
+
+    let digest = ArtifactDigest::new(HashAlgorithm::Sha2512, sha512)
+        .map_err(|e| AttestationError::Verification(e.to_string()))?;
+    verify_github_attestation_sources_for_artifact(
+        Artifact::from_digest(digest),
+        attestations,
+        signer_workflow,
+    )
+    .await
+}
+
 pub(crate) async fn verify_github_attestation_sources_for_artifact(
     artifact: Artifact<'_>,
     attestations: &[Attestation],

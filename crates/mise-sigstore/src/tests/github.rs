@@ -116,6 +116,32 @@ async fn github_attestation_sources_succeeds_when_one_method_fails() {
 }
 
 #[tokio::test]
+async fn github_attestation_sources_for_sha512_rejects_bad_input() {
+    let error = crate::github::verify_github_attestation_sources_for_sha512(&[0; 64], &[], None)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, AttestationError::NoAttestations));
+
+    let error = crate::github::verify_github_attestation_sources_for_sha512(
+        &[0; 32],
+        &[invalid_attestation()],
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("64 bytes"), "{error}");
+
+    let error = crate::github::verify_github_attestation_sources_for_sha512(
+        &[0; 64],
+        &[invalid_attestation()],
+        None,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, AttestationError::Verification(_)));
+}
+
+#[tokio::test]
 async fn github_attestation_sources_fails_when_all_methods_fail() {
     let capture = capture_logs();
     let digest = fixture_digest();
