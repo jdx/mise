@@ -82,8 +82,16 @@ Describe 'dotfiles-conflicts-symlink-each-copies' {
     AfterAll {
         Set-Location $script:OriginalDir
         Remove-Item -Path $script:TestRoot -Recurse -Force -ErrorAction Ignore
-        [Environment]::SetEnvironmentVariable('MISE_TRUSTED_CONFIG_PATHS', $script:OriginalTrusted, 'Process')
-        [Environment]::SetEnvironmentVariable('MISE_STATE_DIR', $script:OriginalStateDir, 'Process')
+        # a variable that was unset is removed, not left behind empty
+        foreach ($pair in @(
+                @('MISE_TRUSTED_CONFIG_PATHS', $script:OriginalTrusted),
+                @('MISE_STATE_DIR', $script:OriginalStateDir))) {
+            if ($null -eq $pair[1]) {
+                Remove-Item "Env:$($pair[0])" -ErrorAction Ignore
+            } else {
+                [Environment]::SetEnvironmentVariable($pair[0], $pair[1], 'Process')
+            }
+        }
     }
 
     It 'needs --force to refresh a copy once the source changes' {
