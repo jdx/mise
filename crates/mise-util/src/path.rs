@@ -329,7 +329,7 @@ fn join_cmd_script_lines(script: &str) -> String {
             // `&`/`|`) is `if`/`for`/`else`, a lone `(`, or the line is a `)` one (`) else (`),
             // and only when no odd run of carets escapes it. Elsewhere it is text: `echo(` prints
             // a blank line.
-            let segment = trimmed.rsplit(['&', '|']).next().unwrap_or_default().trim();
+            let segment = last_cmd_segment(trimmed);
             let first = segment
                 .trim_start_matches('@')
                 .split_whitespace()
@@ -346,6 +346,26 @@ fn join_cmd_script_lines(script: &str) -> String {
         }
     }
     out
+}
+
+/// The last command on a `cmd` line: the text after its final `&` or `|` that is neither inside
+/// double quotes nor escaped with `^`.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn last_cmd_segment(line: &str) -> &str {
+    let mut start = 0;
+    let mut in_quotes = false;
+    let mut chars = line.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '"' => in_quotes = !in_quotes,
+            '^' if !in_quotes => {
+                chars.next();
+            }
+            '&' | '|' if !in_quotes => start = i + 1,
+            _ => {}
+        }
+    }
+    line[start..].trim()
 }
 
 /// MSVCRT/`CommandLineToArgvW`-style quoting for a single argument, matching the

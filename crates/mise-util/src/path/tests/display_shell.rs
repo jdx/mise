@@ -548,3 +548,20 @@ fn test_cmd_verbatim_args_block_after_another_command() {
         sv(&["/s", "/c", r#""echo hello (&exit /b 1""#])
     );
 }
+
+#[test]
+fn test_cmd_verbatim_args_separator_inside_quotes_or_escaped() {
+    let c = || "/c".to_string();
+
+    // A quoted `&` in an `if` condition is not a command separator.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "if \"a&b\"==\"a&b\" (\necho yes\n)", &[]),
+        sv(&["/s", "/c", r#""if "a&b"=="a&b" (echo yes)""#])
+    );
+
+    // Nor is an escaped one, so `echo a^& if (` stays plain text and the next line separate.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo a^& if (\nexit /b 1", &[]),
+        sv(&["/s", "/c", r#""echo a^& if (&exit /b 1""#])
+    );
+}
