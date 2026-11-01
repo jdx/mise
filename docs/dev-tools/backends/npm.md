@@ -194,7 +194,9 @@ A package that publishes no provenance, and a private registry that serves none,
 install as they do with the setting off. Dependencies are not checked. Only the
 embedded aube package manager supports this; with any other
 [`npm.package_manager`](/configuration/settings.html#npm.package_manager) the
-install fails instead of skipping the check.
+install fails instead of skipping the check. A tool with a `checksum` option
+installs a downloaded archive that has no provenance to verify unless it is
+locked, so without a lockfile entry that install fails too.
 
 ### Low-download and new packages
 

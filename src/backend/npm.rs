@@ -1239,6 +1239,15 @@ impl Backend for NPMBackend {
             .await;
         let request_options = tv.request.options();
         let options = NpmOptions::new(&request_options);
+        // A checksum without an aube lock installs a downloaded local archive,
+        // which aube builds no provenance subject for.
+        if Self::provenance_enabled() && options.checksum().is_some() && tv.aube_lock.is_none() {
+            eyre::bail!(
+                "npm:{} has a checksum and no aube lock, so it installs a local archive that provenance cannot be verified for; \
+                 lock the tool, or turn off npm.provenance and the paranoid provenance category",
+                self.display_tool_name()
+            );
+        }
         let package = self.package_install_spec(ctx, &tv, &options).await?;
         let install_before_args = match ctx.before_date {
             Some(before_date) => {
