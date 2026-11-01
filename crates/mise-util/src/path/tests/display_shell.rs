@@ -478,3 +478,20 @@ fn test_cmd_verbatim_args_comments_inside_blocks() {
         sv(&["/s", "/c", r#""if exist foo (echo yes)""#])
     );
 }
+
+#[test]
+fn test_cmd_verbatim_args_continuations_and_single_line_whitespace() {
+    let c = || "/c".to_string();
+
+    // Text after a continuation caret is command text, even when it looks like a comment.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo ^\nrem hello\nexit /b 3", &[]),
+        sv(&["/s", "/c", r#""echo rem hello & exit /b 3""#])
+    );
+
+    // A script with no line break keeps its whitespace.
+    assert_eq!(
+        cmd_verbatim_args(&[c()], "echo value ", &[]),
+        sv(&["/s", "/c", r#""echo value ""#])
+    );
+}

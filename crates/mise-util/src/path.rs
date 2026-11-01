@@ -284,35 +284,49 @@ pub fn cmd_verbatim_args(shell_flags: &[String], script: &str, args: &[String]) 
 /// such as `if exist x (` ... `) else (` ... `)` stays valid.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn join_cmd_script_lines(script: &str) -> String {
+    // A script with no line break is already a command line: leave it exactly as written.
+    if !script.contains('\n') {
+        return script.to_string();
+    }
+    // Blank lines around a single command would otherwise leave a newline for `cmd /c`.
     let script = script.trim();
     if !script.contains('\n') {
         return script.to_string();
     }
     let mut out = String::new();
-    // The previous line asked to be glued to the next one, with no `&` between.
-    let mut glue = false;
+    // The previous line ended in a continuation `^`: this line is more of the same command.
+    let mut caret = false;
+    // A block is open: the previous kept line ended in a `(` that is shell syntax.
+    let mut open = false;
     for line in script.lines() {
         let trimmed = line.trim();
+        if caret && trimmed.is_empty() {
+            // A blank line ends a continuation.
+            caret = false;
+            continue;
+        }
         let lower = trimmed.to_ascii_lowercase();
         let is_comment = trimmed.starts_with("::")
             || lower == "rem"
             || lower.starts_with("rem ")
             || lower.starts_with("rem\t");
-        // Skipped even right after a `(` or `^`: a kept `rem` would swallow the rest of the line.
-        if trimmed.is_empty() || is_comment {
+        // Continued text is command text, not a comment, so only skip outside a continuation.
+        if !caret && (trimmed.is_empty() || is_comment) {
             continue;
         }
-        if !out.is_empty() && !glue && !trimmed.starts_with(')') {
+        if !out.is_empty() && !caret && !open && !trimmed.starts_with(')') {
             out.push_str(" & ");
         }
         let carets = trimmed.len() - trimmed.trim_end_matches('^').len();
         if carets % 2 == 1 {
             out.push_str(&trimmed[..trimmed.len() - 1]);
-            glue = true;
+            caret = true;
+            open = false;
         } else {
             out.push_str(trimmed);
+            caret = false;
             // A `(` is a block opener unless an odd number of carets escape it.
-            glue = trimmed
+            open = trimmed
                 .strip_suffix('(')
                 .is_some_and(|rest| (rest.len() - rest.trim_end_matches('^').len()) % 2 == 0);
         }
