@@ -50,7 +50,7 @@ use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::{Duration, SystemTime};
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError, mpsc, oneshot};
 use xx::file;
 
 use crate::secrets::{SecretBroker, SecretsDenied, SpawnSecrets};
@@ -949,15 +949,19 @@ impl TaskExecutor {
                 .cloned()
                 .collect();
             task_lock::check_nested_order(task, &inherited, &to_take)?;
-            let mut acquisition = task_lock::LockAcquisition::new(task, to_take)?;
-            let held = if acquisition.try_take()? {
-                acquisition.into_held()
-            } else {
-                // A task waiting for a lock holds nothing else, so the rest of the run keeps
-                // going: its `--jobs` permit and an interactive task's terminal are given back
-                // and taken again once it holds the lock.
-                let had_permit = permit.take().is_some();
-                let had_terminal = confirm_guard.take().is_some();
+            // A task never waits for one of these while holding another: waiting for a lock it
+            // gives back its `--jobs` permit and an interactive task's terminal, and waiting
+            // for those it gives back its locks. Otherwise a task holding a permit could start
+            // a nested `mise run` that waits for a lock held by a task waiting for that permit.
+            let needs_permit = permit.is_some();
+            let needs_terminal = confirm_guard.is_some();
+            let held = loop {
+                let mut acquisition = task_lock::LockAcquisition::new(task, to_take.clone())?;
+                if acquisition.try_take()? {
+                    break acquisition.into_held();
+                }
+                *permit = None;
+                confirm_guard = None;
                 let held = acquisition
                     .wait(
                         self.lock_timeout,
@@ -965,13 +969,41 @@ impl TaskExecutor {
                         || Self::check_interruption(allow_during_interruption),
                     )
                     .await?;
-                if had_permit {
-                    *permit = Some(semaphore.clone().acquire_owned().await?);
+                let permit_now = if needs_permit {
+                    match semaphore.clone().try_acquire_owned() {
+                        Ok(p) => Some(p),
+                        Err(TryAcquireError::NoPermits) => None,
+                        Err(err) => return Err(err.into()),
+                    }
+                } else {
+                    None
+                };
+                let terminal_now = if needs_terminal {
+                    TASK_RUNTIME_LOCK
+                        .try_write()
+                        .ok()
+                        .map(RuntimeLockGuard::Write)
+                } else {
+                    None
+                };
+                if permit_now.is_some() == needs_permit && terminal_now.is_some() == needs_terminal
+                {
+                    *permit = permit_now;
+                    confirm_guard = terminal_now;
+                    break held;
                 }
-                if had_terminal {
+                // Busy: release the locks, wait for the permit and the terminal holding no
+                // lock, then try the locks again.
+                drop(held);
+                drop(terminal_now);
+                *permit = match permit_now {
+                    Some(p) => Some(p),
+                    None if needs_permit => Some(semaphore.clone().acquire_owned().await?),
+                    None => None,
+                };
+                if needs_terminal {
                     confirm_guard = Some(acquire_runtime_lock(task.interactive).await);
                 }
-                held
             };
             let locks = task_lock::exported(&inherited, &lock_keys);
             env.insert(task_lock::LOCKS_ENV.to_string(), locks.clone());

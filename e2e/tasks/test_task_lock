@@ -129,3 +129,44 @@ run = 'i=0; while [ ! -f "$LOCK_SIGNALS/free-ran" ]; do i=$((i + 1)); [ "$i" -lt
 run = 'sleep 1; touch "$LOCK_SIGNALS/free-ran"'
 EOF
 assert_succeed "cd d && timeout 60 mise run --jobs 2 w1 ::: w2 ::: free"
+
+# A task never waits for a --jobs slot while holding a lock. Here `first` waits
+# for z, which an outside run holds; `second` takes the only slot, frees z, lets
+# `first` take it, and starts a nested run that needs z. If `first` kept z while
+# waiting for the slot, the nested run would wait for z while `second` kept the
+# slot.
+mkdir -p e f
+cat <<'EOF' >e/mise.toml
+[tasks.hold-z]
+lock = "z"
+run = 'i=0; while [ ! -f "$LOCK_SIGNALS/z-release" ]; do i=$((i + 1)); [ "$i" -lt 600 ] || exit 1; sleep 0.1; done'
+EOF
+cat <<'EOF' >f/mise.toml
+[tasks.first]
+lock = "z"
+run = "echo first ran"
+
+[tasks.second]
+run = '''
+touch "$LOCK_SIGNALS/z-release"
+i=0
+until grep -qs '"task":"first"' "$MISE_STATE_DIR"/task-locks/*.json; do
+  i=$((i + 1))
+  [ "$i" -lt 50 ] || break
+  sleep 0.1
+done
+mise run --lock-timeout 20s needs-z
+'''
+
+[tasks.needs-z]
+lock = "z"
+run = "echo needs-z ran"
+EOF
+(cd e && mise run hold-z) >e.log 2>&1 &
+holder_pid=$!
+until grep -q "hold-z" "$MISE_STATE_DIR"/task-locks/*.json 2>/dev/null; do
+  kill -0 "$holder_pid" || fail "hold-z exited before taking z"
+  sleep 0.1
+done
+assert_contains "cd f && timeout 60 mise run --jobs 1 first ::: second 2>&1" "needs-z ran"
+wait "$holder_pid"
