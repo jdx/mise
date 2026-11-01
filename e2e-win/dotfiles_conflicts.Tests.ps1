@@ -55,3 +55,55 @@ Describe 'dotfiles-conflicts' {
         (Get-Content $script:Target -Raw) | Should -Be "managed source"
     }
 }
+
+Describe 'dotfiles-conflicts-symlink-each-copies' {
+    BeforeAll {
+        $script:OriginalDir = Get-Location
+        $script:TestRoot = Join-Path $TestDrive ([System.Guid]::NewGuid().ToString())
+        New-Item -ItemType Directory -Path (Join-Path $script:TestRoot 'source') -Force | Out-Null
+
+        $script:OriginalTrusted = [Environment]::GetEnvironmentVariable('MISE_TRUSTED_CONFIG_PATHS', 'Process')
+        $env:MISE_TRUSTED_CONFIG_PATHS = $script:TestRoot
+        $script:OriginalStateDir = [Environment]::GetEnvironmentVariable('MISE_STATE_DIR', 'Process')
+        $env:MISE_STATE_DIR = Join-Path $script:TestRoot 'state'
+
+        $script:Source = Join-Path $script:TestRoot 'source\file.txt'
+        $script:Target = Join-Path $script:TestRoot 'target'
+        $targetToml = $script:Target -replace '\\', '/'
+        # dotfiles.windows_symlinks stays at its default (off), so every file is copied
+        @"
+[dotfiles]
+"$targetToml" = { source = "source", mode = "symlink-each" }
+"@ | Out-File (Join-Path $script:TestRoot 'mise.toml')
+
+        Set-Location $script:TestRoot
+    }
+
+    AfterAll {
+        Set-Location $script:OriginalDir
+        Remove-Item -Path $script:TestRoot -Recurse -Force -ErrorAction Ignore
+        [Environment]::SetEnvironmentVariable('MISE_TRUSTED_CONFIG_PATHS', $script:OriginalTrusted, 'Process')
+        [Environment]::SetEnvironmentVariable('MISE_STATE_DIR', $script:OriginalStateDir, 'Process')
+    }
+
+    It 'needs --force to refresh a copy once the source changes' {
+        # Deliberate, and what the Windows docs describe: mise cannot tell its stale copy from
+        # one somebody edited, so it treats it like any file in the way of a link.
+        'source-A' | Out-File -FilePath $script:Source -Encoding ascii -NoNewline
+        mise dot apply 2>&1 | Out-String | Out-Null
+        $LASTEXITCODE | Should -Be 0
+        $copy = Join-Path $script:Target 'file.txt'
+        (Get-Item -LiteralPath $copy -Force).LinkType | Should -BeNullOrEmpty
+        (Get-Content $copy -Raw) | Should -Be 'source-A'
+
+        'source-B' | Out-File -FilePath $script:Source -Encoding ascii -NoNewline
+        $out = mise dot apply 2>&1 | Out-String
+        $LASTEXITCODE | Should -Not -Be 0
+        $out | Should -BeLike '*refusing to overwrite*'
+        (Get-Content $copy -Raw) | Should -Be 'source-A'
+
+        mise dot apply --force $script:Target 2>&1 | Out-String | Out-Null
+        $LASTEXITCODE | Should -Be 0
+        (Get-Content $copy -Raw) | Should -Be 'source-B'
+    }
+}

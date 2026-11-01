@@ -5766,6 +5766,10 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
     // `copy` mode, which is declared as overwriting; for a `symlink` entry it meant the copy
     // silently destroyed a file the user wrote, with no `--force` and no message — while unix
     // refused the same apply.
+    //
+    // That includes the copies `symlink-each` makes on Windows without
+    // `dotfiles.windows_symlinks`: once the source changes, a stale copy cannot be told from one
+    // somebody edited, so refreshing it needs `--force` as well. The Windows docs say so.
     let file_link_conflicts =
         |target: &Path| -> Result<bool> { Ok(target.exists() && !target.is_symlink()) };
     let mut out = vec![];
