@@ -160,9 +160,9 @@ fn receipts_present(dir: &Path, folders_left: u8) -> bool {
             if path.extension().is_some_and(|ext| ext == "app") {
                 path.join("Contents/_MASReceipt/receipt").is_file()
             } else {
-                folders_left > 0
-                    && entry.file_type().is_ok_and(|kind| kind.is_dir())
-                    && receipts_present(&path, folders_left - 1)
+                // is_dir follows symlinks, so a linked folder is searched too;
+                // the depth limit keeps a link loop from recursing.
+                folders_left > 0 && path.is_dir() && receipts_present(&path, folders_left - 1)
             }
         })
 }
@@ -380,6 +380,18 @@ mod tests {
         std::fs::create_dir_all(&receipt).unwrap();
         std::fs::write(receipt.join("receipt"), b"").unwrap();
         assert!(!app_store_receipts_present(deep.path()));
+
+        // A folder linked into place is searched like a real one.
+        #[cfg(unix)]
+        {
+            let linked = tempfile::tempdir().unwrap();
+            std::os::unix::fs::symlink(
+                nested.path().join("Development"),
+                linked.path().join("Dev"),
+            )
+            .unwrap();
+            assert!(app_store_receipts_present(linked.path()));
+        }
     }
 
     #[test]
