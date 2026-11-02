@@ -1143,14 +1143,23 @@ pub fn skills_dir(root: &Path) -> PathBuf {
 }
 
 /// With `skills.auto_sync` on, link the active tools' skills into the
-/// project after an install or a version change. Nothing fails an install
-/// here: a problem is reported and the tools stay installed. Outside a
-/// project root there is nowhere to link into, so nothing happens.
+/// project after an install or a version change, and the global tools' skills
+/// into the home directory. Nothing fails an install here: a problem is
+/// reported and the tools stay installed. Outside a project root only the
+/// global links are kept up to date.
 pub async fn auto_sync_skills(config: &Arc<Config>) {
-    let Some(root) = &config.project_root else {
-        return;
-    };
-    auto_sync_skills_into(config, root, false).await;
+    if let Some(root) = &config.project_root {
+        auto_sync_skills_into(config, root, false).await;
+    }
+    // Installing or upgrading a global tool moves its skills too. A project
+    // rooted at the home directory already syncs there, with a superset.
+    if config
+        .project_root
+        .as_ref()
+        .is_none_or(|root| *root != *crate::dirs::HOME)
+    {
+        auto_sync_global_skills(config).await;
+    }
 }
 
 /// [`auto_sync_skills`] for a global change such as `mise use -g`: the links
