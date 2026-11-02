@@ -76,7 +76,10 @@ idea:
   under `tool-stubs`, and for that the project's config needs trust. In safe
   mode it does not apply the options of those stubs.
 - A [`.miserc.toml`](/configuration.html#miserc) never needs trust. It only
-  holds early settings that choose which config files load. Templates in a
+  holds early settings that choose which config files load, and mise finds it
+  by walking up from the current directory. A project's `env` list can add
+  environments but cannot drop one that a global or system `miserc.toml`
+  selects. Templates in a
   project `.miserc.toml` see no environment variables and may use only `if`
   statements and a short list of functions and filters, so they cannot leak your
   environment or hang mise; see

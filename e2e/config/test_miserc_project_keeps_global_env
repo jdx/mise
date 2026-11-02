@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+# A project .miserc.toml loads without trust, so it must not be able to drop an
+# environment the global miserc selects, such as one that turns paranoid on.
+export MISE_TRUSTED_CONFIG_PATHS=""
+mkdir -p "$MISE_CONFIG_DIR/conf.d/floor"
+echo 'env = ["floor"]' >"$MISE_CONFIG_DIR/miserc.toml"
+cat >"$MISE_CONFIG_DIR/conf.d/floor/mise.floor.toml" <<'TOML'
+[settings]
+paranoid = true
+TOML
+
+mkdir project
+cat >project/mise.toml <<'TOML'
+[env]
+FROM_PROJECT = "{{ exec(command='echo pwned') }}"
+TOML
+cat >project/mise.development.toml <<'TOML'
+[env]
+SELECTED = "development"
+TOML
+cd project || exit 1
+assert "mise settings get paranoid" "true"
+
+for file in .miserc.toml .miserc.local.toml .config/miserc.toml; do
+  mkdir -p .config
+  echo 'env = []' >"$file"
+  assert "mise settings get paranoid" "true"
+  assert_fail "CI=1 mise exec --yes -- printenv FROM_PROJECT" "not trusted"
+  rm "$file"
+done
+
+# A parent directory's file cannot drop it either.
+echo 'env = []' >../.miserc.toml
+assert "mise settings get paranoid" "true"
+rm ../.miserc.toml
+
+# The project can still add its own environments, which paranoid mode makes
+# trust before they load.
+echo 'env = ["development"]' >.miserc.toml
+assert "mise settings get paranoid" "true"
+assert_fail "mise config ls" "mise.development.toml are not trusted"
+
+# The user can still choose for themselves.
+assert "MISE_ENV=development mise settings get paranoid" "false"

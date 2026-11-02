@@ -484,7 +484,12 @@ From highest to lowest precedence:
 3. `/etc/mise/miserc.toml`.
 
 A file overrides only the keys it sets; the others keep their inherited values.
-`env` replaces the inherited list, and `env = []` clears it. The `-E` flag and
+`env` replaces the inherited list, and `env = []` clears it, with one exception:
+a file found from the current directory cannot drop an environment that
+`~/.config/mise/miserc.local.toml`, `~/.config/mise/miserc.toml` or
+`/etc/mise/miserc.toml` selects. Those names stay in the list, ahead of the
+project's own, so a project cannot turn off a baseline such as
+`paranoid = true` that you load from a global environment. The `-E` flag and
 environment variables such as `MISE_ENV` override every `.miserc.toml` file.
 
 ### Personal and machine-wide choices

@@ -432,6 +432,9 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
     // Tera is initialized lazily inside render_miserc_template — only paid if a file
     // actually contains template syntax. Shared across all files to avoid redundant clones.
     let mut tera: Option<TeraEngine> = None;
+    // The environments the system and global files select. They load before
+    // any project file, so this is complete by the time one merges.
+    let mut global_env: Vec<String> = vec![];
 
     for path in files.into_iter().rev() {
         file::ensure_config_file_size(&path)?;
@@ -442,11 +445,35 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
                 .map_err(|e| toml_parse_error(&e, &content, &path))?;
             resolve_ignored_config_paths(&mut settings, config_root);
             drop_names_leaving_the_directory(&mut settings, &path);
-            merge_settings(&mut merged, settings);
+            if is_global_miserc_dir(config_root) {
+                merge_settings(&mut merged, settings);
+                global_env = merged.env.clone().unwrap_or_default();
+            } else {
+                keep_global_envs(&mut settings, &global_env);
+                merge_settings(&mut merged, settings);
+            }
         }
     }
 
     Ok(merged)
+}
+
+/// A project `.miserc.toml` loads without trust, so its `env` adds to the
+/// environments the system and global files select and cannot drop one: an
+/// operator can load a baseline such as `paranoid = true` from one. The global
+/// names go first so the project's own names, loaded later, still take
+/// precedence over them.
+fn keep_global_envs(settings: &mut MisercSettings, global_env: &[String]) {
+    let Some(envs) = settings.env.take() else {
+        return;
+    };
+    let mut kept: Vec<String> = global_env
+        .iter()
+        .filter(|name| !envs.contains(name))
+        .cloned()
+        .collect();
+    kept.extend(envs);
+    settings.env = Some(kept);
 }
 
 /// `env` and the override filenames only choose which files mise loads from the
@@ -622,6 +649,31 @@ mod tests {
 
         assert_eq!(target.env, Some(vec!["override".to_string()]));
         assert_eq!(target.env_conf_d, Some(true));
+    }
+
+    #[test]
+    fn test_keep_global_envs() {
+        let global = ["floor", "work"].map(String::from);
+        let mut settings = MisercSettings {
+            env: Some(vec![]),
+            ..Default::default()
+        };
+        keep_global_envs(&mut settings, &global);
+        assert_eq!(settings.env, Some(global.to_vec()));
+
+        let mut settings = MisercSettings {
+            env: Some(["development", "floor"].map(String::from).to_vec()),
+            ..Default::default()
+        };
+        keep_global_envs(&mut settings, &global);
+        assert_eq!(
+            settings.env,
+            Some(["work", "development", "floor"].map(String::from).to_vec())
+        );
+
+        let mut settings = MisercSettings::default();
+        keep_global_envs(&mut settings, &global);
+        assert_eq!(settings.env, None);
     }
 
     #[test]
