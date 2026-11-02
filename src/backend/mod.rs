@@ -4010,6 +4010,15 @@ pub trait Backend: Debug + Send + Sync {
                 if crate::install_layout::resolver::governs(tv) {
                     return check_path(&tv.install_path(), check_symlink);
                 }
+                // A Version request names its directory after the version as written,
+                // so it is known to differ from the resolved version without the disk.
+                if let ToolRequest::Version { version, .. } = &tv.request
+                    && Path::new(version)
+                        .file_name()
+                        .is_some_and(|f| f.to_string_lossy() != tv.version)
+                {
+                    return check_path(&tv.install_path(), check_symlink);
+                }
                 if let Some(install_path) = tv.request.install_path(config) {
                     // The request's install_path is derived from the REQUEST version
                     // (e.g., "latest" or prefix "1"), which may differ from the resolved
@@ -4021,7 +4030,8 @@ pub trait Backend: Debug + Send + Sync {
                     // the RESOLVED path instead so that `mise upgrade` re-runs the backend's
                     // install hook and writes the new version to `installs/<id>/<new-version>/`.
                     // The request path decides nothing then, so it is not checked: this runs
-                    // several times per tool on every hook-env.
+                    // several times per tool on every hook-env. A Version request is caught
+                    // above, before install_path stats its directory.
                     if matches!(
                         &tv.request,
                         ToolRequest::Version { .. } | ToolRequest::Prefix { .. }
