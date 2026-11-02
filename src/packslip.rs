@@ -1140,13 +1140,20 @@ fn skills_of_toolset(config: &Arc<Config>, ts: &Toolset) -> Result<DeclaredSkill
 /// to link.
 pub struct SkillsTarget {
     pub dir: PathBuf,
+    /// The `.claude/skills` beside a default `.agents/skills`: where mise
+    /// makes its link, and whether it may make one now.
     alias: Option<PathBuf>,
+    create_alias: bool,
 }
 
 impl SkillsTarget {
     /// An explicit directory, with nothing to link beside it.
     pub fn at(dir: PathBuf) -> Self {
-        Self { dir, alias: None }
+        Self {
+            dir,
+            alias: None,
+            create_alias: false,
+        }
     }
 
     /// Make `.claude/skills` a symlink to the directory, for a target mise
@@ -1156,12 +1163,20 @@ impl SkillsTarget {
         let Some(alias) = &self.alias else {
             return Ok(());
         };
-        if !self.dir.is_dir() || alias.symlink_metadata().is_ok() {
-            return Ok(());
-        }
         let Some(parent) = alias.parent() else {
             return Ok(());
         };
+        if alias.symlink_metadata().is_ok() {
+            // Somebody replaced the link with a real directory of their own
+            // (or it never was ours): stop hiding it from git.
+            if !file::is_symlink_or_junction(alias) {
+                crate::packslip_exclude::exclude_links(parent, [], SYNC_STATE)?;
+            }
+            return Ok(());
+        }
+        if !self.create_alias || !self.dir.is_dir() {
+            return Ok(());
+        }
         file::create_dir_all(parent)?;
         // Relative, so a project that moves keeps its link. A Windows
         // junction needs the absolute path, and so does a `.claude` that is
@@ -1187,7 +1202,11 @@ pub fn skills_target(root: &Path) -> SkillsTarget {
     let agents = root.join(".agents/skills");
     let claude = root.join(".claude/skills");
     if agents.is_dir() {
-        return SkillsTarget::at(agents);
+        return SkillsTarget {
+            dir: agents,
+            alias: Some(claude),
+            create_alias: false,
+        };
     }
     if claude.is_dir() {
         return SkillsTarget::at(claude);
@@ -1195,6 +1214,7 @@ pub fn skills_target(root: &Path) -> SkillsTarget {
     SkillsTarget {
         dir: agents,
         alias: Some(claude),
+        create_alias: true,
     }
 }
 
