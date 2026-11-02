@@ -152,11 +152,8 @@ mod tests {
     fn idiomatic_version_files_table_comes_from_baked_registry() {
         let table = render_idiomatic_version_files_table();
 
-        assert!(
-            table
-                .lines()
-                .any(|line| line.starts_with("| cmake ") && line.contains("`CMakeLists.txt`"))
-        );
+        // `cmake_minimum_required` is a floor, so cmake reads no idiomatic file
+        assert!(!table.lines().any(|line| line.starts_with("| cmake ")));
         assert!(table.lines().any(|line| {
             line.starts_with("| node ")
                 && line.contains("`.nvmrc`, `.node-version`, `package.json`")

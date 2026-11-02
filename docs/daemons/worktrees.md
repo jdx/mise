@@ -308,6 +308,13 @@ run = "exec npm run dev -- --port $API_PORT"
 port = 3100
 ```
 
+### Resources worktrees cannot split
+
+Some things exist once on the machine: a database the tests do not namespace, a
+port a test suite hard-codes, a simulator or a device. Give the tasks that use
+one a [`lock`](/tasks/task-configuration.html#lock), so runs from different
+worktrees take turns instead of colliding.
+
 ## Stable URLs per worktree
 
 Separate ports mean each service has to be told where its neighbors are.

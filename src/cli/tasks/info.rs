@@ -119,6 +119,9 @@ impl TasksInfo {
         if let Some(skip_if) = &task.skip_if {
             info::inline_section("Skip if", skip_if)?;
         }
+        if let Some(lock) = crate::task::task_lock::describe(task) {
+            info::inline_section("Lock", lock)?;
+        }
         if !task.sources.is_empty() {
             info::inline_section("Sources", task.sources.join(", "))?;
         }
@@ -192,6 +195,7 @@ impl TasksInfo {
             "cache": task.cache.clone().unwrap_or_default(),
             "shell": task.shell,
             "skip_if": task.skip_if,
+            "lock": task.lock,
             "quiet": task.quiet,
             "silent": task.silent,
             "tools": task.tools,

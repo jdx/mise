@@ -2744,7 +2744,13 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
     match req.mode {
         FileMode::Track => Ok(FileState::Tracked),
         FileMode::Absent => check_absent(&req.target),
-        FileMode::Symlink => check_symlink(&req.source, &req.target, req.relative),
+        FileMode::Symlink => match check_symlink(&req.source, &req.target, req.relative)? {
+            // the reason is the copy comparison's; say why there is a copy to compare
+            FileState::Differs(reason) if symlink_fell_back_to_copy(req) => {
+                Ok(FileState::Differs(format!("{reason}; {NOT_A_SYMLINK}")))
+            }
+            state => Ok(state),
+        },
         FileMode::SymlinkEach => check_symlink_each(req),
         FileMode::Copy if req.source.is_dir() => {
             if req.permissions.is_some() {
@@ -2889,6 +2895,28 @@ pub fn permissions_target_absent(req: &FileRequest) -> Option<&'static str> {
         && std::fs::symlink_metadata(&req.target)
             .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound))
     .then_some("target absent; permissions not applied")
+}
+
+/// What status says of a `symlink` entry whose target is a regular file. Only what is on disk:
+/// the file may be the copy `link_path` falls back to, or one that was there before.
+const NOT_A_SYMLINK: &str = "a regular file, not a symlink";
+
+/// Whether a `symlink` entry's file target is a regular file where `link_path` would have
+/// copied one when Windows refused a symlink (no Developer Mode or elevation,
+/// `dotfiles.windows_symlinks` off).
+fn symlink_fell_back_to_copy(req: &FileRequest) -> bool {
+    cfg!(windows)
+        && !windows_symlinks()
+        && req.mode == FileMode::Symlink
+        && req.source.is_file()
+        && req.target.is_file()
+        && !req.target.is_symlink()
+}
+
+/// Why an applied `symlink` entry does not follow its source: on Windows its target is a
+/// regular file. Status shows this next to `applied`.
+pub fn symlink_target_copied(req: &FileRequest) -> Option<&'static str> {
+    symlink_fell_back_to_copy(req).then_some(NOT_A_SYMLINK)
 }
 
 const PERMISSIONS_THROUGH_LINK: &str =
@@ -3338,10 +3366,66 @@ fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {
 fn symlink_each_state_path(req: &FileRequest) -> PathBuf {
     let source = lexical_normalize(&req.source);
     let target = lexical_normalize(&req.target);
-    dirs::STATE.join("dotfiles").join(format!(
+    let dir = dirs::STATE.join("dotfiles");
+    let path = dir.join(format!(
         "{}.toml",
         hash_to_str(&(source.as_path(), target.as_path()))
-    ))
+    ));
+    if cfg!(windows) && !path.exists() {
+        // the name hashes this spelling of the paths; a record written under another casing of
+        // them is this entry's on Windows, and is used rather than a second one beside it
+        if let Some(other) = state_files(&dir).find(|other| {
+            read_symlink_each_state(other).is_ok_and(|state| {
+                same_path_any_case(&state.source, &source)
+                    && same_path_any_case(&state.target, &target)
+            })
+        }) {
+            return other;
+        }
+    }
+    path
+}
+
+/// The state records directly in `dir`.
+fn state_files(dir: &Path) -> impl Iterator<Item = PathBuf> {
+    dir.read_dir()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "toml") && path.is_file())
+}
+
+/// Whether `a` and `b` name the same path, letter case aside on Windows where the directory
+/// ignores it (one marked case-sensitive tells `foo` from `Foo`).
+fn same_path_any_case(a: &Path, b: &Path) -> bool {
+    file::same_location_ignoring_case(&lexical_normalize(a), &lexical_normalize(b))
+}
+
+/// `path` under `from` moved under `to`, the same directory spelled with other letter case.
+fn respell(path: &Path, from: &Path, to: &Path) -> PathBuf {
+    path.strip_prefix(from)
+        .map_or_else(|_| path.to_path_buf(), |rest| to.join(rest))
+}
+
+/// A record found under another casing of `req`'s paths (see `symlink_each_state_path`),
+/// spelled as `req` spells them now, so the links it holds compare equal to the desired ones.
+fn respell_symlink_each_state(mut state: SymlinkEachState, req: &FileRequest) -> SymlinkEachState {
+    let source = lexical_normalize(&req.source);
+    let target = lexical_normalize(&req.target);
+    if state.source == source && state.target == target
+        || !same_path_any_case(&state.source, &source)
+        || !same_path_any_case(&state.target, &target)
+    {
+        return state;
+    }
+    for link in &mut state.links {
+        link.source = respell(&link.source, &state.source, &source);
+        link.target = respell(&link.target, &state.target, &target);
+    }
+    state.source = source;
+    state.target = target;
+    state
 }
 
 fn desired_symlink_each_state(req: &FileRequest) -> Result<SymlinkEachState> {
@@ -3380,7 +3464,7 @@ fn load_symlink_each_state(req: &FileRequest) -> LoadedSymlinkEachState {
         return LoadedSymlinkEachState::Missing;
     }
     let state = match read_symlink_each_state(&path) {
-        Ok(state) => state,
+        Ok(state) => respell_symlink_each_state(state, req),
         Err(err) => {
             warn!(
                 "files: failed to read dotfiles state {}: {err}",
@@ -3525,24 +3609,129 @@ fn reconcile_symlink_each_states(
     }
 }
 
+/// An entry whose apply failed partway returned normally, so what it left on disk is known
+/// and nothing about it needs recovering: the directories it created on the way to the target
+/// are removed again while empty, links a `symlink-each` entry made are recorded as its own, and
+/// the journal records each touched path as it now is. Left unfinished, the journal would make
+/// the next apply stop for `mise dot recover`.
+fn settle_failed_apply(
+    req: &FileRequest,
+    created: &[PathBuf],
+    stale: &HashMap<PathBuf, PathBuf>,
+    pending: Vec<journal::PendingChange>,
+) {
+    remove_empty_created_dirs(created);
+    // a single-file target the failed write left keeps the directories it is in; they are
+    // still mise's to remove with it, and a later apply finds them already there
+    if records_created_dirs(req) && std::fs::symlink_metadata(&req.target).is_ok() {
+        let kept = created
+            .iter()
+            .filter(|dir| **dir != req.target && dir.is_dir())
+            .cloned()
+            .collect::<Vec<_>>();
+        record_created_dirs(req, &kept);
+    }
+    // links the entry cannot record as its own stay unfinished, for recovery to look at
+    if req.mode == FileMode::SymlinkEach && !save_partial_symlink_each_state(req) {
+        return;
+    }
+    // What the journal captured as there before may have been the user's file, which a
+    // `--force` write removed before failing: left unfinished, recovery keeps its preimage and
+    // asks. One that is unchanged settles that way too. Finished as the failure left them are
+    // only paths captured as missing, links captured exactly as the stale link of its own the
+    // entry found there, and mise's own records. The capture decides, not an earlier look at the path:
+    // something may have replaced a stale link since.
+    let records = [symlink_each_state_path(req), target_state_path(req)];
+    let finished = pending
+        .into_iter()
+        .filter(|change| {
+            change.prior_missing()
+                || change
+                    .prior_link()
+                    .is_some_and(|dest| stale.get(change.path()).is_some_and(|d| d == dest))
+                || records.iter().any(|r| r == change.path())
+        })
+        .collect();
+    journal::commit_changes(finished);
+}
+
+/// Remove the directories in `created` that are still empty, deepest first, so a parent
+/// emptied by removing its children goes too. `remove_dir` leaves one that holds anything.
+/// Only a real directory: removing a link to one would not be undoing what an apply did.
+fn remove_empty_created_dirs(created: &[PathBuf]) {
+    let mut dirs = created.iter().unique().collect::<Vec<_>>();
+    dirs.sort_by_key(|dir| std::cmp::Reverse(dir.components().count()));
+    for dir in dirs {
+        if file::is_symlink_or_junction(dir) || !dir.is_dir() {
+            continue;
+        }
+        let _ = std::fs::remove_dir(dir);
+    }
+}
+
+/// Record the links a failed `symlink-each` apply left: what the entry already owned, and each
+/// desired link that is now in place. A link the apply never made is not claimed.
+fn save_partial_symlink_each_state(req: &FileRequest) -> bool {
+    if cfg!(windows) && !windows_symlinks() {
+        return true;
+    }
+    let state = (|| -> Result<SymlinkEachState> {
+        let mut state = desired_symlink_each_state(req)?;
+        state
+            .links
+            .retain(|link| link_points_to(&link.source, &link.target));
+        if let LoadedSymlinkEachState::Present(prior) = load_symlink_each_state(req) {
+            for link in prior.links {
+                if !state.links.contains(&link) {
+                    state.links.push(link);
+                }
+            }
+        }
+        Ok(state)
+    })();
+    match state {
+        Ok(state) if state.links.is_empty() => true,
+        Ok(state) => write_symlink_each_state(req, &state),
+        Err(err) => {
+            warn!(
+                "files: failed to record the links made for {}: {err}",
+                req.target.display_user()
+            );
+            false
+        }
+    }
+}
+
 fn save_symlink_each_state(req: &FileRequest) {
     if cfg!(windows) && !windows_symlinks() {
         return;
     }
+    match desired_symlink_each_state(req) {
+        Ok(state) => {
+            write_symlink_each_state(req, &state);
+        }
+        Err(err) => warn!(
+            "files: failed to write dotfiles state {}: {err}",
+            symlink_each_state_path(req).display_user()
+        ),
+    }
+}
+
+/// Whether the record was written; a failure warns.
+fn write_symlink_each_state(req: &FileRequest, state: &SymlinkEachState) -> bool {
     let path = symlink_each_state_path(req);
     let result = (|| -> Result<()> {
         file::create_dir_all(path.parent().expect("dotfiles state parent"))?;
-        file::write(
-            &path,
-            toml::to_string_pretty(&desired_symlink_each_state(req)?)?,
-        )
+        // atomic: a failed write must not leave the record it replaces unreadable
+        file::write_atomic(&path, toml::to_string_pretty(state)?)
     })();
-    if let Err(err) = result {
+    if let Err(err) = &result {
         warn!(
             "files: failed to write dotfiles state {}: {err}",
             path.display_user()
         );
     }
+    result.is_ok()
 }
 
 fn remove_symlink_each_state(req: &FileRequest) -> Result<()> {
@@ -3555,10 +3744,22 @@ fn remove_symlink_each_state(req: &FileRequest) -> Result<()> {
 
 fn target_state_path(req: &FileRequest) -> PathBuf {
     let target = lexical_normalize(&req.target);
-    dirs::STATE
-        .join("dotfiles")
-        .join("targets")
-        .join(format!("{}.toml", hash_to_str(&target.as_path())))
+    let dir = dirs::STATE.join("dotfiles").join("targets");
+    let path = dir.join(format!("{}.toml", hash_to_str(&target.as_path())));
+    if cfg!(windows) && !path.exists() {
+        // as for `symlink_each_state_path`: the record of another casing of the target is its
+        if let Some(other) = state_files(&dir).find(|other| {
+            read_target_state(other).is_ok_and(|state| same_path_any_case(&state.target, &target))
+        }) {
+            return other;
+        }
+    }
+    path
+}
+
+fn read_target_state(path: &Path) -> Result<TargetState> {
+    file::read_to_string(path)
+        .and_then(|contents| toml::from_str::<TargetState>(&contents).map_err(Into::into))
 }
 
 /// The record for `req`'s target. A missing, unreadable, or foreign record
@@ -3568,10 +3769,24 @@ fn load_target_state(req: &FileRequest) -> Option<TargetState> {
     if !path.exists() {
         return None;
     }
-    let state = match file::read_to_string(&path)
-        .and_then(|contents| toml::from_str::<TargetState>(&contents).map_err(Into::into))
-    {
-        Ok(state) => state,
+    let state = match read_target_state(&path) {
+        Ok(mut state) => {
+            let target = lexical_normalize(&req.target);
+            if state.target != target && same_path_any_case(&state.target, &target) {
+                // found under another casing of the target: the directories it records are
+                // the target's ancestors, spelled as the target now is
+                for dir in &mut state.created_dirs {
+                    if let Some(ancestor) = target
+                        .ancestors()
+                        .find(|ancestor| same_path_any_case(ancestor, dir))
+                    {
+                        *dir = ancestor.to_path_buf();
+                    }
+                }
+                state.target = target;
+            }
+            state
+        }
         Err(err) => {
             warn!(
                 "files: failed to read dotfiles state {}: {err}",
@@ -4008,14 +4223,16 @@ pub(crate) fn link_points_to(source: &Path, target: &Path) -> bool {
         dest == source
             || points_at_same_file(target, source)
             || if dest.is_absolute() {
-                lexical_normalize(&dest) == lexical_normalize(source)
+                // a record found under another casing of the source is read in the current
+                // one (see `respell_symlink_each_state`), while the link keeps the old one
+                same_path_any_case(&dest, source)
             } else {
                 // the kernel resolves a relative link from the directory the
                 // link physically sits in, so its text is read from there too:
                 // read from the configured spelling, a link in a symlinked
                 // directory could seem to reach a source it does not
                 resolve_relative_link(target, &dest)
-                    .is_some_and(|resolved| resolved == physical_path(source))
+                    .is_some_and(|resolved| same_path_any_case(&resolved, &physical_path(source)))
             }
     })
 }
@@ -4133,8 +4350,18 @@ fn link_points_at(link: &Path, dest: &Path, expected: &Path) -> bool {
 /// with generated excludes, which would make an entry's own pre-existing link
 /// (a stow migration) look stale, and every group targeting `~` would pay a
 /// full walk of it.
+///
+/// Windows walks only with `dotfiles.windows_symlinks` on: without it
+/// `symlink-each` copies every file and records no state, so a link in the
+/// target is not one mise made. With it on, a lost state file must still find
+/// the links whose sources are gone, or apply records an empty state and
+/// unapply no longer knows about them.
 fn legacy_stale_links(req: &FileRequest) -> Result<Vec<PathBuf>> {
-    if cfg!(windows) || req.group.is_some() || !req.target.is_dir() || req.target.is_symlink() {
+    if (cfg!(windows) && !windows_symlinks())
+        || req.group.is_some()
+        || !req.target.is_dir()
+        || req.target.is_symlink()
+    {
         return Ok(vec![]);
     }
     let mut out = vec![];
@@ -4856,7 +5083,8 @@ pub fn execute_apply(
                 );
             }
             let pending = journal::begin_changes_with(DOTFILES_PART, &item, paths)?;
-            file::remove_file(&link.target)?;
+            // a junction or directory symlink is refused by `remove_file` on Windows
+            file::remove_symlink_or_junction(&link.target)?;
             written.push(link.target.clone());
             journal::commit_changes(pending);
         }
@@ -4873,10 +5101,37 @@ pub fn execute_apply(
             if req.mode == FileMode::SymlinkEach {
                 unfold_source_links(req, written)?;
             }
+            // the links the entry recorded as its own, which a failed apply may finish pruning
+            // (see `settle_failed_apply`)
+            // each with where it points now, which the captured link must match exactly
+            let stale = if req.mode == FileMode::SymlinkEach {
+                stale_links(req)?
+                    .into_iter()
+                    .filter_map(|link| std::fs::read_link(&link).ok().map(|dest| (link, dest)))
+                    .collect()
+            } else {
+                HashMap::new()
+            };
             let pending =
                 journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
             let start = written.len();
-            apply_one(req, rendered.as_deref(), written)?;
+            // what is missing now is what a failed apply may have to take away again
+            let mut created = missing_ancestors(&req.target);
+            if req.mode == FileMode::SymlinkEach
+                || req.mode == FileMode::Copy && req.source.is_dir()
+            {
+                if std::fs::symlink_metadata(&req.target).is_err() {
+                    created.push(req.target.clone());
+                }
+                // and the directories the walk creates beneath it
+                for (_, target) in walk_source_files(req).unwrap_or_default() {
+                    created.extend(missing_ancestors(&target));
+                }
+            }
+            if let Err(err) = apply_one(req, rendered.as_deref(), written) {
+                settle_failed_apply(req, &created, &stale, pending);
+                return Err(err);
+            }
             // a target that appeared since planning is left alone and not
             // written, so it is not this group's to prune
             if req.create_if_missing && written[start..].contains(&req.target) {
@@ -5733,13 +5988,10 @@ fn unapply_one(plan: &UnapplyPlan<'_>) -> Result<()> {
     let mut parents = vec![];
     for path in &plan.paths {
         debug!("files: removing {}", path.display_user());
-        if path.is_symlink() || path.is_file() {
-            file::remove_file(path)?;
-        } else if path.is_dir() {
-            // Only reached for a forced type conflict. The user explicitly
-            // asked to remove the declared whole target.
-            file::remove_all(path)?;
-        }
+        // links first: a Windows directory symlink or junction is refused by `remove_file`.
+        // A real directory is only reached for a forced type conflict, where the user
+        // explicitly asked to remove the declared whole target.
+        remove_existing(path)?;
         if let Some(parent) = path.parent() {
             parents.push(parent.to_path_buf());
         }
@@ -5766,6 +6018,10 @@ fn find_conflicts(req: &FileRequest) -> Result<Vec<PathBuf>> {
     // `copy` mode, which is declared as overwriting; for a `symlink` entry it meant the copy
     // silently destroyed a file the user wrote, with no `--force` and no message — while unix
     // refused the same apply.
+    //
+    // That includes the copies `symlink-each` makes on Windows without
+    // `dotfiles.windows_symlinks`: once the source changes, a stale copy cannot be told from one
+    // somebody edited, so refreshing it needs `--force` as well. The Windows docs say so.
     let file_link_conflicts =
         |target: &Path| -> Result<bool> { Ok(target.exists() && !target.is_symlink()) };
     let mut out = vec![];
@@ -5855,6 +6111,10 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
     Ok(match req.mode {
         FileMode::Track => format!("tracked {tgt} in place"),
         FileMode::Absent => format!("removed {tgt}"),
+        // Windows copies a file it refuses to link (see `link_path`)
+        FileMode::Symlink if symlink_fell_back_to_copy(req) => format!(
+            "copied {src} to {tgt}: Windows refused a symlink, so the copy does not follow its source (to link it, turn on Developer Mode and dotfiles.windows_symlinks, then run `mise dot apply --force \"{tgt}\"`, which replaces the copy)"
+        ),
         FileMode::Symlink => format!("created symlink {tgt} -> {src}"),
         // Windows copies each file (see `link_path`), so don't report links it didn't make
         FileMode::SymlinkEach => {
@@ -6393,6 +6653,10 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
     } else {
         vec![]
     };
+    // before any directory is created, or anything removed: a link Windows then refused would
+    // leave a parent behind, and a `--force` replacement of a blocking file with nothing in
+    // its place
+    ensure_windows_links_possible(req)?;
     if req.mode != FileMode::Permissions
         && let Some(parent) = req.target.parent()
     {
@@ -6400,9 +6664,6 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
     }
     match req.mode {
         FileMode::Symlink => {
-            if let Some(dir) = req.target.parent() {
-                ensure_windows_link_possible(&req.source, dir)?;
-            }
             replace_recorded(&req.target, written, || {
                 link_path(
                     &req.source,
@@ -6428,15 +6689,6 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>, written: &mut Vec<PathBu
             }
         }
         FileMode::SymlinkEach => {
-            // before anything is removed or created: Windows may refuse the links, and a
-            // `--force` replacement of a blocking file must not have happened by then
-            if windows_symlinks()
-                && let Some((source, _)) = walk_source_files(req)?
-                    .into_iter()
-                    .find(|(source, _)| source.is_file())
-            {
-                ensure_windows_link_possible(&source, &req.target)?;
-            }
             // `unfold_source_links` has replaced every folded link by now; a
             // link written beneath one that remained would land in the source
             let folded = folded_source_links(req)?;
@@ -6711,7 +6963,9 @@ fn prune_stale_links(req: &FileRequest, written: &mut Vec<PathBuf>) -> Result<()
     }
     for path in &stale {
         debug!("files: removing stale link {}", path.display_user());
-        file::remove_file(path)?;
+        // a junction or directory symlink (a deleted directory link in the source) is refused
+        // by `remove_file` on Windows
+        file::remove_symlink_or_junction(path)?;
         written.push(path.clone());
     }
     let needed: HashSet<PathBuf> = needed_dirs(req)?.into_iter().collect();
@@ -6850,13 +7104,40 @@ fn windows_symlinks() -> bool {
 
 /// How many `symlink-each` entries `link_path` copies: on Windows every regular file unless
 /// `dotfiles.windows_symlinks` links them, while a source that is not a file (a directory link)
-/// still gets a junction.
+/// still gets a junction. A link already reaching its source is left in place, not copied: it
+/// is what an apply with the setting on made before it was turned off.
 fn windows_each_copies(files: &[(PathBuf, PathBuf)]) -> usize {
     if cfg!(windows) && !windows_symlinks() {
-        files.iter().filter(|(source, _)| source.is_file()).count()
+        files
+            .iter()
+            .filter(|(source, target)| source.is_file() && !link_points_to(source, target))
+            .count()
     } else {
         0
     }
+}
+
+/// Prove the links `req` makes can be created, for the entries that may need a Windows file
+/// link (see `ensure_windows_link_possible`).
+fn ensure_windows_links_possible(req: &FileRequest) -> Result<()> {
+    match req.mode {
+        FileMode::Symlink => {
+            if let Some(dir) = req.target.parent() {
+                ensure_windows_link_possible(&req.source, dir)?;
+            }
+        }
+        FileMode::SymlinkEach => {
+            if windows_symlinks()
+                && let Some((source, _)) = walk_source_files(req)?
+                    .into_iter()
+                    .find(|(source, _)| source.is_file())
+            {
+                ensure_windows_link_possible(&source, &req.target)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// With `dotfiles.windows_symlinks` on, prove a file link can be created in `links_in` (the
@@ -9996,6 +10277,46 @@ source = "oldrc""#,
             .map(|(req, (_, dirs))| (req, dirs.clone()))
             .collect::<Vec<_>>();
         prune_created_dirs(&pairs, claimed, home, false);
+        Ok(())
+    }
+
+    #[test]
+    fn a_failed_apply_removes_only_the_empty_dirs_it_created() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("new-parent/mid/target/file");
+        let created = missing_ancestors(&target);
+        std::fs::create_dir_all(target.parent().unwrap())?;
+        remove_empty_created_dirs(&created);
+        assert!(!tmp.path().join("new-parent").exists());
+
+        // a directory something landed in stays, and so does everything above it
+        std::fs::create_dir_all(target.parent().unwrap())?;
+        std::fs::write(tmp.path().join("new-parent/mid/kept"), "")?;
+        remove_empty_created_dirs(&created);
+        assert!(!tmp.path().join("new-parent/mid/target").exists());
+        assert!(tmp.path().join("new-parent/mid/kept").exists());
+
+        // a link where a created directory was is not followed or removed
+        let other = tmp.path().join("other");
+        std::fs::create_dir(&other)?;
+        std::fs::remove_file(tmp.path().join("new-parent/mid/kept"))?;
+        file::make_symlink(&other, &tmp.path().join("new-parent/mid/target"))?;
+        remove_empty_created_dirs(&created);
+        assert!(tmp.path().join("new-parent/mid/target").is_symlink());
+        assert!(other.is_dir());
+
+        // directories created beneath an entry's target go too, children before parents
+        let tree = tmp.path().join("tree");
+        let created = vec![
+            tree.clone(),
+            tree.join("a"),
+            tree.join("a/b"),
+            tree.join("c"),
+        ];
+        std::fs::create_dir_all(tree.join("a/b"))?;
+        std::fs::create_dir(tree.join("c"))?;
+        remove_empty_created_dirs(&created);
+        assert!(!tree.exists());
         Ok(())
     }
 

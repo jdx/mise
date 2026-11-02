@@ -2857,6 +2857,7 @@ impl Bootstrap {
             task_cache_explain_json: false,
             task_cache_stats: false,
             timeout: None,
+            lock_timeout: None,
             skip_deps: false,
             // a dry run must not auto-install tools before the (not actually
             // run) task, and --skip tools must keep the task runner from

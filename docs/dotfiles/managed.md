@@ -755,10 +755,15 @@ apply it.
 
 A `symlink` entry for a file creates a symbolic link when Windows allows it,
 which it does without elevation once Developer Mode is on, and copies the file
-otherwise. A directory link is a junction. `symlink-each` always copies each
-file, so edit the source rather than the target and run `mise dot apply`.
-`mise dot status` accepts either form on disk. `relative` and `permissions`
-are ignored on Windows.
+otherwise. A directory link is a junction. `symlink-each` copies each file,
+and a copy does not follow its source. Once the source changes, the copy is a
+regular file where a link belongs, and `mise dot apply` refuses to overwrite
+it without `--force`, as it does any file in the way of a link: you or an
+application may have edited the copy. Refresh the copies of one entry with
+`mise dot apply --force <target>`, use `mode = "copy"` for files that apply
+should always overwrite, or turn on `dotfiles.windows_symlinks` (below) so the
+targets follow the source. `mise dot status` accepts either form on disk.
+`relative` and `permissions` are ignored on Windows.
 
 Set [`dotfiles.windows_symlinks`](/configuration/settings.html#dotfiles.windows_symlinks)
 to `true` to get real file links from both modes. `symlink-each` then links
