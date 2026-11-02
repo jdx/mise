@@ -258,7 +258,6 @@ are [cached](/cache-behavior.html).
 | bazel         | `.bazelversion`                                                                                                                                                                                                                                                                                            |
 | bun           | `.bun-version`, `package.json`                                                                                                                                                                                                                                                                             |
 | chezmoi       | `.chezmoiversion`                                                                                                                                                                                                                                                                                          |
-| cmake         | `CMakeLists.txt`                                                                                                                                                                                                                                                                                           |
 | crystal       | `.crystal-version`                                                                                                                                                                                                                                                                                         |
 | dagger        | `dagger.json`                                                                                                                                                                                                                                                                                              |
 | deno          | `.deno-version`, `package.json`                                                                                                                                                                                                                                                                            |
@@ -317,20 +316,11 @@ A configuration-format major is different. A GoReleaser config's `version: 2`
 selects a schema that is tied to the CLI major, so mise reads it and selects the
 newest GoReleaser 2.x.
 
-::: warning Deprecated minimum-version fields
-mise used to read two floors as version requests: the `go X.Y` directive in
-`go.mod` and `cmake_minimum_required` in `CMakeLists.txt`. Both are deprecated,
-warn when they resolve a version, and stop being read in mise 2026.11.0. For
-Go, add a `toolchain goX.Y.Z` line to `go.mod`, or use `.go-version` or
-`mise.toml`. For CMake, use `mise.toml`.
-
-To ignore the floors and silence the warning before then, set the
-`idiomatic_version_file_ignore_minimum_versions` setting. That setting is
-removed in 2026.11.0 along with the behavior it guards:
-
-```sh
-mise settings idiomatic_version_file_ignore_minimum_versions=true
-```
+::: tip Removed minimum-version fields
+mise no longer reads two floors as version requests: the `go X.Y` directive in
+`go.mod` and `cmake_minimum_required` in `CMakeLists.txt`. For Go, add a
+`toolchain goX.Y.Z` line to `go.mod`, or use `.go-version` or `mise.toml`. For
+CMake, use `mise.toml`.
 
 :::
 

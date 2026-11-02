@@ -1105,35 +1105,7 @@ fn parse_matching_registry_idiomatic_file(
         .max_by_key(|spec| Path::new(spec.path).components().count())
         .filter(|spec| spec.has_parser())
     {
-        Some(spec) => match spec.deprecated {
-            // The file's only parser reads a value mise should not be installing from.
-            // Opting in early means it yields nothing -- `Some(vec![])` rather than
-            // `None`, so the backend's plain-text fallback doesn't read the whole file.
-            Some(_) if Settings::get().idiomatic_version_file_ignore_minimum_versions => {
-                Ok(Some(vec![]))
-            }
-            Some(reason) => {
-                let versions = parse_registry_idiomatic_file(path, spec)?;
-                // Only warn when the file actually resolved something, so a project
-                // that merely has the file lying around stays quiet.
-                if versions
-                    .as_ref()
-                    .is_some_and(|versions| !versions.is_empty())
-                {
-                    // The path is the id so two deprecated files can't silence each
-                    // other, and it already names the file in the warning.
-                    let id = spec.path;
-                    deprecated_at!(
-                        "2026.8.10",
-                        "2026.11.0",
-                        id,
-                        "{reason} mise will stop reading it as an idiomatic version file; set the version in mise.toml instead."
-                    );
-                }
-                Ok(versions)
-            }
-            None => parse_registry_idiomatic_file(path, spec),
-        },
+        Some(spec) => parse_registry_idiomatic_file(path, spec),
         None => Ok(None),
     }
 }
@@ -1771,7 +1743,6 @@ mod tests {
             version_regex: None,
             version_json_path: Some(".releases[?channel=stable].version"),
             version_expr: None,
-            deprecated: None,
         };
 
         assert_eq!(
@@ -1791,7 +1762,6 @@ mod tests {
             version_regex: None,
             version_json_path: Some(".version"),
             version_expr: None,
-            deprecated: None,
         }];
 
         assert_eq!(
@@ -1810,7 +1780,6 @@ mod tests {
             version_regex: None,
             version_json_path: Some(".tool.version"),
             version_expr: None,
-            deprecated: None,
         }];
 
         assert_eq!(
@@ -1826,7 +1795,6 @@ mod tests {
             version_regex: None,
             version_json_path: None,
             version_expr: None,
-            deprecated: None,
         };
 
         assert_eq!(

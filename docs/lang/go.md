@@ -89,9 +89,7 @@ use (
 
 A `go X.Y` directive without a patch version names no Go release and only
 declares the minimum Go version that the module supports. mise ignores it in
-`go.work`. Reading it from `go.mod` is deprecated and stops in mise 2026.11.0;
-add a `toolchain` line instead, or set
-`idiomatic_version_file_ignore_minimum_versions` to ignore it now. See
+`go.work`, and from `go.mod` as well; add a `toolchain` line instead. See
 [which fields mise reads](/dev-tools/versions.html#which-fields-mise-reads).
 
 ### Workspaces and `GOWORK`
