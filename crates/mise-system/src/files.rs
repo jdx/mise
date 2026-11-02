@@ -1098,7 +1098,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                         .iter()
                         .any(|key| table.contains_key(*key))
                 }) {
-                    for key in ["permissions", "relative", "dot_prefix", "group"] {
+                    for key in ["permissions", "relative", "dot_prefix", "group", "depends"] {
                         if table.contains_key(key) {
                             bail!(
                                 "dotfile {target}: {key} applies to whole-file entries, not block or line edits"
@@ -4927,6 +4927,10 @@ pub fn apply_layers(
             Ok(true)
         };
     }
+    // each round is planned alone, so the claims of entries in different
+    // rounds are checked against each other here
+    validate_composed_file_footprints(requests)?;
+    let mut worked = false;
     // a layer is planned only after the ones it depends on are written, so a
     // template or fnox entry reads the files its dependencies created
     for (i, layer) in layers.iter().enumerate() {
@@ -4936,7 +4940,11 @@ pub fn apply_layers(
             .collect::<Vec<_>>();
         let applied = plan_apply(config, &layer_requests, opts, secrets).and_then(|plan| {
             if before(&plan) {
-                execute_apply(config, plan, opts, written)
+                // "all files are applied" is the end of the command: only the
+                // last round says it, and only when no round had work
+                let announce = i + 1 == layers.len() && !worked;
+                worked |= !plan.is_noop();
+                execute_layer(config, plan, opts, written, announce)
             } else {
                 Ok(true)
             }
@@ -5033,6 +5041,25 @@ fn layering(requests: &[FileRequest], known: &[FileRequest]) -> Result<Vec<Vec<u
             layers.resize(layer + 1, vec![]);
         }
         layers[layer].push(index);
+    }
+    // a permissions-only entry decides whether to wait for a directory by the
+    // entries of its own round, so it goes with the last one
+    if layers.len() > 1 {
+        let last = layers.len() - 1;
+        let mut moved = vec![];
+        for layer in &mut layers[..last] {
+            layer.retain(|&index| {
+                let waits = requests[index].mode == FileMode::Permissions
+                    && requests[index].depends.is_empty();
+                if waits {
+                    moved.push(index);
+                }
+                !waits
+            });
+        }
+        layers[last].extend(moved);
+        layers[last].sort_unstable();
+        layers.retain(|layer| !layer.is_empty());
     }
     Ok(layers)
 }
@@ -5202,6 +5229,18 @@ pub fn execute_apply(
     opts: &ApplyOpts,
     written: &mut Vec<PathBuf>,
 ) -> Result<bool> {
+    execute_layer(config, plan, opts, written, true)
+}
+
+/// [`execute_apply`]; `announce_noop` is whether a plan with nothing to do
+/// says so, which a dependency round that is not the last one does not.
+fn execute_layer(
+    config: &Config,
+    plan: ApplyPlan<'_>,
+    opts: &ApplyOpts,
+    written: &mut Vec<PathBuf>,
+    announce_noop: bool,
+) -> Result<bool> {
     let has_reconciliation = !plan.reconciliation.stale_links.is_empty();
     if plan.todo.is_empty() && !has_reconciliation {
         if !opts.dry_run {
@@ -5222,7 +5261,9 @@ pub fn execute_apply(
                     .filter(|req| records_group_ownership(&[], req)),
             );
         }
-        info!("files: all files are applied");
+        if announce_noop {
+            info!("files: all files are applied");
+        }
         return Ok(true);
     }
     if opts.dry_run {
@@ -7879,6 +7920,20 @@ variants = [{{ {field} = "linux" }}]"#
             dependent("/h/b", Some("g"), &[]),
         ];
         assert_eq!(layering(&requests, &requests)?, vec![vec![1], vec![0]]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_permissions_only_entry_goes_with_the_last_round() -> Result<()> {
+        let mut chmod = dependent("/h/.ssh", None, &[]);
+        chmod.mode = FileMode::Permissions;
+        let requests = [
+            chmod,
+            dependent("/h/.ssh/key", None, &["/h/seed"]),
+            dependent("/h/seed", None, &[]),
+        ];
+        // the key is written in the second round, so the chmod of its directory waits for it
+        assert_eq!(layering(&requests, &requests)?, vec![vec![2], vec![0, 1]]);
         Ok(())
     }
 
