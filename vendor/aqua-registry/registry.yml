@@ -43202,6 +43202,97 @@ packages:
       - goos: linux
         replacements:
           arm64: aarch64
+  - name: getsentry/toolkit/cli
+    type: github_release
+    repo_owner: getsentry
+    repo_name: toolkit
+    description: Sentry command-line tool for error monitoring and debugging
+    version_prefix: cli@
+    # getsentry/toolkit also publishes MCP server releases with unprefixed tags.
+    # version_prefix alone doesn't keep them out of aqua g and aqua update,
+    # because the getsentry/cli overrides set version_prefix: "".
+    version_filter: Version startsWith "cli@"
+    files:
+      - name: sentry
+    version_constraint: "false"
+    version_overrides:
+      # getsentry/cli was archived and the CLI moved to getsentry/toolkit at cli@0.46.0.
+      # scaffold.yaml doesn't generate these overrides.
+      - version_constraint: semver("<= 0.10.3")
+        repo_owner: getsentry
+        repo_name: cli
+        version_prefix: ""
+        asset: sentry-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        replacements:
+          amd64: x64
+      - version_constraint: semver("<= 0.27.0")
+        repo_owner: getsentry
+        repo_name: cli
+        version_prefix: ""
+        asset: sentry-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: gz
+        windows_arm_emulation: true
+        files:
+          - name: sentry
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: windows
+            asset: sentry-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+      - version_constraint: semver("<= 0.34.0")
+        repo_owner: getsentry
+        repo_name: cli
+        version_prefix: ""
+        asset: sentry-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: gz
+        windows_arm_emulation: true
+        files:
+          - name: sentry
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: linux
+            variants:
+              - key: libc
+                value: glibc
+          - goos: linux
+            asset: sentry-{{.OS}}-{{.Arch}}-musl.{{.Format}}
+            variants:
+              - key: libc
+                value: musl
+          - goos: windows
+            asset: sentry-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+      - version_constraint: semver("<= 0.45.0")
+        repo_owner: getsentry
+        repo_name: cli
+        version_prefix: ""
+        asset: sentry-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: gz
+        windows_arm_emulation: true
+        files:
+          - name: sentry
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: windows
+            asset: sentry-{{.OS}}-{{.Arch}}.exe.{{.Format}}
+      - version_constraint: "true"
+        asset: sentry-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: gz
+        windows_arm_emulation: true
+        files:
+          - name: sentry
+            src: "{{.AssetWithoutExt}}"
+        replacements:
+          amd64: x64
+        overrides:
+          - goos: windows
+            asset: sentry-{{.OS}}-{{.Arch}}.exe.{{.Format}}
   - type: github_release
     repo_owner: getsops
     repo_name: sops
@@ -44102,6 +44193,14 @@ packages:
           https://github.com/github/licensed/issues/585
 
           Licensed v4 no longer provides a self-contained executable build of licensed
+  - type: http
+    name: gitlab.com/gitlab-org/ci-cd/runner-tools/glci
+    url: https://gitlab.com/api/v4/projects/80906769/packages/generic/glci/{{.Version}}/glci-{{.OS}}-{{.Arch}}
+    format: raw
+    description: A tool for running GitLab CI jobs locally
+    supported_envs:
+      - darwin
+      - linux
   - name: gitlab.com/gitlab-org/cli
     # TODO: Support GitLab
     # repo_owner: gitlab-org
@@ -67521,7 +67620,7 @@ packages:
   - type: github_release
     repo_owner: mattn
     repo_name: zig-update
-    description: Zig updator
+    description: Zig updater
     version_constraint: "false"
     version_overrides:
       - version_constraint: semver("<= 0.0.1")
@@ -74354,6 +74453,13 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+      - version_constraint: semver("< 1.39.0")
+        asset: cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
       - version_constraint: "true"
         asset: cli_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -74361,6 +74467,15 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+          cosign:
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+            opts:
+              - --certificate-identity
+              - https://github.com/odigos-io/odigos/.github/workflows/release.yml@refs/heads/main
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
   - type: go_install
     repo_owner: ogen-go
     repo_name: ogen
@@ -77650,7 +77765,7 @@ packages:
       - version_constraint: semver("< 1.28.0")
         version_prefix: apps_v
         error_message: |
-          The version was too old. Please ugrade to 1.28.0 or later.
+          The version was too old. Please upgrade to 1.28.0 or later.
           < 1.17.0: The version prefix is oxlint_v
           >= 1.17.0, < 1.28.0: These versions are unavailable
           >= 1.28.0, < 1.85.0: The version prefix is apps_v
@@ -79549,6 +79664,24 @@ packages:
         checksum:
           type: github_release
           asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+  - type: github_release
+    repo_owner: pleaseai
+    repo_name: asana
+    description: asana cli
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: asana-{{.OS}}-{{.Arch}}
+        format: raw
+        replacements:
+          amd64: x64
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
           algorithm: sha256
         supported_envs:
           - linux
@@ -93585,7 +93718,7 @@ packages:
   - type: github_release
     repo_owner: superbrothers
     repo_name: ksort
-    description: Sort manfest files in a proper order by Kind
+    description: Sort manifest files in a proper order by Kind
     files:
       - name: ksort
       - name: kubectl-sort_manifests
@@ -97407,16 +97540,27 @@ packages:
         src: "{{.AssetWithoutExt}}/tailscale"
       - name: tailscaled
         src: "{{.AssetWithoutExt}}/tailscaled"
-    overrides:
-      - goos: darwin
-        url: https://pkgs.tailscale.com/stable/Tailscale-{{trimV .Version}}-macos.{{.Format}}
-        format: pkg
-        files:
-          - name: tailscale
-            src: Distribution.pkg/Payload/Contents/MacOS/Tailscale
     supported_envs:
       - linux
       - darwin
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.102.4")
+        overrides:
+          - goos: darwin
+            url: https://pkgs.tailscale.com/stable/Tailscale-{{trimV .Version}}-macos.{{.Format}}
+            format: pkg
+            files:
+              - name: tailscale
+                src: Distribution.pkg/Payload/Contents/MacOS/Tailscale
+      - version_constraint: "true"
+        overrides:
+          - goos: darwin
+            url: https://pkgs.tailscale.com/stable/Tailscale-{{trimV .Version}}-macos.{{.Format}}
+            format: pkg
+            files:
+              - name: tailscale
+                src: Distribution.pkg/Payload/Tailscale.app/Contents/MacOS/Tailscale
   - type: github_release
     repo_owner: tailwindlabs
     repo_name: tailwindcss
@@ -99874,6 +100018,29 @@ packages:
           type: github_release
           asset: lwc-checksums.txt
           algorithm: sha256
+  - type: github_release
+    repo_owner: timmo001
+    repo_name: system-bridge
+    description: A bridge for your systems
+    version_constraint: "false"
+    version_overrides:
+      # Releases before 5.20.0 ship OS packages, installers and app bundles, but no standalone executable
+      - version_constraint: semver("<= 5.19.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: system-bridge-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+        overrides:
+          - goos: linux
+            format: tar.gz
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+        github_artifact_attestations:
+          signer_workflow: timmo001/system-bridge/.github/workflows/build-and-package-application.yml
   - type: github_release
     repo_owner: timvisee
     repo_name: ffsend

@@ -1,5 +1,71 @@
 # Changelog
 
+## [2026.11.0](https://github.com/jdx/mise/releases/tag/v2026.11.0) - 2026-11-02
+
+### 🚀 Features
+
+- **(task)** add lock so runs that share a resource take turns by @jdx in [#15242](https://github.com/jdx/mise/pull/15242)
+
+### 🐛 Bug Fixes
+
+- **(brew-cask)** upgrade an auto-updating app still at its recorded version by @waynehoover in [#15226](https://github.com/jdx/mise/pull/15226)
+- **(config)** load config folders that are git repositories of their own by @jdx in [#15224](https://github.com/jdx/mise/pull/15224)
+- **(daemons)** use mise's pitchfork for status, stop, logs and prune without a project pin by @jdx in [#15237](https://github.com/jdx/mise/pull/15237)
+- **(deb)** stop apt repository metadata from being cached for a day by @jdx in [#15219](https://github.com/jdx/mise/pull/15219)
+- **(dotfiles)** prune symlink-each links on Windows after the state file is lost by @jdx in [#15249](https://github.com/jdx/mise/pull/15249)
+- **(dotfiles)** unapply junctions and directory symlinks on Windows by @jdx in [#15248](https://github.com/jdx/mise/pull/15248)
+- **(dotfiles)** skip bootstrap history checkpoints when nothing changed by @jdx in [#15246](https://github.com/jdx/mise/pull/15246)
+- **(dotfiles)** report a Windows symlink that fell back to a copy as copied by @jdx in [#15252](https://github.com/jdx/mise/pull/15252)
+- **(dotfiles)** keep one state file when a Windows path changes letter case by @jdx in [#15254](https://github.com/jdx/mise/pull/15254)
+- **(dotfiles)** let the next apply carry on after a failed one by @jdx in [#15253](https://github.com/jdx/mise/pull/15253)
+- **(lock)** remember the install identity of a uv.lock sidecar between runs by @jdx in [#15230](https://github.com/jdx/mise/pull/15230)
+- **(lock)** never trust a project lockfile in safe mode by @jdx in [#15235](https://github.com/jdx/mise/pull/15235)
+- **(mas)** treat an empty mas list as unknown while App Store apps exist by @waynehoover in [#15228](https://github.com/jdx/mise/pull/15228)
+- **(task)** export daemon variables to monorepo tasks run from the root by @jdx in [#15217](https://github.com/jdx/mise/pull/15217)
+- **(task)** run every line of a multi-line script under cmd.exe on Windows by @jdx in [#15238](https://github.com/jdx/mise/pull/15238)
+- **(vfox)** stop re-running embedded plugins' env hook on every prompt by @jdx in [#15227](https://github.com/jdx/mise/pull/15227)
+
+### 🚜 Refactor
+
+- **(core)** verify GitHub attestations against a bare sha512 digest by @jdx in [#15239](https://github.com/jdx/mise/pull/15239)
+
+### 📚 Documentation
+
+- **(dotfiles)** say that Windows symlink-each copies need --force once the source changes by @jdx in [#15247](https://github.com/jdx/mise/pull/15247)
+
+### 🧪 Testing
+
+- **(brew)** run the cask tests from a checkout under /tmp, and skip shim tests without a working ruby by @jdx in [#15222](https://github.com/jdx/mise/pull/15222)
+
+### 📦️ Dependency Updates
+
+- update jdx crates to v7.1.5 by @renovate[bot] in [#15236](https://github.com/jdx/mise/pull/15236)
+
+### 📦 Registry
+
+- add kotlin-toolchain (http:kotlin-toolchain) by @ggoggam in [#15234](https://github.com/jdx/mise/pull/15234)
+
+### Chore
+
+- add Entire's StopFailure hook for Claude Code by @jdx in [#15221](https://github.com/jdx/mise/pull/15221)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (4)
+
+- [`getsentry/toolkit/cli`](https://github.com/getsentry/toolkit)
+- `gitlab.com/gitlab-org/ci-cd/runner-tools/glci`
+- [`pleaseai/asana`](https://github.com/pleaseai/asana)
+- [`timmo001/system-bridge`](https://github.com/timmo001/system-bridge)
+
+#### Updated Packages (5)
+
+- [`mattn/zig-update`](https://github.com/mattn/zig-update)
+- [`odigos-io/odigos`](https://github.com/odigos-io/odigos)
+- [`oxc-project/oxc/oxlint`](https://github.com/oxc-project/oxc)
+- [`superbrothers/ksort`](https://github.com/superbrothers/ksort)
+- [`tailscale/tailscale`](https://github.com/tailscale/tailscale)
+
 ## [2026.10.25](https://github.com/jdx/mise/releases/tag/v2026.10.25) - 2026-10-31
 
 ### 🚀 Features
