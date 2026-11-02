@@ -49,17 +49,17 @@ mise skills sync
 assert_contains "cat .claude/skills/skilled/SKILL.md" "# skilled 1.0.0"
 assert 'test -e .agents; echo $?' "1"
 
-# Both exist (.claude/skills a link to .agents/skills): .agents/skills wins.
+# Both exist as real directories: .agents/skills wins.
 cd .. || exit 1
 mkdir both
 cd both || exit 1
-mkdir -p .agents/skills .claude
-ln -s ../.agents/skills .claude/skills
+mkdir -p .agents/skills .claude/skills
 echo '[tools]
 skilled = "1.0.0"' >mise.toml
 mise install
 mise skills sync
 assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
+assert 'test -e .claude/skills/skilled; echo $?' "1"
 
 # An explicit setting wins over both.
 mkdir ../explicit
