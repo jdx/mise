@@ -78,21 +78,32 @@ fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
     Ok(())
 }
 
-/// Check if a name is similar to any known CLI subcommands using fuzzy matching
+/// Check if a name is similar to any known CLI subcommands
 fn suggest_similar_commands(name: &str) -> Vec<String> {
+    similar_commands(name, crate::frontend::subcommand_names())
+}
+
+/// Close spellings (a transposed or missing letter, like `lsit` for `list`) come first, then
+/// commands that contain the typed letters in order. Hidden `__` commands are never suggested:
+/// their long names contain almost any short typo as a subsequence.
+fn similar_commands(name: &str, commands: Vec<String>) -> Vec<String> {
+    const MAX: usize = 3;
+    let commands: Vec<String> = commands
+        .into_iter()
+        .filter(|c| !c.starts_with("__"))
+        .collect();
+    let mut found = xx::suggest::similar_n_with_threshold(name, &commands, MAX, 0.8);
+
     let mut matcher = FuzzyMatcher::default();
     let pattern = FuzzyPattern::new(name);
-    crate::frontend::subcommand_names()
-        .into_iter()
-        .filter_map(|subcmd| {
-            matcher
-                .score_pattern(&subcmd, &pattern)
-                .map(|score| (score, subcmd))
-        })
+    let fuzzy = commands
+        .iter()
+        .filter(|c| !found.contains(c))
+        .filter_map(|c| matcher.score_pattern(c, &pattern).map(|score| (score, c)))
         .sorted_by_key(|(score, _)| std::cmp::Reverse(*score))
-        .take(3)
-        .map(|(_, subcmd)| subcmd)
-        .collect()
+        .map(|(_, c)| c.clone());
+    found.extend(fuzzy.take(MAX - found.len()));
+    found
 }
 
 async fn tasks_for_missing_task_error(
@@ -678,6 +689,16 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_transposed_command_suggests_the_real_command() {
+        let commands = ["list", "ls", "install", "__publish-system-install", "use"]
+            .map(String::from)
+            .to_vec();
+        let found = similar_commands("lsit", commands);
+        assert_eq!(found.first().map(String::as_str), Some("list"), "{found:?}");
+        assert!(found.iter().all(|c| !c.starts_with("__")), "{found:?}");
+    }
 
     // A miss asks the CLI frontend for similar subcommand names. The library's own tests have
     // no CLI, so this also checks that their stand-in frontend is registered.
