@@ -438,6 +438,8 @@ fn written_homebrew_metadata_hands_the_cask_to_homebrew() -> Result<()> {
     )?)?;
     assert_eq!(receipt["installed_on_request"], true);
     assert_eq!(receipt["installed_as_dependency"], false);
+    assert_eq!(receipt["loaded_from_api"], true);
+    assert_eq!(receipt["arch"], "arm64");
     assert_eq!(receipt["source"]["tap"], "homebrew/cask");
     assert_eq!(receipt["source"]["version"], "2.40.0");
     assert!(receipt["time"].as_i64().is_some_and(|t| t > 0));
@@ -11303,4 +11305,18 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
         "the staged bundle was copied rather than moved out of the stage"
     );
     Ok(())
+}
+
+#[test]
+fn homebrew_receipt_needs_a_release_that_verifies_uninstall_recovery() {
+    let min = MIN_SAFE_HOMEBREW;
+    assert!(homebrew_version_at_least("Homebrew 6.0.12\n", min));
+    assert!(homebrew_version_at_least(
+        "Homebrew 7.0.11-24-g2833c25\nHomebrew/homebrew-core",
+        min
+    ));
+    assert!(!homebrew_version_at_least("Homebrew 6.0.11\n", min));
+    assert!(!homebrew_version_at_least("Homebrew 5.9.99\n", min));
+    assert!(!homebrew_version_at_least("Homebrew\n", min));
+    assert!(!homebrew_version_at_least("", min));
 }

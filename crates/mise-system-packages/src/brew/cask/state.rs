@@ -199,6 +199,51 @@ pub(super) fn homebrew_handoff_applies(cask: &Cask, request: &PackageRequest) ->
         && is_official_cask_request(&request.name)
         && cask.appdir.is_none()
         && mise_util::env::var(APP_DIR_ENV).map_or(true, |dir| dir.is_empty())
+        && homebrew_recovers_uninstall_safely()
+}
+
+/// Oldest Homebrew that verifies the cask definition it recovers for a receipt
+/// without `uninstall_artifacts` (GHSA-rg9r-ppxp-87hm).
+pub(super) const MIN_SAFE_HOMEBREW: (u64, u64, u64) = (6, 0, 12);
+
+/// Whether the installed Homebrew is new enough to receive a receipt that omits
+/// `uninstall_artifacts`. Older releases recover those directives from an
+/// unsigned endpoint and run them under `sudo` on uninstall, so the handoff
+/// stays off when brew is missing or its version cannot be read.
+fn homebrew_recovers_uninstall_safely() -> bool {
+    static SAFE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SAFE.get_or_init(|| {
+        let brew = super::super::prefix::prefix().join("bin/brew");
+        let Ok(output) = std::process::Command::new(brew)
+            .arg("--version")
+            .env("HOMEBREW_NO_AUTO_UPDATE", "1")
+            .output()
+        else {
+            return false;
+        };
+        homebrew_version_at_least(&String::from_utf8_lossy(&output.stdout), MIN_SAFE_HOMEBREW)
+    })
+}
+
+/// Parses the first line of `brew --version` ("Homebrew 6.0.12-3-gabc"), which
+/// is dotted numerics, not an arbitrary tool version. Unparseable counts as old.
+pub(super) fn homebrew_version_at_least(output: &str, min: (u64, u64, u64)) -> bool {
+    let Some(version) = output
+        .lines()
+        .next()
+        .and_then(|line| line.strip_prefix("Homebrew "))
+    else {
+        return false;
+    };
+    let mut parts = version
+        .split(['.', '-', ' '])
+        .map(|part| part.parse::<u64>().ok());
+    let (Some(Some(major)), Some(Some(minor)), Some(Some(patch))) =
+        (parts.next(), parts.next(), parts.next())
+    else {
+        return false;
+    };
+    (major, minor, patch) >= min
 }
 
 pub(super) fn homebrew_metadata_present(token: &str) -> Result<bool> {

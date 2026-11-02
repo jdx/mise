@@ -230,7 +230,11 @@ mise, because Homebrew's record names only the token and would look it up in
 `homebrew/cask`. So do casks installed outside the default application
 directory (an `appdir` entry or `MISE_BREW_CASK_OPT_APPDIR`), which
 `brew upgrade` would reinstall into `/Applications`. The setting applies on
-Apple Silicon Macs only, where mise's Caskroom is Homebrew's.
+Apple Silicon Macs only, where mise's Caskroom is Homebrew's, and only when
+Homebrew is 6.0.12 or newer: older releases recover a cask's uninstall steps
+from an unsigned endpoint when the receipt has none
+([GHSA-rg9r-ppxp-87hm](https://github.com/Homebrew/brew/security/advisories/GHSA-rg9r-ppxp-87hm)),
+so mise leaves the cask alone there.
 
 A cask counts as installed while its app, font, binary, and completion files
 are in place. Changes inside an installed app, such as a self-update, do not

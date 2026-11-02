@@ -76,15 +76,19 @@ pub struct BrewCaskManager {
 
 struct InstallAncestry<'a> {
     tokens: &'a BTreeSet<String>,
+    /// Tokens the user asked for, so a cask requested alongside its parent is
+    /// still recorded as requested when it is installed as the parent's dependency.
+    requested: &'a BTreeSet<String>,
     inherited_appdir: Option<&'a Path>,
 }
 
-impl InstallAncestry<'_> {
-    fn root() -> Self {
+impl<'a> InstallAncestry<'a> {
+    fn root(requested: &'a BTreeSet<String>) -> Self {
         static ROOT: std::sync::LazyLock<BTreeSet<String>> =
             std::sync::LazyLock::new(BTreeSet::new);
         Self {
             tokens: &ROOT,
+            requested,
             inherited_appdir: None,
         }
     }
@@ -98,6 +102,14 @@ enum InstallMode {
 
 /// Preserves matching recorded versions in both modes and self-updating casks
 /// during installation; explicit upgrades may assess their live bundle versions.
+/// The tokens of the requested casks (the last segment of a tapped name).
+fn requested_tokens(pkgs: &[PackageRequest]) -> BTreeSet<String> {
+    pkgs.iter()
+        .filter_map(|pkg| pkg.name.rsplit('/').next())
+        .map(str::to_string)
+        .collect()
+}
+
 fn should_skip_installed(cask: &Cask, version: &str, mode: InstallMode) -> bool {
     version == cask.version || (mode == InstallMode::Install && cask.auto_updates)
 }
@@ -520,6 +532,7 @@ impl BrewCaskManager {
         {
             bail!("brew casks are installed at their current version ('{p}')");
         }
+        let requested = requested_tokens(pkgs);
         if opts.dry_run {
             // Gated like the real install: previewing a macos-app apply must
             // not create a Homebrew prefix that applying it never would.
@@ -527,7 +540,7 @@ impl BrewCaskManager {
                 prefix::bootstrap(true)?;
             }
             for pkg in pkgs {
-                self.install_one(pkg, opts, None, manager_options, mode)
+                self.install_one(pkg, opts, None, &requested, manager_options, mode)
                     .await?;
             }
             return Ok(());
@@ -539,7 +552,7 @@ impl BrewCaskManager {
             let pr: Box<dyn SingleReport> =
                 mpr.add(&format!("{}:{}", self.manager.label(), pkg.name));
             match self
-                .install_one(pkg, opts, Some(&*pr), manager_options, mode)
+                .install_one(pkg, opts, Some(&*pr), &requested, manager_options, mode)
                 .await
             {
                 Ok(version) => {
@@ -578,6 +591,7 @@ impl BrewCaskManager {
         req: &PackageRequest,
         opts: &InstallOpts,
         pr: Option<&dyn SingleReport>,
+        requested: &BTreeSet<String>,
         manager_options: &ManagerPackageOptions,
         mode: InstallMode,
     ) -> Result<String> {
@@ -585,7 +599,7 @@ impl BrewCaskManager {
             req,
             opts,
             pr,
-            InstallAncestry::root(),
+            InstallAncestry::root(requested),
             manager_options,
             mode,
         )
@@ -687,6 +701,7 @@ impl BrewCaskManager {
                 None,
                 InstallAncestry {
                     tokens: &ancestors,
+                    requested: ancestry.requested,
                     inherited_appdir: cask.appdir.as_deref(),
                 },
                 manager_options,
@@ -1043,7 +1058,7 @@ impl BrewCaskManager {
                 &caskroom_token,
                 &cask.token,
                 &cask.version,
-                ancestry.tokens.is_empty(),
+                ancestry.tokens.is_empty() || ancestry.requested.contains(&cask.token),
             )
         {
             warn!(
