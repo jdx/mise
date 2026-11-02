@@ -89,3 +89,17 @@ cat <<EOF >mise.toml
 EOF
 assert_succeed "mise dot apply --yes $PWD/out/rc"
 assert "cat out/rc" "late"
+
+# an entry that writes mise's own config is applied first, and still waits
+rm -rf out
+cat <<'EOT' >templates/private.tera
+[env]
+SECRET = "{{ read_file(path="out/key") | trim }}"
+EOT
+cat <<EOF >mise.toml
+[dotfiles]
+"$PWD/out/key" = { content = "from-entry\n" }
+"$HOME/.config/mise/conf.d/private.toml" = { source = "templates/private.tera", mode = "template", depends = ["$PWD/out/key"] }
+EOF
+assert_succeed "mise dot apply --yes"
+assert_contains "cat $HOME/.config/mise/conf.d/private.toml" 'SECRET = "from-entry"'

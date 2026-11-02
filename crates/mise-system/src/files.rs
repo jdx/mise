@@ -4905,14 +4905,27 @@ pub fn apply(
     secrets: &SecretValues,
     written: &mut Vec<PathBuf>,
 ) -> Result<bool> {
+    apply_layers(config, requests, opts, secrets, written, |_| true)
+}
+
+/// [`apply`], showing each planned layer to `before`, which returns whether
+/// to execute it. A config without `depends` is one layer.
+pub fn apply_layers(
+    config: &Config,
+    requests: &[FileRequest],
+    opts: &ApplyOpts,
+    secrets: &SecretValues,
+    written: &mut Vec<PathBuf>,
+    mut before: impl FnMut(&ApplyPlan<'_>) -> bool,
+) -> Result<bool> {
     let layers = dependency_layers(config, requests)?;
     if layers.len() <= 1 {
-        return execute_apply(
-            config,
-            plan_apply(config, requests, opts, secrets)?,
-            opts,
-            written,
-        );
+        let plan = plan_apply(config, requests, opts, secrets)?;
+        return if before(&plan) {
+            execute_apply(config, plan, opts, written)
+        } else {
+            Ok(true)
+        };
     }
     // a layer is planned only after the ones it depends on are written, so a
     // template or fnox entry reads the files its dependencies created
@@ -4921,8 +4934,13 @@ pub fn apply(
             .iter()
             .map(|&index| requests[index].clone())
             .collect::<Vec<_>>();
-        let applied = plan_apply(config, &layer_requests, opts, secrets)
-            .and_then(|plan| execute_apply(config, plan, opts, written));
+        let applied = plan_apply(config, &layer_requests, opts, secrets).and_then(|plan| {
+            if before(&plan) {
+                execute_apply(config, plan, opts, written)
+            } else {
+                Ok(true)
+            }
+        });
         match applied {
             Ok(true) => {}
             Ok(false) => return Ok(false),
@@ -4953,7 +4971,33 @@ fn dependency_layers(config: &Config, requests: &[FileRequest]) -> Result<Vec<Ve
     if requests.iter().all(|req| req.depends.is_empty()) {
         return Ok(vec![(0..requests.len()).collect()]);
     }
-    layering(requests, &files_from_config(config)?)
+    // a group the machine does not select is still a name that exists
+    layering(requests, &composed_files_from_config(config)?)
+}
+
+/// `selected` among `all`, plus everything they depend on, in `all`'s order:
+/// a pass that applies only some entries still writes what they wait for.
+pub fn with_dependencies(
+    all: &[FileRequest],
+    selected: impl Fn(&FileRequest) -> bool,
+) -> Vec<FileRequest> {
+    let mut keep = all.iter().map(selected).collect::<Vec<_>>();
+    let mut pending = (0..all.len()).filter(|&i| keep[i]).collect::<Vec<_>>();
+    while let Some(index) = pending.pop() {
+        for dep in &all[index].depends {
+            for found in dependency_matches(dep, all) {
+                if !keep[found] {
+                    keep[found] = true;
+                    pending.push(found);
+                }
+            }
+        }
+    }
+    all.iter()
+        .zip(keep)
+        .filter(|(_, keep)| *keep)
+        .map(|(req, _)| req.clone())
+        .collect()
 }
 
 /// [`dependency_layers`] given every entry of the config (`known`), which
@@ -4970,7 +5014,10 @@ fn layering(requests: &[FileRequest], known: &[FileRequest]) -> Result<Vec<Vec<u
                     req.target_raw
                 );
             }
-            edge.extend(in_apply);
+            // an entry of a group that names its own group waits for the rest
+            edge.extend(in_apply.into_iter().filter(|&found| {
+                !(req.group.as_deref() == Some(dep.as_str()) && found == edges.len())
+            }));
         }
         edges.push(edge);
     }
@@ -5034,10 +5081,7 @@ fn layer_for(
     path.push(index);
     let mut layer = 0;
     for &dep in &edges[index] {
-        // an entry of a group that names its own group waits for the rest
-        if dep != index {
-            layer = layer.max(layer_for(dep, requests, edges, layer_of, path)? + 1);
-        }
+        layer = layer.max(layer_for(dep, requests, edges, layer_of, path)? + 1);
     }
     path.pop();
     layer_of[index] = Some(layer);
@@ -7836,6 +7880,38 @@ variants = [{{ {field} = "linux" }}]"#
         ];
         assert_eq!(layering(&requests, &requests)?, vec![vec![1], vec![0]]);
         Ok(())
+    }
+
+    #[test]
+    fn an_entry_naming_its_own_target_is_a_cycle() {
+        let requests = [dependent("/h/a", None, &["/h/a"])];
+        let err = layering(&requests, &requests).unwrap_err().to_string();
+        assert!(err.contains("depends form a cycle: /h/a -> /h/a"), "{err}");
+    }
+
+    #[test]
+    fn a_deselected_group_is_a_known_name() -> Result<()> {
+        let applied = [dependent("/h/.workrc", None, &["secrets"])];
+        let mut deselected = dependent("/h/.ssh/key", Some("secrets"), &[]);
+        deselected.enabled = false;
+        let known = [applied[0].clone(), deselected];
+        assert_eq!(layering(&applied, &known)?, vec![vec![0]]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_pass_that_selects_some_entries_takes_what_they_wait_for() {
+        let all = [
+            dependent("/h/.config/mise/conf.d/x.toml", None, &["/h/.ssh/key"]),
+            dependent("/h/.ssh/key", None, &[]),
+            dependent("/h/.other", None, &[]),
+        ];
+        let kept = with_dependencies(&all, |req| req.target.ends_with("x.toml"));
+        let targets = kept
+            .iter()
+            .map(|req| req.target_raw.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(targets, ["/h/.config/mise/conf.d/x.toml", "/h/.ssh/key"]);
     }
 
     fn validate_incoming_body(body: &str) -> Result<()> {
