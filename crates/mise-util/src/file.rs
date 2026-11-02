@@ -1527,9 +1527,28 @@ pub fn same_location_ignoring_case(a: &Path, b: &Path) -> bool {
     }
     match same_file::is_same_file(a, b) {
         // two hard links can be one file under names a case-sensitive directory tells apart
-        Ok(same) => same && a.parent().and_then(directory_is_case_sensitive) != Some(true),
+        Ok(same) => same && !respelled_in_case_sensitive_dir(a, b),
         Err(_) => dangling_paths_share_case_insensitive_parent(a, b),
     }
+}
+
+/// Whether a component that `a` and `b` spell differently sits in a directory marked
+/// case-sensitive, where the two spellings are two names. Only the directories holding a
+/// respelled component matter: `C:\Work\sensitive\x` and `C:\WORK\sensitive\x` are one file
+/// when `C:\` ignores case, whatever `sensitive` is marked.
+#[cfg(windows)]
+fn respelled_in_case_sensitive_dir(a: &Path, b: &Path) -> bool {
+    let mut dir = PathBuf::new();
+    for (in_a, in_b) in a.components().zip(b.components()) {
+        if in_a != in_b
+            && !dir.as_os_str().is_empty()
+            && directory_is_case_sensitive(&dir) == Some(true)
+        {
+            return true;
+        }
+        dir.push(in_a);
+    }
+    false
 }
 
 #[cfg(windows)]
