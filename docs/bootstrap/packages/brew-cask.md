@@ -231,7 +231,7 @@ mise, because Homebrew's record names only the token and would look it up in
 directory (an `appdir` entry or `MISE_BREW_CASK_OPT_APPDIR`), which
 `brew upgrade` would reinstall into `/Applications`. The setting applies on
 Apple Silicon Macs only, where mise's Caskroom is Homebrew's, and only when
-Homebrew is 6.0.12 or newer: older releases recover a cask's uninstall steps
+Homebrew is 6.0.22 or newer: older releases recover a cask's uninstall steps
 from an unsigned endpoint when the receipt has none
 ([GHSA-rg9r-ppxp-87hm](https://github.com/Homebrew/brew/security/advisories/GHSA-rg9r-ppxp-87hm)),
 so mise leaves the cask alone there.

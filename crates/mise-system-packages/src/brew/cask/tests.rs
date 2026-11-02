@@ -11314,13 +11314,26 @@ fn activation_refuses_an_app_that_appeared_during_staging() -> Result<()> {
 #[test]
 fn homebrew_receipt_needs_a_release_that_verifies_uninstall_recovery() {
     let min = MIN_SAFE_HOMEBREW;
-    assert!(homebrew_version_at_least("Homebrew 6.0.12\n", min));
+    assert!(homebrew_version_at_least("Homebrew 6.0.22\n", min));
     assert!(homebrew_version_at_least(
         "Homebrew 7.0.11-24-g2833c25\nHomebrew/homebrew-core",
         min
     ));
-    assert!(!homebrew_version_at_least("Homebrew 6.0.11\n", min));
+    assert!(!homebrew_version_at_least("Homebrew 6.0.21\n", min));
     assert!(!homebrew_version_at_least("Homebrew 5.9.99\n", min));
     assert!(!homebrew_version_at_least("Homebrew\n", min));
     assert!(!homebrew_version_at_least("", min));
+}
+
+#[test]
+fn requested_tokens_use_the_last_segment_of_a_tapped_name() {
+    let requests = ["foo", "homebrew/cask/bar"].map(|name| PackageRequest {
+        name: name.to_string(),
+        version: None,
+        tap_url: None,
+        desired: crate::PackageDesiredState::Present,
+    });
+    let tokens = requested_tokens(&requests);
+    assert!(tokens.contains("foo") && tokens.contains("bar"));
+    assert_eq!(tokens.len(), 2);
 }

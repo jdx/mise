@@ -220,9 +220,11 @@ pub(super) fn homebrew_handoff_applies(cask: &Cask, request: &PackageRequest) ->
         && homebrew_recovers_uninstall_safely()
 }
 
-/// Oldest Homebrew that verifies the cask definition it recovers for a receipt
-/// without `uninstall_artifacts` (GHSA-rg9r-ppxp-87hm).
-pub(super) const MIN_SAFE_HOMEBREW: (u64, u64, u64) = (6, 0, 12);
+/// Oldest Homebrew that loads the signed cask definition when it recovers
+/// uninstall steps for a receipt without `uninstall_artifacts`
+/// (GHSA-rg9r-ppxp-87hm). 6.0.12 patched the advisory but still falls back to
+/// the unsigned per-cask endpoint; 6.0.22 removed that fallback.
+pub(super) const MIN_SAFE_HOMEBREW: (u64, u64, u64) = (6, 0, 22);
 
 /// Whether the installed Homebrew is new enough to receive a receipt that omits
 /// `uninstall_artifacts`. Older releases recover those directives from an
