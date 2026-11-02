@@ -646,7 +646,7 @@ impl Backend for PIPXBackend {
             && tv
                 .uv_python
                 .as_ref()
-                .is_none_or(|(python, _)| python.as_os_str().is_empty())
+                .is_none_or(|(python, _)| python.as_os_str().is_empty() || !python.exists())
         {
             let selected = PipxOptions::new(&request_options)
                 .selected_python()?
