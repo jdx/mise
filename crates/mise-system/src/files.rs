@@ -3533,7 +3533,7 @@ fn reconcile_symlink_each_states(
 fn settle_failed_apply(
     req: &FileRequest,
     created: &[PathBuf],
-    stale: &HashSet<PathBuf>,
+    stale: &HashMap<PathBuf, PathBuf>,
     pending: Vec<journal::PendingChange>,
 ) {
     remove_empty_created_dirs(created);
@@ -3554,36 +3554,21 @@ fn settle_failed_apply(
     // What the journal captured as there before may have been the user's file, which a
     // `--force` write removed before failing: left unfinished, recovery keeps its preimage and
     // asks. One that is unchanged settles that way too. Finished as the failure left them are
-    // only paths captured as missing, links captured where the entry recorded a stale link of
-    // its own and still reaching into its source, and mise's own records. The capture decides, not an earlier look at the path:
+    // only paths captured as missing, links captured exactly as the stale link of its own the
+    // entry found there, and mise's own records. The capture decides, not an earlier look at the path:
     // something may have replaced a stale link since.
     let records = [symlink_each_state_path(req), target_state_path(req)];
     let finished = pending
         .into_iter()
         .filter(|change| {
             change.prior_missing()
-                || stale.contains(change.path())
-                    && change
-                        .prior_link()
-                        .is_some_and(|dest| links_into_source(req, change.path(), dest))
+                || change
+                    .prior_link()
+                    .is_some_and(|dest| stale.get(change.path()).is_some_and(|d| d == dest))
                 || records.iter().any(|r| r == change.path())
         })
         .collect();
     journal::commit_changes(finished);
-}
-
-/// Whether a link at `link` holding `dest` reaches into `req`'s source, as the entry's links
-/// do: a link that something else put in place of a stale one points elsewhere.
-fn links_into_source(req: &FileRequest, link: &Path, dest: &Path) -> bool {
-    let resolved = if dest.is_absolute() {
-        Some(lexical_normalize(dest))
-    } else {
-        resolve_relative_link(link, dest)
-    };
-    resolved.is_some_and(|resolved| {
-        resolved.starts_with(lexical_normalize(&req.source))
-            || resolved.starts_with(physical_path(&req.source))
-    })
 }
 
 /// Remove the directories in `created` that are still empty, deepest first, so a parent
@@ -5006,10 +4991,14 @@ pub fn execute_apply(
             }
             // the links the entry recorded as its own, which a failed apply may finish pruning
             // (see `settle_failed_apply`)
+            // each with where it points now, which the captured link must match exactly
             let stale = if req.mode == FileMode::SymlinkEach {
-                stale_links(req)?.into_iter().collect()
+                stale_links(req)?
+                    .into_iter()
+                    .filter_map(|link| std::fs::read_link(&link).ok().map(|dest| (link, dest)))
+                    .collect()
             } else {
-                HashSet::new()
+                HashMap::new()
             };
             let pending =
                 journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
