@@ -646,9 +646,25 @@ impl Backend for PIPXBackend {
             && tv
                 .uv_python
                 .as_ref()
-                .is_none_or(|(python, _)| python.as_os_str().is_empty())
+                .is_none_or(|(python, _)| python.as_os_str().is_empty() || !python.exists())
         {
-            self.bind_uv_python(ctx, &mut tv).await?;
+            let selected = PipxOptions::new(&request_options)
+                .selected_python()?
+                .is_some();
+            if let Err(error) = self.bind_uv_python(ctx, &mut tv).await {
+                // Resolving the graph lets uv download an interpreter, but replaying it
+                // needs one mise can hand to `uv sync`. Without one, an install that
+                // is not `--locked` can still proceed from the version alone.
+                if selected || ctx.locked {
+                    return Err(error);
+                }
+                warn!(
+                    "{} dependency graph skipped; installing with version-only resolution: {error}",
+                    self.ba.short
+                );
+                tv.uv_lock = None;
+                tv.uv_python = None;
+            }
         }
         reset_selected_python_install_path(&mut tv)?;
         Ok(tv)
@@ -665,7 +681,14 @@ impl Backend for PIPXBackend {
             .is_some();
         if tv.uv_lock.is_some() {
             if tv.uv_python.is_none() {
-                return Ok(false);
+                // No interpreter to replay the graph with: an install made from the
+                // version alone is as good as it gets, so do not retry it every time.
+                let locked = config
+                    .invocation_locked_for(tv.request.source(), Settings::get().locked)
+                    || tv.request.tool_config_locked(config, true);
+                return Ok(!selected_python
+                    && !locked
+                    && self.is_version_installed(config, tv, check_symlink));
             }
         } else if self.uv_lock_allowed(tv) {
             let revision = self.uv_lockfile_version(config, tv)?;
