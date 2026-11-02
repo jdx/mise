@@ -2124,6 +2124,20 @@ parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
+[locked_require_checksum]
+default = false
+description = "Make locked mode fail when the lockfile has no checksum for a download."
+docs = """
+With `true`, [`locked`](#locked) mode also requires a checksum in the lockfile
+for every artifact it downloads for the current platform, including additional
+GitHub release assets, and fails before downloading when one is missing.
+Without it, a lockfile entry with a URL but no checksum installs whatever the
+URL serves. Backends that do not lock download URLs, such as `cargo` and `go`,
+are not affected. Run `mise lock` to fill in missing checksums.
+"""
+env = "MISE_LOCKED_REQUIRE_CHECKSUM"
+type = "Bool"
+
 [locked_verify_provenance]
 default = false
 description = "Re-verify provenance at install time even when the lockfile already records it."

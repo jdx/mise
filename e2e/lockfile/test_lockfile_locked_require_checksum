@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+# locked_require_checksum makes --locked refuse a lockfile entry that has a URL
+# but no checksum, before anything is downloaded.
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+URL="https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+
+cat <<EOF >mise.toml
+[tools]
+"http:hello-require-checksum" = { version = "1.0.0", url = "$URL", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+EOF
+
+cat <<EOF >mise.lock
+[[tools."http:hello-require-checksum"]]
+version = "1.0.0"
+backend = "http:hello-require-checksum"
+"platforms.$PLATFORM" = { url = "$URL" }
+EOF
+
+MISE_LOCKED_REQUIRE_CHECKSUM=1 assert_fail "mise install --locked" "No lockfile checksum found for http:hello-require-checksum@1.0.0 on platform $PLATFORM ($URL)"
+assert_fail "mise where http:hello-require-checksum"
+
+cat <<EOF >mise.lock
+[[tools."http:hello-require-checksum"]]
+version = "1.0.0"
+backend = "http:hello-require-checksum"
+"platforms.$PLATFORM" = { url = "$URL", checksum = "blake3:71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f" }
+EOF
+
+MISE_LOCKED_REQUIRE_CHECKSUM=1 assert "mise install --locked"
+assert_contains "mise x -- hello-world" "hello world"

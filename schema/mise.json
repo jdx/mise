@@ -2476,6 +2476,11 @@
             "enum": ["project", "global", "system"]
           }
         },
+        "locked_require_checksum": {
+          "default": false,
+          "description": "Make locked mode fail when the lockfile has no checksum for a download.",
+          "type": "boolean"
+        },
         "locked_verify_provenance": {
           "default": false,
           "description": "Re-verify provenance at install time even when the lockfile already records it.",
