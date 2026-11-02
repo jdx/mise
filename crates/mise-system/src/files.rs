@@ -3366,10 +3366,66 @@ fn needed_dirs(req: &FileRequest) -> Result<Vec<PathBuf>> {
 fn symlink_each_state_path(req: &FileRequest) -> PathBuf {
     let source = lexical_normalize(&req.source);
     let target = lexical_normalize(&req.target);
-    dirs::STATE.join("dotfiles").join(format!(
+    let dir = dirs::STATE.join("dotfiles");
+    let path = dir.join(format!(
         "{}.toml",
         hash_to_str(&(source.as_path(), target.as_path()))
-    ))
+    ));
+    if cfg!(windows) && !path.exists() {
+        // the name hashes this spelling of the paths; a record written under another casing of
+        // them is this entry's on Windows, and is used rather than a second one beside it
+        if let Some(other) = state_files(&dir).find(|other| {
+            read_symlink_each_state(other).is_ok_and(|state| {
+                same_path_any_case(&state.source, &source)
+                    && same_path_any_case(&state.target, &target)
+            })
+        }) {
+            return other;
+        }
+    }
+    path
+}
+
+/// The state records directly in `dir`.
+fn state_files(dir: &Path) -> impl Iterator<Item = PathBuf> {
+    dir.read_dir()
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "toml") && path.is_file())
+}
+
+/// Whether `a` and `b` name the same path, letter case aside on Windows where the directory
+/// ignores it (one marked case-sensitive tells `foo` from `Foo`).
+fn same_path_any_case(a: &Path, b: &Path) -> bool {
+    file::same_location_ignoring_case(&lexical_normalize(a), &lexical_normalize(b))
+}
+
+/// `path` under `from` moved under `to`, the same directory spelled with other letter case.
+fn respell(path: &Path, from: &Path, to: &Path) -> PathBuf {
+    path.strip_prefix(from)
+        .map_or_else(|_| path.to_path_buf(), |rest| to.join(rest))
+}
+
+/// A record found under another casing of `req`'s paths (see `symlink_each_state_path`),
+/// spelled as `req` spells them now, so the links it holds compare equal to the desired ones.
+fn respell_symlink_each_state(mut state: SymlinkEachState, req: &FileRequest) -> SymlinkEachState {
+    let source = lexical_normalize(&req.source);
+    let target = lexical_normalize(&req.target);
+    if state.source == source && state.target == target
+        || !same_path_any_case(&state.source, &source)
+        || !same_path_any_case(&state.target, &target)
+    {
+        return state;
+    }
+    for link in &mut state.links {
+        link.source = respell(&link.source, &state.source, &source);
+        link.target = respell(&link.target, &state.target, &target);
+    }
+    state.source = source;
+    state.target = target;
+    state
 }
 
 fn desired_symlink_each_state(req: &FileRequest) -> Result<SymlinkEachState> {
@@ -3408,7 +3464,7 @@ fn load_symlink_each_state(req: &FileRequest) -> LoadedSymlinkEachState {
         return LoadedSymlinkEachState::Missing;
     }
     let state = match read_symlink_each_state(&path) {
-        Ok(state) => state,
+        Ok(state) => respell_symlink_each_state(state, req),
         Err(err) => {
             warn!(
                 "files: failed to read dotfiles state {}: {err}",
@@ -3583,10 +3639,22 @@ fn remove_symlink_each_state(req: &FileRequest) -> Result<()> {
 
 fn target_state_path(req: &FileRequest) -> PathBuf {
     let target = lexical_normalize(&req.target);
-    dirs::STATE
-        .join("dotfiles")
-        .join("targets")
-        .join(format!("{}.toml", hash_to_str(&target.as_path())))
+    let dir = dirs::STATE.join("dotfiles").join("targets");
+    let path = dir.join(format!("{}.toml", hash_to_str(&target.as_path())));
+    if cfg!(windows) && !path.exists() {
+        // as for `symlink_each_state_path`: the record of another casing of the target is its
+        if let Some(other) = state_files(&dir).find(|other| {
+            read_target_state(other).is_ok_and(|state| same_path_any_case(&state.target, &target))
+        }) {
+            return other;
+        }
+    }
+    path
+}
+
+fn read_target_state(path: &Path) -> Result<TargetState> {
+    file::read_to_string(path)
+        .and_then(|contents| toml::from_str::<TargetState>(&contents).map_err(Into::into))
 }
 
 /// The record for `req`'s target. A missing, unreadable, or foreign record
@@ -3596,10 +3664,24 @@ fn load_target_state(req: &FileRequest) -> Option<TargetState> {
     if !path.exists() {
         return None;
     }
-    let state = match file::read_to_string(&path)
-        .and_then(|contents| toml::from_str::<TargetState>(&contents).map_err(Into::into))
-    {
-        Ok(state) => state,
+    let state = match read_target_state(&path) {
+        Ok(mut state) => {
+            let target = lexical_normalize(&req.target);
+            if state.target != target && same_path_any_case(&state.target, &target) {
+                // found under another casing of the target: the directories it records are
+                // the target's ancestors, spelled as the target now is
+                for dir in &mut state.created_dirs {
+                    if let Some(ancestor) = target
+                        .ancestors()
+                        .find(|ancestor| same_path_any_case(ancestor, dir))
+                    {
+                        *dir = ancestor.to_path_buf();
+                    }
+                }
+                state.target = target;
+            }
+            state
+        }
         Err(err) => {
             warn!(
                 "files: failed to read dotfiles state {}: {err}",
@@ -4036,14 +4118,16 @@ pub(crate) fn link_points_to(source: &Path, target: &Path) -> bool {
         dest == source
             || points_at_same_file(target, source)
             || if dest.is_absolute() {
-                lexical_normalize(&dest) == lexical_normalize(source)
+                // a record found under another casing of the source is read in the current
+                // one (see `respell_symlink_each_state`), while the link keeps the old one
+                same_path_any_case(&dest, source)
             } else {
                 // the kernel resolves a relative link from the directory the
                 // link physically sits in, so its text is read from there too:
                 // read from the configured spelling, a link in a symlinked
                 // directory could seem to reach a source it does not
                 resolve_relative_link(target, &dest)
-                    .is_some_and(|resolved| resolved == physical_path(source))
+                    .is_some_and(|resolved| same_path_any_case(&resolved, &physical_path(source)))
             }
     })
 }

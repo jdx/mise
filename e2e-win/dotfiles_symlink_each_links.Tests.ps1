@@ -102,4 +102,58 @@ Describe 'dotfiles-symlink-each-links' {
         (Get-Item -LiteralPath (Join-Path $root 'target\old.txt') -Force).LinkType | Should -Be 'SymbolicLink'
         (Get-Item -LiteralPath (Join-Path $root 'target\new.txt') -Force).LinkType | Should -BeNullOrEmpty
     }
+
+    It 'keeps one state file when the target is spelled with other letter case' {
+        if (-not $script:CanSymlink) { return }
+        $root = New-Case 'casing'
+        Set-Content -LiteralPath (Join-Path $root 'source\old.txt') -Value 'old'
+        mise dot apply 2>&1 | Out-String | Out-Null
+        $LASTEXITCODE | Should -Be 0
+
+        # the same directory, which Windows does not tell apart; a new file makes apply save
+        $source = (Join-Path $root 'source') -replace '\\', '/'
+        $target = (Join-Path $root 'TARGET') -replace '\\', '/'
+        "[settings.dotfiles]`nwindows_symlinks = true`n`n[dotfiles]`n`"$target`" = { source = `"$source`", mode = `"symlink-each`" }`n" |
+            Out-File (Join-Path $root 'mise.toml') -Encoding ascii
+        Set-Content -LiteralPath (Join-Path $root 'source\new.txt') -Value 'new'
+        $out = mise dot apply 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0 -Because $out
+
+        # This used to write a second state file beside the first.
+        @(Get-ChildItem -LiteralPath (Join-Path $root 'state\dotfiles') -Filter '*.toml' -File).Count | Should -Be 1
+        (Get-Item -LiteralPath (Join-Path $root 'target\old.txt') -Force).LinkType | Should -Be 'SymbolicLink'
+        (Get-Item -LiteralPath (Join-Path $root 'target\new.txt') -Force).LinkType | Should -Be 'SymbolicLink'
+
+        $out = mise dot unapply 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0 -Because $out
+        Test-Path -LiteralPath (Join-Path $root 'target\old.txt') | Should -BeFalse
+        Test-Path -LiteralPath (Join-Path $root 'target\new.txt') | Should -BeFalse
+        @(Get-ChildItem -LiteralPath (Join-Path $root 'state\dotfiles') -Filter '*.toml' -File).Count | Should -Be 0
+    }
+
+    It 'keeps one target record when a single-file target is spelled with other letter case' {
+        if (-not $script:CanSymlink) { return }
+        $root = New-Case 'casing-single'
+        $records = Join-Path $root 'state\dotfiles\targets'
+        $write = {
+            param([string]$Dir)
+            $target = (Join-Path $root "$Dir\inline.conf") -replace '\\', '/'
+            "[dotfiles]`n`"$target`" = { content = `"inline`" }`n" | Out-File (Join-Path $root 'mise.toml') -Encoding ascii
+        }
+
+        & $write 'made'
+        $out = mise dot apply 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0 -Because $out
+        @(Get-ChildItem -LiteralPath $records -Filter '*.toml' -File).Count | Should -Be 1
+
+        # the same file to Windows: its record, with the content mise wrote, is the entry's
+        & $write 'MADE'
+        $out = mise dot apply 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0 -Because $out
+        $out = mise dot unapply 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0 -Because $out
+        Test-Path -LiteralPath (Join-Path $root 'made\inline.conf') | Should -BeFalse
+        # This used to leave the first spelling's record behind.
+        @(Get-ChildItem -LiteralPath $records -Filter '*.toml' -File -ErrorAction Ignore).Count | Should -Be 0
+    }
 }
