@@ -138,8 +138,13 @@ links.
 ### Choose a skill directory
 
 Without `--dir`, sync uses the [`skills.dir`](/configuration/settings.html#skills.dir)
-setting under the nearest mise project root. Set it to the directory your agent
-reads; `--dir` overrides it for one run.
+setting under the nearest mise project root; `--dir` overrides it for one run.
+
+Left unset, mise uses `.agents/skills` if it exists, then `.claude/skills` if it
+exists. When neither exists it creates `.agents/skills`, the directory most
+agents read, and makes `.claude/skills` a symlink to it for Claude Code. If you
+prefer one location, symlink the other to it yourself and mise will use whichever
+exists first. Set `skills.dir` to pin a directory.
 
 `mise skills sync --global` uses the same setting under your home directory
 instead. An absolute directory is used as written.
@@ -170,13 +175,13 @@ trigger it. Reload skills in your agent if it does not notice the change.
 
 ### Skill settings {#choose-whether-to-fetch-or-generate-skills}
 
-| Setting                                                             | Default          | Effect                                                             |
-| ------------------------------------------------------------------- | ---------------- | ------------------------------------------------------------------ |
-| [`skills.fetch`](/configuration/settings.html#skills.fetch)         | `true`           | Fetch declared skills during tool installation.                    |
-| [`skills.dir`](/configuration/settings.html#skills.dir)             | `.claude/skills` | Choose the directory sync links into.                              |
-| [`skills.auto_sync`](/configuration/settings.html#skills.auto_sync) | `false`          | Sync after install, use, and upgrade within a mise project.        |
-| [`skills.prune`](/configuration/settings.html#skills.prune)         | `false`          | Remove stale mise-owned links during sync.                         |
-| [`packslip.exec`](/configuration/settings.html#packslip.exec)       | `false`          | Run the installed tool to generate a resource during installation. |
+| Setting                                                             | Default | Effect                                                             |
+| ------------------------------------------------------------------- | ------- | ------------------------------------------------------------------ |
+| [`skills.fetch`](/configuration/settings.html#skills.fetch)         | `true`  | Fetch declared skills during tool installation.                    |
+| [`skills.dir`](/configuration/settings.html#skills.dir)             | unset   | Choose the directory sync links into.                              |
+| [`skills.auto_sync`](/configuration/settings.html#skills.auto_sync) | `false` | Sync after install, use, and upgrade within a mise project.        |
+| [`skills.prune`](/configuration/settings.html#skills.prune)         | `false` | Remove stale mise-owned links during sync.                         |
+| [`packslip.exec`](/configuration/settings.html#packslip.exec)       | `false` | Run the installed tool to generate a resource during installation. |
 
 A skill can come from the artifact, a separate signed asset, or the source
 repository at the release commit, and fetching it does not run the tool. A

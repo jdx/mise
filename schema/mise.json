@@ -3124,7 +3124,6 @@
               "type": "boolean"
             },
             "dir": {
-              "default": ".claude/skills",
               "description": "Where `mise skills sync` links skills: a path under the project root, or under the home directory with `--global`.",
               "type": "string"
             },

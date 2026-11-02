@@ -1136,10 +1136,98 @@ fn skills_of_toolset(config: &Arc<Config>, ts: &Toolset) -> Result<DeclaredSkill
 }
 
 /// Where skills are linked under `root`, a project root or the home
-/// directory: the `skills.dir` setting, or that setting itself when it
-/// is absolute.
-pub fn skills_dir(root: &Path) -> PathBuf {
-    root.join(&Settings::get().skills.dir)
+/// directory, and the symlink to create beside them once there is something
+/// to link.
+pub struct SkillsTarget {
+    pub dir: PathBuf,
+    /// The `.claude/skills` beside a default `.agents/skills`: where mise
+    /// makes its link, and whether it may make one now.
+    alias: Option<PathBuf>,
+    create_alias: bool,
+}
+
+impl SkillsTarget {
+    /// An explicit directory, with nothing to link beside it.
+    pub fn at(dir: PathBuf) -> Self {
+        Self {
+            dir,
+            alias: None,
+            create_alias: false,
+        }
+    }
+
+    /// Make `.claude/skills` a symlink to the directory, for a target mise
+    /// chose because neither default existed. A path that is already there,
+    /// even a dangling link, is somebody's and is left alone.
+    pub fn link_alias(&self) -> Result<()> {
+        let Some(alias) = &self.alias else {
+            return Ok(());
+        };
+        let Some(parent) = alias.parent() else {
+            return Ok(());
+        };
+        // A `.claude` that is itself a link may be shared with other
+        // projects: nothing here is ours to make, change or un-hide in it.
+        if file::is_symlink_or_junction(parent) {
+            if self.create_alias && self.dir.is_dir() {
+                warn!(
+                    "{} is a link, so mise did not make {}; link it to {} to have Claude Code read these skills",
+                    file::display_path(parent),
+                    file::display_path(alias),
+                    file::display_path(&self.dir)
+                );
+            }
+            return Ok(());
+        }
+        if alias.symlink_metadata().is_ok() {
+            // Somebody replaced the link with a real directory of their own
+            // (or it never was ours): stop hiding it from git.
+            if !file::is_symlink_or_junction(alias) {
+                crate::packslip_exclude::exclude_links(parent, [], SYNC_STATE)?;
+            }
+            return Ok(());
+        }
+        if !self.create_alias || !self.dir.is_dir() {
+            return Ok(());
+        }
+        file::create_dir_all(parent)?;
+        // Relative, so a project that moves keeps its link. A Windows
+        // junction needs the absolute path.
+        let target = if cfg!(windows) {
+            self.dir.clone()
+        } else {
+            PathBuf::from("../.agents/skills")
+        };
+        file::make_symlink(&target, alias)?;
+        crate::packslip_exclude::exclude_links(parent, ["skills"], SYNC_STATE)
+    }
+}
+
+/// The directory under `root` to link skills into: the `skills.dir`
+/// setting, or that setting itself when it is absolute. Unset, an existing
+/// `.agents/skills` wins, then an existing `.claude/skills`; with neither,
+/// `.agents/skills` is used and `.claude/skills` is linked to it.
+pub fn skills_target(root: &Path) -> SkillsTarget {
+    if let Some(dir) = &Settings::get().skills.dir {
+        return SkillsTarget::at(root.join(dir));
+    }
+    let agents = root.join(".agents/skills");
+    let claude = root.join(".claude/skills");
+    if agents.is_dir() {
+        return SkillsTarget {
+            dir: agents,
+            alias: Some(claude),
+            create_alias: false,
+        };
+    }
+    if claude.is_dir() {
+        return SkillsTarget::at(claude);
+    }
+    SkillsTarget {
+        dir: agents,
+        alias: Some(claude),
+        create_alias: true,
+    }
 }
 
 /// With `skills.auto_sync` on, link the active tools' skills into the
@@ -1158,7 +1246,7 @@ pub async fn auto_sync_skills(config: &Arc<Config>) {
     let shared = config
         .project_root
         .as_ref()
-        .is_some_and(|root| skills_dir(root) == skills_dir(&crate::dirs::HOME));
+        .is_some_and(|root| skills_target(root).dir == skills_target(&crate::dirs::HOME).dir);
     if !shared {
         auto_sync_global_skills(config).await;
     }
@@ -1178,7 +1266,8 @@ async fn auto_sync_skills_into(config: &Arc<Config>, root: &Path, global: bool) 
         }
         return;
     }
-    let dir = skills_dir(root);
+    let target = skills_target(root);
+    let dir = target.dir.clone();
     let result = async {
         let skills = if global {
             global_skills(config).await?
@@ -1204,6 +1293,9 @@ async fn auto_sync_skills_into(config: &Arc<Config>, root: &Path, global: bool) 
     .await;
     match result {
         Ok(report) => {
+            if let Err(err) = target.link_alias() {
+                warn!("could not link .claude/skills: {err}");
+            }
             for name in &report.linked {
                 info!("linked skill {name} into {}", file::display_path(&dir));
             }
