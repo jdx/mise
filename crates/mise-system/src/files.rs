@@ -4931,6 +4931,8 @@ pub fn apply_layers(
     // rounds are checked against each other here
     validate_composed_file_footprints(requests)?;
     let mut worked = false;
+    // what earlier rounds create, for a dry run that has not written it
+    let mut pending: Vec<PathBuf> = vec![];
     // a layer is planned only after the ones it depends on are written, so a
     // template or fnox entry reads the files its dependencies created
     for (i, layer) in layers.iter().enumerate() {
@@ -4938,17 +4940,21 @@ pub fn apply_layers(
             .iter()
             .map(|&index| requests[index].clone())
             .collect::<Vec<_>>();
-        let applied = plan_apply(config, &layer_requests, opts, secrets).and_then(|plan| {
-            if before(&plan) {
-                // "all files are applied" is the end of the command: only the
-                // last round says it, and only when no round had work
-                let announce = i + 1 == layers.len() && !worked;
-                worked |= !plan.is_noop();
-                execute_layer(config, plan, opts, written, announce)
-            } else {
-                Ok(true)
-            }
-        });
+        let applied = files_from_config(config)
+            .and_then(|active| {
+                plan_apply_after(config, &layer_requests, &active, opts, secrets, &pending)
+            })
+            .and_then(|plan| {
+                if before(&plan) {
+                    // "all files are applied" is the end of the command: only the
+                    // last round says it, and only when no round had work
+                    let announce = i + 1 == layers.len() && !worked;
+                    worked |= !plan.is_noop();
+                    execute_layer(config, plan, opts, written, announce)
+                } else {
+                    Ok(true)
+                }
+            });
         match applied {
             Ok(true) => {}
             Ok(false) => return Ok(false),
@@ -4965,6 +4971,17 @@ pub fn apply_layers(
                 return Err(err);
             }
         }
+        pending.extend(
+            layer_requests
+                .iter()
+                .filter(|req| {
+                    !matches!(
+                        req.mode,
+                        FileMode::Absent | FileMode::Permissions | FileMode::Track
+                    ) && !req.remove_empty
+                })
+                .map(|req| req.target.clone()),
+        );
     }
     Ok(true)
 }
@@ -5485,6 +5502,20 @@ pub fn plan_apply_with_active<'a>(
     opts: &ApplyOpts,
     secrets: &SecretValues,
 ) -> Result<ApplyPlan<'a>> {
+    plan_apply_after(config, requests, active_requests, opts, secrets, &[])
+}
+
+/// [`plan_apply_with_active`] for a round of dependent entries. `pending` are
+/// the targets earlier rounds will create, which a dry run has not written:
+/// a source there is not missing, only not yet written.
+fn plan_apply_after<'a>(
+    config: &Config,
+    requests: &'a [FileRequest],
+    active_requests: &[FileRequest],
+    opts: &ApplyOpts,
+    secrets: &SecretValues,
+    pending: &[PathBuf],
+) -> Result<ApplyPlan<'a>> {
     validate_composed_file_footprints(requests)?;
     // pre-rendered template output rides along so it's written as compared,
     // and exec() in templates runs once per apply
@@ -5503,6 +5534,15 @@ pub fn plan_apply_with_active<'a>(
         }
         // report every problem in one pass instead of fix-and-retry — a
         // render or check failure on one entry must not hide the rest
+        if opts.dry_run
+            && req.mode.has_source()
+            && !req.source.exists()
+            && pending.contains(&req.source)
+        {
+            conflicts.extend(find_conflicts(req)?);
+            todo.push((req, None));
+            continue;
+        }
         if req.mode.has_source() && !req.source.exists() && !keeps_existing(req) {
             missing_sources.push(format!(
                 "  [dotfiles].\"{}\": {}",

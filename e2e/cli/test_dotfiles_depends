@@ -103,3 +103,14 @@ cat <<EOF >mise.toml
 EOF
 assert_succeed "mise dot apply --yes"
 assert_contains "cat $HOME/.config/mise/conf.d/private.toml" 'SECRET = "from-entry"'
+
+# a dry run lists a copy whose source an earlier round writes
+rm -rf out
+cat <<EOF >mise.toml
+[dotfiles]
+"$PWD/out/key" = { content = "from-entry\n" }
+"$PWD/out/copy" = { source = "$PWD/out/key", mode = "copy", depends = ["$PWD/out/key"] }
+EOF
+assert_succeed "mise dot apply --dry-run"
+assert_succeed "mise dot apply --yes"
+assert "cat out/copy" "from-entry"
