@@ -945,15 +945,20 @@ pub(crate) fn register_frontend() {
         lockfiles_after_install: |config, installed| {
             Box::pin(async move { lock::Lock::generate_after_install(config, &installed).await })
         },
-        subcommand_names: || {
-            Cli::command()
-                .subcommands
-                .iter()
-                .flat_map(|s| std::iter::once(s.name).chain(s.aliases.iter().copied()))
-                .map(str::to_string)
-                .collect()
-        },
+        subcommand_names,
     });
+}
+
+/// Every visible command name and alias, for "did you mean" suggestions.
+fn subcommand_names() -> Vec<String> {
+    self::usage::spec()
+        .cmd
+        .subcommands
+        .iter()
+        .filter(|(_, s)| !s.hide)
+        .flat_map(|(name, s)| std::iter::once(name).chain(s.aliases.iter()))
+        .cloned()
+        .collect()
 }
 
 impl Cli {
@@ -1471,6 +1476,15 @@ fn display_args(args: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn suggestion_candidates_leave_out_hidden_commands() {
+        let names = subcommand_names();
+        assert!(names.iter().any(|n| n == "list"), "{names:?}");
+        for hidden in ["__publish-system-install", "hook-env"] {
+            assert!(!names.iter().any(|n| n == hidden), "{hidden} in {names:?}");
+        }
+    }
     use mise_util::args::GLOBAL_FLAGS_WITH_VALUES;
 
     #[test]
