@@ -23,6 +23,7 @@ pub(crate) fn entry_rules(schema: &mut Schema) {
         rule_9(),
         rule_10(),
         rule_11(),
+        rule_12(),
     ];
     schema.insert("allOf".into(), rules.into());
     // an encrypted entry is a whole file from a source, never inline content or an edit
@@ -57,6 +58,7 @@ fn rule_0() -> Value {
                 "relative": false,
                 "dot_prefix": false,
                 "group": false,
+                "depends": false,
                 "block": false,
                 "line": false,
                 "position": false,
@@ -245,6 +247,20 @@ fn rule_7() -> Value {
             },
             {"properties": {"include": false}}
         ]
+    })
+}
+
+/// `depends` orders whole-file deployment, so an edit or a track entry takes none.
+fn rule_12() -> Value {
+    json!({
+        "if": {"required": ["depends"]},
+        "then": {
+            "properties": {
+                "block": false,
+                "line": false,
+                "mode": {"not": {"enum": ["track", "track-local"]}}
+            }
+        }
     })
 }
 

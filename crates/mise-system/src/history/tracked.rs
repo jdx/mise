@@ -3826,6 +3826,7 @@ mod tests {
                 dot_prefix: false,
                 relative: false,
                 group: None,
+                depends: vec![],
             }]);
         }
         assert!(set.entries.is_empty());
@@ -5037,6 +5038,7 @@ mod tests {
             dot_prefix: false,
             relative: false,
             group: None,
+            depends: vec![],
         }]);
         assert_eq!(set.manifest.enrollment.len(), 1);
         assert_eq!(

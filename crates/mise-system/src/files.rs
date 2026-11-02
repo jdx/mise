@@ -475,7 +475,7 @@ pub(crate) enum FileTomlEntry {
     /// optional so `{}` can mean implied source/default mode. Mode stays a
     /// string here so configs using modes from newer mise versions still
     /// parse (they warn and are skipped, like unknown package managers)
-    Table(FileTomlTable),
+    Table(Box<FileTomlTable>),
 }
 
 /// The table form of a [`FileTomlEntry`]. Its keys, with [`crate::edits::EditTomlTable`]'s, are
@@ -532,6 +532,10 @@ pub(crate) struct FileTomlTable {
     /// `[bootstrap] dotfile_groups`
     #[serde(default)]
     pub(crate) group: Option<String>,
+    /// whole-file entries and dotfile groups this entry waits for: mise
+    /// writes them before it renders or reads this entry
+    #[serde(default)]
+    pub(crate) depends: Option<Vec<String>>,
 }
 
 impl FileRequest {
@@ -636,6 +640,10 @@ pub struct FileRequest {
     /// the dotfile group the entry belongs to: declared with `group` on an
     /// ordinary entry, or generated from a `[dotfile_groups]` tree
     pub group: Option<String>,
+    /// dotfile groups (by name) and whole-file entries (by target path) this
+    /// entry waits for: a dependency is written before this entry is
+    /// rendered or read, so the entry can use files the dependency creates
+    pub depends: Vec<String>,
 }
 
 const SYMLINK_EACH_STATE_VERSION: u8 = 1;
@@ -1026,6 +1034,7 @@ fn file_requests_match(config: &Config, first: &FileRequest, second: &FileReques
     first.target == second.target
         // two groups deploying one tree are two declarations, not a repeat
         && first.group == second.group
+        && first.depends == second.depends
         && first.source == second.source
         && first.content == second.content
         && first.mode == second.mode
@@ -1124,6 +1133,7 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
                             | "dot_prefix"
                             | "relative"
                             | "group"
+                            | "depends"
                     ) {
                         bail!(
                             "unknown dotfile key {key:?} for {target} in {}",
@@ -1135,25 +1145,29 @@ pub(crate) fn validate_incoming_files(config_files: &ConfigMap) -> Result<()> {
             if let FileTomlEntry::Source(_) = &entry {
                 validate_file_variants(&target, None, None, None, false, &[])?;
             }
-            if let FileTomlEntry::Table(FileTomlTable {
-                source,
-                content,
-                mode,
-                manifest,
-                exclude,
-                encrypt,
-                allow_plaintext,
-                include,
-                permissions,
-                variants,
-                remove_empty,
-                create_if_missing,
-                dot_prefix,
-                relative,
-                group,
-                ..
-            }) = entry
-            {
+            if let FileTomlEntry::Table(table) = entry {
+                let FileTomlTable {
+                    source,
+                    content,
+                    mode,
+                    manifest,
+                    exclude,
+                    encrypt,
+                    allow_plaintext,
+                    include,
+                    permissions,
+                    variants,
+                    remove_empty,
+                    create_if_missing,
+                    dot_prefix,
+                    relative,
+                    group,
+                    depends,
+                    ..
+                } = *table;
+                if depends.is_some() && matches!(mode.as_deref(), Some("track" | TRACK_LOCAL)) {
+                    bail!("dotfile {target}: mode = \"track\" takes no depends");
+                }
                 if group.is_some() {
                     bail!("dotfile {target}: {GROUP_KEY_IN_DOTFILES}");
                 }
@@ -1399,8 +1413,8 @@ fn files_from_config_files_with_tracking_roots(
                 let mut requests = IndexMap::new();
                 if let Some(entry) = parse_dotfiles_entry(&key, value, path) {
                     let overrides_target = matches!(&entry,
-                        FileTomlEntry::Table(FileTomlTable { variants: Some(vs), .. })
-                            if vs.iter().any(|v| v.target.is_some()));
+                        FileTomlEntry::Table(table)
+                            if table.variants.as_ref().is_some_and(|vs| vs.iter().any(|v| v.target.is_some())));
                     merge_file_entry(key.clone(), entry, base, &origin, &mut requests);
                     // An invalid or inactive declaration cannot suppress an
                     // inherited request. Cache resolution so sources are walked once.
@@ -1567,7 +1581,8 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
                     || table.contains_key("permissions")
                     || table.contains_key("relative")
                     || table.contains_key("dot_prefix")
-                    || table.contains_key("group"))
+                    || table.contains_key("group")
+                    || table.contains_key("depends"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
                     && !table.contains_key("template")
@@ -1642,6 +1657,7 @@ fn merge_file_entry(
         dot_prefix,
         relative,
         group,
+        depends,
     ) = match entry {
         FileTomlEntry::Source(source) => (
             Some(source),
@@ -1661,44 +1677,50 @@ fn merge_file_entry(
             None,
             None,
             None,
+            None,
         ),
-        FileTomlEntry::Table(FileTomlTable {
-            source,
-            content,
-            mode,
-            exclude,
-            include,
-            manifest,
-            permissions,
-            autosave,
-            encrypt,
-            allow_plaintext,
-            variants,
-            enabled,
-            remove_empty,
-            create_if_missing,
-            dot_prefix,
-            relative,
-            group,
-        }) => (
-            source,
-            content,
-            mode,
-            exclude,
-            include,
-            manifest,
-            permissions,
-            autosave,
-            encrypt,
-            allow_plaintext,
-            variants,
-            enabled,
-            remove_empty,
-            create_if_missing,
-            dot_prefix,
-            relative,
-            group,
-        ),
+        FileTomlEntry::Table(table) => {
+            let FileTomlTable {
+                source,
+                content,
+                mode,
+                exclude,
+                include,
+                manifest,
+                permissions,
+                autosave,
+                encrypt,
+                allow_plaintext,
+                variants,
+                enabled,
+                remove_empty,
+                create_if_missing,
+                dot_prefix,
+                relative,
+                group,
+                depends,
+            } = *table;
+            (
+                source,
+                content,
+                mode,
+                exclude,
+                include,
+                manifest,
+                permissions,
+                autosave,
+                encrypt,
+                allow_plaintext,
+                variants,
+                enabled,
+                remove_empty,
+                create_if_missing,
+                dot_prefix,
+                relative,
+                group,
+                depends,
+            )
+        }
     };
     // `mode = "track-local"` is `track` saved in this machine's own history.
     // It is a mode rather than a flag so that a mise that predates it skips
@@ -1732,6 +1754,7 @@ fn merge_file_entry(
     };
     let remove_empty = remove_empty.unwrap_or(false);
     let create_if_missing = create_if_missing.unwrap_or(false);
+    let depends = depends.unwrap_or_default();
     let dot_prefix = dot_prefix.unwrap_or(false);
     if let Some(group) = &group
         && let Err(err) = crate::dotfile_groups::validate_group_name(group)
@@ -1812,11 +1835,12 @@ fn merge_file_entry(
             || relative == Some(true)
             || dot_prefix
             || group.is_some()
+            || !depends.is_empty()
         {
             record_invalid(
                 &target_raw,
                 &origin.config,
-                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, create_if_missing, relative, dot_prefix, or group",
+                "mode = \"track\" leaves the file where it is and takes no source, content, manifest, remove_empty, create_if_missing, relative, dot_prefix, group, or depends",
                 local,
             );
             return;
@@ -1895,6 +1919,7 @@ fn merge_file_entry(
             dot_prefix: false,
             relative: false,
             group: None,
+            depends: vec![],
         };
         // a later file of the same directory (`config.local.toml` after
         // `config.toml`) repeating a track declaration overrides only what
@@ -2017,6 +2042,7 @@ fn merge_file_entry(
                 dot_prefix: false,
                 relative: false,
                 group: group.clone(),
+                depends: depends.clone(),
             },
         );
         return;
@@ -2166,6 +2192,7 @@ fn merge_file_entry(
                 dot_prefix: false,
                 relative: false,
                 group: group.clone(),
+                depends: depends.clone(),
             },
         );
         return;
@@ -2200,6 +2227,7 @@ fn merge_file_entry(
                 dot_prefix: false,
                 relative: false,
                 group: group.clone(),
+                depends: depends.clone(),
             },
         );
         return;
@@ -2227,6 +2255,7 @@ fn merge_file_entry(
                 dot_prefix: false,
                 relative: false,
                 group: group.clone(),
+                depends: depends.clone(),
             },
         );
         return;
@@ -2274,6 +2303,7 @@ fn merge_file_entry(
         dot_prefix,
         relative: relative_symlinks(mode, relative),
         group,
+        depends,
     }) {
         merged.insert((req.target.clone(), false), req);
     }
@@ -2439,6 +2469,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
         dot_prefix,
         relative,
         group,
+        depends,
         ..
     } = req;
     if !is_glob_pattern(&source) {
@@ -2462,6 +2493,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             dot_prefix,
             relative,
             group,
+            depends,
         }];
     }
 
@@ -2519,6 +2551,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
             create_if_missing,
             dot_prefix,
             relative,
+            depends,
             group,
         }];
     }
@@ -2563,6 +2596,7 @@ fn expand_request(req: FileRequest) -> Vec<FileRequest> {
                 dot_prefix,
                 relative,
                 group: group.clone(),
+                depends: depends.clone(),
             })
         })
         .collect()
@@ -3335,7 +3369,10 @@ pub fn preflight_templates(
     validate_composed_file_footprints(requests)?;
     let broken = requests
         .iter()
-        .filter(|req| req.mode == FileMode::Template && !keeps_existing(req))
+        // an entry that depends on others may read files they have not written yet
+        .filter(|req| {
+            req.mode == FileMode::Template && !keeps_existing(req) && req.depends.is_empty()
+        })
         .filter_map(|req| render_template(config, req, secrets).err())
         .map(|err| format!("  {err}"))
         .collect::<Vec<_>>();
@@ -4868,12 +4905,143 @@ pub fn apply(
     secrets: &SecretValues,
     written: &mut Vec<PathBuf>,
 ) -> Result<bool> {
-    execute_apply(
-        config,
-        plan_apply(config, requests, opts, secrets)?,
-        opts,
-        written,
-    )
+    let layers = dependency_layers(config, requests)?;
+    if layers.len() <= 1 {
+        return execute_apply(
+            config,
+            plan_apply(config, requests, opts, secrets)?,
+            opts,
+            written,
+        );
+    }
+    // a layer is planned only after the ones it depends on are written, so a
+    // template or fnox entry reads the files its dependencies created
+    for (i, layer) in layers.iter().enumerate() {
+        let layer_requests = layer
+            .iter()
+            .map(|&index| requests[index].clone())
+            .collect::<Vec<_>>();
+        let applied = plan_apply(config, &layer_requests, opts, secrets)
+            .and_then(|plan| execute_apply(config, plan, opts, written));
+        match applied {
+            Ok(true) => {}
+            Ok(false) => return Ok(false),
+            Err(err) => {
+                let skipped = layers[i + 1..]
+                    .iter()
+                    .flatten()
+                    .map(|&index| requests[index].target_raw.as_str())
+                    .collect::<Vec<_>>();
+                warn!(
+                    "files: not applied because an entry they depend on failed: {}",
+                    skipped.join(", ")
+                );
+                return Err(err);
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// Group `requests` into layers of indices: every request comes after the
+/// ones it `depends` on, and requests in a layer keep their order. A config
+/// without `depends` is one layer. A dependency names a dotfile group or the
+/// target of an entry; one that is not part of `requests` because the apply
+/// was narrowed to some targets is taken as already satisfied, but a name
+/// that no entry of the config answers to is an error, like a cycle.
+fn dependency_layers(config: &Config, requests: &[FileRequest]) -> Result<Vec<Vec<usize>>> {
+    if requests.iter().all(|req| req.depends.is_empty()) {
+        return Ok(vec![(0..requests.len()).collect()]);
+    }
+    layering(requests, &files_from_config(config)?)
+}
+
+/// [`dependency_layers`] given every entry of the config (`known`), which
+/// tells a name that is not part of a narrowed apply from a misspelt one.
+fn layering(requests: &[FileRequest], known: &[FileRequest]) -> Result<Vec<Vec<usize>>> {
+    let mut edges: Vec<Vec<usize>> = vec![];
+    for req in requests {
+        let mut edge = vec![];
+        for dep in &req.depends {
+            let in_apply = dependency_matches(dep, requests);
+            if in_apply.is_empty() && dependency_matches(dep, known).is_empty() {
+                bail!(
+                    "files: [dotfiles].\"{}\": depends names {dep:?}, which is neither a dotfile group nor the target of an entry",
+                    req.target_raw
+                );
+            }
+            edge.extend(in_apply);
+        }
+        edges.push(edge);
+    }
+    let mut layer_of: Vec<Option<usize>> = vec![None; requests.len()];
+    let mut path = vec![];
+    for index in 0..requests.len() {
+        layer_for(index, requests, &edges, &mut layer_of, &mut path)?;
+    }
+    let mut layers: Vec<Vec<usize>> = vec![];
+    for (index, layer) in layer_of.into_iter().enumerate() {
+        let layer = layer.expect("every request has a layer");
+        if layers.len() <= layer {
+            layers.resize(layer + 1, vec![]);
+        }
+        layers[layer].push(index);
+    }
+    Ok(layers)
+}
+
+/// The indices of the requests a `depends` item names: the members of a
+/// dotfile group, else the entry whose target it is.
+fn dependency_matches(dep: &str, requests: &[FileRequest]) -> Vec<usize> {
+    let members = requests
+        .iter()
+        .enumerate()
+        .filter(|(_, req)| req.group.as_deref() == Some(dep))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if !members.is_empty() {
+        return members;
+    }
+    let target = resolve_target_arg(dep);
+    requests
+        .iter()
+        .enumerate()
+        .filter(|(_, req)| req.target == target)
+        .map(|(index, _)| index)
+        .collect()
+}
+
+/// One more than the deepest layer among the dependencies of `index`,
+/// failing on a cycle. `path` holds the requests being resolved.
+fn layer_for(
+    index: usize,
+    requests: &[FileRequest],
+    edges: &[Vec<usize>],
+    layer_of: &mut [Option<usize>],
+    path: &mut Vec<usize>,
+) -> Result<usize> {
+    if let Some(layer) = layer_of[index] {
+        return Ok(layer);
+    }
+    if let Some(start) = path.iter().position(|&seen| seen == index) {
+        let cycle = path[start..]
+            .iter()
+            .chain([&index])
+            .map(|&seen| requests[seen].target_raw.as_str())
+            .collect::<Vec<_>>();
+        bail!("files: depends form a cycle: {}", cycle.join(" -> "));
+    }
+    path.push(index);
+    let mut layer = 0;
+    for &dep in &edges[index] {
+        // an entry of a group that names its own group waits for the rest
+        if dep != index {
+            layer = layer.max(layer_for(dep, requests, edges, layer_of, path)? + 1);
+        }
+    }
+    path.pop();
+    layer_of[index] = Some(layer);
+    Ok(layer)
 }
 
 impl ApplyPlan<'_> {
@@ -7403,13 +7571,16 @@ variants = [
 ]
 "#,
         )?;
-        let FileTomlEntry::Table(FileTomlTable {
+        let FileTomlEntry::Table(table) = entry else {
+            bail!("expected a table entry with variants");
+        };
+        let FileTomlTable {
             source,
             content,
             mode,
             variants: Some(variants),
             ..
-        }) = entry
+        } = *table
         else {
             bail!("expected a table entry with variants");
         };
@@ -7591,7 +7762,80 @@ variants = [{{ {field} = "linux" }}]"#
             dot_prefix: false,
             relative: false,
             group: None,
+            depends: vec![],
         }
+    }
+
+    fn dependent(target: &str, group: Option<&str>, depends: &[&str]) -> FileRequest {
+        FileRequest {
+            group: group.map(str::to_string),
+            depends: depends.iter().map(|dep| dep.to_string()).collect(),
+            ..absent_req(Path::new(target))
+        }
+    }
+
+    #[test]
+    fn without_depends_everything_is_one_layer() -> Result<()> {
+        let requests = [dependent("/h/a", None, &[]), dependent("/h/b", None, &[])];
+        assert_eq!(layering(&requests, &requests)?, vec![vec![0, 1]]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_dependent_waits_for_a_group_or_an_entry_target() -> Result<()> {
+        let requests = [
+            dependent("/h/.workrc", None, &["secrets", "/h/.npmrc"]),
+            dependent("/h/.ssh/key", Some("secrets"), &[]),
+            dependent("/h/.config/age.toml", Some("secrets"), &[]),
+            dependent("/h/.npmrc", None, &["/h/.ssh/key"]),
+            dependent("/h/.plain", None, &[]),
+        ];
+        // the key first, then .npmrc that waits for it, then .workrc that waits for both
+        assert_eq!(
+            layering(&requests, &requests)?,
+            vec![vec![1, 2, 4], vec![3], vec![0]]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_cycle_is_an_error_naming_the_entries() {
+        let requests = [
+            dependent("/h/a", None, &["/h/b"]),
+            dependent("/h/b", None, &["/h/a"]),
+        ];
+        let err = layering(&requests, &requests).unwrap_err().to_string();
+        assert!(
+            err.contains("depends form a cycle: /h/a -> /h/b -> /h/a"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_name_nothing_answers_to_is_an_error() {
+        let requests = [dependent("/h/a", None, &["secrts"])];
+        let err = layering(&requests, &requests).unwrap_err().to_string();
+        assert!(err.contains("\"secrts\""), "{err}");
+    }
+
+    #[test]
+    fn a_dependency_left_out_of_a_narrowed_apply_is_satisfied() -> Result<()> {
+        let all = [
+            dependent("/h/.workrc", None, &["secrets"]),
+            dependent("/h/.ssh/key", Some("secrets"), &[]),
+        ];
+        assert_eq!(layering(&all[..1], &all)?, vec![vec![0]]);
+        Ok(())
+    }
+
+    #[test]
+    fn an_entry_of_a_group_that_names_its_group_waits_for_the_rest() -> Result<()> {
+        let requests = [
+            dependent("/h/a", Some("g"), &["g"]),
+            dependent("/h/b", Some("g"), &[]),
+        ];
+        assert_eq!(layering(&requests, &requests)?, vec![vec![1], vec![0]]);
+        Ok(())
     }
 
     fn validate_incoming_body(body: &str) -> Result<()> {
@@ -8126,6 +8370,7 @@ source = "oldrc""#,
             dot_prefix: false,
             relative: false,
             group: None,
+            depends: vec![],
         };
         let mut first = request(vec!["sessions"], true);
         first.override_from(request(vec!["cache"], true));
@@ -8247,6 +8492,7 @@ source = "oldrc""#,
             dot_prefix: false,
             relative: false,
             group: None,
+            depends: vec![],
         }
     }
 
@@ -9267,14 +9513,14 @@ source = "oldrc""#,
     #[test]
     fn a_permissions_only_table_is_a_whole_file_entry() {
         let value: toml::Value = toml::from_str(r#"permissions = "0600""#).unwrap();
-        let Some(FileTomlEntry::Table(FileTomlTable {
+        let Some(FileTomlEntry::Table(table)) = file_entry_from_toml("~/.ssh/config", value) else {
+            panic!("expected a whole-file table entry");
+        };
+        let FileTomlTable {
             source,
             permissions,
             ..
-        })) = file_entry_from_toml("~/.ssh/config", value)
-        else {
-            panic!("expected a whole-file table entry");
-        };
+        } = *table;
         assert_eq!(source, None);
         assert_eq!(permissions.as_deref(), Some("0600"));
 
