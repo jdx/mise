@@ -1120,10 +1120,65 @@ pub async fn active_skills(config: &Arc<Config>) -> Result<DeclaredSkills> {
 }
 
 /// Where skills are linked under `root`, a project root or the home
-/// directory: the `skills.dir` setting, or that setting itself when it
-/// is absolute.
-pub fn skills_dir(root: &Path) -> PathBuf {
-    root.join(&Settings::get().skills.dir)
+/// directory, and the symlink to create beside them once there is something
+/// to link.
+pub struct SkillsTarget {
+    pub dir: PathBuf,
+    alias: Option<PathBuf>,
+}
+
+impl SkillsTarget {
+    /// An explicit directory, with nothing to link beside it.
+    pub fn at(dir: PathBuf) -> Self {
+        Self { dir, alias: None }
+    }
+
+    /// Make `.claude/skills` a symlink to the directory, for a target mise
+    /// chose because neither default existed. A path that is already there,
+    /// even a dangling link, is somebody's and is left alone.
+    pub fn link_alias(&self) -> Result<()> {
+        let Some(alias) = &self.alias else {
+            return Ok(());
+        };
+        if !self.dir.is_dir() || alias.symlink_metadata().is_ok() {
+            return Ok(());
+        }
+        let Some(parent) = alias.parent() else {
+            return Ok(());
+        };
+        file::create_dir_all(parent)?;
+        // Relative, so a project that moves keeps its link. A Windows
+        // junction needs the absolute path.
+        let target = if cfg!(windows) {
+            self.dir.clone()
+        } else {
+            PathBuf::from("../.agents/skills")
+        };
+        file::make_symlink(&target, alias)?;
+        crate::packslip_exclude::exclude_links(parent, ["skills"], SYNC_STATE)
+    }
+}
+
+/// The directory under `root` to link skills into: the `skills.dir`
+/// setting, or that setting itself when it is absolute. Unset, an existing
+/// `.agents/skills` wins, then an existing `.claude/skills`; with neither,
+/// `.agents/skills` is used and `.claude/skills` is linked to it.
+pub fn skills_target(root: &Path) -> SkillsTarget {
+    if let Some(dir) = &Settings::get().skills.dir {
+        return SkillsTarget::at(root.join(dir));
+    }
+    let agents = root.join(".agents/skills");
+    let claude = root.join(".claude/skills");
+    if agents.is_dir() {
+        return SkillsTarget::at(agents);
+    }
+    if claude.is_dir() {
+        return SkillsTarget::at(claude);
+    }
+    SkillsTarget {
+        dir: agents,
+        alias: Some(claude),
+    }
 }
 
 /// With `skills.auto_sync` on, link the active tools' skills into the
@@ -1151,7 +1206,8 @@ async fn auto_sync_skills_into(config: &Arc<Config>, root: &Path, global: bool) 
         }
         return;
     }
-    let dir = skills_dir(root);
+    let target = skills_target(root);
+    let dir = target.dir.clone();
     let result = async {
         let skills = active_skills(config).await?;
         // Reported, not warned: this runs after every install, and a skill
@@ -1173,6 +1229,9 @@ async fn auto_sync_skills_into(config: &Arc<Config>, root: &Path, global: bool) 
     .await;
     match result {
         Ok(report) => {
+            if let Err(err) = target.link_alias() {
+                warn!("could not link .claude/skills: {err}");
+            }
             for name in &report.linked {
                 info!("linked skill {name} into {}", file::display_path(&dir));
             }
