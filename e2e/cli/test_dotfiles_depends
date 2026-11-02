@@ -112,5 +112,6 @@ cat <<EOF >mise.toml
 "$PWD/out/copy" = { source = "$PWD/out/key", mode = "copy", depends = ["$PWD/out/key"] }
 EOF
 assert_succeed "mise dot apply --dry-run"
+assert_succeed "mise dot apply --dry-run --verbose"
 assert_succeed "mise dot apply --yes"
 assert "cat out/copy" "from-entry"

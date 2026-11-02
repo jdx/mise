@@ -5301,7 +5301,9 @@ fn execute_layer(
             let conditional = req.mode == FileMode::Template && rendered.is_none();
             let suffix = if conditional { " (if changed)" } else { "" };
             miseprintln!("{}{suffix}", describe(req)?);
-            if opts.verbose && !conditional {
+            // a source an earlier round writes is not there to compare yet
+            let deferred = req.mode.has_source() && !req.source.exists() && !keeps_existing(req);
+            if opts.verbose && !conditional && !deferred {
                 print_diff(config, req, rendered.as_deref())?;
             }
         }
