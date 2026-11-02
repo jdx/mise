@@ -150,10 +150,14 @@ fn is_not_found(err: &eyre::Report) -> bool {
         .is_some_and(|s| s == reqwest::StatusCode::NOT_FOUND)
 }
 
-/// The raw digest behind a `sha512-<base64>` SRI string.
+/// The raw digest behind the `sha512-<base64>` entry of an SRI string, which
+/// may list several space-separated hashes.
 fn sha512_from_integrity(integrity: &str) -> Option<Vec<u8>> {
+    let encoded = integrity
+        .split_whitespace()
+        .find_map(|hash| hash.strip_prefix("sha512-"))?;
     let digest = base64::engine::general_purpose::STANDARD
-        .decode(integrity.strip_prefix("sha512-")?)
+        .decode(encoded)
         .ok()?;
     (digest.len() == 64).then_some(digest)
 }
@@ -175,6 +179,8 @@ mod tests {
     fn sha512_comes_only_from_a_sha512_sri_string() {
         let integrity = "sha512-Mm1E3/CmDDCz3nDhFKTuYdB47EdRFRQMOE/EAbiG1MJW77/w1b3P7Qx7JSrVJs8PfwOLOVcKQCHErIwCTyPbag==";
         assert_eq!(sha512_from_integrity(integrity).unwrap().len(), 64);
+        let multi = format!("sha1-abc= {integrity}");
+        assert_eq!(sha512_from_integrity(&multi).unwrap().len(), 64);
         assert_eq!(sha512_from_integrity("sha1-abc="), None);
         assert_eq!(sha512_from_integrity("sha512-abc="), None);
         assert_eq!(sha512_from_integrity("sha512-not base64"), None);
