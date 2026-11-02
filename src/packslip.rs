@@ -1169,6 +1169,14 @@ impl SkillsTarget {
         // A `.claude` that is itself a link may be shared with other
         // projects: nothing here is ours to make, change or un-hide in it.
         if file::is_symlink_or_junction(parent) {
+            if self.create_alias && self.dir.is_dir() {
+                warn!(
+                    "{} is a link, so mise did not make {}; link it to {} to have Claude Code read these skills",
+                    file::display_path(parent),
+                    file::display_path(alias),
+                    file::display_path(&self.dir)
+                );
+            }
             return Ok(());
         }
         if alias.symlink_metadata().is_ok() {
