@@ -2290,6 +2290,9 @@ impl NPMBackend {
         if let Some(args) = options.aube_args() {
             cmd = cmd.args(shell_words::split(args)?);
         }
+        if options.allow_low_downloads()? {
+            cmd = cmd.arg("--allow-low-downloads");
+        }
         cmd.args(options.aube_cli_lifecycle_script_args()?)
             .execute()?;
         Ok(())
