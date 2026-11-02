@@ -10,7 +10,8 @@ Describe 'dotfiles-symlink-fallback' {
         $env:MISE_TRUSTED_CONFIG_PATHS = $script:TestRoot
         $script:OriginalStateDir = [Environment]::GetEnvironmentVariable('MISE_STATE_DIR', 'Process')
         $script:OriginalWindowsSymlinks = [Environment]::GetEnvironmentVariable('MISE_DOTFILES_WINDOWS_SYMLINKS', 'Process')
-        Remove-Item Env:MISE_DOTFILES_WINDOWS_SYMLINKS -ErrorAction Ignore
+        # the fallback only happens with the setting off, whatever a global config says
+        $env:MISE_DOTFILES_WINDOWS_SYMLINKS = 'false'
 
         # Whether this runner may create file symbolic links (Developer Mode or elevation).
         $probeSource = Join-Path $script:TestRoot 'probe-source'
@@ -66,13 +67,13 @@ Describe 'dotfiles-symlink-fallback' {
 
         $entry = (mise dot status --json | ConvertFrom-Json).files[0]
         $entry.state | Should -Be 'applied'
-        $entry.reason | Should -Be 'a copy; Windows refused a symlink'
+        $entry.reason | Should -Be 'a regular file, not a symlink'
 
         # the copy does not follow the source, and status says why it differs
         Set-Content -LiteralPath $source -Value 'source-B'
         $entry = (mise dot status --json | ConvertFrom-Json).files[0]
         $entry.state | Should -Be 'differs'
-        $entry.reason | Should -Be 'content differs; a copy; Windows refused a symlink'
+        $entry.reason | Should -Be 'content differs; a regular file, not a symlink'
 
         $out = mise dot apply --force 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0 -Because $out
