@@ -618,5 +618,121 @@ if [ "$out" = - ]; then echo body; else echo body >"$out"; fi
                 self.assertEqual(leftovers, [])
 
 
+PWSH = os.environ.get("PWSH") or shutil.which("pwsh")
+
+
+@unittest.skipUnless(PWSH, "pwsh is not installed (set PWSH to its path)")
+class PowerShellInstallerTests(unittest.TestCase):
+    """Loads the functions of install.ps1, which only runs whole on Windows,
+    and calls them with Invoke-WebRequest replaced by a stub."""
+
+    PRELUDE = r"""
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version 3.0
+$quiet = $true
+$debugOut = $false
+$errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($env:INSTALL_PS1, [ref]$null, [ref]$errors)
+if ($errors) { throw "install.ps1 does not parse: $($errors -join '; ')" }
+$isFunction = { param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }
+foreach ($f in $ast.FindAll($isFunction, $true)) { . ([scriptblock]::Create($f.Extent.Text)) }
+function Invoke-WebRequest([switch] $UseBasicParsing, $Uri, $Headers, $OutFile) {
+  [pscustomobject]@{ Content = (@{ Uri = $Uri; Authorization = if ($Headers) { $Headers.Authorization } else { $null } } | ConvertTo-Json -Compress) }
+}
+"""
+
+    def pwsh(self, command, netrc=None, windows_netrc=None, **variables):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            if netrc is not None:
+                (tmp / ".netrc").write_text(netrc)
+            if windows_netrc is not None:
+                (tmp / "_netrc").write_text(windows_netrc)
+            script = tmp / "test.ps1"
+            script.write_text(self.PRELUDE + command)
+            env = {k: v for k, v in os.environ.items() if not k.startswith("MISE_")}
+            env.update(HOME=str(tmp), INSTALL_PS1=str(ROOT / "packaging/standalone/install.ps1"), **variables)
+            return subprocess.run(
+                [PWSH, "-NoProfile", "-NonInteractive", "-File", str(script)],
+                env=env, text=True, capture_output=True, check=False,
+            )
+
+    def credential(self, netrc=None, windows_netrc=None, host="gh.example.invalid"):
+        result = self.pwsh(
+            f"$c = Get-NetrcCredential '{host}'; if ($c) {{ \"$($c.Login)|$($c.Password)\" }} else {{ 'none' }}",
+            netrc=netrc, windows_netrc=windows_netrc,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout.strip()
+
+    def test_netrc_entry_for_the_host(self):
+        for case, netrc, expected in [
+            ("one line", "machine gh.example.invalid login user password s3cret\n", "user|s3cret"),
+            ("multi line, other host first",
+             "machine other.invalid\n  login a\n  password b\nmachine GH.example.invalid\n  login user\n  password s3cret\n",
+             "user|s3cret"),
+            ("first match wins",
+             "machine gh.example.invalid login first password one\nmachine gh.example.invalid login second password two\n",
+             "first|one"),
+            ("default after other machines",
+             "machine other.invalid login a password b\ndefault login anon password p\n", "anon|p"),
+            ("quoted password", 'machine gh.example.invalid login user password "s3 cr\\"et"\n', 'user|s3 cr"et'),
+            ("login without password", "machine gh.example.invalid login token\n", "token|"),
+            ("comment and account",
+             "# machine gh.example.invalid login evil password evil\nmachine gh.example.invalid account x login user password s3cret\n",
+             "user|s3cret"),
+            ("macdef body is skipped",
+             "macdef init\nmachine gh.example.invalid login evil password evil\n\nmachine gh.example.invalid login user password s3cret\n",
+             "user|s3cret"),
+            ("no entry", "machine other.invalid login a password b\n", "none"),
+        ]:
+            with self.subTest(case=case):
+                self.assertEqual(self.credential(netrc=netrc), expected)
+
+    def test_netrc_file_lookup(self):
+        self.assertEqual(self.credential(), "none")
+        # _netrc, the Windows name mise reads first, wins over .netrc
+        self.assertEqual(
+            self.credential(
+                netrc="machine gh.example.invalid login dot password one\n",
+                windows_netrc="machine gh.example.invalid login underscore password two\n",
+            ),
+            "underscore|two",
+        )
+
+    def download(self, url, mirror="gh.example.invalid/github", netrc="machine gh.example.invalid login user password s3cret\n"):
+        variables = {"MISE_INSTALL_GITHUB_MIRROR": mirror} if mirror else {}
+        result = self.pwsh(f"(Invoke-Download '{url}').Content", netrc=netrc, **variables)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def test_only_mirror_requests_send_netrc_credentials(self):
+        basic = "Basic dXNlcjpzM2NyZXQ="  # user:s3cret
+        mirror_url = "https://gh.example.invalid/github/jdx/mise/releases/download/v2026.1.0/SHASUMS256.txt"
+        self.assertEqual(self.download(mirror_url), {"Uri": mirror_url, "Authorization": basic})
+        self.assertEqual(self.download(mirror_url.replace("gh.example", "GH.example"))["Authorization"], basic)
+        for case, url, mirror in [
+            ("mise.jdx.dev", "https://mise.jdx.dev/v2026.1.0/mise-v2026.1.0-windows-x64.zip", "gh.example.invalid/github"),
+            ("same host, outside the mirror path", "https://gh.example.invalid/other/x", "gh.example.invalid/github"),
+            ("no mirror", "https://github.com/jdx/mise/releases/download/v2026.1.0/SHASUMS256.txt", None),
+        ]:
+            with self.subTest(case=case):
+                self.assertIsNone(self.download(url, mirror=mirror, netrc="default login user password s3cret\n")["Authorization"])
+        self.assertIsNone(self.download(mirror_url, netrc="machine other.invalid login a password b\n")["Authorization"])
+
+    def test_github_base(self):
+        for mirror, expected in [
+            (None, "https://github.com"),
+            ("gh.example.invalid/github/", "https://gh.example.invalid/github"),
+            ("https://gh.example.invalid", "https://gh.example.invalid"),
+            ("http://gh.example.invalid", "mise: MISE_INSTALL_GITHUB_MIRROR must use https: http://gh.example.invalid"),
+        ]:
+            with self.subTest(mirror=mirror):
+                variables = {"MISE_INSTALL_GITHUB_MIRROR": mirror} if mirror else {}
+                result = self.pwsh("try { Get-GitHubBase } catch { $_.Exception.Message }", **variables)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), expected)
+
+
 if __name__ == "__main__":
     unittest.main()
