@@ -946,11 +946,13 @@ pub(crate) fn register_frontend() {
             Box::pin(async move { lock::Lock::generate_after_install(config, &installed).await })
         },
         subcommand_names: || {
-            Cli::command()
+            self::usage::spec()
+                .cmd
                 .subcommands
                 .iter()
-                .flat_map(|s| std::iter::once(s.name).chain(s.aliases.iter().copied()))
-                .map(str::to_string)
+                .filter(|(_, s)| !s.hide)
+                .flat_map(|(name, s)| std::iter::once(name).chain(s.aliases.iter()))
+                .cloned()
                 .collect()
         },
     });
