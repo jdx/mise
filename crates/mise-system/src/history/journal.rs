@@ -497,6 +497,27 @@ fn mode_of(_metadata: &std::fs::Metadata) -> u32 {
 pub struct PendingChange {
     seq: u32,
     path: PathBuf,
+    /// what the captured prior state was: nothing, or a symlink (whose only content is where
+    /// it points)
+    prior_missing: bool,
+    prior_link: Option<PathBuf>,
+}
+
+impl PendingChange {
+    /// The path this change is about to mutate.
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Whether nothing was at the path when its prior state was captured.
+    pub(crate) fn prior_missing(&self) -> bool {
+        self.prior_missing
+    }
+
+    /// Where the symlink at the path pointed when its prior state was captured, if one was.
+    pub(crate) fn prior_link(&self) -> Option<&Path> {
+        self.prior_link.as_deref()
+    }
 }
 
 /// Captures every path's prior state and records a `PathChanged` for each,
@@ -540,13 +561,23 @@ pub(crate) fn begin_changes_with(
                 display_path(&path)
             );
         }
+        let prior_missing = matches!(prior, PathSnapshot::Missing);
+        let prior_link = match &prior {
+            PathSnapshot::Symlink { dest } => Some(dest.clone()),
+            _ => None,
+        };
         if let Some(seq) = super::scope::record(JournalEntry::PathChanged {
             part: part.to_string(),
             item: item.to_string(),
             path: path.clone(),
             prior,
         })? {
-            pending.push(PendingChange { seq, path });
+            pending.push(PendingChange {
+                seq,
+                path,
+                prior_missing,
+                prior_link,
+            });
         }
     }
     Ok(pending)
