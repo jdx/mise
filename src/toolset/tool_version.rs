@@ -618,7 +618,17 @@ impl ToolVersion {
         };
         let path = self.ba().installs_path().join(&pathname);
         let path = env::find_in_shared_installs(path, &self.ba().tool_dir_name(), &pathname);
-        if path.is_dir() && is_runtime_symlink(&path) {
+        // The link stands in for this installation only while it names it: a
+        // `latest` link skips prereleases, and any link is stale during an
+        // upgrade until runtime symlinks are rebuilt.
+        let install_path = self.install_path();
+        let names_install = |target: &Path| {
+            matches!(
+                (target.canonicalize(), install_path.canonicalize()),
+                (Ok(a), Ok(b)) if a == b
+            )
+        };
+        if path.is_dir() && is_runtime_symlink(&path) && names_install(&path) {
             return path;
         }
 
@@ -629,7 +639,7 @@ impl ToolVersion {
             && let Some(parent) = path.parent()
         {
             let target = parent.join(target);
-            if target.is_dir() {
+            if target.is_dir() && names_install(&target) {
                 return target
                     .absolutize()
                     .expect("failed to absolutize path")
@@ -637,7 +647,7 @@ impl ToolVersion {
             }
         }
 
-        self.install_path()
+        install_path
     }
     pub(crate) fn cache_path(&self) -> PathBuf {
         self.ba().cache_path().join(self.state_key())
@@ -2281,10 +2291,10 @@ mod tests {
         let tv = ToolVersion::new(request, "3.14.6".into());
         assert!(!tv.resolved_from_lockfile());
 
-        // Without locking, runtime_path() follows the stale fuzzy runtime symlink, so
-        // it does NOT resolve to the version just installed -- the bug behavior. (This
-        // also self-checks the stale-symlink setup above.)
-        assert_ne!(tv.runtime_path(), install_path);
+        // runtime_path() skips the stale fuzzy runtime symlink, which names a
+        // different installation, and resolves to the version just installed.
+        assert!(is_runtime_symlink(&runtime_link));
+        assert_eq!(tv.runtime_path(), install_path);
 
         // with_locked() pins runtime_path() to the exact install just made, not the
         // fuzzy runtime symlink, so the postinstall hook sees 3.14.6 (#10347).
