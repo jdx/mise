@@ -13,9 +13,9 @@
 //! the task would read as finished while the service was still running.
 //! `cmd.exe /c set … && …`, which this replaces, waited for the same
 //! reason, and held the console Task Scheduler allocated for as long as it
-//! did. This gives that console up before starting the service, and starts
-//! the service without one, so neither process puts a window on the
-//! desktop.
+//! did. CLI startup hides or replaces that private console before starting
+//! the service, which inherits it. The launcher, service and its ordinary
+//! console children therefore stay off the desktop.
 
 use eyre::{Result, bail};
 
@@ -30,11 +30,11 @@ use crate::scheduled_tasks::ServiceLaunch;
 #[cfg(windows)]
 pub fn run(name: &str, launch: &Path, digest: &str) -> Result<i32> {
     let launch = read_launch(name, launch, digest)?;
-    // The console Task Scheduler allocated for this process alone was
-    // hidden right after the parser recognized this command
-    // (`Commands::runs_unattended`), ahead of settings, config, and any
-    // automatic update — the window is closable for as long as it is up,
-    // and closing it would kill the launcher before the service started.
+    // The private console Task Scheduler allocated for this process was
+    // hidden or replaced for this command (`Commands::runs_unattended`)
+    // after settings and config validation, before automatic updates.
+    // Closing a visible Terminal host would otherwise kill the launcher
+    // before the service started.
     use std::os::windows::process::CommandExt;
     let mut cmd = std::process::Command::new(&launch.program);
     if !launch.args.is_empty() {
@@ -54,12 +54,9 @@ pub fn run(name: &str, launch: &Path, digest: &str) -> Result<i32> {
     // confine is a failure to run: an unconfined service is exactly the one
     // this is meant to prevent.
     //
-    // No creation flags of its own: the service inherits the console hidden
-    // above, so it stays hidden and so does everything it starts. Asking for
-    // `CREATE_NO_WINDOW` would give the service a console of its own, and a
-    // program started by a process whose console it does not share is handed
-    // a fresh one — which is how each `git` the watcher runs would get a
-    // window, the very problem hiding rather than detaching avoids.
+    // No creation flags of its own: the service and its descendants inherit
+    // the launcher's hidden or windowless console. Starting without an
+    // inheritable console would let ordinary children create visible windows.
     let (mut child, job) = mise_util::windows_job::spawn(&mut cmd, 0)?;
     let code = match child.wait() {
         // Windows always has an exit code; anything but zero is the failure
