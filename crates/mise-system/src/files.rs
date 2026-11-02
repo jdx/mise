@@ -4984,9 +4984,18 @@ pub fn execute_apply(
                 unfold_source_links(req, written)?;
             }
             let touched = touched_paths(req)?;
+            // what may have held the user's content (see `settle_failed_apply`). A stale link
+            // the entry recorded as its own holds none, and pruning it is safe to finish
+            let stale = if req.mode == FileMode::SymlinkEach {
+                stale_links(req)?.into_iter().collect()
+            } else {
+                HashSet::new()
+            };
             let existed = touched
                 .iter()
-                .filter(|(path, _)| std::fs::symlink_metadata(path).is_ok())
+                .filter(|(path, _)| {
+                    !stale.contains(path) && std::fs::symlink_metadata(path).is_ok()
+                })
                 .map(|(path, _)| path.clone())
                 .collect::<HashSet<_>>();
             let pending = journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched)?;
