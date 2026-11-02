@@ -50,7 +50,11 @@ pub(super) struct SkillsSync {
 impl SkillsSync {
     pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        let skills = crate::packslip::active_skills(&config).await?;
+        let skills = if self.global {
+            crate::packslip::global_skills(&config).await?
+        } else {
+            crate::packslip::active_skills(&config).await?
+        };
         for missing in &skills.missing {
             warn!("{missing}");
         }
