@@ -442,7 +442,11 @@ fn written_homebrew_metadata_hands_the_cask_to_homebrew() -> Result<()> {
     assert_eq!(receipt["arch"], "arm64");
     assert_eq!(receipt["source"]["tap"], "homebrew/cask");
     assert_eq!(receipt["source"]["version"], "2.40.0");
-    assert!(receipt["time"].as_i64().is_some_and(|t| t > 0));
+    // The install time is the version directory's, not the handoff time.
+    let meta = token_dir.join("2.40.0").metadata()?;
+    let created = meta.created().or_else(|_| meta.modified())?;
+    let created = created.duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
+    assert_eq!(receipt["time"].as_i64(), Some(created));
     assert!(receipt.get("uninstall_artifacts").is_none());
     assert_eq!(
         homebrew_installed_version("example")?.as_deref(),
@@ -453,7 +457,7 @@ fn written_homebrew_metadata_hands_the_cask_to_homebrew() -> Result<()> {
 
 #[test]
 fn dependency_receipt_is_not_marked_as_requested() {
-    let receipt = install_receipt("1.0.0", false);
+    let receipt = install_receipt("1.0.0", false, 1_700_000_000);
     assert_eq!(receipt["installed_on_request"], false);
     assert_eq!(receipt["installed_as_dependency"], true);
 }

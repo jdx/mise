@@ -145,7 +145,11 @@ pub(super) fn write_homebrew_metadata(
         .join(timestamp)
         .join("Casks")
         .join(format!("{token}.json"));
-    let receipt = serde_json::to_vec_pretty(&install_receipt(version, on_request))?;
+    let receipt = serde_json::to_vec_pretty(&install_receipt(
+        version,
+        on_request,
+        install_time(&token_dir.join(version)),
+    ))?;
     let published = write_durable_file(&record, b"{}")
         .and_then(|()| write_durable_file(&stage.join("INSTALL_RECEIPT.json"), &receipt))
         .and_then(|()| file::rename(&stage, token_dir.join(".metadata")));
@@ -155,14 +159,28 @@ pub(super) fn write_homebrew_metadata(
     published
 }
 
+/// When the version directory was created, so a cask handed over on a later
+/// apply keeps its original install date; now when the filesystem has none.
+fn install_time(version_dir: &Path) -> i64 {
+    version_dir
+        .metadata()
+        .and_then(|meta| meta.created().or_else(|_| meta.modified()))
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or_else(
+            || chrono::Utc::now().timestamp(),
+            |age| age.as_secs() as i64,
+        )
+}
+
 /// The `INSTALL_RECEIPT.json` body for an official-tap cask. `on_request` is
 /// false for a cask installed only as another cask's dependency.
-pub(super) fn install_receipt(version: &str, on_request: bool) -> serde_json::Value {
+pub(super) fn install_receipt(version: &str, on_request: bool, time: i64) -> serde_json::Value {
     serde_json::json!({
         "installed_as_dependency": !on_request,
         "installed_on_request": on_request,
         "loaded_from_api": true,
-        "time": chrono::Utc::now().timestamp(),
+        "time": time,
         "source": {
             "path": null,
             "tap": "homebrew/cask",
