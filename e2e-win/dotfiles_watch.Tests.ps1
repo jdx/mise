@@ -18,33 +18,70 @@ Describe 'history watch' {
         New-Item -ItemType Directory -Force -Path $script:Tracked | Out-Null
         'one' | Out-File -FilePath (Join-Path $script:Tracked 'file.txt') -Encoding utf8NoBOM
 
-        # The watcher keeps its console and hides the window, so owning one
-        # no longer tells the two apart — whether the window is visible does.
+        # The watcher keeps a hidden or windowless console, so owning one does
+        # not tell a service from an interactive watcher; visibility does.
         # AttachConsole joins the target's console, and only a caller owning
         # none may, so the probe runs in a process of its own where giving up
-        # a console cannot reach Pester. Exit 3: the window is visible. Exit 6:
-        # hidden. Exit 4: no console. Exit 5: a console with no window, which
-        # no case here expects.
+        # a console cannot reach Pester.
+        #
+        # Under Windows Terminal, GetConsoleWindow returns only a message window;
+        # inspect the real desktop window instead. Exit 3: visible. Exit 6: hidden.
+        # Exit 5: a valid windowless console. Exit 4: no console.
+        # Exit 7: a private Terminal console without windowless-console support.
         $script:Probe = Join-Path $TestDrive 'console-probe.ps1'
         @'
-param([int]$TargetPid)
+param([int]$TargetPid, [int]$RequireWindowless = 0)
 Add-Type -Namespace W -Name C -MemberDefinition @"
 [DllImport("kernel32.dll", SetLastError = true)] public static extern bool AttachConsole(uint dwProcessId);
 [DllImport("kernel32.dll", SetLastError = true)] public static extern bool FreeConsole();
 [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+[DllImport("kernel32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr GetModuleHandleW(string name);
+[DllImport("kernel32.dll", CharSet=CharSet.Ansi, ExactSpelling=true)] public static extern IntPtr GetProcAddress(IntPtr module, string name);
 [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+[DllImport("kernel32.dll", CharSet=CharSet.Unicode)] public static extern uint GetConsoleTitle(System.Text.StringBuilder title, int length);
+[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int length);
+[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr window, System.Text.StringBuilder title, int length);
+public delegate bool WindowCallback(IntPtr window, IntPtr unused);
+[DllImport("user32.dll")] public static extern bool EnumWindows(WindowCallback callback, IntPtr unused);
+public static bool Visible(IntPtr window) {
+    var name = new System.Text.StringBuilder(128);
+    GetClassName(window, name, name.Capacity);
+    if (name.ToString() != "PseudoConsoleWindow") return IsWindowVisible(window);
+    var title = new System.Text.StringBuilder(2048);
+    if (GetConsoleTitle(title, title.Capacity) == 0) throw new InvalidOperationException("Console title unavailable");
+    bool visible = false;
+    EnumWindows(delegate(IntPtr candidate, IntPtr unused) {
+        if (!IsWindowVisible(candidate)) return true;
+        var kind = new System.Text.StringBuilder(128);
+        GetClassName(candidate, kind, kind.Capacity);
+        if (kind.ToString() != "CASCADIA_HOSTING_WINDOW_CLASS") return true;
+        var text = new System.Text.StringBuilder(2048);
+        GetWindowText(candidate, text, text.Capacity);
+        if (text.ToString().Contains(title.ToString())) visible = true;
+        return true;
+    }, IntPtr.Zero);
+    return visible;
+}
 "@
 [W.C]::FreeConsole() | Out-Null
 if (-not [W.C]::AttachConsole($TargetPid)) { exit 4 }
 $window = [W.C]::GetConsoleWindow()
 if ($window -eq [IntPtr]::Zero) { exit 5 }
-if ([W.C]::IsWindowVisible($window)) { exit 3 } else { exit 6 }
+if ($RequireWindowless) {
+    $kind = [System.Text.StringBuilder]::new(128)
+    [W.C]::GetClassName($window, $kind, $kind.Capacity) | Out-Null
+    if ($kind.ToString() -eq 'PseudoConsoleWindow' -and
+        [W.C]::GetProcAddress([W.C]::GetModuleHandleW('kernel32.dll'), 'AllocConsoleWithOptions') -eq [IntPtr]::Zero) {
+        exit 7
+    }
+}
+if ([W.C]::Visible($window)) { exit 3 } else { exit 6 }
 '@ | Out-File -FilePath $script:Probe -Encoding utf8NoBOM
         $script:PsHost = (Get-Process -Id $PID).Path
 
-        function script:Get-ConsoleProbe([int]$TargetPid) {
+        function script:Get-ConsoleProbe([int]$TargetPid, [switch]$RequireWindowless) {
             $probe = Start-Process -FilePath $script:PsHost -PassThru -Wait -ArgumentList @(
-                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script:Probe, $TargetPid)
+                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script:Probe, $TargetPid, ([int]$RequireWindowless.IsPresent))
             return $probe.ExitCode
         }
 
@@ -192,21 +229,20 @@ builtin = "history-watch"
     # Task Scheduler starts a console program in a console of its own, so
     # without this the watcher runs behind a terminal window that closing
     # would kill. See jdx/mise#13426.
-    It 'hides a console of its own but not a shell it shares' {
+    It 'hides a console of its own' {
         $tracked = $script:Tracked -replace '\\', '/'
         mise bootstrap dotfiles track $tracked 2>&1 | Out-String | Out-Null
         $LASTEXITCODE | Should -Be 0
         $watch = @('bootstrap', 'dotfiles', 'watch')
 
         # A console of its own, which is what Task Scheduler gives it and what
-        # says nobody is reading: the watcher hides that window. Exit 5 here
-        # would mean `Start-Process` stopped giving it a real console window,
-        # leaving nothing for this case to be about.
+        # says nobody is reading: the watcher hides or replaces that console.
         $alone = Start-Process -FilePath 'mise' -PassThru -ArgumentList $watch
         $aloneRoot = Get-ProcessRoot $alone.Id
         try {
             Wait-Watcher $true | Should -BeTrue
-            Get-ConsoleProbe $alone.Id | Should -Be 6
+            $console = Get-ConsoleProbe $alone.Id -RequireWindowless
+            @(5, 6, 7) | Should -Contain $console
         } finally {
             # the watcher and any `git` it had running, which killing the
             # watcher alone would leave behind
@@ -214,16 +250,24 @@ builtin = "history-watch"
         }
         $aloneStopped | Should -BeTrue
         Wait-Watcher $false | Should -BeTrue
+        if ($console -eq 7) {
+            Set-ItResult -Skipped -Because 'this Windows version cannot replace a private Terminal console'
+        }
+    }
 
-        # A console of its own again, but with `cmd.exe` in it too — which is
-        # how a service that sets `environment` runs, and what says somebody is
-        # reading. The window must stay up, and a probe that called every
-        # console hidden would fail here. Probing `cmd` reaches the console the
-        # watcher is in, so its own pid never has to be found.
+    It 'leaves a shared shell console visible' {
+        mise bootstrap dotfiles track ($script:Tracked -replace '\\', '/') 2>&1 | Out-String | Out-Null
+        $LASTEXITCODE | Should -Be 0
+        $watch = @('bootstrap', 'dotfiles', 'watch')
+
+        # A separate console with `cmd.exe` waiting for the watcher models a
+        # shared interactive shell. Its window must stay up, so a probe that
+        # called every console hidden would fail here. Probing `cmd` reaches
+        # the watcher's console without finding the watcher's pid.
         #
-        # Deliberately not this test host's console: on a runner that is a
-        # pseudoconsole there is no window there to call visible, which is exit
-        # 5 rather than 3.
+        # Deliberately not this test host's console: a runner may own a hidden
+        # or windowless one, which cannot be a visible positive control.
+        # Exit 5 means a valid windowless console; this case requires exit 3.
         $shared = Start-Process -FilePath 'cmd.exe' -PassThru -ArgumentList @(
             '/c', "mise $($watch -join ' ')")
         $sharedRoot = Get-ProcessRoot $shared.Id
@@ -244,10 +288,12 @@ builtin = "history-watch"
     # `cmd.exe /c set ... && ...`, and that `cmd.exe` held the console Task
     # Scheduler allocated for as long as the watcher lived — so the window
     # stayed even though the watcher itself had given its console up. mise
-    # carries the environment now, and nothing is left attached.
+    # carries the environment now; launcher and watcher share a hidden or
+    # windowless console.
     It 'runs windowless through a task that sets an environment' {
         $env:MISE_EXPERIMENTAL = '1'
-        $task = 'mise\mise-history'
+        $serviceName = 'mise-history-test-' + [guid]::NewGuid().ToString('N')
+        $task = 'mise\' + $serviceName
         $watcherStopped = $false
         $launcherRoot = $null
         $treeStopped = $false
@@ -267,8 +313,10 @@ builtin = "history-watch"
             $stateDir = $env:MISE_STATE_DIR -replace '\\', '\\'
             $trusted = "$TestDrive" -replace '\\', '\\'
             @"
-[bootstrap.services.mise-history]
+[bootstrap.services.$serviceName]
 builtin = "history-watch"
+state = "stopped"
+enabled = false
 environment = { MISE_CONFIG_DIR = "$cfgDir", MISE_STATE_DIR = "$stateDir", MISE_TRUSTED_CONFIG_PATHS = "$trusted", E2E_WATCH_MARK = "1" }
 "@ | Out-File -FilePath (Join-Path $env:MISE_CONFIG_DIR 'config.toml') -Encoding utf8NoBOM
             # `track` declares into the same file, which was just rewritten
@@ -277,16 +325,22 @@ environment = { MISE_CONFIG_DIR = "$cfgDir", MISE_STATE_DIR = "$stateDir", MISE_
 
             mise bootstrap services apply --yes 2>&1 | Out-String | Out-Null
             $LASTEXITCODE | Should -Be 0
+            # The launcher loads its stored environment after startup. Do not let
+            # that startup read the user's global config before isolation arrives.
+            $registered = Get-ScheduledTask -TaskPath '\mise\' -TaskName $serviceName
+            $registered.Actions[0].Arguments = '--no-config ' + $registered.Actions[0].Arguments
+            Set-ScheduledTask -TaskPath '\mise\' -TaskName $serviceName -Action $registered.Actions | Out-Null
+            Start-ScheduledTask -TaskPath '\mise\' -TaskName $serviceName
             Wait-Watcher $true | Should -BeTrue
 
             $services = Join-Path $env:MISE_STATE_DIR 'user-services'
             # one launch, named by its digest, and the registered action
             # points at exactly that file
-            $launches = @(Get-ChildItem (Join-Path $services 'mise-history.launches') -Filter '*.json')
+            $launches = @(Get-ChildItem (Join-Path $services ($serviceName + '.launches')) -Filter '*.json')
             $launches.Count | Should -Be 1
-            (Get-Content (Join-Path $services 'mise-history.xml') -Raw) |
+            (Get-Content (Join-Path $services ($serviceName + '.xml')) -Raw) |
                 Should -BeLike ('*' + $launches[0].Name + '*')
-            (Get-Content (Join-Path $services 'mise-history.xml') -Raw) |
+            (Get-Content (Join-Path $services ($serviceName + '.xml')) -Raw) |
                 Should -Not -BeLike '*cmd.exe*'
 
             # the process Task Scheduler started and tracks, and the watcher
@@ -306,24 +360,31 @@ environment = { MISE_CONFIG_DIR = "$cfgDir", MISE_STATE_DIR = "$stateDir", MISE_
             $watcher | Should -Not -BeNullOrEmpty
             $watcher.CommandLine | Should -BeLike '*dot watch*'
 
-            # Neither puts a window on the desktop: the launcher hides the
-            # console Task Scheduler gave it, and the service inherits that
-            # same hidden console rather than being handed one of its own.
+            # The launcher hides or replaces the console Task Scheduler gave
+            # it, and the service inherits that hidden or windowless console
+            # rather than getting one of its own. A private Terminal console
+            # requires AllocConsoleWithOptions; classic consoles do not.
             # The probe is the one the case above shows reports 3 when a
             # window is visible.
-            Get-ConsoleProbe ([int]$launcher.ProcessId) | Should -Be 6
-            Get-ConsoleProbe ([int]$watcher.ProcessId) | Should -Be 6
+            $consoles = @(
+                Get-ConsoleProbe ([int]$launcher.ProcessId) -RequireWindowless
+                Get-ConsoleProbe ([int]$watcher.ProcessId) -RequireWindowless
+            )
+            foreach ($console in $consoles) { @(5, 6, 7) | Should -Contain $console }
         } finally {
             schtasks /end /tn $task 2>&1 | Out-Null
             # `/end` asks for the launcher to be terminated and does not wait,
             # and the watcher dies only as the launcher's job closes after it
             $treeStopped = Stop-Tree @($launcherRoot)
-            mise bootstrap services remove mise-history 2>&1 | Out-String | Out-Null
+            mise bootstrap services remove $serviceName 2>&1 | Out-String | Out-Null
             schtasks /delete /tn $task /f 2>&1 | Out-Null
             $watcherStopped = Wait-Watcher $false
             $env:MISE_EXPERIMENTAL = '0'
         }
         $treeStopped | Should -BeTrue
         $watcherStopped | Should -BeTrue
+        if ($consoles -contains 7) {
+            Set-ItResult -Skipped -Because 'this Windows version cannot replace a private Terminal console'
+        }
     }
 }

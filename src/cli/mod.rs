@@ -430,9 +430,10 @@ impl Commands {
     /// Commands that run as a service, with no terminal reading their output.
     ///
     /// Windows gives a Scheduled Task's console program a console of its own,
-    /// and the watcher would run behind that window until it was hidden. This
-    /// is asked for right after parsing, ahead of the auto-update that could
-    /// otherwise leave the window on screen for a download's worth of time.
+    /// and a watcher would keep its window open for as long as it runs. This
+    /// is checked after invocation validation and before automatic updates,
+    /// so validation errors remain visible without keeping a window open
+    /// throughout an update download.
     fn runs_unattended(&self) -> bool {
         match self {
             Self::Dotfiles(cmd) => cmd.is_watch(),
@@ -1175,7 +1176,7 @@ impl Cli {
         // land in a console somebody can still read, and before the
         // auto-update that could otherwise leave the window up for a download.
         if cli.command.as_ref().is_some_and(Commands::runs_unattended) {
-            crate::windows_console::hide_if_unattended();
+            crate::windows_console::hide_if_unattended()?;
         }
         let auto_update_command_eligible = !print_version
             && cli
@@ -1810,8 +1811,8 @@ mod tests {
         assert!(unattended(&["mise", "bootstrap", "dotfiles", "watch"]));
 
         // the launcher a Windows user service's task starts is handed a
-        // console the same way, and its window has to go before settings,
-        // config, or an auto-update can hold it on screen
+        // console the same way. Validate settings and the invocation first so
+        // errors stay readable, then prepare it before automatic updates.
         assert!(unattended(&[
             "mise",
             "bootstrap",
