@@ -186,7 +186,7 @@ jobs:
       - run: mise run test:unit-ci
         if: ${{ !(inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
       # On main the same run goes through jouet so its timing is recorded. The
-      # `cost` job in test.yml pushes the timings, so this job needs no write token.
+      # `jouet-cost` job in test.yml pushes the timings, so this job needs no write token.
       # `--display human` streams the output, and the baseline rerun is off so a
       # failure stays a failure.
       - name: Test with jouet
@@ -195,12 +195,13 @@ jobs:
           JOUET_TEST_BASELINE: "off"
         run: |
           mise x -- jouet test --display human --cmd -- mise run test:unit-ci
-          git bundle create "$RUNNER_TEMP/jouet-cost.bundle" refs/notes/jouet-cost
+          git bundle create "$RUNNER_TEMP/cost-${{ github.job }}-${{ strategy.job-index }}.bundle" refs/notes/jouet-cost || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         with:
-          name: jouet-cost
-          path: ${{ runner.temp }}/jouet-cost.bundle
+          name: jouet-cost-${{ github.job }}-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/cost-${{ github.job }}-${{ strategy.job-index }}.bundle
+          if-no-files-found: ignore
       # The full E2E suite runs on Linux. Tests whose filenames contain `macos`
       # are also discovered and exercised here for platform-specific coverage.
       - run: mise run test:e2e macos
