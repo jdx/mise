@@ -3371,9 +3371,7 @@ fn state_files(dir: &Path) -> impl Iterator<Item = PathBuf> {
 /// Whether `a` and `b` name the same path, letter case aside on Windows, whose file systems
 /// ignore it.
 fn same_path_any_case(a: &Path, b: &Path) -> bool {
-    let (a, b) = (lexical_normalize(a), lexical_normalize(b));
-    a == b
-        || cfg!(windows) && a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+    file::same_path_ignoring_case(&lexical_normalize(a), &lexical_normalize(b))
 }
 
 /// `path` under `from` moved under `to`, the same directory spelled with other letter case.
@@ -4092,14 +4090,16 @@ pub(crate) fn link_points_to(source: &Path, target: &Path) -> bool {
         dest == source
             || points_at_same_file(target, source)
             || if dest.is_absolute() {
-                lexical_normalize(&dest) == lexical_normalize(source)
+                // a record found under another casing of the source is read in the current
+                // one (see `respell_symlink_each_state`), while the link keeps the old one
+                same_path_any_case(&dest, source)
             } else {
                 // the kernel resolves a relative link from the directory the
                 // link physically sits in, so its text is read from there too:
                 // read from the configured spelling, a link in a symlinked
                 // directory could seem to reach a source it does not
                 resolve_relative_link(target, &dest)
-                    .is_some_and(|resolved| resolved == physical_path(source))
+                    .is_some_and(|resolved| same_path_any_case(&resolved, &physical_path(source)))
             }
     })
 }

@@ -1454,11 +1454,34 @@ fn path_starts_with(path: &Path, root: &Path) -> bool {
     path.starts_with(root)
 }
 
+/// Whether `a` and `b` are spelled the same. Paths that differ only in case are different
+/// paths on Unix.
+#[cfg(unix)]
+pub fn same_path_ignoring_case(a: &Path, b: &Path) -> bool {
+    a == b
+}
+
+/// Whether `a` and `b` are spelled the same apart from letter case, compared the way Windows
+/// compares file names: ordinal, so code points it keeps distinct (the Kelvin sign and `K`)
+/// stay distinct.
 #[cfg(windows)]
-fn path_starts_with(path: &Path, root: &Path) -> bool {
+pub fn same_path_ignoring_case(a: &Path, b: &Path) -> bool {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Globalization::{CSTR_EQUAL, CompareStringOrdinal};
 
+    if a == b {
+        return true;
+    }
+    let a = a.as_os_str().encode_wide().collect::<Vec<_>>();
+    let b = b.as_os_str().encode_wide().collect::<Vec<_>>();
+    let (Ok(a_len), Ok(b_len)) = (i32::try_from(a.len()), i32::try_from(b.len())) else {
+        return false;
+    };
+    unsafe { CompareStringOrdinal(a.as_ptr(), a_len, b.as_ptr(), b_len, 1) == CSTR_EQUAL }
+}
+
+#[cfg(windows)]
+fn path_starts_with(path: &Path, root: &Path) -> bool {
     if path.starts_with(root) {
         return true;
     }
@@ -1473,25 +1496,7 @@ fn path_starts_with(path: &Path, root: &Path) -> bool {
         return false;
     }
 
-    let candidate_wide = candidate.as_os_str().encode_wide().collect::<Vec<_>>();
-    let root_wide = root.as_os_str().encode_wide().collect::<Vec<_>>();
-    let Ok(candidate_len) = i32::try_from(candidate_wide.len()) else {
-        return false;
-    };
-    let Ok(root_len) = i32::try_from(root_wide.len()) else {
-        return false;
-    };
-    let equal_ignoring_case = unsafe {
-        CompareStringOrdinal(
-            candidate_wide.as_ptr(),
-            candidate_len,
-            root_wide.as_ptr(),
-            root_len,
-            1,
-        ) == CSTR_EQUAL
-    };
-
-    if !equal_ignoring_case {
+    if !same_path_ignoring_case(&candidate, &root) {
         return false;
     }
 
