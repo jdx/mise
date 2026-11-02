@@ -195,9 +195,11 @@ jobs:
           JOUET_TEST_BASELINE: "off"
         run: |
           mise x -- jouet test --display human --cmd -- mise run test:unit-ci
-          git bundle create "$RUNNER_TEMP/cost-${{ github.job }}-${{ strategy.job-index }}.bundle" refs/notes/jouet-cost || true
+      - name: Bundle jouet timings
+        if: ${{ always() && inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: git bundle create "$RUNNER_TEMP/cost-${{ github.job }}-${{ strategy.job-index }}.bundle" refs/notes/jouet-cost || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: ${{ inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        if: ${{ always() && inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         with:
           name: jouet-cost-${{ github.job }}-${{ strategy.job-index }}
           path: ${{ runner.temp }}/cost-${{ github.job }}-${{ strategy.job-index }}.bundle
