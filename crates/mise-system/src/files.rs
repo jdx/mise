@@ -5066,8 +5066,12 @@ fn layering(requests: &[FileRequest], known: &[FileRequest]) -> Result<Vec<Vec<u
     // then wait for it in turn.
     for (index, req) in requests.iter().enumerate() {
         // a directory that is already there may need its mode fixed before
-        // anything can be written inside it, so it keeps its place
-        if req.mode != FileMode::Permissions || std::fs::symlink_metadata(&req.target).is_ok() {
+        // anything can be written inside it, so it keeps its place, unless
+        // the mode it gets takes the owner's write access away
+        let makes_writable = req.permissions.is_none_or(|mode| mode & 0o200 != 0);
+        if req.mode != FileMode::Permissions
+            || makes_writable && std::fs::symlink_metadata(&req.target).is_ok()
+        {
             continue;
         }
         for (creator, other) in requests.iter().enumerate() {
@@ -8104,6 +8108,24 @@ variants = [{{ {field} = "linux" }}]"#
         let requests = [chmod, key, dependent("/h/seed", None, &[])];
         // the directory exists, so its mode is fixed before the key is written inside it
         assert_eq!(layering(&requests, &requests)?, vec![vec![0, 2], vec![1]]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_read_only_mode_for_an_existing_directory_follows_the_writes_into_it() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let ssh = dir.path().join(".ssh");
+        std::fs::create_dir(&ssh)?;
+        let mut chmod = dependent(&ssh.to_string_lossy(), None, &[]);
+        chmod.mode = FileMode::Permissions;
+        chmod.permissions = Some(0o500);
+        let mut key = dependent(&ssh.join("key").to_string_lossy(), None, &["/h/seed"]);
+        key.mode = FileMode::Content;
+        let requests = [chmod, key, dependent("/h/seed", None, &[])];
+        assert_eq!(
+            layering(&requests, &requests)?,
+            vec![vec![2], vec![1], vec![0]]
+        );
         Ok(())
     }
 
