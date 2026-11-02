@@ -681,7 +681,14 @@ impl Backend for PIPXBackend {
             .is_some();
         if tv.uv_lock.is_some() {
             if tv.uv_python.is_none() {
-                return Ok(false);
+                // No interpreter to replay the graph with: an install made from the
+                // version alone is as good as it gets, so do not retry it every time.
+                let locked = config
+                    .invocation_locked_for(tv.request.source(), Settings::get().locked)
+                    || tv.request.tool_config_locked(config, true);
+                return Ok(!selected_python
+                    && !locked
+                    && self.is_version_installed(config, tv, check_symlink));
             }
         } else if self.uv_lock_allowed(tv) {
             let revision = self.uv_lockfile_version(config, tv)?;
