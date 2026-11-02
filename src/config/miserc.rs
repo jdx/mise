@@ -128,16 +128,27 @@ pub(crate) fn get_ignored_config_paths() -> Option<&'static BTreeSet<PathBuf>> {
 /// directory mise runs from, so machine-wide operations such as `mise prune`
 /// reach the same verdict everywhere.
 pub(crate) fn get_global_ignored_config_paths() -> Option<&'static BTreeSet<PathBuf>> {
+    global()?.ignored_config_paths.as_ref()
+}
+
+/// Get the env_conf_d value from the system and global miserc files only. It
+/// decides how the fragments of the global and system `conf.d` directories
+/// load, which a project `.miserc.toml`, read without trust, must not change.
+pub(crate) fn get_global_env_conf_d() -> Option<bool> {
+    global()?.env_conf_d
+}
+
+/// The system and global miserc settings, without project files.
+fn global() -> Option<&'static MisercSettings> {
     if super::Settings::no_config() {
         return None;
     }
-    static GLOBAL: std::sync::LazyLock<Option<BTreeSet<PathBuf>>> =
-        std::sync::LazyLock::new(|| {
-            let settings = load_global_miserc_settings();
-            let _ = take_tera_accessed_files();
-            settings.ignored_config_paths
-        });
-    GLOBAL.as_ref()
+    static GLOBAL: std::sync::LazyLock<MisercSettings> = std::sync::LazyLock::new(|| {
+        let settings = load_global_miserc_settings();
+        let _ = take_tera_accessed_files();
+        settings
+    });
+    Some(&GLOBAL)
 }
 
 /// Get the override_config_filenames value from miserc, if set.

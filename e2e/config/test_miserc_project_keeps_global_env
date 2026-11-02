@@ -48,3 +48,22 @@ done
 
 # The user can still choose for themselves.
 assert "MISE_ENV=other mise settings get paranoid" "false"
+rm .miserc.toml
+
+# Nor can a project's env_conf_d change how a global conf.d fragment loads.
+# With env_conf_d on, security.floor.toml loads for the floor environment, above
+# config.toml; off, it would load unconditionally, below config.toml.
+rm -r "$MISE_CONFIG_DIR/conf.d/floor"
+printf 'env = ["floor"]\nenv_conf_d = true\n' >"$MISE_CONFIG_DIR/miserc.toml"
+cat >"$MISE_CONFIG_DIR/conf.d/security.floor.toml" <<'TOML'
+[settings]
+paranoid = true
+TOML
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[settings]
+paranoid = false
+TOML
+assert "mise settings get paranoid" "true"
+echo 'env_conf_d = false' >.miserc.toml
+assert "mise settings get paranoid" "true"
+assert "MISE_ENV_CONF_D=0 mise settings get paranoid" "false"

@@ -170,6 +170,9 @@ mise/conf.d/tools.development.local.toml  # MISE_ENV=development, usually gitign
 Because this setting controls config discovery, set it in `miserc.toml` or the
 environment; in `mise.toml` it is too late. To keep the old behavior without the
 deprecation warning during the migration, set `env_conf_d = false` explicitly.
+A project's `.miserc.toml` decides it for project directories only: fragments in
+`~/.config/mise/conf.d` and `/etc/mise/conf.d` follow `MISE_ENV_CONF_D` and the
+global and system `miserc.toml` files.
 
 ## Platform environments
 
