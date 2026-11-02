@@ -2744,7 +2744,13 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
     match req.mode {
         FileMode::Track => Ok(FileState::Tracked),
         FileMode::Absent => check_absent(&req.target),
-        FileMode::Symlink => check_symlink(&req.source, &req.target, req.relative),
+        FileMode::Symlink => match check_symlink(&req.source, &req.target, req.relative)? {
+            // the reason is the copy comparison's; say why there is a copy to compare
+            FileState::Differs(reason) if symlink_fell_back_to_copy(req) => {
+                Ok(FileState::Differs(format!("{reason}; {NOT_A_SYMLINK}")))
+            }
+            state => Ok(state),
+        },
         FileMode::SymlinkEach => check_symlink_each(req),
         FileMode::Copy if req.source.is_dir() => {
             if req.permissions.is_some() {
@@ -2889,6 +2895,28 @@ pub fn permissions_target_absent(req: &FileRequest) -> Option<&'static str> {
         && std::fs::symlink_metadata(&req.target)
             .is_err_and(|err| err.kind() == std::io::ErrorKind::NotFound))
     .then_some("target absent; permissions not applied")
+}
+
+/// What status says of a `symlink` entry whose target is a regular file. Only what is on disk:
+/// the file may be the copy `link_path` falls back to, or one that was there before.
+const NOT_A_SYMLINK: &str = "a regular file, not a symlink";
+
+/// Whether a `symlink` entry's file target is a regular file where `link_path` would have
+/// copied one when Windows refused a symlink (no Developer Mode or elevation,
+/// `dotfiles.windows_symlinks` off).
+fn symlink_fell_back_to_copy(req: &FileRequest) -> bool {
+    cfg!(windows)
+        && !windows_symlinks()
+        && req.mode == FileMode::Symlink
+        && req.source.is_file()
+        && req.target.is_file()
+        && !req.target.is_symlink()
+}
+
+/// Why an applied `symlink` entry does not follow its source: on Windows its target is a
+/// regular file. Status shows this next to `applied`.
+pub fn symlink_target_copied(req: &FileRequest) -> Option<&'static str> {
+    symlink_fell_back_to_copy(req).then_some(NOT_A_SYMLINK)
 }
 
 const PERMISSIONS_THROUGH_LINK: &str =
@@ -5867,6 +5895,10 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
     Ok(match req.mode {
         FileMode::Track => format!("tracked {tgt} in place"),
         FileMode::Absent => format!("removed {tgt}"),
+        // Windows copies a file it refuses to link (see `link_path`)
+        FileMode::Symlink if symlink_fell_back_to_copy(req) => format!(
+            "copied {src} to {tgt}: Windows refused a symlink, so the copy does not follow its source (to link it, turn on Developer Mode and dotfiles.windows_symlinks, then run `mise dot apply --force \"{tgt}\"`, which replaces the copy)"
+        ),
         FileMode::Symlink => format!("created symlink {tgt} -> {src}"),
         // Windows copies each file (see `link_path`), so don't report links it didn't make
         FileMode::SymlinkEach => {

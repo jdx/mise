@@ -74,6 +74,28 @@ Describe 'dotfiles-dir-links' {
         Get-Content -LiteralPath (Join-Path $root 'source\file.txt') | Should -Be 'file'
     }
 
+    It 'unapplies a symlink entry whose directory target is a native directory symlink' {
+        # mise links a local directory as a junction, but a directory symlink already reaching
+        # the source is applied as it is. `remove_file` is refused for one as for a junction.
+        if (-not $script:CanSymlink) {
+            Set-ItResult -Skipped -Because 'this runner cannot create symbolic links'
+            return
+        }
+        $root = New-Case 'symlink-native-dir' 'symlink' $true
+        $target = Join-Path $root 'target'
+        New-Item -ItemType SymbolicLink -Path $target -Target (Join-Path $root 'source') | Out-Null
+        (Get-Item -LiteralPath $target -Force).LinkType | Should -Be 'SymbolicLink'
+
+        $out = mise dot apply 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0 -Because $out
+        (Get-Item -LiteralPath $target -Force).LinkType | Should -Be 'SymbolicLink'
+
+        $out = mise dot unapply 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0 -Because $out
+        Test-Path -LiteralPath $target | Should -BeFalse
+        Get-Content -LiteralPath (Join-Path $root 'source\file.txt') | Should -Be 'file'
+    }
+
     It 'unapplies a symlink-each entry whose source holds a directory link' {
         if (-not $script:CanSymlink) {
             Set-ItResult -Skipped -Because 'this runner cannot create file symbolic links'
