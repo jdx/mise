@@ -4964,10 +4964,12 @@ pub fn apply_layers(
                     .flatten()
                     .map(|&index| requests[index].target_raw.as_str())
                     .collect::<Vec<_>>();
-                warn!(
-                    "files: not applied because an entry they depend on failed: {}",
-                    skipped.join(", ")
-                );
+                if !skipped.is_empty() {
+                    warn!(
+                        "files: not applied because an entry they depend on failed: {}",
+                        skipped.join(", ")
+                    );
+                }
                 return Err(err);
             }
         }
@@ -5051,6 +5053,11 @@ fn layering(requests: &[FileRequest], known: &[FileRequest]) -> Result<Vec<Vec<u
     for index in 0..requests.len() {
         layer_for(index, requests, &edges, &mut layer_of, &mut path)?;
     }
+    // an entry another one waits for stays in its round
+    let mut depended_on = vec![false; requests.len()];
+    for &dep in edges.iter().flatten() {
+        depended_on[dep] = true;
+    }
     let mut layers: Vec<Vec<usize>> = vec![];
     for (index, layer) in layer_of.into_iter().enumerate() {
         let layer = layer.expect("every request has a layer");
@@ -5067,7 +5074,8 @@ fn layering(requests: &[FileRequest], known: &[FileRequest]) -> Result<Vec<Vec<u
         for layer in &mut layers[..last] {
             layer.retain(|&index| {
                 let waits = requests[index].mode == FileMode::Permissions
-                    && requests[index].depends.is_empty();
+                    && requests[index].depends.is_empty()
+                    && !depended_on[index];
                 if waits {
                     moved.push(index);
                 }
@@ -7974,6 +7982,22 @@ variants = [{{ {field} = "linux" }}]"#
         ];
         // the key is written in the second round, so the chmod of its directory waits for it
         assert_eq!(layering(&requests, &requests)?, vec![vec![2], vec![0, 1]]);
+        Ok(())
+    }
+
+    #[test]
+    fn a_permissions_only_entry_others_wait_for_keeps_its_round() -> Result<()> {
+        let mut chmod = dependent("/h/.secret", None, &[]);
+        chmod.mode = FileMode::Permissions;
+        let requests = [
+            chmod,
+            dependent("/h/.rc", None, &["/h/.secret"]),
+            dependent("/h/later", None, &["/h/.rc"]),
+        ];
+        assert_eq!(
+            layering(&requests, &requests)?,
+            vec![vec![0], vec![1], vec![2]]
+        );
         Ok(())
     }
 
