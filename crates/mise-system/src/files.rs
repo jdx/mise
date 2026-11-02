@@ -5048,15 +5048,27 @@ fn layering(requests: &[FileRequest], known: &[FileRequest]) -> Result<Vec<Vec<u
         }
         edges.push(edge);
     }
+    // a permissions-only entry never creates its target, so it waits for the
+    // entries that create what lies beneath it, unless one of those waits for
+    // it. Its dependents then wait for it in turn.
+    for (index, req) in requests.iter().enumerate() {
+        if req.mode != FileMode::Permissions {
+            continue;
+        }
+        for (creator, other) in requests.iter().enumerate() {
+            if creator != index
+                && !matches!(other.mode, FileMode::Permissions | FileMode::Absent)
+                && other.target.starts_with(&req.target)
+                && !edges[creator].contains(&index)
+            {
+                edges[index].push(creator);
+            }
+        }
+    }
     let mut layer_of: Vec<Option<usize>> = vec![None; requests.len()];
     let mut path = vec![];
     for index in 0..requests.len() {
         layer_for(index, requests, &edges, &mut layer_of, &mut path)?;
-    }
-    // an entry another one waits for stays in its round
-    let mut depended_on = vec![false; requests.len()];
-    for &dep in edges.iter().flatten() {
-        depended_on[dep] = true;
     }
     let mut layers: Vec<Vec<usize>> = vec![];
     for (index, layer) in layer_of.into_iter().enumerate() {
@@ -5065,26 +5077,6 @@ fn layering(requests: &[FileRequest], known: &[FileRequest]) -> Result<Vec<Vec<u
             layers.resize(layer + 1, vec![]);
         }
         layers[layer].push(index);
-    }
-    // a permissions-only entry decides whether to wait for a directory by the
-    // entries of its own round, so it goes with the last one
-    if layers.len() > 1 {
-        let last = layers.len() - 1;
-        let mut moved = vec![];
-        for layer in &mut layers[..last] {
-            layer.retain(|&index| {
-                let waits = requests[index].mode == FileMode::Permissions
-                    && requests[index].depends.is_empty()
-                    && !depended_on[index];
-                if waits {
-                    moved.push(index);
-                }
-                !waits
-            });
-        }
-        layers[last].extend(moved);
-        layers[last].sort_unstable();
-        layers.retain(|layer| !layer.is_empty());
     }
     Ok(layers)
 }
@@ -7974,21 +7966,22 @@ variants = [{{ {field} = "linux" }}]"#
     }
 
     #[test]
-    fn a_permissions_only_entry_goes_with_the_last_round() -> Result<()> {
+    fn a_permissions_only_entry_waits_for_the_entries_that_create_beneath_it() -> Result<()> {
         let mut chmod = dependent("/h/.ssh", None, &[]);
         chmod.mode = FileMode::Permissions;
-        let requests = [
-            chmod,
-            dependent("/h/.ssh/key", None, &["/h/seed"]),
-            dependent("/h/seed", None, &[]),
-        ];
-        // the key is written in the second round, so the chmod of its directory waits for it
-        assert_eq!(layering(&requests, &requests)?, vec![vec![2], vec![0, 1]]);
+        let mut key = dependent("/h/.ssh/key", None, &["/h/seed"]);
+        key.mode = FileMode::Content;
+        let requests = [chmod, key, dependent("/h/seed", None, &[])];
+        // the key is written in the second round, so the chmod of its directory follows it
+        assert_eq!(
+            layering(&requests, &requests)?,
+            vec![vec![2], vec![1], vec![0]]
+        );
         Ok(())
     }
 
     #[test]
-    fn a_permissions_only_entry_others_wait_for_keeps_its_round() -> Result<()> {
+    fn a_permissions_only_entry_others_wait_for_runs_before_them() -> Result<()> {
         let mut chmod = dependent("/h/.secret", None, &[]);
         chmod.mode = FileMode::Permissions;
         let requests = [
