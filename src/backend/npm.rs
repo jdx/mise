@@ -1239,6 +1239,15 @@ impl Backend for NPMBackend {
             .await;
         let request_options = tv.request.options();
         let options = NpmOptions::new(&request_options);
+        // A checksum without an aube lock installs a downloaded local archive,
+        // which aube builds no provenance subject for.
+        if Self::provenance_enabled() && options.checksum().is_some() && tv.aube_lock.is_none() {
+            eyre::bail!(
+                "npm:{} has a checksum and no aube lock, so it installs a local archive that provenance cannot be verified for; \
+                 lock the tool, or turn off npm.provenance and the paranoid provenance category",
+                self.display_tool_name()
+            );
+        }
         let package = self.package_install_spec(ctx, &tv, &options).await?;
         let install_before_args = match ctx.before_date {
             Some(before_date) => {
@@ -1249,6 +1258,15 @@ impl Backend for NPMBackend {
             }
             None => Vec::new(),
         };
+        // Only the embedded aube runs the verifier. Skipping it silently under
+        // another installer would install without the check the user asked for.
+        if Self::provenance_enabled() && !matches!(package_manager, NpmPackageManager::Aube) {
+            eyre::bail!(
+                "npm:{} installs with {package_manager}, which cannot verify provenance; \
+                 set npm.package_manager to aube, or turn off npm.provenance and the paranoid provenance category",
+                self.display_tool_name()
+            );
+        }
         match package_manager {
             NpmPackageManager::Auto => unreachable!("auto package manager should be resolved"),
             NpmPackageManager::Aube => {
@@ -2102,6 +2120,27 @@ impl NPMBackend {
         }
     }
 
+    /// Checks the tool's own package against the Sigstore provenance npm
+    /// publishes for it when `npm.provenance`, or the paranoid `provenance`
+    /// category, is on. See [`npm_provenance`](crate::backend::npm_provenance).
+    fn provenance_enabled() -> bool {
+        let settings = Settings::get();
+        settings.npm.provenance || settings.paranoid.provenance()
+    }
+
+    fn with_provenance_verifier(
+        &self,
+        control: aube::embed::InstallControl,
+    ) -> aube::embed::InstallControl {
+        if Self::provenance_enabled() {
+            control.with_provenance_verifier(
+                crate::backend::npm_provenance::NpmProvenanceVerifier::new(&self.tool_name()),
+            )
+        } else {
+            control
+        }
+    }
+
     /// Install an npm package by embedding aube's package manager in-process
     /// (`aube::embed::add`) instead of shelling out to the `aube` binary.
     ///
@@ -2142,11 +2181,12 @@ impl NPMBackend {
             install_options.strict_no_lockfile = true;
             install_options.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
             install_options.dangerously_allow_all_builds = matches!(allow_builds, AllowBuilds::All);
-            install_options.control =
+            install_options.control = self.with_provenance_verifier(
                 aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
                     .with_prompt_decision_handler(Arc::new(AubePromptHandler {
                         yes: ctx.explicit_yes,
-                    }));
+                    })),
+            );
             install_options.runtime = self.aube_embed_runtime(ctx).await;
             let install = aube::embed::install_with_overrides(
                 install_options,
@@ -2185,10 +2225,12 @@ impl NPMBackend {
             // `aube.allowBuilds`; only the "allow everything" case needs the
             // invocation flag. `None` leaves scripts skipped (aube's default).
             dangerously_allow_all_builds: matches!(allow_builds, AllowBuilds::All),
-            control: aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
-                .with_prompt_decision_handler(Arc::new(AubePromptHandler {
-                    yes: ctx.explicit_yes,
-                })),
+            control: self.with_provenance_verifier(
+                aube::embed::InstallControl::events(Arc::new(AubeProgressReporter { tx }))
+                    .with_prompt_decision_handler(Arc::new(AubePromptHandler {
+                        yes: ctx.explicit_yes,
+                    })),
+            ),
             // Run dependency lifecycle scripts on the node mise resolved as a
             // dependency, so `allow_builds` installs work even when node isn't
             // on the ambient PATH (the in-process installer doesn't inherit the
