@@ -35,3 +35,12 @@ assert 'test -e .agents; echo $?' "1"
 # A later global change moves the link.
 mise use -g skilled@2.0.0
 assert_contains "cat $HOME/.agents/skills/skilled/SKILL.md" "# skilled 2.0.0"
+
+# The links follow what is active here, not the version being requested: a
+# project that pins another version keeps its own.
+mkdir pinned
+cd pinned || exit 1
+echo '[tools]
+skilled = "1.0.0"' >mise.toml
+mise use -g skilled@2.0.0
+assert_contains "cat $HOME/.agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
