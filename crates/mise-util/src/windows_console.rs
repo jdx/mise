@@ -15,7 +15,7 @@ pub fn hide_if_unattended() -> io::Result<()> {
     Ok(())
 }
 
-// Match ALLOC_CONSOLE_OPTIONS from consoleapi3.h; windows-sys does not yet
+// Match ALLOC_CONSOLE_OPTIONS from consoleapi.h; windows-sys does not yet
 // provide these bindings.
 #[cfg(windows)]
 #[repr(C)]
@@ -25,6 +25,7 @@ struct AllocationOptions {
     show_window: u16,
 }
 
+/// Return `None` for console handles that become invalid on detachment.
 #[cfg(windows)]
 fn redirected_handle(
     handle: windows_sys::Win32::Foundation::HANDLE,
@@ -185,6 +186,7 @@ mod tests {
         assert_eq!(std::mem::offset_of!(AllocationOptions, show_window), 8);
     }
 
+    /// Replace even write-only console output, but retain redirected streams.
     #[test]
     fn console_handles_are_not_redirected_handles() {
         use std::fs::OpenOptions;

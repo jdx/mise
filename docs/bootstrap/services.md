@@ -52,8 +52,9 @@ mise creates a definition for your platform and starts the service:
 | macOS    | `~/Library/LaunchAgents/dev.mise.<name>.plist`                                           | `launchctl`        |
 | Windows  | Scheduled Task `mise\<name>`, with its definition under `$MISE_STATE_DIR/user-services/` | `schtasks`         |
 
-On Windows 11 24H2 and later, mise's built-in services and its environment
-launcher replace a private Windows Terminal console with a windowless console.
+On Windows 11 24H2, Windows Server 2025, and later versions, mise's built-in
+services and its environment launcher replace a private Windows Terminal
+console with a windowless console.
 Console programs that the service starts inherit it. A terminal window can
 appear during startup until mise replaces the console. Startup work and system
 load determine when replacement happens. Windows Terminal can retain the
