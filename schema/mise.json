@@ -2467,6 +2467,11 @@
           "description": "Require tool versions and download URLs to come from the lockfile.",
           "type": "boolean"
         },
+        "locked_require_checksum": {
+          "default": false,
+          "description": "Make locked mode fail when the lockfile has no checksum for a download.",
+          "type": "boolean"
+        },
         "locked_scopes": {
           "default": ["global", "project", "system"],
           "description": "Config scopes where invocation-wide locked mode is enforced.",
@@ -2475,11 +2480,6 @@
             "type": "string",
             "enum": ["project", "global", "system"]
           }
-        },
-        "locked_require_checksum": {
-          "default": false,
-          "description": "Make locked mode fail when the lockfile has no checksum for a download.",
-          "type": "boolean"
         },
         "locked_verify_provenance": {
           "default": false,

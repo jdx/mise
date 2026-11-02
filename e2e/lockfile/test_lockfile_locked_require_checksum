@@ -7,6 +7,13 @@ detect_platform
 PLATFORM="$MISE_PLATFORM"
 URL="https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
 
+# The entry without a checksum points at a local server that logs every
+# request, so the test can show nothing was downloaded.
+HEADERS_LOG_DIR="$PWD/headers"
+mkdir -p "$HEADERS_LOG_DIR"
+start_http_server --headers-log "$HEADERS_LOG_DIR"
+LOCAL_URL="http://127.0.0.1:$HTTP_PORT/hello-world-1.0.0.tar.gz"
+
 cat <<EOF >mise.toml
 [tools]
 "http:hello-require-checksum" = { version = "1.0.0", url = "$URL", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
@@ -16,10 +23,11 @@ cat <<EOF >mise.lock
 [[tools."http:hello-require-checksum"]]
 version = "1.0.0"
 backend = "http:hello-require-checksum"
-"platforms.$PLATFORM" = { url = "$URL" }
+"platforms.$PLATFORM" = { url = "$LOCAL_URL" }
 EOF
 
-MISE_LOCKED_REQUIRE_CHECKSUM=1 assert_fail "mise install --locked" "No lockfile checksum found for http:hello-require-checksum@1.0.0 on platform $PLATFORM ($URL)"
+MISE_LOCKED_REQUIRE_CHECKSUM=1 assert_fail "mise install --locked" "No lockfile checksum found for http:hello-require-checksum@1.0.0 on platform $PLATFORM ($LOCAL_URL)"
+assert_directory_empty "$HEADERS_LOG_DIR"
 assert_fail "mise where http:hello-require-checksum"
 
 cat <<EOF >mise.lock
