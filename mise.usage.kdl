@@ -708,7 +708,7 @@ Repeat the flag or separate parts with commas. Cannot be combined with `--only`.
         long_help #"""
 Refresh package metadata and update repositories before applying
 
-Also fast-forwards a checkout that `--from` or `--adopt` reuses. Without `--update`, a reused checkout stays at its current commit.
+Also fast-forwards a checkout that `--from` or `--adopt` reuses. Without either, fast-forwards the global config when it is a Git checkout with an upstream, as `--adopt` makes, or links into one, as `--config-dir` makes, then bootstraps from the new commit. Without `--update`, a checkout stays at its current commit.
 """#
     }
     flag --upgrade help="Upgrade installed packages and tools as well as installing missing ones" {

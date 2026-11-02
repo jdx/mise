@@ -30,7 +30,7 @@ and keeps in sync with your other machines.
 | Repository holds                                       | Command                        | Where the repository goes                        | Afterwards                                                          |
 | ------------------------------------------------------ | ------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------- |
 | A bootstrap project: `mise.toml` and the files it uses | `mise bootstrap --from <url>`  | `$MISE_DATA_DIR/bootstrap-repo`, or `--from-dir` | Rerun with `--update` to apply new commits                          |
-| Global mise config: `config.toml`, `conf.d/`, `tasks/` | `mise bootstrap --adopt <url>` | A Git checkout at `~/.config/mise`               | Every later mise command reads it as your global config             |
+| Global mise config: `config.toml`, `conf.d/`, `tasks/` | `mise bootstrap --adopt <url>` | A Git checkout at `~/.config/mise`               | Every later mise command reads it; `mise bootstrap --update` pulls  |
 | A setup repository created with `mise dot origin set`  | `mise bootstrap --adopt <url>` | mise's history store; files go to their paths    | Later changes arrive through the history watcher or `mise dot pull` |
 
 To share your own setup between machines, start with a setup repository: track
@@ -131,7 +131,8 @@ installing it.
 The destination must be missing, empty, or already a Git checkout whose
 `origin` is the repository you name. Move an existing `~/.config/mise` aside
 before adopting into it. With an existing checkout, `--update` fast-forwards it
-before the bootstrap runs. The checkout is an ordinary Git repository: commit
+before the bootstrap runs, and so does a later `mise bootstrap --update`
+without `--adopt`. The checkout is an ordinary Git repository: commit
 and pull in it as you would anywhere else.
 
 [`mise dot origin set`](/cli/dotfiles/origin/set.html) does not sync this
@@ -221,11 +222,11 @@ deploys through ordinary entries:
 An entry without a `source` reads the same path under
 [`dotfiles.root`](/configuration/settings.html#dotfiles.root), which defaults
 to `~/.dotfiles`. If you keep the checkout elsewhere, set `dotfiles.root` to
-it. Updating needs no `--from`:
+it. Updating needs no `--from`: `--update` fast-forwards the checkout that
+the link points into, then bootstraps from the new commit:
 
 ```sh
-git -C ~/.dotfiles pull
-mise bootstrap
+mise bootstrap --update
 ```
 
 `mise use -g`, `mise dot add`, and the other commands that write global config
