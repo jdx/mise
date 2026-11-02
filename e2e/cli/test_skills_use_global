@@ -61,3 +61,13 @@ mise use -g --pin skilled@2.0.0 >/dev/null
 rm -rf "$HOME/.agents/skills/skilled" "$HOME/.agents/skills/.mise-skills.json"
 mise install skilled
 assert_contains "cat $HOME/.agents/skills/skilled/SKILL.md" "# skilled 2.0.0"
+
+# One absolute skills.dir for everything: the project's links are not
+# replaced or pruned by the global pass.
+cd "$HOME" || exit 1
+mkdir -p shared-skills abs-project
+cd abs-project || exit 1
+echo '[tools]
+skilled = "1.0.0"' >mise.toml
+MISE_SKILLS_DIR="$HOME/shared-skills" MISE_SKILLS_PRUNE=1 mise use skilled@1.0.0
+assert_contains "cat $HOME/shared-skills/skilled/SKILL.md" "# skilled 1.0.0"

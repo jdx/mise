@@ -1235,13 +1235,15 @@ pub async fn auto_sync_skills(config: &Arc<Config>) {
     if let Some(root) = &config.project_root {
         auto_sync_skills_into(config, root, false).await;
     }
-    // Installing or upgrading a global tool moves its skills too. A project
-    // rooted at the home directory already syncs there, with a superset.
-    if config
+    // Installing or upgrading a global tool moves its skills too. Where the
+    // project and the home directory share one skills directory (a project
+    // rooted at home, or an absolute `skills.dir`), the project sync already
+    // wrote there with a superset, and a second pass would undo or prune it.
+    let shared = config
         .project_root
         .as_ref()
-        .is_none_or(|root| *root != *crate::dirs::HOME)
-    {
+        .is_some_and(|root| skills_dir(root) == skills_dir(&crate::dirs::HOME));
+    if !shared {
         auto_sync_global_skills(config).await;
     }
 }
