@@ -577,52 +577,75 @@ if [ "$out" = - ]; then echo body; else echo body >"$out"; fi
                 self.assertIn("failed to download", result.stderr)
                 self.assertEqual("this wget cannot read ~/.netrc" in result.stderr, warns, result.stderr)
 
-    def download(self, header):
-        return self.run_wget(header, 'download_file https://gh.example.invalid/mise.tar.gz "$DIR"')
+    GNU_WGET = "GNU Wget 1.21.4 built on linux-gnu."
+    BUSYBOX_WGET = ""  # the fake wget then has no --version, like BusyBox
 
-    def fetch(self, header):
-        result, _, leftovers = self.run_wget(header, "fetch_text https://gh.example.invalid/SHASUMS256.txt")
+    def download(self, header, wget, scheme="https"):
+        return self.run_wget(header, f'download_file {scheme}://gh.example.invalid/mise.tar.gz "$DIR"', WGET_VERSION=wget)
+
+    def fetch(self, header, wget, scheme="https"):
+        result, _, leftovers = self.run_wget(header, f"fetch_text {scheme}://gh.example.invalid/SHASUMS256.txt", WGET_VERSION=wget)
         return result, leftovers
 
-    def test_redirect_off_https_is_refused(self):
-        for header in [
-            "Location: http://evil.invalid/mise.tar.gz",
-            "location:HTTP://evil.invalid/mise.tar.gz",
-            "Location: ftp://evil.invalid/mise.tar.gz",
-            # BusyBox wget fetches a Location without a scheme over http
-            "Location: evil.invalid/mise.tar.gz",
-        ]:
-            with self.subTest(header=header):
-                result, downloaded, leftovers = self.download(header)
-                self.assertNotEqual(result.returncode, 0, result.stderr)
-                self.assertFalse(downloaded)
-                self.assertEqual(leftovers, [])
-                self.assertIn("refusing redirect to non-HTTPS URL", result.stderr)
+    def assert_refused(self, header, wget, scheme="https"):
+        result, downloaded, leftovers = self.download(header, wget, scheme)
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(downloaded)
+        self.assertEqual(leftovers, [])
+        self.assertIn("refusing redirect to non-HTTPS URL", result.stderr)
 
-                result, leftovers = self.fetch(header)
-                self.assertNotEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout, "")
-                self.assertEqual(leftovers, [])
-                self.assertIn("refusing redirect to non-HTTPS URL", result.stderr)
+        result, leftovers = self.fetch(header, wget, scheme)
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(leftovers, [])
+        self.assertIn("refusing redirect to non-HTTPS URL", result.stderr)
+
+    def assert_followed(self, header, wget):
+        result, downloaded, leftovers = self.download(header, wget)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(downloaded)
+        self.assertEqual(leftovers, [])
+        self.assertTrue(result.stdout.strip().endswith("/mise.tar.gz"), result.stdout)
+
+        result, leftovers = self.fetch(header, wget)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "body\n")
+        self.assertEqual(leftovers, [])
+
+    def test_redirect_off_https_is_refused(self):
+        for wget in [self.BUSYBOX_WGET, self.GNU_WGET]:
+            for header in [
+                "Location: http://evil.invalid/mise.tar.gz",
+                "location:HTTP://evil.invalid/mise.tar.gz",
+                "Location: ftp://evil.invalid/mise.tar.gz",
+            ]:
+                with self.subTest(wget=wget, header=header):
+                    self.assert_refused(header, wget)
+            # a relative Location keeps the scheme of a plain http request
+            with self.subTest(wget=wget, header="Location: /mise.tar.gz", request="http"):
+                self.assert_refused("Location: /mise.tar.gz", wget, scheme="http")
+
+        # BusyBox wget fetches a Location without a scheme or a leading "/" over http
+        for header in ["Location: evil.invalid/mise.tar.gz", "Location: assets/mise.tar.gz", "Location: ../SHASUMS256.txt"]:
+            with self.subTest(wget="busybox", header=header):
+                self.assert_refused(header, self.BUSYBOX_WGET)
 
     def test_redirect_within_https_is_followed(self):
-        for header in [
-            "Location: https://objects.example.invalid/mise.tar.gz",
-            "Location: HTTPS://objects.example.invalid/mise.tar.gz",
-            "Location: /mise.tar.gz",
-            "Content-Type: application/octet-stream",
-        ]:
-            with self.subTest(header=header):
-                result, downloaded, leftovers = self.download(header)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertTrue(downloaded)
-                self.assertEqual(leftovers, [])
-                self.assertTrue(result.stdout.strip().endswith("/mise.tar.gz"), result.stdout)
+        for wget in [self.BUSYBOX_WGET, self.GNU_WGET]:
+            for header in [
+                "Location: https://objects.example.invalid/mise.tar.gz",
+                "Location: HTTPS://objects.example.invalid/mise.tar.gz",
+                "Location: /mise.tar.gz",
+                "Location: //objects.example.invalid/mise.tar.gz",
+                "Content-Type: application/octet-stream",
+            ]:
+                with self.subTest(wget=wget, header=header):
+                    self.assert_followed(header, wget)
 
-                result, leftovers = self.fetch(header)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout, "body\n")
-                self.assertEqual(leftovers, [])
+        # GNU wget resolves any relative Location against the https request URL
+        for header in ["Location: assets/mise.tar.gz", "Location: ../SHASUMS256.txt", "Location: mise.tar.gz?sig=1"]:
+            with self.subTest(wget="gnu", header=header):
+                self.assert_followed(header, self.GNU_WGET)
 
 
 PWSH = os.environ.get("PWSH") or shutil.which("pwsh")

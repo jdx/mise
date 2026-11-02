@@ -159,23 +159,34 @@ mirror_release_url() {
   echo "https://mise.jdx.dev/v$1"
 }
 
-# Fails if the `wget -S` output in file $1 shows a redirect that leaves https.
-# wget cannot refuse one up front like curl --proto-redir (GNU wget's
-# --https-only only covers recursive downloads), so callers discard what it
-# fetched instead. A Location starting with "/" stays on the same server;
-# BusyBox wget fetches any other value without a scheme over http.
+# Succeeds if wget is GNU Wget or Wget2 rather than BusyBox wget, which has no
+# --version, no netrc support, and its own reading of relative redirects.
+wget_is_gnu() {
+  wget --version 2>/dev/null | grep -q '^GNU Wget'
+}
+
+# Fails if the `wget -S` output in file $1, for a request to $2, shows a
+# redirect that leaves https. wget cannot refuse one up front like curl
+# --proto-redir (GNU wget's --https-only only covers recursive downloads), so
+# callers discard what it fetched instead. A Location without a scheme keeps
+# the scheme of the URL it redirects from, as GNU wget resolves it against that
+# URL, except that BusyBox wget fetches one not starting with "/" over http.
 check_wget_redirects() {
-  location=$(awk '
+  gnu=0
+  wget_is_gnu && gnu=1
+  if ! location=$(awk -v url="$2" -v gnu="$gnu" '
+    BEGIN { scheme = tolower(url); sub(/:.*/, "", scheme) }
     /^[ \t]+[Ll][Oo][Cc][Aa][Tt][Ii][Oo][Nn]:/ {
       loc = $0
       sub(/^[ \t]+[^:]*:[ \t]*/, "", loc)
-      if (tolower(substr(loc, 1, 8)) != "https://" && substr(loc, 1, 1) != "/") { print loc; exit }
+      if (match(loc, /^[A-Za-z][A-Za-z0-9+.-]*:/)) scheme = tolower(substr(loc, 1, RLENGTH - 1))
+      else if (substr(loc, 1, 1) != "/" && !gnu) scheme = "http"
+      if (scheme != "https") { print loc; exit 1 }
     }
-  ' "$1")
-  [ -z "$location" ] || {
+  ' "$1"); then
     warn "mise: refusing redirect to non-HTTPS URL: $location"
     return 1
-  }
+  fi
 }
 
 # Prints the remote file at $1 to stdout. Returns non-zero on any failure.
@@ -188,7 +199,7 @@ fetch_text() {
   elif command -v wget >/dev/null 2>&1; then
     debug ">" wget -qSO - "$url"
     headers=$(mktemp)
-    if text=$(wget -qSO - "$url" 2>"$headers") && check_wget_redirects "$headers"; then
+    if text=$(wget -qSO - "$url" 2>"$headers") && check_wget_redirects "$headers" "$url"; then
       rm -f "$headers"
       printf '%s\n' "$text"
     else
@@ -342,7 +353,7 @@ download_file() {
         rm -f "$stderr"
         return 1
       fi
-      if ! check_wget_redirects "$stderr"; then
+      if ! check_wget_redirects "$stderr" "$url"; then
         rm -f "$stderr" "$file"
         return 1
       fi
@@ -458,7 +469,7 @@ install_mise() {
   # the mirror's redirects to other hosts, so it downloads without them.
   if [ -n "${MISE_INSTALL_GITHUB_MIRROR:-}" ] && [ -f "$HOME/.netrc" ] &&
     ! command -v curl >/dev/null 2>&1 && command -v wget >/dev/null 2>&1 &&
-    ! wget --version 2>/dev/null | grep -q '^GNU Wget'; then
+    ! wget_is_gnu; then
     warn "mise: this wget cannot read ~/.netrc, so requests to MISE_INSTALL_GITHUB_MIRROR send no credentials; install curl or GNU wget"
   fi
   if [ "$install_from_github" = "1" ] || [ "$install_from_github" = "true" ]; then
