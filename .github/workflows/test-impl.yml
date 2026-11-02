@@ -138,9 +138,6 @@ jobs:
     timeout-minutes: 180
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
-    # `jouet cost push` writes refs/notes/jouet-cost on pushes to main.
-    permissions:
-      contents: write
     env:
       # Enable the mise Cargo wrapper for unit tests and E2E rebuilds.
       MBX_DISABLE: "0"
@@ -155,8 +152,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # Only main keeps the token, for `jouet cost push` below.
-          persist-credentials: ${{ inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          persist-credentials: false
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
       - name: Cache mbx objects on Namespace
@@ -189,13 +185,22 @@ jobs:
       # budgeted full-command-graph tests after two seconds.
       - run: mise run test:unit-ci
         if: ${{ !(inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
-      # On main the same run goes through jouet so its timing is recorded, and
-      # `jouet cost push` shares the timings with agents.
-      - name: Test with jouet and share timings
+      # On main the same run goes through jouet so its timing is recorded. The
+      # `cost` job in test.yml pushes the timings, so this job needs no write token.
+      # `--display human` streams the output, and the baseline rerun is off so a
+      # failure stays a failure.
+      - name: Test with jouet
         if: ${{ inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        env:
+          JOUET_TEST_BASELINE: "off"
         run: |
-          mise x -- jouet test --cmd -- mise run test:unit-ci
-          mise x -- jouet cost push
+          mise x -- jouet test --display human --cmd -- mise run test:unit-ci
+          git bundle create "$RUNNER_TEMP/jouet-cost.bundle" refs/notes/jouet-cost
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        with:
+          name: jouet-cost
+          path: ${{ runner.temp }}/jouet-cost.bundle
       # The full E2E suite runs on Linux. Tests whose filenames contain `macos`
       # are also discovered and exercised here for platform-specific coverage.
       - run: mise run test:e2e macos

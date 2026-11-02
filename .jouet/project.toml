@@ -6,5 +6,4 @@ before_push = [
 ]
 
 [checks.focused]
-unit = "jouet test --affected"
 e2e = "jouet test --cmd -- mise run test:e2e NAME"
