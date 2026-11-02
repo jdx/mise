@@ -115,6 +115,25 @@ pub(crate) fn env_conf_d() -> bool {
     env_conf_d_setting().unwrap_or_else(|| env_conf_d_default_for_version(&crate::version::V))
 }
 
+/// [`env_conf_d_setting`] for the global and system config directories, which
+/// ignores project `.miserc.toml` files: those load without trust and must not
+/// change which global fragments load, such as one that turns `paranoid` on.
+pub(crate) fn global_env_conf_d_setting() -> Option<bool> {
+    if var_is_true("MISE_ENV_CONF_D") {
+        Some(true)
+    } else if var_is_false("MISE_ENV_CONF_D") {
+        Some(false)
+    } else {
+        miserc::get_global_env_conf_d()
+    }
+}
+
+/// [`env_conf_d`] for the global and system config directories.
+pub(crate) fn global_env_conf_d() -> bool {
+    global_env_conf_d_setting()
+        .unwrap_or_else(|| env_conf_d_default_for_version(&crate::version::V))
+}
+
 /// Default for auto_env when the setting is unset: off until mise 2027.6.0
 pub(crate) fn auto_env_default_for_version(v: &versions::Versioning) -> bool {
     *v >= versions::Versioning::new("2027.6.0").unwrap()
@@ -333,8 +352,22 @@ fn split_colon_list(value: &str) -> IndexSet<String> {
         .collect()
 }
 
+/// The directory mise started in, before `--cd`, `MISE_CD` or `mise en`
+/// changed it.
+static ORIGINAL_CWD: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+
+/// The directory mise was started in. A process mise starts with its own
+/// arguments runs from here, so a relative `--cd` resolves as it first did.
+pub fn original_cwd() -> Option<PathBuf> {
+    ORIGINAL_CWD
+        .get()
+        .cloned()
+        .unwrap_or_else(|| std::env::current_dir().ok())
+}
+
 pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
+    ORIGINAL_CWD.get_or_init(|| std::env::current_dir().ok());
     trace!("cd {}", display_path(path));
     std::env::set_current_dir(path)
         .wrap_err_with(|| format!("failed to set current directory to {}", display_path(path)))?;
