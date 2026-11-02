@@ -392,13 +392,18 @@ fn global_config_checkout() -> Result<Option<PathBuf>> {
 }
 
 /// Runs this `mise bootstrap` again, after the global config moved to a new
-/// commit, so it reads that commit's config from the start.
+/// commit, so it reads that commit's config from the start. It starts in the
+/// directory this one started in, where a relative `--cd` or `MISE_CD`
+/// resolves as it did here.
 fn rerun_bootstrap_after_config_update() -> Result<()> {
     let args = crate::env::ARGS.read().unwrap().clone();
     let mut command = Command::new(std::env::current_exe()?);
     command
         .args(args.iter().skip(1))
         .env(CONFIG_UPDATED_ENV, "1");
+    if let Some(cwd) = crate::env::original_cwd() {
+        command.current_dir(cwd);
+    }
     let status = command.status()?;
     if !status.success() {
         bail!("bootstrap from the updated global config failed with {status}");

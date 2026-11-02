@@ -44,6 +44,14 @@ assert "git -C '$checkout' rev-parse HEAD" "$(git -C "$repo" rev-parse HEAD)"
 assert "cat ~/.zshrc" "export ZSH=2"
 assert "cat ~/.work-marker" "work"
 
+# The run after the pull starts where the first one did, so a relative --cd
+# is not applied twice.
+mkdir -p "$HOME/work/proj"
+echo 'export ZSH=3' >"$repo/.zshrc"
+git -C "$repo" commit -qam "zsh 3"
+assert_succeed "cd '$HOME/work' && mise --cd proj bootstrap --update --yes --only dotfiles"
+assert "cat ~/.zshrc" "export ZSH=3"
+
 # Only a fast-forward is accepted.
 git -C "$checkout" config user.email test@example.com
 git -C "$checkout" config user.name "mise test"

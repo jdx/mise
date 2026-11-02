@@ -352,8 +352,22 @@ fn split_colon_list(value: &str) -> IndexSet<String> {
         .collect()
 }
 
+/// The directory mise started in, before `--cd`, `MISE_CD` or `mise en`
+/// changed it.
+static ORIGINAL_CWD: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+
+/// The directory mise was started in. A process mise starts with its own
+/// arguments runs from here, so a relative `--cd` resolves as it first did.
+pub fn original_cwd() -> Option<PathBuf> {
+    ORIGINAL_CWD
+        .get()
+        .cloned()
+        .unwrap_or_else(|| std::env::current_dir().ok())
+}
+
 pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
+    ORIGINAL_CWD.get_or_init(|| std::env::current_dir().ok());
     trace!("cd {}", display_path(path));
     std::env::set_current_dir(path)
         .wrap_err_with(|| format!("failed to set current directory to {}", display_path(path)))?;
