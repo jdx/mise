@@ -5060,11 +5060,14 @@ fn layering(requests: &[FileRequest], known: &[FileRequest]) -> Result<Vec<Vec<u
         }
         edges.push(edge);
     }
-    // a permissions-only entry never creates its target, so it waits for the
-    // entries that create it or what lies beneath it, unless one of those
-    // waits for it, however indirectly. Its dependents then wait for it in turn.
+    // a permissions-only entry never creates its target, so while the target
+    // is missing it waits for the entries that create it or what lies beneath
+    // it, unless one of those waits for it, however indirectly. Its dependents
+    // then wait for it in turn.
     for (index, req) in requests.iter().enumerate() {
-        if req.mode != FileMode::Permissions {
+        // a directory that is already there may need its mode fixed before
+        // anything can be written inside it, so it keeps its place
+        if req.mode != FileMode::Permissions || std::fs::symlink_metadata(&req.target).is_ok() {
             continue;
         }
         for (creator, other) in requests.iter().enumerate() {
@@ -8085,6 +8088,21 @@ variants = [{{ {field} = "linux" }}]"#
             layering(&requests, &requests)?,
             vec![vec![0], vec![2], vec![1]]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn a_permissions_only_entry_for_an_existing_directory_keeps_its_place() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let ssh = dir.path().join(".ssh");
+        std::fs::create_dir(&ssh)?;
+        let mut chmod = dependent(&ssh.to_string_lossy(), None, &[]);
+        chmod.mode = FileMode::Permissions;
+        let mut key = dependent(&ssh.join("key").to_string_lossy(), None, &["/h/seed"]);
+        key.mode = FileMode::Content;
+        let requests = [chmod, key, dependent("/h/seed", None, &[])];
+        // the directory exists, so its mode is fixed before the key is written inside it
+        assert_eq!(layering(&requests, &requests)?, vec![vec![0, 2], vec![1]]);
         Ok(())
     }
 
