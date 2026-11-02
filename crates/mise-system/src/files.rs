@@ -5897,7 +5897,7 @@ fn describe_applied(req: &FileRequest) -> Result<String> {
         FileMode::Absent => format!("removed {tgt}"),
         // Windows copies a file it refuses to link (see `link_path`)
         FileMode::Symlink if symlink_fell_back_to_copy(req) => format!(
-            "copied {src} to {tgt}: Windows refused a symlink, so the copy does not follow its source (to link it, turn on Developer Mode and dotfiles.windows_symlinks, then run `mise dot apply --force {tgt}`, which replaces the copy)"
+            "copied {src} to {tgt}: Windows refused a symlink, so the copy does not follow its source (to link it, turn on Developer Mode and dotfiles.windows_symlinks, then run `mise dot apply --force \"{tgt}\"`, which replaces the copy)"
         ),
         FileMode::Symlink => format!("created symlink {tgt} -> {src}"),
         // Windows copies each file (see `link_path`), so don't report links it didn't make
