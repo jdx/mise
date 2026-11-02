@@ -268,6 +268,7 @@ class DownloadSourceTests(unittest.TestCase):
             # every archive and checksum download refuses redirects off https
             [ "$1 $2" = "--proto-redir =https" ] || return 99
             shift 2
+            case " $* " in *" --netrc-optional "*) echo "$u" >>"$NETRC_LOG" ;; esac
             case " $FAIL_URLS " in *" $u "*) return 22 ;; esac
             case " $OTHER_ASSET_SUM_URLS " in *" $u "*)
                 printf '%064d  ./mise-v0-macos-arm64.tar.gz\n' 0
@@ -307,9 +308,11 @@ class DownloadSourceTests(unittest.TestCase):
                 mirror_tarball, mirror_digest = self.make_tarball(tmp / "tampered", asset, "evil")
             log = tmp / "curl.log"
             log.touch()
+            netrc_log = tmp / "netrc.log"
+            netrc_log.touch()
             env = {k: v for k, v in os.environ.items() if not k.startswith("MISE_")}
             env.update(
-                CURL_LOG=str(log), TARBALL=str(tarball), SUM=digest,
+                CURL_LOG=str(log), NETRC_LOG=str(netrc_log), TARBALL=str(tarball), SUM=digest,
                 MIRROR_TARBALL=str(mirror_tarball), MIRROR_SUM=mirror_digest,
                 FAIL_URLS=" ".join(u.format(v=version, a=asset) for u in fail_urls),
                 # these serve a SHASUMS256.txt that only lists an unrelated asset
@@ -329,6 +332,8 @@ class DownloadSourceTests(unittest.TestCase):
                 env=env, text=True, capture_output=True, check=False,
             )
             installed = (tmp / "bin/mise").exists()
+            # the URLs curl fetched with --netrc-optional
+            self.netrc_urls = netrc_log.read_text().splitlines()
             return result, log.read_text().splitlines(), installed
 
     def assert_installed(self, result, installed):
@@ -434,6 +439,23 @@ class DownloadSourceTests(unittest.TestCase):
             f"{gh_mirror}/v2026.1.0/SHASUMS256.txt",
         ])
 
+    def test_only_mirror_requests_read_netrc(self):
+        gh_mirror = "https://gh.example.invalid/github/jdx/mise/releases/download"
+        result, urls, installed = self.install(
+            fail_urls=[MIRROR + "/v{v}/{a}"], MISE_INSTALL_GITHUB_MIRROR="gh.example.invalid/github"
+        )
+        self.assert_installed(result, installed)
+        self.assertEqual(self.netrc_urls, [
+            f"{gh_mirror}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
+            f"{gh_mirror}/v2026.1.0/SHASUMS256.txt",
+        ])
+
+        # neither mise.jdx.dev nor github.com gets netrc credentials
+        result, urls, installed = self.install(fail_urls=[MIRROR + "/v{v}/{a}"])
+        self.assert_installed(result, installed)
+        self.assertEqual(len(urls), 3)
+        self.assertEqual(self.netrc_urls, [])
+
     def test_github_mirror_requires_https(self):
         for value in ["http://gh.example.invalid", "ftp://gh.example.invalid"]:
             with self.subTest(value=value):
@@ -493,6 +515,12 @@ class WgetRedirectTests(unittest.TestCase):
     redirect off https itself, so the installer checks its -S headers."""
 
     WGET = r"""#!/bin/sh
+if [ "$1" = --version ]; then
+    # BusyBox wget has no --version
+    [ -n "$WGET_VERSION" ] || { echo "wget: unrecognized option '--version'" >&2; exit 1; }
+    echo "$WGET_VERSION"
+    exit 0
+fi
 case "$1" in
     -SO | -qSO) out=$2 ;;
     *) echo "wget called without -S: $*" >&2; exit 99 ;;
@@ -501,25 +529,46 @@ printf '  HTTP/1.1 302 Found\n  %s\n  HTTP/1.1 200 OK\n' "$WGET_HEADER" >&2
 if [ "$out" = - ]; then echo body; else echo body >"$out"; fi
 """
 
-    def run_wget(self, header, command):
+    def run_wget(self, header, command, netrc=False, **variables):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             bin_dir = tmp / "bin"
             bin_dir.mkdir()
             # no curl on PATH, so the installer uses wget
-            for tool in ["awk", "basename", "cat", "mktemp", "rm"]:
+            for tool in ["awk", "basename", "cat", "dirname", "grep", "mktemp", "rm"]:
                 (bin_dir / tool).symlink_to(shutil.which(tool))
             wget = bin_dir / "wget"
             wget.write_text(self.WGET)
             wget.chmod(0o755)
+            if netrc:
+                (tmp / ".netrc").write_text("machine gh.example.invalid login user password s3cret\n")
             result = subprocess.run(
                 [shutil.which("sh"), "-c", SCRIPT + "\n" + command],
-                env={"PATH": str(bin_dir), "TMPDIR": str(tmp), "DIR": str(tmp), "WGET_HEADER": header},
+                env={"PATH": str(bin_dir), "TMPDIR": str(tmp), "HOME": str(tmp), "DIR": str(tmp),
+                     "WGET_HEADER": header, **variables},
                 text=True, capture_output=True, check=False,
             )
             downloaded = (tmp / "mise.tar.gz").exists()
-            leftovers = sorted(p.name for p in tmp.iterdir() if p.name not in ("bin", "mise.tar.gz"))
+            leftovers = sorted(p.name for p in tmp.iterdir() if p.name not in ("bin", "mise.tar.gz", ".netrc"))
             return result, downloaded, leftovers
+
+    def test_wget_without_netrc_support_warns_for_mirror(self):
+        command = "resolve_release() { echo 2026.1.0; }; download_file() { return 1; }; install_mise"
+        variables = dict(MISE_VERSION="2026.1.0", MISE_CURRENT_VERSION="v2026.10.0", MISE_INSTALL_OS="linux",
+                         MISE_INSTALL_ARCH="x64", MISE_INSTALL_EXT="tar.gz")
+        for case, wget_version, mirror, netrc, warns in [
+            ("busybox wget", "", "gh.example.invalid", True, True),
+            ("gnu wget", "GNU Wget 1.21.4 built on linux-gnu.", "gh.example.invalid", True, False),
+            ("gnu wget2", "GNU Wget2 2.1.0 - multithreaded metalink/file/website downloader", "gh.example.invalid", True, False),
+            ("no netrc", "", "gh.example.invalid", False, False),
+            ("no mirror", "", "", True, False),
+        ]:
+            with self.subTest(case=case):
+                result, _, _ = self.run_wget(
+                    "", command, netrc=netrc, WGET_VERSION=wget_version, MISE_INSTALL_GITHUB_MIRROR=mirror, **variables
+                )
+                self.assertIn("failed to download", result.stderr)
+                self.assertEqual("this wget cannot read ~/.netrc" in result.stderr, warns, result.stderr)
 
     def download(self, header):
         return self.run_wget(header, 'download_file https://gh.example.invalid/mise.tar.gz "$DIR"')

@@ -145,6 +145,16 @@ github_release_url() {
   echo "$github_base/jdx/mise/releases/download/v$1"
 }
 
+# Succeeds if $1 is on MISE_INSTALL_GITHUB_MIRROR. Only requests to the mirror
+# send credentials from ~/.netrc: curl gets --netrc-optional for them, and GNU
+# wget reads ~/.netrc by itself once the mirror asks for credentials.
+is_mirror_url() {
+  [ -n "${MISE_INSTALL_GITHUB_MIRROR:-}" ] || return 1
+  mirror_base="$(github_base_url)" || return 1
+  case "$1" in "$mirror_base"/*) return 0 ;; esac
+  return 1
+}
+
 mirror_release_url() {
   echo "https://mise.jdx.dev/v$1"
 }
@@ -172,8 +182,9 @@ check_wget_redirects() {
 fetch_text() {
   url="$1"
   if command -v curl >/dev/null 2>&1; then
-    debug ">" curl --proto-redir '=https' --compressed -fsSL "$url"
-    curl --proto-redir '=https' --compressed -fsSL "$url"
+    if is_mirror_url "$url"; then set -- --netrc-optional; else set --; fi
+    debug ">" curl --proto-redir '=https' --compressed -fsSL "$@" "$url"
+    curl --proto-redir '=https' --compressed -fsSL "$@" "$url"
   elif command -v wget >/dev/null 2>&1; then
     debug ">" wget -qSO - "$url"
     headers=$(mktemp)
@@ -319,8 +330,9 @@ download_file() {
   file="$download_dir/$filename"
 
   if command -v curl >/dev/null 2>&1; then
-    debug ">" curl --proto-redir '=https' -#fLo "$file" "$url"
-    curl --proto-redir '=https' -#fLo "$file" "$url" >&2 || return 1
+    if is_mirror_url "$url"; then set -- --netrc-optional; else set --; fi
+    debug ">" curl --proto-redir '=https' -#fLo "$file" "$@" "$url"
+    curl --proto-redir '=https' -#fLo "$file" "$@" "$url" >&2 || return 1
   else
     if command -v wget >/dev/null 2>&1; then
       debug ">" wget -SO "$file" "$url"
@@ -442,6 +454,13 @@ install_mise() {
   # for the built-in version and read from GitHub Releases for any other.
   asset="mise-v${version}-${os}-${arch}.${ext}"
   github_url="$(github_release_url "$version")/$asset"
+  # BusyBox wget has no netrc support, and credentials in the URL would follow
+  # the mirror's redirects to other hosts, so it downloads without them.
+  if [ -n "${MISE_INSTALL_GITHUB_MIRROR:-}" ] && [ -f "$HOME/.netrc" ] &&
+    ! command -v curl >/dev/null 2>&1 && command -v wget >/dev/null 2>&1 &&
+    ! wget --version 2>/dev/null | grep -q '^GNU Wget'; then
+    warn "mise: this wget cannot read ~/.netrc, so requests to MISE_INSTALL_GITHUB_MIRROR send no credentials; install curl or GNU wget"
+  fi
   if [ "$install_from_github" = "1" ] || [ "$install_from_github" = "true" ]; then
     tarball_url="$github_url"
     fallback_url=""

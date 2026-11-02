@@ -57,9 +57,67 @@
     }
   }
 
+  # Reads the netrc file mise reads (%USERPROFILE%\_netrc, else
+  # %USERPROFILE%\.netrc) and returns the login and password of the first
+  # "machine" entry for $HostName, else of a "default" entry, or $null.
+  function Get-NetrcCredential([string] $HostName) {
+    $path = Join-Path $HOME '_netrc'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { $path = Join-Path $HOME '.netrc' }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    $tokens = New-Object System.Collections.Generic.List[string]
+    $inMacro = $false
+    foreach ($line in [IO.File]::ReadAllLines($path)) {
+      # a macdef body runs to the next empty line
+      if ($inMacro) { $inMacro = [bool]$line.Trim(); continue }
+      if ($line.TrimStart().StartsWith('#')) { continue }
+      $lineTokens = @(foreach ($m in [regex]::Matches($line, '"((?:[^"\\]|\\.)*)"|(\S+)')) {
+          if ($m.Groups[1].Success) { $m.Groups[1].Value -replace '\\(.)', '$1' } else { $m.Groups[2].Value }
+        })
+      foreach ($token in $lineTokens) { $tokens.Add($token) }
+      $inMacro = $lineTokens -ccontains 'macdef'
+    }
+    $match = $false
+    $login = $null
+    $password = ''
+    for ($i = 0; $i -lt $tokens.Count; $i++) {
+      $key = $tokens[$i]
+      $value = if ($i + 1 -lt $tokens.Count) { $tokens[$i + 1] } else { '' }
+      if ($key -ceq 'machine' -or $key -ceq 'default') {
+        if ($match) { break }
+        $match = $key -ceq 'default' -or $value -eq $HostName
+        if ($key -ceq 'machine') { $i++ }
+      } elseif ($key -cin 'login', 'password', 'account', 'macdef') {
+        if ($match -and $key -ceq 'login') { $login = $value }
+        if ($match -and $key -ceq 'password') { $password = $value }
+        $i++
+      }
+    }
+    if ($match -and $null -ne $login) { return @{ Login = $login; Password = $password } }
+    return $null
+  }
+
+  # Invoke-WebRequest does not read netrc, so requests to MISE_INSTALL_GITHUB_MIRROR
+  # get the mirror's netrc credentials as a Basic Authorization header.
+  # PowerShell drops that header on a redirect, so it never reaches the host a
+  # mirror redirects to.
+  function Invoke-Download([string] $Url, [string] $OutFile) {
+    $params = @{ UseBasicParsing = $true; Uri = $Url }
+    if ($env:MISE_INSTALL_GITHUB_MIRROR -and $Url.StartsWith("$(Get-GitHubBase)/", [StringComparison]::OrdinalIgnoreCase)) {
+      $hostName = ([Uri]$Url).Host
+      $credential = Get-NetrcCredential $hostName
+      if ($credential) {
+        Write-Debug2 "> using netrc credentials for $hostName"
+        $pair = "$($credential.Login):$($credential.Password)"
+        $params.Headers = @{ Authorization = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pair)) }
+      }
+    }
+    if ($OutFile) { $params.OutFile = $OutFile }
+    return Invoke-WebRequest @params
+  }
+
   function Get-Text([string] $Url) {
     Write-Debug2 "> GET $Url"
-    $content = (Invoke-WebRequest -UseBasicParsing -Uri $Url).Content
+    $content = (Invoke-Download $Url).Content
     # Binary content types (GitHub serves release assets as octet-stream) come back as bytes.
     if ($content -is [byte[]]) { return [Text.Encoding]::UTF8.GetString($content) }
     return [string]$content
@@ -190,7 +248,7 @@
       foreach ($url in $urls) {
         try {
           Write-Debug2 "> download $url"
-          Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $zip
+          Invoke-Download $url $zip
           $downloaded = $true
           break
         } catch {
