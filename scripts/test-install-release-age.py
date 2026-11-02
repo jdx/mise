@@ -475,10 +475,17 @@ class DownloadSourceTests(unittest.TestCase):
                 self.assertNotIn("s3cret", result.stderr)
                 self.assertEqual(urls, [])
 
+        # an "@" in the path is not a credential
+        gh_mirror = "https://gh.example.invalid/a@b/jdx/mise/releases/download"
         result, urls, installed = self.install(
             fail_urls=[MIRROR + "/v{v}/{a}"], MISE_INSTALL_GITHUB_MIRROR="https://gh.example.invalid/a@b"
         )
         self.assert_installed(result, installed)
+        self.assertEqual(urls, [
+            f"{MIRROR}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
+            f"{gh_mirror}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz",
+            f"{gh_mirror}/v2026.1.0/SHASUMS256.txt",
+        ])
 
     def test_builtin_version_uses_static_checksum_and_falls_back(self):
         result, urls, installed = self.install(version="2026.10.0")
