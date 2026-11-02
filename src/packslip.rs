@@ -1131,12 +1131,24 @@ pub fn skills_dir(root: &Path) -> PathBuf {
 /// here: a problem is reported and the tools stay installed. Outside a
 /// project root there is nowhere to link into, so nothing happens.
 pub async fn auto_sync_skills(config: &Arc<Config>) {
-    let settings = Settings::get();
     let Some(root) = &config.project_root else {
         return;
     };
+    auto_sync_skills_into(config, root, false).await;
+}
+
+/// [`auto_sync_skills`] for a global change such as `mise use -g`: the links
+/// go under the home directory, as `mise skills sync --global` writes them.
+pub async fn auto_sync_global_skills(config: &Arc<Config>) {
+    auto_sync_skills_into(config, &crate::dirs::HOME, true).await;
+}
+
+async fn auto_sync_skills_into(config: &Arc<Config>, root: &Path, global: bool) {
+    let settings = Settings::get();
     if !settings.skills.auto_sync {
-        hint_skills(config).await;
+        if !global {
+            hint_skills(config).await;
+        }
         return;
     }
     let dir = skills_dir(root);
