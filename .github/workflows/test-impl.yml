@@ -138,6 +138,9 @@ jobs:
     timeout-minutes: 180
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
+    # `jouet cost push` writes refs/notes/jouet-cost on pushes to main.
+    permissions:
+      contents: write
     env:
       # Enable the mise Cargo wrapper for unit tests and E2E rebuilds.
       MBX_DISABLE: "0"
@@ -152,7 +155,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          persist-credentials: false
+          # Only main keeps the token, for `jouet cost push` below.
+          persist-credentials: ${{ inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
       - name: Cache mbx objects on Namespace
@@ -184,6 +188,14 @@ jobs:
       # The CI profile fails ordinary tests after one second and explicitly
       # budgeted full-command-graph tests after two seconds.
       - run: mise run test:unit-ci
+        if: ${{ !(inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+      # On main the same run goes through jouet so its timing is recorded, and
+      # `jouet cost push` shares the timings with agents.
+      - name: Test with jouet and share timings
+        if: ${{ inputs.trusted && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
+          mise x -- jouet test --cmd -- mise run test:unit-ci
+          mise x -- jouet cost push
       # The full E2E suite runs on Linux. Tests whose filenames contain `macos`
       # are also discovered and exercised here for platform-specific coverage.
       - run: mise run test:e2e macos
