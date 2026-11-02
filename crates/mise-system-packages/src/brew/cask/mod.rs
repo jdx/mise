@@ -1039,7 +1039,12 @@ impl BrewCaskManager {
         file::remove_all(stage)?;
         if manager_options.brew_cask_homebrew_metadata()
             && homebrew_handoff_applies(&cask, req)
-            && let Err(err) = write_homebrew_metadata(&caskroom_token, &cask.token, &cask.version)
+            && let Err(err) = write_homebrew_metadata(
+                &caskroom_token,
+                &cask.token,
+                &cask.version,
+                ancestry.tokens.is_empty(),
+            )
         {
             warn!(
                 "brew-cask:{}: installed, but failed to write Homebrew metadata: {err:#}",
@@ -1305,6 +1310,7 @@ impl SystemPackageManager for BrewCaskManager {
                     &caskroom_token_dir(cask.manager, &cask.token),
                     &cask.token,
                     &version,
+                    true,
                 )
             {
                 warn!(

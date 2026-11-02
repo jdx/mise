@@ -422,7 +422,7 @@ fn written_homebrew_metadata_hands_the_cask_to_homebrew() -> Result<()> {
     file::create_dir_all(token_dir.join("2.40.0"))?;
     assert_eq!(homebrew_installed_version("example")?, None);
 
-    write_homebrew_metadata(&token_dir, "example", "2.40.0")?;
+    write_homebrew_metadata(&token_dir, "example", "2.40.0", true)?;
 
     let versions = token_dir.join(".metadata/2.40.0");
     let stamps = std::fs::read_dir(&versions)?.collect::<Result<Vec<_>, _>>()?;
@@ -447,6 +447,13 @@ fn written_homebrew_metadata_hands_the_cask_to_homebrew() -> Result<()> {
         Some("2.40.0")
     );
     Ok(())
+}
+
+#[test]
+fn dependency_receipt_is_not_marked_as_requested() {
+    let receipt = install_receipt("1.0.0", false);
+    assert_eq!(receipt["installed_on_request"], false);
+    assert_eq!(receipt["installed_as_dependency"], true);
 }
 
 #[test]
