@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Regression test for https://github.com/jdx/mise/issues/15256:
+# a `latest` request with `prerelease = true` must run the newest installed
+# release, pre-releases included, even though the generated `latest` link
+# keeps pointing at the newest stable install.
+
+mise install dummy@2.0.0 dummy@2.1.0-alpha.1
+
+cat <<TOML >mise.toml
+[tools]
+dummy = { version = "latest", prerelease = true }
+TOML
+
+# The generated link stays stable-only.
+assert "readlink $MISE_DATA_DIR/installs/dummy/latest" "./2.0.0"
+
+assert "mise where dummy" "$MISE_DATA_DIR/installs/dummy/2.1.0-alpha.1"
+assert "mise which dummy" "$MISE_DATA_DIR/installs/dummy/2.1.0-alpha.1/bin/dummy"
+assert_contains "mise x -- dummy" "This is Dummy 2.1.0-alpha.1"
+assert_contains "mise bin-paths dummy" "$MISE_DATA_DIR/installs/dummy/2.1.0-alpha.1/bin"
+
+# Without the option, `latest` still runs the stable install through the link.
+cat <<TOML >mise.toml
+[tools]
+dummy = "latest"
+TOML
+assert_contains "mise x -- dummy" "This is Dummy 2.0.0"
+assert_contains "mise bin-paths dummy" "$MISE_DATA_DIR/installs/dummy/latest/bin"
