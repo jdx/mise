@@ -5600,8 +5600,9 @@ fn plan_apply_after<'a>(
             && pending_source(&req.source, pending)
         {
             // nothing to compare with or walk until the earlier round has run;
-            // what does not depend on the source is still checked
-            if req.mode != FileMode::SymlinkEach {
+            // what does not depend on the source is still checked: how a copy
+            // or a walk meets its target depends on what the source will be
+            if !matches!(req.mode, FileMode::SymlinkEach | FileMode::Copy) {
                 conflicts.extend(find_conflicts(req)?);
             }
             todo.push((req, None));

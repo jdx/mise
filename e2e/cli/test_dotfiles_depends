@@ -118,7 +118,7 @@ assert "cat out/copy" "from-entry"
 
 # so does a source inside a directory that an earlier round deploys
 rm -rf out
-mkdir -p tree
+mkdir -p tree out/dircopy
 echo nested >tree/f
 cat <<EOF >mise.toml
 [dotfile_groups.tree]
