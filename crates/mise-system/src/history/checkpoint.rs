@@ -90,6 +90,46 @@ impl Draft {
     }
 }
 
+/// Whether two captures omitted, left incomplete and skipped the same paths.
+/// Reasons are not compared: a checkpoint read back from Git keeps the paths
+/// but not the wording, and records nested repositories among the omitted.
+fn same_coverage(previous: &store::Coverage, current: &store::Coverage) -> bool {
+    let omitted = |coverage: &store::Coverage| -> BTreeSet<String> {
+        coverage
+            .omitted
+            .iter()
+            .chain(&coverage.nested)
+            .map(|reason| reason.path.clone())
+            .collect()
+    };
+    let incomplete = |coverage: &store::Coverage| -> BTreeSet<String> {
+        coverage
+            .incomplete
+            .iter()
+            .map(|reason| reason.path.clone())
+            .collect()
+    };
+    // the capture state (live, saved, protective) varies with the trigger,
+    // and a checkpoint read back from Git does not keep where it was declared
+    let entries = |coverage: &store::Coverage| -> Vec<store::CoverageEntry> {
+        coverage
+            .entries
+            .iter()
+            .cloned()
+            .map(|mut entry| {
+                entry.state.clear();
+                entry.declared_in = None;
+                entry
+            })
+            .collect()
+    };
+    omitted(previous) == omitted(current)
+        && incomplete(previous) == incomplete(current)
+        && entries(previous) == entries(current)
+        && previous.exclude == current.exclude
+        && previous.matcher == current.matcher
+}
+
 #[derive(Debug)]
 pub enum Outcome {
     Created(Box<Entry>),
@@ -168,6 +208,19 @@ impl Store {
 
     pub(crate) fn list(&self) -> Result<Vec<Entry>> {
         store::list_in(&self.state_dir)
+    }
+
+    /// The id and uuid of the newest checkpoint holding a content snapshot:
+    /// the one an unchanged capture compares against.
+    pub(crate) fn latest_snapshot(&self) -> Result<Option<(u64, String)>> {
+        let index = store::load_index_in(&self.state_dir)?;
+        Ok(index.entries.iter().rev().find_map(|entry| {
+            store::read_meta_cache_in(&self.state_dir, &entry.uuid)
+                .ok()
+                .flatten()
+                .is_some_and(|checkpoint| checkpoint.tree.snapshot.is_some())
+                .then(|| (entry.id, entry.uuid.clone()))
+        }))
     }
 
     /// Reserves the next checkpoint id.
@@ -512,6 +565,13 @@ impl Store {
             && let Some((previous_checkpoint, tree)) = &previous_tree
             && snapshot.as_deref() == Some(tree.as_str())
             && (!cfg!(unix) || previous_checkpoint.tree.modes == modes)
+            // a reused checkpoint must also have judged coverage the same
+            // way: an omission it never recorded would read as a covered
+            // path that is absent
+            && (!draft.skip_unchanged || same_coverage(
+                &previous_checkpoint.tree.coverage,
+                &tracked.shared_coverage(coverage.clone(), &walk)
+            ))
         {
             debug!(
                 "history: nothing changed since checkpoint {}",

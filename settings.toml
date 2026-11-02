@@ -1901,22 +1901,6 @@ parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
 
-[idiomatic_version_file_ignore_minimum_versions]
-default = false
-description = "Ignore idiomatic version file fields that only declare a minimum compatible version."
-docs = """
-Affects `go.mod`'s `go X.Y` line (a `toolchain goX.Y.Z` line, or an exact
-`go X.Y.Z` line with no `toolchain` line, is still read) and
-`CMakeLists.txt`'s `cmake_minimum_required`. mise still reads those minimums
-with a deprecation warning; this setting opts into the final behavior now and
-silences the warning. In mise 2026.11.0 that behavior becomes unconditional and
-this setting is removed. See
-[Which fields mise reads](/dev-tools/versions.html#which-fields-mise-reads).
-"""
-env = "MISE_IDIOMATIC_VERSION_FILE_IGNORE_MINIMUM_VERSIONS"
-hide = true
-type = "Bool"
-
 [ignored_config_paths]
 default = []
 description = "Config files and directories mise does not load."
@@ -2624,6 +2608,22 @@ enum = [
 env = "MISE_NPM_PACKAGE_MANAGER"
 rust_type = "NpmPackageManager"
 type = "String"
+
+[npm.provenance]
+default = false
+description = "Verify the Sigstore provenance npm publishes for an `npm:` tool's own package."
+docs = """
+When on, `mise install` fetches the attestations the public npm registry holds
+for the tool's package and requires the SLSA provenance among them to verify
+against the integrity hash the install locks. A package that publishes no
+provenance, or a private registry that serves none, installs as it does with
+this off. Provenance built outside GitHub Actions, such as on GitLab CI, is not
+accepted yet, so such a package fails to install while this is on.
+[`paranoid`](/configuration/settings.html#paranoid) turns it on for the
+`provenance` category.
+"""
+env = "MISE_NPM_PROVENANCE"
+type = "Bool"
 
 [npm.shell_out]
 default = false
@@ -3676,7 +3676,8 @@ mise runs the equivalent of `mise skills sync` after every install, after
 `mise use` changes a version, and after `mise upgrade`, so the links under
 [`skills.dir`](#skills.dir) point at the versions active in the project. Only
 projects with a mise config get links, and nothing is written outside a project
-root. mise touches only links it made, and removes stale ones only when [`skills.prune`](#skills.prune)
+root, except that `mise use --global` links into `skills.dir` under your home
+directory. mise touches only links it made, and removes stale ones only when [`skills.prune`](#skills.prune)
 is on. See
 [Keep project links up to date](/dev-tools/packslip-resources.html#keep-project-links-up-to-date).
 """
@@ -3684,14 +3685,18 @@ env = "MISE_SKILLS_AUTO_SYNC"
 type = "Bool"
 
 [skills.dir]
-default = ".claude/skills"
 description = "Where `mise skills sync` links skills: a path under the project root, or under the home directory with `--global`."
 docs = """
-Set it to the directory the agents you use read, such as `.agents/skills`. An
-absolute path is used as written, and `--dir` overrides it for one run. See
+Set it to the directory the agents you use read, such as `.claude/skills`. An
+absolute path is used as written, and `--dir` overrides it for one run.
+
+Left unset, mise uses `.agents/skills` if it exists, then `.claude/skills` if it
+exists. When neither exists it creates `.agents/skills` and a `.claude/skills`
+symlink to it, so agents that read either path find the skills. See
 [Choose a skill directory](/dev-tools/packslip-resources.html#choose-a-skill-directory).
 """
 env = "MISE_SKILLS_DIR"
+optional = true
 type = "String"
 
 [skills.fetch]

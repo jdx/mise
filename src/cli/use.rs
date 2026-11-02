@@ -443,7 +443,11 @@ impl Use {
                 crate::lockfile::LockfileUpdateMode::Normal,
             )
             .await?;
-            crate::packslip::auto_sync_skills(&config).await;
+            if self.global {
+                crate::packslip::auto_sync_global_skills(&config).await;
+            } else {
+                crate::packslip::auto_sync_skills(&config).await;
+            }
         }
 
         self.render_success_message(cf.as_ref(), &versions, &self.remove)?;

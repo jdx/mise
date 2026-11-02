@@ -274,6 +274,42 @@ content differs without printing it. `mise dot status` reads the file to
 compare it, as it renders a template. `mise oci build` skips fnox entries,
 because anyone who can pull an image can read its layers.
 
+## Wait for other entries {#depends}
+
+By default, `mise dot apply` plans every entry before it writes any of them, so
+a template or an [fnox](#fnox) entry cannot use a file that the same apply
+creates. `depends` makes an entry wait. It lists dotfile groups, by name, and
+whole-file entries, by target path:
+
+```toml
+[dotfile_groups.secrets]
+root = "secrets"
+mode = "copy"
+target = "~/.config/fnox"
+
+[dotfiles]
+"~/.workrc" = { mode = "fnox", depends = ["secrets"] }
+"~/.npmrc" = { mode = "fnox", depends = ["~/.ssh/encryption_ed25519"] }
+"~/.ssh/encryption_ed25519" = { mode = "template", source = "ssh/encryption_ed25519.tera" }
+```
+
+mise writes the dependencies first, then renders or reads the entries that
+depend on them. Entries without `depends` are written in the first round.
+
+- A group can name other groups and entries. Its entries wait for the same
+  dependencies, in addition to their own.
+- A dependency that the apply leaves out, such as an entry you did not name in
+  `mise dot apply <target>`, counts as already applied.
+- A name that is neither a group nor an entry target is an error, as is a cycle.
+- If a round fails, mise stops there: the rounds before it stay written, and
+  mise lists the entries that were not applied because of it.
+- `--dry-run` lists the entries that depend on others without rendering or
+  reading them, and the confirmation prompt appears once per round.
+- Edits and `mode = "track"` entries take no `depends`.
+
+`mise dot status` reads each entry as it is on disk, so before the first apply it
+reports a template that reads a file which does not exist yet.
+
 ## Permissions {#permissions}
 
 Set `permissions` to an octal string to give the target those permissions
@@ -755,10 +791,15 @@ apply it.
 
 A `symlink` entry for a file creates a symbolic link when Windows allows it,
 which it does without elevation once Developer Mode is on, and copies the file
-otherwise. A directory link is a junction. `symlink-each` always copies each
-file, so edit the source rather than the target and run `mise dot apply`.
-`mise dot status` accepts either form on disk. `relative` and `permissions`
-are ignored on Windows.
+otherwise. A directory link is a junction. `symlink-each` copies each file,
+and a copy does not follow its source. Once the source changes, the copy is a
+regular file where a link belongs, and `mise dot apply` refuses to overwrite
+it without `--force`, as it does any file in the way of a link: you or an
+application may have edited the copy. Refresh the copies of one entry with
+`mise dot apply --force <target>`, use `mode = "copy"` for files that apply
+should always overwrite, or turn on `dotfiles.windows_symlinks` (below) so the
+targets follow the source. `mise dot status` accepts either form on disk.
+`relative` and `permissions` are ignored on Windows.
 
 Set [`dotfiles.windows_symlinks`](/configuration/settings.html#dotfiles.windows_symlinks)
 to `true` to get real file links from both modes. `symlink-each` then links

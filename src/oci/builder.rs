@@ -1950,6 +1950,7 @@ mod tests {
             create_if_missing: false,
             relative: false,
             group: None,
+            depends: vec![],
             dot_prefix: false,
         };
         // every path in the layer build_dotfiles_layer produces, so the
@@ -2035,6 +2036,7 @@ mod tests {
             create_if_missing: false,
             relative: false,
             group: None,
+            depends: vec![],
             dot_prefix: true,
         })
     }

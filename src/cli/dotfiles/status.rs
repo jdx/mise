@@ -108,7 +108,10 @@ impl DotfilesStatus {
                 _ => (0, 0),
             };
             let absent = matches!(state, FileState::Applied)
-                .then(|| system::files::permissions_target_absent(req))
+                .then(|| {
+                    system::files::permissions_target_absent(req)
+                        .or_else(|| system::files::symlink_target_copied(req))
+                })
                 .flatten();
             // a tracked entry whose variants all name other machines, or
             // tie, is neither saved nor pulled here

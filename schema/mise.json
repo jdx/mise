@@ -2397,11 +2397,6 @@
             "type": "string"
           }
         },
-        "idiomatic_version_file_ignore_minimum_versions": {
-          "default": false,
-          "description": "Ignore idiomatic version file fields that only declare a minimum compatible version.",
-          "type": "boolean"
-        },
         "ignored_config_paths": {
           "default": [],
           "description": "Config files and directories mise does not load.",
@@ -2655,6 +2650,11 @@
               "description": "Package manager that installs `npm:` tools.",
               "type": "string",
               "enum": ["auto", "npm", "aube", "aube_cli", "bun", "pnpm"]
+            },
+            "provenance": {
+              "default": false,
+              "description": "Verify the Sigstore provenance npm publishes for an `npm:` tool's own package.",
+              "type": "boolean"
             },
             "shell_out": {
               "default": false,
@@ -3129,7 +3129,6 @@
               "type": "boolean"
             },
             "dir": {
-              "default": ".claude/skills",
               "description": "Where `mise skills sync` links skills: a path under the project root, or under the home directory with `--global`.",
               "type": "string"
             },
@@ -7295,6 +7294,13 @@
                   },
                   "additionalProperties": false
                 }
+              },
+              "depends": {
+                "type": "array",
+                "description": "dotfile groups (by name) and whole-file entries (by target path) mise writes before it renders or reads this entry, so a template, a fnox file or a copy can use files they create. A dependency that fails stops this entry and everything after it; a cycle or a name that is neither is an error. Not for edits or track modes",
+                "items": {
+                  "type": "string"
+                }
               }
             },
             "allOf": [
@@ -7324,6 +7330,7 @@
                     "relative": false,
                     "dot_prefix": false,
                     "group": false,
+                    "depends": false,
                     "block": false,
                     "line": false,
                     "position": false,
@@ -7692,6 +7699,22 @@
                     "comment": false
                   }
                 }
+              },
+              {
+                "if": {
+                  "required": ["depends"]
+                },
+                "then": {
+                  "properties": {
+                    "block": false,
+                    "line": false,
+                    "mode": {
+                      "not": {
+                        "enum": ["track", "track-local"]
+                      }
+                    }
+                  }
+                }
               }
             ],
             "anyOf": [
@@ -7731,6 +7754,13 @@
             "type": "string",
             "description": "target directory, absolute or starting with ~/",
             "default": "~"
+          },
+          "depends": {
+            "type": "array",
+            "description": "dotfile groups (by name) and whole-file entries (by target path) mise writes before it deploys this group and its entries",
+            "items": {
+              "type": "string"
+            }
           },
           "mode": {
             "type": "string",
@@ -7903,6 +7933,13 @@
                         "additionalProperties": false
                       }
                     },
+                    "depends": {
+                      "type": "array",
+                      "description": "dotfile groups (by name) and whole-file entries (by target path) mise writes before it renders or reads this entry, in addition to the group's own. Not for edits or track modes",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
                     "block": {
                       "type": "string",
                       "description": "edit entry: block content, maintained between marker comments"
@@ -7991,6 +8028,7 @@
                           "relative": false,
                           "dot_prefix": false,
                           "group": false,
+                          "depends": false,
                           "block": false,
                           "line": false,
                           "position": false,
@@ -8357,6 +8395,22 @@
                           "position": false,
                           "template": false,
                           "comment": false
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "required": ["depends"]
+                      },
+                      "then": {
+                        "properties": {
+                          "block": false,
+                          "line": false,
+                          "mode": {
+                            "not": {
+                              "enum": ["track", "track-local"]
+                            }
+                          }
                         }
                       }
                     }

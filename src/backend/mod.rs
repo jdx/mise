@@ -74,6 +74,7 @@ pub(crate) mod http;
 pub(crate) mod jq;
 pub mod mise_bins;
 pub(crate) mod npm;
+pub(crate) mod npm_provenance;
 pub(crate) mod npm_registry;
 pub(crate) mod options;
 pub mod packslip;
@@ -1105,35 +1106,7 @@ fn parse_matching_registry_idiomatic_file(
         .max_by_key(|spec| Path::new(spec.path).components().count())
         .filter(|spec| spec.has_parser())
     {
-        Some(spec) => match spec.deprecated {
-            // The file's only parser reads a value mise should not be installing from.
-            // Opting in early means it yields nothing -- `Some(vec![])` rather than
-            // `None`, so the backend's plain-text fallback doesn't read the whole file.
-            Some(_) if Settings::get().idiomatic_version_file_ignore_minimum_versions => {
-                Ok(Some(vec![]))
-            }
-            Some(reason) => {
-                let versions = parse_registry_idiomatic_file(path, spec)?;
-                // Only warn when the file actually resolved something, so a project
-                // that merely has the file lying around stays quiet.
-                if versions
-                    .as_ref()
-                    .is_some_and(|versions| !versions.is_empty())
-                {
-                    // The path is the id so two deprecated files can't silence each
-                    // other, and it already names the file in the warning.
-                    let id = spec.path;
-                    deprecated_at!(
-                        "2026.8.10",
-                        "2026.11.0",
-                        id,
-                        "{reason} mise will stop reading it as an idiomatic version file; set the version in mise.toml instead."
-                    );
-                }
-                Ok(versions)
-            }
-            None => parse_registry_idiomatic_file(path, spec),
-        },
+        Some(spec) => parse_registry_idiomatic_file(path, spec),
         None => Ok(None),
     }
 }
@@ -1771,7 +1744,6 @@ mod tests {
             version_regex: None,
             version_json_path: Some(".releases[?channel=stable].version"),
             version_expr: None,
-            deprecated: None,
         };
 
         assert_eq!(
@@ -1791,7 +1763,6 @@ mod tests {
             version_regex: None,
             version_json_path: Some(".version"),
             version_expr: None,
-            deprecated: None,
         }];
 
         assert_eq!(
@@ -1810,7 +1781,6 @@ mod tests {
             version_regex: None,
             version_json_path: Some(".tool.version"),
             version_expr: None,
-            deprecated: None,
         }];
 
         assert_eq!(
@@ -1826,7 +1796,6 @@ mod tests {
             version_regex: None,
             version_json_path: None,
             version_expr: None,
-            deprecated: None,
         };
 
         assert_eq!(
@@ -4734,7 +4703,10 @@ pub trait Backend: Debug + Send + Sync {
                     .unwrap_or_else(|| self.ba().installs_path().to_path_buf());
                 let filter = !self.include_prereleases(&self.ba().opts());
                 let installed_symlink = installs_path.join("latest");
-                if installed_symlink.exists()
+                // The generated `latest` link leaves pre-releases out, so it
+                // only answers a request that leaves them out too.
+                if filter
+                    && installed_symlink.exists()
                     && let Some(target) = file::resolve_symlink(&installed_symlink)?
                 {
                     let version = target
@@ -4745,7 +4717,7 @@ pub trait Backend: Debug + Send + Sync {
                     // A `latest` link written before the backend could tell this
                     // version is a pre-release must not keep winning, and neither
                     // may one left pointing into an interrupted install.
-                    if (!filter || !self.is_backend_prerelease(&version))
+                    if !self.is_backend_prerelease(&version)
                         && !install_state::is_incomplete(self.ba(), &version)
                     {
                         return Ok(Some(version));
@@ -4756,7 +4728,17 @@ pub trait Backend: Debug + Send + Sync {
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
-                    .filter(|v| !install_state::is_incomplete(self.ba(), v))
+                    .filter(|v| {
+                        // An identity-layout version is a link, and its marker is
+                        // keyed by the installation the link names.
+                        let key =
+                            crate::install_layout::resolver::link_target(&installs_path.join(v))
+                                .and_then(|install| {
+                                    install.file_name().map(|n| n.to_string_lossy().to_string())
+                                })
+                                .unwrap_or_else(|| v.clone());
+                        !install_state::is_incomplete(self.ba(), &key)
+                    })
                     .filter(|v| v != "latest")
                     .collect_vec();
                 install_state::sort_versions(&mut installed);

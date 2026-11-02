@@ -20,8 +20,3 @@ where answers stay searchable for other users.
 | Report a security vulnerability privately         | [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md#reporting-a-vulnerability)                                                                                                                                                                            |
 | Send a fix or a docs change                       | [Contributing](/contributing.html)                                                                                                                                                                                                                                    |
 | Reach Jeff privately, including about sponsorship | [jdx.dev/contact](https://jdx.dev/contact/)                                                                                                                                                                                                                           |
-
-Using AI to reply to an Issue or Discussion is restricted, and breaking the
-rule gets you banned from all of jdx's projects; read the
-[community participation policy](/contributing.html#community-participation)
-before you post.

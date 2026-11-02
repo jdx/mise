@@ -11,6 +11,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
 use eyre::Result;
+use indexmap::IndexSet;
 use path_absolutize::Absolutize;
 use tera::Context;
 
@@ -127,16 +128,27 @@ pub(crate) fn get_ignored_config_paths() -> Option<&'static BTreeSet<PathBuf>> {
 /// directory mise runs from, so machine-wide operations such as `mise prune`
 /// reach the same verdict everywhere.
 pub(crate) fn get_global_ignored_config_paths() -> Option<&'static BTreeSet<PathBuf>> {
+    global()?.ignored_config_paths.as_ref()
+}
+
+/// Get the env_conf_d value from the system and global miserc files only. It
+/// decides how the fragments of the global and system `conf.d` directories
+/// load, which a project `.miserc.toml`, read without trust, must not change.
+pub(crate) fn get_global_env_conf_d() -> Option<bool> {
+    global()?.env_conf_d
+}
+
+/// The system and global miserc settings, without project files.
+fn global() -> Option<&'static MisercSettings> {
     if super::Settings::no_config() {
         return None;
     }
-    static GLOBAL: std::sync::LazyLock<Option<BTreeSet<PathBuf>>> =
-        std::sync::LazyLock::new(|| {
-            let settings = load_global_miserc_settings();
-            let _ = take_tera_accessed_files();
-            settings.ignored_config_paths
-        });
-    GLOBAL.as_ref()
+    static GLOBAL: std::sync::LazyLock<MisercSettings> = std::sync::LazyLock::new(|| {
+        let settings = load_global_miserc_settings();
+        let _ = take_tera_accessed_files();
+        settings
+    });
+    Some(&GLOBAL)
 }
 
 /// Get the override_config_filenames value from miserc, if set.
@@ -432,6 +444,9 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
     // Tera is initialized lazily inside render_miserc_template — only paid if a file
     // actually contains template syntax. Shared across all files to avoid redundant clones.
     let mut tera: Option<TeraEngine> = None;
+    // The environments the system and global files select. They load before
+    // any project file, so this is complete by the time one merges.
+    let mut global_env: Vec<String> = vec![];
 
     for path in files.into_iter().rev() {
         file::ensure_config_file_size(&path)?;
@@ -442,11 +457,32 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
                 .map_err(|e| toml_parse_error(&e, &content, &path))?;
             resolve_ignored_config_paths(&mut settings, config_root);
             drop_names_leaving_the_directory(&mut settings, &path);
-            merge_settings(&mut merged, settings);
+            if is_global_miserc_dir(config_root) {
+                merge_settings(&mut merged, settings);
+                global_env = merged.env.clone().unwrap_or_default();
+            } else {
+                keep_global_envs(&mut settings, &global_env);
+                merge_settings(&mut merged, settings);
+            }
         }
     }
 
     Ok(merged)
+}
+
+/// A project `.miserc.toml` loads without trust, so its `env` adds to the
+/// environments the system and global files select and cannot drop one: an
+/// operator can load a baseline such as `paranoid = true` from one. The global
+/// names keep their order and go first, so the project cannot reorder them and
+/// its own names, loaded later, still take precedence over them.
+fn keep_global_envs(settings: &mut MisercSettings, global_env: &[String]) {
+    let Some(envs) = settings.env.take() else {
+        return;
+    };
+    // A set, since an untrusted file can list a great many names.
+    let mut kept: IndexSet<String> = global_env.iter().cloned().collect();
+    kept.extend(envs);
+    settings.env = Some(kept.into_iter().collect());
 }
 
 /// `env` and the override filenames only choose which files mise loads from the
@@ -622,6 +658,31 @@ mod tests {
 
         assert_eq!(target.env, Some(vec!["override".to_string()]));
         assert_eq!(target.env_conf_d, Some(true));
+    }
+
+    #[test]
+    fn test_keep_global_envs() {
+        let global = ["floor", "work"].map(String::from);
+        let mut settings = MisercSettings {
+            env: Some(vec![]),
+            ..Default::default()
+        };
+        keep_global_envs(&mut settings, &global);
+        assert_eq!(settings.env, Some(global.to_vec()));
+
+        let mut settings = MisercSettings {
+            env: Some(["development", "floor"].map(String::from).to_vec()),
+            ..Default::default()
+        };
+        keep_global_envs(&mut settings, &global);
+        assert_eq!(
+            settings.env,
+            Some(["floor", "work", "development"].map(String::from).to_vec())
+        );
+
+        let mut settings = MisercSettings::default();
+        keep_global_envs(&mut settings, &global);
+        assert_eq!(settings.env, None);
     }
 
     #[test]

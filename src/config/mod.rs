@@ -2642,9 +2642,18 @@ fn layer_config_filenames<'a>(
     envs: &[String],
 ) -> Vec<String> {
     let shared = shared.into_iter().map(String::from);
-    let env_shared = envs.iter().flat_map(|env| env_config_patterns(env, false));
+    // The walk reaches the global config directory from the home directory, and
+    // its fragments follow the global decision, so list the environment
+    // fragments when either decision is on; `load_config_glob` drops them where
+    // the directory's own decision is off.
+    let env_conf_d = env::env_conf_d() || env::global_env_conf_d();
+    let env_shared = envs
+        .iter()
+        .flat_map(|env| env_config_patterns_with_conf_d(env, false, env_conf_d));
     let local = local.into_iter().map(String::from);
-    let env_local = envs.iter().flat_map(|env| env_config_patterns(env, true));
+    let env_local = envs
+        .iter()
+        .flat_map(|env| env_config_patterns_with_conf_d(env, true, env_conf_d));
     shared
         .chain(env_shared)
         .chain(local)
@@ -2790,6 +2799,11 @@ fn is_unconditional_conf_d_pattern(pattern: &str) -> bool {
     pattern.ends_with("conf.d/*.toml")
 }
 
+/// A pattern such as `conf.d/*.linux.toml`, which names environment fragments.
+fn is_environment_conf_d_pattern(pattern: &str) -> bool {
+    pattern.contains("conf.d/*.") && !is_unconditional_conf_d_pattern(pattern)
+}
+
 /// Whether a conf.d fragment reserves a filename component for an environment.
 ///
 /// `name.toml` and `name.local.toml` are unconditional. `name.dev.toml` and
@@ -2812,6 +2826,21 @@ fn is_environment_conf_d_file(path: &Path) -> bool {
     conf_d_file_environment(path).is_some()
 }
 
+/// Whether `path` is in the global or system config directory, whose `conf.d`
+/// fragments follow [`env::global_env_conf_d`].
+fn is_in_global_config_dir(path: &Path) -> bool {
+    path.starts_with(*dirs::CONFIG) || path.starts_with(*dirs::SYSTEM_CONFIG)
+}
+
+/// The `env_conf_d` setting and decision that apply to `path`.
+fn env_conf_d_for(path: &Path) -> (Option<bool>, bool) {
+    if is_in_global_config_dir(path) {
+        (env::global_env_conf_d_setting(), env::global_env_conf_d())
+    } else {
+        (env::env_conf_d_setting(), env::env_conf_d())
+    }
+}
+
 /// Warn about a dotted `conf.d` fragment whose name will become an environment
 /// selector once `env_conf_d` defaults to on. Only fires inside the migration
 /// window: the setting is unset (so the meaning is still going to change) and
@@ -2819,8 +2848,7 @@ fn is_environment_conf_d_file(path: &Path) -> bool {
 fn warn_on_dotted_conf_d_file(path: &Path) {
     if settings::is_loaded()
         && !settings::is_bootstrapping()
-        && env::env_conf_d_setting().is_none()
-        && !env::env_conf_d()
+        && env_conf_d_for(path) == (None, false)
         && is_environment_conf_d_file(path)
     {
         deprecated_at!(
@@ -2833,8 +2861,13 @@ fn warn_on_dotted_conf_d_file(path: &Path) {
 }
 
 fn load_config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
+    // The walk from the home directory reaches `~/.config/mise/conf.d`.
+    let env_conf_d = env_conf_d_for(&dir.join(pattern)).1;
+    if !env_conf_d && is_environment_conf_d_pattern(pattern) {
+        return vec![];
+    }
     let paths = config_glob(dir, pattern);
-    if !env::env_conf_d() {
+    if !env_conf_d {
         for path in &paths {
             warn_on_dotted_conf_d_file(path);
         }
@@ -2897,7 +2930,7 @@ pub fn environments_for_config_path(path: &Path) -> Vec<String> {
             ["config", "mise", ".mise"].into_iter().any(|prefix| {
                 filename == format!("{prefix}.{environment}.toml")
                     || filename == format!("{prefix}.{environment}.local.toml")
-            }) || (env::env_conf_d()
+            }) || (env_conf_d_for(path).1
                 && conf_d_file_environment(path)
                     .is_some_and(|(file_environment, _)| file_environment == environment.as_str()))
         })
@@ -3369,7 +3402,7 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
     }
     for dir in [*dirs::CONFIG, *dirs::SYSTEM_CONFIG] {
         for env_name in &candidate_envs {
-            if env::env_conf_d() {
+            if env::global_env_conf_d() {
                 found.extend(conf_d_environment_files(dir, env_name, false));
                 found.extend(conf_d_environment_files(dir, env_name, true));
             }
@@ -3755,6 +3788,7 @@ pub(crate) fn config_files_with_incoming(
     incoming: &std::collections::BTreeSet<PathBuf>,
 ) -> IndexSet<PathBuf> {
     let mut files = IndexSet::new();
+    let env_conf_d = env::global_env_conf_d();
     let conf_dir = dir.join("conf.d");
     let conf_files: std::collections::BTreeSet<PathBuf> = file::ls(&conf_dir)
         .unwrap_or_default()
@@ -3795,7 +3829,7 @@ pub(crate) fn config_files_with_incoming(
         if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string())
             && !file_name.starts_with(".")
             && file_name.ends_with(".toml")
-            && (!env::env_conf_d() || !is_environment_conf_d_file(p))
+            && (!env_conf_d || !is_environment_conf_d_file(p))
         {
             warn_on_dotted_conf_d_file(p);
             files.insert(p.clone());
@@ -3804,7 +3838,7 @@ pub(crate) fn config_files_with_incoming(
     files.extend(conf_folder_files("mise.toml"));
     files.extend([dir.join("config.toml"), dir.join("mise.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
-        if env::env_conf_d() {
+        if env_conf_d {
             files.extend(conf_d_environment_candidates(
                 &conf_files,
                 environment,
@@ -3820,7 +3854,7 @@ pub(crate) fn config_files_with_incoming(
     files.extend(conf_folder_files("mise.local.toml"));
     files.extend([dir.join("config.local.toml"), dir.join("mise.local.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
-        if env::env_conf_d() {
+        if env_conf_d {
             files.extend(conf_d_environment_candidates(
                 &conf_files,
                 environment,

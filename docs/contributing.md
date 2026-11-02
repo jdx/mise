@@ -12,31 +12,12 @@ questions and ideas to [Discussions](https://github.com/jdx/mise/discussions).
 
 ## Community participation {#community-participation}
 
-::: danger AI replies to Discussions and Issues are restricted
-Breaking this rule is **an instant ban across all of jdx's projects**.
-
-You may only use AI to reply to a [Discussion](https://github.com/jdx/mise/discussions) or
-[Issue](https://github.com/jdx/mise/issues) if you created it, you opened a PR that fixes it, or
-you have already had a contribution, attributed to your GitHub account, merged into the default
-branch of mise. Everyone else is not allowed to use AI to reply. Drive-by AI replies are spam, and
-this is a growing problem.
-
-This includes raw, lightly edited, reviewed, and disclosed model output. Adding an "AI-assisted"
-footer does not make an AI reply acceptable on its own. If you are running an agent, make sure it
-does not post to threads you are not allowed to reply to, and never let it sweep through many
-threads at once.
-:::
-
-Using AI to help write and file your own Discussion, Issue, or pull request is
-fine. Review it before you post it, and end it with a disclosure line in this
-form:
+Using AI to help write a Discussion, Issue, reply, or pull request is fine.
+Review it before you post it, and end it with a disclosure line in this form:
 
 ```text
 *AI-assisted — Tool: <tool>; model: <provider>/<model>; version: <version-or-unavailable>.*
 ```
-
-If you are allowed to use AI to reply to a thread, review and verify the reply
-before you post it, and disclose it the same way.
 
 ## Before you open a pull request {#before-you-open-a-pull-request}
 
