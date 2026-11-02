@@ -499,6 +499,13 @@ pub struct PendingChange {
     path: PathBuf,
 }
 
+impl PendingChange {
+    /// The path this change is about to mutate.
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
 /// Captures every path's prior state and records a `PathChanged` for each,
 /// before the caller mutates them. Returns nothing when no generation is
 /// open, so inactive runs pay no capture cost.

@@ -3533,6 +3533,7 @@ fn reconcile_symlink_each_states(
 fn settle_failed_apply(
     req: &FileRequest,
     created: &[PathBuf],
+    existed: &HashSet<PathBuf>,
     pending: Vec<journal::PendingChange>,
 ) {
     remove_empty_created_dirs(created);
@@ -3546,10 +3547,22 @@ fn settle_failed_apply(
             .collect::<Vec<_>>();
         record_created_dirs(req, &kept);
     }
-    if req.mode == FileMode::SymlinkEach {
-        save_partial_symlink_each_state(req);
+    // links the entry cannot record as its own stay unfinished, for recovery to look at
+    if req.mode == FileMode::SymlinkEach && !save_partial_symlink_each_state(req) {
+        return;
     }
-    journal::commit_changes(pending);
+    // A path that was there before may have held the user's file, which a `--force` write
+    // removed before failing: left unfinished, recovery keeps its preimage and asks. One that
+    // is unchanged settles that way too. Only what the apply created, and mise's own records,
+    // are finished as the failure left them.
+    let records = [symlink_each_state_path(req), target_state_path(req)];
+    let created_here = pending
+        .into_iter()
+        .filter(|change| {
+            !existed.contains(change.path()) || records.iter().any(|r| r == change.path())
+        })
+        .collect();
+    journal::commit_changes(created_here);
 }
 
 /// Remove the directories in `created` that are still empty, deepest first, so a parent
@@ -3568,9 +3581,9 @@ fn remove_empty_created_dirs(created: &[PathBuf]) {
 
 /// Record the links a failed `symlink-each` apply left: what the entry already owned, and each
 /// desired link that is now in place. A link the apply never made is not claimed.
-fn save_partial_symlink_each_state(req: &FileRequest) {
+fn save_partial_symlink_each_state(req: &FileRequest) -> bool {
     if cfg!(windows) && !windows_symlinks() {
-        return;
+        return true;
     }
     let state = (|| -> Result<SymlinkEachState> {
         let mut state = desired_symlink_each_state(req)?;
@@ -3587,12 +3600,15 @@ fn save_partial_symlink_each_state(req: &FileRequest) {
         Ok(state)
     })();
     match state {
-        Ok(state) if state.links.is_empty() => {}
+        Ok(state) if state.links.is_empty() => true,
         Ok(state) => write_symlink_each_state(req, &state),
-        Err(err) => warn!(
-            "files: failed to record the links made for {}: {err}",
-            req.target.display_user()
-        ),
+        Err(err) => {
+            warn!(
+                "files: failed to record the links made for {}: {err}",
+                req.target.display_user()
+            );
+            false
+        }
     }
 }
 
@@ -3601,7 +3617,9 @@ fn save_symlink_each_state(req: &FileRequest) {
         return;
     }
     match desired_symlink_each_state(req) {
-        Ok(state) => write_symlink_each_state(req, &state),
+        Ok(state) => {
+            write_symlink_each_state(req, &state);
+        }
         Err(err) => warn!(
             "files: failed to write dotfiles state {}: {err}",
             symlink_each_state_path(req).display_user()
@@ -3609,19 +3627,21 @@ fn save_symlink_each_state(req: &FileRequest) {
     }
 }
 
-fn write_symlink_each_state(req: &FileRequest, state: &SymlinkEachState) {
+/// Whether the record was written; a failure warns.
+fn write_symlink_each_state(req: &FileRequest, state: &SymlinkEachState) -> bool {
     let path = symlink_each_state_path(req);
     let result = (|| -> Result<()> {
         file::create_dir_all(path.parent().expect("dotfiles state parent"))?;
         // atomic: a failed write must not leave the record it replaces unreadable
         file::write_atomic(&path, toml::to_string_pretty(state)?)
     })();
-    if let Err(err) = result {
+    if let Err(err) = &result {
         warn!(
             "files: failed to write dotfiles state {}: {err}",
             path.display_user()
         );
     }
+    result.is_ok()
 }
 
 fn remove_symlink_each_state(req: &FileRequest) -> Result<()> {
@@ -4963,8 +4983,13 @@ pub fn execute_apply(
             if req.mode == FileMode::SymlinkEach {
                 unfold_source_links(req, written)?;
             }
-            let pending =
-                journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
+            let touched = touched_paths(req)?;
+            let existed = touched
+                .iter()
+                .filter(|(path, _)| std::fs::symlink_metadata(path).is_ok())
+                .map(|(path, _)| path.clone())
+                .collect::<HashSet<_>>();
+            let pending = journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched)?;
             let start = written.len();
             // what is missing now is what a failed apply may have to take away again
             let mut created = missing_ancestors(&req.target);
@@ -4980,7 +5005,7 @@ pub fn execute_apply(
                 }
             }
             if let Err(err) = apply_one(req, rendered.as_deref(), written) {
-                settle_failed_apply(req, &created, pending);
+                settle_failed_apply(req, &created, &existed, pending);
                 return Err(err);
             }
             // a target that appeared since planning is left alone and not
