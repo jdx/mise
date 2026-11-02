@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+
+# mise bootstrap --update with no --from fast-forwards the Git checkout that
+# holds the global config, then bootstraps from the new commit, so a
+# --config-dir or --adopt machine updates with one command.
+
+repo="$PWD/dotfiles-source"
+checkout="$HOME/.dotfiles"
+
+mkdir -p "$repo/.config/mise"
+git -C "$repo" init -q -b main
+git -C "$repo" config user.email test@example.com
+git -C "$repo" config user.name "mise test"
+cat <<'EOF' >"$repo/.config/mise/config.toml"
+[dotfiles]
+"~/.zshrc" = {}
+EOF
+cat <<'EOF' >"$repo/.config/mise/config.work.toml"
+[dotfiles]
+"~/.work-marker" = {}
+EOF
+echo 'export ZSH=1' >"$repo/.zshrc"
+echo work >"$repo/.work-marker"
+git -C "$repo" add .
+git -C "$repo" commit -qm initial
+
+assert_succeed "mise bootstrap --from '$repo' --from-dir '$checkout' --config-dir .config/mise --yes --only dotfiles"
+assert "cat ~/.zshrc" "export ZSH=1"
+assert_fail "test -e ~/.work-marker"
+
+# A new commit selects an environment in miserc.toml and changes a file. The
+# run reads the new miserc.toml, so the work environment's entry deploys too.
+echo 'env = ["work"]' >"$repo/.config/mise/miserc.toml"
+echo 'export ZSH=2' >"$repo/.zshrc"
+git -C "$repo" add .
+git -C "$repo" commit -qm "select work"
+
+# A dry run only says what it would pull.
+assert_contains "mise bootstrap --update --dry-run --only dotfiles" "pull --ff-only"
+assert_fail "test -e '$checkout/.config/mise/miserc.toml'"
+
+assert_succeed "mise bootstrap --update --yes --only dotfiles"
+assert "git -C '$checkout' rev-parse HEAD" "$(git -C "$repo" rev-parse HEAD)"
+assert "cat ~/.zshrc" "export ZSH=2"
+assert "cat ~/.work-marker" "work"
+
+# Only a fast-forward is accepted.
+git -C "$checkout" config user.email test@example.com
+git -C "$checkout" config user.name "mise test"
+echo local >"$checkout/local.txt"
+git -C "$checkout" add local.txt
+git -C "$checkout" commit -qm local
+echo remote >"$repo/remote.txt"
+git -C "$repo" add remote.txt
+git -C "$repo" commit -qm remote
+assert_fail "mise bootstrap --update --yes --only dotfiles" "could not fast-forward the global config"
+
+# A config directory adopted as a checkout of its own is fast-forwarded too.
+config_repo="$PWD/config-source"
+mkdir -p "$config_repo"
+git -C "$config_repo" init -q -b main
+git -C "$config_repo" config user.email test@example.com
+git -C "$config_repo" config user.name "mise test"
+cat <<'EOF' >"$config_repo/config.toml"
+[env]
+ADOPTED = "1"
+EOF
+git -C "$config_repo" add .
+git -C "$config_repo" commit -qm initial
+adopted="$HOME/adopted-config"
+git clone -q "$config_repo" "$adopted"
+cat <<'EOF' >"$config_repo/config.toml"
+[env]
+ADOPTED = "2"
+
+[tasks.bootstrap]
+run = 'echo "$ADOPTED" > ~/adopted-seen'
+EOF
+git -C "$config_repo" commit -qam update
+assert_succeed "MISE_CONFIG_DIR='$adopted' mise bootstrap --update --yes --only task"
+assert "cat ~/adopted-seen" "2"
+
+# A checkout without an upstream has nothing to pull and runs as before.
+plain="$HOME/plain-config"
+mkdir -p "$plain"
+git -C "$plain" init -q -b main
+echo '[env]' >"$plain/config.toml"
+assert_succeed "MISE_CONFIG_DIR='$plain' mise bootstrap --update --yes --only dotfiles"

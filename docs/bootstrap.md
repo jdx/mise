@@ -196,15 +196,15 @@ file owner needs both `accounts` and `files`.
 
 These flags change what the selected parts do:
 
-| Flag               | Effect                                                                                                         |
-| ------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `--update`         | Refresh package metadata before installing packages, and update [declared repositories](/bootstrap/repos.html) |
-| `--force-dotfiles` | Replace existing files that conflict with whole-file `[dotfiles]` entries instead of stopping                  |
-| `--prune-dotfiles` | Remove files that dotfile groups deployed and no active entry deploys now, like `mise dot apply --prune`       |
-| `--skip-dirty`     | Skip `[bootstrap.repos]` checkouts with local changes instead of failing                                       |
-| `--prompt-secrets` | Prompt for [secret inputs](/bootstrap/secrets.html) missing from the environment                               |
-| `--prompt-vars`    | Ask for [`[vars]` with a `prompt`](/configuration/vars.html#prompt) that have no saved answer                  |
-| `-y`, `--yes`      | Apply without confirmation prompts                                                                             |
+| Flag               | Effect                                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--update`         | Fast-forward a [global config checkout](/bootstrap/from-repository.html), refresh package metadata, and update [declared repositories](/bootstrap/repos.html) |
+| `--force-dotfiles` | Replace existing files that conflict with whole-file `[dotfiles]` entries instead of stopping                                                                 |
+| `--prune-dotfiles` | Remove files that dotfile groups deployed and no active entry deploys now, like `mise dot apply --prune`                                                      |
+| `--skip-dirty`     | Skip `[bootstrap.repos]` checkouts with local changes instead of failing                                                                                      |
+| `--prompt-secrets` | Prompt for [secret inputs](/bootstrap/secrets.html) missing from the environment                                                                              |
+| `--prompt-vars`    | Ask for [`[vars]` with a `prompt`](/configuration/vars.html#prompt) that have no saved answer                                                                 |
+| `-y`, `--yes`      | Apply without confirmation prompts                                                                                                                            |
 
 The metadata refresh depends on the manager: apk adds `--update-cache`; apt runs
 `apt-get update`; dnf, nix, and AUR helpers add `--refresh`; pacman runs
