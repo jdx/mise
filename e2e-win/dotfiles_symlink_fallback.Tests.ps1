@@ -75,6 +75,11 @@ Describe 'dotfiles-symlink-fallback' {
         $entry.state | Should -Be 'differs'
         $entry.reason | Should -Be 'content differs; a regular file, not a symlink'
 
+        # the copy may hold edits, so a plain apply refuses to overwrite it
+        $out = mise dot apply 2>&1 | Out-String
+        $LASTEXITCODE | Should -Not -Be 0 -Because $out
+        Get-Content -LiteralPath $target | Should -Be 'source-A'
+
         $out = mise dot apply --force 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0 -Because $out
         $out | Should -Match 'copied .*Windows refused a symlink'
