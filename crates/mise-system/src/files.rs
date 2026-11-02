@@ -4987,12 +4987,7 @@ pub fn apply_layers(
                         FileMode::Absent | FileMode::Permissions | FileMode::Track
                     ) && !req.remove_empty
                 })
-                .map(|req| {
-                    let walks = req.mode == FileMode::SymlinkEach
-                        || matches!(req.mode, FileMode::Copy | FileMode::Symlink)
-                            && req.source.is_dir();
-                    (req.target.clone(), walks)
-                }),
+                .map(|req| (req.target.clone(), walks_directory(req))),
         );
     }
     Ok(true)
@@ -5059,8 +5054,8 @@ fn layering(requests: &[FileRequest], known: &[FileRequest]) -> Result<Vec<Vec<u
         edges.push(edge);
     }
     // a permissions-only entry never creates its target, so it waits for the
-    // entries that create what lies beneath it, unless one of those waits for
-    // it. Its dependents then wait for it in turn.
+    // entries that create it or what lies beneath it, unless one of those
+    // waits for it, however indirectly. Its dependents then wait for it in turn.
     for (index, req) in requests.iter().enumerate() {
         if req.mode != FileMode::Permissions {
             continue;
@@ -5068,8 +5063,9 @@ fn layering(requests: &[FileRequest], known: &[FileRequest]) -> Result<Vec<Vec<u
         for (creator, other) in requests.iter().enumerate() {
             if creator != index
                 && !matches!(other.mode, FileMode::Permissions | FileMode::Absent)
-                && other.target.starts_with(&req.target)
-                && !edges[creator].contains(&index)
+                && (other.target.starts_with(&req.target)
+                    || walks_directory(other) && req.target.starts_with(&other.target))
+                && !waits_for(creator, index, &edges)
             {
                 edges[index].push(creator);
             }
@@ -5089,6 +5085,30 @@ fn layering(requests: &[FileRequest], known: &[FileRequest]) -> Result<Vec<Vec<u
         layers[layer].push(index);
     }
     Ok(layers)
+}
+
+/// Whether `req` deploys a tree of files under its target.
+fn walks_directory(req: &FileRequest) -> bool {
+    req.mode == FileMode::SymlinkEach
+        || matches!(req.mode, FileMode::Copy | FileMode::Symlink) && req.source.is_dir()
+}
+
+/// Whether request `from` waits for `to`, directly or through other entries.
+fn waits_for(from: usize, to: usize, edges: &[Vec<usize>]) -> bool {
+    let mut seen = vec![false; edges.len()];
+    let mut pending = vec![from];
+    while let Some(index) = pending.pop() {
+        for &dep in &edges[index] {
+            if dep == to {
+                return true;
+            }
+            if !seen[dep] {
+                seen[dep] = true;
+                pending.push(dep);
+            }
+        }
+    }
+    false
 }
 
 /// Whether `source` is a path an earlier round creates: the target itself, or
@@ -8016,6 +8036,35 @@ variants = [{{ {field} = "linux" }}]"#
         assert_eq!(
             layering(&requests, &requests)?,
             vec![vec![0], vec![1], vec![2]]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_permissions_only_entry_waits_for_a_tree_that_creates_its_directory() -> Result<()> {
+        let mut chmod = dependent("/h/.ssh", None, &[]);
+        chmod.mode = FileMode::Permissions;
+        let mut tree = dependent("/h", Some("home"), &["/h/seed"]);
+        tree.mode = FileMode::SymlinkEach;
+        let requests = [chmod, tree, dependent("/h/seed", None, &[])];
+        assert_eq!(
+            layering(&requests, &requests)?,
+            vec![vec![2], vec![1], vec![0]]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn an_indirect_wait_for_a_permissions_entry_is_not_a_cycle() -> Result<()> {
+        let mut chmod = dependent("/h/.ssh", None, &[]);
+        chmod.mode = FileMode::Permissions;
+        let mut key = dependent("/h/.ssh/key", None, &["/h/mid"]);
+        key.mode = FileMode::Content;
+        let requests = [chmod, key, dependent("/h/mid", None, &["/h/.ssh"])];
+        // the key waits for mid, which waits for the chmod: the chmod cannot also wait for the key
+        assert_eq!(
+            layering(&requests, &requests)?,
+            vec![vec![0], vec![2], vec![1]]
         );
         Ok(())
     }
