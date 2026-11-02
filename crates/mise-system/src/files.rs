@@ -3536,23 +3536,33 @@ fn settle_failed_apply(
     pending: Vec<journal::PendingChange>,
 ) {
     remove_empty_created_dirs(created);
+    // a single-file target the failed write left keeps the directories it is in; they are
+    // still mise's to remove with it, and a later apply finds them already there
+    if records_created_dirs(req) && std::fs::symlink_metadata(&req.target).is_ok() {
+        let kept = created
+            .iter()
+            .filter(|dir| **dir != req.target && dir.is_dir())
+            .cloned()
+            .collect::<Vec<_>>();
+        record_created_dirs(req, &kept);
+    }
     if req.mode == FileMode::SymlinkEach {
         save_partial_symlink_each_state(req);
     }
     journal::commit_changes(pending);
 }
 
-/// Remove the directories in `created` (outermost first, as `missing_ancestors` lists them)
-/// that are still empty, deepest first, stopping at the first that holds anything. Only a real
-/// directory: removing a link to one would not be undoing what an apply did.
+/// Remove the directories in `created` that are still empty, deepest first, so a parent
+/// emptied by removing its children goes too. `remove_dir` leaves one that holds anything.
+/// Only a real directory: removing a link to one would not be undoing what an apply did.
 fn remove_empty_created_dirs(created: &[PathBuf]) {
-    for dir in created.iter().rev() {
-        if std::fs::symlink_metadata(dir).is_err() {
+    let mut dirs = created.iter().unique().collect::<Vec<_>>();
+    dirs.sort_by_key(|dir| std::cmp::Reverse(dir.components().count()));
+    for dir in dirs {
+        if file::is_symlink_or_junction(dir) || !dir.is_dir() {
             continue;
         }
-        if file::is_symlink_or_junction(dir) || !dir.is_dir() || std::fs::remove_dir(dir).is_err() {
-            break;
-        }
+        let _ = std::fs::remove_dir(dir);
     }
 }
 
@@ -3603,7 +3613,8 @@ fn write_symlink_each_state(req: &FileRequest, state: &SymlinkEachState) {
     let path = symlink_each_state_path(req);
     let result = (|| -> Result<()> {
         file::create_dir_all(path.parent().expect("dotfiles state parent"))?;
-        file::write(&path, toml::to_string_pretty(state)?)
+        // atomic: a failed write must not leave the record it replaces unreadable
+        file::write_atomic(&path, toml::to_string_pretty(state)?)
     })();
     if let Err(err) = result {
         warn!(
@@ -4957,10 +4968,16 @@ pub fn execute_apply(
             let start = written.len();
             // what is missing now is what a failed apply may have to take away again
             let mut created = missing_ancestors(&req.target);
-            if matches!(req.mode, FileMode::SymlinkEach | FileMode::Copy)
-                && std::fs::symlink_metadata(&req.target).is_err()
+            if req.mode == FileMode::SymlinkEach
+                || req.mode == FileMode::Copy && req.source.is_dir()
             {
-                created.push(req.target.clone());
+                if std::fs::symlink_metadata(&req.target).is_err() {
+                    created.push(req.target.clone());
+                }
+                // and the directories the walk creates beneath it
+                for (_, target) in walk_source_files(req).unwrap_or_default() {
+                    created.extend(missing_ancestors(&target));
+                }
             }
             if let Err(err) = apply_one(req, rendered.as_deref(), written) {
                 settle_failed_apply(req, &created, pending);
@@ -10134,6 +10151,19 @@ source = "oldrc""#,
         remove_empty_created_dirs(&created);
         assert!(tmp.path().join("new-parent/mid/target").is_symlink());
         assert!(other.is_dir());
+
+        // directories created beneath an entry's target go too, children before parents
+        let tree = tmp.path().join("tree");
+        let created = vec![
+            tree.clone(),
+            tree.join("a"),
+            tree.join("a/b"),
+            tree.join("c"),
+        ];
+        std::fs::create_dir_all(tree.join("a/b"))?;
+        std::fs::create_dir(tree.join("c"))?;
+        remove_empty_created_dirs(&created);
+        assert!(!tree.exists());
         Ok(())
     }
 

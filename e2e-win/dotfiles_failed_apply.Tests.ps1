@@ -51,7 +51,7 @@ Describe 'dotfiles-failed-apply' {
         $target = (Join-Path $root 'target') -replace '\\', '/'
         $source = (Join-Path $root 'source') -replace '\\', '/'
         "[settings.dotfiles]`nwindows_symlinks = true`n`n[dotfiles]`n`"$target`" = { source = `"$source`", mode = `"symlink-each`" }`n" |
-            Out-File (Join-Path $root 'mise.toml') -Encoding ascii
+            Out-File (Join-Path $root 'mise.toml') -Encoding utf8NoBOM
         $env:MISE_STATE_DIR = Join-Path $root 'state'
         Set-Location $root
 
@@ -67,7 +67,9 @@ Describe 'dotfiles-failed-apply' {
         (Get-Item -LiteralPath (Join-Path $root 'target\a.txt') -Force).LinkType | Should -Be 'SymbolicLink'
         # This used to leave an unfinished history record that only `mise dot recover` cleared.
         $out | Should -Not -Match 'recovery needs attention'
-        @(mise bootstrap dotfiles history --pending --json | ConvertFrom-Json).Count | Should -Be 0
+        $pending = mise bootstrap dotfiles history --pending --json
+        $LASTEXITCODE | Should -Be 0
+        @($pending | ConvertFrom-Json).Count | Should -Be 0
 
         $out = mise dot apply 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0 -Because $out
