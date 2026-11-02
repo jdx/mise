@@ -17,6 +17,7 @@ git-cliff = "latest"
 gh = "latest"
 hk = { version = "latest", minimum_release_age = "0s" }
 jactionlint = "latest"
+jouet = "0.0.3"
 jq = "latest"
 lua-language-server = "latest"
 stylua = "latest"
