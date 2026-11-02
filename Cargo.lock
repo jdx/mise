@@ -6827,7 +6827,7 @@ dependencies = [
 
 [[package]]
 name = "mise"
-version = "2026.10.25"
+version = "2026.11.0"
 dependencies = [
  "age 0.12.1",
  "aqua-registry",
