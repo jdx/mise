@@ -13,7 +13,7 @@ use console::truncate_str;
 use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::{borrow::Cow, sync::Arc};
@@ -35,8 +35,13 @@ pub(crate) struct HookEnv {
     quiet: bool,
 
     /// Shell type to generate script for
-    #[usage(long, short, value_enum)]
+    #[usage(long, short, conflicts = "json", value_enum)]
     shell: Option<ShellType>,
+
+    /// Print the env and alias changes as JSON instead of shell script, for
+    /// programs that manage their own environment such as editor plugins
+    #[usage(long, short = 'J', conflicts = "shell")]
+    json: bool,
 
     /// Reason for calling hook-env (e.g., "precmd", "chpwd")
     #[usage(long, hide = true, value_enum)]
@@ -51,10 +56,21 @@ pub(crate) struct HookEnv {
 
 impl HookEnv {
     pub(crate) async fn run(self) -> Result<()> {
-        let shell = require_shell(
-            self.shell,
-            &format!("Name the shell: `mise hook-env --shell {EXAMPLE_SHELL}`."),
-        )?;
+        // --json output is shell-agnostic, so no shell is needed for it
+        let shell = match self.json {
+            true => None,
+            false => Some(require_shell(
+                self.shell,
+                &format!("Name the shell: `mise hook-env --shell {EXAMPLE_SHELL}`."),
+            )?),
+        };
+        let shell = shell.as_deref();
+        // The env the --json consumer will apply the changes to, taken before
+        // mise does any work that could modify its own process env
+        let inherited_env: EnvMap = match self.json {
+            true => env::vars_safe().collect(),
+            false => EnvMap::new(),
+        };
         // Entering a directory is not an explicit action, so an untrusted config is
         // skipped (with a warning) rather than blocking the configs that are trusted.
         crate::config::skip_untrusted_configs();
@@ -104,10 +120,13 @@ impl HookEnv {
             hook_env::schedule_dir_change_hooks();
         } else if hook_env::should_exit_early(slow_path_watch_files, self.reason) {
             trace!("should_exit_early true");
+            if self.json {
+                HookEnvJson::print_unchanged()?;
+            }
             return Ok(());
         }
         time!("should_exit_early false");
-        let old_patches = hook_env::clear_old_env_patches(&*shell);
+        let old_patches = hook_env::clear_old_env_patches(shell);
         let cleared_keys: BTreeSet<&str> = old_patches
             .iter()
             .filter_map(|patch| match patch {
@@ -122,26 +141,30 @@ impl HookEnv {
         // longer than the current one, so they fit wherever the shell's
         // environment already does. Refusing them over a variable the user set
         // would instead keep mise's old variables in the shell indefinitely.
-        let old_output = hook_env::build_env_commands(&*shell, &old_patches);
+        let old_output = shell
+            .map(|shell| hook_env::build_env_commands(shell, &old_patches))
+            .unwrap_or_default();
 
         // Use env_with_path_and_split which handles caching internally
         let (mut mise_env, env_remove, user_paths, tool_paths, env_watch_files) =
             ts.env_with_path_and_split(&config).await?;
-        let daemon_commands = match crate::daemons::hook_env::emit(
-            &config,
-            &ts,
-            &mise_env,
-            self.shell_pid,
-            &*shell,
-            self.force,
-        )
-        .await
-        {
-            Ok(commands) => commands,
-            Err(err) => {
+        // The daemon lifecycle follows a shell's pid and emits shell script, so
+        // --json leaves daemons alone.
+        let daemon_commands = match shell {
+            Some(shell) => crate::daemons::hook_env::emit(
+                &config,
+                &ts,
+                &mise_env,
+                self.shell_pid,
+                shell,
+                self.force,
+            )
+            .await
+            .unwrap_or_else(|err| {
                 warn!("daemon auto lifecycle: {err:#}");
                 String::new()
-            }
+            }),
+            None => String::new(),
         };
         mise_env.remove(&*PATH_KEY);
 
@@ -160,12 +183,8 @@ impl HookEnv {
 
         // For fish shell, filter out PATH operations from diff patches because
         // fish's PATH handling conflicts with setting PATH multiple times
-        if shell.to_string() == "fish" {
-            diff_patches.retain(|p| match p {
-                EnvDiffOperation::Add(k, _)
-                | EnvDiffOperation::Change(k, _)
-                | EnvDiffOperation::Remove(k) => k != &*PATH_KEY,
-            });
+        if hook_env::is_fish(shell) {
+            hook_env::retain_non_path_patches(&mut diff_patches);
         }
         diff_patches.retain(|patch| match patch {
             EnvDiffOperation::Remove(key) => !cleared_keys.contains(key.as_str()),
@@ -229,18 +248,44 @@ impl HookEnv {
         if untrusted_configs.is_empty() {
             hook_env::clear_untrusted_config_warning(&mut patches);
         }
+        let warn_untrusted = !untrusted_configs.is_empty()
+            && hook_env::should_show_untrusted_config_warning(&untrusted_configs);
+        if warn_untrusted {
+            patches.push(hook_env::untrusted_config_warning_seen_patch(
+                &untrusted_configs,
+            ));
+        }
+
+        // A shell snapshots PATH in `mise activate`. A JSON consumer has no
+        // activation step, so its first run takes the snapshot, which later runs
+        // use to keep directories that were on PATH before mise.
+        if shell.is_none() && env::__MISE_ORIG_PATH.is_none() {
+            patches.push(EnvDiffOperation::Add(
+                "__MISE_ORIG_PATH".into(),
+                join_paths(&*env::PATH)?.to_string_lossy().to_string(),
+            ));
+        }
 
         hook_env::ensure_env_fits(&patches)?;
-        let output = hook_env::build_env_commands(&*shell, &patches);
-        miseprint!("{old_output}{output}")?;
-        if !untrusted_configs.is_empty()
-            && hook_env::should_show_untrusted_config_warning(&untrusted_configs)
-        {
-            if let Err(mark_err) =
-                hook_env::mark_untrusted_config_warning_seen(&*shell, &untrusted_configs)
-            {
-                trace!("failed to mark untrusted config warning seen: {mark_err}");
+        match shell {
+            Some(shell) => {
+                let output = hook_env::build_env_commands(shell, &patches);
+                miseprint!("{old_output}{output}")?;
             }
+            None => HookEnvJson {
+                env: without_noops(
+                    merge_patch(old_patches.iter().chain(&patches)),
+                    &inherited_env,
+                ),
+                aliases: merge_patch(&hook_env::alias_patches(
+                    &PREV_SESSION.aliases,
+                    &new_aliases,
+                )),
+                untrusted_configs: untrusted_configs.clone(),
+            }
+            .print()?,
+        }
+        if warn_untrusted {
             // Written directly to stderr because the untrusted config's own
             // [settings] (e.g. quiet, log_level) are applied before the trust
             // check and must not be able to silence this notice.
@@ -253,20 +298,22 @@ impl HookEnv {
                 );
             }
         }
-        miseprint!("{daemon_commands}")?;
+        if let Some(shell) = shell {
+            miseprint!("{daemon_commands}")?;
 
-        // Build and output alias commands
-        let alias_output =
-            hook_env::build_alias_commands(&*shell, &PREV_SESSION.aliases, &new_aliases);
-        miseprint!("{alias_output}")?;
+            // Build and output alias commands
+            let alias_output =
+                hook_env::build_alias_commands(shell, &PREV_SESSION.aliases, &new_aliases);
+            miseprint!("{alias_output}")?;
 
-        miseprint!(
-            "{}",
-            crate::packslip::completions::activate(&config, &ts, &shell.to_string())
-        )?;
+            miseprint!(
+                "{}",
+                crate::packslip::completions::activate(&config, &ts, &shell.to_string())
+            )?;
+        }
 
-        hooks::run_all_hooks(&config, &ts, &*shell).await;
-        hooks::run_enter_hooks_for_newly_loaded_configs(&config, &ts, &*shell).await;
+        hooks::run_all_hooks(&config, &ts, shell).await;
+        hooks::run_enter_hooks_for_newly_loaded_configs(&config, &ts, shell).await;
         watch_files::execute_runs(&config, &ts).await;
         hooks::take_output_error()?;
 
@@ -637,6 +684,61 @@ impl HookEnv {
     }
 }
 
+/// What `hook-env --json` prints: the env and alias changes as data, for programs
+/// that can't eval shell script.
+///
+/// `env` and `aliases` are JSON merge patches (RFC 7396): a name with a string is
+/// set to it and a name with `null` is removed. Changes are relative to the
+/// environment mise was run with. `env` includes mise's own `__MISE_DIFF` and
+/// `__MISE_SESSION`, which the consumer must pass back on the next run so mise
+/// can undo what this run applied.
+#[derive(Debug, Default, serde::Serialize)]
+pub(crate) struct HookEnvJson {
+    env: MergePatch,
+    aliases: MergePatch,
+    /// Config files skipped because they are not trusted
+    untrusted_configs: Vec<PathBuf>,
+}
+
+/// Name -> new value, or `None` to remove it
+type MergePatch = BTreeMap<String, Option<String>>;
+
+impl HookEnvJson {
+    /// Printed when hook-env exits early, so consumers always get JSON
+    pub(crate) fn print_unchanged() -> Result<()> {
+        Self::default().print()
+    }
+
+    fn print(&self) -> Result<()> {
+        miseprintln!("{}", serde_json::to_string_pretty(self)?);
+        Ok(())
+    }
+}
+
+/// Collapses ordered patches into their net effect: the last patch to a key wins.
+fn merge_patch<'a>(patches: impl IntoIterator<Item = &'a EnvDiffOperation>) -> MergePatch {
+    let mut merged = MergePatch::new();
+    for patch in patches {
+        match patch {
+            EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
+                merged.insert(k.clone(), Some(v.clone()));
+            }
+            EnvDiffOperation::Remove(k) => {
+                merged.insert(k.clone(), None);
+            }
+        }
+    }
+    merged
+}
+
+/// Drops entries that would leave `current` as it is. A full run undoes the
+/// previous session and reapplies the whole env, so most of its patches set a
+/// var to the value it already has.
+fn without_noops(mut patch: MergePatch, current: &EnvMap) -> MergePatch {
+    patch.retain(|k, v| current.get(k) != v.as_ref());
+    patch
+}
+
 fn patch_to_status(patch: EnvDiffOperation) -> String {
     match patch {
         EnvDiffOperation::Add(k, _) => format!("+{k}"),
@@ -650,5 +752,39 @@ fn format_status(status: &str) -> Cow<'_, str> {
         truncate_str(status, TERM_WIDTH.max(60) - 5, "…")
     } else {
         status.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    /// The fast path reads `hook-env`'s short flags before the CLI parses them,
+    /// so it has to know every short option that takes a value: either it
+    /// declines the fast path, or the fast path skips over its value. A new one
+    /// fails this test until it is added to the list it belongs in.
+    #[test]
+    fn fast_path_knows_every_short_option_that_takes_a_value() {
+        let spec = super::super::usage::spec();
+        let expected: BTreeSet<char> = spec
+            .cmd
+            .flags
+            .iter()
+            .filter(|flag| flag.global)
+            .chain(&spec.cmd.subcommands["hook-env"].flags)
+            .filter(|flag| flag.arg.is_some())
+            .flat_map(|flag| flag.short.iter().chain(&flag.hidden_short_aliases))
+            .copied()
+            .collect();
+        let actual: BTreeSet<char> = crate::hook_env::SHORT_OPTIONS_WITH_VALUE
+            .iter()
+            .copied()
+            .chain(
+                crate::hook_env::FAST_PATH_DECLINING_OPTIONS
+                    .iter()
+                    .map(|(_, short)| *short),
+            )
+            .collect();
+        assert_eq!(actual, expected);
     }
 }

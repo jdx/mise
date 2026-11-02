@@ -4311,7 +4311,7 @@ The shell hook that `mise activate` installs runs this command.
 """#
     flag "-f --force" help="Skip early exit check"
     flag "-q --quiet" help="Hide warnings such as when a tool is not installed"
-    flag "-s --shell" help="Shell type to generate script for" {
+    flag "-s --shell" help="Shell type to generate script for" conflicts=--json {
         arg <SHELL> {
             choices {
                 choice bash
@@ -4326,6 +4326,7 @@ The shell hook that `mise activate` installs runs this command.
             }
         }
     }
+    flag "-J --json" help="Print the env and alias changes as JSON instead of shell script, for programs that manage their own environment such as editor plugins" conflicts=--shell
     flag --reason help="Reason for calling hook-env (e.g., \"precmd\", \"chpwd\")" hide=#true {
         arg <REASON> {
             choices {

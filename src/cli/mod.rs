@@ -937,6 +937,10 @@ fn finish_hook_env_fast_exit() {
         measure!("logger", { logger::init() });
         Settings::flush_pending_warnings_before_exit();
     }
+    if hook_env_module::json_requested() {
+        // A write failure has nowhere to be reported on this exit path
+        let _ = hook_env::HookEnvJson::print_unchanged();
+    }
 }
 
 /// Hand core the pieces of CLI behavior it calls into (see [`crate::frontend`]).

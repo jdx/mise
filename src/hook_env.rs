@@ -106,18 +106,13 @@ pub fn should_show_untrusted_config_warning(config_paths: &[PathBuf]) -> bool {
         != current_untrusted_warning_key(config_paths)
 }
 
-pub fn mark_untrusted_config_warning_seen(
-    shell: &dyn Shell,
-    config_paths: &[PathBuf],
-) -> Result<()> {
-    miseprint!(
-        "{}",
-        shell.set_env(
-            LAST_UNTRUSTED_CONFIG_WARNING_KEY_ENV,
-            &current_untrusted_warning_key(config_paths)
-        )
-    )?;
-    Ok(())
+/// The patch that records the untrusted config warning as shown, so it is not
+/// repeated until the set of untrusted configs changes.
+pub fn untrusted_config_warning_seen_patch(config_paths: &[PathBuf]) -> EnvDiffOperation {
+    EnvDiffOperation::Add(
+        LAST_UNTRUSTED_CONFIG_WARNING_KEY_ENV.into(),
+        current_untrusted_warning_key(config_paths),
+    )
 }
 
 pub fn clear_untrusted_config_warning(patches: &mut EnvDiffPatches) {
@@ -229,7 +224,20 @@ fn check_exit_early_fast() -> bool {
         return false;
     }
     // Can't exit early if --force flag is present
-    if args.iter().any(|a| a == "--force" || a == "-f") {
+    if has_flag(&args, "--force", 'f') {
+        return false;
+    }
+    // Neither early exit can see options that change the directory or config
+    // environment: they compare against the real cwd and MISE_* vars. Force the
+    // full run so the slow path does not exit early either.
+    if FAST_PATH_DECLINING_OPTIONS
+        .iter()
+        .any(|(long, short)| has_flag(&args, long, *short))
+    {
+        return force_full_run();
+    }
+    // --json and --shell conflict; leave the error to the full parse
+    if has_conflicting_output_flags(&args) {
         return false;
     }
     if has_untrusted_config_warning_marker() {
@@ -484,6 +492,60 @@ fn have_trust_state_dirs_been_modified() -> bool {
         }
     }
     false
+}
+
+/// Whether `hook-env` was given `--json`, read from the raw args so the fast
+/// path, which runs before clap, can still answer in JSON. Only reliable once
+/// [`has_conflicting_output_flags`] has ruled out a `--shell` alongside it.
+pub fn json_requested() -> bool {
+    has_flag(&env::ARGS.read().unwrap(), "--json", 'J')
+}
+
+/// Whether the args may hold both `--json` and `--shell`. The parser rejects
+/// that, but it runs after the fast path, which would otherwise answer in JSON.
+fn has_conflicting_output_flags(args: &[String]) -> bool {
+    has_flag(args, "--json", 'J') && has_flag(args, "--shell", 's')
+}
+
+/// Options that change what `hook-env` computes without either early exit
+/// seeing it: `--cd` takes effect after parsing, and `--env`/`--profile` are
+/// not `MISE_*` variables. With any of them `hook-env` always does a full run.
+pub const FAST_PATH_DECLINING_OPTIONS: &[(&str, char)] =
+    &[("--cd", 'C'), ("--env", 'E'), ("--profile", 'P')];
+
+/// The other short options `hook-env` accepts that take a value, which do not
+/// change what it computes. A test in the CLI checks that these and
+/// [`FAST_PATH_DECLINING_OPTIONS`] cover every short option of `hook-env` that
+/// takes a value, so a new one has to be put in one list or the other.
+pub const SHORT_OPTIONS_WITH_VALUE: &[char] = &['j', 's'];
+
+/// Whether short option `c` takes a value, so that in a group such as `-sJ`
+/// (`--shell J`) or `-Efoo` (`--env foo`) the rest of the group is its value
+fn takes_value(c: char) -> bool {
+    SHORT_OPTIONS_WITH_VALUE.contains(&c)
+        || FAST_PATH_DECLINING_OPTIONS
+            .iter()
+            .any(|(_, short)| *short == c)
+}
+
+/// Matches `long` (also as `long=value`), or `short` alone or combined with
+/// other short flags (`-fJ`), stopping at a short option that takes a value.
+fn has_flag(args: &[String], long: &str, short: char) -> bool {
+    args.iter().any(|arg| {
+        arg == long
+            || arg
+                .strip_prefix(long)
+                .is_some_and(|value| value.starts_with('='))
+            || arg
+                .strip_prefix('-')
+                .filter(|group| !group.starts_with('-'))
+                .is_some_and(|group| {
+                    group
+                        .chars()
+                        .take_while(|c| *c == short || !takes_value(*c))
+                        .any(|c| c == short)
+                })
+    })
 }
 
 fn has_preclap_logging_flag(args: &[String]) -> bool {
@@ -782,30 +844,39 @@ fn get_mise_env_vars_hashed() -> String {
     hash_to_str(&env_vars)
 }
 
-pub fn clear_old_env_patches(shell: &dyn Shell) -> EnvDiffPatches {
+/// Patches that undo the previous session's env changes. `shell` is `None` for
+/// `hook-env --json`, which has no shell-specific PATH handling.
+pub fn clear_old_env_patches(shell: Option<&dyn Shell>) -> EnvDiffPatches {
     let mut patches = env::__MISE_DIFF.reverse().to_patches();
 
     // For fish shell, filter out PATH operations from the reversed diff because
     // fish has its own PATH management that conflicts with ours.
-    if shell.to_string() == "fish" {
-        patches.retain(|p| match p {
-            EnvDiffOperation::Add(k, _)
-            | EnvDiffOperation::Change(k, _)
-            | EnvDiffOperation::Remove(k) => k != &*PATH_KEY,
-        });
-        // Fish also needs PATH restored during deactivation
-        let new_path = compute_deactivated_path();
-        patches.push(EnvDiffOperation::Change(PATH_KEY.to_string(), new_path));
-    } else {
-        // For non-fish shells, we need to preserve user-added paths while removing mise paths
-        let new_path = compute_deactivated_path();
-        patches.push(EnvDiffOperation::Change(PATH_KEY.to_string(), new_path));
+    if is_fish(shell) {
+        retain_non_path_patches(&mut patches);
     }
+    // Restore PATH, preserving user-added paths while removing mise paths. Fish
+    // needs this during deactivation too.
+    let new_path = compute_deactivated_path();
+    patches.push(EnvDiffOperation::Change(PATH_KEY.to_string(), new_path));
     patches
 }
 
 pub(crate) fn clear_old_env(shell: &dyn Shell) -> String {
-    build_env_commands(shell, &clear_old_env_patches(shell))
+    build_env_commands(shell, &clear_old_env_patches(Some(shell)))
+}
+
+pub fn is_fish(shell: Option<&dyn Shell>) -> bool {
+    shell.is_some_and(|s| s.to_string() == "fish")
+}
+
+/// Drops every patch to PATH, for fish, whose own PATH handling conflicts with
+/// mise setting PATH multiple times.
+pub fn retain_non_path_patches(patches: &mut EnvDiffPatches) {
+    patches.retain(|p| match p {
+        EnvDiffOperation::Add(k, _)
+        | EnvDiffOperation::Change(k, _)
+        | EnvDiffOperation::Remove(k) => k != &*PATH_KEY,
+    });
 }
 
 /// Clear all aliases from the previous session. Called only during deactivation.
@@ -968,18 +1039,37 @@ pub fn build_alias_commands(
     new_aliases: &indexmap::IndexMap<String, String>,
 ) -> String {
     let mut output = String::new();
+    for patch in alias_patches(old_aliases, new_aliases) {
+        match patch {
+            EnvDiffOperation::Add(name, cmd) | EnvDiffOperation::Change(name, cmd) => {
+                output.push_str(&shell.set_alias(&name, &cmd));
+            }
+            EnvDiffOperation::Remove(name) => {
+                output.push_str(&shell.unset_alias(&name));
+            }
+        }
+    }
+    output
+}
+
+/// The alias changes between two sessions, in the order they must be applied
+pub fn alias_patches(
+    old_aliases: &indexmap::IndexMap<String, String>,
+    new_aliases: &indexmap::IndexMap<String, String>,
+) -> EnvDiffPatches {
+    let mut patches = EnvDiffPatches::new();
 
     // Remove aliases that no longer exist or have changed
     for (name, old_cmd) in old_aliases {
         match new_aliases.get(name) {
             Some(new_cmd) if new_cmd != old_cmd => {
                 // Alias changed, unset then set new
-                output.push_str(&shell.unset_alias(name));
-                output.push_str(&shell.set_alias(name, new_cmd));
+                patches.push(EnvDiffOperation::Remove(name.clone()));
+                patches.push(EnvDiffOperation::Add(name.clone(), new_cmd.clone()));
             }
             None => {
                 // Alias removed
-                output.push_str(&shell.unset_alias(name));
+                patches.push(EnvDiffOperation::Remove(name.clone()));
             }
             _ => {
                 // Alias unchanged, do nothing
@@ -990,16 +1080,19 @@ pub fn build_alias_commands(
     // Add new aliases
     for (name, cmd) in new_aliases {
         if !old_aliases.contains_key(name) {
-            output.push_str(&shell.set_alias(name, cmd));
+            patches.push(EnvDiffOperation::Add(name.clone(), cmd.clone()));
         }
     }
 
-    output
+    patches
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{FAST_PATH_FORCED_FULL_RUN, force_full_run, has_preclap_logging_flag};
+    use super::{
+        FAST_PATH_DECLINING_OPTIONS, FAST_PATH_FORCED_FULL_RUN, force_full_run,
+        has_conflicting_output_flags, has_flag, has_preclap_logging_flag,
+    };
     use std::sync::atomic::Ordering;
 
     fn args(values: &[&str]) -> Vec<String> {
@@ -1123,6 +1216,110 @@ mod tests {
         assert!(FAST_PATH_FORCED_FULL_RUN.load(Ordering::Relaxed));
 
         FAST_PATH_FORCED_FULL_RUN.store(prev, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn has_flag_matches_long_short_and_combined_short_flags() {
+        assert!(has_flag(
+            &args(&["mise", "hook-env", "--json"]),
+            "--json",
+            'J'
+        ));
+        assert!(has_flag(&args(&["mise", "hook-env", "-J"]), "--json", 'J'));
+        assert!(has_flag(&args(&["mise", "hook-env", "-fJ"]), "--json", 'J'));
+        assert!(has_flag(
+            &args(&["mise", "hook-env", "-Jf"]),
+            "--force",
+            'f'
+        ));
+        assert!(!has_flag(
+            &args(&["mise", "hook-env", "-s", "bash"]),
+            "--json",
+            'J'
+        ));
+        assert!(!has_flag(
+            &args(&["mise", "hook-env", "--json-x"]),
+            "--json",
+            'J'
+        ));
+        assert!(has_flag(
+            &args(&["mise", "hook-env", "--shell=bash"]),
+            "--shell",
+            's'
+        ));
+    }
+
+    #[test]
+    fn has_flag_skips_values_of_short_options() {
+        let json = |argv: &[&str]| has_flag(&args(argv), "--json", 'J');
+        // the rest of a group after a value-taking option is its value
+        assert!(!json(&["mise", "hook-env", "-sJ"]));
+        assert!(!json(&["mise", "hook-env", "-fjJ"]));
+        // flags before a value-taking option, or in a later arg, still count
+        assert!(json(&["mise", "hook-env", "-Jj4"]));
+        assert!(json(&["mise", "hook-env", "-s", "bash", "-J"]));
+
+        // the options that force a full run take values too: an `f` in one is
+        // not --force, which would skip forcing it
+        let force = |argv: &[&str]| has_flag(&args(argv), "--force", 'f');
+        assert!(!force(&["mise", "hook-env", "-Efoo"]));
+        assert!(!force(&["mise", "hook-env", "-Pdefault"]));
+        assert!(!force(&["mise", "hook-env", "-Cfoo"]));
+        assert!(force(&["mise", "hook-env", "-fE", "x"]));
+    }
+
+    #[test]
+    fn options_that_change_the_result_decline_the_fast_path() {
+        let declines = |argv: &[&str]| {
+            let argv = args(&[&["mise", "hook-env"][..], argv].concat());
+            FAST_PATH_DECLINING_OPTIONS
+                .iter()
+                .any(|(long, short)| has_flag(&argv, long, *short))
+        };
+        for argv in [
+            &["-C", "../other"][..],
+            &["--cd=../other"],
+            &["-E", "prod"],
+            &["--env", "prod"],
+            &["-EJava"],
+            &["-fJE", "prod"],
+            &["-P", "prod"],
+            &["-Efoo"],
+            &["-Pdefault"],
+            &["-Cfoo"],
+        ] {
+            assert!(declines(argv), "{argv:?}");
+        }
+        // values of other options are not mistaken for these
+        for argv in [&["-sE"][..], &["-jC"], &["-J", "--force"]] {
+            assert!(!declines(argv), "{argv:?}");
+        }
+    }
+
+    #[test]
+    fn conflicting_output_flags_are_found_in_every_spelling() {
+        for both in [
+            &["--json", "--shell", "bash"][..],
+            &["--shell", "bash", "--json"],
+            &["-J", "-s", "bash"],
+            &["--json", "--shell=bash"],
+            &["-Js", "bash"],
+            &["-fJ", "-sbash"],
+        ] {
+            let argv = [&["mise", "hook-env"][..], both].concat();
+            assert!(has_conflicting_output_flags(&args(&argv)), "{both:?}");
+        }
+        for one in [
+            &["--json"][..],
+            &["-fJ"],
+            &["--shell", "bash"],
+            &["-s", "bash", "--force"],
+            // `--shell J`: J is the shell's value, not --json
+            &["-sJ"],
+        ] {
+            let argv = [&["mise", "hook-env"][..], one].concat();
+            assert!(!has_conflicting_output_flags(&args(&argv)), "{one:?}");
+        }
     }
 
     #[test]
