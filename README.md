@@ -283,9 +283,7 @@ dotfile tracking and templating, services, and remote SSH targets.
 - Chat with the community on [Discord](https://discord.gg/mABnUDvP57).
 
 For security reports and other inquiries, see
-[Contact](https://mise.jdx.dev/contact.html). Before using AI to reply to an
-Issue or Discussion, read the
-[AI reply policy](https://mise.jdx.dev/contributing.html#community-participation).
+[Contact](https://mise.jdx.dev/contact.html).
 
 ## Special thanks
 
