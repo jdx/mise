@@ -115,6 +115,25 @@ pub(crate) fn env_conf_d() -> bool {
     env_conf_d_setting().unwrap_or_else(|| env_conf_d_default_for_version(&crate::version::V))
 }
 
+/// [`env_conf_d_setting`] for the global and system config directories, which
+/// ignores project `.miserc.toml` files: those load without trust and must not
+/// change which global fragments load, such as one that turns `paranoid` on.
+pub(crate) fn global_env_conf_d_setting() -> Option<bool> {
+    if var_is_true("MISE_ENV_CONF_D") {
+        Some(true)
+    } else if var_is_false("MISE_ENV_CONF_D") {
+        Some(false)
+    } else {
+        miserc::get_global_env_conf_d()
+    }
+}
+
+/// [`env_conf_d`] for the global and system config directories.
+pub(crate) fn global_env_conf_d() -> bool {
+    global_env_conf_d_setting()
+        .unwrap_or_else(|| env_conf_d_default_for_version(&crate::version::V))
+}
+
 /// Default for auto_env when the setting is unset: off until mise 2027.6.0
 pub(crate) fn auto_env_default_for_version(v: &versions::Versioning) -> bool {
     *v >= versions::Versioning::new("2027.6.0").unwrap()
