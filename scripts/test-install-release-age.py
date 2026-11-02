@@ -643,8 +643,23 @@ $ast = [System.Management.Automation.Language.Parser]::ParseFile($env:INSTALL_PS
 if ($errors) { throw "install.ps1 does not parse: $($errors -join '; ')" }
 $isFunction = { param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }
 foreach ($f in $ast.FindAll($isFunction, $true)) { . ([scriptblock]::Create($f.Extent.Text)) }
-function Invoke-WebRequest([switch] $UseBasicParsing, $Uri, $Headers, $OutFile) {
-  [pscustomobject]@{ Content = (@{ Uri = $Uri; Authorization = if ($Headers) { $Headers.Authorization } else { $null } } | ConvertTo-Json -Compress) }
+# Records each request and answers from $env:STUB_ROUTES, a JSON object that
+# maps a URL to [status] or [status, Location]; any other URL gets 200.
+$global:calls = New-Object System.Collections.Generic.List[object]
+function Invoke-WebRequest {
+  [CmdletBinding()]
+  param([switch] $UseBasicParsing, $Uri, $Headers, $OutFile, $MaximumRedirection, [switch] $SkipHttpErrorCheck, [switch] $PassThru)
+  $authorization = if ($Headers) { $Headers['Authorization'] } else { $null }
+  $global:calls.Add([pscustomobject]@{ Uri = "$Uri"; Authorization = $authorization; MaximumRedirection = $MaximumRedirection })
+  $route = if ($env:STUB_ROUTES) { ($env:STUB_ROUTES | ConvertFrom-Json).PSObject.Properties["$Uri"] } else { $null }
+  $status = if ($route) { $route.Value[0] } else { 200 }
+  $location = if ($route -and $route.Value.Count -gt 1) { $route.Value[1] } else { $null }
+  if ($OutFile) { Set-Content -LiteralPath $OutFile -Value "body of $Uri" -NoNewline }
+  [pscustomobject]@{
+    StatusCode = $status
+    Headers = @{ Location = $location }
+    Content = (@{ Uri = "$Uri"; Authorization = $authorization } | ConvertTo-Json -Compress)
+  }
 }
 """
 
@@ -726,6 +741,70 @@ function Invoke-WebRequest([switch] $UseBasicParsing, $Uri, $Headers, $OutFile) 
             with self.subTest(case=case):
                 self.assertIsNone(self.download(url, mirror=mirror, netrc="default login user password s3cret\n")["Authorization"])
         self.assertIsNone(self.download(mirror_url, netrc="machine other.invalid login a password b\n")["Authorization"])
+
+    FOLLOW = r"""
+try { $r = Invoke-Download $env:URL $env:OUT_FILE; $result = if ($null -ne $r) { 'returned' } else { 'nothing' } }
+catch { $result = "error: $($_.Exception.Message)" }
+@{ Result = $result; Calls = $global:calls.ToArray() } | ConvertTo-Json -Compress -Depth 3
+"""
+
+    def follow(self, url, routes, out_file=None):
+        variables = {"URL": url, "STUB_ROUTES": json.dumps(routes)}
+        if out_file:
+            variables["OUT_FILE"] = out_file
+        result = self.pwsh(
+            self.FOLLOW, netrc="machine gh.example.invalid login user password s3cret\n",
+            MISE_INSTALL_GITHUB_MIRROR="gh.example.invalid/github", **variables,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout)
+        calls = [(c["Uri"], c["Authorization"]) for c in output["Calls"]]
+        # Invoke-WebRequest never follows a redirect itself
+        self.assertEqual({c["MaximumRedirection"] for c in output["Calls"]}, {0})
+        return output["Result"], calls
+
+    def test_https_redirects_are_followed_without_credentials(self):
+        basic = "Basic dXNlcjpzM2NyZXQ="  # user:s3cret
+        url = "https://gh.example.invalid/github/jdx/mise/releases/download/v2026.1.0/SHASUMS256.txt"
+        for case, location, followed in [
+            ("other host", "https://objects.example.invalid/sums?sig=1", "https://objects.example.invalid/sums?sig=1"),
+            ("same host, relative", "/github/elsewhere", "https://gh.example.invalid/github/elsewhere"),
+        ]:
+            with self.subTest(case=case):
+                result, calls = self.follow(url, {url: [302, location]})
+                self.assertEqual(result, "returned")
+                self.assertEqual(calls, [(url, basic), (followed, None)])
+
+        # a chain of redirects, saving to a file
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "mise.zip"
+            hop = "https://cdn.example.invalid/1"
+            result, calls = self.follow(url, {url: [301, hop], hop: [307, "https://cdn.example.invalid/2"]}, str(out))
+            self.assertEqual(result, "nothing")
+            self.assertEqual([u for u, _ in calls], [url, hop, "https://cdn.example.invalid/2"])
+            self.assertEqual(out.read_text(), "body of https://cdn.example.invalid/2")
+
+    def test_redirect_off_https_is_refused(self):
+        url = "https://gh.example.invalid/github/jdx/mise/releases/download/v2026.1.0/mise-v2026.1.0-windows-x64.zip"
+        hop = "https://cdn.example.invalid/1"
+        for case, routes, refused, requests in [
+            ("to http", {url: [302, "http://cdn.example.invalid/x"]}, "http://cdn.example.invalid/x", 1),
+            ("to http, uppercase", {url: [302, "HTTP://cdn.example.invalid/x"]}, "http://cdn.example.invalid/x", 1),
+            ("to ftp", {url: [302, "ftp://cdn.example.invalid/x"]}, "ftp://cdn.example.invalid/x", 1),
+            ("after an https hop", {url: [302, hop], hop: [302, "http://cdn.example.invalid/x"]}, "http://cdn.example.invalid/x", 2),
+        ]:
+            with self.subTest(case=case):
+                result, calls = self.follow(url, routes)
+                self.assertEqual(result, f"error: refusing redirect to non-HTTPS URL: {refused}")
+                self.assertEqual(len(calls), requests)
+
+    def test_failed_and_endless_downloads_throw(self):
+        url = "https://gh.example.invalid/github/jdx/mise/releases/download/v2026.1.0/SHASUMS256.txt"
+        result, calls = self.follow(url, {url: [404]})
+        self.assertEqual(result, f"error: {url} returned HTTP 404")
+        result, calls = self.follow(url, {url: [302, url]})
+        self.assertEqual(result, f"error: too many redirects from {url}")
+        self.assertEqual(len(calls), 11)
 
     def test_github_base(self):
         for mirror, expected in [

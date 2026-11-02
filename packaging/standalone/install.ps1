@@ -97,22 +97,42 @@
   }
 
   # Invoke-WebRequest does not read netrc, so requests to MISE_INSTALL_GITHUB_MIRROR
-  # get the mirror's netrc credentials as a Basic Authorization header.
-  # PowerShell drops that header on a redirect, so it never reaches the host a
-  # mirror redirects to.
+  # get the mirror's netrc credentials as a Basic Authorization header, on the
+  # first request only, so they never reach a host the mirror redirects to.
+  # Redirects are followed here, not by Invoke-WebRequest, so that each one can
+  # be refused unless it stays on https: Windows PowerShell 5.1 (.NET Framework)
+  # would follow one to http.
   function Invoke-Download([string] $Url, [string] $OutFile) {
-    $params = @{ UseBasicParsing = $true; Uri = $Url }
+    $headers = @{}
     if ($env:MISE_INSTALL_GITHUB_MIRROR -and $Url.StartsWith("$(Get-GitHubBase)/", [StringComparison]::OrdinalIgnoreCase)) {
       $hostName = ([Uri]$Url).Host
       $credential = Get-NetrcCredential $hostName
       if ($credential) {
         Write-Debug2 "> using netrc credentials for $hostName"
         $pair = "$($credential.Login):$($credential.Password)"
-        $params.Headers = @{ Authorization = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pair)) }
+        $headers.Authorization = 'Basic ' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($pair))
       }
     }
-    if ($OutFile) { $params.OutFile = $OutFile }
-    return Invoke-WebRequest @params
+    for ($redirects = 0; ; $redirects++) {
+      # MaximumRedirection 0 returns a redirect instead of following it, and
+      # reports it as an error, which SilentlyContinue drops. PowerShell 7 also
+      # throws on it unless SkipHttpErrorCheck is set, so failures are checked below.
+      $params = @{ UseBasicParsing = $true; Uri = $Url; Headers = $headers; MaximumRedirection = 0; ErrorAction = 'SilentlyContinue' }
+      if ($PSVersionTable.PSVersion.Major -ge 7) { $params.SkipHttpErrorCheck = $true }
+      if ($OutFile) { $params.OutFile = $OutFile; $params.PassThru = $true }
+      $response = Invoke-WebRequest @params
+      $status = [int]$response.StatusCode
+      if ($status -ge 400) { throw "$Url returned HTTP $status" }
+      $location = @($response.Headers['Location'])[0]
+      if ($status -lt 300 -or -not $location) { break }
+      if ($redirects -ge 10) { throw "too many redirects from $Url" }
+      $next = [Uri]::new([Uri]$Url, [string]$location)
+      if ($next.Scheme -ne 'https') { throw "refusing redirect to non-HTTPS URL: $next" }
+      Write-Debug2 "> redirected to $next"
+      $Url = $next.AbsoluteUri
+      $headers = @{}
+    }
+    if (-not $OutFile) { return $response }
   }
 
   function Get-Text([string] $Url) {
