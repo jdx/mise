@@ -3368,10 +3368,10 @@ fn state_files(dir: &Path) -> impl Iterator<Item = PathBuf> {
         .filter(|path| path.extension().is_some_and(|ext| ext == "toml") && path.is_file())
 }
 
-/// Whether `a` and `b` name the same path, letter case aside on Windows, whose file systems
-/// ignore it.
+/// Whether `a` and `b` name the same path, letter case aside on Windows where the directory
+/// ignores it (one marked case-sensitive tells `foo` from `Foo`).
 fn same_path_any_case(a: &Path, b: &Path) -> bool {
-    file::same_path_ignoring_case(&lexical_normalize(a), &lexical_normalize(b))
+    file::same_location_ignoring_case(&lexical_normalize(a), &lexical_normalize(b))
 }
 
 /// `path` under `from` moved under `to`, the same directory spelled with other letter case.

@@ -1496,13 +1496,30 @@ fn path_starts_with(path: &Path, root: &Path) -> bool {
         return false;
     }
 
-    if !same_path_ignoring_case(&candidate, &root) {
+    same_location_ignoring_case(&candidate, &root)
+}
+
+/// Whether `a` and `b` name the same location. Paths that differ only in case are different
+/// paths on Unix.
+#[cfg(unix)]
+pub fn same_location_ignoring_case(a: &Path, b: &Path) -> bool {
+    a == b
+}
+
+/// Whether `a` and `b`, spelled the same apart from letter case, name the same location: the
+/// same file when they exist, and otherwise the same place in a directory that ignores case. A
+/// directory marked case-sensitive can hold `foo` and `Foo` as two files.
+#[cfg(windows)]
+pub fn same_location_ignoring_case(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    if !same_path_ignoring_case(a, b) {
         return false;
     }
-
-    match same_file::is_same_file(&candidate, &root) {
+    match same_file::is_same_file(a, b) {
         Ok(same) => same,
-        Err(_) => dangling_paths_share_case_insensitive_parent(&candidate, &root),
+        Err(_) => dangling_paths_share_case_insensitive_parent(a, b),
     }
 }
 
