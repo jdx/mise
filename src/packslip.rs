@@ -25,7 +25,7 @@ use crate::config::{Config, Settings};
 use crate::file;
 use crate::github;
 use crate::http::{HTTP, HTTP_FETCH};
-use crate::toolset::{ToolVersion, Toolset};
+use crate::toolset::{ConfigScope, ToolVersion, Toolset, ToolsetBuilder};
 use crate::ui::progress_report::SingleReport;
 
 /// Resources fetched from outside the artifact live here in the install.
@@ -1090,6 +1090,22 @@ pub(crate) fn skills_of(
 /// The skills of every tool active in the current directory.
 pub async fn active_skills(config: &Arc<Config>) -> Result<DeclaredSkills> {
     let ts = config.get_toolset().await?;
+    skills_of_toolset(config, ts)
+}
+
+/// The skills of the tools the global and system config select, wherever
+/// the command runs and whatever a project or `MISE_*_VERSION` asks for. It
+/// is what belongs in the home directory's skills.
+pub async fn global_skills(config: &Arc<Config>) -> Result<DeclaredSkills> {
+    let ts = ToolsetBuilder::new()
+        .with_scope(ConfigScope::GlobalOnly)
+        .without_runtime_env()
+        .build(config)
+        .await?;
+    skills_of_toolset(config, &ts)
+}
+
+fn skills_of_toolset(config: &Arc<Config>, ts: &Toolset) -> Result<DeclaredSkills> {
     let mut skills = DeclaredSkills::default();
     for (backend, tv) in ts.list_current_installed_versions(config) {
         let install_path = tv.install_path();
@@ -1153,7 +1169,11 @@ async fn auto_sync_skills_into(config: &Arc<Config>, root: &Path, global: bool) 
     }
     let dir = skills_dir(root);
     let result = async {
-        let skills = active_skills(config).await?;
+        let skills = if global {
+            global_skills(config).await?
+        } else {
+            active_skills(config).await?
+        };
         // Reported, not warned: this runs after every install, and a skill
         // that is missing on purpose must not nag on each one. `mise skills
         // ls` is where someone asks the question, and it warns.
