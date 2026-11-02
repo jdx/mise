@@ -577,6 +577,8 @@ fn parse_registry_idiomatic_files(
                 .as_array()
                 .ok_or_else(|| eyre::eyre!("idiomatic_files must be an array"))?
                 .iter()
+                // A file an older registry marked `deprecated` is no longer read.
+                .filter(|file| file.get("deprecated").is_none())
                 .map(parse_registry_idiomatic_file)
                 .collect()
         })
@@ -599,14 +601,7 @@ fn parse_registry_idiomatic_file(value: &toml::Value) -> Result<RegistryIdiomati
                 ensure!(
                     matches!(
                         key.as_str(),
-                        "path"
-                            | "version_regex"
-                            | "version_json_path"
-                            | "version_expr"
-                            // Registries published by mise before 2026.11.0 mark a floor
-                            // file with `deprecated`. It is ignored, but rejecting it would
-                            // make the whole floating registry archive unusable.
-                            | "deprecated"
+                        "path" | "version_regex" | "version_json_path" | "version_expr"
                     ),
                     "unknown idiomatic file field: {key}"
                 );
@@ -1979,12 +1974,8 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
             Some(r"version=(\S+)")
         );
         assert_eq!(tool.idiomatic_files[2].version_expr, Some("versions[0]"));
-        // a `deprecated` key from an older published registry is accepted and ignored
-        assert_eq!(tool.idiomatic_files[3].path, "example.conf");
-        assert_eq!(
-            tool.idiomatic_files[3].version_regex,
-            Some(r"minimum=(\S+)")
-        );
+        // a file an older published registry marked `deprecated` is dropped, not read
+        assert_eq!(tool.idiomatic_files.len(), 3);
         assert_eq!(tool.test.as_ref().unwrap().tools, &["node"]);
         assert!(!registry.missing_version_order);
     }
