@@ -3555,18 +3555,35 @@ fn settle_failed_apply(
     // `--force` write removed before failing: left unfinished, recovery keeps its preimage and
     // asks. One that is unchanged settles that way too. Finished as the failure left them are
     // only paths captured as missing, links captured where the entry recorded a stale link of
-    // its own, and mise's own records. The capture decides, not an earlier look at the path:
+    // its own and still reaching into its source, and mise's own records. The capture decides, not an earlier look at the path:
     // something may have replaced a stale link since.
     let records = [symlink_each_state_path(req), target_state_path(req)];
     let finished = pending
         .into_iter()
         .filter(|change| {
             change.prior_missing()
-                || change.prior_link() && stale.contains(change.path())
+                || stale.contains(change.path())
+                    && change
+                        .prior_link()
+                        .is_some_and(|dest| links_into_source(req, change.path(), dest))
                 || records.iter().any(|r| r == change.path())
         })
         .collect();
     journal::commit_changes(finished);
+}
+
+/// Whether a link at `link` holding `dest` reaches into `req`'s source, as the entry's links
+/// do: a link that something else put in place of a stale one points elsewhere.
+fn links_into_source(req: &FileRequest, link: &Path, dest: &Path) -> bool {
+    let resolved = if dest.is_absolute() {
+        Some(lexical_normalize(dest))
+    } else {
+        resolve_relative_link(link, dest)
+    };
+    resolved.is_some_and(|resolved| {
+        resolved.starts_with(lexical_normalize(&req.source))
+            || resolved.starts_with(physical_path(&req.source))
+    })
 }
 
 /// Remove the directories in `created` that are still empty, deepest first, so a parent

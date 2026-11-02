@@ -500,7 +500,7 @@ pub struct PendingChange {
     /// what the captured prior state was: nothing, or a symlink (whose only content is where
     /// it points)
     prior_missing: bool,
-    prior_link: bool,
+    prior_link: Option<PathBuf>,
 }
 
 impl PendingChange {
@@ -514,9 +514,9 @@ impl PendingChange {
         self.prior_missing
     }
 
-    /// Whether a symlink was at the path when its prior state was captured.
-    pub(crate) fn prior_link(&self) -> bool {
-        self.prior_link
+    /// Where the symlink at the path pointed when its prior state was captured, if one was.
+    pub(crate) fn prior_link(&self) -> Option<&Path> {
+        self.prior_link.as_deref()
     }
 }
 
@@ -562,7 +562,10 @@ pub(crate) fn begin_changes_with(
             );
         }
         let prior_missing = matches!(prior, PathSnapshot::Missing);
-        let prior_link = matches!(prior, PathSnapshot::Symlink { .. });
+        let prior_link = match &prior {
+            PathSnapshot::Symlink { dest } => Some(dest.clone()),
+            _ => None,
+        };
         if let Some(seq) = super::scope::record(JournalEntry::PathChanged {
             part: part.to_string(),
             item: item.to_string(),
