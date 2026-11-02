@@ -584,6 +584,8 @@ fn parse_registry_idiomatic_files(
         .map(Option::unwrap_or_default)
 }
 
+crate::remove_by!("2027.10.0", "registry-idiomatic-file-deprecated");
+
 fn parse_registry_idiomatic_file(value: &toml::Value) -> Result<RegistryIdiomaticFile> {
     match value {
         toml::Value::String(path) => Ok(RegistryIdiomaticFile {
@@ -597,7 +599,14 @@ fn parse_registry_idiomatic_file(value: &toml::Value) -> Result<RegistryIdiomati
                 ensure!(
                     matches!(
                         key.as_str(),
-                        "path" | "version_regex" | "version_json_path" | "version_expr"
+                        "path"
+                            | "version_regex"
+                            | "version_json_path"
+                            | "version_expr"
+                            // Registries published by mise before 2026.11.0 mark a floor
+                            // file with `deprecated`. It is ignored, but rejecting it would
+                            // make the whole floating registry archive unusable.
+                            | "deprecated"
                     ),
                     "unknown idiomatic file field: {key}"
                 );
@@ -1929,6 +1938,7 @@ idiomatic_files = [
   ".example-version",
   { path = "example.json", version_json_path = ".tool.version" },
   { path = "example.txt", version_regex = 'version=(\S+)', version_expr = "versions[0]" },
+  { path = "example.conf", version_regex = 'minimum=(\S+)', deprecated = "written by mise before 2026.11.0." },
 ]
 test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
 "#
@@ -1969,6 +1979,12 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
             Some(r"version=(\S+)")
         );
         assert_eq!(tool.idiomatic_files[2].version_expr, Some("versions[0]"));
+        // a `deprecated` key from an older published registry is accepted and ignored
+        assert_eq!(tool.idiomatic_files[3].path, "example.conf");
+        assert_eq!(
+            tool.idiomatic_files[3].version_regex,
+            Some(r"minimum=(\S+)")
+        );
         assert_eq!(tool.test.as_ref().unwrap().tools, &["node"]);
         assert!(!registry.missing_version_order);
     }
