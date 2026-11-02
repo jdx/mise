@@ -129,8 +129,22 @@ mode = "copy"
 [dotfiles]
 "$PWD/out/nested" = { source = "$PWD/out/tree/f", mode = "copy", depends = ["tree"] }
 "$PWD/out/each" = { source = "$PWD/out/tree", mode = "symlink-each", depends = ["tree"] }
+"$PWD/out/dircopy" = { source = "$PWD/out/tree", mode = "copy", depends = ["tree"] }
+"$PWD/out/more" = { source = "$PWD/out/dircopy/f", mode = "copy", depends = ["$PWD/out/dircopy"] }
 EOF
 assert_succeed "mise dot apply --dry-run --verbose"
 assert_succeed "mise dot apply --yes"
 assert "cat out/nested" "nested"
 assert "cat out/each/f" "nested"
+assert "cat out/more" "nested"
+
+# a dry run still reports a conflict it can see without the source
+rm -rf out
+mkdir out
+echo in-the-way >out/link
+cat <<EOF >mise.toml
+[dotfiles]
+"$PWD/out/key" = { content = "from-entry\n" }
+"$PWD/out/link" = { source = "$PWD/out/key", mode = "symlink", depends = ["$PWD/out/key"] }
+EOF
+assert_fail "mise dot apply --dry-run" "refusing to overwrite"

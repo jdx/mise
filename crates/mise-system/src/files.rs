@@ -4978,17 +4978,24 @@ pub fn apply_layers(
                 return Err(err);
             }
         }
-        pending.extend(
-            layer_requests
-                .iter()
-                .filter(|req| {
-                    !matches!(
-                        req.mode,
-                        FileMode::Absent | FileMode::Permissions | FileMode::Track
-                    ) && !req.remove_empty
-                })
-                .map(|req| (req.target.clone(), walks_directory(req))),
-        );
+        let created = layer_requests
+            .iter()
+            .filter(|req| {
+                !matches!(
+                    req.mode,
+                    FileMode::Absent | FileMode::Permissions | FileMode::Track
+                ) && !req.remove_empty
+            })
+            .map(|req| {
+                // a directory an earlier round creates is not on disk yet in
+                // a dry run, so copying or linking it still deploys a tree
+                let walks = walks_directory(req)
+                    || matches!(req.mode, FileMode::Copy | FileMode::Symlink)
+                        && pending_directory(&req.source, &pending);
+                (req.target.clone(), walks)
+            })
+            .collect::<Vec<_>>();
+        pending.extend(created);
     }
     Ok(true)
 }
@@ -5109,6 +5116,14 @@ fn waits_for(from: usize, to: usize, edges: &[Vec<usize>]) -> bool {
         }
     }
     false
+}
+
+/// Whether `source` is a directory an earlier round creates, or a path in one.
+fn pending_directory(source: &Path, pending: &[(PathBuf, bool)]) -> bool {
+    let source = lexical_normalize(source);
+    pending
+        .iter()
+        .any(|(target, walks)| *walks && source.starts_with(target))
 }
 
 /// Whether `source` is a path an earlier round creates: the target itself, or
@@ -5581,7 +5596,11 @@ fn plan_apply_after<'a>(
             && !req.source.exists()
             && pending_source(&req.source, pending)
         {
-            // nothing to compare with or walk until the earlier round has run
+            // nothing to compare with or walk until the earlier round has run;
+            // what does not depend on the source is still checked
+            if req.mode != FileMode::SymlinkEach {
+                conflicts.extend(find_conflicts(req)?);
+            }
             todo.push((req, None));
             continue;
         }
