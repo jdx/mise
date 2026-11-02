@@ -90,7 +90,9 @@ impl SkillsSync {
             &[*dirs::INSTALLS, *dirs::INSTALL_STORE],
             prune,
         )?;
-        target.link_alias()?;
+        if let Err(err) = target.link_alias() {
+            warn!("could not update .claude/skills: {err}");
+        }
         for name in &report.linked {
             let skill = skills.iter().find(|s| &s.name == name);
             miseprintln!(

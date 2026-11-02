@@ -1166,6 +1166,11 @@ impl SkillsTarget {
         let Some(parent) = alias.parent() else {
             return Ok(());
         };
+        // A `.claude` that is itself a link may be shared with other
+        // projects: nothing here is ours to make, change or un-hide in it.
+        if file::is_symlink_or_junction(parent) {
+            return Ok(());
+        }
         if alias.symlink_metadata().is_ok() {
             // Somebody replaced the link with a real directory of their own
             // (or it never was ours): stop hiding it from git.
@@ -1174,9 +1179,7 @@ impl SkillsTarget {
             }
             return Ok(());
         }
-        // A `.claude` that is itself a link may be shared with other projects;
-        // a `skills` made inside it would be theirs too.
-        if !self.create_alias || !self.dir.is_dir() || file::is_symlink_or_junction(parent) {
+        if !self.create_alias || !self.dir.is_dir() {
             return Ok(());
         }
         file::create_dir_all(parent)?;

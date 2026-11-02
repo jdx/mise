@@ -91,3 +91,22 @@ mkdir .claude/skills
 echo mine >.claude/skills/handwritten.md
 mise skills sync
 assert_contains "git ls-files --others --exclude-standard" ".claude/skills/handwritten.md"
+
+# A linked .claude that already holds a skills directory is left alone, and
+# so is the exclude file of the repository it lives in.
+cd .. || exit 1
+mkdir other-repo shared-claude
+git -C other-repo init -q
+mkdir other-repo/.claude
+mv other-repo/.claude other-repo/.claude-real
+ln -s "$PWD/other-repo/.claude-real" shared-claude/link
+mkdir -p project-a/.agents/skills other-repo/.claude-real/skills
+ln -s "$PWD/other-repo/.claude-real" project-a/.claude
+cd project-a || exit 1
+echo '[tools]
+skilled = "1.0.0"' >mise.toml
+mise install
+before="$(cat "$PWD/../other-repo/.git/info/exclude")"
+mise skills sync
+assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
+assert "cat $PWD/../other-repo/.git/info/exclude" "$before"
