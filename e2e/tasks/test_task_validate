@@ -216,6 +216,37 @@ EOF
 assert_contains "mise tasks validate 2>&1 || true" "Task has no executable content"
 assert_contains "mise tasks validate 2>&1 || true" "no-execution"
 
+# A Windows-only task has a command even where it runs nothing
+cat <<EOF >mise.toml
+[tasks.win_only]
+run_windows = "echo hi"
+
+[tasks.win_only_empty_run]
+run = []
+run_windows = "echo hi"
+
+[tasks.skip_on_windows]
+run = "echo hi"
+run_windows = []
+EOF
+
+assert_contains "mise tasks validate" "✓ All 3 task(s) validated successfully"
+
+# An empty `run` with no other command on any platform is still empty
+cat <<EOF >mise.toml
+[tasks.empty_run]
+run = []
+
+[tasks.empty_both]
+run = []
+run_windows = []
+EOF
+
+assert_fail "mise tasks validate"
+assert_contains "mise tasks validate 2>&1 || true" "empty_run"
+assert_contains "mise tasks validate 2>&1 || true" "empty_both"
+assert_contains "mise tasks validate 2>&1 || true" "no-execution"
+
 # Test invalid glob pattern
 cat <<EOF >mise.toml
 [tasks.bad-glob]
