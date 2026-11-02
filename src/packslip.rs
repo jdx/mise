@@ -1242,7 +1242,7 @@ pub async fn auto_sync_skills(config: &Arc<Config>) {
     let shared = config
         .project_root
         .as_ref()
-        .is_some_and(|root| skills_dir(root) == skills_dir(&crate::dirs::HOME));
+        .is_some_and(|root| skills_target(root).dir == skills_target(&crate::dirs::HOME).dir);
     if !shared {
         auto_sync_global_skills(config).await;
     }
