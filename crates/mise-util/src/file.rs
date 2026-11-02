@@ -1496,7 +1496,14 @@ fn path_starts_with(path: &Path, root: &Path) -> bool {
         return false;
     }
 
-    same_location_ignoring_case(&candidate, &root)
+    if !same_path_ignoring_case(&candidate, &root) {
+        return false;
+    }
+
+    match same_file::is_same_file(&candidate, &root) {
+        Ok(same) => same,
+        Err(_) => dangling_paths_share_case_insensitive_parent(&candidate, &root),
+    }
 }
 
 /// Whether `a` and `b` name the same location. Paths that differ only in case are different
@@ -1507,8 +1514,9 @@ pub fn same_location_ignoring_case(a: &Path, b: &Path) -> bool {
 }
 
 /// Whether `a` and `b`, spelled the same apart from letter case, name the same location: the
-/// same file when they exist, and otherwise the same place in a directory that ignores case. A
-/// directory marked case-sensitive can hold `foo` and `Foo` as two files.
+/// same file in a directory that ignores case when they exist, and otherwise the same place in
+/// such a directory. A directory marked case-sensitive can hold `foo` and `Foo` as two files,
+/// or as two hard links to one.
 #[cfg(windows)]
 pub fn same_location_ignoring_case(a: &Path, b: &Path) -> bool {
     if a == b {
@@ -1518,7 +1526,8 @@ pub fn same_location_ignoring_case(a: &Path, b: &Path) -> bool {
         return false;
     }
     match same_file::is_same_file(a, b) {
-        Ok(same) => same,
+        // two hard links can be one file under names a case-sensitive directory tells apart
+        Ok(same) => same && a.parent().and_then(directory_is_case_sensitive) != Some(true),
         Err(_) => dangling_paths_share_case_insensitive_parent(a, b),
     }
 }
