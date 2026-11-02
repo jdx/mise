@@ -115,3 +115,22 @@ assert_succeed "mise dot apply --dry-run"
 assert_succeed "mise dot apply --dry-run --verbose"
 assert_succeed "mise dot apply --yes"
 assert "cat out/copy" "from-entry"
+
+# so does a source inside a directory that an earlier round deploys
+rm -rf out
+mkdir -p tree
+echo nested >tree/f
+cat <<EOF >mise.toml
+[dotfile_groups.tree]
+root = "$PWD/tree"
+target = "$PWD/out/tree"
+mode = "copy"
+
+[dotfiles]
+"$PWD/out/nested" = { source = "$PWD/out/tree/f", mode = "copy", depends = ["tree"] }
+"$PWD/out/each" = { source = "$PWD/out/tree", mode = "symlink-each", depends = ["tree"] }
+EOF
+assert_succeed "mise dot apply --dry-run --verbose"
+assert_succeed "mise dot apply --yes"
+assert "cat out/nested" "nested"
+assert "cat out/each/f" "nested"

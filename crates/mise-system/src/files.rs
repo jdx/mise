@@ -4909,7 +4909,9 @@ pub fn apply(
 }
 
 /// [`apply`], showing each planned layer to `before`, which returns whether
-/// to execute it. A config without `depends` is one layer.
+/// to execute it: `false` skips a layer that has nothing to do, and refuses
+/// one that does, which stops the apply. A config without `depends` is one
+/// layer.
 pub fn apply_layers(
     config: &Config,
     requests: &[FileRequest],
@@ -4924,7 +4926,8 @@ pub fn apply_layers(
         return if before(&plan) {
             execute_apply(config, plan, opts, written)
         } else {
-            Ok(true)
+            // a plan with nothing to do is skipped; any other is refused
+            Ok(plan.is_noop())
         };
     }
     // each round is planned alone, so the claims of entries in different
@@ -4932,7 +4935,7 @@ pub fn apply_layers(
     validate_composed_file_footprints(requests)?;
     let mut worked = false;
     // what earlier rounds create, for a dry run that has not written it
-    let mut pending: Vec<PathBuf> = vec![];
+    let mut pending: Vec<(PathBuf, bool)> = vec![];
     // a layer is planned only after the ones it depends on are written, so a
     // template or fnox entry reads the files its dependencies created
     for (i, layer) in layers.iter().enumerate() {
@@ -4952,7 +4955,9 @@ pub fn apply_layers(
                     worked |= !plan.is_noop();
                     execute_layer(config, plan, opts, written, announce)
                 } else {
-                    Ok(true)
+                    // a round with nothing to do is skipped; refusing any
+                    // other stops the rounds after it
+                    Ok(plan.is_noop())
                 }
             });
         match applied {
@@ -4982,7 +4987,12 @@ pub fn apply_layers(
                         FileMode::Absent | FileMode::Permissions | FileMode::Track
                     ) && !req.remove_empty
                 })
-                .map(|req| req.target.clone()),
+                .map(|req| {
+                    let walks = req.mode == FileMode::SymlinkEach
+                        || matches!(req.mode, FileMode::Copy | FileMode::Symlink)
+                            && req.source.is_dir();
+                    (req.target.clone(), walks)
+                }),
         );
     }
     Ok(true)
@@ -5079,6 +5089,15 @@ fn layering(requests: &[FileRequest], known: &[FileRequest]) -> Result<Vec<Vec<u
         layers[layer].push(index);
     }
     Ok(layers)
+}
+
+/// Whether `source` is a path an earlier round creates: the target itself, or
+/// a file beneath one that deploys a directory.
+fn pending_source(source: &Path, pending: &[(PathBuf, bool)]) -> bool {
+    let source = lexical_normalize(source);
+    pending
+        .iter()
+        .any(|(target, walks)| source == *target || *walks && source.starts_with(target))
 }
 
 /// The indices of the requests a `depends` item names: the members of a
@@ -5508,15 +5527,16 @@ pub fn plan_apply_with_active<'a>(
 }
 
 /// [`plan_apply_with_active`] for a round of dependent entries. `pending` are
-/// the targets earlier rounds will create, which a dry run has not written:
-/// a source there is not missing, only not yet written.
+/// the targets earlier rounds will create, which a dry run has not written, and
+/// whether each is a directory with files beneath it: a source there is not
+/// missing, only not yet written.
 fn plan_apply_after<'a>(
     config: &Config,
     requests: &'a [FileRequest],
     active_requests: &[FileRequest],
     opts: &ApplyOpts,
     secrets: &SecretValues,
-    pending: &[PathBuf],
+    pending: &[(PathBuf, bool)],
 ) -> Result<ApplyPlan<'a>> {
     validate_composed_file_footprints(requests)?;
     // pre-rendered template output rides along so it's written as compared,
@@ -5539,9 +5559,9 @@ fn plan_apply_after<'a>(
         if opts.dry_run
             && req.mode.has_source()
             && !req.source.exists()
-            && pending.contains(&req.source)
+            && pending_source(&req.source, pending)
         {
-            conflicts.extend(find_conflicts(req)?);
+            // nothing to compare with or walk until the earlier round has run
             todo.push((req, None));
             continue;
         }
@@ -6374,6 +6394,10 @@ fn describe(req: &FileRequest) -> Result<String> {
         FileMode::Track => format!("track {tgt} in place"),
         FileMode::Absent => format!("rm {tgt}"),
         FileMode::Symlink => format!("{ln} {src} {tgt}"),
+        // a directory an earlier round has yet to write has nothing to walk
+        FileMode::SymlinkEach if !req.source.exists() => {
+            format!("{ln} {src}/* into {tgt}/ (once {src} is written)")
+        }
         FileMode::SymlinkEach => {
             let stale = stale_links(req)?.len();
             let removals = match stale {
