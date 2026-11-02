@@ -107,3 +107,15 @@ before="$(cat "$PWD/../other-repo/.git/info/exclude")"
 mise skills sync
 assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
 assert "cat $PWD/../other-repo/.git/info/exclude" "$before"
+
+# A link made before `git init` is excluded by the next sync.
+cd .. || exit 1
+mkdir late-git
+cd late-git || exit 1
+echo '[tools]
+skilled = "1.0.0"' >mise.toml
+mise install
+mise skills sync
+git init -q
+mise skills sync
+assert "git ls-files --others --exclude-standard" "mise.toml"

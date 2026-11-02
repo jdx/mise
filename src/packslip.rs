@@ -1176,6 +1176,10 @@ impl SkillsTarget {
             // (or it never was ours): stop hiding it from git.
             if !file::is_symlink_or_junction(alias) {
                 crate::packslip_exclude::exclude_links(parent, [], SYNC_STATE)?;
+            } else if same_file::is_same_file(alias, &self.dir).unwrap_or(false) {
+                // Our link, possibly made before the project was a git
+                // repository: make sure git is told.
+                crate::packslip_exclude::exclude_links(parent, ["skills"], SYNC_STATE)?;
             }
             return Ok(());
         }
