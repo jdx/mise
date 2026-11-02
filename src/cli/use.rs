@@ -444,9 +444,6 @@ impl Use {
             )
             .await?;
             if self.global {
-                // The requested versions are runtime overrides while this
-                // runs; the global skills must not follow them.
-                env::TOOL_ARGS.write().unwrap().clear();
                 crate::packslip::auto_sync_global_skills(&config).await;
             } else {
                 crate::packslip::auto_sync_skills(&config).await;

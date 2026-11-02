@@ -47,3 +47,17 @@ mise use -g skilled@2.0.0
 assert_contains "cat $HOME/.agents/skills/skilled/SKILL.md" "# skilled 2.0.0"
 mise skills sync --global --prune
 assert_contains "cat $HOME/.agents/skills/skilled/SKILL.md" "# skilled 2.0.0"
+
+# Installing or upgrading a global tool moves its links too, from anywhere.
+cd "$HOME" || exit 1
+mise use -g skilled@latest
+assert_contains "cat $HOME/.agents/skills/skilled/SKILL.md" "# skilled 2.0.0"
+mise install skilled@1.0.0
+mise use -g skilled@1.0.0
+assert_contains "cat $HOME/.agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
+mkdir "$HOME/elsewhere"
+cd "$HOME/elsewhere" || exit 1
+mise use -g --pin skilled@2.0.0 >/dev/null
+rm -rf "$HOME/.agents/skills/skilled" "$HOME/.agents/skills/.mise-skills.json"
+mise install skilled
+assert_contains "cat $HOME/.agents/skills/skilled/SKILL.md" "# skilled 2.0.0"
