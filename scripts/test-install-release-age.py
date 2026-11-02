@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -264,6 +265,9 @@ class DownloadSourceTests(unittest.TestCase):
         curl() {
             eval "u=\${$#}"
             echo "$u" >>"$CURL_LOG"
+            # every archive and checksum download refuses redirects off https
+            [ "$1 $2" = "--proto-redir =https" ] || return 99
+            shift 2
             case " $FAIL_URLS " in *" $u "*) return 22 ;; esac
             case " $OTHER_ASSET_SUM_URLS " in *" $u "*)
                 printf '%064d  ./mise-v0-macos-arm64.tar.gz\n' 0
@@ -482,6 +486,87 @@ class DownloadSourceTests(unittest.TestCase):
         result, urls, installed = self.install(MISE_TARBALL_URL=custom)
         self.assert_installed(result, installed)
         self.assertEqual(urls[0], f"{MIRROR}/v2026.1.0/mise-v2026.1.0-linux-x64.tar.gz")
+
+
+class WgetRedirectTests(unittest.TestCase):
+    """download_file and fetch_text through a fake wget, which cannot refuse a
+    redirect off https itself, so the installer checks its -S headers."""
+
+    WGET = r"""#!/bin/sh
+case "$1" in
+    -SO | -qSO) out=$2 ;;
+    *) echo "wget called without -S: $*" >&2; exit 99 ;;
+esac
+printf '  HTTP/1.1 302 Found\n  %s\n  HTTP/1.1 200 OK\n' "$WGET_HEADER" >&2
+if [ "$out" = - ]; then echo body; else echo body >"$out"; fi
+"""
+
+    def run_wget(self, header, command):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            bin_dir = tmp / "bin"
+            bin_dir.mkdir()
+            # no curl on PATH, so the installer uses wget
+            for tool in ["awk", "basename", "cat", "mktemp", "rm"]:
+                (bin_dir / tool).symlink_to(shutil.which(tool))
+            wget = bin_dir / "wget"
+            wget.write_text(self.WGET)
+            wget.chmod(0o755)
+            result = subprocess.run(
+                [shutil.which("sh"), "-c", SCRIPT + "\n" + command],
+                env={"PATH": str(bin_dir), "TMPDIR": str(tmp), "DIR": str(tmp), "WGET_HEADER": header},
+                text=True, capture_output=True, check=False,
+            )
+            downloaded = (tmp / "mise.tar.gz").exists()
+            leftovers = sorted(p.name for p in tmp.iterdir() if p.name not in ("bin", "mise.tar.gz"))
+            return result, downloaded, leftovers
+
+    def download(self, header):
+        return self.run_wget(header, 'download_file https://gh.example.invalid/mise.tar.gz "$DIR"')
+
+    def fetch(self, header):
+        result, _, leftovers = self.run_wget(header, "fetch_text https://gh.example.invalid/SHASUMS256.txt")
+        return result, leftovers
+
+    def test_redirect_off_https_is_refused(self):
+        for header in [
+            "Location: http://evil.invalid/mise.tar.gz",
+            "location:HTTP://evil.invalid/mise.tar.gz",
+            "Location: ftp://evil.invalid/mise.tar.gz",
+            # BusyBox wget fetches a Location without a scheme over http
+            "Location: evil.invalid/mise.tar.gz",
+        ]:
+            with self.subTest(header=header):
+                result, downloaded, leftovers = self.download(header)
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertFalse(downloaded)
+                self.assertEqual(leftovers, [])
+                self.assertIn("refusing redirect to non-HTTPS URL", result.stderr)
+
+                result, leftovers = self.fetch(header)
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(leftovers, [])
+                self.assertIn("refusing redirect to non-HTTPS URL", result.stderr)
+
+    def test_redirect_within_https_is_followed(self):
+        for header in [
+            "Location: https://objects.example.invalid/mise.tar.gz",
+            "Location: HTTPS://objects.example.invalid/mise.tar.gz",
+            "Location: /mise.tar.gz",
+            "Content-Type: application/octet-stream",
+        ]:
+            with self.subTest(header=header):
+                result, downloaded, leftovers = self.download(header)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(downloaded)
+                self.assertEqual(leftovers, [])
+                self.assertTrue(result.stdout.strip().endswith("/mise.tar.gz"), result.stdout)
+
+                result, leftovers = self.fetch(header)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "body\n")
+                self.assertEqual(leftovers, [])
 
 
 if __name__ == "__main__":
