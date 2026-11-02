@@ -1174,14 +1174,15 @@ impl SkillsTarget {
             }
             return Ok(());
         }
-        if !self.create_alias || !self.dir.is_dir() {
+        // A `.claude` that is itself a link may be shared with other projects;
+        // a `skills` made inside it would be theirs too.
+        if !self.create_alias || !self.dir.is_dir() || file::is_symlink_or_junction(parent) {
             return Ok(());
         }
         file::create_dir_all(parent)?;
         // Relative, so a project that moves keeps its link. A Windows
-        // junction needs the absolute path, and so does a `.claude` that is
-        // itself a link, which would resolve `..` somewhere else.
-        let target = if cfg!(windows) || file::is_symlink_or_junction(parent) {
+        // junction needs the absolute path.
+        let target = if cfg!(windows) {
             self.dir.clone()
         } else {
             PathBuf::from("../.agents/skills")
