@@ -119,8 +119,13 @@ pub(super) fn ensure_homebrew_did_not_take_ownership(token: &str, stage: &Path) 
 /// version as installed: `.metadata/<version>/<timestamp>/Casks/<token>.json`.
 ///
 /// Homebrew writes `{}` here for a cask it loaded from its API and reads the
-/// definition from the API on demand. Once this exists mise treats the cask as
-/// Homebrew's (see [`homebrew_metadata_present`]), so `brew upgrade` takes over.
+/// definition from the API on demand. Beside the versions it writes
+/// `INSTALL_RECEIPT.json` (Homebrew's `Cask::Tab`), which `brew info` reads for
+/// the install time and whether the cask was installed on request. The receipt
+/// omits `uninstall_artifacts`, so `brew uninstall` still reads the cask
+/// definition, as it does for a cask without that key. Once this exists mise
+/// treats the cask as Homebrew's (see [`homebrew_metadata_present`]), so
+/// `brew upgrade` takes over.
 pub(super) fn write_homebrew_metadata(token_dir: &Path, token: &str, version: &str) -> Result<()> {
     let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S%.3f").to_string();
     // Built beside `.metadata` and renamed into place, so a failed write never
@@ -135,12 +140,31 @@ pub(super) fn write_homebrew_metadata(token_dir: &Path, token: &str, version: &s
         .join(timestamp)
         .join("Casks")
         .join(format!("{token}.json"));
+    let receipt = serde_json::to_vec_pretty(&install_receipt(version))?;
     let published = write_durable_file(&record, b"{}")
+        .and_then(|()| write_durable_file(&stage.join("INSTALL_RECEIPT.json"), &receipt))
         .and_then(|()| file::rename(&stage, token_dir.join(".metadata")));
     if published.is_err() {
         let _ = file::remove_all(&stage);
     }
     published
+}
+
+/// The `INSTALL_RECEIPT.json` body for an official-tap cask the user asked for.
+fn install_receipt(version: &str) -> serde_json::Value {
+    serde_json::json!({
+        "installed_as_dependency": false,
+        "installed_on_request": true,
+        "loaded_from_api": true,
+        "time": chrono::Utc::now().timestamp(),
+        "source": {
+            "path": null,
+            "tap": "homebrew/cask",
+            "tap_git_head": null,
+            "version": version,
+        },
+        "arch": "arm64",
+    })
 }
 
 /// Whether a requested name resolves from Homebrew's official cask tap.

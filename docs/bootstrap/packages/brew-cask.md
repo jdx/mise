@@ -215,7 +215,9 @@ homebrew_metadata = true
 
 After mise installs a cask, it then writes the metadata file Homebrew looks for
 (`.metadata/<version>/<timestamp>/Casks/<token>.json`, containing `{}` as for a
-cask Homebrew loaded from its API). Homebrew reads the cask definition from its
+cask Homebrew loaded from its API) and an `INSTALL_RECEIPT.json` beside it, so
+`brew info` shows the install time and that you installed the cask yourself
+rather than as a dependency. Homebrew reads the cask definition from its
 API and takes the installed version from the Caskroom folder name, so
 `brew upgrade`, `brew outdated` and `brew doctor` treat the cask like one it
 installed.

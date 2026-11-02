@@ -433,6 +433,15 @@ fn written_homebrew_metadata_hands_the_cask_to_homebrew() -> Result<()> {
     assert_eq!(stamp.as_bytes()[14], b'.');
     let record = versions.join(&stamp).join("Casks/example.json");
     assert_eq!(mise_util::file::read_to_string(record)?, "{}");
+    let receipt: serde_json::Value = serde_json::from_str(&mise_util::file::read_to_string(
+        token_dir.join(".metadata/INSTALL_RECEIPT.json"),
+    )?)?;
+    assert_eq!(receipt["installed_on_request"], true);
+    assert_eq!(receipt["installed_as_dependency"], false);
+    assert_eq!(receipt["source"]["tap"], "homebrew/cask");
+    assert_eq!(receipt["source"]["version"], "2.40.0");
+    assert!(receipt["time"].as_i64().is_some_and(|t| t > 0));
+    assert!(receipt.get("uninstall_artifacts").is_none());
     assert_eq!(
         homebrew_installed_version("example")?.as_deref(),
         Some("2.40.0")
