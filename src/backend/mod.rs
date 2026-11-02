@@ -4734,7 +4734,10 @@ pub trait Backend: Debug + Send + Sync {
                     .unwrap_or_else(|| self.ba().installs_path().to_path_buf());
                 let filter = !self.include_prereleases(&self.ba().opts());
                 let installed_symlink = installs_path.join("latest");
-                if installed_symlink.exists()
+                // The generated `latest` link leaves pre-releases out, so it
+                // only answers a request that leaves them out too.
+                if filter
+                    && installed_symlink.exists()
                     && let Some(target) = file::resolve_symlink(&installed_symlink)?
                 {
                     let version = target
@@ -4745,7 +4748,7 @@ pub trait Backend: Debug + Send + Sync {
                     // A `latest` link written before the backend could tell this
                     // version is a pre-release must not keep winning, and neither
                     // may one left pointing into an interrupted install.
-                    if (!filter || !self.is_backend_prerelease(&version))
+                    if !self.is_backend_prerelease(&version)
                         && !install_state::is_incomplete(self.ba(), &version)
                     {
                         return Ok(Some(version));
@@ -4756,7 +4759,17 @@ pub trait Backend: Debug + Send + Sync {
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
-                    .filter(|v| !install_state::is_incomplete(self.ba(), v))
+                    .filter(|v| {
+                        // An identity-layout version is a link, and its marker is
+                        // keyed by the installation the link names.
+                        let key =
+                            crate::install_layout::resolver::link_target(&installs_path.join(v))
+                                .and_then(|install| {
+                                    install.file_name().map(|n| n.to_string_lossy().to_string())
+                                })
+                                .unwrap_or_else(|| v.clone());
+                        !install_state::is_incomplete(self.ba(), &key)
+                    })
                     .filter(|v| v != "latest")
                     .collect_vec();
                 install_state::sort_versions(&mut installed);
