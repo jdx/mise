@@ -3707,6 +3707,27 @@ packages:
         );
     }
 
+    /// The generated `latest` link leaves pre-releases out, so it must not
+    /// hold a pre-release request back on the stable install (#15256).
+    #[test]
+    fn latest_installed_version_with_prereleases_skips_stable_latest_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let installs_path = tmp.path().join("installs/npm-happy-prerelease-link");
+        std::fs::create_dir_all(installs_path.join("1.2.4")).unwrap();
+        std::fs::create_dir_all(installs_path.join("1.3.1-3")).unwrap();
+        crate::file::make_symlink_or_file(Path::new("./1.2.4"), &installs_path.join("latest"))
+            .unwrap();
+        let mut opts = ToolVersionOptions::default();
+        opts.opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(true));
+        let backend = test_backend("happy-prerelease-link", Some(installs_path), Some(opts));
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap().as_deref(),
+            Some("1.3.1-3")
+        );
+    }
+
     #[test]
     fn installed_versions_matching_skips_numeric_prereleases_unless_requested() {
         let tmp = tempfile::tempdir().unwrap();
