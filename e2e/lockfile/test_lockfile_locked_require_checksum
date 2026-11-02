@@ -14,10 +14,13 @@ mkdir -p "$HEADERS_LOG_DIR"
 start_http_server --headers-log "$HEADERS_LOG_DIR"
 LOCAL_URL="http://127.0.0.1:$HTTP_PORT/hello-world-1.0.0.tar.gz"
 
-cat <<EOF >mise.toml
+write_config() {
+  cat <<EOF >mise.toml
 [tools]
-"http:hello-require-checksum" = { version = "1.0.0", url = "$URL", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
+"http:hello-require-checksum" = { version = "1.0.0", url = "$1", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
 EOF
+}
+write_config "$LOCAL_URL"
 
 cat <<EOF >mise.lock
 [[tools."http:hello-require-checksum"]]
@@ -29,6 +32,8 @@ EOF
 MISE_LOCKED_REQUIRE_CHECKSUM=1 assert_fail "mise install --locked" "No lockfile checksum found for http:hello-require-checksum@1.0.0 on platform $PLATFORM ($LOCAL_URL)"
 assert_directory_empty "$HEADERS_LOG_DIR"
 assert_fail "mise where http:hello-require-checksum"
+
+write_config "$URL"
 
 cat <<EOF >mise.lock
 [[tools."http:hello-require-checksum"]]
