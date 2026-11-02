@@ -5170,7 +5170,8 @@ pub trait Backend: Debug + Send + Sync {
         }
         if ctx.locked && self.supports_lockfile_url() {
             let platform_key = self.get_platform_key_for(&tv);
-            let has_lockfile_url = tv.lock_platforms.get(&platform_key).is_some_and(|p| {
+            let locked_platform = tv.lock_platforms.get(&platform_key);
+            let has_lockfile_url = locked_platform.is_some_and(|p| {
                 p.url.is_some()
                     || (self.resolves_locked_url_from_checksum() && p.is_pinned_without_url())
             });
@@ -5181,6 +5182,44 @@ pub trait Backend: Debug + Send + Sync {
                     tv.style(),
                     platform_key
                 );
+            }
+            // Refuse before downloading, so a lockfile with URLs but no
+            // checksums cannot install whatever those URLs serve. Only merge
+            // mode writes such entries, so the setting goes with it.
+            if settings.locked_require_checksum.is_some() {
+                deprecated_at!(
+                    "2027.10.0",
+                    "2028.10.0",
+                    "setting.locked_require_checksum",
+                    "locked_require_checksum is no longer needed: locked mode always requires a lockfile checksum. Remove the setting."
+                );
+            }
+            if settings
+                .locked_require_checksum
+                .unwrap_or(settings.generate_lockfiles())
+                && let Some(p) = locked_platform
+            {
+                let missing = std::iter::once((p.url.as_deref(), &p.checksum))
+                    .chain(
+                        p.additional_artifacts
+                            .iter()
+                            .map(|a| (Some(a.url.as_str()), &a.checksum)),
+                    )
+                    .find(|(_, checksum)| checksum.is_none());
+                if let Some((url, _)) = missing {
+                    bail!(
+                        "No lockfile checksum found for {} on platform {}{} \
+                        (--locked mode)\n\
+                        hint: Run `mise lock` to record checksums, or set locked_require_checksum = false",
+                        tv.style(),
+                        platform_key,
+                        url.map(|u| format!(
+                            " ({})",
+                            crate::install_layout::resolver::redact_credentials(u)
+                        ))
+                        .unwrap_or_default(),
+                    );
+                }
             }
         }
 
