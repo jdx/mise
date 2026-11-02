@@ -487,8 +487,8 @@ A file overrides only the keys it sets; the others keep their inherited values.
 `env` replaces the inherited list, and `env = []` clears it, with one exception:
 a file found from the current directory cannot drop an environment that
 `~/.config/mise/miserc.local.toml`, `~/.config/mise/miserc.toml` or
-`/etc/mise/miserc.toml` selects. Those names stay in the list, ahead of the
-project's own, so a project cannot turn off a baseline such as
+`/etc/mise/miserc.toml` selects. Those names stay in the list in their own
+order, ahead of the project's own, so a project cannot turn off a baseline such as
 `paranoid = true` that you load from a global environment. The `-E` flag and
 environment variables such as `MISE_ENV` override every `.miserc.toml` file.
 
@@ -513,7 +513,9 @@ To choose for the whole machine without editing a shared global
 env = ["work"]
 ```
 
-Project `.miserc.toml` and `.miserc.local.toml` files can still override it.
+Project `.miserc.toml` and `.miserc.local.toml` files can add environments to
+it but cannot remove `work`. Use `-E` or `MISE_ENV` to replace it for one
+command.
 
 ### Templates in .miserc.toml
 

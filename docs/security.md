@@ -78,8 +78,14 @@ idea:
 - A [`.miserc.toml`](/configuration.html#miserc) never needs trust. It only
   holds early settings that choose which config files load, and mise finds it
   by walking up from the current directory. A project's `env` list can add
-  environments but cannot drop one that a global or system `miserc.toml`
-  selects. Templates in a
+  environments but cannot drop or reorder one that a global or system
+  `miserc.toml` selects. The project's own environments come after the global
+  ones and override them, so a global environment protects only settings that
+  project config cannot set, such as `paranoid`. The other keys a project file
+  can set change which project files load and how far up mise looks for them;
+  they cannot hide global or system config. The exception is `env_conf_d`,
+  which also decides whether the suffix of a dotted global `conf.d` fragment
+  name selects an environment. Templates in a
   project `.miserc.toml` see no environment variables and may use only `if`
   statements and a short list of functions and filters, so they cannot leak your
   environment or hang mise; see

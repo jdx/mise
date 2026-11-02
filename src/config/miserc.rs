@@ -461,18 +461,18 @@ fn load_miserc_files(files: Vec<PathBuf>) -> Result<MisercSettings> {
 /// A project `.miserc.toml` loads without trust, so its `env` adds to the
 /// environments the system and global files select and cannot drop one: an
 /// operator can load a baseline such as `paranoid = true` from one. The global
-/// names go first so the project's own names, loaded later, still take
-/// precedence over them.
+/// names keep their order and go first, so the project cannot reorder them and
+/// its own names, loaded later, still take precedence over them.
 fn keep_global_envs(settings: &mut MisercSettings, global_env: &[String]) {
     let Some(envs) = settings.env.take() else {
         return;
     };
-    let mut kept: Vec<String> = global_env
-        .iter()
-        .filter(|name| !envs.contains(name))
-        .cloned()
-        .collect();
-    kept.extend(envs);
+    let mut kept = global_env.to_vec();
+    for name in envs {
+        if !kept.contains(&name) {
+            kept.push(name);
+        }
+    }
     settings.env = Some(kept);
 }
 
@@ -668,7 +668,7 @@ mod tests {
         keep_global_envs(&mut settings, &global);
         assert_eq!(
             settings.env,
-            Some(["work", "development", "floor"].map(String::from).to_vec())
+            Some(["floor", "work", "development"].map(String::from).to_vec())
         );
 
         let mut settings = MisercSettings::default();

@@ -16,8 +16,8 @@ cat >project/mise.toml <<'TOML'
 FROM_PROJECT = "{{ exec(command='echo pwned') }}"
 TOML
 cat >project/mise.development.toml <<'TOML'
-[env]
-SELECTED = "development"
+[settings]
+paranoid = false
 TOML
 cd project || exit 1
 assert "mise settings get paranoid" "true"
@@ -30,16 +30,21 @@ for file in .miserc.toml .miserc.local.toml .config/miserc.toml; do
   rm "$file"
 done
 
-# A parent directory's file cannot drop it either.
+# A parent directory's file cannot drop it either, nor can a template.
 echo 'env = []' >../.miserc.toml
 assert "mise settings get paranoid" "true"
 rm ../.miserc.toml
+echo '{% if os() %}env = []{% endif %}' >.miserc.toml
+assert "mise settings get paranoid" "true"
 
 # The project can still add its own environments, which paranoid mode makes
-# trust before they load.
-echo 'env = ["development"]' >.miserc.toml
-assert "mise settings get paranoid" "true"
-assert_fail "mise config ls" "mise.development.toml are not trusted"
+# trust before they load. One listed after the global environment, or listed
+# with the global one moved last, cannot turn paranoid off.
+for envs in '["development"]' '["development", "floor"]'; do
+  echo "env = $envs" >.miserc.toml
+  assert "mise settings get paranoid" "true"
+  assert_fail "mise config ls" "mise.development.toml are not trusted"
+done
 
 # The user can still choose for themselves.
-assert "MISE_ENV=development mise settings get paranoid" "false"
+assert "MISE_ENV=other mise settings get paranoid" "false"
