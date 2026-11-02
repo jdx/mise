@@ -34,7 +34,8 @@ mise skills sync
 assert_contains "cat .agents/skills/skilled/SKILL.md" "# skilled 1.0.0"
 assert_contains "cat .claude/skills/skilled/SKILL.md" "# skilled 1.0.0"
 assert 'test -L .claude/skills; echo $?' "0"
-assert "git status --porcelain" ""
+# Only the fixture is left to track; the links and the alias are excluded.
+assert "git ls-files --others --exclude-standard" "mise.toml"
 
 # Only .claude/skills exists: it stays the target.
 cd .. || exit 1
@@ -68,3 +69,14 @@ skilled = "1.0.0"' >mise.toml
 MISE_SKILLS_DIR=custom mise skills sync
 assert_contains "cat custom/skilled/SKILL.md" "# skilled 1.0.0"
 assert 'test -e .agents; echo $?' "1"
+
+# A .claude that is itself a link: the alias must still reach the project.
+cd .. || exit 1
+mkdir dotfiles-claude real
+ln -s "$PWD/dotfiles-claude" real/.claude
+cd real || exit 1
+echo '[tools]
+skilled = "1.0.0"' >mise.toml
+mise install
+mise skills sync
+assert_contains "cat .claude/skills/skilled/SKILL.md" "# skilled 1.0.0"

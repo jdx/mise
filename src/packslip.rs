@@ -1148,8 +1148,9 @@ impl SkillsTarget {
         };
         file::create_dir_all(parent)?;
         // Relative, so a project that moves keeps its link. A Windows
-        // junction needs the absolute path.
-        let target = if cfg!(windows) {
+        // junction needs the absolute path, and so does a `.claude` that is
+        // itself a link, which would resolve `..` somewhere else.
+        let target = if cfg!(windows) || file::is_symlink_or_junction(parent) {
             self.dir.clone()
         } else {
             PathBuf::from("../.agents/skills")
