@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 
-# locked_require_checksum makes --locked refuse a lockfile entry that has a URL
-# but no checksum, before anything is downloaded.
+# --locked refuses a lockfile entry that has a URL but no checksum, before
+# anything is downloaded. locked_require_checksum = false and merge mode, which
+# can write such entries, install them.
+
+# The harness defaults to merge mode; test the default, generate.
+export MISE_LOCKFILE_MODE=generate
 
 detect_platform
 PLATFORM="$MISE_PLATFORM"
 URL="https://mise.jdx.dev/test-fixtures/hello-world-1.0.0.tar.gz"
+CHECKSUM="blake3:71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f"
 
 # The entry without a checksum points at a local server that logs every
 # request, so the test can show nothing was downloaded.
@@ -20,27 +25,32 @@ write_config() {
 "http:hello-require-checksum" = { version = "1.0.0", url = "$1", bin_path = "hello-world-1.0.0/bin", postinstall = "chmod +x \$MISE_TOOL_INSTALL_PATH/hello-world-1.0.0/bin/hello-world" }
 EOF
 }
-write_config "$LOCAL_URL"
 
-cat <<EOF >mise.lock
+write_lock() {
+  cat <<EOF >mise.lock
 [[tools."http:hello-require-checksum"]]
 version = "1.0.0"
 backend = "http:hello-require-checksum"
-"platforms.$PLATFORM" = { url = "$LOCAL_URL" }
+"platforms.$PLATFORM" = { url = "$1"${2:-} }
 EOF
+}
 
-MISE_LOCKED_REQUIRE_CHECKSUM=1 assert_fail "mise install --locked" "No lockfile checksum found for http:hello-require-checksum@1.0.0 on platform $PLATFORM ($LOCAL_URL)"
+write_config "$LOCAL_URL"
+write_lock "$LOCAL_URL"
+assert_fail "mise install --locked" "No lockfile checksum found for http:hello-require-checksum@1.0.0 on platform $PLATFORM ($LOCAL_URL)"
 assert_directory_empty "$HEADERS_LOG_DIR"
 assert_fail "mise where http:hello-require-checksum"
 
+# Opting out, and merge mode, install the entry as before.
 write_config "$URL"
+write_lock "$URL"
+MISE_LOCKED_REQUIRE_CHECKSUM=0 assert "mise install --locked"
+assert_contains "mise x -- hello-world" "hello world"
+mise uninstall --all http:hello-require-checksum
+MISE_LOCKFILE_MODE=merge assert "mise install --locked"
+mise uninstall --all http:hello-require-checksum
 
-cat <<EOF >mise.lock
-[[tools."http:hello-require-checksum"]]
-version = "1.0.0"
-backend = "http:hello-require-checksum"
-"platforms.$PLATFORM" = { url = "$URL", checksum = "blake3:71f774faa03daf1a58cc3339f8c73e6557348c8e0a2f3fb8148cc26e26bad83f" }
-EOF
-
-MISE_LOCKED_REQUIRE_CHECKSUM=1 assert "mise install --locked"
+# A checksum satisfies the requirement.
+write_lock "$URL" ", checksum = \"$CHECKSUM\""
+assert "mise install --locked"
 assert_contains "mise x -- hello-world" "hello world"

@@ -5184,8 +5184,19 @@ pub trait Backend: Debug + Send + Sync {
                 );
             }
             // Refuse before downloading, so a lockfile with URLs but no
-            // checksums cannot install whatever those URLs serve.
-            if settings.locked_require_checksum
+            // checksums cannot install whatever those URLs serve. Only merge
+            // mode writes such entries, so the setting goes with it.
+            if settings.locked_require_checksum.is_some() {
+                deprecated_at!(
+                    "2027.10.0",
+                    "2028.10.0",
+                    "setting.locked_require_checksum",
+                    "locked_require_checksum is no longer needed: locked mode always requires a lockfile checksum. Remove the setting."
+                );
+            }
+            if settings
+                .locked_require_checksum
+                .unwrap_or(settings.generate_lockfiles())
                 && let Some(p) = locked_platform
             {
                 let missing = std::iter::once((p.url.as_deref(), &p.checksum))
@@ -5198,8 +5209,8 @@ pub trait Backend: Debug + Send + Sync {
                 if let Some((url, _)) = missing {
                     bail!(
                         "No lockfile checksum found for {} on platform {}{} \
-                        (--locked mode with locked_require_checksum)\n\
-                        hint: Run `mise lock` to record checksums, or unset locked_require_checksum",
+                        (--locked mode)\n\
+                        hint: Run `mise lock` to record checksums, or set locked_require_checksum = false",
                         tv.style(),
                         platform_key,
                         url.map(|u| format!(

@@ -2468,7 +2468,6 @@
           "type": "boolean"
         },
         "locked_require_checksum": {
-          "default": false,
           "description": "Make locked mode fail when the lockfile has no checksum for a download.",
           "type": "boolean"
         },

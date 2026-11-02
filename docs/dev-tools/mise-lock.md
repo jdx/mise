@@ -305,17 +305,18 @@ backends that record no URL; see [backend support](#backend-support). npm and
 PyPI tools in a format version 2 or newer lockfile also need their
 [dependency graph](#dependency-graphs).
 
-Locked mode checks a lockfile checksum when one is there, but does not require
-one: an entry with a URL and no checksum installs whatever that URL serves. To
-reject such entries, set
-[`locked_require_checksum`](/configuration/settings.html#locked_require_checksum):
+Each of those URLs also needs a checksum, or mise fails before downloading,
+naming the tool, platform and URL. `mise lock` records the missing checksums,
+downloading and hashing an artifact when its release publishes none. A
+hand-written entry, or one from
+[`lockfile_mode = "merge"`](/configuration/settings.html#lockfile_mode), can
+lack one; merge mode does not require it. Set
+[`locked_require_checksum`](/configuration/settings.html#locked_require_checksum)
+to `false` to install such entries anyway:
 
 ```sh
-MISE_LOCKED_REQUIRE_CHECKSUM=1 mise install --locked
+MISE_LOCKED_REQUIRE_CHECKSUM=0 mise install --locked
 ```
-
-mise then fails before downloading, naming the tool, platform and URL that
-have no checksum. `mise lock` records the missing checksums.
 
 To make locked mode your personal default, set
 [`locked = true`](/configuration/settings.html#locked) in your global config.

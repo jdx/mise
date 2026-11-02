@@ -2078,7 +2078,8 @@ Resolves tools only from lockfile entries, instead of looking versions and URLs
 up through the GitHub API or a registry. A tool with no matching entry is an
 error, both for installs and for lookups such as `mise which`, even when the
 tool is already installed. Backends that lock download URLs must have one for
-the current platform, and recorded dependency graphs must be present and match
+the current platform, with a checksum (see
+[`locked_require_checksum`](#locked_require_checksum)), and recorded dependency graphs must be present and match
 their digest; backends that do not lock URLs, such as `cargo`, `go`, `gem` and
 `asdf`, need only the version. Installs in this mode do not update lockfiles.
 Same as passing `--locked`.
@@ -2096,17 +2097,24 @@ env = "MISE_LOCKED"
 type = "Bool"
 
 [locked_require_checksum]
-default = false
 description = "Make locked mode fail when the lockfile has no checksum for a download."
 docs = """
-With `true`, [`locked`](#locked) mode also requires a checksum in the lockfile
-for every artifact it downloads for the current platform, including additional
-GitHub release assets, and fails before downloading when one is missing.
-Without it, a lockfile entry with a URL but no checksum installs whatever the
-URL serves. Backends that do not lock download URLs, such as `cargo` and `go`,
-are not affected. Run `mise lock` to fill in missing checksums.
+[`locked`](#locked) mode requires a checksum in the lockfile for every artifact
+it downloads for the current platform, including additional GitHub release
+assets, and fails before downloading when one is missing. Otherwise a lockfile
+entry with a URL but no checksum would install whatever the URL serves. Run
+`mise lock` to fill in missing checksums: it downloads and hashes any artifact
+whose checksum the release does not publish. Backends that do not lock download
+URLs, such as `cargo` and `go`, are not affected.
+
+Unset, this is on, except with
+[`lockfile_mode = "merge"`](#lockfile_mode), which can lock a URL without a
+checksum. Set it to `false` to install such entries anyway, or to `true` to
+require checksums in merge mode too. The setting will be removed after merge
+mode is.
 """
 env = "MISE_LOCKED_REQUIRE_CHECKSUM"
+optional = true
 type = "Bool"
 
 [locked_scopes]
