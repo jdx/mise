@@ -362,7 +362,7 @@ impl PIPXBackend {
             )
         } else {
             let python = self.spawnable_dependency(&ctx.config, None, "python").await
-                .ok_or_else(|| eyre!("Python graph installs require an installed interpreter; run `mise install python`"))?;
+                .ok_or_else(|| eyre!("Python graph installs require an installed interpreter; add python to your config (`mise use python`) and run `mise install`"))?;
             let identity = if let Some(identity) =
                 self.configured_python_identity(&ctx.config).await
             {
@@ -859,7 +859,7 @@ impl PIPXBackend {
         let uv = self.lock_uv_program(&ctx.config).await?;
         let (python, _) = tv.uv_python.as_ref().ok_or_else(|| {
             eyre!(
-                "Python graph installs require an installed interpreter; run `mise install python`"
+                "Python graph installs require an installed interpreter; add python to your config (`mise use python`) and run `mise install`"
             )
         })?;
         let project = tv.install_path().join(".mise-uv");
