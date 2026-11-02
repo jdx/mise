@@ -516,7 +516,11 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<(RegistryTool
     };
     let overrides = string_array(table.get("overrides"), "overrides")?;
     let os = string_array(table.get("os"), "os")?;
-    let idiomatic_files = parse_registry_idiomatic_files(table.get("idiomatic_files"))?;
+    let mut idiomatic_files = parse_registry_idiomatic_files(table.get("idiomatic_files"))?;
+    // Archives published before the floor was deprecated list it with no marker.
+    if short == "cmake" {
+        idiomatic_files.retain(|file| file.path != "CMakeLists.txt");
+    }
     let detect = string_array(table.get("detect"), "detect")?;
     let description = table
         .get("description")
@@ -1998,6 +2002,22 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
             Some(VersionOrder::Source)
         );
         assert!(registry.missing_version_order);
+    }
+
+    #[test]
+    fn test_dynamic_registry_drops_the_retired_cmake_floor_file() {
+        let registry = registry_from_sources(BTreeMap::from([(
+            "cmake".to_string(),
+            r#"
+backends = ["aqua:Kitware/CMake"]
+version_order = "semver"
+idiomatic_files = [{ path = "CMakeLists.txt", version_regex = 'cmake_minimum_required\((\S+)' }]
+"#
+            .to_string(),
+        )]))
+        .unwrap();
+
+        assert!(registry.get("cmake").unwrap().idiomatic_files.is_empty());
     }
 
     #[test]
