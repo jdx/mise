@@ -4759,7 +4759,17 @@ pub trait Backend: Debug + Send + Sync {
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
                     .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
-                    .filter(|v| !install_state::is_incomplete(self.ba(), v))
+                    .filter(|v| {
+                        // An identity-layout version is a link, and its marker is
+                        // keyed by the installation the link names.
+                        let key =
+                            crate::install_layout::resolver::link_target(&installs_path.join(v))
+                                .and_then(|install| {
+                                    install.file_name().map(|n| n.to_string_lossy().to_string())
+                                })
+                                .unwrap_or_else(|| v.clone());
+                        !install_state::is_incomplete(self.ba(), &key)
+                    })
                     .filter(|v| v != "latest")
                     .collect_vec();
                 install_state::sort_versions(&mut installed);
