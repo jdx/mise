@@ -77,10 +77,16 @@ jobs:
           auth=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)
           echo "::add-mask::$auth"
           export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic $auth"
+          n=0
           for b in jouet-cost-bundles/*.bundle; do
             [ -e "$b" ] || continue
             jouet cost fetch "./$b"
+            n=$((n + 1))
           done
+          if [ "$n" -eq 0 ]; then
+            echo "No timing bundles were uploaded; nothing to push."
+            exit 0
+          fi
           jouet cost push
 
   test-ci:
