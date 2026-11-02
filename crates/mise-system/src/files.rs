@@ -3533,7 +3533,7 @@ fn reconcile_symlink_each_states(
 fn settle_failed_apply(
     req: &FileRequest,
     created: &[PathBuf],
-    existed: &HashSet<PathBuf>,
+    stale: &HashSet<PathBuf>,
     pending: Vec<journal::PendingChange>,
 ) {
     remove_empty_created_dirs(created);
@@ -3551,18 +3551,22 @@ fn settle_failed_apply(
     if req.mode == FileMode::SymlinkEach && !save_partial_symlink_each_state(req) {
         return;
     }
-    // A path that was there before may have held the user's file, which a `--force` write
-    // removed before failing: left unfinished, recovery keeps its preimage and asks. One that
-    // is unchanged settles that way too. Only what the apply created, and mise's own records,
-    // are finished as the failure left them.
+    // What the journal captured as there before may have been the user's file, which a
+    // `--force` write removed before failing: left unfinished, recovery keeps its preimage and
+    // asks. One that is unchanged settles that way too. Finished as the failure left them are
+    // only paths captured as missing, links captured where the entry recorded a stale link of
+    // its own, and mise's own records. The capture decides, not an earlier look at the path:
+    // something may have replaced a stale link since.
     let records = [symlink_each_state_path(req), target_state_path(req)];
-    let created_here = pending
+    let finished = pending
         .into_iter()
         .filter(|change| {
-            !existed.contains(change.path()) || records.iter().any(|r| r == change.path())
+            change.prior_missing()
+                || change.prior_link() && stale.contains(change.path())
+                || records.iter().any(|r| r == change.path())
         })
         .collect();
-    journal::commit_changes(created_here);
+    journal::commit_changes(finished);
 }
 
 /// Remove the directories in `created` that are still empty, deepest first, so a parent
@@ -4983,22 +4987,15 @@ pub fn execute_apply(
             if req.mode == FileMode::SymlinkEach {
                 unfold_source_links(req, written)?;
             }
-            let touched = touched_paths(req)?;
-            // what may have held the user's content (see `settle_failed_apply`). A stale link
-            // the entry recorded as its own holds none, and pruning it is safe to finish
+            // the links the entry recorded as its own, which a failed apply may finish pruning
+            // (see `settle_failed_apply`)
             let stale = if req.mode == FileMode::SymlinkEach {
                 stale_links(req)?.into_iter().collect()
             } else {
                 HashSet::new()
             };
-            let existed = touched
-                .iter()
-                .filter(|(path, _)| {
-                    !stale.contains(path) && std::fs::symlink_metadata(path).is_ok()
-                })
-                .map(|(path, _)| path.clone())
-                .collect::<HashSet<_>>();
-            let pending = journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched)?;
+            let pending =
+                journal::begin_changes_with(DOTFILES_PART, &req.target_raw, touched_paths(req)?)?;
             let start = written.len();
             // what is missing now is what a failed apply may have to take away again
             let mut created = missing_ancestors(&req.target);
@@ -5014,7 +5011,7 @@ pub fn execute_apply(
                 }
             }
             if let Err(err) = apply_one(req, rendered.as_deref(), written) {
-                settle_failed_apply(req, &created, &existed, pending);
+                settle_failed_apply(req, &created, &stale, pending);
                 return Err(err);
             }
             // a target that appeared since planning is left alone and not
