@@ -489,7 +489,10 @@ a file found from the current directory cannot drop an environment that
 `~/.config/mise/miserc.local.toml`, `~/.config/mise/miserc.toml` or
 `/etc/mise/miserc.toml` selects. Those names stay in the list in their own
 order, ahead of the project's own, so a project cannot turn off a baseline such as
-`paranoid = true` that you load from a global environment. The `-E` flag and
+`paranoid = true` that you load from a global environment. A project's
+`env_conf_d` can still change how a global `conf.d` fragment with a dot in its
+name loads; see [configuration trust](/security.html#configuration-trust). The
+`-E` flag and
 environment variables such as `MISE_ENV` override every `.miserc.toml` file.
 
 ### Personal and machine-wide choices

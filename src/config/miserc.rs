@@ -11,6 +11,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
 use eyre::Result;
+use indexmap::IndexSet;
 use path_absolutize::Absolutize;
 use tera::Context;
 
@@ -467,13 +468,10 @@ fn keep_global_envs(settings: &mut MisercSettings, global_env: &[String]) {
     let Some(envs) = settings.env.take() else {
         return;
     };
-    let mut kept = global_env.to_vec();
-    for name in envs {
-        if !kept.contains(&name) {
-            kept.push(name);
-        }
-    }
-    settings.env = Some(kept);
+    // A set, since an untrusted file can list a great many names.
+    let mut kept: IndexSet<String> = global_env.iter().cloned().collect();
+    kept.extend(envs);
+    settings.env = Some(kept.into_iter().collect());
 }
 
 /// `env` and the override filenames only choose which files mise loads from the
