@@ -2678,10 +2678,12 @@ impl Lock {
             // The request a tool arg names for this tool, if any. A bare name
             // (`mise lock hk`) selects the tool under any backend: a shadowed
             // request is locked under this lockfile's own backend, which the
-            // arg's backend need not match.
+            // arg's backend need not match. The last arg naming a tool wins, as
+            // it does for the config bump.
             let specified_request = |ba: &crate::args::BackendArg| {
                 self.tool
                     .iter()
+                    .rev()
                     .find(|t| {
                         (!t.ba.short.contains(':') && t.ba.short == ba.short)
                             || t.ba.full() == ba.full()
