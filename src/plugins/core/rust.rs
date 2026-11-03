@@ -46,6 +46,37 @@ fn parse_channel_manifest_date(manifest: &str, channel: &str) -> Result<jiff::ci
         .wrap_err_with(|| format!("invalid Rust {channel} channel manifest date: {date}"))
 }
 
+/// The release number the stable channel manifest points at, such as `1.80.0` from
+/// `1.80.0 (051478957 2024-07-21)`.
+fn parse_stable_manifest_version(manifest: &str) -> Result<String> {
+    let manifest: toml::Value =
+        toml::from_str(manifest).wrap_err("failed to parse the Rust stable channel manifest")?;
+    let version = manifest
+        .get("pkg")
+        .and_then(|pkg| pkg.get("rust"))
+        .and_then(|rust| rust.get("version"))
+        .and_then(toml::Value::as_str)
+        .and_then(|v| v.split_whitespace().next())
+        .filter(|v| regex!(r"^\d+\.\d+\.\d+$").is_match(v))
+        .ok_or_else(|| eyre::eyre!("Rust stable channel manifest is missing its version"))?;
+    Ok(version.to_string())
+}
+
+/// The release the mirror's stable channel points at, with the date of that build.
+async fn mirror_stable_release(
+    config_env: &IndexMap<String, String>,
+) -> Result<(String, Option<String>)> {
+    let url = channel_manifest_url_for(rustup_dist_server(config_env).as_deref(), "stable");
+    let manifest = HTTP_FETCH
+        .get_text_cached(&url)
+        .await
+        .wrap_err("failed to fetch the Rust stable channel manifest")?;
+    let created_at = parse_channel_manifest_date(&manifest, "stable")
+        .ok()
+        .map(channel_created_at);
+    Ok((parse_stable_manifest_version(&manifest)?, created_at))
+}
+
 fn parse_nightly_manifest(manifest: &str) -> Result<String> {
     let date = parse_channel_manifest_date(manifest, "nightly")?;
     Ok(format!("nightly-{date}"))
@@ -703,7 +734,8 @@ impl Backend for RustPlugin {
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         // A mirror is the user's source for toolchains, so GitHub is not asked for the
         // numbered releases. They resolve through the mirror's manifests instead.
-        let releases = if rustup_dist_server(&config.env().await?).is_some() {
+        let mirrored = rustup_dist_server(&config.env().await?).is_some();
+        let releases = if mirrored {
             vec![]
         } else {
             github::list_releases("rust-lang/rust").await?
@@ -722,6 +754,16 @@ impl Backend for RustPlugin {
             .rev()
             .collect();
         let config_env = config.env().await?;
+        if mirrored && let Ok((version, created_at)) = mirror_stable_release(&config_env).await {
+            // The newest release the mirror serves, so numbered selectors and release-age
+            // cutoffs have a concrete version to match.
+            versions.push(VersionInfo {
+                release_url: Some(format!("https://releases.rs/docs/{version}/")),
+                version,
+                created_at,
+                ..Default::default()
+            });
+        }
         let (beta_created_at, stable_created_at) = tokio::join!(
             current_channel_created_at("beta", &config_env),
             current_channel_created_at("stable", &config_env),
@@ -764,10 +806,17 @@ impl Backend for RustPlugin {
         Ok(versions)
     }
 
-    /// Behind a mirror `latest` is the `stable` channel, which the mirror serves
-    /// without a release listing.
+    /// Behind a mirror `latest` is the release the mirror's stable channel points at,
+    /// read from its manifest, or the `stable` channel when that cannot be read.
     async fn latest_stable_version(&self, config: &Arc<Config>) -> Result<Option<String>> {
-        Ok(rustup_dist_server(&config.env().await?).map(|_| "stable".to_string()))
+        let config_env = config.env().await?;
+        if rustup_dist_server(&config_env).is_none() {
+            return Ok(None);
+        }
+        Ok(Some(mirror_stable_release(&config_env).await.map_or_else(
+            |_| "stable".to_string(),
+            |(version, _)| version,
+        )))
     }
 
     /// Behind a mirror a numbered release is proven by its manifest, so it needs
@@ -785,11 +834,14 @@ impl Backend for RustPlugin {
             return Ok(None);
         }
         let url = release_manifest_url_for(server.as_deref(), version);
-        Ok(HTTP_FETCH
+        let rsp = HTTP_FETCH
             .head(&url)
             .await
-            .is_ok_and(|rsp| rsp.status().is_success())
-            .then(|| version.to_string()))
+            .wrap_err_with(|| format!("failed to check rust {version} on the mirror"))?;
+        if !rsp.status().is_success() {
+            bail!("rust {version} was not found on the mirror ({url})");
+        }
+        Ok(Some(version.to_string()))
     }
 
     async fn channel_for_cutoff(
@@ -1871,6 +1923,14 @@ const RUST_TARGET_ARCHES: &[&str] = &[
 mod tests {
     use super::*;
     use confique::Layer;
+
+    #[test]
+    fn test_parse_stable_manifest_version() {
+        let manifest =
+            "date = \"2024-07-25\"\n[pkg.rust]\nversion = \"1.80.0 (051478957 2024-07-21)\"\n";
+        assert_eq!(parse_stable_manifest_version(manifest).unwrap(), "1.80.0");
+        assert!(parse_stable_manifest_version("date = \"2024-07-25\"").is_err());
+    }
 
     #[test]
     fn test_release_manifest_url_for_mirror() {
