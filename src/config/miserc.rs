@@ -840,6 +840,14 @@ ceiling_paths = ["/home/user"]
     }
 
     #[test]
+    fn test_drop_env_set_members_leaving_the_directory() {
+        let mut settings: MisercSettings =
+            toml::from_str("[env_sets]\nteam = [\"ssh\", \"x/../../other\", \"a\\\\b\"]").unwrap();
+        drop_names_leaving_the_directory(&mut settings, Path::new("/work/.miserc.toml"));
+        assert_eq!(settings.env_sets.unwrap()["team"], ["ssh"]);
+    }
+
+    #[test]
     fn test_resolve_ignored_config_paths_from_declaring_file() {
         let mut settings = MisercSettings {
             ignored_config_paths: Some(BTreeSet::from([PathBuf::from("../vendor/./**/mise.toml")])),
