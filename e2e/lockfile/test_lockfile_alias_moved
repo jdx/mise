@@ -82,6 +82,17 @@ backend = "aqua:jqlang/jq"
 EOF
 
 assert_fail_contains "cd mono/packages/a && mise install --locked --dry-run 2>&1" "jq@pinned is not in the lockfile"
+# A binding in the root lockfile still applies
+cat <<EOF >mono/mise.lock
+lockfile_version = 3
+
+[[tools.jq]]
+version = "1.6"
+backend = "aqua:jqlang/jq"
+specifiers = ["pinned"]
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.6.tar.gz" }
+EOF
+assert_contains "cd mono/packages/a && mise install --locked --dry-run 2>&1" "jq@1.6"
 
 # A global config inside the monorepo still reads its own lockfile
 echo '[tools]' >mono/packages/a/mise.toml

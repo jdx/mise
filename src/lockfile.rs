@@ -5727,9 +5727,17 @@ pub(crate) fn get_locked_version(
             // so only a lockfile of the request's own config can say its lone
             // entry is this pin.
             if alias_resolved && !merged && !shared_lockfile {
+                // As with bindings, a request naming its backend only takes
+                // that backend's entry
+                let backend_matches = |v: &LockfileTool| {
+                    !request.ba().has_explicit_backend()
+                        || v.backend
+                            .as_ref()
+                            .is_none_or(|b| *b == request.ba().stored_full())
+                };
                 let exact = tools
                     .iter()
-                    .filter(|v| &v.options == request_options)
+                    .filter(|v| backend_matches(v) && &v.options == request_options)
                     .collect_vec();
                 if let [found] = exact.as_slice() {
                     trace!(
@@ -5744,7 +5752,7 @@ pub(crate) fn get_locked_version(
                     && !request_options.is_empty()
                     && let [found] = tools
                         .iter()
-                        .filter(|v| v.options.is_empty())
+                        .filter(|v| backend_matches(v) && v.options.is_empty())
                         .collect_vec()
                         .as_slice()
                 {
