@@ -398,6 +398,19 @@ function main() {
     );
     count++;
   }
+  // usage generates a page for the spec's `config` block; it has no command to
+  // take a description from.
+  const configPage = resolve(docsDir, "cli", "configuration.md");
+  if (existsSync(configPage)) {
+    const body = readFileSync(configPage, "utf8").replace(
+      /^---\r?\ndescription: [^\r\n]*\r?\n---\r?\n\r?\n/,
+      "",
+    );
+    writeFileSync(
+      configPage,
+      `---\ndescription: ${JSON.stringify("Settings that mise reads from CLI flags and environment variables")}\n---\n\n${body}`,
+    );
+  }
   removeEmptyDirs(resolve(docsDir, "cli"));
   console.log(
     `Added reference navigation to ${count} CLI pages; removed ${removed} under hidden commands`,

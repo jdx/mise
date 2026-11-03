@@ -8847,3 +8847,11 @@ mise which node --version
 20.0.0
 """# help="Show the version that provides it"
 }
+config {
+    prop task.remote_no_cache optional=#true type=bool env=MISE_TASK_REMOTE_NO_CACHE help="Do not use the cache for remote tasks" {
+        cli "--no-cache"
+    }
+    prop truncate optional=#true type=bool help="Truncate long terminal output to fit the available width" {
+        cli "--truncate" "--no-truncate"
+    }
+}

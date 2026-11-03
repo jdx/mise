@@ -154,3 +154,7 @@ Choose a command family below. Its page lists the available subcommands.
 ### Other commands
 
 - [`mise lsp`](/cli/lsp.html) — Run the language server for mise config files over stdin/stdout
+
+## Configuration
+
+- [Settings](/cli/configuration.html)
