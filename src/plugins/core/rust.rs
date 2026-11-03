@@ -62,6 +62,16 @@ fn parse_stable_manifest_version(manifest: &str) -> Result<String> {
     Ok(version.to_string())
 }
 
+/// Whether the mirror serves the manifest of a numbered release. Some mirrors reject
+/// HEAD, so a failed HEAD is retried as the GET rustup itself makes.
+async fn mirror_serves_release(url: &str) -> bool {
+    let head_ok = HTTP_FETCH
+        .head(url)
+        .await
+        .is_ok_and(|rsp| rsp.status().is_success());
+    head_ok || HTTP_FETCH.get_text(url).await.is_ok()
+}
+
 /// The release the mirror's stable channel points at, with the date of that build.
 async fn mirror_stable_release(
     config_env: &IndexMap<String, String>,
@@ -813,10 +823,16 @@ impl Backend for RustPlugin {
         if rustup_dist_server(&config_env).is_none() {
             return Ok(None);
         }
-        Ok(Some(mirror_stable_release(&config_env).await.map_or_else(
-            |_| "stable".to_string(),
-            |(version, _)| version,
-        )))
+        // The numbered release is used only when the mirror serves its manifest too, so
+        // a mirror with just the channel files still installs `stable`.
+        if let Ok((version, _)) = mirror_stable_release(&config_env).await {
+            let url =
+                release_manifest_url_for(rustup_dist_server(&config_env).as_deref(), &version);
+            if mirror_serves_release(&url).await {
+                return Ok(Some(version));
+            }
+        }
+        Ok(Some("stable".to_string()))
     }
 
     /// Behind a mirror a numbered release is proven by its manifest, so it needs
@@ -834,11 +850,7 @@ impl Backend for RustPlugin {
             return Ok(None);
         }
         let url = release_manifest_url_for(server.as_deref(), version);
-        let rsp = HTTP_FETCH
-            .head(&url)
-            .await
-            .wrap_err_with(|| format!("failed to check rust {version} on the mirror"))?;
-        if !rsp.status().is_success() {
+        if !mirror_serves_release(&url).await {
             bail!("rust {version} was not found on the mirror ({url})");
         }
         Ok(Some(version.to_string()))
@@ -1930,6 +1942,8 @@ mod tests {
             "date = \"2024-07-25\"\n[pkg.rust]\nversion = \"1.80.0 (051478957 2024-07-21)\"\n";
         assert_eq!(parse_stable_manifest_version(manifest).unwrap(), "1.80.0");
         assert!(parse_stable_manifest_version("date = \"2024-07-25\"").is_err());
+        let malformed = "[pkg.rust]\nversion = \"nightly (051478957 2024-07-21)\"\n";
+        assert!(parse_stable_manifest_version(malformed).is_err());
     }
 
     #[test]
