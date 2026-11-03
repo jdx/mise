@@ -10,15 +10,15 @@ Pick an installation method for your platform, check the executable, then
 
 ## Choose a method {#installation-methods}
 
-| Platform | Recommended                                                        | Alternatives                                                                                                            |
-| -------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| macOS    | [mise.run](#mise-run)                                              | [Homebrew](#homebrew), [MacPorts](#macports), [packslip](#packslip) (Apple silicon)                                     |
-| Linux    | [mise.run](#mise-run)                                              | [packslip](#packslip), [apt](#apt), [dnf](#dnf), [pacman](#pacman), [apk](#apk), [others](#linux)                       |
-| Windows  | [winget](#windows-winget)                                          | [PowerShell script](#windows-script), [Scoop](#windows-scoop), [Chocolatey](#windows-chocolatey), [packslip](#packslip) |
-| CI       | [mise-action or a committed wrapper](/continuous-integration.html) |                                                                                                                         |
-| Docker   | [Official images](/mise-cookbook/docker.html)                      |                                                                                                                         |
+| Platform | Recommended                                                        | Alternatives                                                                                                 |
+| -------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| macOS    | [mise.run](#mise-run)                                              | [Homebrew](#homebrew), [MacPorts](#macports), [packslip](#packslip) (Apple silicon)                          |
+| Linux    | [mise.run](#mise-run)                                              | [packslip](#packslip), [apt](#apt), [dnf](#dnf), [pacman](#pacman), [apk](#apk), [others](#linux)            |
+| Windows  | [PowerShell script](#windows-script)                               | [winget](#windows-winget), [Scoop](#windows-scoop), [Chocolatey](#windows-chocolatey), [packslip](#packslip) |
+| CI       | [mise-action or a committed wrapper](/continuous-integration.html) |                                                                                                              |
+| Docker   | [Official images](/mise-cookbook/docker.html)                      |                                                                                                              |
 
-mise.run, packslip and [GitHub Releases](#github-releases) install the official
+mise.run, the Windows [PowerShell script](#windows-script), packslip and [GitHub Releases](#github-releases) install the official
 release binaries, which are built with mise's optimized release profile and
 update with `mise self-update`. Package-manager builds can trail a release, and
 the Homebrew formula's build can be noticeably slower and larger.
@@ -368,7 +368,7 @@ sudo snap install mise --classic
 
 ## Windows {#windows}
 
-winget is the recommended method on Windows. After installing, set up
+The PowerShell script is the recommended method on Windows. After installing, set up
 [PowerShell activation](/shell-setup.html#powershell), or put the shims
 directory on `Path` for cmd.exe as described in
 [Windows shells](/shell-setup.html#windows).
@@ -379,6 +379,8 @@ directory on `Path` for cmd.exe as described in
 winget install jdx.mise
 ```
 
+winget builds can trail a release, and mise turns self-update off for them; upgrade with
+`winget upgrade jdx.mise`.
 [winget manifest](https://github.com/microsoft/winget-pkgs/tree/master/manifests/j/jdx/mise)
 
 ### PowerShell script {#windows-script}

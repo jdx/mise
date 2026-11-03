@@ -28,7 +28,7 @@ The installer puts the `mise` executable at `~/.local/bin/mise`. If your shell
 cannot find `mise` in the next steps, run it as `~/.local/bin/mise` until you
 [activate mise](#activate-mise) in step 4, which adds it to `PATH`.
 
-On Windows, run `winget install jdx.mise`. For Homebrew, apt, dnf and other
+On Windows, run `irm https://mise.run/powershell | iex` in PowerShell. For Homebrew, apt, dnf and other
 package managers, see [Installing mise](/installing-mise.html).
 
 ## 2. Run a tool {#mise-exec-run}
