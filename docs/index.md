@@ -237,12 +237,12 @@ import { data as showreel } from "./.vitepress/showreel.data";
     </div>
   </div>
 
-  <a class="landing-special landing-related" href="https://mr-boxington.jdx.dev/" aria-label="Try Mr Boxington">
+  <a class="landing-special landing-related" href="https://jouet.jdx.dev/" aria-label="Try jouet">
     <div>
       <p class="landing-kicker"><span>—</span> Related project</p>
-      <h2>Share Cargo builds with Mr Boxington</h2>
-      <p>Give every Cargo checkout one shared, self-pruning compilation cache, locally and in CI.</p>
+      <h2>Wind up your coding agents with jouet</h2>
+      <p>Tell Claude Code and Codex which checks are slow, and turn what went wrong in past sessions into rules for the next one.</p>
     </div>
-    <span class="card-link">mr-boxington.jdx.dev</span>
+    <span class="card-link">jouet.jdx.dev</span>
   </a>
 </section>
