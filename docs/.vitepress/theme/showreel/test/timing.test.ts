@@ -50,7 +50,10 @@ test("the timing patterns catch what they name, and pass what they do not", () =
   for (const t of good) assert.doesNotMatch(t, TIMING, t);
   assert.match(" hk@2.2.0 ✓", PROGRESS);
   assert.match("lock            jq@1.8.2 windows-x64      ✔", PROGRESS);
-  assert.doesNotMatch("✔ [shop/postgres] started on port 5432", PROGRESS);
+  assert.doesNotMatch(
+    "✔ pitchfork: [shop/postgres] started on port 5432",
+    PROGRESS,
+  );
   // A placeholder, whole or being typed; the fixture user's home is not one.
   for (const t of [
     "~ $ git clone https://github.com/you/a",

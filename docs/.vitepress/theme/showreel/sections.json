@@ -1177,7 +1177,7 @@
       }
     ],
     "captures": ["C14"],
-    "visual": "`cd ../shop`. The shop card: [tools] (pitchfork) folded, `[daemons] postgres = \"18\"`, [daemons_settings] folded, `[tasks.db] daemons = \"postgres\"` with `run = 'psql -Atc \"show server_version\"'`. No [settings] table, no badge. `mise run db` plays at real time: dimmed Postgres log lines under pitchfork's own readiness spinner (`waiting for command … pg_isready …`), then `✔ [shop/postgres] started on port 5432`, with caption 2; [daemons] lights sage; `[db] $ psql -Atc \"show server_version\"` prints the real server version, and a thread ties it to `postgres = \"18\"`. Postgres's log lines and their wrapped rows are dimmed to texture. The card and the terminal, on the server's version, hold into the Dotfiles ticket.",
+    "visual": "`cd ../shop`. The shop card: [tools] (pitchfork) folded, `[daemons] postgres = \"18\"`, [daemons_settings] folded, `[tasks.db] daemons = \"postgres\"` with `run = 'psql -Atc \"show server_version\"'`. No [settings] table, no badge. `mise run db` plays at real time: dimmed Postgres log lines under pitchfork's own readiness spinner (`waiting for command … pg_isready …`), then `✔ pitchfork: [shop/postgres] started on port 5432`, with caption 2; [daemons] lights sage; `[db] $ psql -Atc \"show server_version\"` prints the real server version, and a thread ties it to `postgres = \"18\"`. Postgres's log lines and their wrapped rows are dimmed to texture. The card and the terminal, on the server's version, hold into the Dotfiles ticket.",
     "plan": [
       {
         "at": 0,
@@ -1201,7 +1201,7 @@
         "at": 6,
         "end": 8.41,
         "name": "db",
-        "what": "`mise run db` at real time: the Postgres log lines (dimmed to texture, LOG_DIM) under pitchfork's readiness spinner, `✔ [shop/postgres] started on port 5432`, `[db] $ psql …`, the server's version (3 lines read)"
+        "what": "`mise run db` at real time: the Postgres log lines (dimmed to texture, LOG_DIM) under pitchfork's readiness spinner, `✔ pitchfork: [shop/postgres] started on port 5432`, `[db] $ psql …`, the server's version (3 lines read)"
       },
       {
         "at": 8.911,
