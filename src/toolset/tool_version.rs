@@ -323,14 +323,26 @@ impl ToolVersion {
         self
     }
 
-    fn from_lockfile(mut request: ToolRequest, lt: LockfileTool) -> Self {
+    fn from_lockfile(mut request: ToolRequest, mut lt: LockfileTool) -> Self {
         // A locked backend mise cannot use here, one in `disable_backends` or
         // asdf on Windows (a lockfile written on Linux or macOS can lock one),
         // is not restored: the locked version still applies, and the shorthand
-        // resolves to a backend that can install it.
-        if let Some(backend_full) = lt.backend.as_ref().filter(|full| {
-            backend::is_usable_backend_type(&backend::backend_type::BackendType::guess(full))
+        // resolves to a backend that can install it. The entry's artifacts and
+        // dependency graphs describe the locked backend's install, so they go too.
+        if lt.backend.as_deref().is_some_and(|full| {
+            !backend::is_usable_backend_type(&backend::backend_type::BackendType::guess(full))
         }) {
+            lt.backend = None;
+            lt.platforms = lt
+                .platforms
+                .into_iter()
+                .map(|(key, info)| (key, info.without_artifact_data()))
+                .filter(|(_, info)| !info.is_empty())
+                .collect();
+            lt.aube = None;
+            lt.uv = None;
+        }
+        if let Some(backend_full) = &lt.backend {
             let backend = Arc::new(BackendArg::new(
                 request.ba().short.clone(),
                 Some(backend_full.clone()),
@@ -1983,12 +1995,23 @@ mod tests {
                 backend: Some(backend.to_string()),
                 specifiers: Default::default(),
                 options: Default::default(),
-                platforms: Default::default(),
+                platforms: BTreeMap::from([(
+                    "linux-x64".to_string(),
+                    PlatformInfo {
+                        checksum: Some("sha256:0000".to_string()),
+                        url: Some("https://example.test/yarn.tgz".to_string()),
+                        ..Default::default()
+                    },
+                )]),
                 aube: None,
                 uv: None,
             };
             let tv = ToolVersion::from_lockfile(request, lt);
-            (tv.version.clone(), tv.ba().full())
+            (
+                tv.version.clone(),
+                tv.ba().full(),
+                tv.lock_platforms.contains_key("linux-x64"),
+            )
         };
 
         let mut partial = SettingsPartial::empty();
@@ -2005,9 +2028,17 @@ mod tests {
             "a disabled locked backend must not be restored, got {}",
             disabled.1
         );
+        assert!(
+            !disabled.2,
+            "another backend's artifact must not be verified against this install"
+        );
         assert_eq!(
             enabled,
-            ("4.9.1".to_string(), "npm:@yarnpkg/cli-dist".to_string())
+            (
+                "4.9.1".to_string(),
+                "npm:@yarnpkg/cli-dist".to_string(),
+                true
+            )
         );
         // mise never runs asdf plugins on Windows, so a lock written elsewhere
         // must not route the tool there.
@@ -2017,6 +2048,7 @@ mod tests {
             "{}",
             native.1
         );
+        assert_eq!(native.2, !cfg!(windows));
     }
 
     #[test]
