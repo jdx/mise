@@ -146,8 +146,8 @@ async fn verify_subject(
     }
 
     let url = attestations_url(&registry, name, version);
-    let response = match HTTP.json::<AttestationsResponse, _>(&url).await {
-        Ok(response) => response,
+    let body = match HTTP.get_text(&url).await {
+        Ok(body) => body,
         Err(err) if is_not_found(&err) => {
             return unverified(pinned, name, version, "publishes no attestations");
         }
@@ -166,6 +166,10 @@ async fn verify_subject(
             return Ok(None);
         }
     };
+    // An answer that arrived but cannot be read is never a lookup failure:
+    // it is refused whatever `provenance_api_failures_fatal` says.
+    let response: AttestationsResponse = serde_json::from_str(&body)
+        .map_err(|e| eyre::eyre!("npm attestations for {name}@{version} are malformed: {e}"))?;
     // npm also returns its own publish attestation, which names no repository
     // and is not provenance; a package with only that has none to verify.
     let provenance = select_provenance(response.attestations)

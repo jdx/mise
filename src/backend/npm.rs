@@ -1262,10 +1262,16 @@ impl Backend for NPMBackend {
         // which aube builds no provenance subject for. Only the paranoid
         // category treats that as an error; `npm.provenance` alone, which is
         // on by default, leaves such an install unchecked.
-        if Self::provenance_required() && options.checksum().is_some() && tv.aube_lock.is_none() {
+        // A tool whose lockfile entry pins a repository is refused too, before
+        // any install script can run.
+        let pinned = Self::provenance_enabled() && tv.npm_provenance.is_some();
+        if (Self::provenance_required() || pinned)
+            && options.checksum().is_some()
+            && tv.aube_lock.is_none()
+        {
             eyre::bail!(
                 "npm:{} has a checksum and no aube lock, so it installs a local archive that provenance cannot be verified for; \
-                 lock the tool, or turn off the paranoid provenance category",
+                 lock the tool, or turn off npm.provenance and the paranoid provenance category",
                 self.display_tool_name()
             );
         }
