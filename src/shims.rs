@@ -1334,10 +1334,9 @@ fn snap_mise_bin(mise_bin: &Path, snap: &Path) -> Option<PathBuf> {
 /// reshim or when the lock is released.
 fn remove_shim_with_rename_fallback(path: &Path) -> Result<()> {
     // First, try to clean up any leftover .old files from a previous run.
+    // Unguarded, so a dangling `.old` link goes too.
     let old_path = old_shim_path(path);
-    if old_path.exists() {
-        let _ = fs::remove_file(&old_path); // best-effort
-    }
+    let _ = fs::remove_file(&old_path); // best-effort
 
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
