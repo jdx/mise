@@ -5532,7 +5532,12 @@ pub(crate) fn get_locked_version(
         return Ok(None);
     };
     let mut merged = false;
-    let monorepo_lockfile = config.monorepo_lockfile_root().is_some();
+    // A monorepo root lockfile holds every subproject's pins
+    let shared_lockfile = config.monorepo_lockfile_root().is_some_and(|root| {
+        lockfile_path_for_tool_source_with_root(config, source, Some(&root)).is_some_and(
+            |(path, _)| path.parent() == Some(&crate::config::monorepo_lockfile_dir(&root)),
+        )
+    });
     let lockfile = match source {
         ToolSource::MiseToml(path) => {
             trace!(
@@ -5718,29 +5723,30 @@ pub(crate) fn get_locked_version(
                 }
             }
 
-            // A merged view, or a monorepo root lockfile shared by its
-            // subprojects, mixes other configs' pins, so only a lockfile of
-            // the request's own config can say its lone entry is this pin.
-            if alias_resolved && !merged && !monorepo_lockfile {
-                let only_entry = |options_match: &dyn Fn(&LockfileTool) -> bool| match tools
+            // A merged view or a shared lockfile mixes other configs' pins,
+            // so only a lockfile of the request's own config can say its lone
+            // entry is this pin.
+            if alias_resolved && !merged && !shared_lockfile {
+                let exact = tools
                     .iter()
-                    .filter(|v| options_match(v))
-                    .collect_vec()
-                    .as_slice()
-                {
-                    [found] => Some(*found),
-                    _ => None,
-                };
-                if let Some(found) = only_entry(&|v| &v.options == request_options) {
+                    .filter(|v| &v.options == request_options)
+                    .collect_vec();
+                if let [found] = exact.as_slice() {
                     trace!(
                         "[{short}@{specifier}] {prefix} is not in the lockfile, using its only entry {}",
                         found.version
                     );
-                    return Ok(Some(found.clone()));
+                    return Ok(Some((*found).clone()));
                 }
-                if legacy_options_fallback
+                // Several exact entries already leave the alias ambiguous
+                if exact.is_empty()
+                    && legacy_options_fallback
                     && !request_options.is_empty()
-                    && let Some(found) = only_entry(&|v| v.options.is_empty())
+                    && let [found] = tools
+                        .iter()
+                        .filter(|v| v.options.is_empty())
+                        .collect_vec()
+                        .as_slice()
                 {
                     trace!(
                         "[{short}@{specifier}] {prefix} is not in the lockfile, using its only entry {} without options and dropping its artifact data",
