@@ -187,11 +187,14 @@ not verify the signed bundle. mise verifies it by default
 ([`npm.provenance`](/configuration/settings.html#npm.provenance); the
 `provenance` category of [`paranoid`](/configuration/settings.html#paranoid)
 turns it on even when that is off). It verifies the Sigstore provenance npm
-publishes for the tool's own package. The attestation must name the same sha512 integrity the install locks, which
-aube checks every tarball against before it extracts it.
+publishes for the tool's own package. The attestation must name the same sha512
+integrity the install locks, which aube checks every tarball against before it extracts it.
 
 A package that publishes no provenance, and a private registry that serves none,
-install as they do with the setting off. Dependencies are not checked. Only the
+install as they do with the setting off, unless `mise.lock` pins the tool's
+[provenance repository](/dev-tools/mise-lock-reference.html#npm-package-provenance):
+then a package that no longer publishes provenance fails to install. Dependencies
+are not checked. Only the
 embedded aube package manager supports this; with any other
 [`npm.package_manager`](/configuration/settings.html#npm.package_manager) the
 install is unchecked. A tool with a `checksum` option installs a downloaded
