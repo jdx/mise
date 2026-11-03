@@ -72,7 +72,7 @@ fn element(name: &str, props: &toml::Table) -> Value {
         "Bool" => "boolean",
         "Integer" => "integer",
         "ListString" | "ListPath" | "SetString" => "array",
-        "IndexMap<String, String>" => "object",
+        "IndexMap<String, String>" | "IndexMap<String, Vec<String>>" => "object",
         // Written as `oneOf` below, which AJV's strictTypes accepts where a list of types fails.
         "BoolOrString" | "BoolOrList" => "",
         other => panic!("settings.toml: unknown type {other:?} for {name}"),
@@ -119,7 +119,12 @@ fn element(name: &str, props: &toml::Table) -> Value {
         element.insert("enum".into(), choices.clone());
     }
     if json_type == "object" {
-        element.insert("additionalProperties".into(), json!({"type": "string"}));
+        let values = if setting_type == "IndexMap<String, Vec<String>>" {
+            json!({"type": "array", "items": {"type": "string"}})
+        } else {
+            json!({"type": "string"})
+        };
+        element.insert("additionalProperties".into(), values);
     }
     match setting_type {
         // A list setting that also takes a single value.

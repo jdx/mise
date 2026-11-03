@@ -91,6 +91,10 @@ assert_contains "cat '$PNPM_DEBUG_LOG'" "--config.minimum-release-age="
 assert_contains "cat '$PNPM_DEBUG_LOG'" "--loglevel=warn"
 assert_contains "cat '$PNPM_DEBUG_LOG'" "--allow-build=tiny"
 assert_succeed "mise exec -- tiny --help >/dev/null"
+# The install dir must not link into pnpm's global virtual store outside MISE_DATA_DIR
+tiny_dir="$(mise where npm:tiny)"
+tiny_link="$(find "$tiny_dir" -path "*/node_modules/tiny" -print -quit)"
+assert_contains "realpath '$tiny_link'" "$(realpath "$tiny_dir")"
 echo "✓ npm backend successfully installs package using pnpm (package_manager=pnpm)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 
