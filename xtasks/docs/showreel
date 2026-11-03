@@ -40,7 +40,8 @@
 #
 # With --cache, a failure (the resolve, the captures, the tests, the render)
 # never fails the command: it warns, puts the last good render in
-# docs/public (or none), and exits 0, so the site builds either way.
+# docs/public (or none), and exits 0. The docs deploy fails when that leaves
+# no render.
 set -euo pipefail
 # Command substitutions keep `set -e`, so a failed step inside $(...) stops
 # the run instead of handing on an empty value. Bash before 4.4 (macOS's
@@ -253,7 +254,7 @@ fallback() {
 	if [ -n "$good" ] && restore "$good"; then
 		warn "$1; the site keeps the last good showreel ($good)"
 	else
-		warn "$1; there is no earlier showreel to keep, so the site builds without one"
+		warn "$1; there is no earlier showreel to keep, so docs/public has none"
 	fi
 }
 
