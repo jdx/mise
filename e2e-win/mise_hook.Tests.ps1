@@ -30,6 +30,18 @@ Describe 'mise_hook' {
         }
     }
 
+    It 'keeps $? true for the prompt it wraps' {
+        $originalPrompt = $Global:__mise_pwsh_previous_prompt_function
+        try {
+            $Global:__mise_pwsh_previous_prompt_function = { $Global:__mise_test_prompt_status = $? }
+            cmd /C 'exit 0'
+            prompt
+            $Global:__mise_test_prompt_status | Should -BeTrue
+        } finally {
+            $Global:__mise_pwsh_previous_prompt_function = $originalPrompt
+        }
+    }
+
     It 'runs hook-env when MISE state changes after a directory change' {
         $originalPath = $PWD
         $originalMiseConfigFile = [Environment]::GetEnvironmentVariable('MISE_CONFIG_FILE', 'Process')
