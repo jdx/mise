@@ -63,13 +63,36 @@ impl ZigPlugin {
     /// and `zig-{arch}-{os}-...` from 0.14.1 on. (#15349)
     fn release_tarball_url(arch: &str, os: &str, version: &str) -> String {
         let ext = if os == "windows" { "zip" } else { "tar.xz" };
-        let parts: Vec<u64> = version.split('.').filter_map(|p| p.parse().ok()).collect();
-        let name = if parts.as_slice() >= [0, 14, 1].as_slice() {
+        let name = if Self::arch_first(version) {
             format!("zig-{arch}-{os}-{version}")
         } else {
             format!("zig-{os}-{arch}-{version}")
         };
         format!("https://ziglang.org/download/{version}/{name}.{ext}")
+    }
+
+    /// Whether `version`'s archives put the arch before the os (0.14.1 on).
+    fn arch_first(version: &str) -> bool {
+        let parts: Vec<u64> = version.split('.').filter_map(|p| p.parse().ok()).collect();
+        parts.as_slice() >= [0, 14, 1].as_slice()
+    }
+
+    /// Whether a locked `url` can be downloaded for `version` without the
+    /// index. The signature only proves the archive matches its own file name,
+    /// so that name must be this version's, with no query to change it. Older
+    /// mise wrote `zig-{os}-...` names for 0.14.1 and later when the index was
+    /// unreadable; those files do not exist, so the index resolves them.
+    fn usable_locked_url(url: &str, version: &str, os: &str) -> bool {
+        let Some(filename) = url.rsplit('/').next() else {
+            return false;
+        };
+        let names_version = [".tar.xz", ".zip"].iter().any(|ext| {
+            filename
+                .strip_suffix(ext)
+                .is_some_and(|stem| stem.ends_with(&format!("-{version}")))
+        });
+        let wrong_order = Self::arch_first(version) && filename.starts_with(&format!("zig-{os}-"));
+        !url.contains('?') && names_version && !wrong_order
     }
 
     /// The (arch, os) pair the download index and archive names use.
@@ -107,7 +130,12 @@ impl ZigPlugin {
         let locked_url = tv
             .lock_platforms
             .get(&self.get_platform_key())
-            .and_then(|pi| pi.url.clone());
+            .and_then(|pi| pi.url.as_deref())
+            .filter(|url| {
+                let (_, os) = Self::index_platform(&PlatformTarget::from_current());
+                Self::usable_locked_url(url, &tv.version, os)
+            })
+            .map(str::to_string);
         let url = match locked_url {
             Some(url) => url,
             None => self
@@ -605,5 +633,22 @@ mod tests {
             ZigPlugin::release_tarball_url("x86_64", "windows", "0.13.0"),
             "https://ziglang.org/download/0.13.0/zig-windows-x86_64-0.13.0.zip"
         );
+    }
+
+    #[test]
+    fn test_locked_url_must_name_the_version() {
+        let url = ZigPlugin::release_tarball_url("x86_64", "linux", "0.15.1");
+        let usable = ZigPlugin::usable_locked_url;
+        assert!(usable(&url, "0.15.1", "linux"));
+        assert!(!usable(&url, "0.14.1", "linux"));
+        assert!(!usable(&url, "5.1", "linux"));
+        assert!(!usable(&format!("{url}?x=1"), "0.15.1", "linux"));
+        let windows = ZigPlugin::release_tarball_url("x86_64", "windows", "0.13.0");
+        assert!(usable(&windows, "0.13.0", "windows"));
+        let nightly = ZigPlugin::nightly_tarball_url("aarch64", "macos", "0.16.0-dev.1+abc");
+        assert!(usable(&nightly, "0.16.0-dev.1+abc", "macos"));
+        // What the old fallback wrote for releases that use the new order.
+        let old_fallback = "https://ziglang.org/download/0.17.0/zig-linux-x86_64-0.17.0.tar.xz";
+        assert!(!usable(old_fallback, "0.17.0", "linux"));
     }
 }
