@@ -2513,7 +2513,10 @@ impl Lock {
                             // request under the backend this lockfile records for it.
                             let own_backend_request;
                             let request = match shadowed_elsewhere
-                                .then(|| target_lockfile.locked_backend(&ba.short))
+                                .then(|| {
+                                    target_lockfile
+                                        .locked_backend(&ba.short, Some(&request.version()))
+                                })
                                 .flatten()
                             {
                                 Some(locked) if locked != ba.stored_full() => {
@@ -2555,9 +2558,11 @@ impl Lock {
                                 match resolve_for_lock(config, request, &mut resolve_options).await
                                 {
                                     Ok(tv) => {
+                                        // A lock entry may bind the version to
+                                        // another backend; keep the pair on it.
                                         push_unique_lock_tool(
                                             &mut all_tools,
-                                            (request.ba().as_ref().clone(), tv),
+                                            (tv.ba().clone(), tv),
                                         );
                                     }
                                     Err(err) => {
@@ -2670,18 +2675,26 @@ impl Lock {
             .await?;
             Ok(all_tools)
         } else {
-            // Build map of tool args with explicit versions
-            let specified_versions: std::collections::HashMap<String, Option<ToolRequest>> = self
-                .tool
-                .iter()
-                .map(|t| (t.ba.full(), t.tvr.clone()))
-                .collect();
+            // The request a tool arg names for this tool, if any. A bare name
+            // (`mise lock hk`) selects the tool under any backend: a shadowed
+            // request is locked under this lockfile's own backend, which the
+            // arg's backend need not match.
+            let specified_request = |ba: &crate::args::BackendArg| {
+                self.tool
+                    .iter()
+                    .find(|t| {
+                        (!t.ba.short.contains(':') && t.ba.short == ba.short)
+                            || t.ba.full() == ba.full()
+                    })
+                    .map(|t| t.tvr.clone())
+            };
             // `mise lock python` also locks the Pythons that pipx tools and
             // stubs select, so pruning python keeps them.
-            let mut python_requests =
-                selected_python_requests(all_tools.iter().filter(|(ba, _)| {
-                    python_named || specified_versions.contains_key(&ba.full())
-                }))?;
+            let mut python_requests = selected_python_requests(
+                all_tools
+                    .iter()
+                    .filter(|(ba, _)| python_named || specified_request(ba).is_some()),
+            )?;
             python_requests.extend(stub_python_requests);
             python_requests.extend(task_python_requests);
             // Generate rebuilds every tool in the returned set from scratch, so a
@@ -2690,9 +2703,7 @@ impl Lock {
                 if !python_requests.is_empty() && Settings::get().generate_lockfiles() {
                     all_tools
                         .iter()
-                        .filter(|(ba, _)| {
-                            ba.short == "python" && !specified_versions.contains_key(&ba.full())
-                        })
+                        .filter(|(ba, _)| ba.short == "python" && specified_request(ba).is_none())
                         .cloned()
                         .collect()
                 } else {
@@ -2705,9 +2716,9 @@ impl Lock {
             let mut tools: Vec<LockTool> = Vec::new();
             for (ba, mut tv) in all_tools
                 .into_iter()
-                .filter(|(ba, _)| specified_versions.contains_key(&ba.full()))
+                .filter(|(ba, _)| specified_request(ba).is_some())
             {
-                if let Some(Some(request)) = specified_versions.get(&ba.full()) {
+                if let Some(Some(request)) = specified_request(&ba) {
                     let version = request.version();
                     let backend = crate::backend::get(&ba);
                     let effective_version = match &backend {
