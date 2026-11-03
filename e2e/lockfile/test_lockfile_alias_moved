@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+
+# A version 0 lockfile records no request bindings, so when an alias moves
+# (node's `lts` going from 24 to 26) its pin no longer matches the alias.
+# --locked and `mise lock --upgrade` keep the tool's only entry.
+# https://github.com/jdx/mise/issues/15299
+
+export MISE_LOCKFILE=1
+
+detect_platform
+PLATFORM="$MISE_PLATFORM"
+
+cat <<'EOF' >mise.toml
+[tools]
+jq = "pinned"
+
+[tool_alias.jq.versions]
+pinned = "1.7"
+EOF
+
+cat <<EOF >mise.lock
+[[tools.jq]]
+version = "1.6"
+backend = "aqua:jqlang/jq"
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.6.tar.gz" }
+EOF
+
+assert_contains "mise install --locked --dry-run 2>&1" "jq@1.6"
+# Without --locked the alias resolves again, as after editing the request
+assert_contains "mise install --dry-run 2>&1" "jq@1.7"
+
+# With several entries there is no telling which one the alias meant
+cat <<EOF >mise.lock
+[[tools.jq]]
+version = "1.5"
+backend = "aqua:jqlang/jq"
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.5.tar.gz" }
+
+[[tools.jq]]
+version = "1.6"
+backend = "aqua:jqlang/jq"
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.6.tar.gz" }
+EOF
+
+assert_fail_contains "mise install --locked --dry-run 2>&1" "jq@pinned is not in the lockfile"
+
+# The upgrade binds the alias to the pin instead of re-resolving it
+cat <<EOF >mise.lock
+[[tools.jq]]
+version = "1.6"
+backend = "aqua:jqlang/jq"
+EOF
+
+mise lock --upgrade --platform "$PLATFORM"
+assert "grep -c '^version = ' mise.lock" "1"
+assert_contains "cat mise.lock" 'version = "1.6"'
+assert_contains "cat mise.lock" 'specifiers = ["pinned"]'
+
+# A monorepo root lockfile holds every subproject's pins, so its only entry
+# may belong to another subproject
+rm mise.toml mise.lock
+mkdir -p mono/packages/a
+cat <<'EOF' >mono/mise.toml
+monorepo_root = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/a"]
+EOF
+cat <<'EOF' >mono/packages/a/mise.toml
+[tools]
+jq = "pinned"
+
+[tool_alias.jq.versions]
+pinned = "1.7"
+EOF
+cat <<EOF >mono/mise.lock
+[[tools.jq]]
+version = "1.6"
+backend = "aqua:jqlang/jq"
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.6.tar.gz" }
+EOF
+
+assert_fail_contains "cd mono/packages/a && mise install --locked --dry-run 2>&1" "jq@pinned is not in the lockfile"
+# A binding in the root lockfile still applies
+cat <<EOF >mono/mise.lock
+lockfile_version = 3
+
+[[tools.jq]]
+version = "1.6"
+backend = "aqua:jqlang/jq"
+specifiers = ["pinned"]
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.6.tar.gz" }
+EOF
+assert_contains "cd mono/packages/a && mise install --locked --dry-run 2>&1" "jq@1.6"
+
+# A global config inside the monorepo still reads its own lockfile
+echo '[tools]' >mono/packages/a/mise.toml
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[tools]
+jq = "pinned"
+
+[tool_alias.jq.versions]
+pinned = "1.7"
+EOF
+cat <<EOF >"$MISE_CONFIG_DIR/mise.lock"
+[[tools.jq]]
+version = "1.6"
+backend = "aqua:jqlang/jq"
+"platforms.$PLATFORM" = { url = "https://example.com/jq-1.6.tar.gz" }
+EOF
+
+assert_contains "cd mono/packages/a && mise install --locked --dry-run 2>&1" "jq@1.6"

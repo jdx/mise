@@ -731,7 +731,7 @@ impl ToolRequest {
 
     pub(crate) fn lockfile_resolve(&self, config: &Config) -> Result<Option<LockfileTool>> {
         let (query, prefix_boundary) = self.lockfile_version_query();
-        self.lockfile_resolve_with_prefix(config, &query, prefix_boundary)
+        self.lockfile_resolve_with_prefix(config, &query, prefix_boundary, false)
     }
 
     /// The string used to match this request against lockfile entries, plus
@@ -759,11 +759,14 @@ impl ToolRequest {
     /// prefix match can find entries like "24.13.0".starts_with("24").
     /// `require_prefix_boundary` additionally restricts matches to version-
     /// separator boundaries (used for `prefix:` selectors).
+    /// `alias_resolved` says `prefix` is what an alias in the request means
+    /// today, which may no longer be what the lockfile recorded.
     pub(crate) fn lockfile_resolve_with_prefix(
         &self,
         config: &Config,
         prefix: &str,
         require_prefix_boundary: bool,
+        alias_resolved: bool,
     ) -> Result<Option<LockfileTool>> {
         let backend = self.backend().ok();
         let (request_options, legacy_options_fallback) = if let Some(backend) = &backend {
@@ -783,6 +786,7 @@ impl ToolRequest {
                 specifier: &self.version(),
                 prefix,
                 require_prefix_boundary,
+                alias_resolved,
                 request_options: &request_options,
                 legacy_options_fallback,
                 backend: backend.as_deref(),
