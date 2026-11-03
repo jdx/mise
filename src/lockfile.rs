@@ -6310,6 +6310,25 @@ pub(crate) fn ensure_locked_url_matches_version(
 /// This is used for backend discovery where we just need any entry's backend.
 /// The backend `short`'s lock entries record for `version`; see
 /// [`locked_backend`].
+/// The repository `mise.lock` pins the package to, whatever install options
+/// the entry was written with: the repository belongs to the package, so
+/// changing an option must not drop the pin before the install is verified.
+pub(crate) fn get_locked_npm_provenance(
+    config: &Config,
+    short: &str,
+    version: &str,
+    backend: &str,
+) -> Option<PackageProvenance> {
+    if !Settings::get().lockfile_enabled() {
+        return None;
+    }
+    read_lockfiles_by_precedence(config)
+        .iter()
+        .flat_map(|lockfile| lockfile.tools_for(short).into_iter().flatten())
+        .filter(|tool| tool.version == version && tool.backend.as_deref() == Some(backend))
+        .find_map(|tool| tool.provenance.clone())
+}
+
 pub(crate) fn get_locked_backend_for_version(
     config: &Config,
     short: &str,
