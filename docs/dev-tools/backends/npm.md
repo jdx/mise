@@ -199,7 +199,9 @@ embedded aube package manager supports this; with any other
 [`npm.package_manager`](/configuration/settings.html#npm.package_manager) the
 install is unchecked. A tool with a `checksum` option installs a downloaded
 archive that has no provenance to verify unless it is locked. With the paranoid
-`provenance` category on, both of those installs fail instead of going unchecked.
+`provenance` category on, both of those installs fail instead of going unchecked,
+and so does an install through another package manager of a tool whose
+`mise.lock` entry pins a provenance repository.
 Set `npm.provenance = false` to skip verification; that does not skip it while the
 paranoid `provenance` category is on.
 

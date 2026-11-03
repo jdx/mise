@@ -1266,15 +1266,22 @@ impl Backend for NPMBackend {
             }
             None => Vec::new(),
         };
-        // Only the embedded aube runs the verifier. The paranoid category
-        // refuses another installer rather than install without the check;
-        // `npm.provenance` alone, which is on by default, leaves it unchecked.
+        // Only the embedded aube runs the verifier. The paranoid category, and a
+        // repository pinned in mise.lock, refuse another installer rather than
+        // install without the check; `npm.provenance` alone, which is on by
+        // default, leaves it unchecked.
         if !matches!(package_manager, NpmPackageManager::Aube) {
-            if Self::provenance_required() {
+            let pinned = Self::provenance_enabled() && tv.npm_provenance.is_some();
+            if Self::provenance_required() || pinned {
                 eyre::bail!(
-                    "npm:{} installs with {package_manager}, which cannot verify provenance; \
-                     set npm.package_manager to aube, or turn off the paranoid provenance category",
-                    self.display_tool_name()
+                    "npm:{} installs with {package_manager}, which cannot verify provenance{}; \
+                     set npm.package_manager to aube, or turn off npm.provenance and the paranoid provenance category",
+                    self.display_tool_name(),
+                    if pinned {
+                        ", and mise.lock pins it to a repository"
+                    } else {
+                        ""
+                    }
                 );
             }
             debug!(
