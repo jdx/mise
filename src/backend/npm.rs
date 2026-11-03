@@ -1336,7 +1336,11 @@ impl Backend for NPMBackend {
                 )?
                 // required to avoid pnpm error "global bin dir isn't in PATH"
                 // https://github.com/pnpm/pnpm/issues/9333
-                .prepend_path(vec![bin_dir.clone()])?;
+                .prepend_path(vec![bin_dir.clone()])?
+                // pnpm 11+ links packages through a global virtual store outside the
+                // install dir by default, which breaks a restored MISE_DATA_DIR cache.
+                // Older versions ignore this setting.
+                .env("PNPM_CONFIG_VIRTUAL_STORE_TYPE", "project");
                 if use_global_dir_env {
                     // pnpm 12's replacement Rust CLI does not accept both path settings
                     // as flags, but reads them from PNPM_CONFIG_* environment variables.
