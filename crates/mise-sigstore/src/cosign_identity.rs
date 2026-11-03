@@ -286,7 +286,7 @@ fn certificate_identities(cert: &x509_cert::Certificate) -> Vec<String> {
 
 /// A Fulcio string extension: the deprecated raw-bytes OID, falling back to
 /// the DER `UTF8String` OID that replaced it.
-fn fulcio_string(
+pub(crate) fn fulcio_string(
     cert: &x509_cert::Certificate,
     raw_oid: &str,
     der_oid: Option<&str>,

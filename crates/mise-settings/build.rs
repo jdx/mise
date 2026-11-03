@@ -157,6 +157,7 @@ pub struct Settings {"#
                     "ListPath" => "Vec<PathBuf>",
                     "SetString" => "BTreeSet<String>",
                     "IndexMap<String, String>" => "IndexMap<String, String>",
+                    "IndexMap<String, Vec<String>>" => "IndexMap<String, Vec<String>>",
                     t @ ("BoolOrString" | "BoolOrList") => {
                         panic!("type {t:?} requires a `rust_type` to be specified")
                     }
@@ -437,7 +438,7 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
                 // We could shadow the 'type_' variable, but its a best practice to avoid shadowing.
                 // Thus, we introduce 'meta_type' here.
                 let meta_type = match type_ {
-                    "IndexMap<String, String>" => "IndexMap",
+                    "IndexMap<String, String>" | "IndexMap<String, Vec<String>>" => "IndexMap",
                     other => other,
                 };
                 lines.push(format!(
@@ -506,6 +507,7 @@ pub struct MisercSettings {"#
                         "ListPath" => "Vec<PathBuf>",
                         "SetString" => "BTreeSet<String>",
                         "IndexMap<String, String>" => "IndexMap<String, String>",
+                        "IndexMap<String, Vec<String>>" => "IndexMap<String, Vec<String>>",
                         t @ ("BoolOrString" | "BoolOrList") => {
                             panic!("type {t:?} requires a `rust_type` to be specified")
                         }

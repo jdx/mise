@@ -1962,6 +1962,16 @@
             }
           ]
         },
+        "env_sets": {
+          "description": "Named sets of config environments, which `env` and `-E` can name.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
         "env_shell_expand": {
           "default": true,
           "description": "Expand shell-style variables such as `$FOO` and `${BAR:-default}` in `[env]` values.",
@@ -2465,6 +2475,10 @@
         "locked": {
           "default": false,
           "description": "Require tool versions and download URLs to come from the lockfile.",
+          "type": "boolean"
+        },
+        "locked_require_checksum": {
+          "description": "Make locked mode fail when the lockfile has no checksum for a download.",
           "type": "boolean"
         },
         "locked_scopes": {

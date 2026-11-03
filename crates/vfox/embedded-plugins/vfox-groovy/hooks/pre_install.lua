@@ -7,7 +7,9 @@ local http = require("http")
 --- @return table Version information
 function PLUGIN:PreInstall(ctx)
     local version = ctx.version
-    local downloadUrl = util.DOWNLOAD_URL:format(version, version)
+    -- 2.4.5-incubating lives in a directory of that name but its zips drop the suffix.
+    local fileVersion = version:gsub("%-incubating$", "")
+    local downloadUrl = util.DOWNLOAD_URL:format(version, fileVersion)
 
     --local resp, err = http.get({
     --    url = downloadUrl..".sha256"

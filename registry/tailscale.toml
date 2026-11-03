@@ -1,0 +1,4 @@
+backends = ["aqua:tailscale/tailscale"]
+description = "The easiest, most secure way to use WireGuard and 2FA"
+test = { cmd = "tailscale version", expected = "{{version}}" }
+version_order = "semver"

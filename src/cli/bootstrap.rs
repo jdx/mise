@@ -216,6 +216,16 @@ pub(crate) struct Bootstrap {
     #[usage(long)]
     prompt_vars: bool,
 
+    /// Save the environments of `-E` or `MISE_ENV` to `miserc.local.toml`
+    ///
+    /// Writes `env` in the `miserc.local.toml` of mise's config directory, so
+    /// later runs, including `mise bootstrap --update`, select the same
+    /// environments without `-E`. Names may be sets from `[env_sets]` in
+    /// `miserc.toml`. Other keys in the file are kept. Needs `-E` or
+    /// `MISE_ENV`, and a `--dry-run` writes nothing.
+    #[usage(long)]
+    save_env: bool,
+
     /// Skip these parts
     ///
     /// Repeat the flag or separate parts with commas. Cannot be combined with
@@ -395,6 +405,39 @@ fn global_config_checkout() -> Result<Option<PathBuf>> {
 /// commit, so it reads that commit's config from the start. It starts in the
 /// directory this one started in, where a relative `--cd` or `MISE_CD`
 /// resolves as it did here.
+/// Write `env` to the `miserc.local.toml` of mise's config directory, keeping
+/// the file's other keys and comments.
+fn save_env(names: &[String], dry_run: bool) -> Result<()> {
+    if names.is_empty() {
+        bail!("--save-env needs the environments to save: pass -E or set MISE_ENV");
+    }
+    if let Some(name) = names.iter().find(|name| name.contains(['/', '\\'])) {
+        bail!("--save-env: {name:?} is not an environment name: it contains a path separator");
+    }
+    let path = dirs::CONFIG.join("miserc.local.toml");
+    if dry_run {
+        info!("would save env = {names:?} to {}", path.display_user());
+        return Ok(());
+    }
+    let content = match std::fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(err).wrap_err_with(|| format!("reading {}", path.display_user())),
+    };
+    let mut doc = content
+        .parse::<toml_edit::DocumentMut>()
+        .wrap_err_with(|| format!("parsing {}", path.display_user()))?;
+    let mut list = toml_edit::Array::new();
+    list.extend(names.iter().map(String::as_str));
+    doc["env"] = toml_edit::value(list);
+    if let Some(parent) = path.parent() {
+        crate::file::create_dir_all(parent)?;
+    }
+    crate::file::write_atomic(&path, doc.to_string())?;
+    info!("saved env = {names:?} to {}", path.display_user());
+    Ok(())
+}
+
 fn rerun_bootstrap_after_config_update() -> Result<()> {
     let args = crate::env::ARGS.read().unwrap().clone();
     let mut command = Command::new(std::env::current_exe()?);
@@ -1953,6 +1996,9 @@ impl Bootstrap {
         if self.prompt_vars && self.command.is_some() {
             bail!("--prompt-vars only applies to a full `mise bootstrap` run, not a subcommand");
         }
+        if self.save_env && self.command.is_some() {
+            bail!("--save-env only applies to a full `mise bootstrap` run, not a subcommand");
+        }
         // A full run with --update first fast-forwards a global config that is
         // a Git checkout, or links into one. New commits can change miserc.toml
         // and the environments, which this process has already read, so the
@@ -1988,6 +2034,13 @@ impl Bootstrap {
         }
         if let Some(command) = self.command.take() {
             return command.run().await;
+        }
+        if self.save_env {
+            let args = crate::env::ARGS.read().unwrap().clone();
+            save_env(
+                &crate::env::explicit_environment(&args).unwrap_or_default(),
+                self.dry_run,
+            )?;
         }
         if self.prompt_vars {
             crate::config::env_directive::prompt::enable();

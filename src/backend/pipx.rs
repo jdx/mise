@@ -1024,7 +1024,9 @@ impl PIPXBackend {
     /// remote, Git tags otherwise. A private repository is invisible to the
     /// versions host and the API without a token, but an SSH remote already
     /// shows the user can reach it with their key, so only that case falls
-    /// back to Git tags when GitHub cannot list it.
+    /// back to Git tags when GitHub cannot list it. With a token GitHub can
+    /// see the repository but may hold no releases for its tags, so an empty
+    /// release list falls back the same way.
     async fn git_source_versions(
         source: &GitSource,
         github_releases: impl AsyncFnOnce(&str) -> Result<Vec<VersionInfo>>,
@@ -1036,6 +1038,10 @@ impl PIPXBackend {
         match github_releases(&repo).await {
             Err(err) if PipxRequest::is_ssh_remote(&source.repo) => {
                 debug!("{repo} not listed by GitHub ({err}), trying git ls-remote");
+                git_tags(&source.remote()).await
+            }
+            Ok(releases) if releases.is_empty() && PipxRequest::is_ssh_remote(&source.repo) => {
+                debug!("{repo} has no GitHub releases, trying git ls-remote");
                 git_tags(&source.remote()).await
             }
             result => result,
@@ -2910,6 +2916,35 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
                 assert_eq!(remote, "ssh://git@github.com/owner/private");
                 Ok(tag_versions())
             },
+        )
+        .await
+        .unwrap();
+        assert_eq!(versions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn ssh_github_source_falls_back_to_git_tags_when_github_has_no_releases() {
+        let source = git_source("ssh://git@github.com/owner/private");
+        let versions = PIPXBackend::git_source_versions(
+            &source,
+            async |_| Ok(vec![]),
+            async |remote| {
+                assert_eq!(remote, "ssh://git@github.com/owner/private");
+                Ok(tag_versions())
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(versions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn ssh_github_source_keeps_github_releases_without_calling_git() {
+        let source = git_source("ssh://git@github.com/owner/private");
+        let versions = PIPXBackend::git_source_versions(
+            &source,
+            async |_| Ok(tag_versions()),
+            async |_| panic!("git must not be called"),
         )
         .await
         .unwrap();

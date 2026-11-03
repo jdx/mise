@@ -30,7 +30,7 @@ function PLUGIN:EnvKeys(ctx)
     local is_macos = RUNTIME.osType == "darwin" or RUNTIME.osType == "Darwin"
     local configured = os.getenv("CLOUDSDK_PYTHON")
     if is_macos and (not configured or configured == "") then
-        local found = python.find(version_path)
+        local found = python.find_cached(version_path)
         if found then
             table.insert(keys, {
                 key = "CLOUDSDK_PYTHON",

@@ -348,6 +348,7 @@ async fn download_file(lua: &Lua, input: MultiValue) -> Result<()> {
     cancel_on_interrupt(download_to_file(
         &request_url,
         std::path::Path::new(&path),
+        None,
         || async {
             client
                 .get(&request_url)
@@ -501,6 +502,7 @@ async fn try_download_file(lua: &Lua, input: MultiValue) -> Result<MultiValue> {
     let downloaded = cancel_on_interrupt(download_to_file(
         &request_url,
         std::path::Path::new(&path),
+        None,
         || async {
             client
                 .get(&request_url)

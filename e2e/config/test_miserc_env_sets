@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2209
+
+# env_sets in miserc.toml name groups of environments
+
+cat >mise.toml <<'TOML'
+tools.dummy = '1'
+[env]
+SELECTED = "[{{ mise_env | default(value=[]) | join(sep=',') }}]"
+TOML
+echo "tools.dummy = '2'" >mise.ssh.toml
+echo "tools.dummy = '3'" >mise.server.toml
+cat >.miserc.toml <<'TOML'
+[env_sets]
+server = ["server", "ssh"]
+TOML
+
+# env names a set
+echo 'env = ["server"]' >.miserc.local.toml
+assert "mise env --json | jq -r .SELECTED" "[server,ssh]"
+assert "mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/mise.ssh.toml  2"
+
+# -E and MISE_ENV expand too, and plain names still work
+assert "mise -E server env --json | jq -r .SELECTED" "[server,ssh]"
+MISE_ENV=server,ci assert "mise env --json | jq -r .SELECTED" "[server,ssh,ci]"
+assert "mise -E ssh env --json | jq -r .SELECTED" "[ssh]"
+
+# a project file cannot redefine a set of the global miserc
+rm .miserc.local.toml
+printf '[env_sets]\nserver = ["server"]\n' >"$MISE_CONFIG_DIR/miserc.toml"
+MISE_ENV=server assert "mise env --json | jq -r .SELECTED" "[server]"
+
+# nor empty a global environment, and an empty MISE_ENV selects nothing
+printf 'env = ["floor"]\n' >"$MISE_CONFIG_DIR/miserc.toml"
+printf '[env_sets]\nfloor = []\n' >.miserc.toml
+assert "mise env --json | jq -r .SELECTED" "[floor]"
+printf 'env = ["ssh"]\n' >.miserc.toml
+rm "$MISE_CONFIG_DIR/miserc.toml"
+MISE_ENV='' assert "mise env --json | jq -r .SELECTED" "[]"

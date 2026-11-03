@@ -115,8 +115,8 @@ through `PATH`, `mise exec` and `mise run` set up one command or task, and
 ### Does mise work on Windows? {#windows-support}
 
 Yes. mise runs natively on Windows, with PowerShell activation, shims,
-`mise exec`, and `mise run`. Install it with `winget install jdx.mise`, or see
-[Windows](/installing-mise.html#windows) for Scoop and Chocolatey. To set up
+`mise exec`, and `mise run`. Install it with `irm https://mise.run/powershell | iex`, or see
+[Windows](/installing-mise.html#windows) for winget, Scoop and Chocolatey. To set up
 PowerShell, Git Bash, or `cmd.exe`, see [Shell setup](/shell-setup.html#windows).
 
 Tools from asdf plugins do not run on native Windows, because the plugins are
