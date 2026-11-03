@@ -1374,6 +1374,12 @@ impl Doctor {
                 continue;
             }
 
+            // A backend the user chose is theirs to keep: only warn when the
+            // registry moved a tool that follows it.
+            if ist.explicit_backend {
+                continue;
+            }
+
             // Get stored backend, skip if none
             let Some(stored_full) = &ist.full else {
                 continue;
@@ -1389,40 +1395,26 @@ impl Doctor {
             // one the registry has moved. Strip options for comparison
             // (e.g., "github:repo[exe=bin]" -> "github:repo").
             let stored_stripped = stored_full.split('[').next().unwrap_or(stored_full);
-            let per_version: Vec<Vec<&str>> = if ist.versions.is_empty() {
-                vec![rt.backends()]
+            let recommended: Vec<&str> = if ist.versions.is_empty() {
+                rt.backends().into_iter().take(1).collect()
             } else {
                 ist.versions
                     .iter()
-                    .map(|v| rt.backends_for_version(Some(v)))
+                    .filter_map(|v| rt.backends_for_version(Some(v)).into_iter().next())
                     .collect()
             };
-            let recommended: Vec<&str> = per_version
-                .iter()
-                .filter_map(|backends| backends.first().copied())
-                .collect();
-            if backend_matches_registry(&per_version, stored_stripped, ist.explicit_backend) {
+            if backend_matches_registry(&recommended, stored_stripped) {
                 continue;
             }
             let Some(registry_full) = recommended.first() else {
                 continue;
             };
-            let msg = if ist.explicit_backend {
-                formatdoc!(
-                    r#"tool '{short}' installed with explicit backend '{stored_full}'
-                       differs from registry recommendation '{registry_full}'.
-                       To switch: mise backends switch {short} (add --global for the global lockfile)
-                       If it is not locked, run: mise uninstall --all {short} && mise install {short}"#
-                )
-            } else {
-                formatdoc!(
-                    r#"tool '{short}' installed with backend '{stored_full}'
-                       but registry now recommends '{registry_full}'.
-                       To migrate: mise backends switch {short} (add --global for the global lockfile)
-                       If it is not locked, run: mise uninstall --all {short} && mise install {short}"#
-                )
-            };
-            self.warnings.push(msg);
+            self.warnings.push(formatdoc!(
+                r#"tool '{short}' installed with backend '{stored_full}'
+                   but registry now recommends '{registry_full}'.
+                   To migrate: mise backends switch {short} (add --global for the global lockfile)
+                   If it is not locked, run: mise uninstall --all {short} && mise install {short}"#
+            ));
         }
     }
 
@@ -1846,23 +1838,14 @@ fn install_dir_is_empty(path: &Path) -> bool {
 
 /// Whether the stored backend agrees with the registry for the installed versions.
 ///
-/// `per_version` holds, for each installed version, the registry backends in
-/// priority order. The install state records one backend per tool, so versions
-/// installed on either side of a cutover cannot all match it: only warn when none
-/// do. Only a change of backend kind counts; a repo or org rename within one does
-/// not. An explicit backend is a deliberate choice, so any backend the registry
-/// lists for the tool is acceptable; otherwise it must be the recommended one.
-fn backend_matches_registry(
-    per_version: &[Vec<&str>],
-    stored_stripped: &str,
-    explicit: bool,
-) -> bool {
-    per_version.iter().any(|backends| {
-        let candidates = if explicit { backends.len() } else { 1 };
-        backends.iter().take(candidates).any(|full| {
-            let stripped = full.split('[').next().unwrap_or(full);
-            crate::args::same_backend_kind(stripped, stored_stripped)
-        })
+/// `recommended` holds the registry's first backend for each installed version.
+/// The install state records one backend per tool, so versions installed on
+/// either side of a cutover cannot all match it: only warn when none do. Only a
+/// change of backend kind counts; a repo or org rename within one does not.
+fn backend_matches_registry(recommended: &[&str], stored_stripped: &str) -> bool {
+    recommended.iter().any(|full| {
+        let stripped = full.split('[').next().unwrap_or(full);
+        crate::args::same_backend_kind(stripped, stored_stripped)
     })
 }
 
@@ -1871,19 +1854,13 @@ mod tests {
     use super::{backend_matches_registry, install_dir_is_empty, sync_failure_duration};
 
     #[test]
-    fn explicit_backend_may_be_any_registry_backend() {
-        let neovim = vec![vec!["vfox:jdx/vfox-neovim", "aqua:neovim/neovim"]];
-        assert!(backend_matches_registry(
-            &neovim,
-            "aqua:neovim/neovim",
-            true
-        ));
+    fn any_installed_version_may_match_the_recommended_backend() {
+        let cutover = ["vfox:jdx/vfox-neovim", "aqua:neovim/neovim"];
+        assert!(backend_matches_registry(&cutover, "aqua:neovim/neovim"));
         assert!(!backend_matches_registry(
-            &neovim,
-            "aqua:neovim/neovim",
-            false
+            &["vfox:jdx/vfox-neovim"],
+            "aqua:neovim/neovim"
         ));
-        assert!(!backend_matches_registry(&neovim, "cargo:neovim", true));
     }
 
     use crate::system::history::sync::run::SyncStatus;
