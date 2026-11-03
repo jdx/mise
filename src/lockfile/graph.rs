@@ -694,6 +694,7 @@ mod tests {
             options: BTreeMap::new(),
             platforms: BTreeMap::new(),
             uv: None,
+            provenance: None,
             aube: None,
         }
     }

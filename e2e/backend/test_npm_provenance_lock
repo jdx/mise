@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+# With npm.provenance on, the first install records the repository the package
+# was built from, and later installs must show the same one. Needs the public
+# npm registry: @sigstore/bundle@3.1.0 publishes SLSA provenance from GitHub
+# Actions.
+
+cat >mise.toml <<'TOML'
+[tools]
+node = "20.11.1"
+"npm:@sigstore/bundle" = "3.1.0"
+TOML
+touch mise.lock
+export MISE_NPM_PROVENANCE=1
+
+assert_succeed "mise install"
+assert_contains "cat mise.lock" "lockfile_version = 4"
+assert_contains "cat mise.lock" 'repository = "github.com/sigstore/sigstore-js"'
+
+# A reinstall verifies against the recorded repository.
+assert_succeed "mise uninstall npm:@sigstore/bundle@3.1.0"
+assert_succeed "mise install"
+
+# A pin to another repository refuses the install.
+sed -i.bak 's#github.com/sigstore/sigstore-js#github.com/example/other#' mise.lock
+assert_succeed "mise uninstall npm:@sigstore/bundle@3.1.0"
+assert_fail_contains "mise install 2>&1" "pins its provenance to github.com/example/other"
