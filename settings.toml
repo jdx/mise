@@ -2685,7 +2685,7 @@ another [`npm.package_manager`](#npm.package_manager), and one of a local archiv
 pinned only by a checksum, installs unchecked. The `provenance` category of
 [`paranoid`](/configuration/settings.html#paranoid) turns verification on even
 when this is off, and makes those installs an error instead. If npm's
-attestation lookup fails, [`provenance_api_failures_fatal`](#provenance_api_failures_fatal)
+attestation lookup fails, [`provenance_api_failures_fatal`](/configuration/settings.html#provenance_api_failures_fatal)
 decides whether the install fails or goes on unchecked, unless `mise.lock` pins a
 repository. Set this to `false` to skip verification, for example behind a
 network that blocks Sigstore's trust roots.
