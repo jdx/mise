@@ -5532,12 +5532,7 @@ pub(crate) fn get_locked_version(
         return Ok(None);
     };
     let mut merged = false;
-    // A monorepo root lockfile holds every subproject's pins
-    let shared_lockfile = config.monorepo_lockfile_root().is_some_and(|root| {
-        lockfile_path_for_tool_source_with_root(config, source, Some(&root)).is_some_and(
-            |(path, _)| path.parent() == Some(&crate::config::monorepo_lockfile_dir(&root)),
-        )
-    });
+    let shared_lockfile = reads_shared_monorepo_lockfile(config, source);
     let lockfile = match source {
         ToolSource::MiseToml(path) => {
             trace!(
@@ -5784,6 +5779,35 @@ pub(crate) fn get_locked_version(
         }
         result => result,
     }
+}
+
+/// Whether `source` reads a monorepo root lockfile, which holds every
+/// subproject's pins. A tool stub uses its own monorepo root, not the one of
+/// the directory it runs from.
+fn reads_shared_monorepo_lockfile(config: &Config, source: &ToolSource) -> bool {
+    let (lockfile_path, monorepo_root) = match source {
+        ToolSource::ToolStub(stub) => {
+            let Some((config_path, root)) = tool_stub_config(stub) else {
+                return false;
+            };
+            (
+                lockfile_path_for_config(&config_path, root.as_deref()).0,
+                root,
+            )
+        }
+        _ => {
+            let root = config.monorepo_lockfile_root();
+            let Some((path, _)) =
+                lockfile_path_for_tool_source_with_root(config, source, root.as_deref())
+            else {
+                return false;
+            };
+            (path, root)
+        }
+    };
+    monorepo_root.is_some_and(|root| {
+        lockfile_path.parent() == Some(&crate::config::monorepo_lockfile_dir(&root))
+    })
 }
 
 /// The first lockfile, nearest config first, whose lookup decides the request.
