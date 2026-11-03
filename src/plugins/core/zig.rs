@@ -85,11 +85,11 @@ impl ZigPlugin {
     /// Whether a locked `url` can be downloaded for `version` without the
     /// index. The signature only proves the archive matches its own file name,
     /// so that name must be this version's archive for this platform, with no
-    /// query to change it. Older mise wrote `zig-{os}-...` names for 0.14.1 and
+    /// query or fragment to change it. Older mise wrote `zig-{os}-...` names for 0.14.1 and
     /// later, and `.tar.xz` on Windows, when the index was unreadable; those
     /// files do not exist, so the index resolves them.
     fn usable_locked_url(url: &str, version: &str, arch: &str, os: &str) -> bool {
-        !url.contains('?')
+        !url.contains(['?', '#'])
             && url
                 .rsplit('/')
                 .next()
@@ -642,6 +642,8 @@ mod tests {
         assert!(!usable(&url, "0.15.1", "aarch64", "linux"));
         assert!(!usable(&url, "0.15.1", "x86_64", "macos"));
         assert!(!usable(&format!("{url}?x=1"), "0.15.1", "x86_64", "linux"));
+        let fragment = "https://example.com/archive#x/zig-x86_64-linux-0.15.1.tar.xz";
+        assert!(!usable(fragment, "0.15.1", "x86_64", "linux"));
         let windows = ZigPlugin::release_tarball_url("x86_64", "windows", "0.13.0");
         assert!(usable(&windows, "0.13.0", "x86_64", "windows"));
         let nightly = ZigPlugin::nightly_tarball_url("aarch64", "macos", "0.16.0-dev.1+abc");
