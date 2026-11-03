@@ -5073,8 +5073,17 @@ fn elf_interpreter(path: &Path) -> Option<String> {
     if phentsize == 0 || phnum == 0 {
         return None;
     }
+    // A downloaded file is untrusted: bound every read by the file's own length
+    // so a bogus header cannot ask for a huge allocation.
+    let file_len = file.metadata().ok()?.len();
+    let table_len = u64::try_from(phentsize)
+        .ok()?
+        .checked_mul(u64::try_from(phnum).ok()?)?;
+    if phoff.checked_add(table_len)? > file_len {
+        return None;
+    }
     file.seek(SeekFrom::Start(phoff)).ok()?;
-    let mut table = vec![0u8; phentsize.checked_mul(phnum)?];
+    let mut table = vec![0u8; phentsize * phnum];
     file.read_exact(&mut table).ok()?;
     for index in 0..phnum {
         let entry = table.get(index * phentsize..(index + 1) * phentsize)?;
@@ -5086,7 +5095,13 @@ fn elf_interpreter(path: &Path) -> Option<String> {
         } else {
             (u64::from(le_u32(entry, 4)?), u64::from(le_u32(entry, 16)?))
         };
-        let mut buf = vec![0u8; usize::try_from(size).ok()?];
+        // PT_INTERP is a path. Anything much longer is not one, and the bound
+        // also keeps the allocation below a size a bad file could inflate.
+        let size = usize::try_from(size).ok()?;
+        if size == 0 || size > 4096 || offset.checked_add(size as u64)? > file_len {
+            return None;
+        }
+        let mut buf = vec![0u8; size];
         file.seek(SeekFrom::Start(offset)).ok()?;
         file.read_exact(&mut buf).ok()?;
         let end = buf.iter().position(|byte| *byte == 0).unwrap_or(buf.len());
@@ -6169,6 +6184,25 @@ no_asset: true
         let script = dir.path().join("script");
         std::fs::write(&script, b"#!/bin/sh\necho hi\n").unwrap();
         assert_eq!(elf_interpreter(&script), None);
+    }
+
+    #[test]
+    fn test_elf_interpreter_ignores_a_header_beyond_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // A truncated header that claims more program headers than the file holds.
+        let mut truncated = elf64(Some("/system/bin/linker64"));
+        truncated.truncate(64 + 8);
+        let path = dir.path().join("truncated");
+        std::fs::write(&path, &truncated).unwrap();
+        assert_eq!(elf_interpreter(&path), None);
+
+        // A program header that points the interpreter past the end of the file.
+        let mut runaway = elf64(Some("/system/bin/linker64"));
+        runaway[64 + 8..64 + 16].copy_from_slice(&u64::MAX.to_le_bytes());
+        let path = dir.path().join("runaway");
+        std::fs::write(&path, &runaway).unwrap();
+        assert_eq!(elf_interpreter(&path), None);
     }
 
     #[test]
