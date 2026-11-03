@@ -1373,48 +1373,7 @@ impl Doctor {
             if install_state::get_plugin_type(short).is_some() {
                 continue;
             }
-
-            // A backend the user chose is theirs to keep: only warn when the
-            // registry moved a tool that follows it.
-            if ist.explicit_backend {
-                continue;
-            }
-
-            // Get stored backend, skip if none
-            let Some(stored_full) = &ist.full else {
-                continue;
-            };
-
-            // Get registry entry, skip if not in registry
-            let Some(rt) = REGISTRY.get(short.as_str()) else {
-                continue;
-            };
-
-            // Recommended backend for the installed versions: a registry backend can
-            // start at a later version (`min_version`), so an older install is not
-            // one the registry has moved. Strip options for comparison
-            // (e.g., "github:repo[exe=bin]" -> "github:repo").
-            let stored_stripped = stored_full.split('[').next().unwrap_or(stored_full);
-            let recommended: Vec<&str> = if ist.versions.is_empty() {
-                rt.backends().into_iter().take(1).collect()
-            } else {
-                ist.versions
-                    .iter()
-                    .filter_map(|v| rt.backends_for_version(Some(v)).into_iter().next())
-                    .collect()
-            };
-            if backend_matches_registry(&recommended, stored_stripped) {
-                continue;
-            }
-            let Some(registry_full) = recommended.first() else {
-                continue;
-            };
-            self.warnings.push(formatdoc!(
-                r#"tool '{short}' installed with backend '{stored_full}'
-                   but registry now recommends '{registry_full}'.
-                   To migrate: mise backends switch {short} (add --global for the global lockfile)
-                   If it is not locked, run: mise uninstall --all {short} && mise install {short}"#
-            ));
+            self.warnings.extend(backend_mismatch(short, ist));
         }
     }
 
@@ -1838,6 +1797,41 @@ fn install_dir_is_empty(path: &Path) -> bool {
 
 /// Whether the stored backend agrees with the registry for the installed versions.
 ///
+/// The warning for an installed tool whose backend the registry has moved away from.
+fn backend_mismatch(short: &str, ist: &install_state::InstallStateTool) -> Option<String> {
+    // A backend the user chose is theirs to keep: only warn when the registry
+    // moved a tool that follows it.
+    if ist.explicit_backend {
+        return None;
+    }
+    let stored_full = ist.full.as_ref()?;
+    let rt = REGISTRY.get(short)?;
+
+    // Recommended backend for the installed versions: a registry backend can
+    // start at a later version (`min_version`), so an older install is not
+    // one the registry has moved. Strip options for comparison
+    // (e.g., "github:repo[exe=bin]" -> "github:repo").
+    let stored_stripped = stored_full.split('[').next().unwrap_or(stored_full);
+    let recommended: Vec<&str> = if ist.versions.is_empty() {
+        rt.backends().into_iter().take(1).collect()
+    } else {
+        ist.versions
+            .iter()
+            .filter_map(|v| rt.backends_for_version(Some(v)).into_iter().next())
+            .collect()
+    };
+    if backend_matches_registry(&recommended, stored_stripped) {
+        return None;
+    }
+    let registry_full = recommended.first()?;
+    Some(formatdoc!(
+        r#"tool '{short}' installed with backend '{stored_full}'
+           but registry now recommends '{registry_full}'.
+           To migrate: mise backends switch {short} (add --global for the global lockfile)
+           If it is not locked, run: mise uninstall --all {short} && mise install {short}"#
+    ))
+}
+
 /// `recommended` holds the registry's first backend for each installed version.
 /// The install state records one backend per tool, so versions installed on
 /// either side of a cutover cannot all match it: only warn when none do. Only a
@@ -1851,7 +1845,25 @@ fn backend_matches_registry(recommended: &[&str], stored_stripped: &str) -> bool
 
 #[cfg(test)]
 mod tests {
-    use super::{backend_matches_registry, install_dir_is_empty, sync_failure_duration};
+    use super::{
+        backend_matches_registry, backend_mismatch, install_dir_is_empty, sync_failure_duration,
+    };
+    use crate::toolset::install_state::InstallStateTool;
+
+    #[test]
+    fn a_backend_the_user_chose_is_not_a_mismatch() {
+        let hk = |explicit_backend| InstallStateTool {
+            short: "hk".into(),
+            full: Some("github:jdx/hk".into()),
+            versions: vec!["2.11.0".into()],
+            explicit_backend,
+            opts: Default::default(),
+            installs_path: None,
+        };
+        assert_eq!(backend_mismatch("hk", &hk(true)), None);
+        let warning = backend_mismatch("hk", &hk(false)).unwrap();
+        assert!(warning.contains("but registry now recommends"), "{warning}");
+    }
 
     #[test]
     fn any_installed_version_may_match_the_recommended_backend() {
