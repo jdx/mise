@@ -337,6 +337,12 @@ fn write_bootstrap_shims(
     shims: &BTreeSet<String>,
     _prune_stale_windows_variants: bool,
 ) -> Result<Option<eyre::Report>> {
+    // Taking the lock writes a file, so a farm that is already complete must
+    // not take it: `mise x` and wrapper shims run on read-only filesystems
+    // (#15296).
+    if bootstrap_shims_current(shims_dir, shims, _prune_stale_windows_variants) {
+        return Ok(None);
+    }
     // Lock failures come from outside the target farm and must remain visible
     // to the user. The lock is taken first because a reshim may remove an
     // emptied wrapper directory while it holds it.
@@ -370,8 +376,28 @@ fn write_bootstrap_shims(
     Ok(None)
 }
 
+/// Whether `write_bootstrap_shims` would change nothing in `shims_dir`.
+fn bootstrap_shims_current(
+    shims_dir: &Path,
+    shims: &BTreeSet<String>,
+    prune_stale_windows_variants: bool,
+) -> bool {
+    shims.iter().all(|shim| shims_dir.join(shim).exists())
+        && !(prune_stale_windows_variants && has_stale_windows_shim_variants(shims_dir, shims))
+}
+
 #[cfg(windows)]
-fn remove_stale_windows_shim_variants(shims_dir: &Path, desired: &BTreeSet<String>) -> Result<()> {
+fn has_stale_windows_shim_variants(shims_dir: &Path, desired: &BTreeSet<String>) -> bool {
+    stale_windows_shim_variants(desired).any(|variant| shims_dir.join(variant).exists())
+}
+
+#[cfg(not(windows))]
+fn has_stale_windows_shim_variants(_shims_dir: &Path, _desired: &BTreeSet<String>) -> bool {
+    false
+}
+
+#[cfg(windows)]
+fn stale_windows_shim_variants(desired: &BTreeSet<String>) -> impl Iterator<Item = String> + '_ {
     let stems = desired
         .iter()
         .map(|shim| {
@@ -381,12 +407,16 @@ fn remove_stale_windows_shim_variants(shims_dir: &Path, desired: &BTreeSet<Strin
                 .to_string()
         })
         .collect::<BTreeSet<_>>();
-    for stem in stems {
-        for variant in [stem.clone(), format!("{stem}.cmd"), format!("{stem}.exe")] {
-            if !desired.contains(&variant) {
-                remove_shim_with_rename_fallback(&shims_dir.join(variant))?;
-            }
-        }
+    stems
+        .into_iter()
+        .flat_map(|stem| [stem.clone(), format!("{stem}.cmd"), format!("{stem}.exe")])
+        .filter(|variant| !desired.contains(variant))
+}
+
+#[cfg(windows)]
+fn remove_stale_windows_shim_variants(shims_dir: &Path, desired: &BTreeSet<String>) -> Result<()> {
+    for variant in stale_windows_shim_variants(desired) {
+        remove_shim_with_rename_fallback(&shims_dir.join(variant))?;
     }
     Ok(())
 }
